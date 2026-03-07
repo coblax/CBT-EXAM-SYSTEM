@@ -20,6 +20,8 @@
     var NAV_SIDE_LAYOUT_BREAKPOINT = 1000;
     var PANEL_STACK_BREAKPOINT = 1100;
     var QUESTION_WINDOW_SIZE = 10;
+    var QUESTION_PREFETCH_BATCH_SIZE = 5;
+    var QUESTION_PREFETCH_IDLE_DELAY_MS = 30000;
     var NAV_QUESTION_FILTER_ALL = 'all';
     var NAV_QUESTION_FILTER_ANSWERED = 'answered';
     var NAV_QUESTION_FILTER_UNANSWERED = 'unanswered';
@@ -96,6 +98,8 @@
     var lastAttemptUiStateSyncSignature = '';
     var sessionHeartbeatTimer = 0;
     var sessionHeartbeatInFlight = null;
+    var questionPrefetchIdleTimer = 0;
+    var questionPrefetchInFlightByOffset = {};
 
     function getSessionStorage() {
         if (cachedSessionStorage !== undefined) {
@@ -794,6 +798,110 @@
         return Math.floor(safeIndex / safeWindowSize) * safeWindowSize;
     }
 
+    function setActiveQuestionWindowForIndex(index, windowSize) {
+        var safeWindowSize = Math.max(1, Number(windowSize) || QUESTION_WINDOW_SIZE);
+        var safeIndex = clampQuestionIndex(index);
+        state.windowOffset = questionWindowOffsetForIndex(safeIndex, safeWindowSize);
+        state.windowLimit = safeWindowSize;
+    }
+
+    function clearQuestionPrefetchIdleTimer() {
+        if (questionPrefetchIdleTimer) {
+            window.clearTimeout(questionPrefetchIdleTimer);
+            questionPrefetchIdleTimer = 0;
+        }
+    }
+
+    function clearQuestionPrefetchRuntimeState() {
+        clearQuestionPrefetchIdleTimer();
+        questionPrefetchInFlightByOffset = {};
+    }
+
+    function getNextQuestionPrefetchOffset() {
+        var totalQuestions = getQuestionCount();
+        if (totalQuestions <= 0) {
+            return -1;
+        }
+
+        var startIndex = Math.max(0, Math.min(totalQuestions - 1, (Number(state.currentIndex) || 0) + 1));
+        for (var scanned = 0; scanned < totalQuestions; scanned++) {
+            var index = (startIndex + scanned) % totalQuestions;
+            var questionId = getQuestionIdAtIndex(index);
+            if (questionId > 0 && !isQuestionPayloadLoaded(questionId)) {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    function hasPendingQuestionPrefetch() {
+        return getNextQuestionPrefetchOffset() >= 0;
+    }
+
+    function resetQuestionPrefetchIdleTimer() {
+        clearQuestionPrefetchIdleTimer();
+
+        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
+            return;
+        }
+
+        if (!hasPendingQuestionPrefetch()) {
+            return;
+        }
+
+        questionPrefetchIdleTimer = window.setTimeout(function () {
+            questionPrefetchIdleTimer = 0;
+            prefetchNextQuestionBatch().finally(function () {
+                resetQuestionPrefetchIdleTimer();
+            });
+        }, QUESTION_PREFETCH_IDLE_DELAY_MS);
+    }
+
+    function noteQuestionPrefetchActivity() {
+        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
+            return;
+        }
+
+        resetQuestionPrefetchIdleTimer();
+    }
+
+    function prefetchNextQuestionBatch() {
+        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
+            return Promise.resolve(null);
+        }
+
+        var offset = getNextQuestionPrefetchOffset();
+        if (offset < 0) {
+            return Promise.resolve(null);
+        }
+
+        if (questionPrefetchInFlightByOffset[offset]) {
+            return questionPrefetchInFlightByOffset[offset];
+        }
+
+        var totalQuestions = getQuestionCount();
+        var limit = Math.min(QUESTION_PREFETCH_BATCH_SIZE, Math.max(0, totalQuestions - offset));
+        if (limit <= 0) {
+            return Promise.resolve(null);
+        }
+
+        var request = loadQuestionWindow(offset, {
+            examId: state.selectedExamId,
+            attemptId: state.attemptId,
+            includeExisting: 1,
+            limit: limit,
+            preserveActiveWindow: true
+        }).catch(function () {
+            return null;
+        }).finally(function () {
+            delete questionPrefetchInFlightByOffset[offset];
+        });
+
+        questionPrefetchInFlightByOffset[offset] = request;
+        return request;
+    }
+
     function normalizeExistingAnswerForQuestion(question) {
         if (!question || !Object.prototype.hasOwnProperty.call(question, 'existing_answer')) {
             return {
@@ -1004,15 +1112,20 @@
             });
         }
 
+        var responseOffset = Math.max(0, Number(questionPayload && questionPayload.offset) || 0);
+        var responseLimit = Math.max(0, Number(questionPayload && questionPayload.limit) || 0);
+
         state.totalQuestions = Math.max(
             normalizedOrderIds.length,
             Number(questionPayload && questionPayload.total_questions) || 0,
             Array.isArray(state.questionOrderIds) ? state.questionOrderIds.length : 0
         );
-        state.windowOffset = Math.max(0, Number(questionPayload && questionPayload.offset) || 0);
-        state.windowLimit = Math.max(0, Number(questionPayload && questionPayload.limit) || 0);
-        state.questions = responseItems;
-        markQuestionWindowLoaded(state.windowOffset);
+        if (!options.preserveActiveWindow) {
+            state.windowOffset = responseOffset;
+            state.windowLimit = responseLimit;
+            state.questions = responseItems;
+        }
+        markQuestionWindowLoaded(responseOffset);
 
         var manifestById = buildQuestionManifestById(responseManifest);
         Object.keys(manifestById).forEach(function (key) {
@@ -1390,8 +1503,19 @@
             }
         });
 
+        var canApplyQuestionPayload = (
+            Number(state.attemptId) === attemptId &&
+            Number(state.selectedExamId) === examId &&
+            (state.stage === 'exam' || state.stage === 'confirm')
+        );
+
+        if (!canApplyQuestionPayload) {
+            return questionPayload;
+        }
+
         applyQuestionsResponse(questionPayload, {
-            overwriteExisting: !!options.overwriteExisting
+            overwriteExisting: !!options.overwriteExisting,
+            preserveActiveWindow: !!options.preserveActiveWindow
         });
 
         return questionPayload;
@@ -2759,6 +2883,7 @@
         var previousAttemptId = Number(state.attemptId) || 0;
         stopTimer();
         clearAutoSaveRuntimeState();
+        clearQuestionPrefetchRuntimeState();
         clearAttemptUiStateSyncTimer();
         lastAttemptUiStateSyncSignature = '';
         state.examToken = '';
@@ -2799,6 +2924,7 @@
         stopTimer();
         stopSessionHeartbeat();
         clearAutoSaveRuntimeState();
+        clearQuestionPrefetchRuntimeState();
         clearAttemptUiStateSyncTimer();
         attemptUiStateSyncInFlight = null;
         lastAttemptUiStateSyncSignature = '';
@@ -3034,6 +3160,7 @@
         if (state.attemptId <= 0) {
             throw new Error('Attempt ID tidak valid.');
         }
+        clearQuestionPrefetchRuntimeState();
         clearAttemptUiStateSyncTimer();
         lastAttemptUiStateSyncSignature = '';
 
@@ -3142,6 +3269,7 @@
         scheduleAttemptUiStateSync(ATTEMPT_UI_STATE_SYNC_DELAY_MS);
         startSessionHeartbeat();
         startTimer();
+        resetQuestionPrefetchIdleTimer();
     }
 
     async function tryResumeExamCandidate(exam) {
@@ -3375,7 +3503,8 @@
             }
         }
 
-        var requiresWindowLoad = !isIndexInCurrentWindow(safeIndex) || !isQuestionPayloadLoaded(getQuestionIdAtIndex(safeIndex));
+        var targetQuestionId = getQuestionIdAtIndex(safeIndex);
+        var requiresWindowLoad = !isQuestionPayloadLoaded(targetQuestionId);
         if (requiresWindowLoad) {
             state.busy = true;
             render();
@@ -3396,6 +3525,7 @@
         }
 
         state.currentIndex = safeIndex;
+        setActiveQuestionWindowForIndex(safeIndex, QUESTION_WINDOW_SIZE);
         state.error = '';
         persistCurrentAttemptUiStateLocally();
         try {
@@ -3404,6 +3534,8 @@
             // Keep local fallback; next lifecycle event or interaction will retry.
         }
         render();
+        prefetchNextQuestionBatch();
+        resetQuestionPrefetchIdleTimer();
     }
 
     async function handleFinish(autoSubmit, options) {
@@ -3423,6 +3555,7 @@
         state.finishConfirmSummary = null;
         state.isFinishing = true;
         clearAllAutoSaveTimers();
+        clearQuestionPrefetchRuntimeState();
         clearAttemptUiStateSyncTimer();
         clearMessages();
         render();
@@ -4954,6 +5087,10 @@
             return;
         }
 
+        if (state.stage === 'exam') {
+            noteQuestionPrefetchActivity();
+        }
+
         if (action === 'font-dec') {
             if (updateFontScale(state.fontScale - FONT_SCALE_STEP)) {
                 render();
@@ -5259,6 +5396,10 @@
             return;
         }
 
+        if (state.stage === 'exam') {
+            noteQuestionPrefetchActivity();
+        }
+
         if (target.getAttribute('data-action') === 'answer-single') {
             var singleQid = Number(target.getAttribute('data-qid')) || 0;
             var singleOptionId = Number(target.getAttribute('data-option-id')) || 0;
@@ -5318,6 +5459,10 @@
         var target = event.target;
         if (!(target instanceof HTMLElement)) {
             return;
+        }
+
+        if (state.stage === 'exam') {
+            noteQuestionPrefetchActivity();
         }
 
         var action = target.getAttribute('data-action');
