@@ -108,6 +108,7 @@
     var questionPrefetchInFlightByOffset = {};
     var questionCachePersistTimer = 0;
     var questionCacheIndexedDbPromise = null;
+    var lastQuestionCacheRestoreDebug = null;
 
     function getSessionStorage() {
         if (cachedSessionStorage !== undefined) {
@@ -204,6 +205,17 @@
         });
 
         return questionCacheIndexedDbPromise;
+    }
+
+    function setQuestionCacheRestoreDebug(summary) {
+        lastQuestionCacheRestoreDebug = summary && typeof summary === 'object' ? summary : null;
+        try {
+            if (window) {
+                window.__CBTQuestionCacheDebug = lastQuestionCacheRestoreDebug;
+            }
+        } catch (error) {
+            // Ignore debug export failures.
+        }
     }
 
     function clamp(value, min, max) {
@@ -1761,11 +1773,26 @@
         var indexedDbSnapshot = await readPersistedQuestionCacheFromIndexedDb(attemptId);
         var localStorageSnapshot = readPersistedQuestionCacheFromLocalStorage(attemptId);
         var sessionSnapshot = readPersistedQuestionCacheFromSessionStorage(attemptId);
-        return mergeQuestionCacheSnapshots(
+        var mergedSnapshot = mergeQuestionCacheSnapshots(
             mergeQuestionCacheSnapshots(indexedDbSnapshot, localStorageSnapshot, attemptId),
             sessionSnapshot,
             attemptId
         );
+        setQuestionCacheRestoreDebug({
+            attemptId: Number(attemptId) || 0,
+            indexedDbPayloadCount: questionCachePayloadCount(indexedDbSnapshot),
+            localStoragePayloadCount: questionCachePayloadCount(localStorageSnapshot),
+            sessionPayloadCount: questionCachePayloadCount(sessionSnapshot),
+            mergedPayloadCount: questionCachePayloadCount(mergedSnapshot),
+            mergedOrderCount: mergedSnapshot && Array.isArray(mergedSnapshot.questionOrderIds)
+                ? mergedSnapshot.questionOrderIds.length
+                : 0,
+            mergedWindowOffset: mergedSnapshot ? Number(mergedSnapshot.windowOffset) || 0 : 0,
+            mergedWindowLimit: mergedSnapshot ? Number(mergedSnapshot.windowLimit) || 0 : 0,
+            mergedCachedAt: mergedSnapshot ? Number(mergedSnapshot.cachedAt) || 0 : 0,
+            timestamp: Date.now()
+        });
+        return mergedSnapshot;
     }
 
     function clearPersistedQuestionCache(attemptId) {
@@ -1892,7 +1919,7 @@
     function applyPersistedQuestionCache(snapshot, options) {
         options = options || {};
 
-        var normalizedSnapshot = normalizeQuestionCacheSnapshot(snapshot, options.attemptId || state.attemptId);
+        var normalizedSnapshot = normalizeOrUseQuestionCacheSnapshot(snapshot, options.attemptId || state.attemptId);
         if (!normalizedSnapshot) {
             return false;
         }
@@ -2599,7 +2626,7 @@
         var safeAttemptId = Number(attemptId) || 0;
         var normalizedLocal = localSnapshot ? normalizeAttemptUiState(localSnapshot, safeAttemptId) : null;
         var normalizedRemote = remoteSnapshot ? normalizeAttemptUiState(remoteSnapshot, safeAttemptId) : null;
-        var normalizedQuestionCache = normalizeQuestionCacheSnapshot(questionCacheSnapshot, safeAttemptId);
+        var normalizedQuestionCache = normalizeOrUseQuestionCacheSnapshot(questionCacheSnapshot, safeAttemptId);
         var selectedSnapshot = normalizedLocal || normalizedRemote || {
             attempt_id: safeAttemptId,
             current_index: 0,
