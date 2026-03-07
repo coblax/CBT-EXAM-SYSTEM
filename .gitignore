@@ -1,0 +1,15 @@
+.DS_Store
+Thumbs.db
+
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+*.orig
+
+.idea/
+.vscode/
+
+.phpunit.result.cache
+.php-cs-fixer.cache
