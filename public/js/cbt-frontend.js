@@ -11,6 +11,8 @@
     var UI_PREF_STORAGE_KEY = 'cbt_exam_frontend_ui_pref_v1';
     var ATTEMPT_UI_SESSION_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_attempt_ui_v1_';
     var QUESTION_CACHE_SESSION_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_question_cache_v1_';
+    var QUESTION_CACHE_INDEXED_DB_NAME = 'cbt_exam_frontend_cache_v1';
+    var QUESTION_CACHE_INDEXED_DB_STORE = 'attempt_questions';
     var DOUBTFUL_SESSION_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_doubtful_v1_';
     var FONT_SCALE_MIN = 0.85;
     var FONT_SCALE_MAX = 1.35;
@@ -103,6 +105,7 @@
     var questionPrefetchIdleTimer = 0;
     var questionPrefetchInFlightByOffset = {};
     var questionCachePersistTimer = 0;
+    var questionCacheIndexedDbPromise = null;
 
     function getSessionStorage() {
         if (cachedSessionStorage !== undefined) {
@@ -146,6 +149,59 @@
         }
 
         return cachedLocalStorage;
+    }
+
+    function getIndexedDb() {
+        try {
+            return window && window.indexedDB ? window.indexedDB : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function openQuestionCacheIndexedDb() {
+        if (questionCacheIndexedDbPromise !== null) {
+            return questionCacheIndexedDbPromise;
+        }
+
+        var indexedDb = getIndexedDb();
+        if (!indexedDb) {
+            questionCacheIndexedDbPromise = Promise.resolve(null);
+            return questionCacheIndexedDbPromise;
+        }
+
+        questionCacheIndexedDbPromise = new Promise(function (resolve) {
+            var request;
+            try {
+                request = indexedDb.open(QUESTION_CACHE_INDEXED_DB_NAME, 1);
+            } catch (error) {
+                resolve(null);
+                return;
+            }
+
+            request.onupgradeneeded = function () {
+                var database = request.result;
+                if (!database.objectStoreNames.contains(QUESTION_CACHE_INDEXED_DB_STORE)) {
+                    database.createObjectStore(QUESTION_CACHE_INDEXED_DB_STORE, {
+                        keyPath: 'cache_key'
+                    });
+                }
+            };
+
+            request.onsuccess = function () {
+                resolve(request.result || null);
+            };
+
+            request.onerror = function () {
+                resolve(null);
+            };
+
+            request.onblocked = function () {
+                resolve(null);
+            };
+        });
+
+        return questionCacheIndexedDbPromise;
     }
 
     function clamp(value, min, max) {
@@ -838,7 +894,8 @@
             answers: normalizeStoredAnswers(snapshot.answers),
             loadedQuestionWindowOffsets: normalizeStoredBooleanLookup(snapshot.loaded_question_window_offsets),
             windowOffset: Math.max(0, Number(snapshot.window_offset) || 0),
-            windowLimit: Math.max(0, Number(snapshot.window_limit) || 0)
+            windowLimit: Math.max(0, Number(snapshot.window_limit) || 0),
+            cachedAt: Math.max(0, Number(snapshot.cached_at) || 0)
         };
     }
 
@@ -903,12 +960,78 @@
         };
     }
 
-    function persistQuestionCacheLocally(snapshot) {
+    function serializeQuestionCacheSnapshot(normalizedSnapshot) {
+        if (!normalizedSnapshot) {
+            return null;
+        }
+
+        return {
+            attempt_id: normalizedSnapshot.attemptId,
+            exam_id: normalizedSnapshot.examId,
+            total_questions: normalizedSnapshot.totalQuestions,
+            question_order_ids: normalizedSnapshot.questionOrderIds,
+            question_manifest: normalizedSnapshot.questionManifest,
+            question_payload_by_id: normalizedSnapshot.questionPayloadById,
+            answered_question_lookup: normalizedSnapshot.answeredQuestionLookup,
+            answers: normalizedSnapshot.answers,
+            loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
+            window_offset: normalizedSnapshot.windowOffset,
+            window_limit: normalizedSnapshot.windowLimit,
+            cached_at: Date.now()
+        };
+    }
+
+    function persistQuestionCacheToSessionStorage(storageKey, storedSnapshot) {
         var storage = getSessionStorage();
-        if (!storage) {
+        if (!storage || storageKey === '' || !storedSnapshot) {
             return;
         }
 
+        try {
+            storage.setItem(storageKey, JSON.stringify(storedSnapshot));
+        } catch (error) {
+            // Ignore storage failures (quota or disabled storage).
+        }
+    }
+
+    function persistQuestionCacheToIndexedDb(storageKey, storedSnapshot) {
+        if (storageKey === '' || !storedSnapshot) {
+            return Promise.resolve(false);
+        }
+
+        return openQuestionCacheIndexedDb().then(function (database) {
+            if (!database) {
+                return false;
+            }
+
+            return new Promise(function (resolve) {
+                try {
+                    var transaction = database.transaction(QUESTION_CACHE_INDEXED_DB_STORE, 'readwrite');
+                    var store = transaction.objectStore(QUESTION_CACHE_INDEXED_DB_STORE);
+                    store.put({
+                        cache_key: storageKey,
+                        snapshot: storedSnapshot,
+                        updated_at: Date.now()
+                    });
+                    transaction.oncomplete = function () {
+                        resolve(true);
+                    };
+                    transaction.onerror = function () {
+                        resolve(false);
+                    };
+                    transaction.onabort = function () {
+                        resolve(false);
+                    };
+                } catch (error) {
+                    resolve(false);
+                }
+            });
+        }).catch(function () {
+            return false;
+        });
+    }
+
+    function persistQuestionCacheLocally(snapshot) {
         var normalizedSnapshot = normalizeQuestionCacheSnapshot(snapshot, snapshot && snapshot.attempt_id);
         if (!normalizedSnapshot) {
             return;
@@ -919,24 +1042,13 @@
             return;
         }
 
-        try {
-            storage.setItem(storageKey, JSON.stringify({
-                attempt_id: normalizedSnapshot.attemptId,
-                exam_id: normalizedSnapshot.examId,
-                total_questions: normalizedSnapshot.totalQuestions,
-                question_order_ids: normalizedSnapshot.questionOrderIds,
-                question_manifest: normalizedSnapshot.questionManifest,
-                question_payload_by_id: normalizedSnapshot.questionPayloadById,
-                answered_question_lookup: normalizedSnapshot.answeredQuestionLookup,
-                answers: normalizedSnapshot.answers,
-                loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
-                window_offset: normalizedSnapshot.windowOffset,
-                window_limit: normalizedSnapshot.windowLimit,
-                cached_at: Date.now()
-            }));
-        } catch (error) {
-            // Ignore storage failures (quota or disabled storage).
+        var storedSnapshot = serializeQuestionCacheSnapshot(normalizedSnapshot);
+        if (!storedSnapshot) {
+            return;
         }
+
+        persistQuestionCacheToSessionStorage(storageKey, storedSnapshot);
+        persistQuestionCacheToIndexedDb(storageKey, storedSnapshot);
     }
 
     function persistCurrentQuestionCacheLocally() {
@@ -967,7 +1079,7 @@
         }, Math.max(0, Number(delayMs) || 0));
     }
 
-    function readPersistedQuestionCache(attemptId) {
+    function readPersistedQuestionCacheFromSessionStorage(attemptId) {
         var storage = getSessionStorage();
         if (!storage) {
             return null;
@@ -991,22 +1103,89 @@
         }
     }
 
-    function clearPersistedQuestionCache(attemptId) {
-        var storage = getSessionStorage();
-        if (!storage) {
-            return;
+    function readPersistedQuestionCacheFromIndexedDb(attemptId) {
+        var safeAttemptId = Number(attemptId) || 0;
+        var storageKey = buildQuestionCacheSessionStorageKey(safeAttemptId);
+        if (storageKey === '') {
+            return Promise.resolve(null);
         }
 
+        return openQuestionCacheIndexedDb().then(function (database) {
+            if (!database) {
+                return null;
+            }
+
+            return new Promise(function (resolve) {
+                try {
+                    var transaction = database.transaction(QUESTION_CACHE_INDEXED_DB_STORE, 'readonly');
+                    var store = transaction.objectStore(QUESTION_CACHE_INDEXED_DB_STORE);
+                    var request = store.get(storageKey);
+
+                    request.onsuccess = function () {
+                        var record = request.result;
+                        resolve(record && record.snapshot
+                            ? normalizeQuestionCacheSnapshot(record.snapshot, safeAttemptId)
+                            : null);
+                    };
+
+                    request.onerror = function () {
+                        resolve(null);
+                    };
+
+                    transaction.onerror = function () {
+                        resolve(null);
+                    };
+                } catch (error) {
+                    resolve(null);
+                }
+            });
+        }).catch(function () {
+            return null;
+        });
+    }
+
+    async function readPersistedQuestionCache(attemptId) {
+        var indexedDbSnapshot = await readPersistedQuestionCacheFromIndexedDb(attemptId);
+        var sessionSnapshot = readPersistedQuestionCacheFromSessionStorage(attemptId);
+
+        if (indexedDbSnapshot && sessionSnapshot) {
+            return (indexedDbSnapshot.cachedAt >= sessionSnapshot.cachedAt)
+                ? indexedDbSnapshot
+                : sessionSnapshot;
+        }
+
+        return indexedDbSnapshot || sessionSnapshot;
+    }
+
+    function clearPersistedQuestionCache(attemptId) {
         var storageKey = buildQuestionCacheSessionStorageKey(attemptId);
         if (storageKey === '') {
             return;
         }
 
+        var storage = getSessionStorage();
         try {
-            storage.removeItem(storageKey);
+            if (storage) {
+                storage.removeItem(storageKey);
+            }
         } catch (error) {
             // Ignore storage failures (private mode / blocked storage).
         }
+
+        openQuestionCacheIndexedDb().then(function (database) {
+            if (!database) {
+                return;
+            }
+
+            try {
+                var transaction = database.transaction(QUESTION_CACHE_INDEXED_DB_STORE, 'readwrite');
+                transaction.objectStore(QUESTION_CACHE_INDEXED_DB_STORE).delete(storageKey);
+            } catch (error) {
+                // Ignore IndexedDB deletion failures.
+            }
+        }).catch(function () {
+            // Ignore IndexedDB deletion failures.
+        });
     }
 
     function applyPersistedQuestionCache(snapshot, options) {
@@ -3704,7 +3883,7 @@
         );
 
         var restoredQuestionCache = applyPersistedQuestionCache(
-            readPersistedQuestionCache(state.attemptId),
+            await readPersistedQuestionCache(state.attemptId),
             {
                 attemptId: state.attemptId,
                 examId: examId,
