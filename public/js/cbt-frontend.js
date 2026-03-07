@@ -1184,8 +1184,6 @@
             exam_id: normalizedSnapshot.examId,
             total_questions: normalizedSnapshot.totalQuestions,
             question_order_ids: normalizedSnapshot.questionOrderIds,
-            answered_question_lookup: normalizedSnapshot.answeredQuestionLookup,
-            answers: normalizedSnapshot.answers,
             loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
             window_offset: normalizedSnapshot.windowOffset,
             window_limit: normalizedSnapshot.windowLimit,
