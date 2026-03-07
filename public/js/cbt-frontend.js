@@ -79,7 +79,8 @@
     var AUTO_SAVE_TEXT_DELAY_CONGESTED_MS = 4600;
     var AUTO_SAVE_CONGESTED_WINDOW_MS = 15000;
     var AUTO_SAVE_BATCH_MAX_ITEMS = 20;
-    var ATTEMPT_UI_STATE_SYNC_DELAY_MS = 500;
+    var ATTEMPT_UI_STATE_SYNC_DELAY_MS = 1200;
+    var ATTEMPT_UI_STATE_NAVIGATION_SYNC_DELAY_MS = 1600;
     var SESSION_HEARTBEAT_INTERVAL_MS = 20000;
     var autoSaveTimersByQuestion = {};
     var autoSaveCongestedUntil = 0;
@@ -839,6 +840,103 @@
         return getNextQuestionPrefetchOffset() >= 0;
     }
 
+    function getLoadedQuestionCount() {
+        var totalQuestions = getQuestionCount();
+        if (totalQuestions <= 0) {
+            return 0;
+        }
+
+        var loadedCount = 0;
+        for (var index = 0; index < totalQuestions; index++) {
+            if (isQuestionPayloadLoaded(getQuestionIdAtIndex(index))) {
+                loadedCount++;
+            }
+        }
+
+        return loadedCount;
+    }
+
+    function getQuestionPrefetchMeta() {
+        var totalQuestions = getQuestionCount();
+        var loadedCount = getLoadedQuestionCount();
+        var inFlightCount = Object.keys(questionPrefetchInFlightByOffset).reduce(function (count, key) {
+            var offset = Number(key);
+            if (Number.isFinite(offset) && offset >= 0) {
+                return count + 1;
+            }
+            return count;
+        }, 0);
+        var pendingCount = Math.max(0, totalQuestions - loadedCount);
+        var isLoading = inFlightCount > 0;
+        var isComplete = totalQuestions > 0 && pendingCount === 0 && !isLoading;
+        var statusText = isComplete ? 'Lengkap' : (isLoading ? 'Memuat' : 'Siaga');
+        var summaryText = loadedCount + '/' + totalQuestions;
+        var title = isComplete
+            ? 'Semua soal sudah dimuat di perangkat ini.'
+            : (isLoading
+                ? ('Sedang memuat soal tambahan di latar belakang. Tersisa ' + pendingCount + ' soal lagi.')
+                : 'Prefetch siap mengambil soal tambahan saat pindah soal atau saat diam 30 detik.');
+
+        return {
+            loadedCount: loadedCount,
+            totalQuestions: totalQuestions,
+            pendingCount: pendingCount,
+            isLoading: isLoading,
+            isComplete: isComplete,
+            summaryText: summaryText,
+            statusText: statusText,
+            title: title,
+            ariaLabel: 'Status prefetch soal: ' + summaryText + ' soal sudah dimuat, ' + statusText + '.'
+        };
+    }
+
+    function renderQuestionPrefetchIndicator() {
+        var meta = getQuestionPrefetchMeta();
+        var classes = ['cbt-chip', 'cbt-chip-prefetch'];
+        if (meta.isLoading) {
+            classes.push('is-loading');
+        }
+        if (meta.isComplete) {
+            classes.push('is-complete');
+        }
+
+        return [
+            '<div class="' + classes.join(' ') + '" data-prefetch-indicator title="' + escapeHtml(meta.title) + '" aria-label="' + escapeHtml(meta.ariaLabel) + '">',
+            '<span class="cbt-chip-prefetch-dot" aria-hidden="true"></span>',
+            '<span class="cbt-chip-label">Prefetch</span>',
+            '<span class="cbt-chip-value" data-prefetch-count>' + escapeHtml(meta.summaryText) + '</span>',
+            '<span class="cbt-chip-prefetch-status" data-prefetch-status>' + escapeHtml(meta.statusText) + '</span>',
+            '</div>'
+        ].join('');
+    }
+
+    function updateQuestionPrefetchIndicator() {
+        if (state.stage !== 'exam') {
+            return;
+        }
+
+        var indicator = root.querySelector('[data-prefetch-indicator]');
+        if (!(indicator instanceof HTMLElement)) {
+            return;
+        }
+
+        var meta = getQuestionPrefetchMeta();
+        indicator.classList.toggle('is-loading', meta.isLoading);
+        indicator.classList.toggle('is-complete', meta.isComplete);
+        indicator.setAttribute('title', meta.title);
+        indicator.setAttribute('aria-label', meta.ariaLabel);
+
+        var countEl = indicator.querySelector('[data-prefetch-count]');
+        if (countEl) {
+            countEl.textContent = meta.summaryText;
+        }
+
+        var statusEl = indicator.querySelector('[data-prefetch-status]');
+        if (statusEl) {
+            statusEl.textContent = meta.statusText;
+        }
+    }
+
     function resetQuestionPrefetchIdleTimer() {
         clearQuestionPrefetchIdleTimer();
 
@@ -896,9 +994,11 @@
             return null;
         }).finally(function () {
             delete questionPrefetchInFlightByOffset[offset];
+            updateQuestionPrefetchIndicator();
         });
 
         questionPrefetchInFlightByOffset[offset] = request;
+        updateQuestionPrefetchIndicator();
         return request;
     }
 
@@ -1149,6 +1249,7 @@
             overwriteExisting: !!options.overwriteExisting
         });
         primeSubmittedPayloadCacheFromQuestionItems(responseItems);
+        updateQuestionPrefetchIndicator();
     }
 
     function validAttemptQuestionIds() {
@@ -1565,6 +1666,11 @@
         return payloadSignature(snapshot);
     }
 
+    function syncAttemptUiStateSignatureToCurrentState() {
+        var snapshot = buildAttemptUiStateSnapshot();
+        lastAttemptUiStateSyncSignature = snapshot ? attemptUiStateSignature(snapshot) : '';
+    }
+
     function scheduleAttemptUiStateSync(delayMs) {
         if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
             return;
@@ -1651,7 +1757,7 @@
             }
 
             if (attemptUiStateSignature(latestSnapshot) !== lastAttemptUiStateSyncSignature) {
-                scheduleAttemptUiStateSync(150);
+                scheduleAttemptUiStateSync(ATTEMPT_UI_STATE_SYNC_DELAY_MS);
             }
         });
 
@@ -3240,6 +3346,7 @@
             applyAttemptUiState(readPersistedAttemptUiState(state.attemptId), state.attemptId);
         } else {
             applyAttemptUiState(attemptUiStatePayload, state.attemptId);
+            syncAttemptUiStateSignatureToCurrentState();
         }
 
         state.isFinishing = false;
@@ -3528,11 +3635,7 @@
         setActiveQuestionWindowForIndex(safeIndex, QUESTION_WINDOW_SIZE);
         state.error = '';
         persistCurrentAttemptUiStateLocally();
-        try {
-            await flushAttemptUiState({ force: true });
-        } catch (error) {
-            // Keep local fallback; next lifecycle event or interaction will retry.
-        }
+        scheduleAttemptUiStateSync(ATTEMPT_UI_STATE_NAVIGATION_SYNC_DELAY_MS);
         render();
         prefetchNextQuestionBatch();
         resetQuestionPrefetchIdleTimer();
@@ -4304,6 +4407,7 @@
             '<div class="cbt-question-head-main">',
             '<div class="cbt-chip cbt-chip-question-index" aria-label="Soal ' + escapeHtml(state.currentIndex + 1) + ' dari ' + escapeHtml(totalQuestions) + '"><span class="cbt-chip-mobile-icon" aria-hidden="true">#</span><span class="cbt-chip-label">Soal</span><span class="cbt-chip-value">' + escapeHtml(state.currentIndex + 1) + '/' + escapeHtml(totalQuestions) + '</span></div>',
             '<div class="cbt-chip cbt-chip-question-meta" title="' + escapeHtml(currentQuestionMetaLabel) + '" aria-label="' + escapeHtml(currentQuestionMetaLabel) + '"><span class="cbt-chip-mobile-meta" aria-hidden="true">' + escapeHtml(currentQuestionMetaCompact) + '</span><span class="cbt-chip-type">' + escapeHtml(currentQuestionTypeLabel) + '</span><span class="cbt-chip-separator" aria-hidden="true"></span><span class="cbt-chip-points">Poin ' + escapeHtml(currentQuestionPoints) + '</span></div>',
+            renderQuestionPrefetchIndicator(),
             (currentQuestionIsDoubtful ? '<div class="cbt-chip cbt-chip-warning">Ragu-ragu</div>' : ''),
             renderQuestionFontControls(),
             '</div>',
@@ -5045,6 +5149,7 @@
         syncBodyStageClass();
         updateTimerLabel();
         scheduleNavigationGridLayout();
+        updateQuestionPrefetchIndicator();
     }
 
     function syncBodyStageClass() {
