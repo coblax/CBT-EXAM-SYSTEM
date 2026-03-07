@@ -10,8 +10,10 @@
     var AUTH_SESSION_STORAGE_KEY = 'cbt_exam_frontend_auth_v1';
     var UI_PREF_STORAGE_KEY = 'cbt_exam_frontend_ui_pref_v1';
     var ATTEMPT_UI_SESSION_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_attempt_ui_v1_';
-    var QUESTION_CACHE_SESSION_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_question_cache_v1_';
-    var QUESTION_CACHE_INDEXED_DB_NAME = 'cbt_exam_frontend_cache_v1';
+    var QUESTION_CACHE_SESSION_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_question_cache_v2_';
+    var QUESTION_CACHE_META_LOCAL_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_question_cache_meta_v2_';
+    var QUESTION_CACHE_ITEM_LOCAL_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_question_cache_item_v2_';
+    var QUESTION_CACHE_INDEXED_DB_NAME = 'cbt_exam_frontend_cache_v2';
     var QUESTION_CACHE_INDEXED_DB_STORE = 'attempt_questions';
     var DOUBTFUL_SESSION_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_doubtful_v1_';
     var FONT_SCALE_MIN = 0.85;
@@ -675,6 +677,25 @@
         return QUESTION_CACHE_SESSION_STORAGE_KEY_PREFIX + String(userId) + '_' + String(safeAttemptId);
     }
 
+    function buildQuestionCacheMetaLocalStorageKey(attemptId) {
+        var safeAttemptId = Number(attemptId) || 0;
+        var userId = Number(state.user && state.user.user_id) || 0;
+        if (safeAttemptId <= 0 || userId <= 0) {
+            return '';
+        }
+        return QUESTION_CACHE_META_LOCAL_STORAGE_KEY_PREFIX + String(userId) + '_' + String(safeAttemptId);
+    }
+
+    function buildQuestionCacheItemLocalStorageKey(attemptId, questionId) {
+        var safeAttemptId = Number(attemptId) || 0;
+        var safeQuestionId = Number(questionId) || 0;
+        var userId = Number(state.user && state.user.user_id) || 0;
+        if (safeAttemptId <= 0 || safeQuestionId <= 0 || userId <= 0) {
+            return '';
+        }
+        return QUESTION_CACHE_ITEM_LOCAL_STORAGE_KEY_PREFIX + String(userId) + '_' + String(safeAttemptId) + '_' + String(safeQuestionId);
+    }
+
     function normalizeQuestionIdList(rawQuestionIds) {
         if (!Array.isArray(rawQuestionIds)) {
             return [];
@@ -981,6 +1002,36 @@
         };
     }
 
+    function questionCachePayloadCount(snapshot) {
+        if (!snapshot || !snapshot.questionPayloadById || typeof snapshot.questionPayloadById !== 'object') {
+            return 0;
+        }
+
+        return Object.keys(snapshot.questionPayloadById).reduce(function (count, key) {
+            var questionId = Number(key) || 0;
+            return count + (questionId > 0 ? 1 : 0);
+        }, 0);
+    }
+
+    function choosePreferredQuestionCacheSnapshot(primarySnapshot, secondarySnapshot) {
+        if (!primarySnapshot) {
+            return secondarySnapshot || null;
+        }
+        if (!secondarySnapshot) {
+            return primarySnapshot;
+        }
+
+        var primaryCount = questionCachePayloadCount(primarySnapshot);
+        var secondaryCount = questionCachePayloadCount(secondarySnapshot);
+        if (primaryCount !== secondaryCount) {
+            return primaryCount > secondaryCount ? primarySnapshot : secondarySnapshot;
+        }
+
+        return (Number(primarySnapshot.cachedAt) || 0) >= (Number(secondarySnapshot.cachedAt) || 0)
+            ? primarySnapshot
+            : secondarySnapshot;
+    }
+
     function persistQuestionCacheToSessionStorage(storageKey, storedSnapshot) {
         var storage = getSessionStorage();
         if (!storage || storageKey === '' || !storedSnapshot) {
@@ -991,6 +1042,59 @@
             storage.setItem(storageKey, JSON.stringify(storedSnapshot));
         } catch (error) {
             // Ignore storage failures (quota or disabled storage).
+        }
+    }
+
+    function persistQuestionCacheToLocalStorage(normalizedSnapshot) {
+        var storage = getLocalStorage();
+        if (!storage || !normalizedSnapshot) {
+            return false;
+        }
+
+        var metaKey = buildQuestionCacheMetaLocalStorageKey(normalizedSnapshot.attemptId);
+        if (metaKey === '') {
+            return false;
+        }
+
+        var storedQuestionIds = [];
+        Object.keys(normalizedSnapshot.questionPayloadById || {}).forEach(function (key) {
+            var questionId = Number(key) || 0;
+            var questionPayload = questionId > 0 ? normalizedSnapshot.questionPayloadById[questionId] : null;
+            if (questionId <= 0 || !questionPayload) {
+                return;
+            }
+
+            var itemKey = buildQuestionCacheItemLocalStorageKey(normalizedSnapshot.attemptId, questionId);
+            if (itemKey === '') {
+                return;
+            }
+
+            try {
+                storage.setItem(itemKey, JSON.stringify(questionPayload));
+                storedQuestionIds.push(questionId);
+            } catch (error) {
+                // Stop growing the cache when browser quota is reached.
+            }
+        });
+
+        try {
+            storage.setItem(metaKey, JSON.stringify({
+                attempt_id: normalizedSnapshot.attemptId,
+                exam_id: normalizedSnapshot.examId,
+                total_questions: normalizedSnapshot.totalQuestions,
+                question_order_ids: normalizedSnapshot.questionOrderIds,
+                question_manifest: normalizedSnapshot.questionManifest,
+                answered_question_lookup: normalizedSnapshot.answeredQuestionLookup,
+                answers: normalizedSnapshot.answers,
+                loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
+                window_offset: normalizedSnapshot.windowOffset,
+                window_limit: normalizedSnapshot.windowLimit,
+                stored_question_ids: storedQuestionIds,
+                cached_at: Date.now()
+            }));
+            return true;
+        } catch (error) {
+            return false;
         }
     }
 
@@ -1048,6 +1152,7 @@
         }
 
         persistQuestionCacheToSessionStorage(storageKey, storedSnapshot);
+        persistQuestionCacheToLocalStorage(normalizedSnapshot);
         persistQuestionCacheToIndexedDb(storageKey, storedSnapshot);
     }
 
@@ -1103,6 +1208,68 @@
         }
     }
 
+    function readPersistedQuestionCacheFromLocalStorage(attemptId) {
+        var storage = getLocalStorage();
+        if (!storage) {
+            return null;
+        }
+
+        var safeAttemptId = Number(attemptId) || 0;
+        var metaKey = buildQuestionCacheMetaLocalStorageKey(safeAttemptId);
+        if (metaKey === '') {
+            return null;
+        }
+
+        try {
+            var rawMeta = storage.getItem(metaKey);
+            if (!rawMeta) {
+                return null;
+            }
+
+            var parsedMeta = JSON.parse(rawMeta);
+            var storedQuestionIds = normalizeQuestionIdList(parsedMeta && parsedMeta.stored_question_ids);
+            var questionPayloadById = {};
+
+            storedQuestionIds.forEach(function (questionId) {
+                var itemKey = buildQuestionCacheItemLocalStorageKey(safeAttemptId, questionId);
+                if (itemKey === '') {
+                    return;
+                }
+
+                try {
+                    var rawItem = storage.getItem(itemKey);
+                    if (!rawItem) {
+                        return;
+                    }
+
+                    var parsedQuestion = JSON.parse(rawItem);
+                    if (parsedQuestion && typeof parsedQuestion === 'object') {
+                        questionPayloadById[questionId] = parsedQuestion;
+                    }
+                } catch (error) {
+                    // Ignore broken question payload cache items.
+                }
+            });
+
+            return normalizeQuestionCacheSnapshot({
+                attempt_id: safeAttemptId,
+                exam_id: parsedMeta && parsedMeta.exam_id,
+                total_questions: parsedMeta && parsedMeta.total_questions,
+                question_order_ids: parsedMeta && parsedMeta.question_order_ids,
+                question_manifest: parsedMeta && parsedMeta.question_manifest,
+                question_payload_by_id: questionPayloadById,
+                answered_question_lookup: parsedMeta && parsedMeta.answered_question_lookup,
+                answers: parsedMeta && parsedMeta.answers,
+                loaded_question_window_offsets: parsedMeta && parsedMeta.loaded_question_window_offsets,
+                window_offset: parsedMeta && parsedMeta.window_offset,
+                window_limit: parsedMeta && parsedMeta.window_limit,
+                cached_at: parsedMeta && parsedMeta.cached_at
+            }, safeAttemptId);
+        } catch (error) {
+            return null;
+        }
+    }
+
     function readPersistedQuestionCacheFromIndexedDb(attemptId) {
         var safeAttemptId = Number(attemptId) || 0;
         var storageKey = buildQuestionCacheSessionStorageKey(safeAttemptId);
@@ -1146,15 +1313,12 @@
 
     async function readPersistedQuestionCache(attemptId) {
         var indexedDbSnapshot = await readPersistedQuestionCacheFromIndexedDb(attemptId);
+        var localStorageSnapshot = readPersistedQuestionCacheFromLocalStorage(attemptId);
         var sessionSnapshot = readPersistedQuestionCacheFromSessionStorage(attemptId);
-
-        if (indexedDbSnapshot && sessionSnapshot) {
-            return (indexedDbSnapshot.cachedAt >= sessionSnapshot.cachedAt)
-                ? indexedDbSnapshot
-                : sessionSnapshot;
-        }
-
-        return indexedDbSnapshot || sessionSnapshot;
+        return choosePreferredQuestionCacheSnapshot(
+            choosePreferredQuestionCacheSnapshot(indexedDbSnapshot, localStorageSnapshot),
+            sessionSnapshot
+        );
     }
 
     function clearPersistedQuestionCache(attemptId) {
@@ -1170,6 +1334,31 @@
             }
         } catch (error) {
             // Ignore storage failures (private mode / blocked storage).
+        }
+
+        var localStorage = getLocalStorage();
+        var metaKey = buildQuestionCacheMetaLocalStorageKey(attemptId);
+        if (localStorage && metaKey !== '') {
+            try {
+                var rawMeta = localStorage.getItem(metaKey);
+                if (rawMeta) {
+                    var parsedMeta = JSON.parse(rawMeta);
+                    normalizeQuestionIdList(parsedMeta && parsedMeta.stored_question_ids).forEach(function (questionId) {
+                        var itemKey = buildQuestionCacheItemLocalStorageKey(attemptId, questionId);
+                        if (itemKey !== '') {
+                            localStorage.removeItem(itemKey);
+                        }
+                    });
+                }
+            } catch (error) {
+                // Ignore localStorage cache cleanup failures.
+            }
+
+            try {
+                localStorage.removeItem(metaKey);
+            } catch (error) {
+                // Ignore localStorage cache cleanup failures.
+            }
         }
 
         openQuestionCacheIndexedDb().then(function (database) {
