@@ -7970,4 +7970,40 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
         width: 9px;
         height: 9px;
     }
+
+    .cbt-legend {
+        margin-top: 4px;
+        gap: 2px;
+        line-height: 1;
+    }
+
+    .cbt-legend span {
+        gap: 3px;
+        padding: 2px 5px;
+        min-height: 16px;
+        font-size: 0;
+    }
+
+    .cbt-legend-item::after {
+        font-size: 7px;
+        font-weight: 700;
+        letter-spacing: 0;
+    }
+
+    .cbt-legend-item-current::after {
+        content: "Aktif";
+    }
+
+    .cbt-legend-item-answered::after {
+        content: "Jawab";
+    }
+
+    .cbt-legend-item-doubtful::after {
+        content: "Ragu";
+    }
+
+    .cbt-dot {
+        width: 5px;
+        height: 5px;
+    }
 }
