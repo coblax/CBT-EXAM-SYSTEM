@@ -1,0 +1,14 @@
+{
+  "name": "coblax/cbt-exam-system",
+  "description": "WordPress CBT plugin with JWT authentication",
+  "type": "wordpress-plugin",
+  "require": {
+    "firebase/php-jwt": "^6.10",
+    "phpoffice/phpspreadsheet": "^2.2"
+  },
+  "autoload": {
+    "psr-4": {
+      "CbtExamSystem\\": "includes/"
+    }
+  }
+}
