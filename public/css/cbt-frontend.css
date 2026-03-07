@@ -6168,23 +6168,27 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     }
 
     .cbt-question-head .cbt-chip.cbt-chip-prefetch {
-        min-height: 22px;
-        padding: 0 6px;
-        gap: 4px;
+        min-height: 20px;
+        min-width: 0;
+        padding: 0 5px;
+        gap: 3px;
+    }
+
+    .cbt-question-head .cbt-chip.cbt-chip-prefetch .cbt-chip-label,
+    .cbt-question-head .cbt-chip.cbt-chip-prefetch .cbt-chip-prefetch-status {
+        display: none;
     }
 
     .cbt-question-head .cbt-chip.cbt-chip-prefetch .cbt-chip-value {
-        font-size: 10px;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0;
     }
 
     .cbt-chip-prefetch-dot {
-        width: 6px;
-        height: 6px;
-        flex-basis: 6px;
-    }
-
-    .cbt-chip-prefetch-status {
-        display: none;
+        width: 5px;
+        height: 5px;
+        flex-basis: 5px;
     }
 
     .cbt-question-font-controls {
@@ -6366,13 +6370,19 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     }
 
     .cbt-question-head .cbt-chip.cbt-chip-prefetch {
-        min-height: 20px;
-        padding: 0 5px;
-        gap: 3px;
+        min-height: 18px;
+        padding: 0 4px;
+        gap: 2px;
     }
 
     .cbt-question-head .cbt-chip.cbt-chip-prefetch .cbt-chip-value {
-        font-size: 9px;
+        font-size: 8px;
+    }
+
+    .cbt-chip-prefetch-dot {
+        width: 4px;
+        height: 4px;
+        flex-basis: 4px;
     }
 
     .cbt-question-font-controls {
