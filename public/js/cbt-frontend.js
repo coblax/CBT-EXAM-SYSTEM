@@ -946,6 +946,67 @@
         }, {});
     }
 
+    function normalizeOrUseQuestionCacheSnapshot(snapshot, attemptId) {
+        if (
+            snapshot &&
+            typeof snapshot === 'object' &&
+            Object.prototype.hasOwnProperty.call(snapshot, 'questionPayloadById') &&
+            Object.prototype.hasOwnProperty.call(snapshot, 'questionOrderIds')
+        ) {
+            return snapshot;
+        }
+
+        return normalizeQuestionCacheSnapshot(snapshot, attemptId);
+    }
+
+    function mergeQuestionCachePayloadMaps(primaryPayloadById, secondaryPayloadById) {
+        var mergedPayloadById = {};
+
+        [primaryPayloadById, secondaryPayloadById].forEach(function (payloadMap) {
+            var normalizedPayloadMap = normalizeStoredQuestionPayloadById(payloadMap);
+            Object.keys(normalizedPayloadMap).forEach(function (key) {
+                var questionId = Number(key) || 0;
+                if (questionId > 0) {
+                    mergedPayloadById[questionId] = normalizedPayloadMap[questionId];
+                }
+            });
+        });
+
+        return mergedPayloadById;
+    }
+
+    function buildQuestionCacheSnapshotFromBaseAndPayloads(baseSnapshot, extraPayloadById, attemptId) {
+        var normalizedBaseSnapshot = normalizeOrUseQuestionCacheSnapshot(baseSnapshot, attemptId);
+        var mergedPayloadById = mergeQuestionCachePayloadMaps(
+            normalizedBaseSnapshot ? normalizedBaseSnapshot.questionPayloadById : null,
+            extraPayloadById
+        );
+
+        if (!normalizedBaseSnapshot && !Object.keys(mergedPayloadById).length) {
+            return null;
+        }
+
+        return normalizeQuestionCacheSnapshot({
+            attempt_id: Number(attemptId) || 0,
+            exam_id: normalizedBaseSnapshot ? normalizedBaseSnapshot.examId : Number(baseSnapshot && baseSnapshot.exam_id) || 0,
+            total_questions: normalizedBaseSnapshot ? normalizedBaseSnapshot.totalQuestions : Number(baseSnapshot && baseSnapshot.total_questions) || 0,
+            question_order_ids: normalizedBaseSnapshot ? normalizedBaseSnapshot.questionOrderIds : (baseSnapshot && baseSnapshot.question_order_ids),
+            question_manifest: Object.keys(mergedPayloadById).length
+                ? []
+                : (normalizedBaseSnapshot ? normalizedBaseSnapshot.questionManifest : (baseSnapshot && baseSnapshot.question_manifest)),
+            question_payload_by_id: mergedPayloadById,
+            answered_question_lookup: normalizedBaseSnapshot ? normalizedBaseSnapshot.answeredQuestionLookup : (baseSnapshot && baseSnapshot.answered_question_lookup),
+            answers: normalizedBaseSnapshot ? normalizedBaseSnapshot.answers : (baseSnapshot && baseSnapshot.answers),
+            loaded_question_window_offsets: normalizedBaseSnapshot ? normalizedBaseSnapshot.loadedQuestionWindowOffsets : (baseSnapshot && baseSnapshot.loaded_question_window_offsets),
+            window_offset: normalizedBaseSnapshot ? normalizedBaseSnapshot.windowOffset : (baseSnapshot && baseSnapshot.window_offset),
+            window_limit: normalizedBaseSnapshot ? normalizedBaseSnapshot.windowLimit : (baseSnapshot && baseSnapshot.window_limit),
+            cached_at: Math.max(
+                Number(normalizedBaseSnapshot && normalizedBaseSnapshot.cachedAt) || 0,
+                Number(baseSnapshot && baseSnapshot.cached_at) || 0
+            )
+        }, attemptId);
+    }
+
     function normalizeQuestionCacheSnapshot(snapshot, attemptId) {
         var safeAttemptId = Number(attemptId || (snapshot && snapshot.attempt_id)) || 0;
         if (safeAttemptId <= 0 || !snapshot || typeof snapshot !== 'object') {
@@ -976,6 +1037,23 @@
             questionManifest = buildQuestionManifestFromQuestions(payloadQuestions);
         }
 
+        var answeredQuestionLookup = normalizeStoredBooleanLookup(snapshot.answered_question_lookup);
+        var answers = normalizeStoredAnswers(snapshot.answers);
+        if (payloadQuestions.length && (!Object.keys(answeredQuestionLookup).length || !Object.keys(answers).length)) {
+            payloadQuestions.forEach(function (question) {
+                var questionId = Number(question && question.id) || 0;
+                var normalizedExistingAnswer = normalizeExistingAnswerForQuestion(question);
+                if (questionId <= 0 || !normalizedExistingAnswer.hasValue) {
+                    return;
+                }
+
+                answeredQuestionLookup[questionId] = true;
+                if (!Object.prototype.hasOwnProperty.call(answers, questionId)) {
+                    answers[questionId] = normalizedExistingAnswer.value;
+                }
+            });
+        }
+
         if (!questionOrderIds.length && !payloadQuestions.length) {
             return null;
         }
@@ -991,8 +1069,8 @@
             questionOrderIds: questionOrderIds,
             questionManifest: questionManifest,
             questionPayloadById: questionPayloadById,
-            answeredQuestionLookup: normalizeStoredBooleanLookup(snapshot.answered_question_lookup),
-            answers: normalizeStoredAnswers(snapshot.answers),
+            answeredQuestionLookup: answeredQuestionLookup,
+            answers: answers,
             loadedQuestionWindowOffsets: normalizeStoredBooleanLookup(snapshot.loaded_question_window_offsets),
             windowOffset: Math.max(0, Number(snapshot.window_offset) || 0),
             windowLimit: Math.max(0, Number(snapshot.window_limit) || 0),
@@ -1106,7 +1184,6 @@
             exam_id: normalizedSnapshot.examId,
             total_questions: normalizedSnapshot.totalQuestions,
             question_order_ids: normalizedSnapshot.questionOrderIds,
-            question_manifest: normalizedSnapshot.questionManifest,
             answered_question_lookup: normalizedSnapshot.answeredQuestionLookup,
             answers: normalizedSnapshot.answers,
             loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
@@ -1371,36 +1448,43 @@
         if (metaKey !== '') {
             try {
                 var rawMeta = storage.getItem(metaKey);
-                if (rawMeta) {
-                    var parsedMeta = JSON.parse(rawMeta);
-                    var storedQuestionIds = mergeQuestionCacheStoredIds(
-                        parsedMeta && parsedMeta.stored_question_ids,
-                        collectStorageQuestionCacheIds(storage, buildQuestionCacheItemKeyPrefix(storageKey))
-                    );
-                    var questionPayloadById = {};
+                var discoveredQuestionIds = collectStorageQuestionCacheIds(storage, buildQuestionCacheItemKeyPrefix(storageKey));
+                var questionPayloadById = {};
+                discoveredQuestionIds.forEach(function (questionId) {
+                    var itemKey = buildQuestionCacheSessionStorageItemKey(safeAttemptId, questionId);
+                    if (itemKey === '') {
+                        return;
+                    }
 
-                    storedQuestionIds.forEach(function (questionId) {
-                        var itemKey = buildQuestionCacheSessionStorageItemKey(safeAttemptId, questionId);
-                        if (itemKey === '') {
+                    try {
+                        var rawItem = storage.getItem(itemKey);
+                        if (!rawItem) {
                             return;
                         }
 
-                        try {
-                            var rawItem = storage.getItem(itemKey);
-                            if (!rawItem) {
-                                return;
-                            }
-
-                            var parsedQuestion = JSON.parse(rawItem);
-                            if (parsedQuestion && typeof parsedQuestion === 'object') {
-                                questionPayloadById[questionId] = parsedQuestion;
-                            }
-                        } catch (error) {
-                            // Ignore broken session question cache items.
+                        var parsedQuestion = JSON.parse(rawItem);
+                        if (parsedQuestion && typeof parsedQuestion === 'object') {
+                            questionPayloadById[questionId] = parsedQuestion;
                         }
-                    });
+                    } catch (error) {
+                        // Ignore broken session question cache items.
+                    }
+                });
 
-                    return normalizeQuestionCacheSnapshotFromMeta(parsedMeta, questionPayloadById, safeAttemptId);
+                var parsedMeta = rawMeta ? JSON.parse(rawMeta) : null;
+                var rawLegacy = storage.getItem(storageKey);
+                var parsedLegacy = rawLegacy ? JSON.parse(rawLegacy) : null;
+
+                var mergedSnapshot = buildQuestionCacheSnapshotFromBaseAndPayloads(
+                    parsedMeta || parsedLegacy,
+                    mergeQuestionCachePayloadMaps(
+                        questionPayloadById,
+                        parsedLegacy && parsedLegacy.question_payload_by_id
+                    ),
+                    safeAttemptId
+                );
+                if (mergedSnapshot) {
+                    return mergedSnapshot;
                 }
             } catch (error) {
                 // Fall through to legacy monolithic snapshot.
@@ -1433,15 +1517,15 @@
 
         try {
             var rawMeta = storage.getItem(metaKey);
-            if (!rawMeta) {
-                return null;
+            var baseSnapshot = null;
+            if (rawMeta) {
+                baseSnapshot = JSON.parse(rawMeta);
             }
 
-            var parsedMeta = JSON.parse(rawMeta);
-            var storedQuestionIds = mergeQuestionCacheStoredIds(
-                parsedMeta && parsedMeta.stored_question_ids,
-                collectStorageQuestionCacheIds(storage, buildQuestionCacheLocalStorageItemKeyPrefix(safeAttemptId))
-            );
+            var storedQuestionIds = collectStorageQuestionCacheIds(storage, buildQuestionCacheLocalStorageItemKeyPrefix(safeAttemptId));
+            if (!storedQuestionIds.length && !baseSnapshot) {
+                return null;
+            }
             var questionPayloadById = {};
 
             storedQuestionIds.forEach(function (questionId) {
@@ -1465,20 +1549,11 @@
                 }
             });
 
-            return normalizeQuestionCacheSnapshot({
-                attempt_id: safeAttemptId,
-                exam_id: parsedMeta && parsedMeta.exam_id,
-                total_questions: parsedMeta && parsedMeta.total_questions,
-                question_order_ids: parsedMeta && parsedMeta.question_order_ids,
-                question_manifest: parsedMeta && parsedMeta.question_manifest,
-                question_payload_by_id: questionPayloadById,
-                answered_question_lookup: parsedMeta && parsedMeta.answered_question_lookup,
-                answers: parsedMeta && parsedMeta.answers,
-                loaded_question_window_offsets: parsedMeta && parsedMeta.loaded_question_window_offsets,
-                window_offset: parsedMeta && parsedMeta.window_offset,
-                window_limit: parsedMeta && parsedMeta.window_limit,
-                cached_at: parsedMeta && parsedMeta.cached_at
-            }, safeAttemptId);
+            return buildQuestionCacheSnapshotFromBaseAndPayloads(
+                baseSnapshot || readPersistedQuestionCacheFromSessionStorage(safeAttemptId),
+                questionPayloadById,
+                safeAttemptId
+            );
         } catch (error) {
             return null;
         }
@@ -1516,9 +1591,12 @@
                             var legacyRequest = store.get(storageKey);
                             legacyRequest.onsuccess = function () {
                                 var record = legacyRequest.result;
-                                resolveOnce(record && record.snapshot
-                                    ? normalizeQuestionCacheSnapshot(record.snapshot, safeAttemptId)
-                                    : null);
+                                var mergedLegacySnapshot = buildQuestionCacheSnapshotFromBaseAndPayloads(
+                                    record && record.snapshot ? record.snapshot : null,
+                                    questionPayloadById,
+                                    safeAttemptId
+                                );
+                                resolveOnce(mergedLegacySnapshot);
                             };
                             legacyRequest.onerror = function () {
                                 resolveOnce(null);
@@ -1539,21 +1617,29 @@
                             return;
                         }
 
-                        if (!metaSnapshot) {
-                            readLegacySnapshot();
+                        var mergedMetaSnapshot = metaSnapshot ? Object.keys(metaSnapshot).reduce(function (accumulator, key) {
+                            accumulator[key] = metaSnapshot[key];
+                            return accumulator;
+                        }, {}) : null;
+                        if (mergedMetaSnapshot) {
+                            mergedMetaSnapshot.stored_question_ids = mergeQuestionCacheStoredIds(
+                                metaSnapshot && metaSnapshot.stored_question_ids,
+                                discoveredQuestionIds
+                            );
+                        }
+
+                        var mergedSnapshot = buildQuestionCacheSnapshotFromBaseAndPayloads(
+                            mergedMetaSnapshot,
+                            questionPayloadById,
+                            safeAttemptId
+                        );
+
+                        if (mergedSnapshot) {
+                            resolveOnce(mergedSnapshot);
                             return;
                         }
 
-                        var mergedMetaSnapshot = {};
-                        Object.keys(metaSnapshot).forEach(function (key) {
-                            mergedMetaSnapshot[key] = metaSnapshot[key];
-                        });
-                        mergedMetaSnapshot.stored_question_ids = mergeQuestionCacheStoredIds(
-                            metaSnapshot && metaSnapshot.stored_question_ids,
-                            discoveredQuestionIds
-                        );
-
-                        resolveOnce(normalizeQuestionCacheSnapshotFromMeta(mergedMetaSnapshot, questionPayloadById, safeAttemptId));
+                        readLegacySnapshot();
                     }
 
                     var metaRequest = store.get(metaKey);
