@@ -710,6 +710,72 @@
         return storageKey + '__item_' + String(safeQuestionId);
     }
 
+    function buildQuestionCacheSessionStorageMetaKey(attemptId) {
+        var storageKey = buildQuestionCacheSessionStorageKey(attemptId);
+        return storageKey === '' ? '' : (storageKey + '__meta');
+    }
+
+    function buildQuestionCacheSessionStorageItemKey(attemptId, questionId) {
+        var storageKey = buildQuestionCacheSessionStorageKey(attemptId);
+        var safeQuestionId = Number(questionId) || 0;
+        if (storageKey === '' || safeQuestionId <= 0) {
+            return '';
+        }
+        return storageKey + '__item_' + String(safeQuestionId);
+    }
+
+    function buildQuestionCacheLocalStorageItemKeyPrefix(attemptId) {
+        var safeAttemptId = Number(attemptId) || 0;
+        var userId = Number(state.user && state.user.user_id) || 0;
+        if (safeAttemptId <= 0 || userId <= 0) {
+            return '';
+        }
+        return QUESTION_CACHE_ITEM_LOCAL_STORAGE_KEY_PREFIX + String(userId) + '_' + String(safeAttemptId) + '_';
+    }
+
+    function buildQuestionCacheItemKeyPrefix(storageKey) {
+        return storageKey === '' ? '' : (storageKey + '__item_');
+    }
+
+    function parseQuestionIdFromCacheItemKey(cacheKey, keyPrefix) {
+        var safeKey = String(cacheKey || '');
+        var safePrefix = String(keyPrefix || '');
+        if (safeKey === '' || safePrefix === '' || safeKey.indexOf(safePrefix) !== 0) {
+            return 0;
+        }
+
+        return Number(safeKey.slice(safePrefix.length)) || 0;
+    }
+
+    function mergeQuestionCacheStoredIds(primaryIds, secondaryIds) {
+        return normalizeQuestionIdList([].concat(
+            Array.isArray(primaryIds) ? primaryIds : [],
+            Array.isArray(secondaryIds) ? secondaryIds : []
+        ));
+    }
+
+    function collectStorageQuestionCacheIds(storage, itemKeyPrefix) {
+        if (!storage || itemKeyPrefix === '') {
+            return [];
+        }
+
+        var discoveredIds = [];
+        try {
+            var storageLength = Number(storage.length) || 0;
+            for (var index = 0; index < storageLength; index++) {
+                var currentKey = typeof storage.key === 'function' ? storage.key(index) : '';
+                var questionId = parseQuestionIdFromCacheItemKey(currentKey, itemKeyPrefix);
+                if (questionId > 0) {
+                    discoveredIds.push(questionId);
+                }
+            }
+        } catch (error) {
+            return normalizeQuestionIdList(discoveredIds);
+        }
+
+        return normalizeQuestionIdList(discoveredIds);
+    }
+
     function normalizeQuestionIdList(rawQuestionIds) {
         if (!Array.isArray(rawQuestionIds)) {
             return [];
@@ -1098,9 +1164,38 @@
             : secondarySnapshot;
     }
 
-    function persistQuestionCacheToSessionStorage(storageKey, storedSnapshot) {
+    function persistQuestionCacheToSessionStorage(storageKey, normalizedSnapshot, storedSnapshot) {
         var storage = getSessionStorage();
-        if (!storage || storageKey === '' || !storedSnapshot) {
+        if (!storage || storageKey === '' || !normalizedSnapshot) {
+            return;
+        }
+
+        var metaKey = buildQuestionCacheSessionStorageMetaKey(normalizedSnapshot.attemptId);
+        var storedQuestionIds = [];
+        buildQuestionCacheStoredQuestionIds(normalizedSnapshot.questionPayloadById).forEach(function (questionId) {
+            var itemKey = buildQuestionCacheSessionStorageItemKey(normalizedSnapshot.attemptId, questionId);
+            var questionPayload = normalizedSnapshot.questionPayloadById[questionId];
+            if (itemKey === '' || !questionPayload) {
+                return;
+            }
+
+            try {
+                storage.setItem(itemKey, JSON.stringify(questionPayload));
+                storedQuestionIds.push(questionId);
+            } catch (error) {
+                // Stop growing the per-question session cache when quota is reached.
+            }
+        });
+
+        if (metaKey !== '') {
+            try {
+                storage.setItem(metaKey, JSON.stringify(serializeQuestionCacheMetaSnapshot(normalizedSnapshot, storedQuestionIds)));
+            } catch (error) {
+                // Ignore storage failures (quota or disabled storage).
+            }
+        }
+
+        if (!storedSnapshot) {
             return;
         }
 
@@ -1226,7 +1321,7 @@
 
         var storedSnapshot = serializeQuestionCacheSnapshot(normalizedSnapshot);
         if (storedSnapshot) {
-            persistQuestionCacheToSessionStorage(storageKey, storedSnapshot);
+            persistQuestionCacheToSessionStorage(storageKey, normalizedSnapshot, storedSnapshot);
         }
         persistQuestionCacheToLocalStorage(normalizedSnapshot);
         persistQuestionCacheToIndexedDb(storageKey, normalizedSnapshot);
@@ -1268,8 +1363,48 @@
 
         var safeAttemptId = Number(attemptId) || 0;
         var storageKey = buildQuestionCacheSessionStorageKey(safeAttemptId);
+        var metaKey = buildQuestionCacheSessionStorageMetaKey(safeAttemptId);
         if (storageKey === '') {
             return null;
+        }
+
+        if (metaKey !== '') {
+            try {
+                var rawMeta = storage.getItem(metaKey);
+                if (rawMeta) {
+                    var parsedMeta = JSON.parse(rawMeta);
+                    var storedQuestionIds = mergeQuestionCacheStoredIds(
+                        parsedMeta && parsedMeta.stored_question_ids,
+                        collectStorageQuestionCacheIds(storage, buildQuestionCacheItemKeyPrefix(storageKey))
+                    );
+                    var questionPayloadById = {};
+
+                    storedQuestionIds.forEach(function (questionId) {
+                        var itemKey = buildQuestionCacheSessionStorageItemKey(safeAttemptId, questionId);
+                        if (itemKey === '') {
+                            return;
+                        }
+
+                        try {
+                            var rawItem = storage.getItem(itemKey);
+                            if (!rawItem) {
+                                return;
+                            }
+
+                            var parsedQuestion = JSON.parse(rawItem);
+                            if (parsedQuestion && typeof parsedQuestion === 'object') {
+                                questionPayloadById[questionId] = parsedQuestion;
+                            }
+                        } catch (error) {
+                            // Ignore broken session question cache items.
+                        }
+                    });
+
+                    return normalizeQuestionCacheSnapshotFromMeta(parsedMeta, questionPayloadById, safeAttemptId);
+                }
+            } catch (error) {
+                // Fall through to legacy monolithic snapshot.
+            }
         }
 
         try {
@@ -1303,7 +1438,10 @@
             }
 
             var parsedMeta = JSON.parse(rawMeta);
-            var storedQuestionIds = normalizeQuestionIdList(parsedMeta && parsedMeta.stored_question_ids);
+            var storedQuestionIds = mergeQuestionCacheStoredIds(
+                parsedMeta && parsedMeta.stored_question_ids,
+                collectStorageQuestionCacheIds(storage, buildQuestionCacheLocalStorageItemKeyPrefix(safeAttemptId))
+            );
             var questionPayloadById = {};
 
             storedQuestionIds.forEach(function (questionId) {
@@ -1364,6 +1502,7 @@
                     var transaction = database.transaction(QUESTION_CACHE_INDEXED_DB_STORE, 'readonly');
                     var store = transaction.objectStore(QUESTION_CACHE_INDEXED_DB_STORE);
                     var resolved = false;
+                    var itemKeyPrefix = buildQuestionCacheItemKeyPrefix(storageKey);
                     function resolveOnce(snapshot) {
                         if (resolved) {
                             return;
@@ -1389,66 +1528,71 @@
                         }
                     }
 
-                    var metaRequest = store.get(metaKey);
-                    metaRequest.onsuccess = function () {
-                        var metaRecord = metaRequest.result;
-                        if (!metaRecord || !metaRecord.snapshot) {
+                    var metaSnapshot = null;
+                    var metaResolved = false;
+                    var cursorResolved = false;
+                    var questionPayloadById = {};
+                    var discoveredQuestionIds = [];
+
+                    function finalizeIndexedDbSnapshot() {
+                        if (!metaResolved || !cursorResolved) {
+                            return;
+                        }
+
+                        if (!metaSnapshot) {
                             readLegacySnapshot();
                             return;
                         }
 
-                        var storedQuestionIds = normalizeQuestionIdList(metaRecord.snapshot && metaRecord.snapshot.stored_question_ids);
-                        if (!storedQuestionIds.length) {
-                            resolveOnce(normalizeQuestionCacheSnapshotFromMeta(metaRecord.snapshot, {}, safeAttemptId));
-                            return;
-                        }
-
-                        var questionPayloadById = {};
-                        var pendingCount = storedQuestionIds.length;
-
-                        function finalizeMetaSnapshot() {
-                            resolveOnce(normalizeQuestionCacheSnapshotFromMeta(metaRecord.snapshot, questionPayloadById, safeAttemptId));
-                        }
-
-                        storedQuestionIds.forEach(function (questionId) {
-                            var itemKey = buildQuestionCacheIndexedDbItemKey(safeAttemptId, questionId);
-                            if (itemKey === '') {
-                                pendingCount--;
-                                if (pendingCount <= 0) {
-                                    finalizeMetaSnapshot();
-                                }
-                                return;
-                            }
-
-                            try {
-                                var itemRequest = store.get(itemKey);
-                                itemRequest.onsuccess = function () {
-                                    var itemRecord = itemRequest.result;
-                                    if (itemRecord && itemRecord.payload && typeof itemRecord.payload === 'object') {
-                                        questionPayloadById[questionId] = itemRecord.payload;
-                                    }
-                                    pendingCount--;
-                                    if (pendingCount <= 0) {
-                                        finalizeMetaSnapshot();
-                                    }
-                                };
-                                itemRequest.onerror = function () {
-                                    pendingCount--;
-                                    if (pendingCount <= 0) {
-                                        finalizeMetaSnapshot();
-                                    }
-                                };
-                            } catch (error) {
-                                pendingCount--;
-                                if (pendingCount <= 0) {
-                                    finalizeMetaSnapshot();
-                                }
-                            }
+                        var mergedMetaSnapshot = {};
+                        Object.keys(metaSnapshot).forEach(function (key) {
+                            mergedMetaSnapshot[key] = metaSnapshot[key];
                         });
+                        mergedMetaSnapshot.stored_question_ids = mergeQuestionCacheStoredIds(
+                            metaSnapshot && metaSnapshot.stored_question_ids,
+                            discoveredQuestionIds
+                        );
+
+                        resolveOnce(normalizeQuestionCacheSnapshotFromMeta(mergedMetaSnapshot, questionPayloadById, safeAttemptId));
+                    }
+
+                    var metaRequest = store.get(metaKey);
+                    metaRequest.onsuccess = function () {
+                        var metaRecord = metaRequest.result;
+                        metaSnapshot = metaRecord && metaRecord.snapshot ? metaRecord.snapshot : null;
+                        metaResolved = true;
+                        finalizeIndexedDbSnapshot();
                     };
 
                     metaRequest.onerror = function () {
-                        readLegacySnapshot();
+                        metaResolved = true;
+                        metaSnapshot = null;
+                        finalizeIndexedDbSnapshot();
+                    };
+
+                    var cursorRequest = store.openCursor();
+                    cursorRequest.onsuccess = function (event) {
+                        var cursor = event && event.target ? event.target.result : null;
+                        if (!cursor) {
+                            cursorResolved = true;
+                            finalizeIndexedDbSnapshot();
+                            return;
+                        }
+
+                        var cacheKey = String(cursor.key || '');
+                        var questionId = parseQuestionIdFromCacheItemKey(cacheKey, itemKeyPrefix);
+                        var itemRecord = cursor.value;
+                        if (questionId > 0 && itemRecord && itemRecord.payload && typeof itemRecord.payload === 'object') {
+                            discoveredQuestionIds.push(questionId);
+                            questionPayloadById[questionId] = itemRecord.payload;
+                        }
+
+                        cursor.continue();
+                    };
+
+                    cursorRequest.onerror = function () {
+                        cursorResolved = true;
+                        finalizeIndexedDbSnapshot();
                     };
 
                     transaction.onerror = function () {
@@ -1482,6 +1626,39 @@
         var storage = getSessionStorage();
         try {
             if (storage) {
+                var metaKey = buildQuestionCacheSessionStorageMetaKey(attemptId);
+                var itemKeyPrefix = buildQuestionCacheItemKeyPrefix(storageKey);
+                if (metaKey !== '') {
+                    try {
+                        collectStorageQuestionCacheIds(storage, itemKeyPrefix).forEach(function (questionId) {
+                            var itemKey = buildQuestionCacheSessionStorageItemKey(attemptId, questionId);
+                            if (itemKey !== '') {
+                                storage.removeItem(itemKey);
+                            }
+                        });
+                    } catch (error) {
+                        // Ignore sessionStorage cache cleanup failures.
+                    }
+
+                    try {
+                        var storageLength = Number(storage.length) || 0;
+                        for (var index = storageLength - 1; index >= 0; index--) {
+                            var extraStorageKey = typeof storage.key === 'function' ? storage.key(index) : '';
+                            if (parseQuestionIdFromCacheItemKey(extraStorageKey, itemKeyPrefix) > 0) {
+                                storage.removeItem(extraStorageKey);
+                            }
+                        }
+                    } catch (error) {
+                        // Ignore sessionStorage cache cleanup failures.
+                    }
+
+                    try {
+                        storage.removeItem(metaKey);
+                    } catch (error) {
+                        // Ignore sessionStorage cache cleanup failures.
+                    }
+                }
+
                 storage.removeItem(storageKey);
             }
         } catch (error) {
@@ -1491,16 +1668,25 @@
         var localStorage = getLocalStorage();
         var metaKey = buildQuestionCacheMetaLocalStorageKey(attemptId);
         if (localStorage && metaKey !== '') {
+            var localItemKeyPrefix = buildQuestionCacheLocalStorageItemKeyPrefix(attemptId);
             try {
-                var rawMeta = localStorage.getItem(metaKey);
-                if (rawMeta) {
-                    var parsedMeta = JSON.parse(rawMeta);
-                    normalizeQuestionIdList(parsedMeta && parsedMeta.stored_question_ids).forEach(function (questionId) {
-                        var itemKey = buildQuestionCacheItemLocalStorageKey(attemptId, questionId);
-                        if (itemKey !== '') {
-                            localStorage.removeItem(itemKey);
-                        }
-                    });
+                collectStorageQuestionCacheIds(localStorage, localItemKeyPrefix).forEach(function (questionId) {
+                    var itemKey = buildQuestionCacheItemLocalStorageKey(attemptId, questionId);
+                    if (itemKey !== '') {
+                        localStorage.removeItem(itemKey);
+                    }
+                });
+            } catch (error) {
+                // Ignore localStorage cache cleanup failures.
+            }
+
+            try {
+                var localStorageLength = Number(localStorage.length) || 0;
+                for (var localIndex = localStorageLength - 1; localIndex >= 0; localIndex--) {
+                    var extraLocalKey = typeof localStorage.key === 'function' ? localStorage.key(localIndex) : '';
+                    if (parseQuestionIdFromCacheItemKey(extraLocalKey, localItemKeyPrefix) > 0) {
+                        localStorage.removeItem(extraLocalKey);
+                    }
                 }
             } catch (error) {
                 // Ignore localStorage cache cleanup failures.
@@ -1522,24 +1708,25 @@
                 var transaction = database.transaction(QUESTION_CACHE_INDEXED_DB_STORE, 'readwrite');
                 var store = transaction.objectStore(QUESTION_CACHE_INDEXED_DB_STORE);
                 var metaKey = buildQuestionCacheIndexedDbMetaKey(attemptId);
+                var itemKeyPrefix = buildQuestionCacheItemKeyPrefix(storageKey);
 
                 store.delete(storageKey);
                 if (metaKey !== '') {
-                    var metaRequest = store.get(metaKey);
-                    metaRequest.onsuccess = function () {
-                        var metaRecord = metaRequest.result;
-                        var storedQuestionIds = normalizeQuestionIdList(
-                            metaRecord && metaRecord.snapshot && metaRecord.snapshot.stored_question_ids
-                        );
-                        storedQuestionIds.forEach(function (questionId) {
-                            var itemKey = buildQuestionCacheIndexedDbItemKey(attemptId, questionId);
-                            if (itemKey !== '') {
-                                store.delete(itemKey);
-                            }
-                        });
-                        store.delete(metaKey);
+                    var cursorRequest = store.openCursor();
+                    cursorRequest.onsuccess = function (event) {
+                        var cursor = event && event.target ? event.target.result : null;
+                        if (!cursor) {
+                            store.delete(metaKey);
+                            return;
+                        }
+
+                        var cacheKey = String(cursor.key || '');
+                        if (parseQuestionIdFromCacheItemKey(cacheKey, itemKeyPrefix) > 0) {
+                            store.delete(cacheKey);
+                        }
+                        cursor.continue();
                     };
-                    metaRequest.onerror = function () {
+                    cursorRequest.onerror = function () {
                         store.delete(metaKey);
                     };
                 }
