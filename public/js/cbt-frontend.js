@@ -1239,6 +1239,72 @@
             : secondarySnapshot;
     }
 
+    function mergeStoredBooleanLookups(primaryLookup, secondaryLookup) {
+        return normalizeStoredBooleanLookup(Object.assign(
+            {},
+            primaryLookup && typeof primaryLookup === 'object' ? primaryLookup : {},
+            secondaryLookup && typeof secondaryLookup === 'object' ? secondaryLookup : {}
+        ));
+    }
+
+    function mergeStoredAnswers(primaryAnswers, secondaryAnswers) {
+        return normalizeStoredAnswers(Object.assign(
+            {},
+            primaryAnswers && typeof primaryAnswers === 'object' ? primaryAnswers : {},
+            secondaryAnswers && typeof secondaryAnswers === 'object' ? secondaryAnswers : {}
+        ));
+    }
+
+    function mergeQuestionCacheSnapshots(primarySnapshot, secondarySnapshot, attemptId) {
+        var normalizedPrimary = normalizeOrUseQuestionCacheSnapshot(primarySnapshot, attemptId);
+        var normalizedSecondary = normalizeOrUseQuestionCacheSnapshot(secondarySnapshot, attemptId);
+        if (!normalizedPrimary) {
+            return normalizedSecondary;
+        }
+        if (!normalizedSecondary) {
+            return normalizedPrimary;
+        }
+
+        var preferredBaseSnapshot = choosePreferredQuestionCacheSnapshot(normalizedPrimary, normalizedSecondary);
+        var preferredOrderSnapshot = normalizedPrimary.questionOrderIds.length >= normalizedSecondary.questionOrderIds.length
+            ? normalizedPrimary
+            : normalizedSecondary;
+        var mergedPayloadById = mergeQuestionCachePayloadMaps(
+            normalizedPrimary.questionPayloadById,
+            normalizedSecondary.questionPayloadById
+        );
+
+        return buildQuestionCacheSnapshotFromBaseAndPayloads({
+            attempt_id: Number(attemptId) || normalizedPrimary.attemptId || normalizedSecondary.attemptId || 0,
+            exam_id: preferredBaseSnapshot.examId || preferredOrderSnapshot.examId || 0,
+            total_questions: Math.max(
+                Number(normalizedPrimary.totalQuestions) || 0,
+                Number(normalizedSecondary.totalQuestions) || 0,
+                Object.keys(mergedPayloadById).length
+            ),
+            question_order_ids: preferredOrderSnapshot.questionOrderIds,
+            question_manifest: preferredOrderSnapshot.questionManifest,
+            answered_question_lookup: mergeStoredBooleanLookups(
+                normalizedPrimary.answeredQuestionLookup,
+                normalizedSecondary.answeredQuestionLookup
+            ),
+            answers: mergeStoredAnswers(
+                normalizedPrimary.answers,
+                normalizedSecondary.answers
+            ),
+            loaded_question_window_offsets: mergeStoredBooleanLookups(
+                normalizedPrimary.loadedQuestionWindowOffsets,
+                normalizedSecondary.loadedQuestionWindowOffsets
+            ),
+            window_offset: Number(preferredBaseSnapshot.windowOffset) || 0,
+            window_limit: Number(preferredBaseSnapshot.windowLimit) || 0,
+            cached_at: Math.max(
+                Number(normalizedPrimary.cachedAt) || 0,
+                Number(normalizedSecondary.cachedAt) || 0
+            )
+        }, mergedPayloadById, attemptId);
+    }
+
     function persistQuestionCacheToSessionStorage(storageKey, normalizedSnapshot, storedSnapshot) {
         var storage = getSessionStorage();
         if (!storage || storageKey === '' || !normalizedSnapshot) {
@@ -1695,9 +1761,10 @@
         var indexedDbSnapshot = await readPersistedQuestionCacheFromIndexedDb(attemptId);
         var localStorageSnapshot = readPersistedQuestionCacheFromLocalStorage(attemptId);
         var sessionSnapshot = readPersistedQuestionCacheFromSessionStorage(attemptId);
-        return choosePreferredQuestionCacheSnapshot(
-            choosePreferredQuestionCacheSnapshot(indexedDbSnapshot, localStorageSnapshot),
-            sessionSnapshot
+        return mergeQuestionCacheSnapshots(
+            mergeQuestionCacheSnapshots(indexedDbSnapshot, localStorageSnapshot, attemptId),
+            sessionSnapshot,
+            attemptId
         );
     }
 
