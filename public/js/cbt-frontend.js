@@ -696,6 +696,20 @@
         return QUESTION_CACHE_ITEM_LOCAL_STORAGE_KEY_PREFIX + String(userId) + '_' + String(safeAttemptId) + '_' + String(safeQuestionId);
     }
 
+    function buildQuestionCacheIndexedDbMetaKey(attemptId) {
+        var storageKey = buildQuestionCacheSessionStorageKey(attemptId);
+        return storageKey === '' ? '' : (storageKey + '__meta');
+    }
+
+    function buildQuestionCacheIndexedDbItemKey(attemptId, questionId) {
+        var storageKey = buildQuestionCacheSessionStorageKey(attemptId);
+        var safeQuestionId = Number(questionId) || 0;
+        if (storageKey === '' || safeQuestionId <= 0) {
+            return '';
+        }
+        return storageKey + '__item_' + String(safeQuestionId);
+    }
+
     function normalizeQuestionIdList(rawQuestionIds) {
         if (!Array.isArray(rawQuestionIds)) {
             return [];
@@ -1002,6 +1016,58 @@
         };
     }
 
+    function buildQuestionCacheStoredQuestionIds(questionPayloadById) {
+        if (!questionPayloadById || typeof questionPayloadById !== 'object') {
+            return [];
+        }
+
+        return Object.keys(questionPayloadById).reduce(function (accumulator, key) {
+            var questionId = Number(key) || 0;
+            if (questionId > 0 && questionPayloadById[questionId]) {
+                accumulator.push(questionId);
+            }
+            return accumulator;
+        }, []);
+    }
+
+    function serializeQuestionCacheMetaSnapshot(normalizedSnapshot, storedQuestionIds) {
+        if (!normalizedSnapshot) {
+            return null;
+        }
+
+        return {
+            attempt_id: normalizedSnapshot.attemptId,
+            exam_id: normalizedSnapshot.examId,
+            total_questions: normalizedSnapshot.totalQuestions,
+            question_order_ids: normalizedSnapshot.questionOrderIds,
+            question_manifest: normalizedSnapshot.questionManifest,
+            answered_question_lookup: normalizedSnapshot.answeredQuestionLookup,
+            answers: normalizedSnapshot.answers,
+            loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
+            window_offset: normalizedSnapshot.windowOffset,
+            window_limit: normalizedSnapshot.windowLimit,
+            stored_question_ids: normalizeQuestionIdList(storedQuestionIds),
+            cached_at: Date.now()
+        };
+    }
+
+    function normalizeQuestionCacheSnapshotFromMeta(metaSnapshot, questionPayloadById, attemptId) {
+        return normalizeQuestionCacheSnapshot({
+            attempt_id: attemptId,
+            exam_id: metaSnapshot && metaSnapshot.exam_id,
+            total_questions: metaSnapshot && metaSnapshot.total_questions,
+            question_order_ids: metaSnapshot && metaSnapshot.question_order_ids,
+            question_manifest: metaSnapshot && metaSnapshot.question_manifest,
+            question_payload_by_id: questionPayloadById || {},
+            answered_question_lookup: metaSnapshot && metaSnapshot.answered_question_lookup,
+            answers: metaSnapshot && metaSnapshot.answers,
+            loaded_question_window_offsets: metaSnapshot && metaSnapshot.loaded_question_window_offsets,
+            window_offset: metaSnapshot && metaSnapshot.window_offset,
+            window_limit: metaSnapshot && metaSnapshot.window_limit,
+            cached_at: metaSnapshot && metaSnapshot.cached_at
+        }, attemptId);
+    }
+
     function questionCachePayloadCount(snapshot) {
         if (!snapshot || !snapshot.questionPayloadById || typeof snapshot.questionPayloadById !== 'object') {
             return 0;
@@ -1057,10 +1123,9 @@
         }
 
         var storedQuestionIds = [];
-        Object.keys(normalizedSnapshot.questionPayloadById || {}).forEach(function (key) {
-            var questionId = Number(key) || 0;
-            var questionPayload = questionId > 0 ? normalizedSnapshot.questionPayloadById[questionId] : null;
-            if (questionId <= 0 || !questionPayload) {
+        buildQuestionCacheStoredQuestionIds(normalizedSnapshot.questionPayloadById).forEach(function (questionId) {
+            var questionPayload = normalizedSnapshot.questionPayloadById[questionId];
+            if (!questionPayload) {
                 return;
             }
 
@@ -1078,28 +1143,26 @@
         });
 
         try {
-            storage.setItem(metaKey, JSON.stringify({
-                attempt_id: normalizedSnapshot.attemptId,
-                exam_id: normalizedSnapshot.examId,
-                total_questions: normalizedSnapshot.totalQuestions,
-                question_order_ids: normalizedSnapshot.questionOrderIds,
-                question_manifest: normalizedSnapshot.questionManifest,
-                answered_question_lookup: normalizedSnapshot.answeredQuestionLookup,
-                answers: normalizedSnapshot.answers,
-                loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
-                window_offset: normalizedSnapshot.windowOffset,
-                window_limit: normalizedSnapshot.windowLimit,
-                stored_question_ids: storedQuestionIds,
-                cached_at: Date.now()
-            }));
+            storage.setItem(metaKey, JSON.stringify(serializeQuestionCacheMetaSnapshot(normalizedSnapshot, storedQuestionIds)));
             return true;
         } catch (error) {
             return false;
         }
     }
 
-    function persistQuestionCacheToIndexedDb(storageKey, storedSnapshot) {
-        if (storageKey === '' || !storedSnapshot) {
+    function persistQuestionCacheToIndexedDb(storageKey, normalizedSnapshot) {
+        if (storageKey === '' || !normalizedSnapshot) {
+            return Promise.resolve(false);
+        }
+
+        var metaKey = buildQuestionCacheIndexedDbMetaKey(normalizedSnapshot.attemptId);
+        if (metaKey === '') {
+            return Promise.resolve(false);
+        }
+
+        var storedQuestionIds = buildQuestionCacheStoredQuestionIds(normalizedSnapshot.questionPayloadById);
+        var metaSnapshot = serializeQuestionCacheMetaSnapshot(normalizedSnapshot, storedQuestionIds);
+        if (!metaSnapshot) {
             return Promise.resolve(false);
         }
 
@@ -1113,10 +1176,25 @@
                     var transaction = database.transaction(QUESTION_CACHE_INDEXED_DB_STORE, 'readwrite');
                     var store = transaction.objectStore(QUESTION_CACHE_INDEXED_DB_STORE);
                     store.put({
-                        cache_key: storageKey,
-                        snapshot: storedSnapshot,
+                        cache_key: metaKey,
+                        snapshot: metaSnapshot,
                         updated_at: Date.now()
                     });
+                    storedQuestionIds.forEach(function (questionId) {
+                        var itemKey = buildQuestionCacheIndexedDbItemKey(normalizedSnapshot.attemptId, questionId);
+                        var questionPayload = normalizedSnapshot.questionPayloadById[questionId];
+                        if (itemKey === '' || !questionPayload) {
+                            return;
+                        }
+
+                        store.put({
+                            cache_key: itemKey,
+                            payload: questionPayload,
+                            updated_at: Date.now()
+                        });
+                    });
+                    // Clear the older monolithic snapshot so future restores use the per-question cache.
+                    store.delete(storageKey);
                     transaction.oncomplete = function () {
                         resolve(true);
                     };
@@ -1147,13 +1225,11 @@
         }
 
         var storedSnapshot = serializeQuestionCacheSnapshot(normalizedSnapshot);
-        if (!storedSnapshot) {
-            return;
+        if (storedSnapshot) {
+            persistQuestionCacheToSessionStorage(storageKey, storedSnapshot);
         }
-
-        persistQuestionCacheToSessionStorage(storageKey, storedSnapshot);
         persistQuestionCacheToLocalStorage(normalizedSnapshot);
-        persistQuestionCacheToIndexedDb(storageKey, storedSnapshot);
+        persistQuestionCacheToIndexedDb(storageKey, normalizedSnapshot);
     }
 
     function persistCurrentQuestionCacheLocally() {
@@ -1273,7 +1349,8 @@
     function readPersistedQuestionCacheFromIndexedDb(attemptId) {
         var safeAttemptId = Number(attemptId) || 0;
         var storageKey = buildQuestionCacheSessionStorageKey(safeAttemptId);
-        if (storageKey === '') {
+        var metaKey = buildQuestionCacheIndexedDbMetaKey(safeAttemptId);
+        if (storageKey === '' || metaKey === '') {
             return Promise.resolve(null);
         }
 
@@ -1286,21 +1363,96 @@
                 try {
                     var transaction = database.transaction(QUESTION_CACHE_INDEXED_DB_STORE, 'readonly');
                     var store = transaction.objectStore(QUESTION_CACHE_INDEXED_DB_STORE);
-                    var request = store.get(storageKey);
+                    var resolved = false;
+                    function resolveOnce(snapshot) {
+                        if (resolved) {
+                            return;
+                        }
+                        resolved = true;
+                        resolve(snapshot);
+                    }
 
-                    request.onsuccess = function () {
-                        var record = request.result;
-                        resolve(record && record.snapshot
-                            ? normalizeQuestionCacheSnapshot(record.snapshot, safeAttemptId)
-                            : null);
+                    function readLegacySnapshot() {
+                        try {
+                            var legacyRequest = store.get(storageKey);
+                            legacyRequest.onsuccess = function () {
+                                var record = legacyRequest.result;
+                                resolveOnce(record && record.snapshot
+                                    ? normalizeQuestionCacheSnapshot(record.snapshot, safeAttemptId)
+                                    : null);
+                            };
+                            legacyRequest.onerror = function () {
+                                resolveOnce(null);
+                            };
+                        } catch (error) {
+                            resolveOnce(null);
+                        }
+                    }
+
+                    var metaRequest = store.get(metaKey);
+                    metaRequest.onsuccess = function () {
+                        var metaRecord = metaRequest.result;
+                        if (!metaRecord || !metaRecord.snapshot) {
+                            readLegacySnapshot();
+                            return;
+                        }
+
+                        var storedQuestionIds = normalizeQuestionIdList(metaRecord.snapshot && metaRecord.snapshot.stored_question_ids);
+                        if (!storedQuestionIds.length) {
+                            resolveOnce(normalizeQuestionCacheSnapshotFromMeta(metaRecord.snapshot, {}, safeAttemptId));
+                            return;
+                        }
+
+                        var questionPayloadById = {};
+                        var pendingCount = storedQuestionIds.length;
+
+                        function finalizeMetaSnapshot() {
+                            resolveOnce(normalizeQuestionCacheSnapshotFromMeta(metaRecord.snapshot, questionPayloadById, safeAttemptId));
+                        }
+
+                        storedQuestionIds.forEach(function (questionId) {
+                            var itemKey = buildQuestionCacheIndexedDbItemKey(safeAttemptId, questionId);
+                            if (itemKey === '') {
+                                pendingCount--;
+                                if (pendingCount <= 0) {
+                                    finalizeMetaSnapshot();
+                                }
+                                return;
+                            }
+
+                            try {
+                                var itemRequest = store.get(itemKey);
+                                itemRequest.onsuccess = function () {
+                                    var itemRecord = itemRequest.result;
+                                    if (itemRecord && itemRecord.payload && typeof itemRecord.payload === 'object') {
+                                        questionPayloadById[questionId] = itemRecord.payload;
+                                    }
+                                    pendingCount--;
+                                    if (pendingCount <= 0) {
+                                        finalizeMetaSnapshot();
+                                    }
+                                };
+                                itemRequest.onerror = function () {
+                                    pendingCount--;
+                                    if (pendingCount <= 0) {
+                                        finalizeMetaSnapshot();
+                                    }
+                                };
+                            } catch (error) {
+                                pendingCount--;
+                                if (pendingCount <= 0) {
+                                    finalizeMetaSnapshot();
+                                }
+                            }
+                        });
                     };
 
-                    request.onerror = function () {
-                        resolve(null);
+                    metaRequest.onerror = function () {
+                        readLegacySnapshot();
                     };
 
                     transaction.onerror = function () {
-                        resolve(null);
+                        resolveOnce(null);
                     };
                 } catch (error) {
                     resolve(null);
@@ -1368,7 +1520,29 @@
 
             try {
                 var transaction = database.transaction(QUESTION_CACHE_INDEXED_DB_STORE, 'readwrite');
-                transaction.objectStore(QUESTION_CACHE_INDEXED_DB_STORE).delete(storageKey);
+                var store = transaction.objectStore(QUESTION_CACHE_INDEXED_DB_STORE);
+                var metaKey = buildQuestionCacheIndexedDbMetaKey(attemptId);
+
+                store.delete(storageKey);
+                if (metaKey !== '') {
+                    var metaRequest = store.get(metaKey);
+                    metaRequest.onsuccess = function () {
+                        var metaRecord = metaRequest.result;
+                        var storedQuestionIds = normalizeQuestionIdList(
+                            metaRecord && metaRecord.snapshot && metaRecord.snapshot.stored_question_ids
+                        );
+                        storedQuestionIds.forEach(function (questionId) {
+                            var itemKey = buildQuestionCacheIndexedDbItemKey(attemptId, questionId);
+                            if (itemKey !== '') {
+                                store.delete(itemKey);
+                            }
+                        });
+                        store.delete(metaKey);
+                    };
+                    metaRequest.onerror = function () {
+                        store.delete(metaKey);
+                    };
+                }
             } catch (error) {
                 // Ignore IndexedDB deletion failures.
             }
@@ -2042,6 +2216,71 @@
             current_index: currentIndex,
             doubtful_question_ids: doubtfulIds
         };
+    }
+
+    function questionCacheHasPayloadForIndex(snapshot, index) {
+        var normalizedSnapshot = snapshot && snapshot.questionPayloadById
+            ? snapshot
+            : normalizeQuestionCacheSnapshot(snapshot, snapshot && snapshot.attempt_id);
+        if (!normalizedSnapshot) {
+            return false;
+        }
+
+        var safeIndex = Math.max(0, Math.floor(Number(index) || 0));
+        if (!Array.isArray(normalizedSnapshot.questionOrderIds) || safeIndex >= normalizedSnapshot.questionOrderIds.length) {
+            return false;
+        }
+
+        var questionId = Number(normalizedSnapshot.questionOrderIds[safeIndex]) || 0;
+        return questionId > 0 && !!normalizedSnapshot.questionPayloadById[questionId];
+    }
+
+    function mergeAttemptUiStateDoubtfulIds(primarySnapshot, secondarySnapshot) {
+        var mergedLookup = {};
+        var mergedIds = [];
+
+        [primarySnapshot, secondarySnapshot].forEach(function (snapshot) {
+            if (!snapshot || !Array.isArray(snapshot.doubtful_question_ids)) {
+                return;
+            }
+
+            snapshot.doubtful_question_ids.forEach(function (questionId) {
+                var safeQuestionId = Number(questionId) || 0;
+                if (safeQuestionId <= 0 || mergedLookup[safeQuestionId]) {
+                    return;
+                }
+                mergedLookup[safeQuestionId] = true;
+                mergedIds.push(safeQuestionId);
+            });
+        });
+
+        return mergedIds;
+    }
+
+    function choosePreferredAttemptUiState(remoteSnapshot, localSnapshot, questionCacheSnapshot, attemptId) {
+        var safeAttemptId = Number(attemptId) || 0;
+        var normalizedLocal = localSnapshot ? normalizeAttemptUiState(localSnapshot, safeAttemptId) : null;
+        var normalizedRemote = remoteSnapshot ? normalizeAttemptUiState(remoteSnapshot, safeAttemptId) : null;
+        var normalizedQuestionCache = normalizeQuestionCacheSnapshot(questionCacheSnapshot, safeAttemptId);
+        var selectedSnapshot = normalizedLocal || normalizedRemote || {
+            attempt_id: safeAttemptId,
+            current_index: 0,
+            doubtful_question_ids: []
+        };
+
+        if (normalizedQuestionCache) {
+            if (normalizedLocal && questionCacheHasPayloadForIndex(normalizedQuestionCache, normalizedLocal.current_index)) {
+                selectedSnapshot = normalizedLocal;
+            } else if (normalizedRemote && questionCacheHasPayloadForIndex(normalizedQuestionCache, normalizedRemote.current_index)) {
+                selectedSnapshot = normalizedRemote;
+            }
+        }
+
+        return normalizeAttemptUiState({
+            attempt_id: safeAttemptId,
+            current_index: selectedSnapshot.current_index,
+            doubtful_question_ids: mergeAttemptUiStateDoubtfulIds(normalizedLocal, normalizedRemote)
+        }, safeAttemptId);
     }
 
     function buildAttemptUiStateSnapshot(attemptId) {
@@ -4061,18 +4300,23 @@
             attemptUiStateRequestFailed = true;
         }
 
-        var fallbackAttemptUiState = attemptUiStateRequestFailed
-            ? readPersistedAttemptUiState(state.attemptId)
-            : attemptUiStatePayload;
+        var localAttemptUiState = readPersistedAttemptUiState(state.attemptId);
+        var restoredQuestionCacheSnapshot = await readPersistedQuestionCache(state.attemptId);
+        var preferredAttemptUiState = choosePreferredAttemptUiState(
+            attemptUiStateRequestFailed ? null : attemptUiStatePayload,
+            localAttemptUiState,
+            restoredQuestionCacheSnapshot,
+            state.attemptId
+        );
         var requestedResumeIndex = Math.max(
             0,
-            Math.floor(Number(fallbackAttemptUiState && fallbackAttemptUiState.current_index !== undefined
-                ? fallbackAttemptUiState.current_index
+            Math.floor(Number(preferredAttemptUiState && preferredAttemptUiState.current_index !== undefined
+                ? preferredAttemptUiState.current_index
                 : 0) || 0)
         );
 
         var restoredQuestionCache = applyPersistedQuestionCache(
-            await readPersistedQuestionCache(state.attemptId),
+            restoredQuestionCacheSnapshot,
             {
                 attemptId: state.attemptId,
                 examId: examId,
@@ -4096,12 +4340,8 @@
             );
         }
 
-        if (attemptUiStateRequestFailed) {
-            applyAttemptUiState(readPersistedAttemptUiState(state.attemptId), state.attemptId);
-        } else {
-            applyAttemptUiState(attemptUiStatePayload, state.attemptId);
-            syncAttemptUiStateSignatureToCurrentState();
-        }
+        applyAttemptUiState(preferredAttemptUiState, state.attemptId);
+        syncAttemptUiStateSignatureToCurrentState();
 
         state.isFinishing = false;
         state.navPanelVisible = true;
