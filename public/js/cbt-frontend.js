@@ -37,6 +37,7 @@
         stage: 'login',
         busy: false,
         error: '',
+        notice: '',
         success: '',
         loginIdentifier: '',
         loginPassword: '',
@@ -53,10 +54,12 @@
         questionManifestById: {},
         questionPayloadById: {},
         answeredQuestionLookup: {},
+        changedQuestionLookup: {},
         loadedQuestionWindowOffsets: {},
         windowOffset: 0,
         windowLimit: 0,
         totalQuestions: 0,
+        questionRevision: null,
         answers: {},
         doubtful: {},
         currentIndex: 0,
@@ -109,6 +112,9 @@
     var questionCachePersistTimer = 0;
     var questionCacheIndexedDbPromise = null;
     var lastQuestionCacheRestoreDebug = null;
+    var questionRevisionRefreshInFlight = null;
+    var questionDataGeneration = 0;
+    var pendingRevisionSafeAnswerRestoreByQuestion = {};
 
     function getSessionStorage() {
         if (cachedSessionStorage !== undefined) {
@@ -805,6 +811,106 @@
         }, []);
     }
 
+    function normalizeQuestionRevision(rawRevision, fallbackExamId) {
+        var revision = rawRevision && typeof rawRevision === 'object' ? rawRevision : {};
+        var examId = Number(revision.exam_id !== undefined ? revision.exam_id : fallbackExamId) || 0;
+        var namespace = String(revision.namespace || '');
+        var version = Math.max(0, Number(revision.version) || 0);
+        var invalidatedAt = Math.max(0, Number(revision.invalidated_at) || 0);
+        var signature = String(revision.signature || '');
+
+        if (namespace === '' && examId > 0) {
+            namespace = 'exam:' + String(examId);
+        }
+        if (signature === '' && namespace !== '' && version > 0) {
+            signature = namespace + '|v:' + String(version) + '|t:' + String(invalidatedAt);
+        }
+
+        if (examId <= 0 || namespace === '' || version <= 0 || signature === '') {
+            return null;
+        }
+
+        return {
+            examId: examId,
+            namespace: namespace,
+            version: version,
+            invalidatedAt: invalidatedAt,
+            signature: signature
+        };
+    }
+
+    function serializeQuestionRevision(revision, fallbackExamId) {
+        var normalized = normalizeQuestionRevision(revision, fallbackExamId);
+        if (!normalized) {
+            return null;
+        }
+
+        return {
+            exam_id: normalized.examId,
+            namespace: normalized.namespace,
+            version: normalized.version,
+            invalidated_at: normalized.invalidatedAt,
+            signature: normalized.signature
+        };
+    }
+
+    function questionRevisionSignature(revision, fallbackExamId) {
+        var normalized = normalizeQuestionRevision(revision, fallbackExamId);
+        return normalized ? String(normalized.signature || '') : '';
+    }
+
+    function questionRevisionEquals(leftRevision, rightRevision, fallbackExamId) {
+        var leftSignature = questionRevisionSignature(leftRevision, fallbackExamId);
+        var rightSignature = questionRevisionSignature(rightRevision, fallbackExamId);
+        if (leftSignature === '' || rightSignature === '') {
+            return leftSignature === rightSignature;
+        }
+        return leftSignature === rightSignature;
+    }
+
+    function compareQuestionRevisionFreshness(leftRevision, rightRevision, fallbackExamId) {
+        var left = normalizeQuestionRevision(leftRevision, fallbackExamId);
+        var right = normalizeQuestionRevision(rightRevision, fallbackExamId);
+
+        if (!left && !right) {
+            return 0;
+        }
+        if (left && !right) {
+            return 1;
+        }
+        if (!left && right) {
+            return -1;
+        }
+        if (left.version !== right.version) {
+            return left.version > right.version ? 1 : -1;
+        }
+        if (left.invalidatedAt !== right.invalidatedAt) {
+            return left.invalidatedAt > right.invalidatedAt ? 1 : -1;
+        }
+        return 0;
+    }
+
+    function bumpQuestionDataGeneration() {
+        questionDataGeneration = (questionDataGeneration + 1) % 2147483647;
+        if (questionDataGeneration <= 0) {
+            questionDataGeneration = 1;
+        }
+        return questionDataGeneration;
+    }
+
+    function isQuestionRevisionRefreshActive() {
+        return questionRevisionRefreshInFlight !== null;
+    }
+
+    function clearPendingRevisionSafeAnswerRestoreState() {
+        pendingRevisionSafeAnswerRestoreByQuestion = {};
+    }
+
+    function setQuestionRevision(revision, fallbackExamId) {
+        state.questionRevision = normalizeQuestionRevision(revision, fallbackExamId || state.selectedExamId || 0);
+        return state.questionRevision;
+    }
+
     function normalizeQuestionManifestItem(question) {
         var item = question && typeof question === 'object' ? question : {};
         var questionId = Number(item.id) || 0;
@@ -814,7 +920,8 @@
 
         var normalized = {
             id: questionId,
-            question_type: String(item.question_type || '')
+            question_type: String(item.question_type || ''),
+            updated_at: String(item.updated_at || '')
         };
 
         if (Array.isArray(item.options)) {
@@ -868,6 +975,75 @@
             accumulator[normalized.id] = normalized;
             return accumulator;
         }, {});
+    }
+
+    function questionManifestUpdatedAt(question) {
+        var normalized = normalizeQuestionManifestItem(question);
+        if (!normalized) {
+            return '';
+        }
+
+        return String(normalized.updated_at || '').trim();
+    }
+
+    function questionManifestContentSignature(question) {
+        var normalized = normalizeQuestionManifestItem(question);
+        if (!normalized) {
+            return '';
+        }
+
+        delete normalized.updated_at;
+        return payloadSignature(normalized);
+    }
+
+    function buildChangedQuestionLookup(previousManifestById, nextManifestById, preservedLookup) {
+        var changedLookup = normalizeStoredBooleanLookup(preservedLookup);
+        var safePreviousManifestById = previousManifestById && typeof previousManifestById === 'object'
+            ? previousManifestById
+            : {};
+        var safeNextManifestById = nextManifestById && typeof nextManifestById === 'object'
+            ? nextManifestById
+            : {};
+
+        Object.keys(safeNextManifestById).forEach(function (key) {
+            var questionId = Number(key) || 0;
+            if (questionId <= 0) {
+                return;
+            }
+
+            var previousManifest = safePreviousManifestById[questionId] || null;
+            var nextManifest = safeNextManifestById[questionId] || null;
+            if (!nextManifest) {
+                return;
+            }
+
+            if (!previousManifest) {
+                changedLookup[questionId] = true;
+                return;
+            }
+
+            var previousUpdatedAt = questionManifestUpdatedAt(previousManifest);
+            var nextUpdatedAt = questionManifestUpdatedAt(nextManifest);
+            if (previousUpdatedAt !== '' && nextUpdatedAt !== '') {
+                if (previousUpdatedAt !== nextUpdatedAt) {
+                    changedLookup[questionId] = true;
+                }
+                return;
+            }
+
+            if (questionManifestContentSignature(previousManifest) !== questionManifestContentSignature(nextManifest)) {
+                changedLookup[questionId] = true;
+            }
+        });
+
+        return changedLookup;
+    }
+
+    function getChangedQuestionCount() {
+        return Object.keys(state.changedQuestionLookup || {}).reduce(function (count, key) {
+            var questionId = Number(key) || 0;
+            return count + (questionId > 0 && state.changedQuestionLookup[key] ? 1 : 0);
+        }, 0);
     }
 
     function buildQuestionWindowItems(offset, limit) {
@@ -971,6 +1147,29 @@
         return normalizeQuestionCacheSnapshot(snapshot, attemptId);
     }
 
+    function questionCacheSnapshotsShareRevision(primarySnapshot, secondarySnapshot, attemptId) {
+        var normalizedPrimary = normalizeOrUseQuestionCacheSnapshot(primarySnapshot, attemptId);
+        var normalizedSecondary = normalizeOrUseQuestionCacheSnapshot(secondarySnapshot, attemptId);
+        if (!normalizedPrimary || !normalizedSecondary) {
+            return true;
+        }
+
+        var primarySignature = questionRevisionSignature(
+            normalizedPrimary.questionRevision,
+            normalizedPrimary.examId || attemptId || 0
+        );
+        var secondarySignature = questionRevisionSignature(
+            normalizedSecondary.questionRevision,
+            normalizedSecondary.examId || attemptId || 0
+        );
+
+        if (primarySignature === '' && secondarySignature === '') {
+            return true;
+        }
+
+        return primarySignature !== '' && primarySignature === secondarySignature;
+    }
+
     function mergeQuestionCachePayloadMaps(primaryPayloadById, secondaryPayloadById) {
         var mergedPayloadById = {};
 
@@ -1001,6 +1200,9 @@
         return normalizeQuestionCacheSnapshot({
             attempt_id: Number(attemptId) || 0,
             exam_id: normalizedBaseSnapshot ? normalizedBaseSnapshot.examId : Number(baseSnapshot && baseSnapshot.exam_id) || 0,
+            question_revision: normalizedBaseSnapshot
+                ? serializeQuestionRevision(normalizedBaseSnapshot.questionRevision, normalizedBaseSnapshot.examId)
+                : (baseSnapshot && baseSnapshot.question_revision),
             total_questions: normalizedBaseSnapshot ? normalizedBaseSnapshot.totalQuestions : Number(baseSnapshot && baseSnapshot.total_questions) || 0,
             question_order_ids: normalizedBaseSnapshot ? normalizedBaseSnapshot.questionOrderIds : (baseSnapshot && baseSnapshot.question_order_ids),
             question_manifest: Object.keys(mergedPayloadById).length
@@ -1008,6 +1210,7 @@
                 : (normalizedBaseSnapshot ? normalizedBaseSnapshot.questionManifest : (baseSnapshot && baseSnapshot.question_manifest)),
             question_payload_by_id: mergedPayloadById,
             answered_question_lookup: normalizedBaseSnapshot ? normalizedBaseSnapshot.answeredQuestionLookup : (baseSnapshot && baseSnapshot.answered_question_lookup),
+            changed_question_lookup: normalizedBaseSnapshot ? normalizedBaseSnapshot.changedQuestionLookup : (baseSnapshot && baseSnapshot.changed_question_lookup),
             answers: normalizedBaseSnapshot ? normalizedBaseSnapshot.answers : (baseSnapshot && baseSnapshot.answers),
             loaded_question_window_offsets: normalizedBaseSnapshot ? normalizedBaseSnapshot.loadedQuestionWindowOffsets : (baseSnapshot && baseSnapshot.loaded_question_window_offsets),
             window_offset: normalizedBaseSnapshot ? normalizedBaseSnapshot.windowOffset : (baseSnapshot && baseSnapshot.window_offset),
@@ -1050,6 +1253,7 @@
         }
 
         var answeredQuestionLookup = normalizeStoredBooleanLookup(snapshot.answered_question_lookup);
+        var changedQuestionLookup = normalizeStoredBooleanLookup(snapshot.changed_question_lookup);
         var answers = normalizeStoredAnswers(snapshot.answers);
         if (payloadQuestions.length && (!Object.keys(answeredQuestionLookup).length || !Object.keys(answers).length)) {
             payloadQuestions.forEach(function (question) {
@@ -1073,6 +1277,7 @@
         return {
             attemptId: safeAttemptId,
             examId: Number(snapshot.exam_id) || 0,
+            questionRevision: normalizeQuestionRevision(snapshot.question_revision, Number(snapshot.exam_id) || 0),
             totalQuestions: Math.max(
                 Number(snapshot.total_questions) || 0,
                 questionOrderIds.length,
@@ -1082,6 +1287,7 @@
             questionManifest: questionManifest,
             questionPayloadById: questionPayloadById,
             answeredQuestionLookup: answeredQuestionLookup,
+            changedQuestionLookup: changedQuestionLookup,
             answers: answers,
             loadedQuestionWindowOffsets: normalizeStoredBooleanLookup(snapshot.loaded_question_window_offsets),
             windowOffset: Math.max(0, Number(snapshot.window_offset) || 0),
@@ -1120,6 +1326,7 @@
         return {
             attempt_id: safeAttemptId,
             exam_id: Number(state.selectedExamId) || 0,
+            question_revision: serializeQuestionRevision(state.questionRevision, Number(state.selectedExamId) || 0),
             total_questions: Math.max(Number(state.totalQuestions) || 0, questionOrderIds.length, questionPayloadCount),
             question_order_ids: questionOrderIds,
             question_manifest: manifestItems,
@@ -1127,6 +1334,13 @@
             answered_question_lookup: Object.keys(state.answeredQuestionLookup || {}).reduce(function (accumulator, key) {
                 var questionId = Number(key) || 0;
                 if (questionId > 0 && state.answeredQuestionLookup[key]) {
+                    accumulator[questionId] = true;
+                }
+                return accumulator;
+            }, {}),
+            changed_question_lookup: Object.keys(state.changedQuestionLookup || {}).reduce(function (accumulator, key) {
+                var questionId = Number(key) || 0;
+                if (questionId > 0 && state.changedQuestionLookup[key]) {
                     accumulator[questionId] = true;
                 }
                 return accumulator;
@@ -1159,11 +1373,13 @@
         return {
             attempt_id: normalizedSnapshot.attemptId,
             exam_id: normalizedSnapshot.examId,
+            question_revision: serializeQuestionRevision(normalizedSnapshot.questionRevision, normalizedSnapshot.examId),
             total_questions: normalizedSnapshot.totalQuestions,
             question_order_ids: normalizedSnapshot.questionOrderIds,
             question_manifest: normalizedSnapshot.questionManifest,
             question_payload_by_id: normalizedSnapshot.questionPayloadById,
             answered_question_lookup: normalizedSnapshot.answeredQuestionLookup,
+            changed_question_lookup: normalizedSnapshot.changedQuestionLookup,
             answers: normalizedSnapshot.answers,
             loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
             window_offset: normalizedSnapshot.windowOffset,
@@ -1194,8 +1410,12 @@
         return {
             attempt_id: normalizedSnapshot.attemptId,
             exam_id: normalizedSnapshot.examId,
+            question_revision: serializeQuestionRevision(normalizedSnapshot.questionRevision, normalizedSnapshot.examId),
             total_questions: normalizedSnapshot.totalQuestions,
             question_order_ids: normalizedSnapshot.questionOrderIds,
+            answered_question_lookup: normalizedSnapshot.answeredQuestionLookup,
+            changed_question_lookup: normalizedSnapshot.changedQuestionLookup,
+            answers: normalizedSnapshot.answers,
             loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
             window_offset: normalizedSnapshot.windowOffset,
             window_limit: normalizedSnapshot.windowLimit,
@@ -1208,11 +1428,13 @@
         return normalizeQuestionCacheSnapshot({
             attempt_id: attemptId,
             exam_id: metaSnapshot && metaSnapshot.exam_id,
+            question_revision: metaSnapshot && metaSnapshot.question_revision,
             total_questions: metaSnapshot && metaSnapshot.total_questions,
             question_order_ids: metaSnapshot && metaSnapshot.question_order_ids,
             question_manifest: metaSnapshot && metaSnapshot.question_manifest,
             question_payload_by_id: questionPayloadById || {},
             answered_question_lookup: metaSnapshot && metaSnapshot.answered_question_lookup,
+            changed_question_lookup: metaSnapshot && metaSnapshot.changed_question_lookup,
             answers: metaSnapshot && metaSnapshot.answers,
             loaded_question_window_offsets: metaSnapshot && metaSnapshot.loaded_question_window_offsets,
             window_offset: metaSnapshot && metaSnapshot.window_offset,
@@ -1238,6 +1460,15 @@
         }
         if (!secondarySnapshot) {
             return primarySnapshot;
+        }
+
+        var revisionComparison = compareQuestionRevisionFreshness(
+            primarySnapshot.questionRevision,
+            secondarySnapshot.questionRevision,
+            primarySnapshot.examId || secondarySnapshot.examId || 0
+        );
+        if (revisionComparison !== 0) {
+            return revisionComparison > 0 ? primarySnapshot : secondarySnapshot;
         }
 
         var primaryCount = questionCachePayloadCount(primarySnapshot);
@@ -1276,6 +1507,9 @@
         if (!normalizedSecondary) {
             return normalizedPrimary;
         }
+        if (!questionCacheSnapshotsShareRevision(normalizedPrimary, normalizedSecondary, attemptId)) {
+            return choosePreferredQuestionCacheSnapshot(normalizedPrimary, normalizedSecondary);
+        }
 
         var preferredBaseSnapshot = choosePreferredQuestionCacheSnapshot(normalizedPrimary, normalizedSecondary);
         var preferredOrderSnapshot = normalizedPrimary.questionOrderIds.length >= normalizedSecondary.questionOrderIds.length
@@ -1289,6 +1523,10 @@
         return buildQuestionCacheSnapshotFromBaseAndPayloads({
             attempt_id: Number(attemptId) || normalizedPrimary.attemptId || normalizedSecondary.attemptId || 0,
             exam_id: preferredBaseSnapshot.examId || preferredOrderSnapshot.examId || 0,
+            question_revision: serializeQuestionRevision(
+                preferredBaseSnapshot.questionRevision || preferredOrderSnapshot.questionRevision,
+                preferredBaseSnapshot.examId || preferredOrderSnapshot.examId || 0
+            ),
             total_questions: Math.max(
                 Number(normalizedPrimary.totalQuestions) || 0,
                 Number(normalizedSecondary.totalQuestions) || 0,
@@ -1299,6 +1537,10 @@
             answered_question_lookup: mergeStoredBooleanLookups(
                 normalizedPrimary.answeredQuestionLookup,
                 normalizedSecondary.answeredQuestionLookup
+            ),
+            changed_question_lookup: mergeStoredBooleanLookups(
+                normalizedPrimary.changedQuestionLookup,
+                normalizedSecondary.changedQuestionLookup
             ),
             answers: mergeStoredAnswers(
                 normalizedPrimary.answers,
@@ -1550,13 +1792,11 @@
                 var parsedMeta = rawMeta ? JSON.parse(rawMeta) : null;
                 var rawLegacy = storage.getItem(storageKey);
                 var parsedLegacy = rawLegacy ? JSON.parse(rawLegacy) : null;
+                var mergedBaseSnapshot = mergeQuestionCacheSnapshots(parsedMeta, parsedLegacy, safeAttemptId);
 
                 var mergedSnapshot = buildQuestionCacheSnapshotFromBaseAndPayloads(
-                    parsedMeta || parsedLegacy,
-                    mergeQuestionCachePayloadMaps(
-                        questionPayloadById,
-                        parsedLegacy && parsedLegacy.question_payload_by_id
-                    ),
+                    mergedBaseSnapshot || parsedMeta || parsedLegacy,
+                    questionPayloadById,
                     safeAttemptId
                 );
                 if (mergedSnapshot) {
@@ -1662,26 +1902,6 @@
                         resolve(snapshot);
                     }
 
-                    function readLegacySnapshot() {
-                        try {
-                            var legacyRequest = store.get(storageKey);
-                            legacyRequest.onsuccess = function () {
-                                var record = legacyRequest.result;
-                                var mergedLegacySnapshot = buildQuestionCacheSnapshotFromBaseAndPayloads(
-                                    record && record.snapshot ? record.snapshot : null,
-                                    questionPayloadById,
-                                    safeAttemptId
-                                );
-                                resolveOnce(mergedLegacySnapshot);
-                            };
-                            legacyRequest.onerror = function () {
-                                resolveOnce(null);
-                            };
-                        } catch (error) {
-                            resolveOnce(null);
-                        }
-                    }
-
                     var metaSnapshot = null;
                     var metaResolved = false;
                     var cursorResolved = false;
@@ -1703,19 +1923,39 @@
                                 discoveredQuestionIds
                             );
                         }
-
-                        var mergedSnapshot = buildQuestionCacheSnapshotFromBaseAndPayloads(
-                            mergedMetaSnapshot,
-                            questionPayloadById,
-                            safeAttemptId
-                        );
-
-                        if (mergedSnapshot) {
+                        try {
+                            var legacyRequest = store.get(storageKey);
+                            legacyRequest.onsuccess = function () {
+                                var record = legacyRequest.result;
+                                var legacySnapshot = record && record.snapshot ? record.snapshot : null;
+                                var mergedBaseSnapshot = mergeQuestionCacheSnapshots(
+                                    mergedMetaSnapshot,
+                                    legacySnapshot,
+                                    safeAttemptId
+                                );
+                                var mergedSnapshot = buildQuestionCacheSnapshotFromBaseAndPayloads(
+                                    mergedBaseSnapshot || mergedMetaSnapshot || legacySnapshot,
+                                    questionPayloadById,
+                                    safeAttemptId
+                                );
+                                resolveOnce(mergedSnapshot);
+                            };
+                            legacyRequest.onerror = function () {
+                                var mergedSnapshot = buildQuestionCacheSnapshotFromBaseAndPayloads(
+                                    mergedMetaSnapshot,
+                                    questionPayloadById,
+                                    safeAttemptId
+                                );
+                                resolveOnce(mergedSnapshot);
+                            };
+                        } catch (error) {
+                            var mergedSnapshot = buildQuestionCacheSnapshotFromBaseAndPayloads(
+                                mergedMetaSnapshot,
+                                questionPayloadById,
+                                safeAttemptId
+                            );
                             resolveOnce(mergedSnapshot);
-                            return;
                         }
-
-                        readLegacySnapshot();
                     }
 
                     var metaRequest = store.get(metaKey);
@@ -1781,8 +2021,11 @@
         setQuestionCacheRestoreDebug({
             attemptId: Number(attemptId) || 0,
             indexedDbPayloadCount: questionCachePayloadCount(indexedDbSnapshot),
+            indexedDbRevision: questionRevisionSignature(indexedDbSnapshot && indexedDbSnapshot.questionRevision, indexedDbSnapshot && indexedDbSnapshot.examId),
             localStoragePayloadCount: questionCachePayloadCount(localStorageSnapshot),
+            localStorageRevision: questionRevisionSignature(localStorageSnapshot && localStorageSnapshot.questionRevision, localStorageSnapshot && localStorageSnapshot.examId),
             sessionPayloadCount: questionCachePayloadCount(sessionSnapshot),
+            sessionRevision: questionRevisionSignature(sessionSnapshot && sessionSnapshot.questionRevision, sessionSnapshot && sessionSnapshot.examId),
             mergedPayloadCount: questionCachePayloadCount(mergedSnapshot),
             mergedOrderCount: mergedSnapshot && Array.isArray(mergedSnapshot.questionOrderIds)
                 ? mergedSnapshot.questionOrderIds.length
@@ -1790,6 +2033,7 @@
             mergedWindowOffset: mergedSnapshot ? Number(mergedSnapshot.windowOffset) || 0 : 0,
             mergedWindowLimit: mergedSnapshot ? Number(mergedSnapshot.windowLimit) || 0 : 0,
             mergedCachedAt: mergedSnapshot ? Number(mergedSnapshot.cachedAt) || 0 : 0,
+            mergedRevision: questionRevisionSignature(mergedSnapshot && mergedSnapshot.questionRevision, mergedSnapshot && mergedSnapshot.examId),
             timestamp: Date.now()
         });
         return mergedSnapshot;
@@ -1929,6 +2173,14 @@
             return false;
         }
 
+        if (options.expectedQuestionRevision && !questionRevisionEquals(
+            normalizedSnapshot.questionRevision,
+            options.expectedQuestionRevision,
+            expectedExamId || normalizedSnapshot.examId || 0
+        )) {
+            return false;
+        }
+
         state.questionOrderIds = normalizedSnapshot.questionOrderIds;
         state.totalQuestions = normalizedSnapshot.totalQuestions;
         state.questionManifestById = buildQuestionManifestById(normalizedSnapshot.questionManifest);
@@ -1942,8 +2194,12 @@
         }, []);
         state.questionPayloadById = normalizedSnapshot.questionPayloadById;
         state.answeredQuestionLookup = normalizedSnapshot.answeredQuestionLookup;
+        state.changedQuestionLookup = normalizedSnapshot.changedQuestionLookup;
         state.answers = normalizedSnapshot.answers;
         state.loadedQuestionWindowOffsets = normalizedSnapshot.loadedQuestionWindowOffsets;
+        if (normalizedSnapshot.questionRevision) {
+            setQuestionRevision(normalizedSnapshot.questionRevision, expectedExamId || normalizedSnapshot.examId || 0);
+        }
 
         var targetWindowSize = Math.max(1, Number(options.windowSize) || normalizedSnapshot.windowLimit || QUESTION_WINDOW_SIZE);
         var preferredIndex = Number(options.preferredIndex);
@@ -1961,6 +2217,36 @@
         }
 
         return true;
+    }
+
+    function resetQuestionDataState(options) {
+        options = options || {};
+
+        state.questions = [];
+        state.questionOrderIds = [];
+        state.questionManifest = [];
+        state.questionManifestById = {};
+        state.questionPayloadById = {};
+        state.answeredQuestionLookup = {};
+        state.changedQuestionLookup = {};
+        state.loadedQuestionWindowOffsets = {};
+        state.windowOffset = 0;
+        state.windowLimit = 0;
+        state.totalQuestions = 0;
+        state.answers = {};
+
+        if (!options.preserveDoubtful) {
+            state.doubtful = {};
+        }
+        if (!options.preserveCurrentIndex) {
+            state.currentIndex = 0;
+        }
+        if (!options.preserveNavFilter) {
+            state.navQuestionFilter = NAV_QUESTION_FILTER_ALL;
+        }
+        if (!options.preserveQuestionRevision) {
+            state.questionRevision = null;
+        }
     }
 
     function getQuestionCount() {
@@ -2213,7 +2499,7 @@
     function resetQuestionPrefetchIdleTimer() {
         clearQuestionPrefetchIdleTimer();
 
-        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
+        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || isQuestionRevisionRefreshActive()) {
             return;
         }
 
@@ -2230,7 +2516,7 @@
     }
 
     function noteQuestionPrefetchActivity() {
-        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
+        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || isQuestionRevisionRefreshActive()) {
             return;
         }
 
@@ -2238,7 +2524,7 @@
     }
 
     function prefetchNextQuestionBatch() {
-        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
+        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || isQuestionRevisionRefreshActive()) {
             return Promise.resolve(null);
         }
 
@@ -2290,70 +2576,7 @@
                 value: null
             };
         }
-
-        var questionType = String(question.question_type || '');
-        if (questionType === 'multiple_choice' || questionType === 'true_false') {
-            var single = Number(existing) || 0;
-            return {
-                hasValue: single > 0,
-                value: single > 0 ? single : null
-            };
-        }
-
-        if (questionType === 'multiple_answer') {
-            if (!Array.isArray(existing)) {
-                return {
-                    hasValue: false,
-                    value: null
-                };
-            }
-
-            var selected = existing
-                .map(function (item) { return Number(item) || 0; })
-                .filter(function (item) { return item > 0; });
-
-            return {
-                hasValue: selected.length > 0,
-                value: selected
-            };
-        }
-
-        if (questionType === 'true_false_matrix') {
-            var matrixValue = normalizeTrueFalseMatrixAnswer(existing);
-            return {
-                hasValue: Object.keys(matrixValue).length > 0,
-                value: matrixValue
-            };
-        }
-
-        if (questionType === 'short_answer') {
-            if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
-                return {
-                    hasValue: false,
-                    value: null
-                };
-            }
-
-            var normalizedShort = Object.keys(existing).reduce(function (accumulator, key) {
-                var safeKey = String(key || '').trim().toUpperCase();
-                if (safeKey === '') {
-                    return accumulator;
-                }
-                accumulator[safeKey] = String(existing[key] || '');
-                return accumulator;
-            }, {});
-
-            return {
-                hasValue: Object.keys(normalizedShort).length > 0,
-                value: normalizedShort
-            };
-        }
-
-        var textValue = String(existing || '');
-        return {
-            hasValue: textValue !== '',
-            value: textValue !== '' ? textValue : null
-        };
+        return normalizeAnswerValueForQuestion(question, existing);
     }
 
     function mergeExistingAnswersFromQuestionItems(questions, options) {
@@ -2453,7 +2676,13 @@
                 return;
             }
 
-            state.answers[questionId] = existingAnswersMap[key];
+            var question = getQuestionById(questionId);
+            var normalized = normalizeAnswerValueForQuestion(question, existingAnswersMap[key]);
+            if (!normalized.hasValue) {
+                return;
+            }
+
+            state.answers[questionId] = normalized.value;
             state.answeredQuestionLookup[questionId] = true;
         });
     }
@@ -2474,9 +2703,16 @@
         var responseExistingAnswersMap = questionPayload && questionPayload.existing_answers_map && typeof questionPayload.existing_answers_map === 'object'
             ? questionPayload.existing_answers_map
             : null;
+        var responseRevision = normalizeQuestionRevision(
+            questionPayload && questionPayload.question_revision,
+            Number(state.selectedExamId) || 0
+        );
 
         if (normalizedOrderIds.length) {
             state.questionOrderIds = normalizedOrderIds;
+        }
+        if (responseRevision) {
+            setQuestionRevision(responseRevision, Number(state.selectedExamId) || 0);
         }
 
         if (responseAnsweredQuestionIds.length) {
@@ -2522,6 +2758,12 @@
             overwriteExisting: !!options.overwriteExisting
         });
         primeSubmittedPayloadCacheFromQuestionItems(responseItems);
+        var restoredDeferredQuestionIds = applyPendingRevisionSafeAnswersForLoadedQuestions(responseItems);
+        if (restoredDeferredQuestionIds.length && !isQuestionRevisionRefreshActive()) {
+            if (queueQuestionAnswersByIds(restoredDeferredQuestionIds) > 0) {
+                scheduleAnswerBatchFlush(300);
+            }
+        }
         scheduleQuestionCachePersist(0);
         updateQuestionPrefetchIndicator();
     }
@@ -2540,6 +2782,34 @@
             }
             return accumulator;
         }, {});
+    }
+
+    function pruneQuestionScopedState(validQuestionIdLookup) {
+        var validLookup = validQuestionIdLookup && typeof validQuestionIdLookup === 'object'
+            ? validQuestionIdLookup
+            : validAttemptQuestionIds();
+
+        function pruneLookup(source) {
+            Object.keys(source || {}).forEach(function (key) {
+                var questionId = Number(key) || 0;
+                if (questionId > 0 && !validLookup[questionId]) {
+                    delete source[key];
+                }
+            });
+        }
+
+        pruneLookup(state.answers);
+        pruneLookup(state.answeredQuestionLookup);
+        pruneLookup(state.changedQuestionLookup);
+        pruneLookup(state.doubtful);
+        pruneLookup(lastSubmittedPayloadByQuestion);
+        pruneLookup(pendingAnswerBatchByQuestion);
+        pruneLookup(pendingRevisionSafeAnswerRestoreByQuestion);
+
+        pendingAnswerBatchOrder = pendingAnswerBatchOrder.filter(function (item) {
+            var questionId = Number(item) || 0;
+            return questionId > 0 && validLookup[questionId];
+        });
     }
 
     function normalizeAttemptUiState(snapshot, attemptId) {
@@ -2830,7 +3100,44 @@
             return sessionHeartbeatInFlight;
         }
 
-        sessionHeartbeatInFlight = api('session')
+        var heartbeatAttemptId = state.stage === 'exam' && state.attemptId > 0
+            ? Number(state.attemptId) || 0
+            : 0;
+        var heartbeatExamId = Number(state.selectedExamId) || 0;
+
+        sessionHeartbeatInFlight = api('session', {
+            query: {
+                attempt_id: heartbeatAttemptId > 0 ? heartbeatAttemptId : null
+            }
+        }).then(function (sessionPayload) {
+            if (
+                heartbeatAttemptId > 0
+                && state.stage === 'exam'
+                && Number(state.attemptId) === heartbeatAttemptId
+            ) {
+                var sessionRevision = normalizeQuestionRevision(
+                    sessionPayload && sessionPayload.question_revision,
+                    heartbeatExamId
+                );
+
+                if (sessionRevision && state.questionRevision && !questionRevisionEquals(sessionRevision, state.questionRevision, heartbeatExamId)) {
+                    return refreshAttemptQuestionRevision(sessionRevision, {
+                        attemptId: heartbeatAttemptId,
+                        examId: heartbeatExamId,
+                        preferredIndex: state.currentIndex,
+                        source: 'heartbeat'
+                    }).then(function () {
+                        return sessionPayload;
+                    });
+                }
+
+                if (sessionRevision && !state.questionRevision) {
+                    setQuestionRevision(sessionRevision, heartbeatExamId);
+                }
+            }
+
+            return sessionPayload;
+        })
             .catch(function () {
                 return null;
             })
@@ -2927,6 +3234,7 @@
         var includeExisting = options.includeExisting !== undefined ? options.includeExisting : 1;
         var includeAnswerManifest = options.includeAnswerManifest !== undefined ? options.includeAnswerManifest : 0;
         var windowLimit = Math.max(1, Number(options.limit) || QUESTION_WINDOW_SIZE);
+        var requestGeneration = questionDataGeneration;
 
         if (examId <= 0 || attemptId <= 0) {
             throw new Error('Sesi ujian tidak valid.');
@@ -2942,6 +3250,17 @@
                 limit: windowLimit
             }
         });
+        var responseRevision = normalizeQuestionRevision(
+            questionPayload && questionPayload.question_revision,
+            examId
+        );
+        if (questionPayload && typeof questionPayload === 'object') {
+            questionPayload.question_revision = serializeQuestionRevision(responseRevision, examId);
+        }
+
+        if (requestGeneration !== questionDataGeneration) {
+            return questionPayload;
+        }
 
         var canApplyQuestionPayload = (
             Number(state.attemptId) === attemptId &&
@@ -2949,7 +3268,22 @@
             (state.stage === 'exam' || state.stage === 'confirm')
         );
 
-        if (!canApplyQuestionPayload) {
+        if (!canApplyQuestionPayload || !!options.skipApply) {
+            return questionPayload;
+        }
+
+        if (
+            !options.allowRevisionTransition
+            && responseRevision
+            && state.questionRevision
+            && !questionRevisionEquals(responseRevision, state.questionRevision, examId)
+        ) {
+            refreshAttemptQuestionRevision(responseRevision, {
+                attemptId: attemptId,
+                examId: examId,
+                preferredIndex: state.currentIndex,
+                source: 'questions'
+            });
             return questionPayload;
         }
 
@@ -2992,7 +3326,195 @@
             }
         );
 
+        questionId = getQuestionIdAtIndex(clampQuestionIndex(index));
         return getQuestionPayloadById(questionId);
+    }
+
+    function restoreQuestionAutoSaveState(snapshot) {
+        var safeSnapshot = snapshot && typeof snapshot === 'object' ? snapshot : {};
+        lastSubmittedPayloadByQuestion = safeSnapshot.lastSubmittedPayloadByQuestion && typeof safeSnapshot.lastSubmittedPayloadByQuestion === 'object'
+            ? Object.assign({}, safeSnapshot.lastSubmittedPayloadByQuestion)
+            : {};
+        pendingAnswerBatchByQuestion = safeSnapshot.pendingAnswerBatchByQuestion && typeof safeSnapshot.pendingAnswerBatchByQuestion === 'object'
+            ? Object.assign({}, safeSnapshot.pendingAnswerBatchByQuestion)
+            : {};
+        pendingAnswerBatchOrder = Array.isArray(safeSnapshot.pendingAnswerBatchOrder)
+            ? safeSnapshot.pendingAnswerBatchOrder.slice()
+            : [];
+        autoSaveCongestedUntil = Math.max(0, Number(safeSnapshot.autoSaveCongestedUntil) || 0);
+    }
+
+    async function refreshAttemptQuestionRevision(nextRevision, options) {
+        options = options || {};
+
+        var attemptId = Number(options.attemptId !== undefined ? options.attemptId : state.attemptId) || 0;
+        var examId = Number(options.examId !== undefined ? options.examId : state.selectedExamId) || 0;
+        var normalizedNextRevision = normalizeQuestionRevision(nextRevision, examId);
+
+        if (state.stage !== 'exam' || attemptId <= 0 || examId <= 0) {
+            return Promise.resolve(null);
+        }
+
+        if (normalizedNextRevision && state.questionRevision && questionRevisionEquals(normalizedNextRevision, state.questionRevision, examId)) {
+            return Promise.resolve(null);
+        }
+
+        if (questionRevisionRefreshInFlight) {
+            return questionRevisionRefreshInFlight;
+        }
+
+        var requestedIndex = Number(options.preferredIndex);
+        if (!Number.isFinite(requestedIndex) || requestedIndex < 0) {
+            requestedIndex = Number(state.currentIndex) || 0;
+        }
+
+        var attemptUiSnapshot = buildAttemptUiStateSnapshot(attemptId) || {
+            attempt_id: attemptId,
+            current_index: Math.max(0, Math.floor(requestedIndex)),
+            doubtful_question_ids: []
+        };
+        attemptUiSnapshot.current_index = Math.max(0, Math.floor(requestedIndex));
+
+        var previousQuestionManifestById = Object.keys(state.questionManifestById || {}).reduce(function (accumulator, key) {
+            var questionId = Number(key) || 0;
+            if (questionId > 0 && state.questionManifestById[key]) {
+                accumulator[questionId] = state.questionManifestById[key];
+            }
+            return accumulator;
+        }, {});
+        var preservedNavQuestionFilter = normalizeNavigationQuestionFilter(state.navQuestionFilter);
+        var preservedChangedQuestionLookup = Object.assign({}, state.changedQuestionLookup || {});
+        var preservedAnswers = captureRevisionSafeLocalAnswers();
+        var preservedAutoSaveState = {
+            autoSaveCongestedUntil: autoSaveCongestedUntil,
+            lastSubmittedPayloadByQuestion: Object.assign({}, lastSubmittedPayloadByQuestion),
+            pendingAnswerBatchByQuestion: Object.assign({}, pendingAnswerBatchByQuestion),
+            pendingAnswerBatchOrder: pendingAnswerBatchOrder.slice()
+        };
+
+        questionRevisionRefreshInFlight = (async function () {
+            var refreshGeneration = bumpQuestionDataGeneration();
+            clearPersistedQuestionCache(attemptId);
+            clearQuestionCachePersistTimer();
+            clearQuestionPrefetchRuntimeState();
+            clearAttemptUiStateSyncTimer();
+            clearPendingRevisionSafeAnswerRestoreState();
+            clearAutoSaveRuntimeState();
+            state.busy = true;
+            state.notice = '';
+            render();
+
+            try {
+                var refreshOffset = questionWindowOffsetForIndex(attemptUiSnapshot.current_index, QUESTION_WINDOW_SIZE);
+                var questionPayload = await loadQuestionWindow(
+                    refreshOffset,
+                    {
+                        examId: examId,
+                        attemptId: attemptId,
+                        includeExisting: 1,
+                        includeAnswerManifest: 1,
+                        limit: QUESTION_WINDOW_SIZE,
+                        skipApply: true,
+                        allowRevisionTransition: true
+                    }
+                );
+
+                if (
+                    refreshGeneration !== questionDataGeneration
+                    || state.stage !== 'exam'
+                    || Number(state.attemptId) !== attemptId
+                    || Number(state.selectedExamId) !== examId
+                ) {
+                    return null;
+                }
+
+                var appliedRevision = normalizeQuestionRevision(
+                    questionPayload && questionPayload.question_revision,
+                    examId
+                ) || normalizedNextRevision;
+                if (questionPayload && typeof questionPayload === 'object') {
+                    questionPayload.question_revision = serializeQuestionRevision(appliedRevision, examId);
+                }
+
+                resetQuestionDataState();
+                clearPendingRevisionSafeAnswerRestoreState();
+                setQuestionRevision(appliedRevision, examId);
+                state.navQuestionFilter = preservedNavQuestionFilter;
+                applyQuestionsResponse(questionPayload, {
+                    overwriteExisting: true,
+                    preserveActiveWindow: false
+                });
+                state.changedQuestionLookup = buildChangedQuestionLookup(
+                    previousQuestionManifestById,
+                    state.questionManifestById,
+                    preservedChangedQuestionLookup
+                );
+
+                if (!getQuestionCount()) {
+                    throw new Error('Belum ada soal pada exam ini.');
+                }
+
+                initializeSubmittedPayloadCache();
+                applyAttemptUiState(attemptUiSnapshot, attemptId);
+                state.navQuestionFilter = preservedNavQuestionFilter;
+                restoreRevisionSafeLocalAnswers(preservedAnswers, {
+                    deferMissing: true
+                });
+                pruneQuestionScopedState(validAttemptQuestionIds());
+                state.currentIndex = clampQuestionIndex(attemptUiSnapshot.current_index);
+
+                await ensureQuestionWindowForIndex(state.currentIndex, {
+                    examId: examId,
+                    attemptId: attemptId,
+                    includeExisting: 1,
+                    limit: QUESTION_WINDOW_SIZE
+                });
+
+                pruneQuestionScopedState(validAttemptQuestionIds());
+                initializeSubmittedPayloadCache();
+                var queuedRestoredAnswerCount = queueLoadedQuestionAnswersForFlush();
+
+                persistCurrentAttemptUiStateLocally();
+                persistCurrentQuestionCacheLocally();
+                syncAttemptUiStateSignatureToCurrentState();
+                scheduleAttemptUiStateSync(ATTEMPT_UI_STATE_SYNC_DELAY_MS);
+                if (queuedRestoredAnswerCount > 0) {
+                    scheduleAnswerBatchFlush(700);
+                }
+
+                state.busy = false;
+                state.notice = getChangedQuestionCount() > 0
+                    ? 'Perubahan soal terdeteksi. Nomor merah menandakan soal yang berubah.'
+                    : '';
+                if (typeof state.error === 'string' && state.error.indexOf('Autosave') !== 0) {
+                    state.error = '';
+                }
+                render();
+                resetQuestionPrefetchIdleTimer();
+                return questionPayload;
+            } catch (error) {
+                if (
+                    refreshGeneration === questionDataGeneration
+                    && state.stage === 'exam'
+                    && Number(state.attemptId) === attemptId
+                    && Number(state.selectedExamId) === examId
+                ) {
+                    restoreQuestionAutoSaveState(preservedAutoSaveState);
+                    state.busy = false;
+                    state.notice = 'Perubahan soal terdeteksi. Sinkronisasi akan dicoba lagi.';
+                    render();
+                    if (pendingAnswerBatchOrder.length > 0) {
+                        scheduleAnswerBatchFlush(300);
+                    }
+                    resetQuestionPrefetchIdleTimer();
+                }
+                return null;
+            } finally {
+                questionRevisionRefreshInFlight = null;
+            }
+        })();
+
+        return questionRevisionRefreshInFlight;
     }
 
     function clearAttemptUiStateSyncTimer() {
@@ -3151,6 +3673,15 @@
         return '';
     }
 
+    function getConfiguredSchoolName() {
+        var value = String(config.schoolName || config.siteName || '').trim();
+        return value || 'CBT Exam';
+    }
+
+    function getConfiguredSchoolLogoUrl() {
+        return normalizePhotoUrl(config.schoolLogoUrl || '');
+    }
+
     function getCurrentUserName() {
         return state.user && state.user.display_name
             ? String(state.user.display_name)
@@ -3186,6 +3717,19 @@
         html = html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
         html = html.replace(/\son\w+="[^"]*"/gi, '');
         html = html.replace(/\son\w+='[^']*'/gi, '');
+        html = html.replace(/\r\n?/g, '\n');
+        // TinyMCE/WordPress often stores blank lines as empty paragraphs.
+        // Remove those wrappers so manual newlines don't look overly spaced.
+        html = html.replace(/<p\b[^>]*>\s*(?:&nbsp;|&#160;|<br\s*\/?>)*\s*<\/p>/gi, '');
+
+        var hasExplicitLineBreakMarkup = /<(?:br|p|div|table|thead|tbody|tfoot|tr|td|th|ul|ol|li|blockquote|pre|figure|figcaption|h[1-6]|hr)\b/i.test(html);
+        if (!hasExplicitLineBreakMarkup && html.indexOf('\n') >= 0) {
+            // Import/textarea content may store each visual line as double newlines.
+            // Collapse repeated blank lines so one "Enter" does not look too far apart.
+            html = html.replace(/\n\s*\n+/g, '\n');
+            html = html.replace(/\n/g, '<br />');
+        }
+
         return html;
     }
 
@@ -3273,6 +3817,9 @@
         if (state.error) {
             return '<div class="cbt-alert cbt-alert-error">' + escapeHtml(state.error) + '</div>';
         }
+        if (state.notice) {
+            return '<div class="cbt-alert cbt-alert-warning">' + escapeHtml(state.notice) + '</div>';
+        }
         if (state.success) {
             return '<div class="cbt-alert cbt-alert-success">' + escapeHtml(state.success) + '</div>';
         }
@@ -3281,6 +3828,7 @@
 
     function clearMessages() {
         state.error = '';
+        state.notice = '';
         state.success = '';
     }
 
@@ -3347,6 +3895,170 @@
                 text: String(item && item.text ? item.text : '')
             };
         });
+    }
+
+    function findQuestionOptionById(question, optionId) {
+        var safeOptionId = Number(optionId) || 0;
+        if (safeOptionId <= 0 || !question || !Array.isArray(question.options)) {
+            return null;
+        }
+
+        for (var index = 0; index < question.options.length; index++) {
+            var option = question.options[index];
+            if (Number(option && option.id) === safeOptionId) {
+                return option;
+            }
+        }
+
+        return null;
+    }
+
+    function findQuestionOptionByKey(question, optionKey) {
+        var normalizedKey = String(optionKey || '').trim().toUpperCase();
+        if (normalizedKey === '' || !question || !Array.isArray(question.options)) {
+            return null;
+        }
+
+        for (var index = 0; index < question.options.length; index++) {
+            var option = question.options[index];
+            if (String(questionOptionKey(option, index) || '').trim().toUpperCase() === normalizedKey) {
+                return option;
+            }
+        }
+
+        return null;
+    }
+
+    function findQuestionOptionKeyById(question, optionId) {
+        var safeOptionId = Number(optionId) || 0;
+        if (safeOptionId <= 0 || !question || !Array.isArray(question.options)) {
+            return '';
+        }
+
+        for (var index = 0; index < question.options.length; index++) {
+            var option = question.options[index];
+            if (Number(option && option.id) === safeOptionId) {
+                return String(questionOptionKey(option, index) || '').trim().toUpperCase();
+            }
+        }
+
+        return '';
+    }
+
+    function normalizeAnswerValueForQuestion(question, rawAnswer, options) {
+        options = options || {};
+
+        if (!question) {
+            return {
+                hasValue: false,
+                value: null
+            };
+        }
+
+        var preserveText = !!options.preserveText;
+        var questionType = String(question.question_type || '');
+
+        if (questionType === 'multiple_choice' || questionType === 'true_false') {
+            var selectedId = Number(rawAnswer) || 0;
+            var selectedOption = findQuestionOptionById(question, selectedId);
+            return {
+                hasValue: !!selectedOption,
+                value: selectedOption ? Number(selectedOption.id) || 0 : null
+            };
+        }
+
+        if (questionType === 'multiple_answer') {
+            if (!Array.isArray(rawAnswer)) {
+                return {
+                    hasValue: false,
+                    value: null
+                };
+            }
+
+            var selectedOptionIds = [];
+            var seenOptionIds = {};
+            rawAnswer.forEach(function (item) {
+                var option = findQuestionOptionById(question, item);
+                var optionId = Number(option && option.id) || 0;
+                if (optionId <= 0 || seenOptionIds[optionId]) {
+                    return;
+                }
+                seenOptionIds[optionId] = true;
+                selectedOptionIds.push(optionId);
+            });
+
+            return {
+                hasValue: selectedOptionIds.length > 0,
+                value: selectedOptionIds.length ? selectedOptionIds : null
+            };
+        }
+
+        if (questionType === 'true_false_matrix') {
+            var matrixValue = normalizeTrueFalseMatrixAnswer(rawAnswer);
+            var validMatrixKeys = getTrueFalseMatrixItems(question).reduce(function (accumulator, item) {
+                accumulator[String(item.key || '').trim()] = true;
+                return accumulator;
+            }, {});
+            var filteredMatrixValue = Object.keys(matrixValue).reduce(function (accumulator, key) {
+                if (!Object.keys(validMatrixKeys).length || validMatrixKeys[key]) {
+                    accumulator[key] = matrixValue[key];
+                }
+                return accumulator;
+            }, {});
+
+            return {
+                hasValue: Object.keys(filteredMatrixValue).length > 0,
+                value: Object.keys(filteredMatrixValue).length ? filteredMatrixValue : null
+            };
+        }
+
+        if (questionType === 'short_answer') {
+            if (!rawAnswer || typeof rawAnswer !== 'object' || Array.isArray(rawAnswer)) {
+                return {
+                    hasValue: false,
+                    value: null
+                };
+            }
+
+            var allowedKeys = getShortAnswerKeys(question).reduce(function (accumulator, key) {
+                accumulator[String(key || '').trim().toUpperCase()] = true;
+                return accumulator;
+            }, {});
+            var shortAnswerValue = Object.keys(rawAnswer).reduce(function (accumulator, key) {
+                var normalizedKey = String(key || '').trim().toUpperCase();
+                if (normalizedKey === '' || !allowedKeys[normalizedKey]) {
+                    return accumulator;
+                }
+
+                var nextValue = rawAnswer[key] === undefined || rawAnswer[key] === null
+                    ? ''
+                    : String(rawAnswer[key]);
+                if (nextValue.trim() === '') {
+                    return accumulator;
+                }
+
+                accumulator[normalizedKey] = preserveText ? nextValue : nextValue.trim();
+                return accumulator;
+            }, {});
+
+            return {
+                hasValue: Object.keys(shortAnswerValue).length > 0,
+                value: Object.keys(shortAnswerValue).length ? shortAnswerValue : null
+            };
+        }
+
+        var textValue = rawAnswer === undefined || rawAnswer === null ? '' : String(rawAnswer);
+        if (textValue.trim() === '') {
+            return {
+                hasValue: false,
+                value: null
+            };
+        }
+
+        return {
+            hasValue: true,
+            value: preserveText ? textValue : textValue.trim()
+        };
     }
 
     function normalizeTrueFalseMatrixAnswer(answer) {
@@ -3537,6 +4249,237 @@
             return false;
         }
         return !!state.doubtful[question.id];
+    }
+
+    function isQuestionChanged(question) {
+        if (!question) {
+            return false;
+        }
+        return !!(state.changedQuestionLookup && state.changedQuestionLookup[question.id]);
+    }
+
+    function captureRevisionSafeAnswerForQuestion(questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        if (safeQuestionId <= 0 || !Object.prototype.hasOwnProperty.call(state.answers, safeQuestionId)) {
+            return null;
+        }
+
+        var question = getQuestionById(safeQuestionId);
+        if (!question) {
+            return null;
+        }
+
+        var answer = state.answers[safeQuestionId];
+        var questionType = String(question.question_type || '');
+        var questionUpdatedAt = String(question && question.updated_at ? question.updated_at : '').trim();
+
+        if (questionType === 'multiple_choice' || questionType === 'true_false') {
+            var singleOptionKey = findQuestionOptionKeyById(question, answer);
+            if (singleOptionKey === '') {
+                return null;
+            }
+            return {
+                kind: 'option_single',
+                option_key: singleOptionKey,
+                question_updated_at: questionUpdatedAt
+            };
+        }
+
+        if (questionType === 'multiple_answer') {
+            if (!Array.isArray(answer)) {
+                return null;
+            }
+
+            var selectedOptionKeys = [];
+            var seenOptionKeys = {};
+            answer.forEach(function (item) {
+                var optionKey = findQuestionOptionKeyById(question, item);
+                if (optionKey === '' || seenOptionKeys[optionKey]) {
+                    return;
+                }
+                seenOptionKeys[optionKey] = true;
+                selectedOptionKeys.push(optionKey);
+            });
+
+            if (!selectedOptionKeys.length) {
+                return null;
+            }
+
+            return {
+                kind: 'option_multi',
+                option_keys: selectedOptionKeys,
+                question_updated_at: questionUpdatedAt
+            };
+        }
+
+        if (questionType === 'true_false_matrix') {
+            var normalizedMatrixAnswer = normalizeAnswerValueForQuestion(question, answer, {
+                preserveText: true
+            });
+            if (!normalizedMatrixAnswer.hasValue) {
+                return null;
+            }
+
+            return {
+                kind: 'true_false_matrix',
+                value: normalizedMatrixAnswer.value,
+                question_updated_at: questionUpdatedAt
+            };
+        }
+
+        if (questionType === 'short_answer') {
+            var normalizedShortAnswer = normalizeAnswerValueForQuestion(question, answer, {
+                preserveText: true
+            });
+            if (!normalizedShortAnswer.hasValue) {
+                return null;
+            }
+
+            return {
+                kind: 'short_answer',
+                value: normalizedShortAnswer.value,
+                question_updated_at: questionUpdatedAt
+            };
+        }
+
+        var normalizedTextAnswer = normalizeAnswerValueForQuestion(question, answer, {
+            preserveText: true
+        });
+        if (!normalizedTextAnswer.hasValue) {
+            return null;
+        }
+
+        return {
+            kind: 'text',
+            value: normalizedTextAnswer.value,
+            question_updated_at: questionUpdatedAt
+        };
+    }
+
+    function captureRevisionSafeLocalAnswers() {
+        return Object.keys(state.answers || {}).reduce(function (accumulator, key) {
+            var questionId = Number(key) || 0;
+            var preservedAnswer = captureRevisionSafeAnswerForQuestion(questionId);
+            if (questionId > 0 && preservedAnswer) {
+                accumulator[questionId] = preservedAnswer;
+            }
+            return accumulator;
+        }, {});
+    }
+
+    function restoreRevisionSafeAnswerForQuestion(question, preservedAnswer) {
+        var questionId = Number(question && question.id) || 0;
+        if (questionId <= 0 || !preservedAnswer || typeof preservedAnswer !== 'object') {
+            return false;
+        }
+
+        var preservedUpdatedAt = String(preservedAnswer.question_updated_at || '').trim();
+        var currentUpdatedAt = String(question && question.updated_at ? question.updated_at : '').trim();
+        if (preservedUpdatedAt !== '' && currentUpdatedAt !== '' && preservedUpdatedAt !== currentUpdatedAt) {
+            delete state.answers[questionId];
+            delete state.answeredQuestionLookup[questionId];
+            return false;
+        }
+
+        var nextValue = null;
+        var hasValue = false;
+        var kind = String(preservedAnswer.kind || '');
+
+        if (kind === 'option_single') {
+            var selectedOption = findQuestionOptionByKey(question, preservedAnswer.option_key);
+            nextValue = Number(selectedOption && selectedOption.id) || 0;
+            hasValue = nextValue > 0;
+        } else if (kind === 'option_multi') {
+            var selectedOptionIds = [];
+            var seenOptionIds = {};
+            var optionKeys = Array.isArray(preservedAnswer.option_keys) ? preservedAnswer.option_keys : [];
+            optionKeys.forEach(function (item) {
+                var option = findQuestionOptionByKey(question, item);
+                var optionId = Number(option && option.id) || 0;
+                if (optionId <= 0 || seenOptionIds[optionId]) {
+                    return;
+                }
+                seenOptionIds[optionId] = true;
+                selectedOptionIds.push(optionId);
+            });
+            nextValue = selectedOptionIds;
+            hasValue = selectedOptionIds.length > 0;
+        } else if (kind === 'true_false_matrix' || kind === 'short_answer' || kind === 'text') {
+            var normalizedAnswer = normalizeAnswerValueForQuestion(
+                question,
+                preservedAnswer.value,
+                {
+                    preserveText: true
+                }
+            );
+            nextValue = normalizedAnswer.value;
+            hasValue = normalizedAnswer.hasValue;
+        }
+
+        if (!hasValue) {
+            delete state.answers[questionId];
+            delete state.answeredQuestionLookup[questionId];
+            return false;
+        }
+
+        state.answers[questionId] = nextValue;
+        state.answeredQuestionLookup[questionId] = true;
+        return true;
+    }
+
+    function restoreRevisionSafeLocalAnswers(preservedAnswers, options) {
+        options = options || {};
+        var shouldDeferMissingQuestions = options.deferMissing !== false;
+        var restoredQuestionIds = [];
+
+        if (!preservedAnswers || typeof preservedAnswers !== 'object') {
+            return restoredQuestionIds;
+        }
+
+        Object.keys(preservedAnswers).forEach(function (key) {
+            var questionId = Number(key) || 0;
+            if (questionId <= 0) {
+                return;
+            }
+
+            var question = getQuestionById(questionId);
+            if (!question) {
+                if (shouldDeferMissingQuestions) {
+                    pendingRevisionSafeAnswerRestoreByQuestion[questionId] = preservedAnswers[key];
+                }
+                return;
+            }
+
+            if (restoreRevisionSafeAnswerForQuestion(question, preservedAnswers[key])) {
+                restoredQuestionIds.push(questionId);
+            }
+
+            delete pendingRevisionSafeAnswerRestoreByQuestion[questionId];
+        });
+
+        return restoredQuestionIds;
+    }
+
+    function applyPendingRevisionSafeAnswersForLoadedQuestions(questions) {
+        if (!Array.isArray(questions) || !questions.length) {
+            return [];
+        }
+
+        var restoredQuestionIds = [];
+        questions.forEach(function (question) {
+            var questionId = Number(question && question.id) || 0;
+            if (questionId <= 0 || !Object.prototype.hasOwnProperty.call(pendingRevisionSafeAnswerRestoreByQuestion, questionId)) {
+                return;
+            }
+
+            if (restoreRevisionSafeAnswerForQuestion(question, pendingRevisionSafeAnswerRestoreByQuestion[questionId])) {
+                restoredQuestionIds.push(questionId);
+            }
+
+            delete pendingRevisionSafeAnswerRestoreByQuestion[questionId];
+        });
+
+        return restoredQuestionIds;
     }
 
     function normalizeNavigationQuestionFilter(filter) {
@@ -3922,6 +4865,23 @@
         return queuedCount;
     }
 
+    function queueQuestionAnswersByIds(questionIds) {
+        if (!Array.isArray(questionIds) || !questionIds.length) {
+            return 0;
+        }
+
+        var queuedCount = 0;
+        questionIds.forEach(function (item) {
+            var questionId = Number(item) || 0;
+            var question = getQuestionById(questionId);
+            if (question && queueQuestionAnswer(question)) {
+                queuedCount += 1;
+            }
+        });
+
+        return queuedCount;
+    }
+
     function findQuestionById(questionId) {
         return getQuestionById(questionId);
     }
@@ -3948,6 +4908,10 @@
     }
 
     function scheduleAnswerBatchFlush(delayMs) {
+        if (isQuestionRevisionRefreshActive()) {
+            return;
+        }
+
         var waitMs = Math.max(0, Number(delayMs) || 0);
         var nextDueAt = Date.now() + waitMs;
         if (answerBatchFlushTimer && answerBatchFlushDueAt > 0 && answerBatchFlushDueAt <= nextDueAt) {
@@ -4033,7 +4997,13 @@
         }
     }
 
-    function applySubmittedBatchItems(items, responseItems) {
+    function applySubmittedBatchItems(items, responseItems, options) {
+        options = options || {};
+        var requestGeneration = Number(options.questionDataGeneration);
+        if (Number.isFinite(requestGeneration) && requestGeneration !== questionDataGeneration) {
+            return;
+        }
+
         var responseByQuestion = {};
         if (Array.isArray(responseItems)) {
             responseItems.forEach(function (responseItem) {
@@ -4101,6 +5071,7 @@
 
     async function sendAnswerBatch(items, options) {
         options = options || {};
+        var requestGeneration = Number(options.questionDataGeneration);
 
         try {
             var batchResponse = await api('submit_answers_batch', {
@@ -4117,8 +5088,14 @@
                 }
             });
 
-            applySubmittedBatchItems(items, batchResponse && Array.isArray(batchResponse.items) ? batchResponse.items : []);
-            if (typeof state.error === 'string' && state.error.indexOf('Autosave') === 0) {
+            applySubmittedBatchItems(items, batchResponse && Array.isArray(batchResponse.items) ? batchResponse.items : [], {
+                questionDataGeneration: requestGeneration
+            });
+            if (
+                requestGeneration === questionDataGeneration &&
+                typeof state.error === 'string' &&
+                state.error.indexOf('Autosave') === 0
+            ) {
                 state.error = '';
             }
             return batchResponse;
@@ -4127,11 +5104,17 @@
 
             try {
                 var legacyResponse = await submitLegacyAnswerBatch(items, options);
-                applySubmittedBatchItems(items, legacyResponse.items || []);
-                state.error = 'Autosave batch melambat. Sistem memakai mode aman sementara.';
+                applySubmittedBatchItems(items, legacyResponse.items || [], {
+                    questionDataGeneration: requestGeneration
+                });
+                if (requestGeneration === questionDataGeneration) {
+                    state.error = 'Autosave batch melambat. Sistem memakai mode aman sementara.';
+                }
                 return legacyResponse;
             } catch (legacyError) {
-                requeuePendingAnswerBatchItems(items);
+                if (requestGeneration === questionDataGeneration) {
+                    requeuePendingAnswerBatchItems(items);
+                }
                 throw (legacyError instanceof Error) ? legacyError : batchError;
             }
         }
@@ -4141,10 +5124,24 @@
         options = options || {};
         var keepalive = !!options.keepalive;
         var flushAll = !!options.flushAll;
+        var requestGeneration = Number.isFinite(Number(options.questionDataGeneration))
+            ? Number(options.questionDataGeneration)
+            : questionDataGeneration;
 
         clearAnswerBatchFlushTimer();
 
         while (true) {
+            if (requestGeneration !== questionDataGeneration) {
+                return {
+                    attempt_id: state.attemptId,
+                    accepted_count: 0,
+                    buffered: 0,
+                    flushed: 0,
+                    pending_count: pendingAnswerBatchOrder.length,
+                    items: []
+                };
+            }
+
             if (answerBatchFlushInFlight) {
                 await answerBatchFlushInFlight;
                 if (!flushAll || pendingAnswerBatchOrder.length <= 0) {
@@ -4172,15 +5169,18 @@
             }
 
             answerBatchFlushInFlight = sendAnswerBatch(items, {
-                keepalive: keepalive
+                keepalive: keepalive,
+                questionDataGeneration: requestGeneration
             });
 
             var result;
             try {
                 result = await answerBatchFlushInFlight;
             } catch (error) {
-                state.error = error instanceof Error ? ('Autosave gagal: ' + error.message) : 'Autosave gagal. Coba cek jaringan.';
-                render();
+                if (requestGeneration === questionDataGeneration) {
+                    state.error = error instanceof Error ? ('Autosave gagal: ' + error.message) : 'Autosave gagal. Coba cek jaringan.';
+                    render();
+                }
                 throw error;
             } finally {
                 answerBatchFlushInFlight = null;
@@ -4197,7 +5197,7 @@
 
     function scheduleAutoSave(questionId, delayMs) {
         var qid = Number(questionId) || 0;
-        if (qid <= 0 || state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
+        if (qid <= 0 || state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || isQuestionRevisionRefreshActive()) {
             return;
         }
 
@@ -4216,7 +5216,17 @@
     async function runAutoSave(questionId, options) {
         options = options || {};
         var qid = Number(questionId) || 0;
-        if (qid <= 0 || state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
+        var requestGeneration = Number.isFinite(Number(options.questionDataGeneration))
+            ? Number(options.questionDataGeneration)
+            : questionDataGeneration;
+        if (
+            qid <= 0
+            || state.stage !== 'exam'
+            || state.attemptId <= 0
+            || state.isFinishing
+            || isQuestionRevisionRefreshActive()
+            || requestGeneration !== questionDataGeneration
+        ) {
             return;
         }
 
@@ -4236,16 +5246,24 @@
             if (options.immediate) {
                 await flushPendingAnswerBatch({
                     flushAll: true,
-                    keepalive: !!options.keepalive
+                    keepalive: !!options.keepalive,
+                    questionDataGeneration: requestGeneration
                 });
             } else if (queued) {
                 scheduleAnswerBatchFlush(150);
             }
 
-            if (typeof state.error === 'string' && state.error.indexOf('Autosave gagal') === 0) {
+            if (
+                requestGeneration === questionDataGeneration &&
+                typeof state.error === 'string' &&
+                state.error.indexOf('Autosave gagal') === 0
+            ) {
                 state.error = '';
             }
         } catch (error) {
+            if (requestGeneration !== questionDataGeneration) {
+                return;
+            }
             state.error = error instanceof Error ? ('Autosave gagal: ' + error.message) : 'Autosave gagal. Coba cek jaringan.';
             markAutoSaveCongested();
             if (!options.immediate) {
@@ -4332,23 +5350,13 @@
         clearQuestionPrefetchRuntimeState();
         clearAttemptUiStateSyncTimer();
         clearQuestionCachePersistTimer();
+        clearPendingRevisionSafeAnswerRestoreState();
+        questionRevisionRefreshInFlight = null;
+        bumpQuestionDataGeneration();
         lastAttemptUiStateSyncSignature = '';
         state.examToken = '';
         state.attemptId = 0;
-        state.questions = [];
-        state.questionOrderIds = [];
-        state.questionManifest = [];
-        state.questionManifestById = {};
-        state.questionPayloadById = {};
-        state.answeredQuestionLookup = {};
-        state.loadedQuestionWindowOffsets = {};
-        state.windowOffset = 0;
-        state.windowLimit = 0;
-        state.totalQuestions = 0;
-        state.answers = {};
-        state.doubtful = {};
-        state.currentIndex = 0;
-        state.navQuestionFilter = NAV_QUESTION_FILTER_ALL;
+        resetQuestionDataState();
         state.remainingSeconds = 0;
         state.isFinishing = false;
         state.result = null;
@@ -4377,9 +5385,13 @@
         clearQuestionCachePersistTimer();
         attemptUiStateSyncInFlight = null;
         lastAttemptUiStateSyncSignature = '';
+        clearPendingRevisionSafeAnswerRestoreState();
+        questionRevisionRefreshInFlight = null;
+        bumpQuestionDataGeneration();
         state.stage = typeof options.stage === 'string' && options.stage !== '' ? options.stage : 'login';
         state.busy = false;
         state.error = typeof options.error === 'string' ? options.error : '';
+        state.notice = '';
         state.success = typeof options.success === 'string' ? options.success : '';
         state.loginIdentifier = '';
         state.loginPassword = '';
@@ -4390,20 +5402,7 @@
         state.selectedExamId = 0;
         state.examToken = '';
         state.attemptId = 0;
-        state.questions = [];
-        state.questionOrderIds = [];
-        state.questionManifest = [];
-        state.questionManifestById = {};
-        state.questionPayloadById = {};
-        state.answeredQuestionLookup = {};
-        state.loadedQuestionWindowOffsets = {};
-        state.windowOffset = 0;
-        state.windowLimit = 0;
-        state.totalQuestions = 0;
-        state.answers = {};
-        state.doubtful = {};
-        state.currentIndex = 0;
-        state.navQuestionFilter = NAV_QUESTION_FILTER_ALL;
+        resetQuestionDataState();
         state.remainingSeconds = 0;
         state.timerId = 0;
         state.isFinishing = false;
@@ -4612,6 +5611,9 @@
         }
         clearQuestionPrefetchRuntimeState();
         clearAttemptUiStateSyncTimer();
+        clearPendingRevisionSafeAnswerRestoreState();
+        questionRevisionRefreshInFlight = null;
+        bumpQuestionDataGeneration();
         lastAttemptUiStateSyncSignature = '';
 
         var durationMinutes = Number(
@@ -4634,21 +5636,10 @@
         if (examId > 0) {
             state.selectedExamId = examId;
         }
-
-        state.questions = [];
-        state.questionOrderIds = [];
-        state.questionManifest = [];
-        state.questionManifestById = {};
-        state.questionPayloadById = {};
-        state.answeredQuestionLookup = {};
-        state.loadedQuestionWindowOffsets = {};
-        state.windowOffset = 0;
-        state.windowLimit = 0;
-        state.totalQuestions = 0;
-        state.answers = {};
-        state.doubtful = {};
-        state.currentIndex = 0;
-        state.navQuestionFilter = NAV_QUESTION_FILTER_ALL;
+        setQuestionRevision(startPayload && startPayload.question_revision, examId);
+        resetQuestionDataState({
+            preserveQuestionRevision: true
+        });
 
         var attemptUiStatePayload = null;
         var attemptUiStateRequestFailed = false;
@@ -4667,6 +5658,17 @@
 
         var localAttemptUiState = readPersistedAttemptUiState(state.attemptId);
         var restoredQuestionCacheSnapshot = await readPersistedQuestionCache(state.attemptId);
+        if (
+            restoredQuestionCacheSnapshot &&
+            !questionRevisionEquals(
+                restoredQuestionCacheSnapshot.questionRevision,
+                state.questionRevision,
+                examId
+            )
+        ) {
+            clearPersistedQuestionCache(state.attemptId);
+            restoredQuestionCacheSnapshot = null;
+        }
         var preferredAttemptUiState = choosePreferredAttemptUiState(
             attemptUiStateRequestFailed ? null : attemptUiStatePayload,
             localAttemptUiState,
@@ -4686,7 +5688,8 @@
                 attemptId: state.attemptId,
                 examId: examId,
                 preferredIndex: requestedResumeIndex,
-                windowSize: QUESTION_WINDOW_SIZE
+                windowSize: QUESTION_WINDOW_SIZE,
+                expectedQuestionRevision: state.questionRevision
             }
         );
         var resumeQuestionId = getQuestionIdAtIndex(requestedResumeIndex);
@@ -4730,6 +5733,7 @@
 
         state.stage = 'exam';
         state.error = '';
+        state.notice = '';
         state.success = '';
         persistAuthSession();
         persistCurrentAttemptUiStateLocally();
@@ -5309,6 +6313,11 @@
         var userRole = getCurrentUserRole();
         var userPhoto = getCurrentUserPhoto();
         var userInitial = getUserInitial(userName);
+        var schoolName = getConfiguredSchoolName();
+        var schoolLogoUrl = getConfiguredSchoolLogoUrl();
+        var brandBadge = schoolLogoUrl !== ''
+            ? '<img class="cbt-brand-badge-logo" src="' + escapeHtml(schoolLogoUrl) + '" alt="' + escapeHtml(schoolName) + '" loading="lazy" decoding="async" />'
+            : 'CBT';
         var userChip = [
             '<span class="cbt-chip cbt-user-chip">',
             userPhoto !== ''
@@ -5340,8 +6349,8 @@
         return [
             '<header class="cbt-topbar">',
             '<div class="cbt-brand">',
-            '<span class="cbt-brand-badge">CBT</span>',
-            '<div><h2>' + escapeHtml(config.siteName || 'CBT Exam') + '</h2><small>' + escapeHtml(stageLabel) + '</small></div>',
+            '<span class="cbt-brand-badge">' + brandBadge + '</span>',
+            '<div><h2>' + escapeHtml(schoolName) + '</h2><small>' + escapeHtml(stageLabel) + '</small></div>',
             '</div>',
             '<div class="cbt-topbar-right">',
             renderThemeToggleControl(),
@@ -5356,17 +6365,28 @@
     }
 
     function renderLoginStage() {
-        var siteName = escapeHtml(config.siteName || 'SMK Negeri 1 Tanjungpandan CBT');
+        var schoolNameRaw = getConfiguredSchoolName();
+        var schoolName = escapeHtml(schoolNameRaw);
+        var schoolLogoUrl = getConfiguredSchoolLogoUrl();
+        var heroLogoBlock = schoolLogoUrl !== ''
+            ? '<div class="cbt-login-hero-logo-wrap"><img class="cbt-login-hero-logo" src="' + escapeHtml(schoolLogoUrl) + '" alt="' + schoolName + '" loading="lazy" decoding="async" /></div>'
+            : '';
+        var mobilePanelLogoBlock = schoolLogoUrl !== ''
+            ? '<div class="cbt-login-panel-brand-mobile"><img class="cbt-login-panel-brand-mobile-logo" src="' + escapeHtml(schoolLogoUrl) + '" alt="' + schoolName + '" loading="lazy" decoding="async" /></div>'
+            : '';
         var passwordType = state.loginPasswordVisible ? 'text' : 'password';
         var loginButtonClass = state.busy ? 'cbt-button cbt-button-primary cbt-button-login is-loading' : 'cbt-button cbt-button-primary cbt-button-login';
-        var loginButtonLabel = state.busy ? 'Memverifikasi...' : 'Masuk Sekarang';
+        var loginButtonLabel = state.busy ? 'Memverifikasi...' : 'LOGIN';
         var togglePasswordLabel = state.loginPasswordVisible ? 'Sembunyikan' : 'Tampilkan';
 
         return [
             '<section class="cbt-login-shell">',
             '<div class="cbt-login-hero">',
             '<p class="cbt-login-kicker">Portal Ujian Berbasis Komputer</p>',
-            '<h1>' + siteName + '</h1>',
+            '<div class="cbt-login-hero-heading">',
+            heroLogoBlock,
+            '<h1>' + schoolName + '</h1>',
+            '</div>',
             '<p class="cbt-login-description">Platform ujian online untuk siswa dan guru. Masuk dengan akun terdaftar untuk melanjutkan ke daftar exam.</p>',
             '<div class="cbt-login-steps">',
             '<article class="cbt-login-step"><span>1</span><div><strong>Masuk</strong><small>Email/Username/NISN dan password.</small></div></article>',
@@ -5376,7 +6396,7 @@
             '</div>',
             '<div class="cbt-login-panel">',
             '<h3>Masuk ke CBT</h3>',
-            '<p class="cbt-subtitle">Identifier bisa berupa email, username, atau NISN.</p>',
+            mobilePanelLogoBlock,
             '<form id="cbt-login-form" class="cbt-form-grid">',
             '<div class="cbt-field"><label for="cbt-identifier">Email / Username / NISN</label><input id="cbt-identifier" class="cbt-input" name="identifier" autocomplete="username" value="' + escapeHtml(state.loginIdentifier) + '" placeholder="Contoh: 231045 atau siswa@smkn1tpd.sch.id" required /></div>',
             '<div class="cbt-field"><label for="cbt-password">Password</label><div class="cbt-password-field"><input id="cbt-password" class="cbt-input" name="password" type="' + passwordType + '" autocomplete="current-password" value="' + escapeHtml(state.loginPassword) + '" placeholder="Masukkan password akun" required /><button class="cbt-password-toggle' + (state.loginPasswordVisible ? ' is-visible' : '') + '" data-action="toggle-password" type="button" aria-label="' + togglePasswordLabel + '" title="' + togglePasswordLabel + '"' + (state.busy ? ' disabled' : '') + '><span class="cbt-password-toggle-icon" aria-hidden="true"><span class="cbt-password-toggle-icon-eye"><svg viewBox="0 0 24 24" focusable="false"><path d="M1.5 12S5.5 5.5 12 5.5 22.5 12 22.5 12 18.5 18.5 12 18.5 1.5 12 1.5 12Z"></path><circle cx="12" cy="12" r="3.2"></circle></svg></span><span class="cbt-password-toggle-icon-eye-off"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.2 3.2 20.8 20.8"></path><path d="M9.9 5.9A12.2 12.2 0 0 1 12 5.5c6.5 0 10.5 6.5 10.5 6.5a18.9 18.9 0 0 1-3.4 4.2"></path><path d="M6.4 8A18.3 18.3 0 0 0 1.5 12s4 6.5 10.5 6.5a11.6 11.6 0 0 0 4-.7"></path><path d="M14.3 14.3A3.2 3.2 0 0 1 9.7 9.7"></path></svg></span></span><span class="cbt-password-toggle-label">' + escapeHtml(togglePasswordLabel) + '</span></button></div></div>',
@@ -5677,7 +6697,9 @@
         var answeredPercentageWidth = Math.max(0, Math.min(100, answeredPercentage)).toFixed(2);
         var doubtfulCount = progressSummary.doubtfulQuestions;
         var unansweredCount = Math.max(0, totalQuestions - answeredCount);
+        var changedQuestionCount = getChangedQuestionCount();
         var currentQuestionIsDoubtful = isQuestionDoubtful(currentQuestion);
+        var currentQuestionIsChanged = isQuestionChanged(currentQuestion);
         var isLastQuestion = state.currentIndex >= (totalQuestions - 1);
         var currentQuestionTypeLabel = formatQuestionType(currentQuestion.question_type);
         var currentQuestionTypeCode = navigationQuestionTypeBadgeConfig(currentQuestion.question_type).code;
@@ -5709,12 +6731,19 @@
             if (isQuestionDoubtful(question)) {
                 classes.push('is-doubtful');
             }
+            if (isQuestionChanged(question)) {
+                classes.push('is-changed');
+            }
             if (entry.index === state.currentIndex) {
                 classes.push('is-current');
             }
             var answerBadge = renderNavigationAnswerBadges(question);
             var questionTypeBadge = renderNavigationQuestionTypeBadge(question);
-            return '<button type="button" class="' + classes.join(' ') + '" data-action="jump" data-index="' + escapeHtml(entry.index) + '"><span class="cbt-nav-number">' + escapeHtml(entry.index + 1) + '</span>' + questionTypeBadge + answerBadge + '</button>';
+            var buttonLabel = 'Soal ' + String(entry.index + 1);
+            if (isQuestionChanged(question)) {
+                buttonLabel += ', soal berubah';
+            }
+            return '<button type="button" class="' + classes.join(' ') + '" data-action="jump" data-index="' + escapeHtml(entry.index) + '" aria-label="' + escapeHtml(buttonLabel) + '" title="' + escapeHtml(buttonLabel) + '"><span class="cbt-nav-number">' + escapeHtml(entry.index + 1) + '</span>' + questionTypeBadge + answerBadge + '</button>';
         }).join('');
         var navGridClass = 'cbt-nav-grid' + (filteredNavigationEntries.length ? '' : ' is-empty');
         var navGridMarkup = filteredNavigationEntries.length
@@ -5760,7 +6789,7 @@
             '</div>',
             '</section>',
             '<div class="' + navGridClass + '">' + navGridMarkup + '</div>',
-            '<div class="cbt-legend"><span class="cbt-legend-item cbt-legend-item-current"><i class="cbt-dot cbt-dot-current"></i> Aktif</span><span class="cbt-legend-item cbt-legend-item-answered"><i class="cbt-dot cbt-dot-answered"></i> Terjawab</span><span class="cbt-legend-item cbt-legend-item-doubtful"><i class="cbt-dot cbt-dot-doubtful"></i> Ragu-ragu</span></div>',
+            '<div class="cbt-legend"><span class="cbt-legend-item cbt-legend-item-current"><i class="cbt-dot cbt-dot-current"></i> Aktif</span><span class="cbt-legend-item cbt-legend-item-answered"><i class="cbt-dot cbt-dot-answered"></i> Terjawab</span><span class="cbt-legend-item cbt-legend-item-doubtful"><i class="cbt-dot cbt-dot-doubtful"></i> Ragu-ragu</span>' + (changedQuestionCount > 0 ? '<span class="cbt-legend-item cbt-legend-item-changed"><i class="cbt-dot cbt-dot-changed"></i> Berubah</span>' : '') + '</div>',
             (isLastQuestion
                 ? ('<div class="cbt-actions cbt-side-actions-compact"><button class="cbt-button cbt-button-primary" data-action="collect" type="button"' + (state.busy || state.isFinishing ? ' disabled' : '') + '>Kumpulkan Jawaban</button></div>')
                 : ''),
@@ -5774,6 +6803,7 @@
             '<div class="cbt-chip cbt-chip-question-index" aria-label="Soal ' + escapeHtml(state.currentIndex + 1) + ' dari ' + escapeHtml(totalQuestions) + '"><span class="cbt-chip-mobile-icon" aria-hidden="true">#</span><span class="cbt-chip-label">Soal</span><span class="cbt-chip-value">' + escapeHtml(state.currentIndex + 1) + '/' + escapeHtml(totalQuestions) + '</span></div>',
             '<div class="cbt-chip cbt-chip-question-meta" title="' + escapeHtml(currentQuestionMetaLabel) + '" aria-label="' + escapeHtml(currentQuestionMetaLabel) + '"><span class="cbt-chip-mobile-meta" aria-hidden="true">' + escapeHtml(currentQuestionMetaCompact) + '</span><span class="cbt-chip-type">' + escapeHtml(currentQuestionTypeLabel) + '</span><span class="cbt-chip-separator" aria-hidden="true"></span><span class="cbt-chip-points">Poin ' + escapeHtml(currentQuestionPoints) + '</span></div>',
             renderQuestionPrefetchIndicator(),
+            (currentQuestionIsChanged ? '<div class="cbt-chip cbt-chip-danger">Soal berubah</div>' : ''),
             (currentQuestionIsDoubtful ? '<div class="cbt-chip cbt-chip-warning">Ragu-ragu</div>' : ''),
             renderQuestionFontControls(),
             '</div>',
@@ -6338,10 +7368,12 @@
             return '';
         }
 
+        var selectedExam = getSelectedExam();
         var userName = getCurrentUserName();
         var userKelas = state.user && state.user.kode_kelas ? String(state.user.kode_kelas) : '-';
         var userRuang = state.user && state.user.kode_ruang ? String(state.user.kode_ruang) : '-';
         var userAgama = state.user && state.user.agama ? String(state.user.agama) : '-';
+        var activeExamTitle = selectedExam && selectedExam.title ? String(selectedExam.title) : '-';
 
         return [
             '<div class="cbt-user-photo-modal-overlay" data-action="close-user-photo">',
@@ -6350,6 +7382,7 @@
             '<h3 id="cbt-user-photo-title">Foto Peserta</h3>',
             '<img class="cbt-user-photo-modal-image" src="' + escapeHtml(userPhoto) + '" alt="' + escapeHtml(userName) + '" loading="eager" decoding="sync" />',
             '<dl class="cbt-user-photo-modal-info">',
+            '<div class="cbt-user-photo-modal-row cbt-user-photo-modal-row-wide"><dt>Ujian Aktif</dt><dd>' + escapeHtml(activeExamTitle) + '</dd></div>',
             '<div class="cbt-user-photo-modal-row"><dt>Nama</dt><dd>' + escapeHtml(userName) + '</dd></div>',
             '<div class="cbt-user-photo-modal-row"><dt>Kelas</dt><dd>' + escapeHtml(userKelas) + '</dd></div>',
             '<div class="cbt-user-photo-modal-row"><dt>Ruangan</dt><dd>' + escapeHtml(userRuang) + '</dd></div>',
@@ -6486,6 +7519,55 @@
         });
     }
 
+    function fitLoginHeroSchoolName() {
+        if (state.stage !== 'login') {
+            return;
+        }
+
+        var titleNode = root.querySelector('.cbt-login-hero-heading h1');
+        if (!(titleNode instanceof HTMLElement)) {
+            return;
+        }
+
+        titleNode.style.removeProperty('font-size');
+
+        var computed = window.getComputedStyle(titleNode);
+        var baseFontSize = parseFloat(String(computed.fontSize || '0'));
+        if (!Number.isFinite(baseFontSize) || baseFontSize <= 0) {
+            return;
+        }
+
+        var lineHeight = parseFloat(String(computed.lineHeight || '0'));
+        if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
+            lineHeight = baseFontSize * 1.08;
+        }
+
+        var fitsInTwoLines = function () {
+            var currentComputed = window.getComputedStyle(titleNode);
+            var currentLineHeight = parseFloat(String(currentComputed.lineHeight || '0'));
+            if (!Number.isFinite(currentLineHeight) || currentLineHeight <= 0) {
+                var currentFontSize = parseFloat(String(currentComputed.fontSize || '0'));
+                currentLineHeight = (Number.isFinite(currentFontSize) && currentFontSize > 0) ? currentFontSize * 1.08 : lineHeight;
+            }
+            var allowedHeight = (currentLineHeight * 2) + 1;
+            return titleNode.scrollHeight <= allowedHeight;
+        };
+
+        if (fitsInTwoLines()) {
+            return;
+        }
+
+        var minFontSize = Math.max(20, Math.round(baseFontSize * 0.58));
+        var currentFontSize = Math.round(baseFontSize);
+        while (currentFontSize > minFontSize) {
+            currentFontSize -= 1;
+            titleNode.style.fontSize = String(currentFontSize) + 'px';
+            if (fitsInTwoLines()) {
+                return;
+            }
+        }
+    }
+
     function render() {
         var loadingMarkup = state.busy && state.stage !== 'exam' && state.stage !== 'login'
             ? '<div class="cbt-loading" role="status" aria-live="polite"><span class="cbt-loading-dot" aria-hidden="true"></span><span>Memproses...</span></div>'
@@ -6514,6 +7596,7 @@
         applyUiPreferences();
         syncBodyStageClass();
         updateTimerLabel();
+        fitLoginHeroSchoolName();
         scheduleNavigationGridLayout();
         updateQuestionPrefetchIndicator();
     }
@@ -6866,12 +7949,17 @@
         if (!(target instanceof HTMLElement)) {
             return;
         }
+        var targetAction = String(target.getAttribute('data-action') || '');
+
+        if (isQuestionRevisionRefreshActive() && targetAction.indexOf('answer-') === 0) {
+            return;
+        }
 
         if (state.stage === 'exam') {
             noteQuestionPrefetchActivity();
         }
 
-        if (target.getAttribute('data-action') === 'answer-single') {
+        if (targetAction === 'answer-single') {
             var singleQid = Number(target.getAttribute('data-qid')) || 0;
             var singleOptionId = Number(target.getAttribute('data-option-id')) || 0;
             if (singleQid > 0 && singleOptionId > 0) {
@@ -6885,7 +7973,7 @@
             return;
         }
 
-        if (target.getAttribute('data-action') === 'answer-multi') {
+        if (targetAction === 'answer-multi') {
             var multiQid = Number(target.getAttribute('data-qid')) || 0;
             var multiOptionId = Number(target.getAttribute('data-option-id')) || 0;
             if (multiQid <= 0 || multiOptionId <= 0) {
@@ -6917,7 +8005,7 @@
             return;
         }
 
-        if (target.getAttribute('data-action') === 'answer-tf-matrix') {
+        if (targetAction === 'answer-tf-matrix') {
             var matrixQid = Number(target.getAttribute('data-qid')) || 0;
             var matrixKey = String(target.getAttribute('data-key') || '').trim();
             var matrixValue = String(target.getAttribute('data-value') || '').trim().toLowerCase();
@@ -6941,12 +8029,15 @@
         if (!(target instanceof HTMLElement)) {
             return;
         }
+        var action = String(target.getAttribute('data-action') || '');
+
+        if (isQuestionRevisionRefreshActive() && action.indexOf('answer-') === 0) {
+            return;
+        }
 
         if (state.stage === 'exam') {
             noteQuestionPrefetchActivity();
         }
-
-        var action = target.getAttribute('data-action');
 
         if (target.getAttribute('name') === 'identifier') {
             if (target instanceof HTMLInputElement) {
@@ -7137,8 +8228,17 @@
             render();
             return;
         }
+        fitLoginHeroSchoolName();
         scheduleNavigationGridLayout();
     });
+
+    if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
+        document.fonts.ready.then(function () {
+            fitLoginHeroSchoolName();
+        }).catch(function () {
+            // Ignore font loading errors.
+        });
+    }
 
     function flushPendingAnswerBatchSilently(options) {
         if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {

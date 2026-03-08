@@ -461,6 +461,58 @@ class CBT_Cache
     /**
      * @return array<string,mixed>
      */
+    public static function get_namespace_registry_entry(string $namespace): array
+    {
+        $normalized_namespace = self::normalize_namespace($namespace);
+        $registry = self::load_registry();
+        $payload = (
+            $normalized_namespace !== ''
+            && isset($registry['namespaces'][$normalized_namespace])
+            && is_array($registry['namespaces'][$normalized_namespace])
+        )
+            ? $registry['namespaces'][$normalized_namespace]
+            : [];
+
+        return [
+            'namespace' => $normalized_namespace,
+            'version' => max(1, (int) ($payload['version'] ?? 1)),
+            'invalidated_at' => max(0, (int) ($payload['invalidated_at'] ?? 0)),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public static function get_exam_revision_meta(int $exam_id): array
+    {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0) {
+            return [
+                'exam_id' => 0,
+                'namespace' => '',
+                'version' => 0,
+                'invalidated_at' => 0,
+                'signature' => '',
+            ];
+        }
+
+        $namespace = self::namespace_exam($exam_id);
+        $entry = self::get_namespace_registry_entry($namespace);
+        $version = max(1, (int) ($entry['version'] ?? 1));
+        $invalidated_at = max(0, (int) ($entry['invalidated_at'] ?? 0));
+
+        return [
+            'exam_id' => $exam_id,
+            'namespace' => $namespace,
+            'version' => $version,
+            'invalidated_at' => $invalidated_at,
+            'signature' => $namespace . '|v:' . $version . '|t:' . $invalidated_at,
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
     public static function get_admin_overview(): array
     {
         $redis_config = self::redis_config_summary();

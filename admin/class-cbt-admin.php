@@ -10,6 +10,9 @@ class CBT_Admin
     private const REDIS_BOOTSTRAP_SLUG = 'redis-cache';
     private const REDIS_CONFIG_BLOCK_START = "/** BEGIN CBT Redis Object Cache */";
     private const REDIS_CONFIG_BLOCK_END = "/** END CBT Redis Object Cache */";
+    private const SETUP_BRANDING_OPTION = 'cbt_setup_branding';
+    private const USER_META_PLAIN_PASSWORD = 'cbt_plain_password';
+    private const DEFAULT_STUDENT_PHOTO_RELATIVE_PATH = 'public/images/default-student-avatar.svg';
 
     public static function init(): void
     {
@@ -27,8 +30,10 @@ class CBT_Admin
         add_action('admin_post_cbt_save_exam', [self::class, 'handle_save_exam']);
         add_action('admin_post_cbt_delete_exam', [self::class, 'handle_delete_exam']);
         add_action('admin_post_cbt_save_global_exam_token', [self::class, 'handle_save_global_exam_token']);
+        add_action('admin_post_cbt_save_setup_branding', [self::class, 'handle_save_setup_branding']);
         add_action('admin_post_cbt_cache_action', [self::class, 'handle_cache_action']);
         add_action('admin_post_cbt_reset_database', [self::class, 'handle_reset_database']);
+        add_action('admin_post_cbt_backfill_question_sources', [self::class, 'handle_backfill_question_sources']);
 
         add_action('admin_post_cbt_save_question', [self::class, 'handle_save_question']);
         add_action('admin_post_cbt_delete_question', [self::class, 'handle_delete_question']);
@@ -45,6 +50,8 @@ class CBT_Admin
         add_action('admin_post_cbt_reset_attempt', [self::class, 'handle_reset_attempt']);
         add_action('admin_post_cbt_bulk_reset_attempts', [self::class, 'handle_bulk_reset_attempts']);
         add_action('admin_post_cbt_bulk_force_complete_attempts', [self::class, 'handle_bulk_force_complete_attempts']);
+        add_action('admin_post_cbt_export_exam_report_pdf', [self::class, 'handle_export_exam_report_pdf']);
+        add_action('admin_post_cbt_print_exam_cards', [self::class, 'handle_print_exam_cards']);
 
         add_action('admin_post_cbt_import_users', [self::class, 'handle_import_users']);
         add_action('admin_post_cbt_create_user_manual', [self::class, 'handle_create_user_manual']);
@@ -89,6 +96,15 @@ class CBT_Admin
 
         add_submenu_page(
             'cbt-exams',
+            'CBT Setup',
+            'CBT Setup',
+            'cbt_manage_exams',
+            'cbt-setup',
+            [self::class, 'render_setup_page']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
             'CBT Maintenance',
             'CBT Maintenance',
             'manage_options',
@@ -125,6 +141,15 @@ class CBT_Admin
 
         add_submenu_page(
             'cbt-exams',
+            'Cetak Kartu Ujian',
+            'Cetak Kartu Ujian',
+            'cbt_manage_users',
+            'cbt-exam-cards',
+            [self::class, 'render_exam_cards_page']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
             'CBT Bank Soal',
             'CBT Bank Soal',
             'cbt_manage_questions',
@@ -139,6 +164,15 @@ class CBT_Admin
             'cbt_view_results',
             'cbt-results',
             [self::class, 'render_results_page']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Report Exam',
+            'CBT Report Exam',
+            'cbt_view_results',
+            'cbt-report-exam',
+            [self::class, 'render_report_exam_page']
         );
     }
 
@@ -346,7 +380,7 @@ class CBT_Admin
                 'intval',
                 (array) $wpdb->get_col(
                     $wpdb->prepare(
-                        "SELECT id FROM {$question_table} WHERE exam_id = %d ORDER BY id ASC",
+                        "SELECT COALESCE(source_question_id, id) FROM {$question_table} WHERE exam_id = %d ORDER BY id ASC",
                         (int) $editing_exam['id']
                     )
                 )
@@ -1693,6 +1727,171 @@ class CBT_Admin
         <?php
     }
 
+    public static function render_setup_page(): void
+    {
+        if (!self::can_manage_exams()) {
+            wp_die('Unauthorized');
+        }
+
+        wp_enqueue_media();
+
+        $notice = isset($_GET['cbt_msg']) ? sanitize_text_field(wp_unslash($_GET['cbt_msg'])) : '';
+        $error = isset($_GET['cbt_err']) ? sanitize_text_field(wp_unslash($_GET['cbt_err'])) : '';
+        $branding = self::get_setup_branding_settings();
+        $school_name = (string) ($branding['school_name'] ?? '');
+        $logo_attachment_id = (int) ($branding['logo_attachment_id'] ?? 0);
+        $logo_url = '';
+        if ($logo_attachment_id > 0) {
+            $resolved_logo_url = wp_get_attachment_image_url($logo_attachment_id, 'medium');
+            if (is_string($resolved_logo_url)) {
+                $logo_url = $resolved_logo_url;
+            }
+        }
+        ?>
+        <div class="wrap">
+            <h1>CBT Setup</h1>
+            <p class="description">Atur branding frontend CBT untuk topbar dan hero login.</p>
+            <?php if ($notice): ?>
+                <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+            <?php endif; ?>
+            <?php if ($error): ?>
+                <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+            <?php endif; ?>
+
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="max-width:860px;">
+                <?php wp_nonce_field('cbt_save_setup_branding'); ?>
+                <input type="hidden" name="action" value="cbt_save_setup_branding" />
+                <table class="form-table" role="presentation">
+                    <tbody>
+                    <tr>
+                        <th><label for="cbt-setup-school-name">Nama Sekolah CBT</label></th>
+                        <td>
+                            <input
+                                type="text"
+                                class="regular-text"
+                                id="cbt-setup-school-name"
+                                name="school_name"
+                                value="<?php echo esc_attr($school_name); ?>"
+                                placeholder="<?php echo esc_attr((string) get_bloginfo('name')); ?>"
+                            />
+                            <p class="description">Jika kosong, otomatis memakai nama situs WordPress.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="cbt-setup-logo-attachment-id">Logo Sekolah</label></th>
+                        <td>
+                            <input
+                                type="hidden"
+                                id="cbt-setup-logo-attachment-id"
+                                name="logo_attachment_id"
+                                value="<?php echo esc_attr($logo_attachment_id > 0 ? (string) $logo_attachment_id : ''); ?>"
+                            />
+                            <div
+                                id="cbt-setup-logo-preview"
+                                style="width:180px; min-height:84px; margin:0 0 10px; border:1px solid #d0d7e2; border-radius:10px; background:#f8fafc; display:<?php echo $logo_url !== '' ? 'inline-flex' : 'none'; ?>; align-items:center; justify-content:center; padding:10px;"
+                            >
+                                <img
+                                    id="cbt-setup-logo-preview-image"
+                                    src="<?php echo esc_url($logo_url); ?>"
+                                    alt=""
+                                    style="display:block; max-width:100%; max-height:70px; object-fit:contain;"
+                                />
+                            </div>
+                            <p id="cbt-setup-logo-empty" class="description" style="margin:0 0 10px; display:<?php echo $logo_url === '' ? 'block' : 'none'; ?>;">Belum ada logo dipilih.</p>
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                <button type="button" id="cbt-setup-logo-pick" class="button">
+                                    <?php echo esc_html($logo_attachment_id > 0 ? 'Ganti Logo' : 'Pilih Logo'); ?>
+                                </button>
+                                <button type="button" id="cbt-setup-logo-remove" class="button button-secondary" style="display:<?php echo $logo_attachment_id > 0 ? 'inline-flex' : 'none'; ?>;">Hapus Logo</button>
+                            </div>
+                            <p class="description">Gunakan gambar dari Media Library WordPress.</p>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+                <p>
+                    <button type="submit" class="button button-primary">Simpan Setup Branding</button>
+                </p>
+            </form>
+        </div>
+        <script>
+            (function () {
+                var mediaFrame = null;
+                var logoInput = document.getElementById('cbt-setup-logo-attachment-id');
+                var previewWrap = document.getElementById('cbt-setup-logo-preview');
+                var previewImage = document.getElementById('cbt-setup-logo-preview-image');
+                var emptyState = document.getElementById('cbt-setup-logo-empty');
+                var pickButton = document.getElementById('cbt-setup-logo-pick');
+                var removeButton = document.getElementById('cbt-setup-logo-remove');
+
+                if (!pickButton || !removeButton) {
+                    return;
+                }
+
+                function setLogoState(attachmentId, imageUrl) {
+                    var hasLogo = attachmentId > 0 && String(imageUrl || '').trim() !== '';
+                    if (logoInput) {
+                        logoInput.value = hasLogo ? String(attachmentId) : '';
+                    }
+                    if (previewImage) {
+                        previewImage.src = hasLogo ? String(imageUrl) : '';
+                    }
+                    if (previewWrap) {
+                        previewWrap.style.display = hasLogo ? 'inline-flex' : 'none';
+                    }
+                    if (emptyState) {
+                        emptyState.style.display = hasLogo ? 'none' : 'block';
+                    }
+                    if (pickButton) {
+                        pickButton.textContent = hasLogo ? 'Ganti Logo' : 'Pilih Logo';
+                    }
+                    if (removeButton) {
+                        removeButton.style.display = hasLogo ? 'inline-flex' : 'none';
+                    }
+                }
+
+                pickButton.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    if (typeof wp === 'undefined' || !wp.media) {
+                        window.alert('Media Library belum siap. Coba refresh halaman ini.');
+                        return;
+                    }
+
+                    if (!mediaFrame) {
+                        mediaFrame = wp.media({
+                            title: 'Pilih Logo Sekolah',
+                            button: { text: 'Gunakan Logo' },
+                            multiple: false,
+                            library: { type: 'image' }
+                        });
+                        mediaFrame.on('select', function () {
+                            var selection = mediaFrame.state().get('selection').first();
+                            if (!selection) {
+                                return;
+                            }
+
+                            var payload = selection.toJSON();
+                            var imageUrl = '';
+                            if (payload.sizes && payload.sizes.medium && payload.sizes.medium.url) {
+                                imageUrl = payload.sizes.medium.url;
+                            } else if (payload.url) {
+                                imageUrl = payload.url;
+                            }
+                            setLogoState(parseInt(payload.id, 10) || 0, imageUrl);
+                        });
+                    }
+                    mediaFrame.open();
+                });
+
+                removeButton.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    setLogoState(0, '');
+                });
+            })();
+        </script>
+        <?php
+    }
+
     public static function render_maintenance_page(): void
     {
         if (!current_user_can('manage_options')) {
@@ -1701,6 +1900,48 @@ class CBT_Admin
 
         $notice = isset($_GET['cbt_msg']) ? sanitize_text_field(wp_unslash($_GET['cbt_msg'])) : '';
         $error = isset($_GET['cbt_err']) ? sanitize_text_field(wp_unslash($_GET['cbt_err'])) : '';
+        $reset_progress_token = isset($_GET['cbt_reset_progress_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_reset_progress_token'])) : '';
+        $reset_progress_state = null;
+        $reset_progress_total = 0;
+        $reset_progress_processed = 0;
+        $reset_progress_deleted_users = 0;
+        $reset_progress_failed_tables = 0;
+        $reset_progress_percent = 0.0;
+        $reset_progress_is_running = false;
+        $reset_progress_phase_label = '';
+        $reset_progress_continue_url = '';
+        if ($reset_progress_token !== '') {
+            $reset_progress_state = self::get_reset_progress_state_for_current_user($reset_progress_token);
+            if (is_array($reset_progress_state)) {
+                $reset_progress_total = max(1, isset($reset_progress_state['total_units']) ? (int) $reset_progress_state['total_units'] : 1);
+                $reset_progress_processed = max(0, isset($reset_progress_state['processed_units']) ? (int) $reset_progress_state['processed_units'] : 0);
+                if ($reset_progress_processed > $reset_progress_total) {
+                    $reset_progress_processed = $reset_progress_total;
+                }
+                $reset_progress_deleted_users = max(0, isset($reset_progress_state['deleted_user_count']) ? (int) $reset_progress_state['deleted_user_count'] : 0);
+                $reset_progress_failed_tables = count((array) ($reset_progress_state['failed_tables'] ?? []));
+                $reset_phase = sanitize_key((string) ($reset_progress_state['phase'] ?? 'tables'));
+                $phase_labels = [
+                    'tables' => 'Mengosongkan tabel CBT',
+                    'users' => 'Menghapus user CBT',
+                    'finalize' => 'Finalisasi reset',
+                ];
+                $reset_progress_phase_label = $phase_labels[$reset_phase] ?? 'Memproses reset database';
+                $reset_progress_percent = $reset_progress_total > 0
+                    ? round(((float) $reset_progress_processed / (float) $reset_progress_total) * 100, 2)
+                    : 0.0;
+                $reset_progress_is_running = $reset_progress_processed < $reset_progress_total;
+                $reset_progress_continue_url = add_query_arg(
+                    [
+                        'action' => 'cbt_reset_database',
+                        'cbt_reset_progress_token' => $reset_progress_token,
+                    ],
+                    admin_url('admin-post.php')
+                );
+            } elseif ($notice === '' && $error === '') {
+                $error = 'Sesi reset database tidak ditemukan atau sudah berakhir. Silakan mulai ulang reset.';
+            }
+        }
         ?>
         <div class="wrap">
             <h1>CBT Maintenance</h1>
@@ -1710,6 +1951,47 @@ class CBT_Admin
             <?php if ($error): ?>
                 <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
             <?php endif; ?>
+            <?php if (is_array($reset_progress_state)): ?>
+                <div class="notice notice-info">
+                    <p>
+                        <strong>Progress Reset Database:</strong>
+                        <?php echo esc_html((string) $reset_progress_processed . ' / ' . (string) $reset_progress_total); ?>
+                        (<?php echo esc_html(number_format($reset_progress_percent, 2)); ?>%)
+                        | Tahap: <?php echo esc_html($reset_progress_phase_label); ?>
+                        | User terhapus: <?php echo esc_html((string) $reset_progress_deleted_users); ?>
+                        | Tabel gagal: <?php echo esc_html((string) $reset_progress_failed_tables); ?>
+                    </p>
+                </div>
+                <div style="max-width:760px; margin:0 0 14px; border:1px solid #c3c4c7; border-radius:8px; background:#fff; padding:12px;">
+                    <div style="width:100%; height:14px; border-radius:999px; background:#f0f0f1; overflow:hidden; border:1px solid #dcdcde;">
+                        <div style="height:100%; width: <?php echo esc_attr((string) $reset_progress_percent); ?>%; background:linear-gradient(90deg,#2271b1,#135e96); transition:width .25s ease;"></div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <?php if ($reset_progress_is_running): ?>
+                            <span style="color:#1d2327;">Memproses reset database batch berikutnya...</span>
+                            <script>
+                                window.setTimeout(function () {
+                                    window.location.href = <?php echo wp_json_encode($reset_progress_continue_url); ?>;
+                                }, 350);
+                            </script>
+                        <?php else: ?>
+                            <span style="color:#0a7a2f; font-weight:600;">Reset database selesai diproses.</span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <div style="max-width:980px; margin:16px 0; padding:16px 18px; border:1px solid #dcdcde; background:#fff;">
+                <h2 style="margin-top:0;">Repair Link Soal Bank</h2>
+                <p style="margin:0 0 8px;">Aksi ini memasangkan salinan soal exam lama yang belum punya <code>source_question_id</code> ke soal sumber di <code>CBT Bank Soal</code>, lalu menyinkronkan konten soal exam ke versi bank terbaru.</p>
+                <p style="margin:0 0 8px;"><strong>Aman untuk data ujian:</strong> aksi ini tidak menghapus exam atau attempt. Cache exam terdampak akan di-invalidate agar peserta aktif mengambil versi terbaru.</p>
+                <p style="margin:0 0 12px;"><strong>Kapan dipakai:</strong> setelah upgrade fitur sinkronisasi bank soal, terutama jika sebelumnya Anda sudah punya banyak exam hasil salin dari bank soal.</p>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Jalankan backfill linkage soal bank sekarang?');">
+                    <?php wp_nonce_field('cbt_backfill_question_sources'); ?>
+                    <input type="hidden" name="action" value="cbt_backfill_question_sources" />
+                    <button type="submit" class="button button-secondary">Jalankan Backfill Link Soal Bank</button>
+                </form>
+            </div>
 
             <div class="notice notice-warning" style="margin: 16px 0;">
                 <p><strong>Peringatan:</strong> aksi di bawah akan menghapus data CBT secara permanen dari database.</p>
@@ -1723,6 +2005,7 @@ class CBT_Admin
                         <th scope="row">Reset tabel CBT</th>
                         <td>
                             <p>Semua data tabel plugin CBT akan dikosongkan (subjects, exams, questions, attempts, answers, options, dan pengaturan token global).</p>
+                            <p class="description">Progress reset akan ditampilkan otomatis sampai proses selesai.</p>
                         </td>
                     </tr>
                     <tr>
@@ -3570,6 +3853,42 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         );
         $notice = isset($_GET['cbt_msg']) ? sanitize_text_field(wp_unslash($_GET['cbt_msg'])) : '';
         $error = isset($_GET['cbt_err']) ? sanitize_text_field(wp_unslash($_GET['cbt_err'])) : '';
+        $subject_import_token = isset($_GET['cbt_subject_import_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_subject_import_token'])) : '';
+        $subject_import_state = null;
+        $subject_import_total = 0;
+        $subject_import_offset = 0;
+        $subject_import_created = 0;
+        $subject_import_updated = 0;
+        $subject_import_failed = 0;
+        $subject_import_progress_percent = 0.0;
+        $subject_import_is_running = false;
+        $subject_import_continue_url = '';
+        if ($subject_import_token !== '') {
+            $subject_import_state = self::get_subject_import_state_for_current_user($subject_import_token);
+            if (is_array($subject_import_state)) {
+                $subject_import_total = max(0, isset($subject_import_state['total']) ? (int) $subject_import_state['total'] : 0);
+                $subject_import_offset = max(0, isset($subject_import_state['offset']) ? (int) $subject_import_state['offset'] : 0);
+                if ($subject_import_total > 0 && $subject_import_offset > $subject_import_total) {
+                    $subject_import_offset = $subject_import_total;
+                }
+                $subject_import_created = max(0, isset($subject_import_state['created']) ? (int) $subject_import_state['created'] : 0);
+                $subject_import_updated = max(0, isset($subject_import_state['updated']) ? (int) $subject_import_state['updated'] : 0);
+                $subject_import_failed = max(0, isset($subject_import_state['failed']) ? (int) $subject_import_state['failed'] : 0);
+                $subject_import_progress_percent = $subject_import_total > 0
+                    ? round(((float) $subject_import_offset / (float) $subject_import_total) * 100, 2)
+                    : 0.0;
+                $subject_import_is_running = $subject_import_total > 0 && $subject_import_offset < $subject_import_total;
+                $subject_import_continue_url = add_query_arg(
+                    [
+                        'action' => 'cbt_import_subjects',
+                        'cbt_subject_import_token' => $subject_import_token,
+                    ],
+                    admin_url('admin-post.php')
+                );
+            } elseif ($notice === '' && $error === '') {
+                $error = 'Sesi import subject tidak ditemukan atau sudah berakhir. Silakan upload ulang file.';
+            }
+        }
         ?>
         <div class="wrap">
             <h1>Subjects / Mata Pelajaran</h1>
@@ -3578,6 +3897,35 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             <?php endif; ?>
             <?php if ($error): ?>
                 <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+            <?php endif; ?>
+            <?php if (is_array($subject_import_state)): ?>
+                <div class="notice notice-info">
+                    <p>
+                        <strong>Progress Import Subject:</strong>
+                        <?php echo esc_html((string) $subject_import_offset . ' / ' . (string) $subject_import_total); ?>
+                        (<?php echo esc_html(number_format($subject_import_progress_percent, 2)); ?>%)
+                        | Created: <?php echo esc_html((string) $subject_import_created); ?>
+                        | Updated: <?php echo esc_html((string) $subject_import_updated); ?>
+                        | Failed: <?php echo esc_html((string) $subject_import_failed); ?>
+                    </p>
+                </div>
+                <div style="max-width:760px; margin:0 0 14px; border:1px solid #c3c4c7; border-radius:8px; background:#fff; padding:12px;">
+                    <div style="width:100%; height:14px; border-radius:999px; background:#f0f0f1; overflow:hidden; border:1px solid #dcdcde;">
+                        <div style="height:100%; width: <?php echo esc_attr((string) $subject_import_progress_percent); ?>%; background:linear-gradient(90deg,#2271b1,#135e96); transition:width .25s ease;"></div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <?php if ($subject_import_is_running): ?>
+                            <span style="color:#1d2327;">Memproses batch subject berikutnya...</span>
+                            <script>
+                                window.setTimeout(function () {
+                                    window.location.href = <?php echo wp_json_encode($subject_import_continue_url); ?>;
+                                }, 350);
+                            </script>
+                        <?php else: ?>
+                            <span style="color:#0a7a2f; font-weight:600;">Import subject selesai diproses.</span>
+                        <?php endif; ?>
+                    </div>
+                </div>
             <?php endif; ?>
 
             <h2><?php echo $editing ? 'Edit Subject' : 'Add Subject'; ?></h2>
@@ -3629,6 +3977,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                                 Kolom opsional: <code>code</code>, <code>description</code>.
                                 Format didukung: <code>.csv</code> dan <code>.xlsx</code>.
                                 Import bersifat upsert berdasarkan <code>code</code> (jika code kosong, pakai <code>name</code>).
+                                Progress import akan tampil otomatis (jumlah diproses, persentase, created/updated/failed).
                             </p>
                         </td>
                     </tr>
@@ -3983,6 +4332,75 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
         $notice = isset($_GET['cbt_msg']) ? sanitize_text_field(wp_unslash($_GET['cbt_msg'])) : '';
         $error = isset($_GET['cbt_err']) ? sanitize_text_field(wp_unslash($_GET['cbt_err'])) : '';
+        $question_import_token = isset($_GET['cbt_question_import_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_question_import_token'])) : '';
+        $question_import_state = null;
+        $question_import_total = 0;
+        $question_import_offset = 0;
+        $question_import_created = 0;
+        $question_import_failed = 0;
+        $question_import_progress_percent = 0.0;
+        $question_import_is_running = false;
+        $question_import_continue_url = '';
+        if ($question_import_token !== '') {
+            $question_import_state = self::get_question_import_state_for_current_user($question_import_token);
+            if (is_array($question_import_state)) {
+                $question_import_total = max(0, isset($question_import_state['total']) ? (int) $question_import_state['total'] : 0);
+                $question_import_offset = max(0, isset($question_import_state['offset']) ? (int) $question_import_state['offset'] : 0);
+                if ($question_import_total > 0 && $question_import_offset > $question_import_total) {
+                    $question_import_offset = $question_import_total;
+                }
+                $question_import_created = max(0, isset($question_import_state['created']) ? (int) $question_import_state['created'] : 0);
+                $question_import_failed = max(0, isset($question_import_state['failed']) ? (int) $question_import_state['failed'] : 0);
+                $question_import_progress_percent = $question_import_total > 0
+                    ? round(((float) $question_import_offset / (float) $question_import_total) * 100, 2)
+                    : 0.0;
+                $question_import_is_running = $question_import_total > 0 && $question_import_offset < $question_import_total;
+                $question_import_continue_url = add_query_arg(
+                    [
+                        'action' => 'cbt_import_questions',
+                        'cbt_question_import_token' => $question_import_token,
+                    ],
+                    admin_url('admin-post.php')
+                );
+            } elseif ($notice === '' && $error === '') {
+                $error = 'Sesi import soal tidak ditemukan atau sudah berakhir. Silakan upload ulang file.';
+            }
+        }
+        $show_import_panel_first = is_array($question_import_state);
+        $question_delete_token = isset($_GET['cbt_question_delete_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_question_delete_token'])) : '';
+        $question_delete_state = null;
+        $question_delete_total = 0;
+        $question_delete_offset = 0;
+        $question_delete_deleted = 0;
+        $question_delete_failed = 0;
+        $question_delete_progress_percent = 0.0;
+        $question_delete_is_running = false;
+        $question_delete_continue_url = '';
+        if ($question_delete_token !== '') {
+            $question_delete_state = self::get_question_delete_state_for_current_user($question_delete_token);
+            if (is_array($question_delete_state)) {
+                $question_delete_total = max(0, isset($question_delete_state['total']) ? (int) $question_delete_state['total'] : 0);
+                $question_delete_offset = max(0, isset($question_delete_state['offset']) ? (int) $question_delete_state['offset'] : 0);
+                if ($question_delete_total > 0 && $question_delete_offset > $question_delete_total) {
+                    $question_delete_offset = $question_delete_total;
+                }
+                $question_delete_deleted = max(0, isset($question_delete_state['deleted']) ? (int) $question_delete_state['deleted'] : 0);
+                $question_delete_failed = max(0, isset($question_delete_state['failed']) ? (int) $question_delete_state['failed'] : 0);
+                $question_delete_progress_percent = $question_delete_total > 0
+                    ? round(((float) $question_delete_offset / (float) $question_delete_total) * 100, 2)
+                    : 0.0;
+                $question_delete_is_running = $question_delete_total > 0 && $question_delete_offset < $question_delete_total;
+                $question_delete_continue_url = add_query_arg(
+                    [
+                        'action' => 'cbt_bulk_delete_questions',
+                        'cbt_question_delete_token' => $question_delete_token,
+                    ],
+                    admin_url('admin-post.php')
+                );
+            } elseif ($notice === '' && $error === '') {
+                $error = 'Sesi hapus soal tidak ditemukan atau sudah berakhir. Silakan pilih ulang soal yang ingin dihapus.';
+            }
+        }
 
         if ($lock_question_type && $editing_question && (string) ($editing_question['question_type'] ?? '') !== $active_question_type) {
             $editing_question = null;
@@ -4268,11 +4686,11 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             </style>
 
             <div class="cbt-tab-buttons" id="cbt-question-mode-tabs">
-                <button type="button" class="button cbt-active" data-target="cbt-question-manual-panel">Input Manual</button>
-                <button type="button" class="button" data-target="cbt-question-import-panel">Import Word</button>
+                <button type="button" class="button<?php echo !$show_import_panel_first ? ' cbt-active' : ''; ?>" data-target="cbt-question-manual-panel">Input Manual</button>
+                <button type="button" class="button<?php echo $show_import_panel_first ? ' cbt-active' : ''; ?>" data-target="cbt-question-import-panel">Import Word</button>
             </div>
 
-            <div id="cbt-question-manual-panel" class="cbt-tab-panel cbt-active">
+            <div id="cbt-question-manual-panel" class="cbt-tab-panel<?php echo !$show_import_panel_first ? ' cbt-active' : ''; ?>">
                 <h2><?php echo $editing_question ? 'Edit Question' : 'Add Question'; ?></h2>
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="cbt-question-manual-form">
                     <?php wp_nonce_field('cbt_save_question'); ?>
@@ -4478,8 +4896,36 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 </form>
             </div>
 
-            <div id="cbt-question-import-panel" class="cbt-tab-panel">
+            <div id="cbt-question-import-panel" class="cbt-tab-panel<?php echo $show_import_panel_first ? ' cbt-active' : ''; ?>">
                 <h2>Import Questions (Word)</h2>
+                <?php if (is_array($question_import_state)): ?>
+                    <div class="notice notice-info">
+                        <p>
+                            <strong>Progress Import Soal:</strong>
+                            <?php echo esc_html((string) $question_import_offset . ' / ' . (string) $question_import_total); ?>
+                            (<?php echo esc_html(number_format($question_import_progress_percent, 2)); ?>%)
+                            | Created: <?php echo esc_html((string) $question_import_created); ?>
+                            | Failed: <?php echo esc_html((string) $question_import_failed); ?>
+                        </p>
+                    </div>
+                    <div style="max-width:760px; margin:0 0 14px; border:1px solid #c3c4c7; border-radius:8px; background:#fff; padding:12px;">
+                        <div style="width:100%; height:14px; border-radius:999px; background:#f0f0f1; overflow:hidden; border:1px solid #dcdcde;">
+                            <div style="height:100%; width: <?php echo esc_attr((string) $question_import_progress_percent); ?>%; background:linear-gradient(90deg,#2271b1,#135e96); transition:width .25s ease;"></div>
+                        </div>
+                        <div style="margin-top:10px;">
+                            <?php if ($question_import_is_running): ?>
+                                <span style="color:#1d2327;">Memproses batch soal berikutnya...</span>
+                                <script>
+                                    window.setTimeout(function () {
+                                        window.location.href = <?php echo wp_json_encode($question_import_continue_url); ?>;
+                                    }, 350);
+                                </script>
+                            <?php else: ?>
+                                <span style="color:#0a7a2f; font-weight:600;">Import soal selesai diproses.</span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
                 <p class="description"><strong>Rekomendasi:</strong> gunakan file <code>.docx</code> sesuai jenis soal yang dipilih.</p>
                 <?php if ($lock_question_type): ?>
                     <p><strong>Jenis Soal:</strong> <?php echo esc_html((string) ($question_type_labels[$import_active_type] ?? $import_active_type)); ?></p>
@@ -4542,6 +4988,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                                 <p class="description">
                                     Format didukung: <code>.docx</code>.
                                     Template berbentuk <strong>tabel</strong> untuk <strong>multiple choice</strong>, <strong>multiple answer</strong>, <strong>true/false</strong>, <strong>true/false matrix</strong>, <strong>short answer</strong>, dan <strong>essay</strong> (gambar bisa ditempel langsung di soal, termasuk opsi jawaban).
+                                    Progress import akan tampil otomatis (jumlah diproses, persentase, created/failed).
                                 </p>
                             </td>
                         </tr>
@@ -4553,6 +5000,34 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             <hr />
 
             <h2>Question List</h2>
+            <?php if (is_array($question_delete_state)): ?>
+                <div class="notice notice-info">
+                    <p>
+                        <strong>Progress Hapus Soal:</strong>
+                        <?php echo esc_html((string) $question_delete_offset . ' / ' . (string) $question_delete_total); ?>
+                        (<?php echo esc_html(number_format($question_delete_progress_percent, 2)); ?>%)
+                        | Deleted: <?php echo esc_html((string) $question_delete_deleted); ?>
+                        | Failed: <?php echo esc_html((string) $question_delete_failed); ?>
+                    </p>
+                </div>
+                <div style="max-width:760px; margin:0 0 14px; border:1px solid #c3c4c7; border-radius:8px; background:#fff; padding:12px;">
+                    <div style="width:100%; height:14px; border-radius:999px; background:#f0f0f1; overflow:hidden; border:1px solid #dcdcde;">
+                        <div style="height:100%; width: <?php echo esc_attr((string) $question_delete_progress_percent); ?>%; background:linear-gradient(90deg,#2271b1,#135e96); transition:width .25s ease;"></div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <?php if ($question_delete_is_running): ?>
+                            <span style="color:#1d2327;">Memproses batch hapus soal berikutnya...</span>
+                            <script>
+                                window.setTimeout(function () {
+                                    window.location.href = <?php echo wp_json_encode($question_delete_continue_url); ?>;
+                                }, 350);
+                            </script>
+                        <?php else: ?>
+                            <span style="color:#0a7a2f; font-weight:600;">Proses hapus soal selesai diproses.</span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
             <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" style="margin: 8px 0 12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <input type="hidden" name="page" value="<?php echo esc_attr($current_page_slug); ?>" />
                 <label for="cbt-filter-question-type" style="margin-right:8px;">Type</label>
@@ -6072,6 +6547,1147 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         <?php
     }
 
+    public static function render_report_exam_page(): void
+    {
+        if (!current_user_can('cbt_view_results')) {
+            wp_die('Unauthorized');
+        }
+
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        $selected_exam_id = isset($_GET['cbt_exam_id']) ? absint($_GET['cbt_exam_id']) : 0;
+        $selected_kelas = isset($_GET['cbt_result_kelas']) ? sanitize_text_field(wp_unslash($_GET['cbt_result_kelas'])) : '';
+
+        $role_options = self::report_supervisor_role_options();
+        $supervisor_inputs = [];
+        for ($idx = 1; $idx <= 3; $idx++) {
+            $name_key = 'supervisor_' . $idx . '_name';
+            $nip_key = 'supervisor_' . $idx . '_nip';
+            $role_key = 'supervisor_' . $idx . '_role';
+            $supervisor_inputs[$idx] = [
+                'name' => isset($_GET[$name_key]) ? trim(sanitize_text_field(wp_unslash((string) $_GET[$name_key]))) : '',
+                'nip' => isset($_GET[$nip_key]) ? trim(sanitize_text_field(wp_unslash((string) $_GET[$nip_key]))) : '',
+                'role' => isset($_GET[$role_key]) ? self::normalize_report_supervisor_role((string) wp_unslash($_GET[$role_key])) : '',
+            ];
+        }
+
+        $notice = isset($_GET['cbt_msg']) ? sanitize_text_field(wp_unslash($_GET['cbt_msg'])) : '';
+        $error = isset($_GET['cbt_err']) ? sanitize_text_field(wp_unslash($_GET['cbt_err'])) : '';
+
+        $exam_filter_rows = self::get_accessible_exam_filter_rows($is_admin_scope, $current_user_id);
+        $kelas_filter_rows = self::get_distinct_user_meta_values('kode_kelas');
+        ?>
+        <div class="wrap">
+            <h1>CBT Report Exam</h1>
+            <p class="description">Cetak rekap nilai berdasarkan exam dan kelas. Export PDF dilakukan lewat browser (Print / Save as PDF). Petugas minimal 1, maksimal 3.</p>
+            <?php if ($notice): ?>
+                <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+            <?php endif; ?>
+            <?php if ($error): ?>
+                <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+            <?php endif; ?>
+
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="max-width:860px;">
+                <?php wp_nonce_field('cbt_export_exam_report_pdf'); ?>
+                <input type="hidden" name="action" value="cbt_export_exam_report_pdf" />
+                <table class="form-table" role="presentation">
+                    <tbody>
+                    <tr>
+                        <th><label for="cbt-report-exam-id">Exam</label></th>
+                        <td>
+                            <select required id="cbt-report-exam-id" name="cbt_exam_id">
+                                <option value="0">Pilih exam</option>
+                                <?php foreach ($exam_filter_rows as $exam_filter_row): ?>
+                                    <?php $exam_id = (int) ($exam_filter_row['id'] ?? 0); ?>
+                                    <option value="<?php echo $exam_id; ?>" <?php selected($selected_exam_id, $exam_id); ?>>
+                                        <?php echo esc_html((string) ($exam_filter_row['title'] ?? '-')); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="cbt-report-kelas">Kelas</label></th>
+                        <td>
+                            <select id="cbt-report-kelas" name="cbt_result_kelas">
+                                <option value="">Semua kelas</option>
+                                <?php foreach ($kelas_filter_rows as $kelas_filter_row): ?>
+                                    <option value="<?php echo esc_attr($kelas_filter_row); ?>" <?php selected($selected_kelas, $kelas_filter_row); ?>>
+                                        <?php echo esc_html($kelas_filter_row); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                    <?php for ($idx = 1; $idx <= 3; $idx++): ?>
+                        <?php
+                        $is_required = ($idx === 1);
+                        $label_suffix = $is_required ? 'wajib' : 'opsional';
+                        $supervisor = (array) ($supervisor_inputs[$idx] ?? []);
+                        ?>
+                        <tr>
+                            <th><?php echo esc_html('Petugas ' . $idx); ?></th>
+                            <td style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;">
+                                <div>
+                                    <label for="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-name'); ?>" style="display:block; margin:0 0 4px;"><?php echo esc_html('Nama (' . $label_suffix . ')'); ?></label>
+                                    <input <?php echo $is_required ? 'required' : ''; ?> type="text" id="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-name'); ?>" name="<?php echo esc_attr('supervisor_' . $idx . '_name'); ?>" class="regular-text" value="<?php echo esc_attr((string) ($supervisor['name'] ?? '')); ?>" />
+                                </div>
+                                <div>
+                                    <label for="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-nip'); ?>" style="display:block; margin:0 0 4px;"><?php echo esc_html('NIP (' . $label_suffix . ')'); ?></label>
+                                    <input <?php echo $is_required ? 'required' : ''; ?> type="text" id="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-nip'); ?>" name="<?php echo esc_attr('supervisor_' . $idx . '_nip'); ?>" class="regular-text" value="<?php echo esc_attr((string) ($supervisor['nip'] ?? '')); ?>" />
+                                </div>
+                                <div>
+                                    <label for="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-role'); ?>" style="display:block; margin:0 0 4px;"><?php echo esc_html('Jabatan (' . $label_suffix . ')'); ?></label>
+                                    <select <?php echo $is_required ? 'required' : ''; ?> id="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-role'); ?>" name="<?php echo esc_attr('supervisor_' . $idx . '_role'); ?>" class="regular-text">
+                                        <option value="">Pilih jabatan</option>
+                                        <?php foreach ($role_options as $role_option): ?>
+                                            <option value="<?php echo esc_attr($role_option); ?>" <?php selected((string) ($supervisor['role'] ?? ''), $role_option); ?>>
+                                                <?php echo esc_html($role_option); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <?php if (!$is_required): ?>
+                                    <p class="description" style="grid-column:1 / -1; margin:0;"><?php echo esc_html('Jika salah satu field Petugas ' . $idx . ' diisi, maka semua field Petugas ' . $idx . ' wajib diisi.'); ?></p>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endfor; ?>
+                    </tbody>
+                </table>
+                <p>
+                    <button class="button button-primary" type="submit">Export PDF (Print-Ready)</button>
+                </p>
+            </form>
+        </div>
+        <?php
+    }
+
+    public static function handle_export_exam_report_pdf(): void
+    {
+        if (!current_user_can('cbt_view_results')) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_export_exam_report_pdf');
+
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        $exam_id = isset($_POST['cbt_exam_id']) ? absint($_POST['cbt_exam_id']) : 0;
+        $selected_kelas = isset($_POST['cbt_result_kelas']) ? sanitize_text_field(wp_unslash($_POST['cbt_result_kelas'])) : '';
+        $selected_kelas = trim($selected_kelas);
+
+        $supervisor_inputs = [];
+        for ($idx = 1; $idx <= 3; $idx++) {
+            $supervisor_inputs[$idx] = self::extract_report_supervisor_input('supervisor_' . $idx, $_POST);
+        }
+        $supervisor_1 = $supervisor_inputs[1];
+
+        $redirect_args = [
+            'cbt_exam_id' => $exam_id,
+            'cbt_result_kelas' => $selected_kelas,
+            'supervisor_1_name' => $supervisor_1['name'],
+            'supervisor_1_nip' => $supervisor_1['nip'],
+            'supervisor_1_role' => $supervisor_1['role'],
+            'supervisor_2_name' => $supervisor_inputs[2]['name'],
+            'supervisor_2_nip' => $supervisor_inputs[2]['nip'],
+            'supervisor_2_role' => $supervisor_inputs[2]['role'],
+            'supervisor_3_name' => $supervisor_inputs[3]['name'],
+            'supervisor_3_nip' => $supervisor_inputs[3]['nip'],
+            'supervisor_3_role' => $supervisor_inputs[3]['role'],
+        ];
+
+        if ($exam_id <= 0) {
+            self::redirect_report_exam_page($redirect_args + ['cbt_err' => 'Exam wajib dipilih.']);
+        }
+
+        $exam = self::get_accessible_exam_row($exam_id, $is_admin_scope, $current_user_id);
+        if (empty($exam)) {
+            self::redirect_report_exam_page($redirect_args + ['cbt_err' => 'Exam tidak ditemukan atau tidak bisa diakses.']);
+        }
+
+        if ($supervisor_1['name'] === '' || $supervisor_1['nip'] === '' || $supervisor_1['role'] === '') {
+            self::redirect_report_exam_page($redirect_args + ['cbt_err' => 'Data Petugas 1 wajib diisi lengkap (Nama, NIP, Jabatan).']);
+        }
+
+        $optional_supervisors = [2, 3];
+        $supervisors = [$supervisor_1];
+        foreach ($optional_supervisors as $idx) {
+            $supervisor = (array) ($supervisor_inputs[$idx] ?? []);
+            $has_any = (($supervisor['name'] ?? '') !== '' || ($supervisor['nip'] ?? '') !== '' || ($supervisor['role'] ?? '') !== '');
+            if ($has_any && (($supervisor['name'] ?? '') === '' || ($supervisor['nip'] ?? '') === '' || ($supervisor['role'] ?? '') === '')) {
+                self::redirect_report_exam_page($redirect_args + ['cbt_err' => 'Jika data Petugas ' . $idx . ' diisi, semua field Petugas ' . $idx . ' wajib lengkap.']);
+            }
+            if ($has_any) {
+                $supervisors[] = $supervisor;
+            }
+        }
+
+        $report_rows = self::get_exam_report_rows($exam_id, $selected_kelas, $is_admin_scope, $current_user_id);
+        $site_name = (string) get_bloginfo('name');
+        $printed_at = current_time('d M Y H:i');
+        $kelas_label = $selected_kelas !== '' ? $selected_kelas : 'Semua Kelas';
+
+        $signature_role_labels = self::build_report_supervisor_role_labels($supervisors);
+
+        $back_args = [
+            'page' => 'cbt-report-exam',
+            'cbt_exam_id' => $exam_id,
+        ];
+        if ($selected_kelas !== '') {
+            $back_args['cbt_result_kelas'] = $selected_kelas;
+        }
+        $back_url = add_query_arg($back_args, admin_url('admin.php'));
+
+        nocache_headers();
+        header('Content-Type: text/html; charset=' . get_option('blog_charset'));
+        ?>
+        <!doctype html>
+        <html lang="id">
+        <head>
+            <meta charset="<?php bloginfo('charset'); ?>" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title><?php echo esc_html('CBT Report Exam - ' . (string) ($exam['title'] ?? '-')); ?></title>
+            <style>
+                @page {
+                    size: A4 portrait;
+                    margin: 14mm 12mm;
+                }
+                * {
+                    box-sizing: border-box;
+                }
+                body {
+                    margin: 0;
+                    font-family: Arial, Helvetica, sans-serif;
+                    color: #111827;
+                    background: #fff;
+                    font-size: 12px;
+                    line-height: 1.45;
+                }
+                .no-print {
+                    padding: 10px 12px;
+                    border-bottom: 1px solid #dbe5f2;
+                    background: #f8fbff;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                .no-print .button {
+                    border: 1px solid #1d4ed8;
+                    background: #2563eb;
+                    color: #fff;
+                    padding: 6px 10px;
+                    border-radius: 6px;
+                    text-decoration: none;
+                    cursor: pointer;
+                    font-size: 12px;
+                    line-height: 1;
+                }
+                .no-print .button-secondary {
+                    border-color: #cbd5e1;
+                    background: #fff;
+                    color: #0f172a;
+                }
+                .report-wrap {
+                    padding: 18px 18px 14px;
+                }
+                .report-title {
+                    margin: 0;
+                    font-size: 18px;
+                    line-height: 1.2;
+                }
+                .report-meta {
+                    margin-top: 10px;
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 6px 14px;
+                    font-size: 12px;
+                }
+                .report-meta strong {
+                    display: inline-block;
+                    min-width: 85px;
+                }
+                .report-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 14px;
+                }
+                .report-table th,
+                .report-table td {
+                    border: 1px solid #475569;
+                    padding: 6px 8px;
+                }
+                .report-table th {
+                    background: #f1f5f9;
+                    text-align: center;
+                    font-size: 11px;
+                }
+                .report-table td:nth-child(1),
+                .report-table td:nth-child(5) {
+                    text-align: center;
+                    white-space: nowrap;
+                }
+                .report-empty {
+                    text-align: center;
+                    color: #64748b;
+                    padding: 14px 8px;
+                }
+                .signature-wrap {
+                    margin-top: 40px;
+                    display: grid;
+                    grid-template-columns: repeat(<?php echo (int) count($supervisors); ?>, minmax(0, 1fr));
+                    gap: 24px;
+                }
+                .signature-card {
+                    text-align: center;
+                }
+                .signature-role {
+                    font-weight: 600;
+                }
+                .signature-space {
+                    height: 74px;
+                }
+                .signature-name {
+                    display: inline-block;
+                    min-width: 220px;
+                    max-width: 320px;
+                    border-top: 1px solid #111827;
+                    padding-top: 4px;
+                    font-weight: 700;
+                    margin: 0 auto;
+                }
+                .signature-nip {
+                    margin-top: 2px;
+                }
+                @media print {
+                    .no-print {
+                        display: none !important;
+                    }
+                    .report-wrap {
+                        padding: 0;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="no-print">
+                <button type="button" class="button" onclick="window.print()">Print / Save PDF</button>
+                <a class="button button-secondary" href="<?php echo esc_url($back_url); ?>">Kembali ke Form Report</a>
+            </div>
+            <main class="report-wrap">
+                <h1 class="report-title">CBT Report Exam</h1>
+                <div class="report-meta">
+                    <div><strong>Sekolah</strong>: <?php echo esc_html($site_name !== '' ? $site_name : '-'); ?></div>
+                    <div><strong>Tanggal Cetak</strong>: <?php echo esc_html($printed_at); ?></div>
+                    <div><strong>Exam</strong>: <?php echo esc_html((string) ($exam['title'] ?? '-')); ?></div>
+                    <div><strong>Kelas</strong>: <?php echo esc_html($kelas_label); ?></div>
+                </div>
+
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th style="width:52px;">NO</th>
+                            <th style="width:160px;">NISN</th>
+                            <th>NAMA</th>
+                            <th style="width:120px;">KELAS</th>
+                            <th style="width:96px;">NILAI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($report_rows)): ?>
+                            <tr>
+                                <td class="report-empty" colspan="5">Tidak ada data peserta sesuai filter.</td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($report_rows as $report_row): ?>
+                                <tr>
+                                    <td><?php echo esc_html((string) ($report_row['no'] ?? '')); ?></td>
+                                    <td><?php echo esc_html((string) ($report_row['nisn'] ?? '-')); ?></td>
+                                    <td><?php echo esc_html((string) ($report_row['nama'] ?? '-')); ?></td>
+                                    <td><?php echo esc_html((string) ($report_row['kelas'] ?? '-')); ?></td>
+                                    <td><?php echo esc_html(number_format((float) ($report_row['nilai'] ?? 0), 2)); ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+
+                <section class="signature-wrap">
+                    <?php foreach ($supervisors as $idx => $supervisor): ?>
+                        <div class="signature-card">
+                            <p class="signature-role"><?php echo esc_html((string) ($signature_role_labels[$idx] ?? (($supervisor['role'] ?? '') !== '' ? $supervisor['role'] : ('Petugas ' . ($idx + 1))))); ?></p>
+                            <div class="signature-space"></div>
+                            <p class="signature-name"><?php echo esc_html((string) ($supervisor['name'] ?? '-')); ?></p>
+                            <div class="signature-nip"><?php echo esc_html('NIP: ' . (string) ($supervisor['nip'] ?? '-')); ?></div>
+                        </div>
+                    <?php endforeach; ?>
+                </section>
+            </main>
+            <script>
+                window.addEventListener('load', function () {
+                    window.setTimeout(function () {
+                        window.print();
+                    }, 350);
+                });
+            </script>
+        </body>
+        </html>
+        <?php
+        exit;
+    }
+
+    public static function render_exam_cards_page(): void
+    {
+        if (!self::can_manage_users()) {
+            wp_die('Unauthorized');
+        }
+
+        $notice = isset($_GET['cbt_msg']) ? sanitize_text_field(wp_unslash($_GET['cbt_msg'])) : '';
+        $error = isset($_GET['cbt_err']) ? sanitize_text_field(wp_unslash($_GET['cbt_err'])) : '';
+        $selected_kelas = isset($_GET['cbt_card_kelas']) ? sanitize_text_field(wp_unslash($_GET['cbt_card_kelas'])) : '';
+        $selected_ruang = isset($_GET['cbt_card_ruang']) ? sanitize_text_field(wp_unslash($_GET['cbt_card_ruang'])) : '';
+        $search = isset($_GET['cbt_card_q']) ? sanitize_text_field(wp_unslash($_GET['cbt_card_q'])) : '';
+
+        $kelas_options = self::get_distinct_user_meta_values('kode_kelas');
+        $ruang_options = self::get_distinct_user_meta_values('kode_ruang');
+        ?>
+        <div class="wrap">
+            <h1>Cetak Kartu Ujian</h1>
+            <p class="description">Generate kartu peserta ujian berdasarkan filter siswa. Output siap dicetak ke PDF (A4, 6 kartu per halaman).</p>
+            <?php if ($notice): ?>
+                <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+            <?php endif; ?>
+            <?php if ($error): ?>
+                <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+            <?php endif; ?>
+
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="max-width:860px;">
+                <?php wp_nonce_field('cbt_print_exam_cards'); ?>
+                <input type="hidden" name="action" value="cbt_print_exam_cards" />
+                <table class="form-table" role="presentation">
+                    <tbody>
+                    <tr>
+                        <th><label for="cbt-card-kelas">Kelas</label></th>
+                        <td>
+                            <select id="cbt-card-kelas" name="cbt_card_kelas">
+                                <option value="">Semua kelas</option>
+                                <?php foreach ($kelas_options as $kelas_option): ?>
+                                    <option value="<?php echo esc_attr($kelas_option); ?>" <?php selected($selected_kelas, $kelas_option); ?>>
+                                        <?php echo esc_html($kelas_option); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">Opsional. Jika kosong, semua kelas akan diproses.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="cbt-card-ruang">Ruang</label></th>
+                        <td>
+                            <select id="cbt-card-ruang" name="cbt_card_ruang">
+                                <option value="">Semua ruang</option>
+                                <?php foreach ($ruang_options as $ruang_option): ?>
+                                    <option value="<?php echo esc_attr($ruang_option); ?>" <?php selected($selected_ruang, $ruang_option); ?>>
+                                        <?php echo esc_html($ruang_option); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">Opsional. Jika kosong, semua ruang di filter kelas akan dicetak.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="cbt-card-q">Search</label></th>
+                        <td>
+                            <input type="text" id="cbt-card-q" name="cbt_card_q" class="regular-text" value="<?php echo esc_attr($search); ?>" placeholder="Cari username / nama / email" />
+                            <p class="description">Opsional untuk mempersempit hasil siswa.</p>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+                <p class="description" style="margin:0 0 12px; color:#9a3412;">
+                    Password kartu akan memakai nilai tersimpan. Jika masih kosong, sistem akan membuat password 6 digit otomatis untuk siswa tersebut.
+                </p>
+                <p>
+                    <button class="button button-primary" type="submit">Generate &amp; Print Kartu</button>
+                </p>
+            </form>
+        </div>
+        <?php
+    }
+
+    public static function handle_print_exam_cards(): void
+    {
+        if (!self::can_manage_users()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_print_exam_cards');
+
+        $selected_kelas = isset($_POST['cbt_card_kelas']) ? trim(sanitize_text_field(wp_unslash($_POST['cbt_card_kelas']))) : '';
+        $selected_ruang = isset($_POST['cbt_card_ruang']) ? trim(sanitize_text_field(wp_unslash($_POST['cbt_card_ruang']))) : '';
+        $search = isset($_POST['cbt_card_q']) ? trim(sanitize_text_field(wp_unslash($_POST['cbt_card_q']))) : '';
+
+        $redirect_args = [
+            'cbt_card_kelas' => $selected_kelas,
+            'cbt_card_ruang' => $selected_ruang,
+            'cbt_card_q' => $search,
+        ];
+
+        $students = self::get_exam_card_students($search, $selected_kelas, $selected_ruang);
+        if (empty($students)) {
+            self::redirect_exam_cards_page($redirect_args + ['cbt_err' => 'Tidak ada siswa sesuai filter untuk dicetak.']);
+        }
+
+        foreach ($students as $idx => $student) {
+            $student_id = (int) ($student['id'] ?? 0);
+            if ($student_id <= 0) {
+                continue;
+            }
+
+            $existing_password = trim((string) ($student['password'] ?? ''));
+            if ($existing_password !== '') {
+                $students[$idx]['password'] = $existing_password;
+                continue;
+            }
+
+            $generated_password = self::generate_exam_card_password();
+            wp_set_password($generated_password, $student_id);
+            update_user_meta($student_id, self::USER_META_PLAIN_PASSWORD, $generated_password);
+            $students[$idx]['password'] = $generated_password;
+        }
+
+        $schedule_rows = self::get_exam_card_schedule_rows($selected_kelas);
+        $schedule_items = [];
+        foreach ($schedule_rows as $schedule_row) {
+            $schedule_items[] = self::format_exam_card_schedule_line((array) $schedule_row);
+        }
+
+        $branding = self::get_setup_branding_print_context();
+        $school_name = trim((string) ($branding['school_name'] ?? ''));
+        if ($school_name === '') {
+            $school_name = trim((string) get_bloginfo('name'));
+        }
+        if ($school_name === '') {
+            $school_name = 'CBT Exam';
+        }
+        $school_logo_url = (string) ($branding['logo_url'] ?? '');
+
+        $printed_at = current_time('d M Y H:i');
+        $kelas_label = $selected_kelas !== '' ? $selected_kelas : 'Semua Kelas';
+        $ruang_label = $selected_ruang !== '' ? $selected_ruang : 'Semua Ruang';
+        $student_total = count($students);
+
+        $back_args = [
+            'page' => 'cbt-exam-cards',
+            'cbt_card_kelas' => $selected_kelas,
+        ];
+        if ($selected_ruang !== '') {
+            $back_args['cbt_card_ruang'] = $selected_ruang;
+        }
+        if ($search !== '') {
+            $back_args['cbt_card_q'] = $search;
+        }
+        $back_url = add_query_arg($back_args, admin_url('admin.php'));
+
+        nocache_headers();
+        header('Content-Type: text/html; charset=' . get_option('blog_charset'));
+        ?>
+        <!doctype html>
+        <html lang="id">
+        <head>
+            <meta charset="<?php bloginfo('charset'); ?>" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title><?php echo esc_html('Cetak Kartu Ujian - ' . $kelas_label); ?></title>
+            <style>
+                @page {
+                    size: A4 portrait;
+                    margin: 10mm;
+                }
+                * {
+                    box-sizing: border-box;
+                }
+                body {
+                    margin: 0;
+                    font-family: Arial, Helvetica, sans-serif;
+                    color: #0f172a;
+                    background: #fff;
+                    font-size: 11px;
+                    line-height: 1.35;
+                }
+                .no-print {
+                    padding: 10px 12px;
+                    border-bottom: 1px solid #dbe5f2;
+                    background: #f8fbff;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                }
+                .no-print .button {
+                    border: 1px solid #1d4ed8;
+                    background: #2563eb;
+                    color: #fff;
+                    padding: 6px 10px;
+                    border-radius: 6px;
+                    text-decoration: none;
+                    cursor: pointer;
+                    font-size: 12px;
+                    line-height: 1;
+                }
+                .no-print .button-secondary {
+                    border-color: #cbd5e1;
+                    background: #fff;
+                    color: #0f172a;
+                }
+                .cards-wrap {
+                    padding: 8px;
+                }
+                .cards-meta {
+                    margin: 0 0 8px;
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 3px 12px;
+                    font-size: 11px;
+                }
+                .cards-meta strong {
+                    display: inline-block;
+                    min-width: 84px;
+                }
+                .cards-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 5mm;
+                }
+                .exam-card {
+                    border: 1px solid #0f172a;
+                    padding: 2.8mm;
+                    min-height: 86mm;
+                    break-inside: avoid;
+                    page-break-inside: avoid;
+                    display: flex;
+                    flex-direction: column;
+                }
+                .exam-card-head {
+                    display: grid;
+                    grid-template-columns: 18mm minmax(0, 1fr);
+                    gap: 2.5mm;
+                    align-items: center;
+                    padding-bottom: 2mm;
+                    border-bottom: 1px solid #64748b;
+                }
+                .exam-card-school-logo {
+                    width: 18mm;
+                    height: 18mm;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 3px;
+                    background: #f8fafc;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    overflow: hidden;
+                }
+                .exam-card-school-logo img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                }
+                .exam-card-school-logo-fallback {
+                    font-weight: 700;
+                    color: #334155;
+                    font-size: 10px;
+                }
+                .exam-card-school-name {
+                    font-size: 10px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    line-height: 1.2;
+                }
+                .exam-card-title {
+                    margin-top: 1px;
+                    font-weight: 700;
+                    font-size: 11px;
+                    line-height: 1.2;
+                }
+                .exam-card-content {
+                    margin-top: 2.4mm;
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) 24mm;
+                    gap: 2.4mm;
+                    align-items: start;
+                }
+                .exam-card-main-fields {
+                    min-width: 0;
+                }
+                .exam-card-photo-box {
+                    border: 1px solid #94a3b8;
+                    border-radius: 3px;
+                    min-height: 31mm;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: #f8fafc;
+                    overflow: hidden;
+                }
+                .exam-card-photo-box img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                }
+                .exam-card-photo-fallback {
+                    font-size: 15px;
+                    font-weight: 700;
+                    color: #475569;
+                }
+                .exam-card-row {
+                    display: grid;
+                    grid-template-columns: 33mm minmax(0, 1fr);
+                    gap: 1.2mm;
+                    margin-bottom: 1.2mm;
+                    align-items: start;
+                }
+                .exam-card-row-label {
+                    font-weight: 700;
+                    color: #334155;
+                    text-transform: uppercase;
+                    font-size: 10px;
+                }
+                .exam-card-row-value {
+                    font-size: 11px;
+                    word-break: break-word;
+                }
+                .exam-card-row-value.is-password {
+                    font-weight: 700;
+                    letter-spacing: 0.03em;
+                }
+                .exam-card-schedule-block {
+                    margin-top: 2.2mm;
+                }
+                .exam-card-schedule-title {
+                    font-size: 10px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    color: #334155;
+                    margin-bottom: 1.2mm;
+                }
+                .exam-card-schedule-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    table-layout: fixed;
+                    font-size: 8.3px;
+                    line-height: 1.15;
+                }
+                .exam-card-schedule-table th,
+                .exam-card-schedule-table td {
+                    border: 1px solid #94a3b8;
+                    padding: 0.6mm 0.75mm;
+                    vertical-align: top;
+                    text-align: left;
+                    word-break: break-word;
+                }
+                .exam-card-schedule-table th {
+                    background: #f1f5f9;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    color: #334155;
+                    white-space: nowrap;
+                }
+                @media print {
+                    .no-print {
+                        display: none !important;
+                    }
+                    .cards-wrap {
+                        padding: 0;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="no-print">
+                <button type="button" class="button" onclick="window.print()">Print / Save PDF</button>
+                <a class="button button-secondary" href="<?php echo esc_url($back_url); ?>">Kembali ke Form Cetak</a>
+            </div>
+            <main class="cards-wrap">
+                <div class="cards-meta">
+                    <div><strong>Tanggal Cetak</strong>: <?php echo esc_html($printed_at); ?></div>
+                    <div><strong>Total Siswa</strong>: <?php echo esc_html((string) $student_total); ?></div>
+                    <div><strong>Kelas</strong>: <?php echo esc_html($kelas_label); ?></div>
+                    <div><strong>Ruang</strong>: <?php echo esc_html($ruang_label); ?></div>
+                </div>
+                <section class="cards-grid">
+                    <?php foreach ($students as $student): ?>
+                        <?php
+                        $student_name = trim((string) ($student['name'] ?? ''));
+                        if ($student_name === '') {
+                            $student_name = (string) ($student['username'] ?? '-');
+                        }
+                        $student_photo = trim((string) ($student['foto'] ?? ''));
+                        $student_initial = strtoupper(substr($student_name, 0, 1));
+                        if ($student_initial === '') {
+                            $student_initial = 'S';
+                        }
+                        ?>
+                        <article class="exam-card">
+                            <header class="exam-card-head">
+                                <div class="exam-card-school-logo">
+                                    <?php if ($school_logo_url !== ''): ?>
+                                        <img src="<?php echo esc_url($school_logo_url); ?>" alt="<?php echo esc_attr($school_name); ?>" loading="lazy" decoding="async" />
+                                    <?php else: ?>
+                                        <div class="exam-card-school-logo-fallback">CBT</div>
+                                    <?php endif; ?>
+                                </div>
+                                <div>
+                                    <div class="exam-card-school-name"><?php echo esc_html($school_name); ?></div>
+                                    <div class="exam-card-title">KARTU PESERTA UJIAN CBT</div>
+                                </div>
+                            </header>
+                            <div class="exam-card-content">
+                                <div class="exam-card-main-fields">
+                                    <div class="exam-card-row">
+                                        <div class="exam-card-row-label">Nama Peserta</div>
+                                        <div class="exam-card-row-value"><?php echo esc_html($student_name); ?></div>
+                                    </div>
+                                    <div class="exam-card-row">
+                                        <div class="exam-card-row-label">NISN</div>
+                                        <div class="exam-card-row-value"><?php echo esc_html((string) ($student['nisn'] !== '' ? $student['nisn'] : '-')); ?></div>
+                                    </div>
+                                    <div class="exam-card-row">
+                                        <div class="exam-card-row-label">Username</div>
+                                        <div class="exam-card-row-value"><?php echo esc_html((string) ($student['username'] ?? '-')); ?></div>
+                                    </div>
+                                    <div class="exam-card-row">
+                                        <div class="exam-card-row-label">Password</div>
+                                        <div class="exam-card-row-value is-password"><?php echo esc_html((string) ($student['password'] ?? '-')); ?></div>
+                                    </div>
+                                    <div class="exam-card-row">
+                                        <div class="exam-card-row-label">Kelas</div>
+                                        <div class="exam-card-row-value"><?php echo esc_html((string) (($student['kelas'] ?? '') !== '' ? $student['kelas'] : '-')); ?></div>
+                                    </div>
+                                    <div class="exam-card-row">
+                                        <div class="exam-card-row-label">Ruangan</div>
+                                        <div class="exam-card-row-value"><?php echo esc_html((string) (($student['ruang'] ?? '') !== '' ? $student['ruang'] : '-')); ?></div>
+                                    </div>
+                                </div>
+                                <div class="exam-card-photo-box">
+                                    <?php if ($student_photo !== ''): ?>
+                                        <img src="<?php echo esc_url($student_photo); ?>" alt="<?php echo esc_attr($student_name); ?>" loading="lazy" decoding="async" />
+                                    <?php else: ?>
+                                        <div class="exam-card-photo-fallback"><?php echo esc_html($student_initial); ?></div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <section class="exam-card-schedule-block">
+                                <div class="exam-card-schedule-title">Jadwal Ujian</div>
+                                <?php if (empty($schedule_items)): ?>
+                                    -
+                                <?php else: ?>
+                                    <table class="exam-card-schedule-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:24%;">Mapel</th>
+                                                <th style="width:34%;">Hari</th>
+                                                <th style="width:24%;">Jadwal</th>
+                                                <th style="width:18%;">Durasi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                        <?php foreach ($schedule_items as $schedule_item): ?>
+                                            <tr>
+                                                <td><?php echo esc_html((string) ($schedule_item['title'] ?? '-')); ?></td>
+                                                <td><?php echo esc_html((string) ($schedule_item['day'] ?? '-')); ?></td>
+                                                <td><?php echo esc_html((string) ($schedule_item['time'] ?? '-')); ?></td>
+                                                <td><?php echo esc_html((string) ($schedule_item['duration'] ?? '-')); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                <?php endif; ?>
+                            </section>
+                        </article>
+                    <?php endforeach; ?>
+                </section>
+            </main>
+            <script>
+                window.addEventListener('load', function () {
+                    window.setTimeout(function () {
+                        window.print();
+                    }, 350);
+                });
+            </script>
+        </body>
+        </html>
+        <?php
+        exit;
+    }
+
+    private static function redirect_exam_cards_page(array $args = []): void
+    {
+        $redirect_args = array_merge(['page' => 'cbt-exam-cards'], $args);
+        wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+        exit;
+    }
+
+    private static function redirect_report_exam_page(array $args = []): void
+    {
+        $redirect_args = array_merge(['page' => 'cbt-report-exam'], $args);
+        wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+        exit;
+    }
+
+    /**
+     * @return array{name:string,nip:string,role:string}
+     */
+    private static function extract_report_supervisor_input(string $prefix, array $source): array
+    {
+        $name_key = $prefix . '_name';
+        $nip_key = $prefix . '_nip';
+        $role_key = $prefix . '_role';
+
+        return [
+            'name' => isset($source[$name_key]) ? trim(sanitize_text_field(wp_unslash((string) $source[$name_key]))) : '',
+            'nip' => isset($source[$nip_key]) ? trim(sanitize_text_field(wp_unslash((string) $source[$nip_key]))) : '',
+            'role' => isset($source[$role_key]) ? self::normalize_report_supervisor_role((string) wp_unslash($source[$role_key])) : '',
+        ];
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function report_supervisor_role_options(): array
+    {
+        return ['Pengawas', 'Teknisi Ruang', 'Proktor'];
+    }
+
+    private static function normalize_report_supervisor_role(string $raw): string
+    {
+        $role = trim(sanitize_text_field($raw));
+        if ($role === '') {
+            return '';
+        }
+
+        foreach (self::report_supervisor_role_options() as $option) {
+            if (strcasecmp($role, $option) === 0) {
+                return $option;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<int,array{name:string,nip:string,role:string}> $supervisors
+     * @return array<int,string>
+     */
+    private static function build_report_supervisor_role_labels(array $supervisors): array
+    {
+        $totals = [];
+        foreach ($supervisors as $supervisor) {
+            $role = trim((string) ($supervisor['role'] ?? ''));
+            if ($role === '') {
+                continue;
+            }
+            if (!isset($totals[$role])) {
+                $totals[$role] = 0;
+            }
+            $totals[$role]++;
+        }
+
+        $seen = [];
+        $labels = [];
+        foreach ($supervisors as $idx => $supervisor) {
+            $role = trim((string) ($supervisor['role'] ?? ''));
+            if ($role === '') {
+                $labels[$idx] = 'Petugas ' . ((int) $idx + 1);
+                continue;
+            }
+
+            $total_for_role = isset($totals[$role]) ? (int) $totals[$role] : 0;
+            if ($total_for_role <= 1) {
+                $labels[$idx] = $role;
+                continue;
+            }
+
+            if (!isset($seen[$role])) {
+                $seen[$role] = 0;
+            }
+            $seen[$role]++;
+            $labels[$idx] = $role . ' ' . (string) $seen[$role];
+        }
+
+        return $labels;
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_accessible_exam_filter_rows(bool $is_admin_scope, int $current_user_id): array
+    {
+        global $wpdb;
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $sql = "SELECT id, title FROM {$exam_table} WHERE 1=1";
+        $params = [];
+        if (!$is_admin_scope) {
+            $sql .= ' AND created_by = %d';
+            $params[] = $current_user_id;
+        }
+        $sql .= ' ORDER BY id DESC';
+        if (!empty($params)) {
+            $sql = $wpdb->prepare($sql, $params);
+        }
+
+        $rows = $wpdb->get_results($sql, ARRAY_A);
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function get_accessible_exam_row(int $exam_id, bool $is_admin_scope, int $current_user_id): array
+    {
+        if ($exam_id <= 0) {
+            return [];
+        }
+
+        global $wpdb;
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        if ($is_admin_scope) {
+            $exam = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT id, title FROM {$exam_table} WHERE id = %d",
+                    $exam_id
+                ),
+                ARRAY_A
+            );
+        } else {
+            $exam = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT id, title FROM {$exam_table} WHERE id = %d AND created_by = %d",
+                    $exam_id,
+                    $current_user_id
+                ),
+                ARRAY_A
+            );
+        }
+
+        return is_array($exam) ? $exam : [];
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_exam_report_rows(
+        int $exam_id,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id
+    ): array {
+        if ($exam_id <= 0) {
+            return [];
+        }
+
+        global $wpdb;
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+
+        $latest_attempt_subquery = "SELECT student_id, MAX(id) AS latest_attempt_id
+                                    FROM {$attempt_table}
+                                    WHERE exam_id = %d
+                                      AND status IN ('in_progress', 'completed')
+                                    GROUP BY student_id";
+
+        $selected_kelas = trim($selected_kelas);
+        $where_parts = ['a.exam_id = %d'];
+        $params = [$exam_id, $exam_id];
+
+        if (!$is_admin_scope) {
+            $where_parts[] = 'e.created_by = %d';
+            $params[] = $current_user_id;
+        }
+        if ($selected_kelas !== '') {
+            $where_parts[] = 'kelas_meta.meta_value = %s';
+            $params[] = $selected_kelas;
+        }
+
+        $where_sql = ' WHERE ' . implode(' AND ', $where_parts);
+        $sql = "SELECT a.id,
+                       a.status,
+                       a.score,
+                       a.max_score,
+                       u.display_name AS student_name,
+                       COALESCE(kelas_meta.meta_value, '') AS student_kelas,
+                       COALESCE(nisn_meta.meta_value, '') AS student_nisn,
+                       COALESCE(anscore.total_score_awarded, 0) AS answer_score_awarded,
+                       COALESCE(qtotal.total_points, 0) AS exam_total_points
+                FROM {$attempt_table} a
+                INNER JOIN ({$latest_attempt_subquery}) latest ON latest.latest_attempt_id = a.id
+                INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                INNER JOIN {$wpdb->users} u ON u.ID = a.student_id
+                LEFT JOIN (
+                    SELECT user_id, MAX(meta_value) AS meta_value
+                    FROM {$wpdb->usermeta}
+                    WHERE meta_key = 'kode_kelas'
+                    GROUP BY user_id
+                ) kelas_meta ON kelas_meta.user_id = u.ID
+                LEFT JOIN (
+                    SELECT user_id, MAX(meta_value) AS meta_value
+                    FROM {$wpdb->usermeta}
+                    WHERE meta_key = 'nisn'
+                    GROUP BY user_id
+                ) nisn_meta ON nisn_meta.user_id = u.ID
+                LEFT JOIN (
+                    SELECT attempt_id, COALESCE(SUM(score_awarded), 0) AS total_score_awarded
+                    FROM {$answer_table}
+                    GROUP BY attempt_id
+                ) anscore ON anscore.attempt_id = a.id
+                LEFT JOIN (
+                    SELECT exam_id, COALESCE(SUM(points), 0) AS total_points
+                    FROM {$question_table}
+                    GROUP BY exam_id
+                ) qtotal ON qtotal.exam_id = a.exam_id
+                {$where_sql}
+                ORDER BY COALESCE(kelas_meta.meta_value, '') ASC, u.display_name ASC, a.id DESC";
+
+        $prepared_sql = $wpdb->prepare($sql, $params);
+        $raw_rows = $wpdb->get_results($prepared_sql, ARRAY_A);
+        if (!is_array($raw_rows)) {
+            return [];
+        }
+
+        $rows = [];
+        $no = 1;
+        foreach ($raw_rows as $raw_row) {
+            $row = (array) $raw_row;
+            $status = (string) ($row['status'] ?? '');
+
+            $attempt_score = (float) ($row['score'] ?? 0);
+            $answer_score_awarded = (float) ($row['answer_score_awarded'] ?? 0);
+            $has_completed_score = ($status === 'completed')
+                && array_key_exists('score', $row)
+                && $row['score'] !== null
+                && $row['score'] !== '';
+
+            $earned_points = $has_completed_score ? $attempt_score : $answer_score_awarded;
+            $total_points = (float) ($row['max_score'] ?? 0);
+            if ($total_points <= 0) {
+                $total_points = (float) ($row['exam_total_points'] ?? 0);
+            }
+
+            $nilai = $total_points > 0 ? round(($earned_points / $total_points) * 100, 2) : 0.0;
+
+            $rows[] = [
+                'no' => $no++,
+                'nisn' => (string) ($row['student_nisn'] ?? ''),
+                'nama' => (string) ($row['student_name'] ?? ''),
+                'kelas' => (string) ($row['student_kelas'] ?? ''),
+                'nilai' => $nilai,
+            ];
+        }
+
+        return $rows;
+    }
+
     /**
      * @param array<int,array<string,mixed>> $attempts
      * @return array<int,array<int,array<string,mixed>>>
@@ -6503,6 +8119,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
         $notice = isset($_GET['cbt_msg']) ? sanitize_text_field(wp_unslash($_GET['cbt_msg'])) : '';
         $error = isset($_GET['cbt_err']) ? sanitize_text_field(wp_unslash($_GET['cbt_err'])) : '';
+        $import_token = isset($_GET['cbt_import_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_import_token'])) : '';
         $search = isset($_GET['cbt_user_q']) ? sanitize_text_field(wp_unslash($_GET['cbt_user_q'])) : '';
         $filter_role = isset($_GET['cbt_user_role']) ? sanitize_text_field(wp_unslash($_GET['cbt_user_role'])) : '';
         $filter_kelas = isset($_GET['cbt_user_kelas']) ? sanitize_text_field(wp_unslash($_GET['cbt_user_kelas'])) : '';
@@ -6528,6 +8145,41 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         $current_page = $users_page_data['page'];
         $total_pages = $users_page_data['total_pages'];
         $total_users = $users_page_data['total'];
+        $import_state = null;
+        $import_total = 0;
+        $import_offset = 0;
+        $import_created = 0;
+        $import_updated = 0;
+        $import_failed = 0;
+        $import_progress_percent = 0.0;
+        $import_is_running = false;
+        $import_continue_url = '';
+        if ($import_token !== '') {
+            $import_state = self::get_user_import_state_for_current_user($import_token);
+            if (is_array($import_state)) {
+                $import_total = max(0, isset($import_state['total']) ? (int) $import_state['total'] : 0);
+                $import_offset = max(0, isset($import_state['offset']) ? (int) $import_state['offset'] : 0);
+                if ($import_total > 0 && $import_offset > $import_total) {
+                    $import_offset = $import_total;
+                }
+                $import_created = max(0, isset($import_state['created']) ? (int) $import_state['created'] : 0);
+                $import_updated = max(0, isset($import_state['updated']) ? (int) $import_state['updated'] : 0);
+                $import_failed = max(0, isset($import_state['failed']) ? (int) $import_state['failed'] : 0);
+                $import_progress_percent = $import_total > 0
+                    ? round(((float) $import_offset / (float) $import_total) * 100, 2)
+                    : 0.0;
+                $import_is_running = $import_total > 0 && $import_offset < $import_total;
+                $import_continue_url = add_query_arg(
+                    [
+                        'action' => 'cbt_import_users',
+                        'cbt_import_token' => $import_token,
+                    ],
+                    admin_url('admin-post.php')
+                );
+            } elseif ($notice === '' && $error === '') {
+                $error = 'Sesi import tidak ditemukan atau sudah berakhir. Silakan upload ulang file.';
+            }
+        }
         ?>
         <div class="wrap">
             <h1>CBT User Import</h1>
@@ -6536,6 +8188,35 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             <?php endif; ?>
             <?php if ($error): ?>
                 <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+            <?php endif; ?>
+            <?php if (is_array($import_state)): ?>
+                <div class="notice notice-info">
+                    <p>
+                        <strong>Progress Import:</strong>
+                        <?php echo esc_html((string) $import_offset . ' / ' . (string) $import_total); ?>
+                        (<?php echo esc_html(number_format($import_progress_percent, 2)); ?>%)
+                        | Created: <?php echo esc_html((string) $import_created); ?>
+                        | Updated: <?php echo esc_html((string) $import_updated); ?>
+                        | Failed: <?php echo esc_html((string) $import_failed); ?>
+                    </p>
+                </div>
+                <div style="max-width:760px; margin:0 0 14px; border:1px solid #c3c4c7; border-radius:8px; background:#fff; padding:12px;">
+                    <div style="width:100%; height:14px; border-radius:999px; background:#f0f0f1; overflow:hidden; border:1px solid #dcdcde;">
+                        <div style="height:100%; width: <?php echo esc_attr((string) $import_progress_percent); ?>%; background:linear-gradient(90deg,#2271b1,#135e96); transition:width .25s ease;"></div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <?php if ($import_is_running): ?>
+                            <span style="color:#1d2327;">Memproses batch berikutnya...</span>
+                            <script>
+                                window.setTimeout(function () {
+                                    window.location.href = <?php echo wp_json_encode($import_continue_url); ?>;
+                                }, 350);
+                            </script>
+                        <?php else: ?>
+                            <span style="color:#0a7a2f; font-weight:600;">Import selesai diproses.</span>
+                        <?php endif; ?>
+                    </div>
+                </div>
             <?php endif; ?>
 
             <p>Import user massal dari file CSV/XLSX (Microsoft Excel / Google Sheets).</p>
@@ -6566,6 +8247,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                                 Format didukung: <code>.csv</code> dan <code>.xlsx</code>.
                                 Untuk CSV, delimiter koma atau titik-koma didukung.
                                 Import data besar diproses bertahap otomatis (batch <?php echo (int) $import_batch_size; ?> user per putaran) untuk mencegah timeout.
+                                Progress import akan ditampilkan otomatis (jumlah diproses, persentase, created/updated/failed).
                                 Untuk >500 user, disarankan pakai <code>.csv</code> karena parsing biasanya lebih cepat.
                             </p>
                         </td>
@@ -7125,6 +8807,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         if ($foto_upload['status'] === 'uploaded') {
             $foto = (string) $foto_upload['url'];
         }
+        $foto = self::resolve_student_default_photo($role, $foto);
 
         $generated_password = false;
         $password = $raw_password;
@@ -7157,6 +8840,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         if ($foto !== '') {
             update_user_meta((int) $user_id, 'foto', $foto);
         }
+        update_user_meta((int) $user_id, self::USER_META_PLAIN_PASSWORD, $password);
 
         $msg = 'User berhasil dibuat.';
         if ($generated_password) {
@@ -7249,6 +8933,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
         if ($raw_password !== '') {
             wp_set_password($raw_password, $user_id);
+            update_user_meta($user_id, self::USER_META_PLAIN_PASSWORD, $raw_password);
         }
 
         if ($kode_kelas !== '') {
@@ -7277,6 +8962,13 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 update_user_meta($user_id, 'foto', $foto);
             } else {
                 delete_user_meta($user_id, 'foto');
+            }
+        }
+
+        if (self::is_student_role($role)) {
+            $current_foto = trim((string) get_user_meta($user_id, 'foto', true));
+            if ($current_foto === '') {
+                update_user_meta($user_id, 'foto', self::get_default_student_photo_url());
             }
         }
 
@@ -7416,10 +9108,46 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         exit;
     }
 
+    public static function handle_save_setup_branding(): void
+    {
+        if (!self::can_manage_exams()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_save_setup_branding');
+
+        $school_name = isset($_POST['school_name'])
+            ? trim(sanitize_text_field(wp_unslash((string) $_POST['school_name'])))
+            : '';
+        $logo_attachment_id = isset($_POST['logo_attachment_id']) ? absint($_POST['logo_attachment_id']) : 0;
+        if ($logo_attachment_id > 0 && !wp_attachment_is_image($logo_attachment_id)) {
+            $logo_attachment_id = 0;
+        }
+
+        update_option(
+            self::SETUP_BRANDING_OPTION,
+            [
+                'school_name' => $school_name,
+                'logo_attachment_id' => $logo_attachment_id,
+            ],
+            false
+        );
+
+        wp_safe_redirect(admin_url('admin.php?page=cbt-setup&cbt_msg=' . rawurlencode('Setup branding berhasil disimpan.')));
+        exit;
+    }
+
     public static function handle_reset_database(): void
     {
         if (!current_user_can('manage_options')) {
             wp_die('Unauthorized');
+        }
+
+        self::prepare_runtime_for_bulk_user_import();
+
+        $token = isset($_GET['cbt_reset_progress_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_reset_progress_token'])) : '';
+        if ($token !== '') {
+            self::continue_reset_database($token);
         }
 
         check_admin_referer('cbt_reset_database');
@@ -7428,57 +9156,238 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             ? trim((string) sanitize_text_field(wp_unslash($_POST['confirm_phrase'])))
             : '';
         if ($confirm_phrase !== 'RESET CBT') {
-            wp_safe_redirect(admin_url('admin.php?page=cbt-maintenance&cbt_err=' . rawurlencode('Konfirmasi tidak valid. Ketik persis: RESET CBT')));
-            exit;
+            self::redirect_maintenance_page(null, 'Konfirmasi tidak valid. Ketik persis: RESET CBT');
         }
 
         global $wpdb;
-
-        $failed_tables = [];
         $tables = self::cbt_data_tables($wpdb);
-
-        $wpdb->query('SET FOREIGN_KEY_CHECKS = 0');
-        foreach ($tables as $table) {
-            $safe_table = str_replace('`', '', (string) $table);
-            if ($safe_table === '') {
-                continue;
-            }
-
-            $truncated = $wpdb->query("TRUNCATE TABLE `{$safe_table}`");
-            if ($truncated !== false) {
-                continue;
-            }
-
-            $deleted = $wpdb->query("DELETE FROM `{$safe_table}`");
-            if ($deleted === false) {
-                $failed_tables[] = $safe_table;
-                continue;
-            }
-
-            $wpdb->query("ALTER TABLE `{$safe_table}` AUTO_INCREMENT = 1");
-        }
-        $wpdb->query('SET FOREIGN_KEY_CHECKS = 1');
-
-        self::reset_cbt_global_token_options();
-        CBT_UI_State::clear_all();
-        CBT_Cache::reset_plugin_cache_state();
-
-        if (!empty($failed_tables)) {
-            wp_safe_redirect(
-                admin_url(
-                    'admin.php?page=cbt-maintenance&cbt_err=' . rawurlencode(
-                        'Sebagian tabel gagal direset: ' . implode(', ', $failed_tables)
-                    )
-                )
-            );
-            exit;
+        $user_ids = self::collect_cbt_user_ids_for_reset();
+        $token = strtolower((string) wp_generate_password(24, false, false));
+        $total_units = count($tables) + max(1, count($user_ids)) + 1; // table reset + user delete + finalize
+        $state = [
+            'user_id' => get_current_user_id(),
+            'started_at' => time(),
+            'phase' => 'tables',
+            'tables' => $tables,
+            'table_index' => 0,
+            'failed_tables' => [],
+            'foreign_keys_disabled' => 0,
+            'user_offset' => 0,
+            'users_placeholder_done' => 0,
+            'deleted_user_count' => 0,
+            'total_units' => max(1, $total_units),
+            'processed_units' => 0,
+        ];
+        $state_saved = set_transient(self::get_reset_progress_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+        $users_saved = set_transient(self::get_reset_progress_users_key($token), array_values($user_ids), 12 * HOUR_IN_SECONDS);
+        if (!$state_saved || !$users_saved) {
+            self::clear_reset_progress_transients($token);
+            self::redirect_maintenance_page(null, 'Gagal menyiapkan sesi reset database. Coba ulang lagi.');
         }
 
-        $deleted_user_count = self::delete_cbt_users_for_reset();
-        $message = 'Data database CBT berhasil direset. User CBT terhapus: ' . $deleted_user_count . '.';
-
-        wp_safe_redirect(admin_url('admin.php?page=cbt-maintenance&cbt_msg=' . rawurlencode($message)));
+        wp_safe_redirect(add_query_arg(
+            [
+                'page' => 'cbt-maintenance',
+                'cbt_reset_progress_token' => $token,
+            ],
+            admin_url('admin.php')
+        ));
         exit;
+    }
+
+    private static function continue_reset_database(string $token): void
+    {
+        $state = self::get_reset_progress_state_for_current_user($token);
+        if (!is_array($state)) {
+            self::clear_reset_progress_transients($token);
+            self::redirect_maintenance_page(null, 'Sesi reset database berakhir. Silakan mulai ulang reset.');
+        }
+
+        $tables = isset($state['tables']) && is_array($state['tables']) ? array_values((array) $state['tables']) : [];
+        $users = get_transient(self::get_reset_progress_users_key($token));
+        if (!is_array($users)) {
+            $users = [];
+        }
+        $users = array_values(array_map('intval', $users));
+
+        $phase = sanitize_key((string) ($state['phase'] ?? 'tables'));
+        $table_index = max(0, isset($state['table_index']) ? (int) $state['table_index'] : 0);
+        $user_offset = max(0, isset($state['user_offset']) ? (int) $state['user_offset'] : 0);
+        $users_placeholder_done = !empty($state['users_placeholder_done']) ? 1 : 0;
+        $deleted_user_count = max(0, isset($state['deleted_user_count']) ? (int) $state['deleted_user_count'] : 0);
+        $failed_tables = [];
+        if (isset($state['failed_tables']) && is_array($state['failed_tables'])) {
+            foreach ($state['failed_tables'] as $failed_table) {
+                $failed_table = str_replace('`', '', (string) $failed_table);
+                if ($failed_table !== '') {
+                    $failed_tables[$failed_table] = $failed_table;
+                }
+            }
+        }
+
+        $table_total = count($tables);
+        if ($table_index > $table_total) {
+            $table_index = $table_total;
+        }
+        $user_total = count($users);
+        if ($user_offset > $user_total) {
+            $user_offset = $user_total;
+        }
+        $total_units = max(1, isset($state['total_units']) ? (int) $state['total_units'] : ($table_total + max(1, $user_total) + 1));
+
+        $max_batch_seconds = self::get_reset_progress_max_batch_seconds();
+        $table_batch_size = self::get_reset_progress_table_batch_size();
+        $user_batch_size = self::get_reset_progress_user_batch_size();
+        $batch_started_at = microtime(true);
+
+        global $wpdb;
+
+        if ($phase === 'tables') {
+            if (empty($state['foreign_keys_disabled'])) {
+                $wpdb->query('SET FOREIGN_KEY_CHECKS = 0');
+                $state['foreign_keys_disabled'] = 1;
+            }
+
+            $processed_tables_this_round = 0;
+            while ($table_index < $table_total && $processed_tables_this_round < $table_batch_size) {
+                $safe_table = str_replace('`', '', (string) $tables[$table_index]);
+                if ($safe_table !== '') {
+                    $truncated = $wpdb->query("TRUNCATE TABLE `{$safe_table}`");
+                    if ($truncated === false) {
+                        $deleted = $wpdb->query("DELETE FROM `{$safe_table}`");
+                        if ($deleted === false) {
+                            $failed_tables[$safe_table] = $safe_table;
+                        } else {
+                            $wpdb->query("ALTER TABLE `{$safe_table}` AUTO_INCREMENT = 1");
+                        }
+                    }
+                }
+
+                $table_index++;
+                $processed_tables_this_round++;
+
+                if ((microtime(true) - $batch_started_at) >= $max_batch_seconds) {
+                    break;
+                }
+            }
+
+            if ($table_index >= $table_total) {
+                if (!empty($state['foreign_keys_disabled'])) {
+                    $wpdb->query('SET FOREIGN_KEY_CHECKS = 1');
+                }
+                $state['foreign_keys_disabled'] = 0;
+                $phase = 'users';
+            }
+        }
+
+        if ($phase === 'users' && (microtime(true) - $batch_started_at) < $max_batch_seconds) {
+            if ($user_total <= 0) {
+                $users_placeholder_done = 1;
+                $phase = 'finalize';
+            } else {
+                require_once ABSPATH . 'wp-admin/includes/user.php';
+                $target_offset = min($user_offset + $user_batch_size, $user_total);
+                for ($index = $user_offset; $index < $target_offset; $index++) {
+                    $user_id = isset($users[$index]) ? (int) $users[$index] : 0;
+                    if ($user_id <= 0) {
+                        continue;
+                    }
+                    $deleted = wp_delete_user($user_id);
+                    if ($deleted) {
+                        $deleted_user_count++;
+                    }
+
+                    if (($index - $user_offset) >= 1 && (microtime(true) - $batch_started_at) >= $max_batch_seconds) {
+                        $target_offset = $index + 1;
+                        break;
+                    }
+                }
+                $user_offset = $target_offset;
+                if ($user_offset >= $user_total) {
+                    $phase = 'finalize';
+                }
+            }
+        }
+
+        if ($phase === 'finalize' && (microtime(true) - $batch_started_at) < $max_batch_seconds) {
+            self::reset_cbt_global_token_options();
+            CBT_UI_State::clear_all();
+            CBT_Cache::reset_plugin_cache_state();
+            self::clear_reset_progress_transients($token);
+
+            if (!empty($failed_tables)) {
+                self::redirect_maintenance_page(
+                    null,
+                    'Sebagian tabel gagal direset: ' . implode(', ', array_values($failed_tables))
+                    . '. User CBT terhapus: ' . $deleted_user_count . '.'
+                );
+            }
+
+            $message = 'Data database CBT berhasil direset. User CBT terhapus: ' . $deleted_user_count . '.';
+            self::redirect_maintenance_page($message);
+        }
+
+        $user_progress_units = $user_total > 0
+            ? min($user_offset, $user_total)
+            : ($users_placeholder_done ? 1 : 0);
+        $processed_units = $table_index + $user_progress_units;
+        if ($processed_units > ($total_units - 1)) {
+            $processed_units = $total_units - 1;
+        }
+        if ($processed_units < 0) {
+            $processed_units = 0;
+        }
+
+        $state['phase'] = $phase;
+        $state['table_index'] = $table_index;
+        $state['user_offset'] = $user_offset;
+        $state['users_placeholder_done'] = $users_placeholder_done;
+        $state['deleted_user_count'] = $deleted_user_count;
+        $state['failed_tables'] = array_values($failed_tables);
+        $state['total_units'] = $total_units;
+        $state['processed_units'] = $processed_units;
+
+        $state_saved = set_transient(self::get_reset_progress_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+        if (!$state_saved) {
+            if (!empty($state['foreign_keys_disabled'])) {
+                $wpdb->query('SET FOREIGN_KEY_CHECKS = 1');
+            }
+            self::clear_reset_progress_transients($token);
+            self::redirect_maintenance_page(null, 'Gagal menyimpan progres reset database. Silakan mulai ulang reset.');
+        }
+
+        wp_safe_redirect(add_query_arg(
+            [
+                'page' => 'cbt-maintenance',
+                'cbt_reset_progress_token' => $token,
+            ],
+            admin_url('admin.php')
+        ));
+        exit;
+    }
+
+    public static function handle_backfill_question_sources(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_backfill_question_sources');
+
+        $result = self::run_question_source_backfill();
+        if (!empty($result['error'])) {
+            self::redirect_maintenance_page(null, (string) $result['error']);
+        }
+
+        $message = sprintf(
+            'Backfill soal bank selesai. Source dipindai: %d, soal exam tersinkron: %d, linkage baru: %d, exam terdampak: %d.',
+            (int) ($result['scanned_sources'] ?? 0),
+            (int) ($result['updated_questions'] ?? 0),
+            (int) ($result['new_links'] ?? 0),
+            (int) ($result['affected_exams'] ?? 0)
+        );
+
+        self::redirect_maintenance_page($message);
     }
 
     public static function handle_save_exam(): void
@@ -7785,6 +9694,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 $question_table,
                 [
                     'exam_id' => $exam_id,
+                    'source_question_id' => $source_question_id,
                     'question_text' => (string) ($source_row['question_text'] ?? ''),
                     'question_type' => $question_type,
                     'points' => (float) ($source_row['points'] ?? 1),
@@ -7793,7 +9703,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     'created_at' => $now,
                     'updated_at' => $now,
                 ],
-                ['%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s']
+                ['%d', '%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s']
             );
 
             if (!$inserted_question) {
@@ -7835,6 +9745,712 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         return $inserted_count;
     }
 
+    private static function is_bank_exam_title(string $exam_title): bool
+    {
+        return stripos($exam_title, 'Bank Soal - ') === 0;
+    }
+
+    private static function is_bank_question_snapshot(array $snapshot): bool
+    {
+        return self::is_bank_exam_title((string) ($snapshot['exam_title'] ?? ''));
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function get_question_sync_snapshot(int $question_id): array
+    {
+        global $wpdb;
+
+        if ($question_id <= 0) {
+            return [];
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $option_table = $wpdb->prefix . 'cbt_options';
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT q.*, e.subject_id, e.title AS exam_title
+                 FROM {$question_table} q
+                 INNER JOIN {$exam_table} e ON e.id = q.exam_id
+                 WHERE q.id = %d
+                 LIMIT 1",
+                $question_id
+            ),
+            ARRAY_A
+        );
+        if (!is_array($row) || empty($row)) {
+            return [];
+        }
+
+        $options = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, option_key, option_text, is_correct
+                 FROM {$option_table}
+                 WHERE question_id = %d
+                 ORDER BY id ASC",
+                $question_id
+            ),
+            ARRAY_A
+        );
+
+        $question_type = (string) ($row['question_type'] ?? '');
+        $detail = self::get_question_type_detail($question_id, $question_type);
+        $normalized_detail_text = '';
+        if ($question_type === 'true_false') {
+            $detail_value = array_key_exists('correct_value', $detail)
+                ? (int) $detail['correct_value']
+                : self::normalize_true_false_value((string) ($row['correct_text'] ?? ''));
+            $normalized_detail_text = ($detail_value === 0) ? 'false' : 'true';
+        } elseif ($question_type === 'short_answer') {
+            $normalized_detail_text = (string) ($detail['correct_text'] ?? ($row['correct_text'] ?? ''));
+        } elseif ($question_type === 'essay') {
+            $normalized_detail_text = (string) ($detail['rubric_text'] ?? ($row['correct_text'] ?? ''));
+        } elseif ($question_type === 'true_false_matrix') {
+            $normalized_detail_text = (string) ($row['correct_text'] ?? '');
+        }
+
+        return [
+            'question_id' => (int) ($row['id'] ?? 0),
+            'exam_id' => (int) ($row['exam_id'] ?? 0),
+            'subject_id' => (int) ($row['subject_id'] ?? 0),
+            'exam_title' => (string) ($row['exam_title'] ?? ''),
+            'source_question_id' => (int) ($row['source_question_id'] ?? 0),
+            'question_text' => (string) ($row['question_text'] ?? ''),
+            'question_type' => $question_type,
+            'points' => (float) ($row['points'] ?? 0),
+            'correct_text' => (string) ($row['correct_text'] ?? ''),
+            'explanation' => (string) ($row['explanation'] ?? ''),
+            'normalized_detail_text' => $normalized_detail_text,
+            'options' => is_array($options) ? $options : [],
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $options
+     * @return array<int,array<string,mixed>>
+     */
+    private static function normalize_question_sync_options(array $options): array
+    {
+        $normalized = [];
+
+        foreach ($options as $index => $option_row) {
+            $option = (array) $option_row;
+            $option_key = trim((string) ($option['option_key'] ?? ''));
+            $normalized[] = [
+                'id' => (int) ($option['id'] ?? 0),
+                'option_key' => $option_key,
+                'match_key' => $option_key !== '' ? $option_key : '__idx_' . $index,
+                'option_text' => (string) ($option['option_text'] ?? ''),
+                'is_correct' => ((int) ($option['is_correct'] ?? 0) === 1) ? 1 : 0,
+            ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function option_sync_signature(array $options): array
+    {
+        $signature = [];
+        foreach (self::normalize_question_sync_options($options) as $option) {
+            $signature[] = [
+                'match_key' => (string) ($option['match_key'] ?? ''),
+                'option_text' => (string) ($option['option_text'] ?? ''),
+                'is_correct' => (int) ($option['is_correct'] ?? 0),
+            ];
+        }
+
+        return $signature;
+    }
+
+    private static function question_snapshots_are_sync_equivalent(array $left, array $right): bool
+    {
+        return
+            (string) ($left['question_text'] ?? '') === (string) ($right['question_text'] ?? '') &&
+            (string) ($left['question_type'] ?? '') === (string) ($right['question_type'] ?? '') &&
+            round((float) ($left['points'] ?? 0), 2) === round((float) ($right['points'] ?? 0), 2) &&
+            (string) ($left['correct_text'] ?? '') === (string) ($right['correct_text'] ?? '') &&
+            (string) ($left['explanation'] ?? '') === (string) ($right['explanation'] ?? '') &&
+            (string) ($left['normalized_detail_text'] ?? '') === (string) ($right['normalized_detail_text'] ?? '') &&
+            self::option_sync_signature((array) ($left['options'] ?? [])) === self::option_sync_signature((array) ($right['options'] ?? []));
+    }
+
+    private static function question_snapshots_are_legacy_descendant_match(array $candidate, array $source): bool
+    {
+        if (self::question_snapshots_are_sync_equivalent($candidate, $source)) {
+            return true;
+        }
+
+        return
+            (string) ($candidate['question_type'] ?? '') === (string) ($source['question_type'] ?? '') &&
+            round((float) ($candidate['points'] ?? 0), 2) === round((float) ($source['points'] ?? 0), 2) &&
+            (string) ($candidate['correct_text'] ?? '') === (string) ($source['correct_text'] ?? '') &&
+            (string) ($candidate['explanation'] ?? '') === (string) ($source['explanation'] ?? '') &&
+            (string) ($candidate['normalized_detail_text'] ?? '') === (string) ($source['normalized_detail_text'] ?? '') &&
+            self::option_sync_signature((array) ($candidate['options'] ?? [])) === self::option_sync_signature((array) ($source['options'] ?? [])) &&
+            self::question_texts_look_related(
+                (string) ($candidate['question_text'] ?? ''),
+                (string) ($source['question_text'] ?? '')
+            );
+    }
+
+    private static function question_texts_look_related(string $left, string $right): bool
+    {
+        $left = strtolower(trim(preg_replace('/\s+/', ' ', wp_strip_all_tags($left))));
+        $right = strtolower(trim(preg_replace('/\s+/', ' ', wp_strip_all_tags($right))));
+        if ($left === '' || $right === '') {
+            return false;
+        }
+
+        if ($left === $right) {
+            return true;
+        }
+
+        if (strpos($left, $right) !== false || strpos($right, $left) !== false) {
+            return true;
+        }
+
+        similar_text($left, $right, $percent);
+        return $percent >= 82.0;
+    }
+
+    /**
+     * @return int[]
+     */
+    private static function collect_descendant_question_ids_for_source(int $source_question_id, array $reference_snapshot): array
+    {
+        global $wpdb;
+
+        if ($source_question_id <= 0 || empty($reference_snapshot)) {
+            return [];
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $direct_descendant_ids = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT id
+                 FROM {$question_table}
+                 WHERE source_question_id = %d
+                   AND id <> %d",
+                $source_question_id,
+                $source_question_id
+            )
+        );
+
+        $target_question_ids = [];
+        foreach ((array) $direct_descendant_ids as $target_question_id) {
+            $target_question_id = (int) $target_question_id;
+            if ($target_question_id > 0) {
+                $target_question_ids[$target_question_id] = $target_question_id;
+            }
+        }
+
+        foreach (self::find_legacy_descendant_question_ids($source_question_id, $reference_snapshot) as $target_question_id) {
+            $target_question_id = (int) $target_question_id;
+            if ($target_question_id > 0) {
+                $target_question_ids[$target_question_id] = $target_question_id;
+            }
+        }
+
+        return array_values($target_question_ids);
+    }
+
+    /**
+     * @return int[]
+     */
+    private static function propagate_bank_question_update(int $source_question_id, array $before_snapshot, array $after_snapshot): array
+    {
+        global $wpdb;
+
+        if ($source_question_id <= 0 || empty($before_snapshot) || empty($after_snapshot)) {
+            return [];
+        }
+
+        $affected_exam_ids = [];
+        foreach (self::collect_descendant_question_ids_for_source($source_question_id, $before_snapshot) as $target_question_id) {
+            $target_snapshot = self::get_question_sync_snapshot($target_question_id);
+            if (empty($target_snapshot)) {
+                continue;
+            }
+
+            $affected_exam_id = self::apply_source_snapshot_to_question(
+                $target_question_id,
+                $source_question_id,
+                $after_snapshot,
+                $target_snapshot
+            );
+            if ($affected_exam_id > 0) {
+                $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
+            }
+        }
+
+        return array_values($affected_exam_ids);
+    }
+
+    /**
+     * @return array{scanned_sources:int,updated_questions:int,new_links:int,affected_exams:int,error?:string}
+     */
+    public static function run_question_source_backfill(): array
+    {
+        global $wpdb;
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$question_table}", 0);
+        if (!is_array($columns) || !in_array('source_question_id', $columns, true)) {
+            return [
+                'scanned_sources' => 0,
+                'updated_questions' => 0,
+                'new_links' => 0,
+                'affected_exams' => 0,
+                'error' => 'Kolom source_question_id belum tersedia. Muat ulang plugin atau jalankan upgrade terlebih dahulu.',
+            ];
+        }
+
+        $bank_question_ids = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT q.id
+                 FROM {$question_table} q
+                 INNER JOIN {$exam_table} e ON e.id = q.exam_id
+                 WHERE e.title LIKE %s
+                 ORDER BY q.id ASC",
+                'Bank Soal - %'
+            )
+        );
+
+        $claimed_question_ids = [];
+        $updated_question_ids = [];
+        $new_link_ids = [];
+        $affected_exam_ids = [];
+        $scanned_sources = 0;
+
+        foreach ((array) $bank_question_ids as $source_question_id) {
+            $source_question_id = (int) $source_question_id;
+            if ($source_question_id <= 0) {
+                continue;
+            }
+
+            $source_snapshot = self::get_question_sync_snapshot($source_question_id);
+            if (empty($source_snapshot) || !self::is_bank_question_snapshot($source_snapshot)) {
+                continue;
+            }
+
+            $scanned_sources++;
+            foreach (self::collect_descendant_question_ids_for_source($source_question_id, $source_snapshot) as $target_question_id) {
+                $target_question_id = (int) $target_question_id;
+                if ($target_question_id <= 0 || isset($claimed_question_ids[$target_question_id])) {
+                    continue;
+                }
+
+                $target_snapshot = self::get_question_sync_snapshot($target_question_id);
+                if (empty($target_snapshot)) {
+                    continue;
+                }
+
+                $affected_exam_id = self::apply_source_snapshot_to_question(
+                    $target_question_id,
+                    $source_question_id,
+                    $source_snapshot,
+                    $target_snapshot
+                );
+                if ($affected_exam_id <= 0) {
+                    continue;
+                }
+
+                $claimed_question_ids[$target_question_id] = true;
+                $updated_question_ids[$target_question_id] = $target_question_id;
+                if ((int) ($target_snapshot['source_question_id'] ?? 0) !== $source_question_id) {
+                    $new_link_ids[$target_question_id] = $target_question_id;
+                }
+                $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
+            }
+        }
+
+        if (!empty($affected_exam_ids)) {
+            CBT_Cache::invalidate_exams(array_values($affected_exam_ids));
+        }
+
+        return [
+            'scanned_sources' => $scanned_sources,
+            'updated_questions' => count($updated_question_ids),
+            'new_links' => count($new_link_ids),
+            'affected_exams' => count($affected_exam_ids),
+        ];
+    }
+
+    /**
+     * @return int[]
+     */
+    private static function find_legacy_descendant_question_ids(int $source_question_id, array $before_snapshot): array
+    {
+        global $wpdb;
+
+        $source_exam_id = (int) ($before_snapshot['exam_id'] ?? 0);
+        $subject_id = (int) ($before_snapshot['subject_id'] ?? 0);
+        if ($source_question_id <= 0 || $source_exam_id <= 0 || $subject_id <= 0) {
+            return [];
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $candidate_ids = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT q.id
+                 FROM {$question_table} q
+                 INNER JOIN {$exam_table} e ON e.id = q.exam_id
+                 WHERE e.subject_id = %d
+                   AND e.title NOT LIKE %s
+                   AND q.exam_id <> %d
+                   AND q.id <> %d
+                   AND (q.source_question_id IS NULL OR q.source_question_id = 0)
+                   AND q.question_type = %s
+                   AND q.points = %f
+                   AND COALESCE(q.correct_text, '') = %s
+                   AND COALESCE(q.explanation, '') = %s",
+                $subject_id,
+                'Bank Soal - %',
+                $source_exam_id,
+                $source_question_id,
+                (string) ($before_snapshot['question_type'] ?? ''),
+                (float) ($before_snapshot['points'] ?? 0),
+                (string) ($before_snapshot['correct_text'] ?? ''),
+                (string) ($before_snapshot['explanation'] ?? '')
+            )
+        );
+
+        $matched_ids = [];
+        foreach ((array) $candidate_ids as $candidate_id) {
+            $candidate_id = (int) $candidate_id;
+            if ($candidate_id <= 0) {
+                continue;
+            }
+
+            $candidate_snapshot = self::get_question_sync_snapshot($candidate_id);
+            if (empty($candidate_snapshot)) {
+                continue;
+            }
+
+            if (!self::question_snapshots_are_legacy_descendant_match($candidate_snapshot, $before_snapshot)) {
+                continue;
+            }
+
+            $matched_ids[] = $candidate_id;
+        }
+
+        return $matched_ids;
+    }
+
+    private static function apply_source_snapshot_to_question(
+        int $target_question_id,
+        int $source_question_id,
+        array $source_snapshot,
+        array $target_snapshot = []
+    ): int {
+        global $wpdb;
+
+        if ($target_question_id <= 0 || $source_question_id <= 0 || empty($source_snapshot)) {
+            return 0;
+        }
+
+        if (empty($target_snapshot)) {
+            $target_snapshot = self::get_question_sync_snapshot($target_question_id);
+        }
+        if (empty($target_snapshot)) {
+            return 0;
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $now = current_time('mysql');
+        $question_type = (string) ($source_snapshot['question_type'] ?? 'multiple_choice');
+        $correct_text = (string) ($source_snapshot['correct_text'] ?? '');
+        $explanation = (string) ($source_snapshot['explanation'] ?? '');
+        $old_question_type = (string) ($target_snapshot['question_type'] ?? '');
+
+        $updated = $wpdb->update(
+            $question_table,
+            [
+                'source_question_id' => $source_question_id,
+                'question_text' => (string) ($source_snapshot['question_text'] ?? ''),
+                'question_type' => $question_type,
+                'points' => (float) ($source_snapshot['points'] ?? 0),
+                'correct_text' => $correct_text !== '' ? $correct_text : null,
+                'explanation' => $explanation !== '' ? $explanation : null,
+                'updated_at' => $now,
+            ],
+            ['id' => $target_question_id],
+            ['%d', '%s', '%s', '%f', '%s', '%s', '%s'],
+            ['%d']
+        );
+        if ($updated === false) {
+            return 0;
+        }
+
+        $option_id_map = self::sync_question_options_from_snapshot(
+            $target_question_id,
+            (array) ($source_snapshot['options'] ?? []),
+            (array) ($target_snapshot['options'] ?? [])
+        );
+
+        self::save_question_type_detail(
+            $target_question_id,
+            $question_type,
+            (string) ($source_snapshot['normalized_detail_text'] ?? '')
+        );
+
+        if ($old_question_type !== $question_type) {
+            self::clear_question_answer_records($target_question_id, true);
+            if (class_exists('CBT_Runtime')) {
+                CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, [], true);
+            }
+        } elseif (self::question_type_uses_choice_options($question_type)) {
+            self::remap_question_answer_option_ids($target_question_id, $option_id_map);
+            if (class_exists('CBT_Runtime')) {
+                CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, $option_id_map, false);
+            }
+        }
+
+        return (int) ($target_snapshot['exam_id'] ?? 0);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $desired_options
+     * @param array<int,array<string,mixed>> $existing_options
+     * @return array<int,int>
+     */
+    private static function sync_question_options_from_snapshot(int $question_id, array $desired_options, array $existing_options = []): array
+    {
+        global $wpdb;
+
+        $option_table = $wpdb->prefix . 'cbt_options';
+        if ($question_id <= 0) {
+            return [];
+        }
+
+        if (empty($existing_options)) {
+            $existing_options = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT id, option_key, option_text, is_correct
+                     FROM {$option_table}
+                     WHERE question_id = %d
+                     ORDER BY id ASC",
+                    $question_id
+                ),
+                ARRAY_A
+            );
+        }
+
+        $normalized_existing = self::normalize_question_sync_options((array) $existing_options);
+        $normalized_desired = self::normalize_question_sync_options($desired_options);
+
+        $existing_ids_by_match_key = [];
+        foreach ($normalized_existing as $existing_option) {
+            $existing_id = (int) ($existing_option['id'] ?? 0);
+            $match_key = (string) ($existing_option['match_key'] ?? '');
+            if ($existing_id <= 0 || $match_key === '') {
+                continue;
+            }
+
+            $existing_ids_by_match_key[$match_key] = $existing_id;
+        }
+
+        $new_ids_by_match_key = [];
+        $used_existing_ids = [];
+        $now = current_time('mysql');
+
+        foreach ($normalized_desired as $desired_option) {
+            $match_key = (string) ($desired_option['match_key'] ?? '');
+            $existing_id = $match_key !== '' && isset($existing_ids_by_match_key[$match_key])
+                ? (int) $existing_ids_by_match_key[$match_key]
+                : 0;
+
+            if ($existing_id > 0) {
+                $wpdb->update(
+                    $option_table,
+                    [
+                        'option_key' => (string) ($desired_option['option_key'] ?? ''),
+                        'option_text' => (string) ($desired_option['option_text'] ?? ''),
+                        'is_correct' => (int) ($desired_option['is_correct'] ?? 0),
+                    ],
+                    ['id' => $existing_id],
+                    ['%s', '%s', '%d'],
+                    ['%d']
+                );
+                $used_existing_ids[$existing_id] = true;
+                $new_ids_by_match_key[$match_key] = $existing_id;
+                continue;
+            }
+
+            $inserted = $wpdb->insert(
+                $option_table,
+                [
+                    'question_id' => $question_id,
+                    'option_key' => (string) ($desired_option['option_key'] ?? ''),
+                    'option_text' => (string) ($desired_option['option_text'] ?? ''),
+                    'is_correct' => (int) ($desired_option['is_correct'] ?? 0),
+                    'created_at' => $now,
+                ],
+                ['%d', '%s', '%s', '%d', '%s']
+            );
+            if (!$inserted) {
+                continue;
+            }
+
+            $new_option_id = (int) $wpdb->insert_id;
+            if ($new_option_id > 0) {
+                $used_existing_ids[$new_option_id] = true;
+                $new_ids_by_match_key[$match_key] = $new_option_id;
+            }
+        }
+
+        foreach ($normalized_existing as $existing_option) {
+            $existing_id = (int) ($existing_option['id'] ?? 0);
+            if ($existing_id <= 0 || isset($used_existing_ids[$existing_id])) {
+                continue;
+            }
+            $wpdb->delete($option_table, ['id' => $existing_id], ['%d']);
+        }
+
+        $old_to_new = [];
+        foreach ($existing_ids_by_match_key as $match_key => $old_option_id) {
+            $new_option_id = (int) ($new_ids_by_match_key[$match_key] ?? 0);
+            if ($old_option_id > 0 && $new_option_id > 0) {
+                $old_to_new[$old_option_id] = $new_option_id;
+            }
+        }
+
+        return $old_to_new;
+    }
+
+    private static function question_type_uses_choice_options(string $question_type): bool
+    {
+        return in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false'], true);
+    }
+
+    /**
+     * @param array<int,int> $option_id_map
+     */
+    private static function remap_question_answer_option_ids(int $question_id, array $option_id_map): void
+    {
+        global $wpdb;
+
+        if ($question_id <= 0) {
+            return;
+        }
+
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $answer_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, attempt_id, selected_option_ids
+                 FROM {$answer_table}
+                 WHERE question_id = %d
+                   AND selected_option_ids IS NOT NULL
+                   AND selected_option_ids <> ''",
+                $question_id
+            ),
+            ARRAY_A
+        );
+
+        $affected_attempt_ids = [];
+        foreach ((array) $answer_rows as $answer_row) {
+            $answer_id = (int) ($answer_row['id'] ?? 0);
+            if ($answer_id <= 0) {
+                continue;
+            }
+
+            $existing_option_ids = json_decode((string) ($answer_row['selected_option_ids'] ?? ''), true);
+            if (!is_array($existing_option_ids)) {
+                $existing_option_ids = [];
+            }
+            $existing_option_ids = array_values(array_unique(array_filter(array_map('intval', $existing_option_ids), static function (int $option_id): bool {
+                return $option_id > 0;
+            })));
+            sort($existing_option_ids);
+
+            $remapped_option_ids = [];
+            foreach ($existing_option_ids as $existing_option_id) {
+                $existing_option_id = (int) $existing_option_id;
+                $new_option_id = isset($option_id_map[$existing_option_id]) ? (int) $option_id_map[$existing_option_id] : 0;
+                if ($new_option_id > 0) {
+                    $remapped_option_ids[] = $new_option_id;
+                }
+            }
+
+            $remapped_option_ids = array_values(array_unique($remapped_option_ids));
+            sort($remapped_option_ids);
+            if ($remapped_option_ids === $existing_option_ids) {
+                continue;
+            }
+            $selected_option_ids = !empty($remapped_option_ids) ? wp_json_encode($remapped_option_ids) : null;
+
+            $wpdb->update(
+                $answer_table,
+                [
+                    'selected_option_ids' => $selected_option_ids,
+                    'updated_at' => current_time('mysql'),
+                ],
+                ['id' => $answer_id],
+                ['%s', '%s'],
+                ['%d']
+            );
+            $attempt_id = (int) ($answer_row['attempt_id'] ?? 0);
+            if ($attempt_id > 0) {
+                $affected_attempt_ids[$attempt_id] = $attempt_id;
+            }
+        }
+
+        if (!empty($affected_attempt_ids)) {
+            CBT_Cache::invalidate_attempts(array_values($affected_attempt_ids));
+        }
+    }
+
+    private static function clear_question_answer_records(int $question_id, bool $clear_answer_text): void
+    {
+        global $wpdb;
+
+        if ($question_id <= 0) {
+            return;
+        }
+
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $affected_attempt_ids = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT DISTINCT attempt_id
+                 FROM {$answer_table}
+                 WHERE question_id = %d",
+                $question_id
+            )
+        );
+        $fields = [
+            'selected_option_ids' => null,
+            'is_correct' => null,
+            'score_awarded' => 0,
+            'updated_at' => current_time('mysql'),
+        ];
+        $formats = ['%s', '%d', '%f', '%s'];
+
+        if ($clear_answer_text) {
+            $fields['answer_text'] = null;
+            array_splice($formats, 1, 0, ['%s']);
+        }
+
+        $wpdb->update(
+            $answer_table,
+            $fields,
+            ['question_id' => $question_id],
+            $formats,
+            ['%d']
+        );
+
+        if (!empty($affected_attempt_ids)) {
+            CBT_Cache::invalidate_attempts(array_map('intval', (array) $affected_attempt_ids));
+        }
+    }
+
     private static function redirect_exam_with_error(string $message, int $edit_id = 0): void
     {
         $args = [
@@ -7851,6 +10467,20 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
     private static function redirect_cache_page(?string $message = null, ?string $error = null): void
     {
         $args = ['page' => 'cbt-cache'];
+        if ($message !== null && $message !== '') {
+            $args['cbt_msg'] = $message;
+        }
+        if ($error !== null && $error !== '') {
+            $args['cbt_err'] = $error;
+        }
+
+        wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
+        exit;
+    }
+
+    private static function redirect_maintenance_page(?string $message = null, ?string $error = null): void
+    {
+        $args = ['page' => 'cbt-maintenance'];
         if ($message !== null && $message !== '') {
             $args['cbt_msg'] = $message;
         }
@@ -8049,6 +10679,13 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             wp_die('Unauthorized');
         }
 
+        self::prepare_runtime_for_bulk_user_import();
+
+        $token = isset($_GET['cbt_subject_import_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_subject_import_token'])) : '';
+        if ($token !== '') {
+            self::continue_subject_import($token);
+        }
+
         check_admin_referer('cbt_import_subjects');
 
         if (!isset($_FILES['subject_file']) || !is_array($_FILES['subject_file'])) {
@@ -8076,13 +10713,81 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         if (is_wp_error($rows)) {
             self::redirect_subject_import_with_error($rows->get_error_message());
         }
+        if (!is_array($rows) || empty($rows)) {
+            self::redirect_subject_import_with_error('Tidak ada data subject yang bisa diproses.');
+        }
 
-        $created = 0;
-        $updated = 0;
-        $failed = 0;
+        $token = strtolower((string) wp_generate_password(24, false, false));
+        $state = [
+            'total' => count($rows),
+            'offset' => 0,
+            'created' => 0,
+            'updated' => 0,
+            'failed' => 0,
+            'user_id' => get_current_user_id(),
+            'started_at' => time(),
+        ];
+        $rows_saved = set_transient(self::get_subject_import_rows_key($token), array_values($rows), 12 * HOUR_IN_SECONDS);
+        $state_saved = set_transient(self::get_subject_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+        if (!$rows_saved || !$state_saved) {
+            self::clear_subject_import_transients($token);
+            self::redirect_subject_import_with_error('Gagal menyiapkan sesi import subject.');
+        }
 
-        foreach ($rows as $row) {
-            $result = self::upsert_subject_from_row($row);
+        wp_safe_redirect(add_query_arg([
+            'page' => 'cbt-subjects',
+            'cbt_subject_import_token' => $token,
+        ], admin_url('admin.php')));
+        exit;
+    }
+
+    private static function continue_subject_import(string $token): void
+    {
+        $state = self::get_subject_import_state_for_current_user($token);
+        if (!is_array($state)) {
+            self::clear_subject_import_transients($token);
+            self::redirect_subject_import_with_error('Sesi import subject berakhir. Silakan upload ulang file.');
+        }
+
+        $rows = get_transient(self::get_subject_import_rows_key($token));
+        if (!is_array($rows) || empty($rows)) {
+            self::clear_subject_import_transients($token);
+            self::redirect_subject_import_with_error('Data batch import subject tidak ditemukan. Silakan upload ulang file.');
+        }
+
+        $rows = array_values($rows);
+        $total = isset($state['total']) ? (int) $state['total'] : count($rows);
+        $offset = isset($state['offset']) ? (int) $state['offset'] : 0;
+        $created = isset($state['created']) ? (int) $state['created'] : 0;
+        $updated = isset($state['updated']) ? (int) $state['updated'] : 0;
+        $failed = isset($state['failed']) ? (int) $state['failed'] : 0;
+        if ($total <= 0 || empty($rows)) {
+            self::clear_subject_import_transients($token);
+            self::redirect_subject_import_with_error('Data import subject kosong.');
+        }
+
+        if ($offset < 0) {
+            $offset = 0;
+        }
+        if ($offset > $total) {
+            $offset = $total;
+        }
+
+        $batch_size = self::get_subject_import_batch_size();
+        $max_batch_seconds = self::get_subject_import_max_batch_seconds();
+        $target_end = min($offset + $batch_size, $total);
+        $end = $offset;
+        $batch_started_at = microtime(true);
+
+        for ($index = $offset; $index < $target_end; $index++) {
+            $row = isset($rows[$index]) && is_array($rows[$index]) ? (array) $rows[$index] : [];
+
+            try {
+                $result = self::upsert_subject_from_row($row);
+            } catch (Throwable $exception) {
+                $result = 'failed';
+            }
+
             if ($result === 'created') {
                 $created++;
             } elseif ($result === 'updated') {
@@ -8090,19 +10795,42 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             } else {
                 $failed++;
             }
+
+            $end = $index + 1;
+            if (($end - $offset) >= 1 && (microtime(true) - $batch_started_at) >= $max_batch_seconds) {
+                break;
+            }
         }
 
+        $state['offset'] = max($offset, $end);
+        $state['created'] = $created;
+        $state['updated'] = $updated;
+        $state['failed'] = $failed;
+
+        if ($state['offset'] < $total) {
+            $state_saved = set_transient(self::get_subject_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+            if (!$state_saved) {
+                self::clear_subject_import_transients($token);
+                self::redirect_subject_import_with_error('Gagal menyimpan progres import subject.');
+            }
+            wp_safe_redirect(add_query_arg([
+                'page' => 'cbt-subjects',
+                'cbt_subject_import_token' => $token,
+            ], admin_url('admin.php')));
+            exit;
+        }
+
+        self::clear_subject_import_transients($token);
+        if ($created > 0 || $updated > 0) {
+            CBT_Cache::invalidate_catalog();
+        }
         $msg = sprintf(
-            'Import subjects selesai. Created: %d, Updated: %d, Failed: %d',
+            'Import subjects selesai. Total: %d, Created: %d, Updated: %d, Failed: %d',
+            $total,
             $created,
             $updated,
             $failed
         );
-
-        if ($created > 0 || $updated > 0) {
-            CBT_Cache::invalidate_catalog();
-        }
-
         wp_safe_redirect(admin_url('admin.php?page=cbt-subjects&cbt_msg=' . rawurlencode($msg)));
         exit;
     }
@@ -8356,6 +11084,141 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         return $inserted ? 'created' : 'failed';
     }
 
+    private static function get_subject_import_state_key(string $token): string
+    {
+        return 'cbt_subject_import_' . $token;
+    }
+
+    private static function get_subject_import_rows_key(string $token): string
+    {
+        return 'cbt_subject_import_rows_' . $token;
+    }
+
+    private static function clear_subject_import_transients(string $token): void
+    {
+        delete_transient(self::get_subject_import_state_key($token));
+        delete_transient(self::get_subject_import_rows_key($token));
+    }
+
+    private static function get_subject_import_state_for_current_user(string $token): ?array
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        $state = get_transient(self::get_subject_import_state_key($token));
+        if (!is_array($state)) {
+            return null;
+        }
+
+        $state_user_id = isset($state['user_id']) ? (int) $state['user_id'] : 0;
+        if ($state_user_id <= 0 || $state_user_id !== get_current_user_id()) {
+            return null;
+        }
+
+        return $state;
+    }
+
+    private static function get_subject_import_batch_size(): int
+    {
+        $batch_size = (int) apply_filters('cbt_subject_import_batch_size', 250);
+        if ($batch_size < 25) {
+            return 25;
+        }
+        if ($batch_size > 1000) {
+            return 1000;
+        }
+
+        return $batch_size;
+    }
+
+    private static function get_subject_import_max_batch_seconds(): float
+    {
+        $seconds = (float) apply_filters('cbt_subject_import_batch_max_seconds', 10.0);
+        if ($seconds < 2.0) {
+            return 2.0;
+        }
+        if ($seconds > 25.0) {
+            return 25.0;
+        }
+
+        return $seconds;
+    }
+
+    private static function get_reset_progress_state_key(string $token): string
+    {
+        return 'cbt_reset_progress_' . $token;
+    }
+
+    private static function get_reset_progress_users_key(string $token): string
+    {
+        return 'cbt_reset_progress_users_' . $token;
+    }
+
+    private static function clear_reset_progress_transients(string $token): void
+    {
+        delete_transient(self::get_reset_progress_state_key($token));
+        delete_transient(self::get_reset_progress_users_key($token));
+    }
+
+    private static function get_reset_progress_state_for_current_user(string $token): ?array
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        $state = get_transient(self::get_reset_progress_state_key($token));
+        if (!is_array($state)) {
+            return null;
+        }
+
+        $state_user_id = isset($state['user_id']) ? (int) $state['user_id'] : 0;
+        if ($state_user_id <= 0 || $state_user_id !== get_current_user_id()) {
+            return null;
+        }
+
+        return $state;
+    }
+
+    private static function get_reset_progress_table_batch_size(): int
+    {
+        $batch_size = (int) apply_filters('cbt_reset_progress_table_batch_size', 2);
+        if ($batch_size < 1) {
+            return 1;
+        }
+        if ($batch_size > 10) {
+            return 10;
+        }
+
+        return $batch_size;
+    }
+
+    private static function get_reset_progress_user_batch_size(): int
+    {
+        $batch_size = (int) apply_filters('cbt_reset_progress_user_batch_size', 140);
+        if ($batch_size < 20) {
+            return 20;
+        }
+        if ($batch_size > 500) {
+            return 500;
+        }
+
+        return $batch_size;
+    }
+
+    private static function get_reset_progress_max_batch_seconds(): float
+    {
+        $seconds = (float) apply_filters('cbt_reset_progress_batch_max_seconds', 8.0);
+        if ($seconds < 2.0) {
+            return 2.0;
+        }
+        if ($seconds > 25.0) {
+            return 25.0;
+        }
+
+        return $seconds;
+    }
+
     private static function redirect_subject_import_with_error(string $message): void
     {
         wp_safe_redirect(admin_url('admin.php?page=cbt-subjects&cbt_err=' . rawurlencode($message)));
@@ -8391,6 +11254,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         $return_page = self::normalize_question_page_slug(isset($_POST['return_page']) ? wp_unslash($_POST['return_page']) : 'cbt-question-bank');
         $forced_question_type = self::forced_question_type_for_page($return_page);
         $previous_exam_id = 0;
+        $previous_question_snapshot = [];
 
         $allowed_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'];
         if (!in_array($question_type, $allowed_types, true)) {
@@ -8456,6 +11320,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         ];
 
         if ($id > 0) {
+            $previous_question_snapshot = self::get_question_sync_snapshot($id);
             $previous_exam_id = (int) $wpdb->get_var(
                 $wpdb->prepare("SELECT exam_id FROM {$question_table} WHERE id = %d", $id)
             );
@@ -8561,9 +11426,32 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         }
 
         CBT_Cache::invalidate_catalog();
-        CBT_Cache::invalidate_exam($exam_id);
+        $affected_exam_ids = [];
+        if ($exam_id > 0) {
+            $affected_exam_ids[$exam_id] = $exam_id;
+        }
         if ($previous_exam_id > 0 && $previous_exam_id !== $exam_id) {
-            CBT_Cache::invalidate_exam($previous_exam_id);
+            $affected_exam_ids[$previous_exam_id] = $previous_exam_id;
+        }
+
+        if ($question_id > 0) {
+            $current_question_snapshot = self::get_question_sync_snapshot($question_id);
+            if (
+                !empty($previous_question_snapshot) &&
+                self::is_bank_question_snapshot($previous_question_snapshot) &&
+                !empty($current_question_snapshot)
+            ) {
+                foreach (self::propagate_bank_question_update($question_id, $previous_question_snapshot, $current_question_snapshot) as $affected_exam_id) {
+                    $affected_exam_id = (int) $affected_exam_id;
+                    if ($affected_exam_id > 0) {
+                        $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
+                    }
+                }
+            }
+        }
+
+        foreach ($affected_exam_ids as $affected_exam_id) {
+            CBT_Cache::invalidate_exam((int) $affected_exam_id);
         }
 
         wp_safe_redirect(add_query_arg(
@@ -8644,6 +11532,13 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             wp_die('Unauthorized');
         }
 
+        self::prepare_runtime_for_bulk_user_import();
+
+        $token = isset($_GET['cbt_question_delete_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_question_delete_token'])) : '';
+        if ($token !== '') {
+            self::continue_bulk_delete_questions($token);
+        }
+
         check_admin_referer('cbt_bulk_delete_questions');
         $return_page = self::normalize_question_page_slug(isset($_POST['return_page']) ? wp_unslash($_POST['return_page']) : 'cbt-question-bank');
         $filter_exam_id = isset($_POST['redirect_filter_exam_id']) ? absint($_POST['redirect_filter_exam_id']) : 0;
@@ -8680,7 +11575,6 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
         global $wpdb;
         $target_ids = $question_ids;
-        $affected_exam_ids = [];
         if (!self::is_admin_scope()) {
             $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
             $query_params = array_merge($question_ids, [get_current_user_id()]);
@@ -8698,35 +11592,173 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             );
         }
 
-        if (!empty($target_ids)) {
-            $placeholders = implode(',', array_fill(0, count($target_ids), '%d'));
-            $exam_rows = $wpdb->get_results(
-                $wpdb->prepare(
-                    "SELECT DISTINCT exam_id FROM {$wpdb->prefix}cbt_questions WHERE id IN ({$placeholders})",
-                    ...$target_ids
-                ),
-                ARRAY_A
-            );
-            foreach ((array) $exam_rows as $exam_row) {
-                $exam_id = (int) ($exam_row['exam_id'] ?? 0);
-                if ($exam_id > 0) {
-                    $affected_exam_ids[$exam_id] = $exam_id;
+        if (empty($target_ids)) {
+            $redirect_args['cbt_err'] = 'Tidak ada soal yang bisa dihapus.';
+            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+            exit;
+        }
+
+        $affected_exam_ids = [];
+        $placeholders = implode(',', array_fill(0, count($target_ids), '%d'));
+        $exam_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT DISTINCT exam_id FROM {$wpdb->prefix}cbt_questions WHERE id IN ({$placeholders})",
+                ...$target_ids
+            ),
+            ARRAY_A
+        );
+        foreach ((array) $exam_rows as $exam_row) {
+            $exam_id = (int) ($exam_row['exam_id'] ?? 0);
+            if ($exam_id > 0) {
+                $affected_exam_ids[$exam_id] = $exam_id;
+            }
+        }
+
+        $token = strtolower((string) wp_generate_password(24, false, false));
+        $state = [
+            'total' => count($target_ids),
+            'offset' => 0,
+            'deleted' => 0,
+            'failed' => 0,
+            'user_id' => get_current_user_id(),
+            'started_at' => time(),
+            'return_page' => $return_page,
+            'filter_exam_id' => $filter_exam_id,
+            'filter_type' => $filter_type,
+            'question_per_page' => $question_per_page,
+            'question_paged' => $question_paged,
+            'affected_exam_ids' => array_values($affected_exam_ids),
+        ];
+        $rows_saved = set_transient(self::get_question_delete_rows_key($token), array_values($target_ids), 12 * HOUR_IN_SECONDS);
+        $state_saved = set_transient(self::get_question_delete_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+        if (!$rows_saved || !$state_saved) {
+            self::clear_question_delete_transients($token);
+            $redirect_args['cbt_err'] = 'Gagal menyiapkan sesi hapus soal. Coba lagi.';
+            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+            exit;
+        }
+
+        $redirect_args['cbt_question_delete_token'] = $token;
+        wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+        exit;
+    }
+
+    private static function continue_bulk_delete_questions(string $token): void
+    {
+        $state = self::get_question_delete_state_for_current_user($token);
+        if (!is_array($state)) {
+            self::clear_question_delete_transients($token);
+            self::redirect_question_import_with_error('Sesi hapus soal berakhir. Silakan pilih ulang soal yang ingin dihapus.');
+        }
+
+        $return_page = self::normalize_question_page_slug((string) ($state['return_page'] ?? 'cbt-question-bank'));
+        $filter_exam_id = isset($state['filter_exam_id']) ? absint($state['filter_exam_id']) : 0;
+        $filter_type = isset($state['filter_type']) ? sanitize_text_field((string) $state['filter_type']) : '';
+        $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'];
+        if (!in_array($filter_type, $allowed_filter_types, true)) {
+            $filter_type = '';
+        }
+        $question_per_page = self::normalize_standard_list_per_page(isset($state['question_per_page']) ? (int) $state['question_per_page'] : 20);
+        $question_paged = isset($state['question_paged']) ? max(1, (int) $state['question_paged']) : 1;
+        $redirect_args = [
+            'page' => $return_page,
+            'cbt_question_per_page' => $question_per_page,
+            'cbt_question_paged' => $question_paged,
+        ];
+        if ($filter_exam_id > 0) {
+            $redirect_args['filter_exam_id'] = $filter_exam_id;
+        }
+        if ($filter_type !== '') {
+            $redirect_args['filter_type'] = $filter_type;
+        }
+
+        $target_ids = get_transient(self::get_question_delete_rows_key($token));
+        if (!is_array($target_ids) || empty($target_ids)) {
+            self::clear_question_delete_transients($token);
+            $redirect_args['cbt_err'] = 'Data batch hapus soal tidak ditemukan. Silakan pilih ulang soal.';
+            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+            exit;
+        }
+
+        $target_ids = array_values(array_map('intval', $target_ids));
+        $total = isset($state['total']) ? (int) $state['total'] : count($target_ids);
+        $offset = isset($state['offset']) ? (int) $state['offset'] : 0;
+        $deleted = isset($state['deleted']) ? (int) $state['deleted'] : 0;
+        $failed = isset($state['failed']) ? (int) $state['failed'] : 0;
+        if ($total <= 0 || empty($target_ids)) {
+            self::clear_question_delete_transients($token);
+            $redirect_args['cbt_err'] = 'Data hapus soal kosong.';
+            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+            exit;
+        }
+        if ($offset < 0) {
+            $offset = 0;
+        }
+        if ($offset > $total) {
+            $offset = $total;
+        }
+
+        $affected_exam_ids = [];
+        if (isset($state['affected_exam_ids']) && is_array($state['affected_exam_ids'])) {
+            foreach ((array) $state['affected_exam_ids'] as $affected_exam_id) {
+                $affected_exam_id = (int) $affected_exam_id;
+                if ($affected_exam_id > 0) {
+                    $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
                 }
             }
         }
 
-        $deleted_count = 0;
-        foreach ($target_ids as $question_id) {
-            $deleted = $wpdb->delete($wpdb->prefix . 'cbt_questions', ['id' => (int) $question_id], ['%d']);
-            if ($deleted) {
-                $deleted_count += (int) $deleted;
+        $batch_size = self::get_question_delete_batch_size();
+        $max_batch_seconds = self::get_question_delete_max_batch_seconds();
+        $target_end = min($offset + $batch_size, $total);
+        $end = $offset;
+        $batch_started_at = microtime(true);
+
+        global $wpdb;
+        for ($index = $offset; $index < $target_end; $index++) {
+            $question_id = isset($target_ids[$index]) ? (int) $target_ids[$index] : 0;
+            if ($question_id <= 0) {
+                $failed++;
+                $end = $index + 1;
+                continue;
+            }
+
+            $deleted_rows = $wpdb->delete($wpdb->prefix . 'cbt_questions', ['id' => $question_id], ['%d']);
+            if ($deleted_rows) {
+                $deleted += (int) $deleted_rows;
+            } else {
+                $failed++;
+            }
+
+            $end = $index + 1;
+            if (($end - $offset) >= 1 && (microtime(true) - $batch_started_at) >= $max_batch_seconds) {
+                break;
             }
         }
 
-        if ($deleted_count > 0) {
+        $state['offset'] = max($offset, $end);
+        $state['deleted'] = $deleted;
+        $state['failed'] = $failed;
+        $state['affected_exam_ids'] = array_values($affected_exam_ids);
+
+        if ((int) $state['offset'] < $total) {
+            $state_saved = set_transient(self::get_question_delete_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+            if (!$state_saved) {
+                self::clear_question_delete_transients($token);
+                $redirect_args['cbt_err'] = 'Gagal menyimpan progres hapus soal. Silakan ulangi proses.';
+                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+                exit;
+            }
+            $redirect_args['cbt_question_delete_token'] = $token;
+            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+            exit;
+        }
+
+        self::clear_question_delete_transients($token);
+        if ($deleted > 0) {
             CBT_Cache::invalidate_catalog();
             CBT_Cache::invalidate_exams(array_values($affected_exam_ids));
-            $redirect_args['cbt_msg'] = sprintf('%d question(s) deleted.', $deleted_count);
+            $redirect_args['cbt_msg'] = sprintf('Hapus soal selesai. Total: %d, Deleted: %d, Failed: %d', $total, $deleted, $failed);
         } else {
             $redirect_args['cbt_err'] = 'Tidak ada soal yang berhasil dihapus.';
         }
@@ -8739,6 +11771,13 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
     {
         if (!current_user_can('cbt_manage_questions')) {
             wp_die('Unauthorized');
+        }
+
+        self::prepare_runtime_for_bulk_user_import();
+
+        $token = isset($_GET['cbt_question_import_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_question_import_token'])) : '';
+        if ($token !== '') {
+            self::continue_question_import($token);
         }
 
         check_admin_referer('cbt_import_questions');
@@ -8819,24 +11858,159 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             unset($row);
         }
 
-        $created = 0;
-        $failed = 0;
+        if (!is_array($parsed) || empty($parsed)) {
+            self::redirect_question_import_with_error('Tidak ada data soal yang bisa diproses.', $return_page);
+        }
+
+        $token = strtolower((string) wp_generate_password(24, false, false));
+        $current_user_id = get_current_user_id();
+        $state = [
+            'total' => count($parsed),
+            'offset' => 0,
+            'created' => 0,
+            'failed' => 0,
+            'user_id' => $current_user_id,
+            'started_at' => time(),
+            'return_page' => $return_page,
+            'default_exam_id' => $default_exam_id,
+            'is_admin_scope' => $is_admin_scope ? 1 : 0,
+            'import_user_id' => $current_user_id,
+            'affected_exam_ids' => [],
+        ];
+
+        $rows_saved = set_transient(self::get_question_import_rows_key($token), array_values($parsed), 12 * HOUR_IN_SECONDS);
+        $state_saved = set_transient(self::get_question_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+        if (!$rows_saved || !$state_saved) {
+            self::clear_question_import_transients($token);
+            self::redirect_question_import_with_error('Gagal menyiapkan sesi import soal. Coba file lebih kecil atau ulangi import.', $return_page);
+        }
+
+        wp_safe_redirect(add_query_arg(
+            [
+                'page' => $return_page,
+                'cbt_question_import_token' => $token,
+            ],
+            admin_url('admin.php')
+        ));
+        exit;
+    }
+
+    private static function continue_question_import(string $token): void
+    {
+        $state = self::get_question_import_state_for_current_user($token);
+        if (!is_array($state)) {
+            self::clear_question_import_transients($token);
+            self::redirect_question_import_with_error('Sesi import soal berakhir. Silakan upload ulang file.');
+        }
+
+        $return_page = self::normalize_question_page_slug((string) ($state['return_page'] ?? 'cbt-question-bank'));
+        $rows = get_transient(self::get_question_import_rows_key($token));
+        if (!is_array($rows) || empty($rows)) {
+            self::clear_question_import_transients($token);
+            self::redirect_question_import_with_error('Data batch import soal tidak ditemukan. Silakan upload ulang file.', $return_page);
+        }
+
+        $rows = array_values($rows);
+        $total = isset($state['total']) ? (int) $state['total'] : count($rows);
+        $offset = isset($state['offset']) ? (int) $state['offset'] : 0;
+        $created = isset($state['created']) ? (int) $state['created'] : 0;
+        $failed = isset($state['failed']) ? (int) $state['failed'] : 0;
+        $default_exam_id = isset($state['default_exam_id']) ? (int) $state['default_exam_id'] : 0;
+        $is_admin_scope = !empty($state['is_admin_scope']);
+        $import_user_id = isset($state['import_user_id']) ? (int) $state['import_user_id'] : get_current_user_id();
+        if ($import_user_id <= 0) {
+            $import_user_id = get_current_user_id();
+        }
+
+        if ($total <= 0 || empty($rows)) {
+            self::clear_question_import_transients($token);
+            self::redirect_question_import_with_error('Data import soal kosong.', $return_page);
+        }
+        if ($default_exam_id <= 0) {
+            self::clear_question_import_transients($token);
+            self::redirect_question_import_with_error('Exam penampung import tidak valid.', $return_page);
+        }
+        if ($offset < 0) {
+            $offset = 0;
+        }
+        if ($offset > $total) {
+            $offset = $total;
+        }
+
         $affected_exam_ids = [];
-        foreach ($parsed as $row) {
-            $result = self::import_single_question_row($row, $default_exam_id, $is_admin_scope, get_current_user_id(), $affected_exam_ids);
+        if (isset($state['affected_exam_ids']) && is_array($state['affected_exam_ids'])) {
+            foreach ((array) $state['affected_exam_ids'] as $affected_exam_id) {
+                $affected_exam_id = (int) $affected_exam_id;
+                if ($affected_exam_id > 0) {
+                    $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
+                }
+            }
+        }
+
+        $batch_size = self::get_question_import_batch_size();
+        $max_batch_seconds = self::get_question_import_max_batch_seconds();
+        $target_end = min($offset + $batch_size, $total);
+        $end = $offset;
+        $batch_started_at = microtime(true);
+        $batch_affected_exam_ids = [];
+
+        for ($index = $offset; $index < $target_end; $index++) {
+            $row = isset($rows[$index]) && is_array($rows[$index]) ? (array) $rows[$index] : [];
+
+            try {
+                $result = self::import_single_question_row($row, $default_exam_id, $is_admin_scope, $import_user_id, $batch_affected_exam_ids);
+            } catch (Throwable $exception) {
+                $result = 'failed';
+            }
+
             if ($result === 'created') {
                 $created++;
             } else {
                 $failed++;
             }
+
+            $end = $index + 1;
+            if (($end - $offset) >= 1 && (microtime(true) - $batch_started_at) >= $max_batch_seconds) {
+                break;
+            }
         }
+
+        foreach ((array) $batch_affected_exam_ids as $affected_exam_id) {
+            $affected_exam_id = (int) $affected_exam_id;
+            if ($affected_exam_id > 0) {
+                $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
+            }
+        }
+
+        $state['offset'] = max($offset, $end);
+        $state['created'] = $created;
+        $state['failed'] = $failed;
+        $state['affected_exam_ids'] = array_values($affected_exam_ids);
+
+        if ((int) $state['offset'] < $total) {
+            $state_saved = set_transient(self::get_question_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+            if (!$state_saved) {
+                self::clear_question_import_transients($token);
+                self::redirect_question_import_with_error('Gagal menyimpan progres import soal.', $return_page);
+            }
+            wp_safe_redirect(add_query_arg(
+                [
+                    'page' => $return_page,
+                    'cbt_question_import_token' => $token,
+                ],
+                admin_url('admin.php')
+            ));
+            exit;
+        }
+
+        self::clear_question_import_transients($token);
 
         if ($created > 0) {
             CBT_Cache::invalidate_catalog();
             CBT_Cache::invalidate_exams(array_values($affected_exam_ids));
         }
 
-        $msg = sprintf('Import soal selesai. Created: %d, Failed: %d', $created, $failed);
+        $msg = sprintf('Import soal selesai. Total: %d, Created: %d, Failed: %d', $total, $created, $failed);
         wp_safe_redirect(add_query_arg(
             [
                 'page' => $return_page,
@@ -10784,6 +13958,128 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             . '</w:body></w:document>';
     }
 
+    private static function get_question_delete_state_key(string $token): string
+    {
+        return 'cbt_question_delete_' . $token;
+    }
+
+    private static function get_question_delete_rows_key(string $token): string
+    {
+        return 'cbt_question_delete_rows_' . $token;
+    }
+
+    private static function clear_question_delete_transients(string $token): void
+    {
+        delete_transient(self::get_question_delete_state_key($token));
+        delete_transient(self::get_question_delete_rows_key($token));
+    }
+
+    private static function get_question_delete_state_for_current_user(string $token): ?array
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        $state = get_transient(self::get_question_delete_state_key($token));
+        if (!is_array($state)) {
+            return null;
+        }
+
+        $state_user_id = isset($state['user_id']) ? (int) $state['user_id'] : 0;
+        if ($state_user_id <= 0 || $state_user_id !== get_current_user_id()) {
+            return null;
+        }
+
+        return $state;
+    }
+
+    private static function get_question_delete_batch_size(): int
+    {
+        $batch_size = (int) apply_filters('cbt_question_delete_batch_size', 220);
+        if ($batch_size < 20) {
+            return 20;
+        }
+        if ($batch_size > 1000) {
+            return 1000;
+        }
+
+        return $batch_size;
+    }
+
+    private static function get_question_delete_max_batch_seconds(): float
+    {
+        $seconds = (float) apply_filters('cbt_question_delete_batch_max_seconds', 8.0);
+        if ($seconds < 2.0) {
+            return 2.0;
+        }
+        if ($seconds > 25.0) {
+            return 25.0;
+        }
+
+        return $seconds;
+    }
+
+    private static function get_question_import_state_key(string $token): string
+    {
+        return 'cbt_question_import_' . $token;
+    }
+
+    private static function get_question_import_rows_key(string $token): string
+    {
+        return 'cbt_question_import_rows_' . $token;
+    }
+
+    private static function clear_question_import_transients(string $token): void
+    {
+        delete_transient(self::get_question_import_state_key($token));
+        delete_transient(self::get_question_import_rows_key($token));
+    }
+
+    private static function get_question_import_state_for_current_user(string $token): ?array
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        $state = get_transient(self::get_question_import_state_key($token));
+        if (!is_array($state)) {
+            return null;
+        }
+
+        $state_user_id = isset($state['user_id']) ? (int) $state['user_id'] : 0;
+        if ($state_user_id <= 0 || $state_user_id !== get_current_user_id()) {
+            return null;
+        }
+
+        return $state;
+    }
+
+    private static function get_question_import_batch_size(): int
+    {
+        $batch_size = (int) apply_filters('cbt_question_import_batch_size', 140);
+        if ($batch_size < 20) {
+            return 20;
+        }
+        if ($batch_size > 500) {
+            return 500;
+        }
+
+        return $batch_size;
+    }
+
+    private static function get_question_import_max_batch_seconds(): float
+    {
+        $seconds = (float) apply_filters('cbt_question_import_batch_max_seconds', 10.0);
+        if ($seconds < 2.0) {
+            return 2.0;
+        }
+        if ($seconds > 25.0) {
+            return 25.0;
+        }
+
+        return $seconds;
+    }
+
     private static function redirect_question_import_with_error(string $message, string $return_page = 'cbt-question-bank'): void
     {
         wp_safe_redirect(add_query_arg(
@@ -11524,7 +14820,11 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             self::clear_user_import_transients($token);
             self::redirect_user_import_with_error('Gagal menyiapkan sesi import. Coba gunakan file CSV atau kurangi ukuran batch.');
         }
-        self::continue_user_import($token);
+        wp_safe_redirect(add_query_arg([
+            'page' => 'cbt-user-import',
+            'cbt_import_token' => $token,
+        ], admin_url('admin.php')));
+        exit;
     }
 
     private static function prepare_runtime_for_bulk_user_import(): void
@@ -11541,7 +14841,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
     private static function get_user_import_batch_size(): int
     {
-        $batch_size = (int) apply_filters('cbt_user_import_batch_size', 120);
+        $batch_size = (int) apply_filters('cbt_user_import_batch_size', 220);
         if ($batch_size < 25) {
             return 25;
         }
@@ -11554,7 +14854,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
     private static function get_user_import_max_batch_seconds(): float
     {
-        $seconds = (float) apply_filters('cbt_user_import_batch_max_seconds', 8.0);
+        $seconds = (float) apply_filters('cbt_user_import_batch_max_seconds', 14.0);
         if ($seconds < 2.0) {
             return 2.0;
         }
@@ -11579,6 +14879,25 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
     {
         delete_transient(self::get_user_import_state_key($token));
         delete_transient(self::get_user_import_rows_key($token));
+    }
+
+    private static function get_user_import_state_for_current_user(string $token): ?array
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        $state = get_transient(self::get_user_import_state_key($token));
+        if (!is_array($state)) {
+            return null;
+        }
+
+        $state_user_id = isset($state['user_id']) ? (int) $state['user_id'] : 0;
+        if ($state_user_id <= 0 || $state_user_id !== get_current_user_id()) {
+            return null;
+        }
+
+        return $state;
     }
 
     private static function continue_user_import(string $token): void
@@ -11635,12 +14954,17 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         $target_end = min($offset + $batch_size, $total);
         $end = $offset;
         $batch_started_at = microtime(true);
+        $import_lookup = self::build_user_import_lookup($rows, $offset, $target_end);
+        $cache_invalidation_prev = null;
+        if (function_exists('wp_suspend_cache_invalidation')) {
+            $cache_invalidation_prev = wp_suspend_cache_invalidation(true);
+        }
 
         for ($index = $offset; $index < $target_end; $index++) {
             $row = isset($rows[$index]) && is_array($rows[$index]) ? $rows[$index] : [];
 
             try {
-                $result = self::upsert_user_from_row($row);
+                $result = self::upsert_user_from_row($row, $import_lookup);
             } catch (Throwable $exception) {
                 $result = 'failed';
             }
@@ -11658,6 +14982,9 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 break;
             }
         }
+        if ($cache_invalidation_prev !== null && function_exists('wp_suspend_cache_invalidation')) {
+            wp_suspend_cache_invalidation((bool) $cache_invalidation_prev);
+        }
 
         if ($end < $offset) {
             $end = $offset;
@@ -11673,7 +15000,10 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 self::clear_user_import_transients($token);
                 self::redirect_user_import_with_error('Gagal menyimpan progres import. Silakan coba import ulang (disarankan format CSV).');
             }
-            wp_safe_redirect(admin_url('admin-post.php?action=cbt_import_users&cbt_import_token=' . rawurlencode($token)));
+            wp_safe_redirect(add_query_arg([
+                'page' => 'cbt-user-import',
+                'cbt_import_token' => $token,
+            ], admin_url('admin.php')));
             exit;
         }
 
@@ -11894,7 +15224,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         return true;
     }
 
-    private static function upsert_user_from_row(array $row): string
+    private static function upsert_user_from_row(array $row, array &$import_lookup = []): string
     {
         $name = sanitize_text_field($row['name'] ?? '');
         $raw_email = trim((string) ($row['email'] ?? ''));
@@ -11942,23 +15272,28 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         }
 
         $password = $raw_password !== '' ? (string) $raw_password : wp_generate_password(12, true, true);
+        $user_id = self::resolve_user_import_existing_id($email, $username, $import_lookup);
 
-        $existing = get_user_by('email', $email);
-        if (!$existing) {
-            $existing = get_user_by('login', $username);
-        }
+        if ($user_id > 0) {
+            $existing_display_name = (string) ($import_lookup['by_id'][$user_id]['display_name'] ?? '');
+            $display_name = $name !== '' ? $name : $existing_display_name;
+            if ($display_name === '') {
+                $display_name = $username;
+            }
 
-        if ($existing instanceof WP_User) {
-            $user_id = (int) $existing->ID;
-
-            wp_update_user([
+            $update_result = wp_update_user([
                 'ID' => $user_id,
-                'display_name' => $name !== '' ? $name : $existing->display_name,
+                'display_name' => $display_name,
                 'role' => $role,
             ]);
+            if (is_wp_error($update_result)) {
+                return 'failed';
+            }
+            self::register_user_import_lookup($import_lookup, $user_id, $email, $username, $display_name);
 
             if ($raw_password !== '') {
                 wp_set_password($password, $user_id);
+                update_user_meta($user_id, self::USER_META_PLAIN_PASSWORD, $password);
             }
 
             if ($kode_kelas !== '') {
@@ -11972,6 +15307,11 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             }
             if ($foto !== '') {
                 update_user_meta($user_id, 'foto', $foto);
+            } elseif (self::is_student_role($role)) {
+                $existing_foto = trim((string) get_user_meta($user_id, 'foto', true));
+                if ($existing_foto === '') {
+                    update_user_meta($user_id, 'foto', self::get_default_student_photo_url());
+                }
             }
             if ($nisn !== '') {
                 update_user_meta($user_id, 'nisn', $nisn);
@@ -12001,14 +15341,204 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         if ($agama !== '') {
             update_user_meta((int) $user_id, 'agama', $agama);
         }
+        $foto = self::resolve_student_default_photo($role, $foto);
         if ($foto !== '') {
             update_user_meta((int) $user_id, 'foto', $foto);
         }
         if ($nisn !== '') {
             update_user_meta((int) $user_id, 'nisn', $nisn);
         }
+        update_user_meta((int) $user_id, self::USER_META_PLAIN_PASSWORD, $password);
+        self::register_user_import_lookup($import_lookup, (int) $user_id, $email, $username, $name !== '' ? $name : $username);
 
         return 'created';
+    }
+
+    /**
+     * @return array{by_email:array<string,int>,by_login:array<string,int>,by_id:array<int,array{display_name:string}>}
+     */
+    private static function build_user_import_lookup(array $rows, int $offset, int $target_end): array
+    {
+        $lookup = [
+            'by_email' => [],
+            'by_login' => [],
+            'by_id' => [],
+        ];
+        if ($target_end <= $offset) {
+            return $lookup;
+        }
+
+        $emails = [];
+        $logins = [];
+        for ($index = $offset; $index < $target_end; $index++) {
+            $row = isset($rows[$index]) && is_array($rows[$index]) ? (array) $rows[$index] : [];
+            $identity = self::extract_user_import_identity($row);
+            if (($identity['email'] ?? '') !== '') {
+                $email = (string) $identity['email'];
+                $emails[self::normalize_user_import_lookup_key($email)] = $email;
+            }
+            if (($identity['username'] ?? '') !== '') {
+                $username = (string) $identity['username'];
+                $logins[self::normalize_user_import_lookup_key($username)] = $username;
+            }
+        }
+
+        if (empty($emails) && empty($logins)) {
+            return $lookup;
+        }
+
+        global $wpdb;
+        $where_clauses = [];
+        $params = [];
+        if (!empty($emails)) {
+            $email_placeholders = implode(',', array_fill(0, count($emails), '%s'));
+            $where_clauses[] = "user_email IN ({$email_placeholders})";
+            $params = array_merge($params, array_values($emails));
+        }
+        if (!empty($logins)) {
+            $login_placeholders = implode(',', array_fill(0, count($logins), '%s'));
+            $where_clauses[] = "user_login IN ({$login_placeholders})";
+            $params = array_merge($params, array_values($logins));
+        }
+
+        if (empty($where_clauses)) {
+            return $lookup;
+        }
+
+        $sql = "SELECT ID, user_email, user_login, display_name
+                FROM {$wpdb->users}
+                WHERE " . implode(' OR ', $where_clauses);
+        $prepared_sql = $wpdb->prepare($sql, $params);
+        $existing_rows = $wpdb->get_results($prepared_sql, ARRAY_A);
+        if (!is_array($existing_rows)) {
+            return $lookup;
+        }
+
+        foreach ($existing_rows as $existing_row) {
+            $row = (array) $existing_row;
+            self::register_user_import_lookup(
+                $lookup,
+                isset($row['ID']) ? (int) $row['ID'] : 0,
+                (string) ($row['user_email'] ?? ''),
+                (string) ($row['user_login'] ?? ''),
+                (string) ($row['display_name'] ?? '')
+            );
+        }
+
+        return $lookup;
+    }
+
+    /**
+     * @return array{email:string,username:string}
+     */
+    private static function extract_user_import_identity(array $row): array
+    {
+        $raw_email = trim((string) ($row['email'] ?? ''));
+        $email = sanitize_email($raw_email);
+        $nisn = preg_replace('/\D+/', '', (string) ($row['nisn'] ?? ''));
+        if (!is_email($email) && $nisn !== '') {
+            $email = sanitize_email($nisn . '@student.sch.id');
+        }
+        if (!is_email($email)) {
+            $email = '';
+        }
+
+        $raw_username = trim((string) ($row['username'] ?? ''));
+        $raw_combined_username_password = trim((string) ($row['usernamepassword'] ?? ($row['username_password'] ?? '')));
+        if ($raw_username === '' && $raw_combined_username_password !== '') {
+            $combined_parts = preg_split('/\s+|[:;|]/', $raw_combined_username_password, 2);
+            if (is_array($combined_parts) && !empty($combined_parts)) {
+                $raw_username = trim((string) ($combined_parts[0] ?? ''));
+            }
+        }
+
+        $username = sanitize_user($raw_username, true);
+        if ($username === '' && $email !== '') {
+            $email_parts = explode('@', $email);
+            $username = sanitize_user((string) ($email_parts[0] ?? ''), true);
+        }
+        if ($username === '') {
+            $username = '';
+        }
+
+        return [
+            'email' => $email,
+            'username' => $username,
+        ];
+    }
+
+    private static function resolve_user_import_existing_id(string $email, string $username, array &$lookup): int
+    {
+        $email_key = self::normalize_user_import_lookup_key($email);
+        if ($email_key !== '' && isset($lookup['by_email'][$email_key])) {
+            return (int) $lookup['by_email'][$email_key];
+        }
+
+        $username_key = self::normalize_user_import_lookup_key($username);
+        if ($username_key !== '' && isset($lookup['by_login'][$username_key])) {
+            return (int) $lookup['by_login'][$username_key];
+        }
+
+        $existing = false;
+        if ($email !== '') {
+            $existing = get_user_by('email', $email);
+        }
+        if (!($existing instanceof WP_User) && $username !== '') {
+            $existing = get_user_by('login', $username);
+        }
+        if ($existing instanceof WP_User) {
+            $resolved_id = (int) $existing->ID;
+            self::register_user_import_lookup(
+                $lookup,
+                $resolved_id,
+                (string) $existing->user_email,
+                (string) $existing->user_login,
+                (string) $existing->display_name
+            );
+            return $resolved_id;
+        }
+
+        return 0;
+    }
+
+    private static function register_user_import_lookup(
+        array &$lookup,
+        int $user_id,
+        string $email,
+        string $username,
+        string $display_name = ''
+    ): void {
+        if ($user_id <= 0) {
+            return;
+        }
+
+        if (!isset($lookup['by_email']) || !is_array($lookup['by_email'])) {
+            $lookup['by_email'] = [];
+        }
+        if (!isset($lookup['by_login']) || !is_array($lookup['by_login'])) {
+            $lookup['by_login'] = [];
+        }
+        if (!isset($lookup['by_id']) || !is_array($lookup['by_id'])) {
+            $lookup['by_id'] = [];
+        }
+
+        $lookup['by_id'][$user_id] = [
+            'display_name' => sanitize_text_field($display_name),
+        ];
+
+        $email_key = self::normalize_user_import_lookup_key($email);
+        if ($email_key !== '') {
+            $lookup['by_email'][$email_key] = $user_id;
+        }
+        $username_key = self::normalize_user_import_lookup_key($username);
+        if ($username_key !== '') {
+            $lookup['by_login'][$username_key] = $user_id;
+        }
+    }
+
+    private static function normalize_user_import_lookup_key(string $value): string
+    {
+        return strtolower(trim($value));
     }
 
     private static function map_import_role(string $raw_role): string
@@ -12063,6 +15593,30 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         return 'siswa';
     }
 
+    private static function is_student_role(string $role): bool
+    {
+        $normalized = strtolower(trim($role));
+        return in_array($normalized, ['siswa', 'siswa_cbt', 'subscriber', 'student'], true);
+    }
+
+    private static function get_default_student_photo_url(): string
+    {
+        return esc_url_raw(CBT_EXAM_SYSTEM_URL . self::DEFAULT_STUDENT_PHOTO_RELATIVE_PATH);
+    }
+
+    private static function resolve_student_default_photo(string $role, string $foto): string
+    {
+        $clean_foto = esc_url_raw(trim($foto));
+        if ($clean_foto !== '') {
+            return $clean_foto;
+        }
+        if (!self::is_student_role($role)) {
+            return '';
+        }
+
+        return self::get_default_student_photo_url();
+    }
+
     private static function normalize_standard_list_per_page(int $requested): int
     {
         $allowed = [20, 40, 60, 80, 100];
@@ -12114,6 +15668,279 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         }
 
         return 20;
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_exam_card_students(string $search, string $kode_kelas, string $kode_ruang): array
+    {
+        $args = self::build_cbt_user_query_args($search, 'siswa', $kode_kelas, $kode_ruang);
+        $args['orderby'] = 'display_name';
+        $args['order'] = 'ASC';
+        $args['fields'] = 'all';
+
+        $users = get_users($args);
+        if (!is_array($users)) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($users as $user) {
+            if (!($user instanceof WP_User)) {
+                continue;
+            }
+
+            $user_id = (int) $user->ID;
+            if ($user_id <= 0) {
+                continue;
+            }
+
+            $display_name = trim((string) $user->display_name);
+            if ($display_name === '') {
+                $display_name = (string) $user->user_login;
+            }
+            $role = isset($user->roles[0]) ? (string) $user->roles[0] : '';
+            $foto = esc_url_raw((string) get_user_meta($user_id, 'foto', true));
+            if ($foto === '' && self::is_student_role($role)) {
+                $foto = self::get_default_student_photo_url();
+            }
+
+            $rows[] = [
+                'id' => $user_id,
+                'username' => (string) $user->user_login,
+                'name' => $display_name,
+                'nisn' => trim((string) get_user_meta($user_id, 'nisn', true)),
+                'kelas' => trim((string) get_user_meta($user_id, 'kode_kelas', true)),
+                'ruang' => trim((string) get_user_meta($user_id, 'kode_ruang', true)),
+                'foto' => $foto,
+                'password' => trim((string) get_user_meta($user_id, self::USER_META_PLAIN_PASSWORD, true)),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_exam_card_schedule_rows(string $kelas): array
+    {
+        global $wpdb;
+
+        $kelas_normalized = strtoupper(sanitize_text_field(trim($kelas)));
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, title, starts_at, ends_at, duration_minutes, target_kelas
+                 FROM {$exam_table}
+                 WHERE status = %s
+                 ORDER BY starts_at ASC, id ASC",
+                'published'
+            ),
+            ARRAY_A
+        );
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $schedules = [];
+        foreach ($rows as $row) {
+            $exam = is_array($row) ? $row : [];
+            $target_kelas = self::split_target_kelas_csv((string) ($exam['target_kelas'] ?? ''));
+            if ($kelas_normalized !== '' && !empty($target_kelas) && !in_array($kelas_normalized, $target_kelas, true)) {
+                continue;
+            }
+            $schedules[] = $exam;
+        }
+
+        return $schedules;
+    }
+
+    /**
+     * @return array{title:string,day:string,time:string,duration:string}
+     */
+    private static function format_exam_card_schedule_line(array $exam): array
+    {
+        $title = trim(sanitize_text_field((string) ($exam['title'] ?? '')));
+        if ($title === '') {
+            $title = 'Exam';
+        }
+
+        $day_label = self::format_exam_card_day_label((string) ($exam['starts_at'] ?? ''), (string) ($exam['ends_at'] ?? ''));
+        $duration_label = self::format_exam_card_duration_label(
+            isset($exam['duration_minutes']) ? (int) $exam['duration_minutes'] : 0,
+            (string) ($exam['starts_at'] ?? ''),
+            (string) ($exam['ends_at'] ?? '')
+        );
+        $start_time_label = self::format_exam_card_time_only((string) ($exam['starts_at'] ?? ''));
+        $end_time_label = self::format_exam_card_end_time(
+            (string) ($exam['starts_at'] ?? ''),
+            (string) ($exam['ends_at'] ?? ''),
+            isset($exam['duration_minutes']) ? (int) $exam['duration_minutes'] : 0
+        );
+        if ($start_time_label !== '-' && $end_time_label !== '-') {
+            $time_label = $start_time_label . ' - ' . $end_time_label;
+        } elseif ($start_time_label !== '-') {
+            $time_label = $start_time_label;
+        } elseif ($end_time_label !== '-') {
+            $time_label = $end_time_label;
+        } else {
+            $time_label = 'Jadwal belum diatur';
+        }
+
+        return [
+            'title' => $title,
+            'day' => $day_label,
+            'time' => $time_label,
+            'duration' => $duration_label,
+        ];
+    }
+
+    private static function format_exam_card_day_label(string $starts_at, string $ends_at): string
+    {
+        $start_ts = strtotime(trim($starts_at));
+        $end_ts = strtotime(trim($ends_at));
+        $active_ts = false;
+
+        if ($start_ts !== false) {
+            $active_ts = $start_ts;
+        } elseif ($end_ts !== false) {
+            $active_ts = $end_ts;
+        }
+        if ($active_ts === false) {
+            return '-';
+        }
+
+        $weekday = self::translate_exam_card_weekday((string) wp_date('l', $active_ts));
+        $date_label = self::format_exam_card_indonesian_date((int) $active_ts);
+
+        return $weekday . ' , ' . $date_label;
+    }
+
+    private static function translate_exam_card_weekday(string $weekday): string
+    {
+        $map = [
+            'Monday' => 'Senin',
+            'Tuesday' => 'Selasa',
+            'Wednesday' => 'Rabu',
+            'Thursday' => 'Kamis',
+            'Friday' => 'Jumat',
+            'Saturday' => 'Sabtu',
+            'Sunday' => 'Minggu',
+        ];
+
+        return $map[$weekday] ?? sanitize_text_field($weekday);
+    }
+
+    private static function format_exam_card_indonesian_date(int $timestamp): string
+    {
+        if ($timestamp <= 0) {
+            return '-';
+        }
+
+        $month_map = [
+            1 => 'Januari',
+            2 => 'Februari',
+            3 => 'Maret',
+            4 => 'April',
+            5 => 'Mei',
+            6 => 'Juni',
+            7 => 'Juli',
+            8 => 'Agustus',
+            9 => 'September',
+            10 => 'Oktober',
+            11 => 'November',
+            12 => 'Desember',
+        ];
+
+        $day = (int) wp_date('j', $timestamp);
+        $month = (int) wp_date('n', $timestamp);
+        $year = (int) wp_date('Y', $timestamp);
+        $month_label = $month_map[$month] ?? (string) wp_date('F', $timestamp);
+
+        return (string) $day . ' ' . $month_label . ' ' . (string) $year;
+    }
+
+    private static function format_exam_card_duration_label(int $duration_minutes, string $starts_at, string $ends_at): string
+    {
+        if ($duration_minutes > 0) {
+            return (string) $duration_minutes . ' menit';
+        }
+
+        $start_ts = strtotime(trim($starts_at));
+        $end_ts = strtotime(trim($ends_at));
+        if ($start_ts !== false && $end_ts !== false && $end_ts > $start_ts) {
+            $minutes = (int) round(($end_ts - $start_ts) / 60);
+            if ($minutes > 0) {
+                return (string) $minutes . ' menit';
+            }
+        }
+
+        return '-';
+    }
+
+    private static function format_exam_card_time_only(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return '-';
+        }
+
+        $timestamp = strtotime($value);
+        if ($timestamp === false) {
+            return sanitize_text_field($value);
+        }
+
+        return wp_date('H:i', $timestamp);
+    }
+
+    private static function format_exam_card_end_time(string $starts_at, string $ends_at, int $duration_minutes): string
+    {
+        $start_ts = strtotime(trim($starts_at));
+        if ($start_ts !== false && $duration_minutes > 0) {
+            return wp_date('H:i', $start_ts + ($duration_minutes * 60));
+        }
+
+        $end_ts = strtotime(trim($ends_at));
+        if ($end_ts !== false) {
+            return wp_date('H:i', $end_ts);
+        }
+
+        return '-';
+    }
+
+    private static function generate_exam_card_password(): string
+    {
+        try {
+            return (string) random_int(100000, 999999);
+        } catch (Throwable $exception) {
+            return str_pad((string) wp_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+        }
+    }
+
+    /**
+     * @return array{school_name:string,logo_url:string}
+     */
+    private static function get_setup_branding_print_context(): array
+    {
+        $branding = self::get_setup_branding_settings();
+        $school_name = trim((string) ($branding['school_name'] ?? ''));
+
+        $logo_url = '';
+        $logo_attachment_id = (int) ($branding['logo_attachment_id'] ?? 0);
+        if ($logo_attachment_id > 0) {
+            $resolved_logo_url = wp_get_attachment_image_url($logo_attachment_id, 'medium');
+            if (is_string($resolved_logo_url)) {
+                $logo_url = $resolved_logo_url;
+            }
+        }
+
+        return [
+            'school_name' => $school_name,
+            'logo_url' => $logo_url,
+        ];
     }
 
     private static function build_cbt_user_query_args(
@@ -12282,6 +16109,30 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
     }
 
     /**
+     * @return array{school_name:string,logo_attachment_id:int}
+     */
+    private static function get_setup_branding_settings(): array
+    {
+        $raw = get_option(self::SETUP_BRANDING_OPTION, []);
+        if (!is_array($raw)) {
+            $raw = [];
+        }
+
+        $school_name = isset($raw['school_name'])
+            ? trim(sanitize_text_field((string) $raw['school_name']))
+            : '';
+        $logo_attachment_id = isset($raw['logo_attachment_id']) ? absint($raw['logo_attachment_id']) : 0;
+        if ($logo_attachment_id > 0 && !wp_attachment_is_image($logo_attachment_id)) {
+            $logo_attachment_id = 0;
+        }
+
+        return [
+            'school_name' => $school_name,
+            'logo_attachment_id' => $logo_attachment_id,
+        ];
+    }
+
+    /**
      * @return string[]
      */
     private static function cbt_data_tables(wpdb $wpdb): array
@@ -12309,10 +16160,14 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         delete_option('cbt_global_exam_token_generated_at');
         delete_option('cbt_global_exam_token_refresh_minutes');
         delete_option('cbt_global_exam_token_frontend_auto_apply');
+        delete_option(self::SETUP_BRANDING_OPTION);
         delete_transient('cbt_exam_priority_window_until');
     }
 
-    private static function delete_cbt_users_for_reset(): int
+    /**
+     * @return int[]
+     */
+    private static function collect_cbt_user_ids_for_reset(): array
     {
         $roles_to_purge = ['administrator', 'admin_cbt', 'guru_cbt', 'editor', 'teacher', 'siswa_cbt', 'subscriber', 'student'];
         $user_ids = [];
@@ -12334,21 +16189,26 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             }
         }
 
+        $current_user_id = get_current_user_id();
+        if ($current_user_id > 0 && isset($user_ids[$current_user_id])) {
+            unset($user_ids[$current_user_id]);
+        }
+
+        return array_values($user_ids);
+    }
+
+    private static function delete_cbt_users_for_reset(): int
+    {
+        $user_ids = self::collect_cbt_user_ids_for_reset();
         if (empty($user_ids)) {
             return 0;
         }
 
         require_once ABSPATH . 'wp-admin/includes/user.php';
 
-        $current_user_id = get_current_user_id();
         $deleted_count = 0;
-
         foreach ($user_ids as $user_id) {
-            if ($user_id === $current_user_id) {
-                continue;
-            }
-
-            $deleted = wp_delete_user($user_id);
+            $deleted = wp_delete_user((int) $user_id);
             if ($deleted) {
                 $deleted_count++;
             }

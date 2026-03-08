@@ -31,6 +31,13 @@ class CBT_REST
             'methods' => WP_REST_Server::READABLE,
             'callback' => [self::class, 'get_session'],
             'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
+            'args' => [
+                'attempt_id' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+            ],
         ]);
 
         register_rest_route('cbt/v1', '/exams', [
@@ -217,15 +224,30 @@ class CBT_REST
     {
         $user_id = CBT_Auth::current_user_id($request);
         $role = CBT_Auth::current_user_role($request);
+        $attempt_id = (int) $request->get_param('attempt_id');
 
         if ($user_id <= 0) {
             return new WP_Error('unauthorized', 'Unauthorized', ['status' => 401]);
+        }
+
+        $question_revision = null;
+        if ($attempt_id > 0) {
+            $attempt = self::get_attempt_for_question_revision($attempt_id, $user_id, $role);
+            if (is_wp_error($attempt)) {
+                return $attempt;
+            }
+
+            $exam_id = (int) ($attempt['exam_id'] ?? 0);
+            if ($exam_id > 0) {
+                $question_revision = CBT_Cache::get_exam_revision_meta($exam_id);
+            }
         }
 
         return rest_ensure_response([
             'ok' => true,
             'user_id' => $user_id,
             'role' => $role,
+            'question_revision' => $question_revision,
         ]);
     }
 
@@ -315,6 +337,8 @@ class CBT_REST
         if (!$exam) {
             return new WP_Error('not_found', 'Exam not found', ['status' => 404]);
         }
+
+        $question_revision = CBT_Cache::get_exam_revision_meta($exam_id);
 
         $question_order_ids = [];
         $attempt = null;
@@ -437,6 +461,7 @@ class CBT_REST
                 'question_manifest' => $question_manifest,
                 'answered_question_ids' => $answered_question_ids,
                 'existing_answers_map' => $existing_answers_map,
+                'question_revision' => $question_revision,
             ]);
         }
 
@@ -469,6 +494,8 @@ class CBT_REST
             $response['answered_question_ids'] = $answered_question_ids;
             $response['existing_answers_map'] = $existing_answers_map;
         }
+
+        $response['question_revision'] = $question_revision;
 
         return rest_ensure_response($response);
     }
@@ -590,6 +617,7 @@ class CBT_REST
                     'status' => 'resumed',
                     'duration_minutes' => (int) $exam['duration_minutes'],
                     'started_at' => $latest_attempt['started_at'],
+                    'question_revision' => CBT_Cache::get_exam_revision_meta($exam_id),
                 ]);
             }
 
@@ -679,6 +707,7 @@ class CBT_REST
                 'status' => 'started',
                 'duration_minutes' => (int) $exam['duration_minutes'],
                 'started_at' => $now,
+                'question_revision' => CBT_Cache::get_exam_revision_meta($exam_id),
             ]);
         } finally {
             CBT_Cache::release_lock($lock_key);
@@ -1477,7 +1506,7 @@ class CBT_REST
 
                 $questions = (array) $wpdb->get_results(
                     $wpdb->prepare(
-                        "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text,
+                        "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text, q.updated_at,
                                 qsa.correct_text AS short_answer_correct_text
                          FROM {$question_table} q
                          LEFT JOIN {$short_answer_table} qsa ON qsa.question_id = q.id
@@ -1530,6 +1559,7 @@ class CBT_REST
 
                 foreach ($questions as &$question) {
                     $question_id = (int) ($question['id'] ?? 0);
+                    $question['question_text'] = self::normalize_frontend_question_text((string) ($question['question_text'] ?? ''));
                     $question['options'] = (array) ($options_by_question[$question_id] ?? []);
 
                     if ((string) ($question['question_type'] ?? '') === 'short_answer') {
@@ -1696,6 +1726,7 @@ class CBT_REST
             $manifest_item = [
                 'id' => $question_id,
                 'question_type' => (string) ($question['question_type'] ?? ''),
+                'updated_at' => (string) ($question['updated_at'] ?? ''),
             ];
 
             $question_type = (string) ($question['question_type'] ?? '');
@@ -1737,17 +1768,32 @@ class CBT_REST
             return [];
         }
 
+        $question_updated_lookup = [];
+
         if (is_array($attempt) && CBT_Runtime::is_ready()) {
             self::ensure_runtime_attempt_state($attempt, $duration_minutes);
             $runtime_answers = CBT_Runtime::get_existing_answers_map($attempt_id, $runtime_state_found);
             if ($runtime_state_found) {
-                return array_values(array_keys(array_filter($runtime_answers, [self::class, 'answer_row_has_value'])));
+                $question_updated_lookup = self::get_question_updated_at_lookup(array_keys($runtime_answers));
+                $answered_question_ids = [];
+                foreach ($runtime_answers as $question_id => $answer_row) {
+                    $question_id = (int) $question_id;
+                    if ($question_id <= 0 || !self::answer_row_has_value((array) $answer_row)) {
+                        continue;
+                    }
+                    if (self::answer_row_is_stale_for_question_updated_at((array) $answer_row, (string) ($question_updated_lookup[$question_id] ?? ''))) {
+                        continue;
+                    }
+                    $answered_question_ids[$question_id] = $question_id;
+                }
+
+                return array_values($answered_question_ids);
             }
         }
 
         $answer_rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT question_id, selected_option_ids, answer_text
+                "SELECT question_id, selected_option_ids, answer_text, answered_at, updated_at
                  FROM {$wpdb->prefix}cbt_answers
                  WHERE attempt_id = %d",
                 $attempt_id
@@ -1759,10 +1805,17 @@ class CBT_REST
             return [];
         }
 
+        $question_updated_lookup = self::get_question_updated_at_lookup(array_map(static function ($answer_row): int {
+            return (int) ($answer_row['question_id'] ?? 0);
+        }, $answer_rows));
+
         $answered_question_ids = [];
         foreach ($answer_rows as $answer_row) {
             $question_id = (int) ($answer_row['question_id'] ?? 0);
             if ($question_id <= 0 || !self::answer_row_has_value((array) $answer_row)) {
+                continue;
+            }
+            if (self::answer_row_is_stale_for_question_updated_at((array) $answer_row, (string) ($question_updated_lookup[$question_id] ?? ''))) {
                 continue;
             }
             $answered_question_ids[$question_id] = $question_id;
@@ -1797,7 +1850,7 @@ class CBT_REST
         if (empty($existing_answers)) {
             $answer_rows = $wpdb->get_results(
                 $wpdb->prepare(
-                    "SELECT question_id, selected_option_ids, answer_text
+                    "SELECT question_id, selected_option_ids, answer_text, answered_at, updated_at
                      FROM {$wpdb->prefix}cbt_answers
                      WHERE attempt_id = %d",
                     $attempt_id
@@ -1878,6 +1931,69 @@ class CBT_REST
         }
 
         return trim($answer_text) !== '';
+    }
+
+    private static function answer_row_is_stale_for_question_updated_at(array $answer_row, string $question_updated_at): bool
+    {
+        $question_updated_at = trim($question_updated_at);
+        if ($question_updated_at === '') {
+            return false;
+        }
+
+        $question_updated_ts = strtotime($question_updated_at);
+        if ($question_updated_ts === false || $question_updated_ts <= 0) {
+            return false;
+        }
+
+        $answer_updated_at = trim((string) ($answer_row['updated_at'] ?? ($answer_row['answered_at'] ?? '')));
+        if ($answer_updated_at === '') {
+            return false;
+        }
+
+        $answer_updated_ts = strtotime($answer_updated_at);
+        if ($answer_updated_ts === false || $answer_updated_ts <= 0) {
+            return false;
+        }
+
+        return $question_updated_ts > $answer_updated_ts;
+    }
+
+    /**
+     * @param array<int|string> $question_ids
+     * @return array<int,string>
+     */
+    private static function get_question_updated_at_lookup(array $question_ids): array
+    {
+        global $wpdb;
+
+        $question_ids = array_values(array_unique(array_filter(array_map('intval', $question_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        })));
+        if (empty($question_ids)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+        $question_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, updated_at
+                 FROM {$wpdb->prefix}cbt_questions
+                 WHERE id IN ({$placeholders})",
+                ...$question_ids
+            ),
+            ARRAY_A
+        );
+
+        $lookup = [];
+        foreach ((array) $question_rows as $question_row) {
+            $question_id = (int) ($question_row['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+            $lookup[$question_id] = (string) ($question_row['updated_at'] ?? '');
+        }
+
+        return $lookup;
     }
 
     /**
@@ -1967,6 +2083,8 @@ class CBT_REST
             $params = array_merge($params, $question_ids);
         }
 
+        $query = str_replace('SELECT question_id, selected_option_ids, answer_text', 'SELECT question_id, selected_option_ids, answer_text, answered_at, updated_at', $query);
+
         $answer_rows = $wpdb->get_results(
             $wpdb->prepare($query, $params),
             ARRAY_A
@@ -1989,6 +2107,10 @@ class CBT_REST
      */
     private static function apply_existing_answer_map_to_question_payload(array &$questions, array $existing_answers): void
     {
+        $question_updated_lookup = self::get_question_updated_at_lookup(array_map(static function ($question): int {
+            return (int) ((is_array($question) ? ($question['id'] ?? 0) : 0));
+        }, $questions));
+
         foreach ($questions as &$question) {
             $question_id = (int) ($question['id'] ?? 0);
             if ($question_id <= 0 || !isset($existing_answers[$question_id])) {
@@ -1996,6 +2118,13 @@ class CBT_REST
             }
 
             $existing_answer_row = $existing_answers[$question_id];
+            $question_updated_at = (string) ($question['updated_at'] ?? ($question_updated_lookup[$question_id] ?? ''));
+            if ($question_updated_at !== '' && !isset($question['updated_at'])) {
+                $question['updated_at'] = $question_updated_at;
+            }
+            if (self::answer_row_is_stale_for_question_updated_at((array) $existing_answer_row, $question_updated_at)) {
+                continue;
+            }
             $selected_option_ids = json_decode((string) ($existing_answer_row['selected_option_ids'] ?? ''), true);
             if (!is_array($selected_option_ids)) {
                 $selected_option_ids = [];
@@ -2366,6 +2495,47 @@ class CBT_REST
         }
 
         if ((int) ($attempt['student_id'] ?? 0) !== $user_id) {
+            return new WP_Error('forbidden', 'Anda tidak dapat mengakses attempt ini.', ['status' => 403]);
+        }
+
+        return $attempt;
+    }
+
+    /**
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function get_attempt_for_question_revision(int $attempt_id, int $user_id, string $role)
+    {
+        global $wpdb;
+
+        if ($attempt_id <= 0 || $user_id <= 0) {
+            return new WP_Error('invalid_attempt_id', 'Attempt tidak valid.', ['status' => 400]);
+        }
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $attempt = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT a.id, a.exam_id, a.student_id, a.status, e.created_by
+                 FROM {$attempt_table} a
+                 LEFT JOIN {$exam_table} e ON e.id = a.exam_id
+                 WHERE a.id = %d",
+                $attempt_id
+            ),
+            ARRAY_A
+        );
+        if (!$attempt) {
+            return new WP_Error('not_found', 'Attempt tidak ditemukan.', ['status' => 404]);
+        }
+
+        if (in_array($role, ['siswa', 'student'], true)) {
+            if ((int) ($attempt['student_id'] ?? 0) !== $user_id) {
+                return new WP_Error('forbidden', 'Anda tidak dapat mengakses attempt ini.', ['status' => 403]);
+            }
+            return $attempt;
+        }
+
+        if (in_array($role, ['guru', 'teacher'], true) && (int) ($attempt['created_by'] ?? 0) !== $user_id) {
             return new WP_Error('forbidden', 'Anda tidak dapat mengakses attempt ini.', ['status' => 403]);
         }
 
@@ -3515,6 +3685,22 @@ class CBT_REST
         }
 
         return $values;
+    }
+
+    private static function normalize_frontend_question_text(string $question_text): string
+    {
+        $normalized = str_replace(["\r\n", "\r"], "\n", $question_text);
+
+        // Remove blank paragraphs often produced by editor/autop conversion.
+        $normalized = (string) preg_replace('/<p\b[^>]*>\s*(?:&nbsp;|&#160;|<br(?:\s+[^>]*)?\s*\/?>)*\s*<\/p>/i', '', $normalized);
+
+        $has_explicit_line_break_markup = preg_match('/<(?:br|p|div|table|thead|tbody|tfoot|tr|td|th|ul|ol|li|blockquote|pre|figure|figcaption|h[1-6]|hr)\b/i', $normalized) === 1;
+        if (!$has_explicit_line_break_markup) {
+            // For plain text questions, compress repeated blank lines.
+            $normalized = (string) preg_replace('/\n[ \t\x{00A0}]*(?:\n[ \t\x{00A0}]*)+/u', "\n", $normalized);
+        }
+
+        return $normalized;
     }
 
     /**

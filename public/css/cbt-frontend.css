@@ -636,6 +636,12 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login::-webkit-s
     color: #0f7a56;
 }
 
+.cbt-alert-warning {
+    border: 1px solid #efd8a5;
+    background: #fff9ea;
+    color: #8d6210;
+}
+
 .cbt-finish-modal-overlay {
     position: fixed;
     inset: 0;
@@ -917,6 +923,10 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     color: var(--cbt-muted);
 }
 
+.cbt-login-panel-brand-mobile {
+    display: none;
+}
+
 .cbt-grid-2 {
     display: grid;
     grid-template-columns: 1.1fr 1fr;
@@ -1153,6 +1163,12 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     color: #8f4f06;
 }
 
+.cbt-question-head .cbt-chip.cbt-chip-danger {
+    border-color: #f3b0b0;
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
 .cbt-question-body {
     padding: 16px;
 }
@@ -1174,11 +1190,26 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
 
 .cbt-question-stem :where(p, ul, ol, table, blockquote) {
     margin-top: 0;
-    margin-bottom: 0.72em;
+    margin-bottom: 0.42em;
 }
 
 .cbt-question-stem :where(p, ul, ol, table, blockquote):last-child {
     margin-bottom: 0;
+}
+
+/* Keep manual newlines compact even when theme/global styles set large <p> margins. */
+.cbt-web-shell .cbt-question-stem p {
+    margin-top: 0 !important;
+    margin-bottom: 0.2em !important;
+}
+
+.cbt-web-shell .cbt-question-stem p:last-child {
+    margin-bottom: 0 !important;
+}
+
+.cbt-web-shell .cbt-question-stem p:empty {
+    display: none;
+    margin: 0 !important;
 }
 
 .cbt-short-inline-field {
@@ -1290,7 +1321,7 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
 
 .cbt-option-label :where(p, ul, ol) {
     margin-top: 0;
-    margin-bottom: 0.65em;
+    margin-bottom: 0.42em;
 }
 
 .cbt-option-label :where(p, ul, ol):last-child {
@@ -1992,6 +2023,10 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     background: #e29d2f;
 }
 
+.cbt-dot-changed {
+    background: #dc2626;
+}
+
 .cbt-result-card {
     max-width: 660px;
     margin: 0 auto;
@@ -2364,6 +2399,12 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     color: #ffd79a;
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-danger {
+    border-color: rgba(248, 113, 113, 0.45);
+    background: rgba(127, 29, 29, 0.4);
+    color: #fecaca;
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-question-font-controls {
     border-color: #406084;
     background: #1a2d46;
@@ -2691,6 +2732,16 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     background: #122339;
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-legend-item-changed {
+    border-color: rgba(248, 113, 113, 0.42);
+    background: rgba(127, 29, 29, 0.32);
+    color: #fecaca;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-dot-changed {
+    background: #f87171;
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-review-chip {
     border-color: #3f5674;
     background: #16263c;
@@ -2728,6 +2779,12 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     border-color: #2f8a64;
     background: #102b22;
     color: #9fe4c6;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-alert-warning {
+    border-color: #7f6631;
+    background: #2d2512;
+    color: #f4d58c;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-finish-stat {
@@ -3208,6 +3265,8 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     --cbt-radius: 18px;
     --cbt-shadow: 0 14px 34px rgba(29, 78, 216, 0.12);
     --cbt-font-scale: 1.05;
+    --cbt-question-font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    --cbt-question-font-weight: 500;
     font-family: 'Source Sans 3', 'Segoe UI', Tahoma, sans-serif;
     font-size: 16px;
     line-height: 1.62;
@@ -3216,6 +3275,26 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
         radial-gradient(circle at 8% 8%, rgba(59, 130, 246, 0.16), transparent 40%),
         radial-gradient(circle at 92% 90%, rgba(99, 102, 241, 0.18), transparent 36%),
         linear-gradient(140deg, #eff6ff 0%, #e0e7ff 52%, #eef2ff 100%);
+}
+
+.cbt-web-shell .cbt-question-stem,
+.cbt-web-shell .cbt-option-label,
+.cbt-web-shell .cbt-tf-matrix-statement,
+.cbt-web-shell .cbt-review-question {
+    font-family: var(--cbt-question-font-family);
+    font-weight: var(--cbt-question-font-weight);
+}
+
+.cbt-web-shell .cbt-question-stem :where(*),
+.cbt-web-shell .cbt-option-label :where(*) {
+    font-family: inherit !important;
+}
+
+/* Keep question stem and option text at identical size across breakpoints. */
+.cbt-web-shell .cbt-question-stem,
+.cbt-web-shell .cbt-option-label,
+.cbt-web-shell .cbt-option-label :where(p, ul, ol, li, span) {
+    font-size: calc(16px * var(--cbt-font-scale)) !important;
 }
 
 .cbt-card h3,
@@ -4300,6 +4379,18 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     color: #c2410c;
 }
 
+.cbt-nav-btn.is-changed:not(.is-current) {
+    border-color: #f3a8a8;
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.cbt-nav-btn.is-current.is-changed {
+    border-color: #f87171;
+    background: #dc2626;
+    color: #fff;
+}
+
 .cbt-nav-answer-badge {
     background: #2563eb;
 }
@@ -4482,6 +4573,22 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
         padding: 16px;
     }
 
+    .cbt-login-panel-brand-mobile {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 2px auto 10px;
+    }
+
+    .cbt-login-panel-brand-mobile-logo {
+        display: block;
+        width: clamp(92px, 30vw, 182px);
+        max-width: 45vw;
+        height: auto;
+        object-fit: contain;
+        object-position: center;
+    }
+
     .cbt-login-panel .cbt-form-grid {
         width: min(100%, 720px);
         margin-left: auto;
@@ -4501,6 +4608,20 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
         display: none;
     }
 
+}
+
+@media (max-width: 560px) {
+    .cbt-login-panel-brand-mobile-logo {
+        width: clamp(82px, 34vw, 156px);
+        max-width: 50vw;
+    }
+}
+
+@media (max-width: 400px) {
+    .cbt-login-panel-brand-mobile-logo {
+        width: clamp(74px, 36vw, 132px);
+        max-width: 52vw;
+    }
 }
 
 @media (min-width: 721px) and (max-width: 1080px) {
@@ -4760,7 +4881,7 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     .cbt-question-stem :where(p, ul, ol, table, blockquote),
     .cbt-option-label :where(p, ul, ol),
     .cbt-tf-matrix-statement :where(p, ul, ol) {
-        margin-bottom: 0.58em;
+        margin-bottom: 0.38em;
     }
 
     .cbt-options {
@@ -4941,6 +5062,18 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     background: rgba(194, 65, 12, 0.2);
     border-color: rgba(253, 186, 116, 0.45);
     color: #fdba74;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-changed:not(.is-current) {
+    background: rgba(185, 28, 28, 0.24);
+    border-color: rgba(248, 113, 113, 0.48);
+    color: #fca5a5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-current.is-changed {
+    background: #b91c1c;
+    border-color: #f87171;
+    color: #fff;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-result-hero {
@@ -5750,6 +5883,11 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     margin: 0;
 }
 
+.cbt-user-photo-modal-row-wide {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(72px, 96px) minmax(0, 1fr);
+}
+
 .cbt-user-photo-modal-row dt {
     margin: 0;
     font-size: 10px;
@@ -5871,6 +6009,11 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
         grid-template-columns: 70px minmax(0, 1fr);
         padding: 7px 8px;
         gap: 8px;
+    }
+
+    .cbt-user-photo-modal-row-wide {
+        grid-column: auto;
+        grid-template-columns: 84px minmax(0, 1fr);
     }
 
     .cbt-user-photo-modal-row dd {
@@ -6594,7 +6737,7 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     .cbt-question-stem :where(p, ul, ol, table, blockquote),
     .cbt-option-label :where(p, ul, ol),
     .cbt-tf-matrix-statement :where(p, ul, ol) {
-        margin-bottom: 0.5em;
+        margin-bottom: 0.32em;
     }
 
     .cbt-options {
@@ -7087,6 +7230,18 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     color: #e5c07b;
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-changed:not(.is-current) {
+    background: rgba(185, 28, 28, 0.24);
+    border-color: rgba(248, 113, 113, 0.48);
+    color: #fca5a5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-current.is-changed {
+    background: #b91c1c;
+    border-color: #f87171;
+    color: #fff;
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-exam-meta-attempt,
 .cbt-web-shell.cbt-theme-dark .cbt-result-body .cbt-subtitle {
     color: #b9c4d1;
@@ -7441,6 +7596,16 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     background: var(--cbt-light-warning-border);
 }
 
+.cbt-web-shell.cbt-theme-light .cbt-legend-item-changed {
+    background: #fee2e2;
+    border-color: #f3b0b0;
+    color: #b91c1c;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-dot-changed {
+    background: #dc2626;
+}
+
 .cbt-web-shell.cbt-theme-light .cbt-legend-item-answered {
     background: var(--cbt-light-success-surface);
     border-color: var(--cbt-light-success-border);
@@ -7517,6 +7682,20 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     box-shadow: 0 8px 16px rgba(221, 146, 32, 0.24);
 }
 
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-changed:not(.is-current) {
+    background: #fee2e2;
+    border-color: #f3a8a8;
+    color: #b91c1c;
+    box-shadow: inset 0 0 0 1px rgba(185, 28, 28, 0.08);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-current.is-changed {
+    background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%);
+    border-color: #f87171;
+    color: #fff;
+    box-shadow: 0 8px 16px rgba(220, 38, 38, 0.24);
+}
+
 .cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-answered:not(.is-current) {
     background: var(--cbt-light-success-surface-strong);
     border-color: var(--cbt-light-success-border-strong);
@@ -7584,6 +7763,12 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     background: var(--cbt-light-success-surface);
     border-color: var(--cbt-light-success-border);
     color: var(--cbt-light-success-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-alert-warning {
+    background: #fff9eb;
+    border-color: #e7d09d;
+    color: #99691c;
 }
 
 .cbt-web-shell.cbt-theme-light .cbt-side-stat.is-answered strong,
@@ -8002,8 +8187,84 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
         content: "Ragu";
     }
 
+    .cbt-legend-item-changed::after {
+        content: "Ubah";
+    }
+
     .cbt-dot {
         width: 5px;
         height: 5px;
+    }
+}
+
+.cbt-brand-badge {
+    overflow: hidden;
+}
+
+.cbt-brand-badge-logo {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+}
+
+.cbt-login-hero-heading {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 8px;
+}
+
+.cbt-login-hero-heading h1 {
+    min-width: 0;
+    max-width: none;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.cbt-login-hero-logo-wrap {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: auto;
+    max-width: 260px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: 0;
+}
+
+.cbt-login-hero-logo {
+    display: block;
+    max-width: 260px;
+    max-height: 138px;
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    object-position: center;
+    border-radius: 6px;
+}
+
+@media (max-width: 640px) {
+    .cbt-login-hero-heading {
+        flex-direction: column;
+        align-items: flex-start;
+        display: flex;
+        gap: 6px;
+    }
+
+    .cbt-login-hero-logo-wrap {
+        max-width: 210px;
+        min-height: 0;
+        padding: 0;
+    }
+
+    .cbt-login-hero-logo {
+        max-width: 210px;
+        max-height: 112px;
     }
 }

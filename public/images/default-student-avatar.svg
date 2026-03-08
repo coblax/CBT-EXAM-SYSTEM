@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640" role="img" aria-label="Default siswa">
+  <defs>
+    <clipPath id="avatar-clip">
+      <circle cx="320" cy="320" r="320" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#avatar-clip)">
+    <rect width="640" height="640" fill="#b6dde2" />
+    <circle cx="320" cy="332" r="214" fill="#61b5c2" />
+    <rect y="498" width="640" height="142" fill="#25845f" />
+
+    <ellipse cx="320" cy="268" rx="112" ry="124" fill="#f3b54a" />
+    <path d="M264 350h112v82a56 56 0 0 1-112 0z" fill="#cf8d37" />
+
+    <path d="M194 562c20-86 78-132 126-132s106 46 126 132z" fill="#f3b54a" />
+    <path d="M176 640c6-112 62-188 144-188s138 76 144 188z" fill="#27408f" />
+
+    <path d="M226 458h188l-40 182H266z" fill="#1d2f76" />
+    <path d="M280 458h80l-10 182h-60z" fill="#f3b54a" />
+    <path d="M285 458h70l-6 182h-58z" fill="#ffffff" opacity="0.94" />
+
+    <ellipse cx="270" cy="279" rx="15" ry="16" fill="#0c2468" />
+    <ellipse cx="370" cy="279" rx="15" ry="16" fill="#0c2468" />
+    <circle cx="266" cy="275" r="4" fill="#ffffff" />
+    <circle cx="366" cy="275" r="4" fill="#ffffff" />
+    <path d="M286 325q34 34 68 0" stroke="#ffffff" stroke-width="10" fill="none" stroke-linecap="round" />
+
+    <rect x="238" y="236" width="62" height="20" rx="10" fill="#73251e" />
+    <rect x="340" y="236" width="62" height="20" rx="10" fill="#73251e" />
+
+    <path d="M130 170 320 78l190 92-190 92z" fill="#18358f" />
+    <path d="M210 200v62c0 40 246 40 246 0v-62z" fill="#27439f" />
+    <path d="M500 170v104" stroke="#f7c532" stroke-width="8" />
+    <rect x="486" y="260" width="28" height="58" rx="8" fill="#f7c532" />
+  </g>
+</svg>

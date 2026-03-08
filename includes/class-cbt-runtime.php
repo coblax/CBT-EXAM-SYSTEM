@@ -721,6 +721,118 @@ class CBT_Runtime
     }
 
     /**
+     * @param array<int,int> $option_id_map
+     */
+    public static function remap_active_attempt_answers_for_question(int $question_id, array $option_id_map = [], bool $clear_answer = false): int
+    {
+        $question_id = absint($question_id);
+        if ($question_id <= 0) {
+            return 0;
+        }
+
+        $redis = self::redis();
+        if (!$redis instanceof Redis) {
+            return 0;
+        }
+
+        self::prune_stale_active_attempts();
+        $attempt_ids = $redis->zRange(self::active_attempts_key(), 0, -1);
+        if (!is_array($attempt_ids) || empty($attempt_ids)) {
+            return 0;
+        }
+
+        $updated_count = 0;
+        $now_unix = time();
+        $now_mysql = current_time('mysql');
+
+        foreach ($attempt_ids as $attempt_id_raw) {
+            $attempt_id = (int) $attempt_id_raw;
+            if ($attempt_id <= 0) {
+                continue;
+            }
+
+            $answers_key = self::attempt_answers_key($attempt_id);
+            $encoded_entry = $redis->hGet($answers_key, (string) $question_id);
+            if (!is_scalar($encoded_entry) || (string) $encoded_entry === '') {
+                continue;
+            }
+
+            $decoded_entry = self::decode_json_string((string) $encoded_entry);
+            if (!is_array($decoded_entry)) {
+                continue;
+            }
+
+            $entry = self::normalize_stored_entry($decoded_entry + ['question_id' => $question_id]);
+            $has_changes = false;
+
+            if ($clear_answer) {
+                if (
+                    (string) ($entry['selected_option_ids'] ?? '') !== '' ||
+                    (string) ($entry['answer_text'] ?? '') !== '' ||
+                    $entry['is_correct'] !== null ||
+                    (float) ($entry['score_awarded'] ?? 0) !== 0.0
+                ) {
+                    $entry['selected_option_ids'] = '';
+                    $entry['answer_text'] = '';
+                    $entry['answer'] = null;
+                    $entry['is_correct'] = null;
+                    $entry['score_awarded'] = 0.0;
+                    $entry['clear'] = 0;
+                    $entry['answered_at'] = $now_mysql;
+                    $has_changes = true;
+                }
+            } else {
+                $selected_option_ids = self::decode_selected_option_ids_string((string) ($entry['selected_option_ids'] ?? ''));
+                $remapped_option_ids = [];
+                foreach ($selected_option_ids as $selected_option_id) {
+                    $new_option_id = isset($option_id_map[$selected_option_id]) ? (int) $option_id_map[$selected_option_id] : 0;
+                    if ($new_option_id > 0) {
+                        $remapped_option_ids[] = $new_option_id;
+                    }
+                }
+
+                $remapped_option_ids = array_values(array_unique($remapped_option_ids));
+                sort($remapped_option_ids);
+                $next_selected_option_ids = !empty($remapped_option_ids) ? (string) wp_json_encode($remapped_option_ids) : '';
+                if ($next_selected_option_ids !== (string) ($entry['selected_option_ids'] ?? '')) {
+                    $entry['selected_option_ids'] = $next_selected_option_ids;
+                    $entry['is_correct'] = null;
+                    $entry['score_awarded'] = 0.0;
+                    $entry['answered_at'] = $now_mysql;
+                    $has_changes = true;
+                }
+            }
+
+            if (!$has_changes) {
+                continue;
+            }
+
+            $redis->hSet(
+                $answers_key,
+                (string) $question_id,
+                self::encode_json_string(self::normalize_stored_entry($entry))
+            );
+            $redis->zAdd(self::attempt_dirty_key($attempt_id), $now_unix, (string) $question_id);
+            self::schedule_attempt_flush($redis, $attempt_id, self::FLUSH_DELAY_SECONDS);
+
+            $meta = self::decode_json_string((string) $redis->get(self::attempt_meta_key($attempt_id)));
+            $duration_minutes = is_array($meta) ? (int) ($meta['duration_minutes'] ?? 0) : 0;
+            $attempt_meta = [
+                'id' => $attempt_id,
+                'exam_id' => is_array($meta) ? (int) ($meta['exam_id'] ?? 0) : 0,
+                'student_id' => is_array($meta) ? (int) ($meta['student_id'] ?? 0) : 0,
+                'status' => is_array($meta) ? (string) ($meta['status'] ?? 'in_progress') : 'in_progress',
+                'started_at' => is_array($meta) ? (string) ($meta['started_at'] ?? '') : '',
+            ];
+            self::update_meta_touch($redis, $attempt_id, $duration_minutes, $attempt_meta, 0);
+            CBT_Cache::invalidate_attempt($attempt_id);
+            $updated_count++;
+        }
+
+        return $updated_count;
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public static function get_admin_overview(): array
@@ -1142,6 +1254,33 @@ class CBT_Runtime
             'answered_at' => (string) ($entry['answered_at'] ?? current_time('mysql')),
             'clear' => !empty($entry['clear']) ? 1 : 0,
         ];
+    }
+
+    /**
+     * @return int[]
+     */
+    private static function decode_selected_option_ids_string(string $raw): array
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            if (is_numeric($raw)) {
+                $decoded = [(int) $raw];
+            } else {
+                return [];
+            }
+        }
+
+        $ids = array_values(array_filter(array_map('intval', $decoded), static function (int $option_id): bool {
+            return $option_id > 0;
+        }));
+        $ids = array_values(array_unique($ids));
+        sort($ids);
+        return $ids;
     }
 
     /**

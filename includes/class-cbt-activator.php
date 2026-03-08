@@ -8,7 +8,7 @@ class CBT_Activator
 {
     private const OPTION_DB_VERSION = 'cbt_exam_system_db_version';
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
-    private const DB_VERSION = '1.5.0';
+    private const DB_VERSION = '1.6.0';
 
     public static function activate(): void
     {
@@ -78,6 +78,7 @@ class CBT_Activator
         $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_questions (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             exam_id BIGINT UNSIGNED NOT NULL,
+            source_question_id BIGINT UNSIGNED NULL,
             question_text LONGTEXT NOT NULL,
             question_type VARCHAR(30) NOT NULL,
             points DECIMAL(6,2) NOT NULL DEFAULT 1.00,
@@ -88,6 +89,7 @@ class CBT_Activator
             PRIMARY KEY (id),
             KEY idx_exam_id (exam_id),
             KEY idx_exam_id_id (exam_id, id),
+            KEY idx_source_question_id (source_question_id),
             KEY idx_question_type (question_type)
         ) $charset;";
 
@@ -187,6 +189,7 @@ class CBT_Activator
 
         // Add foreign keys when supported by current MySQL setup.
         self::maybe_add_foreign_keys($wpdb);
+        self::ensure_question_source_linkage_schema($wpdb);
         self::migrate_question_type_details($wpdb);
         self::seed_default_subjects($wpdb);
         self::register_roles();
@@ -215,6 +218,36 @@ class CBT_Activator
         foreach ($constraints as $sql) {
             // Ignore if constraint exists or storage engine does not support it.
             $wpdb->query($sql);
+        }
+    }
+
+    private static function ensure_question_source_linkage_schema(wpdb $wpdb): void
+    {
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$question_table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (!in_array('source_question_id', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$question_table} ADD COLUMN source_question_id BIGINT UNSIGNED NULL AFTER exam_id"
+            );
+        }
+
+        $index_rows = $wpdb->get_results("SHOW INDEX FROM {$question_table}", ARRAY_A);
+        $index_names = [];
+        foreach ((array) $index_rows as $index_row) {
+            $index_name = (string) ($index_row['Key_name'] ?? '');
+            if ($index_name !== '') {
+                $index_names[$index_name] = true;
+            }
+        }
+
+        if (!isset($index_names['idx_source_question_id'])) {
+            $wpdb->query(
+                "ALTER TABLE {$question_table} ADD KEY idx_source_question_id (source_question_id)"
+            );
         }
     }
 
