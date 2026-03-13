@@ -23,6 +23,7 @@ require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-runtime.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-ui-state.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-auth.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-frontend.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-exams-helper.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-rest.php';
 

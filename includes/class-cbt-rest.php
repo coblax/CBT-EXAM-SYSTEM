@@ -222,6 +222,8 @@ class CBT_REST
 
     public static function get_session(WP_REST_Request $request)
     {
+        global $wpdb;
+
         $user_id = CBT_Auth::current_user_id($request);
         $role = CBT_Auth::current_user_role($request);
         $attempt_id = (int) $request->get_param('attempt_id');
@@ -231,6 +233,8 @@ class CBT_REST
         }
 
         $question_revision = null;
+        $question_count = 0;
+        $attempt_timer = null;
         if ($attempt_id > 0) {
             $attempt = self::get_attempt_for_question_revision($attempt_id, $user_id, $role);
             if (is_wp_error($attempt)) {
@@ -240,6 +244,26 @@ class CBT_REST
             $exam_id = (int) ($attempt['exam_id'] ?? 0);
             if ($exam_id > 0) {
                 $question_revision = CBT_Cache::get_exam_revision_meta($exam_id);
+                $attempt_timer = ((string) ($attempt['status'] ?? '') === 'in_progress')
+                    ? self::build_attempt_timer_payload(
+                        $attempt,
+                        (int) ($attempt['exam_duration_minutes'] ?? 0)
+                    )
+                    : null;
+                if ((string) ($attempt['status'] ?? '') === 'in_progress') {
+                    $question_table = $wpdb->prefix . 'cbt_questions';
+                    $question_count = (int) $wpdb->get_var(
+                        $wpdb->prepare(
+                            "SELECT COUNT(*)
+                             FROM {$question_table}
+                             WHERE exam_id = %d
+                               AND COALESCE(is_active, 1) = 1",
+                            $exam_id
+                        )
+                    );
+                } else {
+                    $question_count = count(self::normalize_question_order_ids($attempt['question_order'] ?? ''));
+                }
             }
         }
 
@@ -248,6 +272,8 @@ class CBT_REST
             'user_id' => $user_id,
             'role' => $role,
             'question_revision' => $question_revision,
+            'question_count' => $question_count,
+            'attempt_timer' => $attempt_timer,
         ]);
     }
 
@@ -346,7 +372,7 @@ class CBT_REST
         if ($attempt_id > 0) {
             $attempt = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT id, exam_id, student_id, status, question_order, score, max_score, started_at
+                    "SELECT id, exam_id, student_id, status, question_order, score, max_score, started_at, extra_time_minutes
                      FROM {$attempt_table}
                      WHERE id = %d",
                     $attempt_id
@@ -390,6 +416,30 @@ class CBT_REST
         $window_mode = ($attempt_id > 0 && $limit > 0);
 
         if (is_array($attempt)) {
+            $persisted_attempt_order_ids = self::normalize_question_order_ids($attempt['question_order'] ?? '');
+            $runtime_attempt_order_ids = [];
+            if (CBT_Runtime::is_ready()) {
+                $runtime_attempt_order_ids = CBT_Runtime::get_attempt_question_order((int) ($attempt['id'] ?? 0), $runtime_attempt_order_found);
+                if (!$runtime_attempt_order_found) {
+                    $runtime_attempt_order_ids = [];
+                }
+            }
+            $merged_attempt_order_ids = self::merge_attempt_question_order_ids(
+                $persisted_attempt_order_ids,
+                $runtime_attempt_order_ids
+            );
+            if (!empty($merged_attempt_order_ids)) {
+                $merged_attempt_order_json = wp_json_encode($merged_attempt_order_ids);
+                if (is_string($merged_attempt_order_json)) {
+                    $attempt['question_order'] = $merged_attempt_order_json;
+                }
+            }
+
+            $questions = self::append_missing_attempt_questions(
+                $questions,
+                $exam_id,
+                (string) ($attempt['question_order'] ?? '')
+            );
             $resolved_attempt_payload = self::resolve_attempt_question_payload(
                 $questions,
                 $attempt,
@@ -407,22 +457,30 @@ class CBT_REST
             $question_order_ids = self::extract_question_ids_from_payload($questions);
         }
 
+        $attempt_duration_minutes = self::resolve_attempt_duration_minutes(
+            is_array($attempt) ? $attempt : null,
+            (int) ($exam['duration_minutes'] ?? 0)
+        );
         $question_manifest = self::build_question_manifest($questions);
         $answered_question_ids = [];
         $existing_answers_map = [];
+        $archived_review_items = [];
         if ($attempt_id > 0) {
             $answered_question_ids = self::get_attempt_answered_question_ids(
                 $attempt_id,
                 is_array($attempt) ? $attempt : null,
-                (int) ($exam['duration_minutes'] ?? 0)
+                $attempt_duration_minutes
             );
             if ($include_answer_manifest) {
                 $existing_answers_map = self::build_attempt_existing_answers_map(
                     $questions,
                     $attempt_id,
                     is_array($attempt) ? $attempt : null,
-                    (int) ($exam['duration_minutes'] ?? 0)
+                    $attempt_duration_minutes
                 );
+            }
+            if ($include_answer_manifest && is_array($attempt)) {
+                $archived_review_items = self::build_attempt_archived_review_items($attempt);
             }
         }
 
@@ -441,7 +499,7 @@ class CBT_REST
                     $used_runtime_state = self::merge_runtime_answers_into_question_payload(
                         $window_questions,
                         $attempt,
-                        (int) ($exam['duration_minutes'] ?? 0),
+                        $attempt_duration_minutes,
                         $window_question_ids
                     );
                 }
@@ -461,6 +519,7 @@ class CBT_REST
                 'question_manifest' => $question_manifest,
                 'answered_question_ids' => $answered_question_ids,
                 'existing_answers_map' => $existing_answers_map,
+                'archived_review_items' => $archived_review_items,
                 'question_revision' => $question_revision,
             ]);
         }
@@ -471,7 +530,7 @@ class CBT_REST
                 $used_runtime_state = self::merge_runtime_answers_into_question_payload(
                     $questions,
                     $attempt,
-                    (int) ($exam['duration_minutes'] ?? 0)
+                    $attempt_duration_minutes
                 );
             }
 
@@ -493,6 +552,7 @@ class CBT_REST
             $response['question_manifest'] = $question_manifest;
             $response['answered_question_ids'] = $answered_question_ids;
             $response['existing_answers_map'] = $existing_answers_map;
+            $response['archived_review_items'] = $archived_review_items;
         }
 
         $response['question_revision'] = $question_revision;
@@ -561,7 +621,7 @@ class CBT_REST
         try {
             $latest_attempt = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT id, status, started_at, finished_at, question_order
+                    "SELECT id, status, started_at, finished_at, question_order, extra_time_minutes
                      FROM {$attempt_table}
                      WHERE exam_id = %d AND student_id = %d AND status IN ('in_progress', 'completed')
                      ORDER BY FIELD(status, 'in_progress', 'completed'), id DESC
@@ -603,6 +663,10 @@ class CBT_REST
                     }
                 }
 
+                $resolved_duration_minutes = self::resolve_attempt_duration_minutes(
+                    is_array($latest_attempt) ? $latest_attempt : null,
+                    (int) ($exam['duration_minutes'] ?? 0)
+                );
                 self::ensure_runtime_attempt_state([
                     'id' => (int) ($latest_attempt['id'] ?? 0),
                     'exam_id' => $exam_id,
@@ -610,13 +674,23 @@ class CBT_REST
                     'status' => (string) ($latest_attempt['status'] ?? 'in_progress'),
                     'started_at' => (string) ($latest_attempt['started_at'] ?? ''),
                     'question_order' => (string) ($latest_attempt['question_order'] ?? ''),
+                    'extra_time_minutes' => (int) ($latest_attempt['extra_time_minutes'] ?? 0),
+                ], $resolved_duration_minutes);
+                $attempt_timer = self::build_attempt_timer_payload([
+                    'id' => (int) ($latest_attempt['id'] ?? 0),
+                    'status' => (string) ($latest_attempt['status'] ?? 'in_progress'),
+                    'started_at' => (string) ($latest_attempt['started_at'] ?? ''),
+                    'extra_time_minutes' => (int) ($latest_attempt['extra_time_minutes'] ?? 0),
                 ], (int) ($exam['duration_minutes'] ?? 0));
 
                 return rest_ensure_response([
                     'attempt_id' => (int) $latest_attempt['id'],
                     'status' => 'resumed',
-                    'duration_minutes' => (int) $exam['duration_minutes'],
+                    'duration_minutes' => $resolved_duration_minutes,
+                    'extra_time_minutes' => max(0, (int) ($latest_attempt['extra_time_minutes'] ?? 0)),
                     'started_at' => $latest_attempt['started_at'],
+                    'remaining_seconds' => (int) ($attempt_timer['remaining_seconds'] ?? max(0, $resolved_duration_minutes * MINUTE_IN_SECONDS)),
+                    'server_now' => (string) ($attempt_timer['server_now'] ?? current_time('mysql')),
                     'question_revision' => CBT_Cache::get_exam_revision_meta($exam_id),
                 ]);
             }
@@ -657,7 +731,7 @@ class CBT_REST
 
             $question_ids = $wpdb->get_col(
                 $wpdb->prepare(
-                    "SELECT id FROM {$question_table} WHERE exam_id = %d ORDER BY id ASC",
+                    "SELECT id FROM {$question_table} WHERE exam_id = %d AND COALESCE(is_active, 1) = 1 ORDER BY id ASC",
                     $exam_id
                 )
             );
@@ -701,12 +775,21 @@ class CBT_REST
                 'started_at' => $now,
                 'question_order' => $question_order,
             ], (int) ($exam['duration_minutes'] ?? 0));
+            $attempt_timer = self::build_attempt_timer_payload([
+                'id' => $created_attempt_id,
+                'status' => 'in_progress',
+                'started_at' => $now,
+                'extra_time_minutes' => 0,
+            ], (int) ($exam['duration_minutes'] ?? 0));
 
             return rest_ensure_response([
                 'attempt_id' => $created_attempt_id,
                 'status' => 'started',
                 'duration_minutes' => (int) $exam['duration_minutes'],
+                'extra_time_minutes' => 0,
                 'started_at' => $now,
+                'remaining_seconds' => (int) ($attempt_timer['remaining_seconds'] ?? max(0, ((int) $exam['duration_minutes']) * MINUTE_IN_SECONDS)),
+                'server_now' => (string) ($attempt_timer['server_now'] ?? current_time('mysql')),
                 'question_revision' => CBT_Cache::get_exam_revision_meta($exam_id),
             ]);
         } finally {
@@ -899,7 +982,10 @@ class CBT_REST
             return new WP_Error('invalid_payload', 'No valid answers submitted', ['status' => 400]);
         }
 
-        $duration_minutes = self::get_exam_duration_minutes((int) ($attempt['exam_id'] ?? 0));
+        $duration_minutes = self::resolve_attempt_duration_minutes(
+            $attempt,
+            self::get_exam_duration_minutes((int) ($attempt['exam_id'] ?? 0))
+        );
         $runtime_used = false;
         $buffered = 0;
         $flushed = 0;
@@ -949,7 +1035,7 @@ class CBT_REST
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
         $attempt = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, exam_id, student_id, status, started_at
+                "SELECT id, exam_id, student_id, status, started_at, extra_time_minutes
                  FROM {$attempt_table}
                  WHERE id = %d
                  LIMIT 1",
@@ -1088,6 +1174,84 @@ class CBT_REST
         );
 
         return max(1, $duration);
+    }
+
+    /**
+     * @param array<string,mixed>|null $attempt
+     */
+    private static function resolve_attempt_duration_minutes(?array $attempt, int $exam_duration_minutes): int
+    {
+        $resolved_duration = max(1, $exam_duration_minutes > 0 ? $exam_duration_minutes : 60);
+        if (!is_array($attempt)) {
+            return $resolved_duration;
+        }
+
+        $extra_time_minutes = max(0, (int) ($attempt['extra_time_minutes'] ?? 0));
+        return max(1, $resolved_duration + $extra_time_minutes);
+    }
+
+    private static function local_datetime_to_timestamp(string $value): ?int
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        $timezone = wp_timezone();
+        $formats = [
+            'Y-m-d H:i:s',
+            'Y-m-d H:i',
+            'Y-m-d\TH:i:s',
+            'Y-m-d\TH:i',
+        ];
+
+        foreach ($formats as $format) {
+            $parsed = DateTimeImmutable::createFromFormat($format, $value, $timezone);
+            if ($parsed instanceof DateTimeImmutable) {
+                return $parsed->getTimestamp();
+            }
+        }
+
+        try {
+            $parsed = new DateTimeImmutable($value, $timezone);
+            return $parsed->getTimestamp();
+        } catch (Throwable $throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param array<string,mixed>|null $attempt
+     * @return array<string,mixed>|null
+     */
+    private static function build_attempt_timer_payload(?array $attempt, int $exam_duration_minutes): ?array
+    {
+        if (!is_array($attempt)) {
+            return null;
+        }
+
+        $attempt_id = (int) ($attempt['id'] ?? 0);
+        if ($attempt_id <= 0) {
+            return null;
+        }
+
+        $duration_minutes = self::resolve_attempt_duration_minutes($attempt, $exam_duration_minutes);
+        $started_at = (string) ($attempt['started_at'] ?? '');
+        $started_at_ts = self::local_datetime_to_timestamp($started_at);
+        $remaining_seconds = max(0, $duration_minutes * MINUTE_IN_SECONDS);
+        if ($started_at_ts !== null) {
+            $remaining_seconds = max(0, ($started_at_ts + ($duration_minutes * MINUTE_IN_SECONDS)) - time());
+        }
+
+        return [
+            'attempt_id' => $attempt_id,
+            'status' => (string) ($attempt['status'] ?? ''),
+            'started_at' => $started_at,
+            'duration_minutes' => $duration_minutes,
+            'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? 0)),
+            'remaining_seconds' => $remaining_seconds,
+            'server_now' => current_time('mysql'),
+        ];
     }
 
     /**
@@ -1502,103 +1666,194 @@ class CBT_REST
 
                 $question_table = $wpdb->prefix . 'cbt_questions';
                 $short_answer_table = $wpdb->prefix . 'cbt_question_short_answer';
-                $option_table = $wpdb->prefix . 'cbt_options';
-
-                $questions = (array) $wpdb->get_results(
+                $question_rows = (array) $wpdb->get_results(
                     $wpdb->prepare(
                         "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text, q.updated_at,
+                                COALESCE(q.is_active, 1) AS is_active,
                                 qsa.correct_text AS short_answer_correct_text
                          FROM {$question_table} q
                          LEFT JOIN {$short_answer_table} qsa ON qsa.question_id = q.id
                          WHERE q.exam_id = %d
+                           AND COALESCE(q.is_active, 1) = 1
                          ORDER BY q.id ASC",
                         $exam_id
                     ),
                     ARRAY_A
                 );
 
-                $option_question_ids = [];
-                foreach ($questions as $question_row) {
-                    $question_id = (int) ($question_row['id'] ?? 0);
-                    $question_type = (string) ($question_row['question_type'] ?? '');
-                    if ($question_id <= 0) {
-                        continue;
-                    }
-                    if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false'], true)) {
-                        $option_question_ids[] = $question_id;
-                    }
-                }
-                $option_question_ids = array_values(array_unique($option_question_ids));
-
-                $options_by_question = [];
-                if (!empty($option_question_ids)) {
-                    $question_ids_sql = implode(',', $option_question_ids);
-                    $option_rows = $wpdb->get_results(
-                        "SELECT id, question_id, option_key, option_text
-                         FROM {$option_table}
-                         WHERE question_id IN ({$question_ids_sql})
-                         ORDER BY question_id ASC, id ASC",
-                        ARRAY_A
-                    );
-
-                    foreach ((array) $option_rows as $option_row) {
-                        $question_id = (int) ($option_row['question_id'] ?? 0);
-                        if ($question_id <= 0) {
-                            continue;
-                        }
-                        if (!isset($options_by_question[$question_id])) {
-                            $options_by_question[$question_id] = [];
-                        }
-                        $options_by_question[$question_id][] = [
-                            'id' => (int) ($option_row['id'] ?? 0),
-                            'option_key' => (string) ($option_row['option_key'] ?? ''),
-                            'option_text' => (string) ($option_row['option_text'] ?? ''),
-                        ];
-                    }
-                }
-
-                foreach ($questions as &$question) {
-                    $question_id = (int) ($question['id'] ?? 0);
-                    $question['question_text'] = self::normalize_frontend_question_text((string) ($question['question_text'] ?? ''));
-                    $question['options'] = (array) ($options_by_question[$question_id] ?? []);
-
-                    if ((string) ($question['question_type'] ?? '') === 'short_answer') {
-                        $correct_text = trim((string) ($question['short_answer_correct_text'] ?? ''));
-                        if ($correct_text === '') {
-                            $correct_text = (string) ($question['correct_text'] ?? '');
-                        }
-                        $correct_values = self::normalize_short_answer_values($correct_text);
-                        $input_keys = self::resolve_short_answer_input_keys((string) ($question['question_text'] ?? ''), $correct_values);
-                        $question['short_answer_meta'] = [
-                            'max_inputs' => 8,
-                            'input_count' => count($input_keys),
-                            'input_keys' => $input_keys,
-                        ];
-                    } elseif ((string) ($question['question_type'] ?? '') === 'true_false_matrix') {
-                        $matrix_items = self::normalize_true_false_matrix_config((string) ($question['correct_text'] ?? ''));
-                        $question['true_false_matrix_meta'] = [
-                            'item_count' => count($matrix_items),
-                            'items' => array_map(static function (array $row, int $idx): array {
-                                return [
-                                    'key' => (string) ($idx + 1),
-                                    'text' => (string) ($row['text'] ?? ''),
-                                ];
-                            }, $matrix_items, array_keys($matrix_items)),
-                        ];
-                    }
-
-                    unset($question['short_answer_correct_text']);
-                    if ((string) ($question['question_type'] ?? '') === 'true_false_matrix') {
-                        unset($question['correct_text']);
-                    }
-                }
-                unset($question);
-
-                return $questions;
+                return self::build_question_payload_from_rows($question_rows);
             }
         );
 
         return is_array($payload) ? $payload : [];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $questions
+     * @return array<int,array<string,mixed>>
+     */
+    private static function append_missing_attempt_questions(array $questions, int $exam_id, string $question_order_raw): array
+    {
+        $question_order_ids = self::normalize_question_order_ids($question_order_raw);
+        if ($exam_id <= 0 || empty($question_order_ids)) {
+            return $questions;
+        }
+
+        $known_question_ids = array_fill_keys(self::extract_question_ids_from_payload($questions), true);
+        $missing_question_ids = [];
+        foreach ($question_order_ids as $question_id) {
+            if (!isset($known_question_ids[$question_id])) {
+                $missing_question_ids[] = $question_id;
+            }
+        }
+
+        if (empty($missing_question_ids)) {
+            return $questions;
+        }
+
+        $extra_questions = self::get_question_payload_by_ids($exam_id, $missing_question_ids);
+        if (empty($extra_questions)) {
+            return $questions;
+        }
+
+        return array_merge($questions, $extra_questions);
+    }
+
+    /**
+     * @param array<int,int> $question_ids
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_question_payload_by_ids(int $exam_id, array $question_ids): array
+    {
+        global $wpdb;
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $short_answer_table = $wpdb->prefix . 'cbt_question_short_answer';
+        $question_ids = array_values(array_unique(array_filter(array_map('intval', $question_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        })));
+        if ($exam_id <= 0 || empty($question_ids)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+        $question_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text, q.updated_at,
+                        COALESCE(q.is_active, 1) AS is_active,
+                        qsa.correct_text AS short_answer_correct_text
+                 FROM {$question_table} q
+                 LEFT JOIN {$short_answer_table} qsa ON qsa.question_id = q.id
+                 WHERE q.exam_id = %d
+                   AND q.id IN ({$placeholders})
+                 ORDER BY q.id ASC",
+                $exam_id,
+                ...$question_ids
+            ),
+            ARRAY_A
+        );
+
+        return self::build_question_payload_from_rows((array) $question_rows);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $question_rows
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_question_payload_from_rows(array $question_rows): array
+    {
+        global $wpdb;
+
+        if (empty($question_rows)) {
+            return [];
+        }
+
+        $option_table = $wpdb->prefix . 'cbt_options';
+        $option_question_ids = [];
+        foreach ($question_rows as $question_row) {
+            $question_id = (int) ($question_row['id'] ?? 0);
+            $question_type = (string) ($question_row['question_type'] ?? '');
+            if ($question_id <= 0) {
+                continue;
+            }
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false'], true)) {
+                $option_question_ids[] = $question_id;
+            }
+        }
+        $option_question_ids = array_values(array_unique($option_question_ids));
+
+        $options_by_question = [];
+        if (!empty($option_question_ids)) {
+            $question_ids_sql = implode(',', $option_question_ids);
+            $option_rows = $wpdb->get_results(
+                "SELECT id, question_id, option_key, option_text
+                 FROM {$option_table}
+                 WHERE question_id IN ({$question_ids_sql})
+                 ORDER BY question_id ASC, id ASC",
+                ARRAY_A
+            );
+
+            foreach ((array) $option_rows as $option_row) {
+                $question_id = (int) ($option_row['question_id'] ?? 0);
+                if ($question_id <= 0) {
+                    continue;
+                }
+                if (!isset($options_by_question[$question_id])) {
+                    $options_by_question[$question_id] = [];
+                }
+                $options_by_question[$question_id][] = [
+                    'id' => (int) ($option_row['id'] ?? 0),
+                    'option_key' => (string) ($option_row['option_key'] ?? ''),
+                    'option_text' => (string) ($option_row['option_text'] ?? ''),
+                ];
+            }
+        }
+
+        $questions = [];
+        foreach ($question_rows as $question_row) {
+            $question = (array) $question_row;
+            $question_id = (int) ($question['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+
+            $question['question_text'] = self::normalize_frontend_question_text((string) ($question['question_text'] ?? ''));
+            $question['options'] = (array) ($options_by_question[$question_id] ?? []);
+
+            if ((string) ($question['question_type'] ?? '') === 'short_answer') {
+                $correct_text = trim((string) ($question['short_answer_correct_text'] ?? ''));
+                if ($correct_text === '') {
+                    $correct_text = (string) ($question['correct_text'] ?? '');
+                }
+                $correct_values = self::normalize_short_answer_values($correct_text);
+                $input_keys = self::resolve_short_answer_input_keys((string) ($question['question_text'] ?? ''), $correct_values);
+                $question['short_answer_meta'] = [
+                    'max_inputs' => 8,
+                    'input_count' => count($input_keys),
+                    'input_keys' => $input_keys,
+                ];
+            } elseif ((string) ($question['question_type'] ?? '') === 'true_false_matrix') {
+                $matrix_items = self::normalize_true_false_matrix_config((string) ($question['correct_text'] ?? ''));
+                $question['true_false_matrix_meta'] = [
+                    'item_count' => count($matrix_items),
+                    'items' => array_map(static function (array $row, int $idx): array {
+                        return [
+                            'key' => (string) ($idx + 1),
+                            'text' => (string) ($row['text'] ?? ''),
+                        ];
+                    }, $matrix_items, array_keys($matrix_items)),
+                ];
+            }
+
+            unset($question['short_answer_correct_text']);
+            if ((string) ($question['question_type'] ?? '') === 'true_false_matrix') {
+                unset($question['correct_text']);
+            }
+
+            $questions[] = $question;
+        }
+
+        return $questions;
     }
 
     /**
@@ -1613,51 +1868,98 @@ class CBT_REST
 
         $attempt_id = (int) ($attempt['id'] ?? 0);
         $should_shuffle = ((int) ($exam['randomize_questions'] ?? 0) === 1);
-        $question_order_ids = [];
-
+        $attempt_status = (string) ($attempt['status'] ?? '');
+        $is_in_progress_attempt = ($attempt_status === 'in_progress');
+        $attempt_duration_minutes = self::resolve_attempt_duration_minutes(
+            $attempt,
+            (int) ($exam['duration_minutes'] ?? 0)
+        );
+        $persisted_question_order_ids = self::normalize_question_order_ids($attempt['question_order'] ?? '');
+        $runtime_question_order_ids = [];
         if ($attempt_id > 0 && CBT_Runtime::is_ready()) {
-            $question_order_ids = CBT_Runtime::get_attempt_question_order($attempt_id, $runtime_order_found);
+            $runtime_question_order_ids = CBT_Runtime::get_attempt_question_order($attempt_id, $runtime_order_found);
             if (!$runtime_order_found) {
-                $question_order_ids = [];
+                $runtime_question_order_ids = [];
             }
         }
 
-        if (empty($question_order_ids)) {
-            $question_order_ids = self::normalize_question_order_ids($attempt['question_order'] ?? '');
-        }
+        $question_order_ids = self::merge_attempt_question_order_ids(
+            $persisted_question_order_ids,
+            $runtime_question_order_ids
+        );
 
+        $original_question_order_ids = $question_order_ids;
+        $canonical_question_order_ids = $question_order_ids;
         $ordered_questions = [];
         $stale_attempt_order = empty($question_order_ids);
+        $removed_question_ids = [];
+        $preserve_removed_question_history = false;
         if (!empty($question_order_ids)) {
-            $ordered_questions = self::order_question_payload_by_ids($questions, $question_order_ids);
-            $stale_attempt_order = (
-                count($ordered_questions) !== count($question_order_ids) ||
-                count($ordered_questions) !== count($questions)
-            );
+            if ($is_in_progress_attempt) {
+                $question_order_ids = self::reconcile_in_progress_question_order($questions, $question_order_ids);
+                $canonical_question_order_ids = self::merge_attempt_question_order_ids(
+                    $original_question_order_ids,
+                    $question_order_ids
+                );
+                $ordered_questions = self::order_question_payload_by_ids($questions, $question_order_ids);
+                $removed_question_ids = array_values(array_diff($canonical_question_order_ids, $question_order_ids));
+                $preserve_removed_question_history = !empty($removed_question_ids);
+                $stale_attempt_order = (
+                    count($ordered_questions) !== count($questions) ||
+                    self::question_id_lists_differ($question_order_ids, $original_question_order_ids) ||
+                    self::question_id_lists_differ($canonical_question_order_ids, $persisted_question_order_ids)
+                );
+            } else {
+                $ordered_questions = self::order_question_payload_by_ids($questions, $question_order_ids);
+                $stale_attempt_order = (count($ordered_questions) !== count($question_order_ids));
+            }
         }
 
         if ($stale_attempt_order) {
-            $questions = self::shuffle_question_payload_if_needed($questions, $should_shuffle);
-            $question_order_ids = self::extract_question_ids_from_payload($questions);
+            if ($is_in_progress_attempt && !empty($question_order_ids)) {
+                $questions = $ordered_questions;
+            } else {
+                $questions = self::shuffle_question_payload_if_needed($questions, $should_shuffle);
+                $question_order_ids = self::extract_question_ids_from_payload($questions);
+            }
             $question_order_json = wp_json_encode($question_order_ids);
             if (!is_string($question_order_json)) {
                 $question_order_json = '[]';
             }
 
-            if ($attempt_id > 0) {
-                $wpdb->update(
-                    $attempt_table,
-                    [
-                        'question_order' => $question_order_json,
-                        'updated_at' => current_time('mysql'),
-                    ],
-                    ['id' => $attempt_id],
-                    ['%s', '%s'],
-                    ['%d']
-                );
+            if ($preserve_removed_question_history) {
+                $canonical_question_order_json = wp_json_encode($canonical_question_order_ids);
+                if (!is_string($canonical_question_order_json)) {
+                    $canonical_question_order_json = '[]';
+                }
+                if ($attempt_id > 0 && self::question_id_lists_differ($canonical_question_order_ids, $persisted_question_order_ids)) {
+                    $wpdb->update(
+                        $attempt_table,
+                        [
+                            'question_order' => $canonical_question_order_json,
+                            'updated_at' => current_time('mysql'),
+                        ],
+                        ['id' => $attempt_id],
+                        ['%s', '%s'],
+                        ['%d']
+                    );
+                }
+                $attempt['question_order'] = $canonical_question_order_json;
+            } else {
+                if ($attempt_id > 0 && self::question_id_lists_differ($question_order_ids, $persisted_question_order_ids)) {
+                    $wpdb->update(
+                        $attempt_table,
+                        [
+                            'question_order' => $question_order_json,
+                            'updated_at' => current_time('mysql'),
+                        ],
+                        ['id' => $attempt_id],
+                        ['%s', '%s'],
+                        ['%d']
+                    );
+                }
+                $attempt['question_order'] = $question_order_json;
             }
-
-            $attempt['question_order'] = $question_order_json;
         } else {
             $questions = $ordered_questions;
             $question_order_json = wp_json_encode($question_order_ids);
@@ -1668,14 +1970,117 @@ class CBT_REST
         }
 
         if ($attempt_id > 0 && CBT_Runtime::is_ready()) {
-            self::ensure_runtime_attempt_state($attempt, (int) ($exam['duration_minutes'] ?? 0));
+            self::ensure_runtime_attempt_state($attempt, $attempt_duration_minutes);
         }
+
+        $question_number_map = self::build_attempt_question_number_map(
+            !empty($canonical_question_order_ids) ? $canonical_question_order_ids : (!empty($original_question_order_ids) ? $original_question_order_ids : $question_order_ids),
+            $question_order_ids
+        );
+        $questions = self::apply_question_numbers_to_payload($questions, $question_number_map);
 
         return [
             'questions' => $questions,
             'question_order_ids' => $question_order_ids,
             'attempt' => $attempt,
         ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $questions
+     * @param array<int,int> $existing_question_order_ids
+     * @return array<int,int>
+     */
+    private static function reconcile_in_progress_question_order(array $questions, array $existing_question_order_ids): array
+    {
+        $active_questions = array_values(array_filter($questions, static function ($question_row): bool {
+            $question = (array) $question_row;
+            return (int) ($question['is_active'] ?? 1) === 1;
+        }));
+        $active_question_ids = self::extract_question_ids_from_payload($active_questions);
+        if (empty($active_question_ids)) {
+            $active_question_ids = self::extract_question_ids_from_payload($questions);
+        }
+        if (empty($active_question_ids)) {
+            return [];
+        }
+
+        $active_lookup = array_fill_keys($active_question_ids, true);
+        $reconciled = [];
+        foreach ($existing_question_order_ids as $question_id) {
+            $question_id = (int) $question_id;
+            if ($question_id <= 0 || !isset($active_lookup[$question_id]) || in_array($question_id, $reconciled, true)) {
+                continue;
+            }
+            $reconciled[] = $question_id;
+        }
+
+        foreach ($active_question_ids as $question_id) {
+            if (!in_array($question_id, $reconciled, true)) {
+                $reconciled[] = $question_id;
+            }
+        }
+
+        return $reconciled;
+    }
+
+    /**
+     * @param array<int,int> $left
+     * @param array<int,int> $right
+     */
+    private static function question_id_lists_differ(array $left, array $right): bool
+    {
+        if (count($left) !== count($right)) {
+            return true;
+        }
+
+        foreach ($left as $index => $question_id) {
+            if ((int) $question_id !== (int) ($right[$index] ?? 0)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<int,int> $question_ids
+     */
+    private static function clear_attempt_answers_for_questions(array $attempt, int $duration_minutes, array $question_ids): void
+    {
+        global $wpdb;
+
+        $attempt_id = (int) ($attempt['id'] ?? 0);
+        $question_ids = array_values(array_unique(array_filter(array_map('intval', $question_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        })));
+        if ($attempt_id <= 0 || empty($question_ids)) {
+            return;
+        }
+
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+        $wpdb->query(
+            $wpdb->prepare(
+                "DELETE FROM {$answer_table}
+                 WHERE attempt_id = %d
+                   AND question_id IN ({$placeholders})",
+                $attempt_id,
+                ...$question_ids
+            )
+        );
+
+        if (CBT_Runtime::is_ready()) {
+            $clear_entries = array_map(static function (int $question_id): array {
+                return [
+                    'question_id' => $question_id,
+                    'clear' => true,
+                ];
+            }, $question_ids);
+            CBT_Runtime::buffer_entries($attempt, $duration_minutes, $clear_entries);
+            CBT_Runtime::flush_attempt($attempt_id, true);
+        }
     }
 
     /**
@@ -1710,6 +2115,87 @@ class CBT_REST
     }
 
     /**
+     * @param array<int,int> $primary_question_order_ids
+     * @param array<int,int> $secondary_question_order_ids
+     * @return array<int,int>
+     */
+    private static function merge_attempt_question_order_ids(array $primary_question_order_ids, array $secondary_question_order_ids = []): array
+    {
+        $primary_question_order_ids = array_values(array_unique(array_filter(array_map('intval', $primary_question_order_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        })));
+        $secondary_question_order_ids = array_values(array_unique(array_filter(array_map('intval', $secondary_question_order_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        })));
+
+        if (empty($primary_question_order_ids)) {
+            return $secondary_question_order_ids;
+        }
+        if (empty($secondary_question_order_ids)) {
+            return $primary_question_order_ids;
+        }
+
+        $merged_question_order_ids = $primary_question_order_ids;
+        $merged_lookup = array_fill_keys($merged_question_order_ids, true);
+        foreach ($secondary_question_order_ids as $question_id) {
+            if (isset($merged_lookup[$question_id])) {
+                continue;
+            }
+
+            $merged_question_order_ids[] = $question_id;
+            $merged_lookup[$question_id] = true;
+        }
+
+        return $merged_question_order_ids;
+    }
+
+    /**
+     * @param array<int,int> $preferred_question_order_ids
+     * @param array<int,int> $fallback_question_order_ids
+     * @return array<int,int>
+     */
+    private static function build_attempt_question_number_map(array $preferred_question_order_ids, array $fallback_question_order_ids = []): array
+    {
+        $question_number_map = [];
+        $next_number = 1;
+
+        foreach ([$preferred_question_order_ids, $fallback_question_order_ids] as $question_id_list) {
+            foreach ($question_id_list as $question_id) {
+                $question_id = (int) $question_id;
+                if ($question_id <= 0 || isset($question_number_map[$question_id])) {
+                    continue;
+                }
+
+                $question_number_map[$question_id] = $next_number;
+                $next_number++;
+            }
+        }
+
+        return $question_number_map;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $questions
+     * @param array<int,int> $question_number_map
+     * @return array<int,array<string,mixed>>
+     */
+    private static function apply_question_numbers_to_payload(array $questions, array $question_number_map): array
+    {
+        foreach ($questions as $index => $question_row) {
+            $question = (array) $question_row;
+            $question_id = (int) ($question['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+
+            $question['question_number'] = (int) ($question_number_map[$question_id] ?? ($index + 1));
+            $questions[$index] = $question;
+        }
+
+        return $questions;
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $questions
      * @return array<int,array<string,mixed>>
      */
@@ -1728,6 +2214,10 @@ class CBT_REST
                 'question_type' => (string) ($question['question_type'] ?? ''),
                 'updated_at' => (string) ($question['updated_at'] ?? ''),
             ];
+            $question_number = (int) ($question['question_number'] ?? 0);
+            if ($question_number > 0) {
+                $manifest_item['question_number'] = $question_number;
+            }
 
             $question_type = (string) ($question['question_type'] ?? '');
             if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false'], true)) {
@@ -1768,20 +2258,14 @@ class CBT_REST
             return [];
         }
 
-        $question_updated_lookup = [];
-
         if (is_array($attempt) && CBT_Runtime::is_ready()) {
             self::ensure_runtime_attempt_state($attempt, $duration_minutes);
             $runtime_answers = CBT_Runtime::get_existing_answers_map($attempt_id, $runtime_state_found);
             if ($runtime_state_found) {
-                $question_updated_lookup = self::get_question_updated_at_lookup(array_keys($runtime_answers));
                 $answered_question_ids = [];
                 foreach ($runtime_answers as $question_id => $answer_row) {
                     $question_id = (int) $question_id;
                     if ($question_id <= 0 || !self::answer_row_has_value((array) $answer_row)) {
-                        continue;
-                    }
-                    if (self::answer_row_is_stale_for_question_updated_at((array) $answer_row, (string) ($question_updated_lookup[$question_id] ?? ''))) {
                         continue;
                     }
                     $answered_question_ids[$question_id] = $question_id;
@@ -1805,17 +2289,10 @@ class CBT_REST
             return [];
         }
 
-        $question_updated_lookup = self::get_question_updated_at_lookup(array_map(static function ($answer_row): int {
-            return (int) ($answer_row['question_id'] ?? 0);
-        }, $answer_rows));
-
         $answered_question_ids = [];
         foreach ($answer_rows as $answer_row) {
             $question_id = (int) ($answer_row['question_id'] ?? 0);
             if ($question_id <= 0 || !self::answer_row_has_value((array) $answer_row)) {
-                continue;
-            }
-            if (self::answer_row_is_stale_for_question_updated_at((array) $answer_row, (string) ($question_updated_lookup[$question_id] ?? ''))) {
                 continue;
             }
             $answered_question_ids[$question_id] = $question_id;
@@ -1910,14 +2387,9 @@ class CBT_REST
             return false;
         }
 
-        $selected_option_ids = json_decode((string) ($answer_row['selected_option_ids'] ?? ''), true);
-        if (is_array($selected_option_ids)) {
-            $selected_option_ids = array_values(array_filter(array_map('intval', $selected_option_ids), static function (int $selected_option_id): bool {
-                return $selected_option_id > 0;
-            }));
-            if (!empty($selected_option_ids)) {
-                return true;
-            }
+        $selected_option_ids = self::decode_selected_option_ids($answer_row['selected_option_ids'] ?? null);
+        if (!empty($selected_option_ids)) {
+            return true;
         }
 
         $answer_text = (string) ($answer_row['answer_text'] ?? '');
@@ -2107,10 +2579,6 @@ class CBT_REST
      */
     private static function apply_existing_answer_map_to_question_payload(array &$questions, array $existing_answers): void
     {
-        $question_updated_lookup = self::get_question_updated_at_lookup(array_map(static function ($question): int {
-            return (int) ((is_array($question) ? ($question['id'] ?? 0) : 0));
-        }, $questions));
-
         foreach ($questions as &$question) {
             $question_id = (int) ($question['id'] ?? 0);
             if ($question_id <= 0 || !isset($existing_answers[$question_id])) {
@@ -2118,20 +2586,7 @@ class CBT_REST
             }
 
             $existing_answer_row = $existing_answers[$question_id];
-            $question_updated_at = (string) ($question['updated_at'] ?? ($question_updated_lookup[$question_id] ?? ''));
-            if ($question_updated_at !== '' && !isset($question['updated_at'])) {
-                $question['updated_at'] = $question_updated_at;
-            }
-            if (self::answer_row_is_stale_for_question_updated_at((array) $existing_answer_row, $question_updated_at)) {
-                continue;
-            }
-            $selected_option_ids = json_decode((string) ($existing_answer_row['selected_option_ids'] ?? ''), true);
-            if (!is_array($selected_option_ids)) {
-                $selected_option_ids = [];
-            }
-            $selected_option_ids = array_values(array_filter(array_map('intval', $selected_option_ids), static function (int $selected_option_id): bool {
-                return $selected_option_id > 0;
-            }));
+            $selected_option_ids = self::decode_selected_option_ids($existing_answer_row['selected_option_ids'] ?? null);
             $existing_text = (string) ($existing_answer_row['answer_text'] ?? '');
 
             switch ((string) ($question['question_type'] ?? '')) {
@@ -2333,7 +2788,7 @@ class CBT_REST
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
         $attempt = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, exam_id, student_id, status, question_order, score, max_score, started_at
+                "SELECT id, exam_id, student_id, status, question_order, score, max_score, started_at, extra_time_minutes
                  FROM {$attempt_table}
                  WHERE id = %d
                  LIMIT 1",
@@ -2345,7 +2800,10 @@ class CBT_REST
             return new WP_Error('not_found', 'Attempt not found', ['status' => 404]);
         }
 
-        $duration_minutes = self::get_exam_duration_minutes((int) ($attempt['exam_id'] ?? 0));
+        $duration_minutes = self::resolve_attempt_duration_minutes(
+            $attempt,
+            self::get_exam_duration_minutes((int) ($attempt['exam_id'] ?? 0))
+        );
         if ($duration_minutes > 0) {
             self::ensure_runtime_attempt_state($attempt, $duration_minutes);
         }
@@ -2357,8 +2815,8 @@ class CBT_REST
         $percentage = (float) ($score_snapshot['percentage'] ?? 0.0);
         $finished_at = is_string($finished_at) && $finished_at !== '' ? $finished_at : current_time('mysql');
 
-        $started_ts = strtotime((string) ($attempt['started_at'] ?? ''));
-        $duration_seconds = max(0, time() - (int) $started_ts);
+        $started_ts = self::local_datetime_to_timestamp((string) ($attempt['started_at'] ?? ''));
+        $duration_seconds = max(0, time() - (int) ($started_ts ?? time()));
 
         $updated = $wpdb->update(
             $attempt_table,
@@ -2516,7 +2974,7 @@ class CBT_REST
         $exam_table = $wpdb->prefix . 'cbt_exams';
         $attempt = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT a.id, a.exam_id, a.student_id, a.status, e.created_by
+                "SELECT a.id, a.exam_id, a.student_id, a.status, a.started_at, a.extra_time_minutes, e.created_by, e.duration_minutes AS exam_duration_minutes
                  FROM {$attempt_table} a
                  LEFT JOIN {$exam_table} e ON e.id = a.exam_id
                  WHERE a.id = %d",
@@ -2561,7 +3019,7 @@ class CBT_REST
 
         $questions = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id, question_text, question_type, points, correct_text, explanation
+                "SELECT id, question_text, question_type, points, correct_text, explanation, COALESCE(is_active, 1) AS is_active
                  FROM {$question_table}
                  WHERE exam_id = %d
                  ORDER BY id ASC",
@@ -2570,11 +3028,29 @@ class CBT_REST
             ARRAY_A
         );
 
+        $attempt_question_order_ids = self::normalize_question_order_ids($attempt['question_order'] ?? '');
+        if (CBT_Runtime::is_ready() && (string) ($attempt['status'] ?? '') === 'in_progress') {
+            $runtime_attempt_question_order_ids = CBT_Runtime::get_attempt_question_order($attempt_id, $runtime_attempt_order_found);
+            if (!$runtime_attempt_order_found) {
+                $runtime_attempt_question_order_ids = [];
+            }
+            $attempt_question_order_ids = self::merge_attempt_question_order_ids(
+                $attempt_question_order_ids,
+                $runtime_attempt_question_order_ids
+            );
+        }
+
+        $attempt_question_order_json = wp_json_encode($attempt_question_order_ids);
+        $attempt_question_order = is_string($attempt_question_order_json)
+            ? $attempt_question_order_json
+            : (string) ($attempt['question_order'] ?? '');
+        $questions = self::append_missing_attempt_review_questions($questions, $exam_id, $attempt_question_order);
+
         if (!is_array($questions) || empty($questions)) {
             return [];
         }
 
-        $questions = self::order_questions_by_attempt_sequence($questions, (string) ($attempt['question_order'] ?? ''));
+        $questions = self::order_questions_by_attempt_sequence($questions, $attempt_question_order);
         $question_ids = array_values(array_filter(array_map('intval', array_column($questions, 'id')), static function ($id): bool {
             return $id > 0;
         }));
@@ -2787,6 +3263,7 @@ class CBT_REST
                 'question_id' => $question_id,
                 'question_number' => $index + 1,
                 'question_type' => $question_type,
+                'is_active' => (int) ($question['is_active'] ?? 1),
                 'question_text' => (string) ($question['question_text'] ?? ''),
                 'points' => $question_max_points,
                 'explanation' => (string) ($question['explanation'] ?? ''),
@@ -2810,6 +3287,76 @@ class CBT_REST
     }
 
     /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_attempt_archived_review_items(array $attempt): array
+    {
+        $review_items = self::build_attempt_review_items($attempt);
+        if (empty($review_items)) {
+            return [];
+        }
+
+        return array_values(array_filter($review_items, static function ($item_row): bool {
+            $item = (array) $item_row;
+            return ((int) ($item['is_active'] ?? 1) !== 1) && ((int) ($item['is_answered'] ?? 0) === 1);
+        }));
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $questions
+     * @return array<int,array<string,mixed>>
+     */
+    private static function append_missing_attempt_review_questions(array $questions, int $exam_id, string $question_order_raw): array
+    {
+        global $wpdb;
+
+        $question_order_ids = self::normalize_question_order_ids($question_order_raw);
+        if ($exam_id <= 0 || empty($question_order_ids)) {
+            return $questions;
+        }
+
+        $known_question_ids = [];
+        foreach ($questions as $question_row) {
+            $question_id = (int) ($question_row['id'] ?? 0);
+            if ($question_id > 0) {
+                $known_question_ids[$question_id] = true;
+            }
+        }
+
+        $missing_question_ids = [];
+        foreach ($question_order_ids as $question_id) {
+            if (!isset($known_question_ids[$question_id])) {
+                $missing_question_ids[] = $question_id;
+            }
+        }
+
+        if (empty($missing_question_ids)) {
+            return $questions;
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $placeholders = implode(',', array_fill(0, count($missing_question_ids), '%d'));
+        $extra_questions = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, question_text, question_type, points, correct_text, explanation, COALESCE(is_active, 1) AS is_active
+                 FROM {$question_table}
+                 WHERE exam_id = %d
+                   AND id IN ({$placeholders})
+                 ORDER BY id ASC",
+                $exam_id,
+                ...$missing_question_ids
+            ),
+            ARRAY_A
+        );
+
+        if (!is_array($extra_questions) || empty($extra_questions)) {
+            return $questions;
+        }
+
+        return array_merge($questions, $extra_questions);
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $questions
      * @return array<int,array<string,mixed>>
      */
@@ -2824,7 +3371,12 @@ class CBT_REST
         }
 
         if (empty($question_order_ids)) {
-            return $questions;
+            $active_questions = array_values(array_filter($questions, static function ($question_row): bool {
+                $question = (array) $question_row;
+                return (int) ($question['is_active'] ?? 1) === 1;
+            }));
+
+            return !empty($active_questions) ? $active_questions : $questions;
         }
 
         $by_id = [];
@@ -2846,11 +3398,22 @@ class CBT_REST
             unset($by_id[$question_id]);
         }
 
-        foreach ($by_id as $remaining_question) {
-            $ordered[] = $remaining_question;
+        if (!empty($by_id)) {
+            foreach ($by_id as $remaining_question) {
+                $ordered[] = $remaining_question;
+            }
         }
 
-        return $ordered;
+        if (!empty($ordered)) {
+            return $ordered;
+        }
+
+        $active_questions = array_values(array_filter($questions, static function ($question_row): bool {
+            $question = (array) $question_row;
+            return (int) ($question['is_active'] ?? 1) === 1;
+        }));
+
+        return !empty($active_questions) ? $active_questions : $questions;
     }
 
     /**

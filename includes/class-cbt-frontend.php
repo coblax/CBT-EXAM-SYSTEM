@@ -16,6 +16,7 @@ class CBT_Frontend
     {
         add_shortcode(self::SHORTCODE, [self::class, 'render_shortcode']);
         add_filter('body_class', [self::class, 'filter_body_class']);
+        add_action('template_redirect', [self::class, 'send_nocache_headers']);
     }
 
     /**
@@ -37,6 +38,8 @@ class CBT_Frontend
                 'siteName' => $branding['school_name'],
                 'schoolName' => $branding['school_name'],
                 'schoolLogoUrl' => $branding['logo_url'],
+                'schoolLogo1Url' => $branding['logo_1_url'],
+                'schoolLogo2Url' => $branding['logo_2_url'],
                 'homeUrl' => (string) home_url('/'),
                 'tokenMinLength' => 6,
                 'tokenLength' => 6,
@@ -65,6 +68,32 @@ class CBT_Frontend
         }
 
         return $classes;
+    }
+
+    public static function send_nocache_headers(): void
+    {
+        if (!self::is_frontend_shortcode_page()) {
+            return;
+        }
+
+        if (!defined('DONOTCACHEPAGE')) {
+            define('DONOTCACHEPAGE', true);
+        }
+        if (!defined('DONOTCACHEDB')) {
+            define('DONOTCACHEDB', true);
+        }
+        if (!defined('DONOTMINIFY')) {
+            define('DONOTMINIFY', true);
+        }
+        if (!defined('DONOTCDN')) {
+            define('DONOTCDN', true);
+        }
+
+        nocache_headers();
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+        header('Expires: Wed, 11 Jan 1984 05:00:00 GMT');
+        header('Vary: Cookie', false);
     }
 
     private static function enqueue_assets(): void
@@ -113,7 +142,7 @@ class CBT_Frontend
     }
 
     /**
-     * @return array{school_name:string,logo_url:string}
+     * @return array{school_name:string,logo_url:string,logo_1_url:string,logo_2_url:string}
      */
     private static function get_setup_branding_config(): array
     {
@@ -133,18 +162,42 @@ class CBT_Frontend
             $school_name = 'CBT Exam';
         }
 
-        $logo_url = '';
-        $logo_attachment_id = isset($raw['logo_attachment_id']) ? absint($raw['logo_attachment_id']) : 0;
-        if ($logo_attachment_id > 0 && wp_attachment_is_image($logo_attachment_id)) {
-            $resolved_logo_url = wp_get_attachment_image_url($logo_attachment_id, 'medium');
-            if (is_string($resolved_logo_url)) {
-                $logo_url = $resolved_logo_url;
+        $legacy_logo_attachment_id = isset($raw['logo_attachment_id']) ? absint($raw['logo_attachment_id']) : 0;
+        if ($legacy_logo_attachment_id > 0 && !wp_attachment_is_image($legacy_logo_attachment_id)) {
+            $legacy_logo_attachment_id = 0;
+        }
+
+        $logo_1_attachment_id = isset($raw['logo_1_attachment_id']) ? absint($raw['logo_1_attachment_id']) : $legacy_logo_attachment_id;
+        if ($logo_1_attachment_id > 0 && !wp_attachment_is_image($logo_1_attachment_id)) {
+            $logo_1_attachment_id = 0;
+        }
+
+        $logo_2_attachment_id = isset($raw['logo_2_attachment_id']) ? absint($raw['logo_2_attachment_id']) : 0;
+        if ($logo_2_attachment_id > 0 && !wp_attachment_is_image($logo_2_attachment_id)) {
+            $logo_2_attachment_id = 0;
+        }
+
+        $logo_1_url = '';
+        if ($logo_1_attachment_id > 0) {
+            $resolved_logo_1_url = wp_get_attachment_image_url($logo_1_attachment_id, 'medium');
+            if (is_string($resolved_logo_1_url)) {
+                $logo_1_url = $resolved_logo_1_url;
+            }
+        }
+
+        $logo_2_url = '';
+        if ($logo_2_attachment_id > 0) {
+            $resolved_logo_2_url = wp_get_attachment_image_url($logo_2_attachment_id, 'medium');
+            if (is_string($resolved_logo_2_url)) {
+                $logo_2_url = $resolved_logo_2_url;
             }
         }
 
         return [
             'school_name' => $school_name,
-            'logo_url' => $logo_url,
+            'logo_url' => $logo_1_url,
+            'logo_1_url' => $logo_1_url,
+            'logo_2_url' => $logo_2_url,
         ];
     }
 }

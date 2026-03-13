@@ -396,6 +396,7 @@ class CBT_UI_State
                     "SELECT id
                      FROM {$question_table}
                      WHERE exam_id = %d
+                       AND COALESCE(is_active, 1) = 1
                      ORDER BY id ASC",
                     $exam_id
                 )

@@ -8,7 +8,7 @@ class CBT_Activator
 {
     private const OPTION_DB_VERSION = 'cbt_exam_system_db_version';
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
-    private const DB_VERSION = '1.6.0';
+    private const DB_VERSION = '1.6.2';
 
     public static function activate(): void
     {
@@ -79,6 +79,7 @@ class CBT_Activator
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             exam_id BIGINT UNSIGNED NOT NULL,
             source_question_id BIGINT UNSIGNED NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
             question_text LONGTEXT NOT NULL,
             question_type VARCHAR(30) NOT NULL,
             points DECIMAL(6,2) NOT NULL DEFAULT 1.00,
@@ -89,6 +90,7 @@ class CBT_Activator
             PRIMARY KEY (id),
             KEY idx_exam_id (exam_id),
             KEY idx_exam_id_id (exam_id, id),
+            KEY idx_exam_active_id (exam_id, is_active, id),
             KEY idx_source_question_id (source_question_id),
             KEY idx_question_type (question_type)
         ) $charset;";
@@ -154,6 +156,7 @@ class CBT_Activator
             started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             finished_at DATETIME NULL,
             duration_seconds INT UNSIGNED NOT NULL DEFAULT 0,
+            extra_time_minutes INT UNSIGNED NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -190,6 +193,8 @@ class CBT_Activator
         // Add foreign keys when supported by current MySQL setup.
         self::maybe_add_foreign_keys($wpdb);
         self::ensure_question_source_linkage_schema($wpdb);
+        self::ensure_question_activity_schema($wpdb);
+        self::ensure_attempt_extra_time_schema($wpdb);
         self::migrate_question_type_details($wpdb);
         self::seed_default_subjects($wpdb);
         self::register_roles();
@@ -247,6 +252,51 @@ class CBT_Activator
         if (!isset($index_names['idx_source_question_id'])) {
             $wpdb->query(
                 "ALTER TABLE {$question_table} ADD KEY idx_source_question_id (source_question_id)"
+            );
+        }
+    }
+
+    private static function ensure_question_activity_schema(wpdb $wpdb): void
+    {
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$question_table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (!in_array('is_active', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$question_table} ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER source_question_id"
+            );
+        }
+
+        $index_rows = $wpdb->get_results("SHOW INDEX FROM {$question_table}", ARRAY_A);
+        $index_names = [];
+        foreach ((array) $index_rows as $index_row) {
+            $index_name = (string) ($index_row['Key_name'] ?? '');
+            if ($index_name !== '') {
+                $index_names[$index_name] = true;
+            }
+        }
+
+        if (!isset($index_names['idx_exam_active_id'])) {
+            $wpdb->query(
+                "ALTER TABLE {$question_table} ADD KEY idx_exam_active_id (exam_id, is_active, id)"
+            );
+        }
+    }
+
+    private static function ensure_attempt_extra_time_schema(wpdb $wpdb): void
+    {
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$attempt_table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (!in_array('extra_time_minutes', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$attempt_table} ADD COLUMN extra_time_minutes INT UNSIGNED NOT NULL DEFAULT 0 AFTER duration_seconds"
             );
         }
     }

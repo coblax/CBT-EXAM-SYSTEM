@@ -85,6 +85,16 @@ Versi plugin saat ini: `1.5.0`
 - Halaman `CBT Results` mendapat detail jawaban full-width yang lebih informatif dan compact, lengkap dengan scroll internal agar review jawaban panjang tetap nyaman.
 - Tombol aksi penting seperti `Reset Filter`, `Reset attempt`, `Paksa Complete`, dan bulk delete di area admin diperbarui ke visual yang lebih modern dan konsisten.
 
+## Update Frontend dan Runtime Terbaru
+
+- Frontend ujian kini mengirim header `no-cache` di halaman shortcode untuk membantu mencegah cache agresif pada halaman login/exam siswa.
+- Branding frontend mendukung dua logo sekolah (`logo_1` dan `logo_2`) selain fallback ke konfigurasi logo lama.
+- Runtime ujian mengirim payload timer dari server seperti `remaining_seconds`, `server_now`, dan `extra_time_minutes` agar resume attempt lebih akurat dan tidak hanya mengandalkan jam browser.
+- Soal exam kini mendukung status aktif/nonaktif (`is_active`) sehingga daftar soal aktif di runtime, UI state, dan API lebih konsisten saat ada soal yang dinonaktifkan.
+- Attempt yang sudah berjalan tetap bisa menampilkan review jawaban untuk soal arsip/nonaktif melalui `archived_review_items`, sehingga jawaban lama tidak hilang dari sisi siswa saat bank soal berubah.
+- Runtime urutan soal kini berusaha merekonsiliasi urutan dari database, cache runtime, dan payload attempt agar attempt lama tetap stabil walau struktur soal exam berubah.
+- UI frontend mendapat penyegaran visual untuk status soal answered/doubtful, panel review arsip, serta perbaikan tata letak card dan navigasi selama ujian.
+
 ## Tabel Database
 
 Plugin membuat tabel berikut saat aktivasi:
@@ -104,6 +114,8 @@ Plugin membuat tabel berikut saat aktivasi:
 Catatan:
 
 - `true_false_matrix` tidak memakai tabel detail terpisah; konfigurasi matrix disimpan pada payload soal.
+- Tabel `wp_cbt_questions` kini memakai kolom `is_active` untuk menandai soal aktif/nonaktif tanpa harus menghapus record.
+- Tabel `wp_cbt_attempts` kini memakai kolom `extra_time_minutes` untuk kebutuhan tambahan waktu pada attempt.
 - Plugin juga memastikan role, capability, dan halaman ujian tetap sinkron setiap plugin dimuat.
 
 ## Role dan Hak Akses
