@@ -77,6 +77,14 @@ Versi plugin saat ini: `1.5.0`
 - Integrasi Redis Object Cache WordPress dan Redis runtime buffer untuk beban ujian tinggi.
 - Paket tuning performa dan load test `k6` sudah disediakan di folder `performance/`.
 
+## Update Admin UI Terbaru
+
+- Builder `CBT Exams` kini mendukung filter soal otomatis tanpa tombol `Terapkan`; saat kata kunci, tipe, sumber, atau jumlah `per halaman` berubah, yang disegarkan hanya panel katalog soal.
+- Panel `CBT Users` memakai filter otomatis dengan partial refresh, dukungan filter `agama`, dan tombol `Reset` yang konsisten dengan gaya admin baru.
+- Panel `CBT Subjects` mendukung filter cepat berbasis dropdown nama subject, partial refresh pada daftar subject, dan reset filter tanpa reload penuh halaman.
+- Halaman `CBT Results` mendapat detail jawaban full-width yang lebih informatif dan compact, lengkap dengan scroll internal agar review jawaban panjang tetap nyaman.
+- Tombol aksi penting seperti `Reset Filter`, `Reset attempt`, `Paksa Complete`, dan bulk delete di area admin diperbarui ke visual yang lebih modern dan konsisten.
+
 ## Tabel Database
 
 Plugin membuat tabel berikut saat aktivasi:
