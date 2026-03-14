@@ -2,7 +2,7 @@
 
 Plugin WordPress untuk ujian CBT berbasis web dengan panel admin penuh, REST API berbasis JWT, frontend siswa berbasis JavaScript, dan toolkit operasional untuk ujian serentak.
 
-Versi plugin saat ini: `1.5.0`
+Versi plugin saat ini: `1.6.2`
 
 ## Ringkasan
 
