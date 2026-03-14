@@ -1,103 +1,177 @@
 # CBT Exam System
 
-Plugin WordPress untuk ujian CBT berbasis web. Plugin ini menyediakan panel admin untuk mengelola mata pelajaran, bank soal, ujian, token, peserta, hasil, perawatan sistem, dan cache; serta antarmuka ujian berbasis JavaScript untuk peserta dengan autentikasi JWT.
+Plugin WordPress untuk ujian CBT berbasis web dengan panel admin penuh, REST API berbasis JWT, frontend siswa berbasis JavaScript, dan toolkit operasional untuk ujian serentak.
 
 Versi plugin saat ini: `1.5.0`
 
-## Ringkasan Fitur
+## Ringkasan
 
-- Panel admin WordPress untuk:
-  - mata pelajaran
-  - ujian
-  - token ujian
-  - setup branding CBT (nama sekolah + logo)
-  - bank soal
-  - cetak kartu ujian
-  - hasil ujian
-  - report nilai ujian (print-ready PDF)
-  - import user
-  - cache dan Redis
-  - maintenance/reset data
-- Halaman ujian otomatis dibuat sebagai halaman `CBT Ujian` dengan slug `/cbt-ujian`.
-- Shortcode halaman ujian: `[cbt_exam_frontend]`.
-- Login dengan `email`, `username`, atau `NISN`.
+Plugin ini sudah mencakup alur inti CBT dari hulu ke hilir:
+
+- pengelolaan subject, user, bank soal, exam, token, hasil, kartu ujian, dan report dari dashboard WordPress
+- frontend siswa dengan login `email`, `username`, atau `NISN`
+- 6 tipe soal dengan auto grading untuk tipe objektif dan koreksi manual untuk essay
+- kontrol operasional untuk reset attempt, tambah waktu, force complete, cache invalidation, Redis bootstrap, generate dataset uji, sampai load test `k6`
+
+## Highlight Fitur Saat Ini
+
+### Admin dan Operasional
+
+- Menu admin lengkap: `CBT Exams`, `CBT Tokens`, `CBT Setup`, `CBT Maintenance`, `CBT Cache`, `CBT Subjects`, `CBT Users`, `CBT Exam Cards`, `CBT Questions`, `CBT Results`, `CBT Report Exam`.
+- Builder exam modern dengan dua panel (`Form Exam` dan `Daftar Exam`), checklist target kelas, sinkronisasi pilihan soal, preview soal, dan progress overlay saat update exam besar sedang diproses.
+- Filter admin otomatis dengan partial refresh pada daftar exam, daftar subject, daftar user, dan katalog soal di builder exam.
+- Branding CBT dari admin: nama sekolah, `logo_1`, dan `logo_2` untuk frontend, kartu ujian, dan report print-ready.
+- Monitoring hasil dengan auto refresh 10 detik, timer remaining time per attempt, detail jawaban full-width, dan kontrol operasional tanpa keluar dari halaman hasil.
+
+### Ujian, Soal, dan Penilaian
+
+- Exam mendukung subject, durasi, status `draft/published/closed`, jadwal mulai-selesai, target kelas, token per exam, dan randomisasi urutan soal.
+- Global token 6 karakter dapat diatur manual, dirotasi otomatis setiap 5-60 menit, diregenerate manual, dan di-auto-apply di frontend.
+- Bank soal mendukung status aktif/nonaktif (`is_active`) sehingga soal bisa dinonaktifkan tanpa dihapus.
+- Saat soal bank dipakai di exam, plugin menjaga linkage ke soal sumber agar perubahan soal bank bisa tersinkron ke salinan soal exam terkait.
+- Penilaian otomatis tersedia untuk `multiple_choice`, `multiple_answer`, `true_false`, `true_false_matrix`, dan `short_answer`.
+- Soal `essay` diperiksa manual dari halaman hasil.
+
+### Frontend Siswa
+
+- Halaman ujian otomatis dibuat sebagai halaman `CBT Ujian` dengan shortcode `[cbt_exam_frontend]`.
+- Login dengan `email`, `username`, atau `NISN`, memakai JWT untuk autentikasi REST API.
 - Satu sesi login aktif per akun untuk mencegah login ganda bersamaan.
-- JWT untuk autentikasi API.
-- Token ujian per exam dan token global 6 karakter dengan rotasi otomatis.
-- Opsi token global bisa diisi otomatis di halaman ujian saat siswa mulai ujian.
-- Dukungan 6 jenis soal:
-  - `multiple_choice`
-  - `multiple_answer`
-  - `true_false`
-  - `true_false_matrix`
-  - `short_answer`
-  - `essay`
-- Penilaian otomatis untuk:
-  - pilihan ganda
-  - multiple answer
-  - benar/salah
-  - true/false matrix
-  - short answer
-- Essay diperiksa manual dari halaman hasil.
-- Ujian mendukung:
+- Resume attempt, autosave per soal, batch submit, timer dari server, auto finish saat waktu habis, penanda soal ragu-ragu, dan kalkulator bawaan.
+- UI state per attempt disimpan ke server, sementara preferensi lokal seperti font, tema, panel navigasi, dan posisi kalkulator tetap disimpan di browser.
+- Soal yang sudah dimuat disimpan ke `sessionStorage`, `localStorage`, dan `IndexedDB`, lalu dipadukan kembali saat reload agar perpindahan dan resume attempt lebih stabil.
+- Runtime frontend sudah mendukung prefetch soal bertahap, no-cache headers pada halaman shortcode, dan review jawaban arsip saat attempt lama berisi soal yang kini nonaktif.
+
+### Hasil, Cetak, dan Report
+
+- `CBT Results` mendukung filter exam, status, kelas, pencarian siswa, auto refresh, reset login, reset attempt, bulk reset, bulk force complete, tambah waktu ujian, dan koreksi essay.
+- `CBT Report Exam` menghasilkan tampilan print-ready untuk `Print / Save PDF` dengan filter exam + kelas, kolom nilai, dan 1 sampai 3 petugas bertanda tangan (`Pengawas`, `Teknisi Ruang`, `Proktor`).
+- `CBT Exam Cards` menghasilkan layout A4 6 kartu per halaman dengan filter kelas, ruang, dan pencarian siswa.
+- Kartu ujian memuat `NISN`, `username`, `password`, `kelas`, `ruang`, `agama`, foto, dan jadwal ujian.
+- Jika password plaintext siswa belum tersedia, plugin membuat password 6 digit otomatis saat generate kartu agar kartu bisa langsung dicetak.
+
+### Maintenance, Cache, dan Performa
+
+- `CBT Maintenance` mendukung reset database CBT dengan progress bertahap.
+- Generator dataset uji tersedia dengan preset `Small`, `Medium`, dan `Large`, lengkap dengan subject, exam, bank soal, guru, siswa, kelas, dan ruang uji.
+- Dataset uji selalu membuat akun khusus `coblax / 223611`, serta password default dataset `Skills39`.
+- Load test terintegrasi dari admin dengan preset `Smoke 50`, `Load 200`, `Load 500`, dan `Load 1000`, termasuk polling status job, ringkasan metrik, dan download artefak.
+- Export pool siswa untuk load test tersedia dalam format `JSON`, `CSV`, dan `XLSX`.
+- `CBT Cache` menyediakan readiness check Redis, probe server, probe runtime buffer, invalidate namespace, inspeksi lock, inspeksi UI state, bootstrap Redis sekali klik, dan rollback konfigurasi Redis dari sisi WordPress.
+- Jika Redis belum siap, plugin tetap berjalan dengan fallback transient/object cache WordPress.
+
+## Menu Admin
+
+| Menu | Fungsi |
+| --- | --- |
+| `CBT Exams` | Builder exam, daftar exam, filter exam, sinkronisasi soal, dan ringkasan attempt aktif |
+| `CBT Tokens` | Token global semua exam, rotasi otomatis, dan auto-apply token di frontend |
+| `CBT Setup` | Nama sekolah, `logo_1`, `logo_2`, dan branding print/frontend |
+| `CBT Maintenance` | Reset database CBT, generate dataset uji, dan load test terintegrasi |
+| `CBT Cache` | Readiness Redis, bootstrap/rollback Redis, namespace cache, locks, dan UI state |
+| `CBT Subjects` | CRUD subject, import `CSV/XLSX`, filter otomatis, dan bulk delete |
+| `CBT Users` | CRUD user, import `CSV/XLSX`, upload foto, filter role/kelas/ruang/agama, dan bulk delete |
+| `CBT Exam Cards` | Cetak kartu peserta ujian print-ready |
+| `CBT Questions` | CRUD bank soal, import `CSV/XLSX/DOCX`, template Word, dan sinkronisasi soal sumber |
+| `CBT Results` | Monitoring attempt, detail jawaban, essay grading, reset login/attempt, extra time, dan force complete |
+| `CBT Report Exam` | Report nilai print-ready dengan tanda tangan petugas |
+
+## Fitur Detail
+
+### 1. Exam dan Attempt
+
+- Exam mendukung:
+  - subject
   - durasi
   - status `draft`, `published`, `closed`
   - jadwal mulai dan selesai
   - target kelas
-  - acak urutan soal
-- Soal ujian dapat dipilih dari bank soal yang sudah ada dan dipreview sebelum disimpan.
-- Report hasil ujian print-ready (`CBT Report Exam`) dengan filter exam + kelas, kolom `NO/NISN/NAMA/KELAS/NILAI`, dan blok tanda tangan petugas (1 sampai 3 orang, role: Pengawas/Teknisi Ruang/Proktor).
-- Cetak kartu ujian print-ready (`Cetak Kartu Ujian`) format A4 6 kartu per halaman, memuat foto, identitas siswa, password login, kelas/ruang, dan tabel jadwal ujian.
-- Import massal:
-  - user dari `CSV/XLSX`
-  - mata pelajaran dari `CSV/XLSX`
-  - soal dari `CSV/XLSX/DOCX`
-- Operasi batch skala besar mendukung progress bar otomatis di admin:
-  - import user
-  - import mata pelajaran
-  - import soal
-  - hapus massal soal (Delete Selected)
-  - reset database CBT
-- Template Word untuk semua tipe soal dengan dukungan tempel gambar langsung ke dokumen.
-- Antarmuka peserta mendukung:
-  - autosave jawaban bertahap
-  - submit batch
-  - melanjutkan attempt
-  - timer dan auto-finish saat waktu habis
-  - penandaan soal ragu-ragu
-  - penyimpanan state tampilan per attempt
-  - preferensi tampilan lokal
-  - kalkulator bawaan
-- Branding frontend CBT bisa dikustom dari admin:
-  - nama sekolah (dipakai pada topbar + hero login)
-  - logo sekolah dari Media Library WordPress
-  - fallback aman ke nama situs / badge default jika belum diatur
-- Foto default siswa otomatis dipasang jika data siswa (manual/import) tidak memiliki foto.
-- Sistem cache namespace untuk katalog, user, attempt, dan UI state.
-- Integrasi Redis Object Cache WordPress dan Redis runtime buffer untuk beban ujian tinggi.
-- Paket tuning performa dan load test `k6` sudah disediakan di folder `performance/`.
+  - randomisasi soal
+  - token per exam
+- Attempt mendukung:
+  - start baru atau `resume_only`
+  - penyimpanan urutan soal per attempt
+  - tambahan waktu (`extra_time_minutes`)
+  - review hasil setelah selesai
+- Runtime berusaha menjaga urutan soal tetap stabil walaupun struktur soal exam berubah di tengah jalan.
 
-## Update Admin UI Terbaru
+### 2. Tipe Soal
 
-- Builder `CBT Exams` kini mendukung filter soal otomatis tanpa tombol `Terapkan`; saat kata kunci, tipe, sumber, atau jumlah `per halaman` berubah, yang disegarkan hanya panel katalog soal.
-- Panel `CBT Users` memakai filter otomatis dengan partial refresh, dukungan filter `agama`, dan tombol `Reset` yang konsisten dengan gaya admin baru.
-- Panel `CBT Subjects` mendukung filter cepat berbasis dropdown nama subject, partial refresh pada daftar subject, dan reset filter tanpa reload penuh halaman.
-- Halaman `CBT Results` mendapat detail jawaban full-width yang lebih informatif dan compact, lengkap dengan scroll internal agar review jawaban panjang tetap nyaman.
-- Tombol aksi penting seperti `Reset Filter`, `Reset attempt`, `Paksa Complete`, dan bulk delete di area admin diperbarui ke visual yang lebih modern dan konsisten.
+Plugin mendukung 6 tipe soal:
 
-## Update Frontend dan Runtime Terbaru
+- `multiple_choice`
+- `multiple_answer`
+- `true_false`
+- `true_false_matrix`
+- `short_answer`
+- `essay`
 
-- Frontend ujian kini mengirim header `no-cache` di halaman shortcode untuk membantu mencegah cache agresif pada halaman login/exam siswa.
-- Branding frontend mendukung dua logo sekolah (`logo_1` dan `logo_2`) selain fallback ke konfigurasi logo lama.
-- Runtime ujian mengirim payload timer dari server seperti `remaining_seconds`, `server_now`, dan `extra_time_minutes` agar resume attempt lebih akurat dan tidak hanya mengandalkan jam browser.
-- Soal exam kini mendukung status aktif/nonaktif (`is_active`) sehingga daftar soal aktif di runtime, UI state, dan API lebih konsisten saat ada soal yang dinonaktifkan.
-- Attempt yang sudah berjalan tetap bisa menampilkan review jawaban untuk soal arsip/nonaktif melalui `archived_review_items`, sehingga jawaban lama tidak hilang dari sisi siswa saat bank soal berubah.
-- Runtime urutan soal kini berusaha merekonsiliasi urutan dari database, cache runtime, dan payload attempt agar attempt lama tetap stabil walau struktur soal exam berubah.
-- UI frontend mendapat penyegaran visual untuk status soal answered/doubtful, panel review arsip, serta perbaikan tata letak card dan navigasi selama ujian.
+Catatan penting:
+
+- `multiple_choice`: 1 jawaban benar, template Word mendukung sampai 5 opsi.
+- `multiple_answer`: lebih dari 1 jawaban benar, template Word mendukung sampai 12 opsi.
+- `true_false_matrix`: satu soal dengan beberapa pernyataan `true/false`, template Word mendukung sampai 10 pernyataan.
+- `short_answer`: mendukung placeholder `[INPUT_1]` sampai `[INPUT_8]` dan sampai 8 jawaban valid per soal.
+- `essay`: mendukung rubrik/acuan jawaban, dicek manual dari halaman hasil.
+
+### 3. Import Data
+
+#### User
+
+- Format: `CSV`, `XLSX`
+- Kolom wajib: `name`, `username`, `password`, `role`, dan salah satu `email` atau `nisn`
+- Kolom opsional: `email`, `nisn`, `kode_kelas`, `kode_ruang`, `agama`, `foto`
+- Jika `email` kosong/tidak valid tetapi `nisn` ada, sistem membuat email default `nisn@student.sch.id`
+- Untuk role siswa, foto default otomatis dipasang saat foto tidak tersedia
+- Selain import massal, halaman `CBT Users` juga mendukung tambah, edit, hapus, upload foto, dan bulk delete manual
+
+#### Subject
+
+- Format: `CSV`, `XLSX`
+- Template resmi dapat diunduh dari admin
+- Import subject skala besar diproses bertahap dengan progress otomatis
+
+#### Soal
+
+- Format: `CSV`, `XLSX`, `DOCX`
+- Template Word tersedia untuk semua tipe soal di folder `templates/`
+- Gambar yang ditempel langsung ke dokumen Word ikut terbaca saat import
+- Import besar dan bulk delete soal diproses bertahap dengan progress otomatis
+
+## Frontend dan REST API
+
+Semua endpoint selain login memerlukan header:
+
+```text
+Authorization: Bearer <jwt_token>
+```
+
+Endpoint utama:
+
+- `POST /wp-json/cbt/v1/login`
+- `POST /wp-json/cbt/v1/logout`
+- `GET /wp-json/cbt/v1/session`
+- `GET /wp-json/cbt/v1/exams`
+- `GET /wp-json/cbt/v1/subjects`
+- `GET /wp-json/cbt/v1/questions`
+- `POST /wp-json/cbt/v1/start_attempt`
+- `POST /wp-json/cbt/v1/submit_answer`
+- `POST /wp-json/cbt/v1/submit_answers_batch`
+- `POST /wp-json/cbt/v1/finish_exam`
+- `GET|POST|DELETE /wp-json/cbt/v1/ui_state`
+- `GET /wp-json/cbt/v1/result`
+
+Perilaku penting endpoint:
+
+- `login` menerima identifier `email`, `username`, atau `nisn`
+- `questions` mendukung `offset`, `limit`, `include_existing`, dan `include_answer_manifest`
+- `start_attempt` mendukung `exam_token` dan `resume_only`
+- payload timer dari server sudah menyertakan `remaining_seconds`, `server_now`, dan `extra_time_minutes`
+- runtime dapat mendefer scoring submit saat server sedang sibuk agar alur start exam dan ambil soal tetap lebih prioritas
 
 ## Tabel Database
 
-Plugin membuat tabel berikut saat aktivasi:
+Saat aktivasi, plugin membuat tabel:
 
 - `wp_cbt_subjects`
 - `wp_cbt_exams`
@@ -113,14 +187,14 @@ Plugin membuat tabel berikut saat aktivasi:
 
 Catatan:
 
-- `true_false_matrix` tidak memakai tabel detail terpisah; konfigurasi matrix disimpan pada payload soal.
-- Tabel `wp_cbt_questions` kini memakai kolom `is_active` untuk menandai soal aktif/nonaktif tanpa harus menghapus record.
-- Tabel `wp_cbt_attempts` kini memakai kolom `extra_time_minutes` untuk kebutuhan tambahan waktu pada attempt.
-- Plugin juga memastikan role, capability, dan halaman ujian tetap sinkron setiap plugin dimuat.
+- `true_false_matrix` tidak memakai tabel detail terpisah; payload matrix disimpan pada detail soal.
+- `wp_cbt_questions` memakai `source_question_id` untuk linkage ke bank soal sumber dan `is_active` untuk aktif/nonaktif.
+- `wp_cbt_attempts` memakai `question_order` dan `extra_time_minutes`.
+- Plugin juga menjaga role, capability, halaman frontend, dan migrasi schema tetap sinkron saat plugin dimuat.
 
-## Role dan Hak Akses
+## Role dan Capability
 
-Plugin menyiapkan role kompatibel berikut:
+Role kompatibel yang disiapkan:
 
 - `guru_cbt`
 - `siswa_cbt`
@@ -129,48 +203,33 @@ Plugin menyiapkan role kompatibel berikut:
 
 Capability utama:
 
-- Admin:
-  - kelola sistem
-  - kelola user
-  - kelola mata pelajaran
-  - kelola ujian
-  - kelola soal
-  - lihat hasil
-  - koreksi essay
-  - ikut ujian
-  - lihat hasil sendiri
-- Guru:
-  - kelola ujian
-  - kelola soal
-  - lihat hasil
-  - koreksi essay
-- Siswa:
-  - ikut ujian
-  - lihat hasil sendiri
+- Admin: kelola sistem, user, subject, exam, soal, hasil, essay, dan ikut ujian
+- Guru: kelola exam, soal, lihat hasil, koreksi essay
+- Siswa: ikut ujian dan lihat hasil sendiri
 
-Untuk kompatibilitas, capability juga dapat ditambahkan ke role WordPress bawaan seperti `administrator`, `editor`, dan `subscriber`.
+Capability juga ditambahkan ke role WordPress umum seperti `administrator`, `editor`, dan `subscriber` untuk kompatibilitas yang lebih mudah.
 
 ## Persyaratan Sistem
 
 - WordPress `6.0+`
 - PHP `8.0+`
-- MySQL / MariaDB
+- MySQL atau MariaDB
 - Composer
-- Ekstensi PHP untuk fitur impor spreadsheet:
+- Ekstensi PHP untuk import spreadsheet:
   - `zip`
   - `xml`
   - `mbstring`
   - `gd`
-- Ekstensi `redis` direkomendasikan jika ingin memakai runtime buffer Redis
+- Ekstensi `redis` direkomendasikan jika ingin memakai object cache dan runtime buffer Redis
 
 Dependensi Composer:
 
 - `firebase/php-jwt`
 - `phpoffice/phpspreadsheet`
 
-## Instalasi Cepat di WordPress yang Sudah Berjalan
+## Instalasi Cepat
 
-1. Salin folder plugin ke:
+1. Salin plugin ke:
 
 ```bash
 wp-content/plugins/cbt-exam-system
@@ -183,484 +242,31 @@ cd wp-content/plugins/cbt-exam-system
 composer install --no-dev
 ```
 
-3. Jika instalasi lama sudah pernah memakai dependency sebelum fitur spreadsheet terbaru, jalankan:
+3. Aktifkan plugin dari dashboard WordPress.
 
-```bash
-composer require phpoffice/phpspreadsheet:^2.2 --update-no-dev
-```
-
-4. Aktifkan plugin dari dashboard WordPress.
-
-5. Saat plugin aktif, sistem akan:
-  - membuat tabel CBT
-  - mendaftarkan role dan capability
-  - membuat halaman frontend `CBT Ujian`
-  - menambahkan shortcode `[cbt_exam_frontend]` ke halaman tersebut
-
-6. Tambahkan JWT secret ke `wp-config.php`:
+4. Tambahkan secret JWT ke `wp-config.php`:
 
 ```php
 define('CBT_JWT_SECRET', 'ganti-dengan-secret-panjang-acak');
 ```
 
-7. Pastikan aplikasi yang mengakses API mengirim header:
+Jika `CBT_JWT_SECRET` tidak diisi, plugin akan memakai `wp_salt('auth')` sebagai fallback.
 
-```text
-Authorization: Bearer <jwt_token>
-```
+5. Setelah aktif, plugin akan:
 
-Jika `CBT_JWT_SECRET` tidak diisi, plugin akan memakai `wp_salt('auth')` sebagai cadangan.
+- membuat tabel CBT
+- mendaftarkan role dan capability
+- membuat halaman frontend `CBT Ujian`
+- menambahkan shortcode `[cbt_exam_frontend]` ke halaman tersebut
 
-## Instalasi Server Ubuntu dengan Nginx, PHP-FPM, dan MySQL
-
-Bagian ini ditujukan untuk instalasi server baru. Jika WordPress Anda sudah berjalan, Anda bisa langsung memakai bagian instalasi cepat di atas.
-
-### 1. Instal paket server
-
-```bash
-sudo apt update
-sudo apt install -y nginx mysql-server php8.3-fpm php8.3-mysql php8.3-curl php8.3-xml php8.3-mbstring php8.3-zip php8.3-gd unzip git composer
-```
-
-### 2. Siapkan database WordPress
-
-```bash
-sudo mysql -e "CREATE DATABASE wordpress_cbt CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-sudo mysql -e "CREATE USER 'wpuser'@'localhost' IDENTIFIED BY 'StrongPassword123';"
-sudo mysql -e "GRANT ALL PRIVILEGES ON wordpress_cbt.* TO 'wpuser'@'localhost'; FLUSH PRIVILEGES;"
-```
-
-Catatan: jika WordPress dan MySQL berada di server yang sama, gunakan `'wpuser'@'localhost'`.
-
-### 3. Pasang WordPress
-
-```bash
-cd /var/www
-sudo wget https://wordpress.org/latest.zip
-sudo unzip latest.zip
-sudo rm -f latest.zip
-sudo chown -R www-data:www-data /var/www/wordpress
-```
-
-### 4. Buat virtual host Nginx
-
-Buat file `/etc/nginx/sites-available/cbt.domain.com`:
-
-```nginx
-server {
-    listen 80;
-    server_name cbt.domain.com localhost 127.0.0.1 192.168.1.10;
-
-    root /var/www/wordpress;
-    index index.php index.html;
-
-    location / {
-        try_files $uri $uri/ /index.php?$args;
-    }
-
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
-    }
-
-    location ~ /\.ht {
-        deny all;
-    }
-}
-```
-
-Aktifkan site:
-
-```bash
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo ln -sfn /etc/nginx/sites-available/cbt.domain.com /etc/nginx/sites-enabled/cbt.domain.com
-ls /run/php/
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-Jika socket `php8.3-fpm.sock` tidak ada, sesuaikan dengan socket yang tersedia, misalnya `php8.2-fpm.sock`, atau gunakan TCP:
-
-```nginx
-fastcgi_pass 127.0.0.1:9000;
-```
-
-Untuk uji lokal berbasis domain, tambahkan hosts entry:
-
-```text
-127.0.0.1 cbt.domain.com
-```
-
-### 5. Selesaikan panduan instalasi WordPress
-
-Isi form instalasi WordPress:
-
-- Database Name: `wordpress_cbt`
-- Username: `wpuser`
-- Password: `StrongPassword123`
-- Database Host: `localhost`
-- Table Prefix: `wp_`
-
-### 6. Install plugin CBT
-
-```bash
-sudo mkdir -p /var/www/wordpress/wp-content/plugins
-sudo cp -r ./wordpress/wp-content/plugins/cbt-exam-system /var/www/wordpress/wp-content/plugins/
-cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
-sudo composer install --no-dev
-sudo composer require phpoffice/phpspreadsheet:^2.2 --update-no-dev
-sudo chown -R www-data:www-data /var/www/wordpress/wp-content/plugins/cbt-exam-system
-```
-
-Setelah itu, aktifkan plugin dari `wp-admin`.
-
-### 7. Aktifkan HTTPS
-
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d cbt.domain.com
-```
-
-## Alur Penggunaan yang Disarankan
-
-1. Import user siswa dan guru terlebih dahulu.
-2. Buat atau import mata pelajaran.
-3. Isi bank soal secara manual atau import massal.
-4. Buat ujian baru, atur:
-   - mapel
-   - durasi
-   - status
-   - jadwal
-   - target kelas
-   - acak soal
-5. Pilih soal untuk ujian dari bank soal yang tersedia.
-6. Jika perlu, atur token global dari menu `CBT Tokens`.
-7. Arahkan siswa ke halaman `/cbt-ujian`.
-8. Pantau progres di `CBT Results`.
-9. Koreksi essay dari halaman hasil.
-
-## Menu Admin
-
-Menu utama plugin berada di `CBT Exams` dengan submenu:
-
-- `Exams`
-- `CBT Tokens`
-- `CBT Setup`
-- `CBT Maintenance`
-- `CBT Cache`
-- `Subjects / Mata Pelajaran`
-- `User Import`
-- `Cetak Kartu Ujian`
-- `CBT Bank Soal`
-- `CBT Results`
-- `CBT Report Exam`
-
-## Fitur Ujian
-
-### Pengaturan exam
-
-Setiap exam mendukung:
-
-- judul
-- deskripsi
-- mapel
-- durasi ujian
-- status `draft`, `published`, `closed`
-- jadwal mulai
-- jadwal selesai
-- target kelas peserta
-- acak urutan soal
-
-Soal exam dipilih dari bank soal yang sudah tersedia. Saat exam disimpan ulang, daftar soal akan disinkronkan dari pilihan tersebut.
-
-### Token ujian
-
-Plugin mendukung dua skema token:
-
-- token per exam
-- token global
-
-Token global:
-
-- panjang `6` karakter
-- memakai huruf/angka yang tidak ambigu
-- dapat dirotasi otomatis setiap `5` sampai `60` menit
-- dapat digenerate ulang manual
-- dapat diisi otomatis di frontend saat siswa mulai ujian
-
-### Monitoring percobaan ujian
-
-Halaman hasil mendukung:
-
-- filter ujian
-- filter status attempt
-- filter kelas
-- pencarian siswa
-- pemantauan otomatis berkala
-- reset login siswa
-- reset attempt
-- bulk reset attempt
-- force complete attempt yang masih berjalan
-- koreksi essay manual
-
-### CBT Report Exam (print-ready)
-
-Menu: `CBT Exams > CBT Report Exam`
-
-Fitur utama:
-
-- filter wajib `Exam`
-- filter opsional `Kelas`
-- data nilai mencakup attempt `in_progress` dan `completed`
-- satu siswa ditampilkan satu baris (attempt terbaru)
-- nilai dalam persen (`0..100`, dua desimal)
-- export dilakukan melalui halaman print HTML (browser `Print / Save PDF`)
-- tanda tangan petugas minimal 1, maksimal 3
-- role petugas via dropdown: `Pengawas`, `Teknisi Ruang`, `Proktor`
-
-### Cetak Kartu Ujian
-
-Menu: `CBT Exams > Cetak Kartu Ujian`
-
-Fitur utama:
-
-- filter `Kelas` (opsional: bisa semua kelas)
-- filter `Ruang` (opsional)
-- search siswa (opsional)
-- output A4 print-ready, grid 2x3 (6 kartu per halaman)
-- data kartu: `NISN`, `USERNAME`, `PASSWORD`, `KELAS`, `RUANGAN`, `JADWAL UJIAN`, `FOTO`
-- jika password plaintext siswa belum ada, sistem membuat password baru 6 digit dan menyimpannya untuk kebutuhan cetak kartu
-- jika foto siswa kosong, sistem menampilkan foto default siswa
-
-### CBT Setup Branding
-
-Menu: `CBT Exams > CBT Setup`
-
-Fitur utama:
-
-- atur `Nama Sekolah CBT`
-- pilih `Logo Sekolah` dari Media Library WordPress
-- branding dipakai di topbar ujian dan hero login frontend
-
-## Antarmuka Peserta
-
-Halaman ujian berbasis JavaScript dan dirender melalui shortcode `[cbt_exam_frontend]`.
-
-Fitur yang tersedia:
-
-- login dengan email, username, atau NISN
-- penyimpanan token sesi di browser
-- melanjutkan ujian yang sedang berjalan
-- autosave jawaban dengan submit bertahap
-- submit batch untuk mengurangi lonjakan request
-- penanda soal ragu-ragu
-- timer mundur
-- auto-finish saat waktu habis
-- state tampilan per attempt melalui endpoint `ui_state`
-- invalidasi cache soal berbasis `question_revision` agar client otomatis memuat versi soal terbaru saat admin mengubah exam
-- preferensi UI lokal:
-  - skala font
-  - tema
-  - posisi panel navigasi
-  - posisi kalkulator
-- kalkulator bawaan untuk peserta
-
-## Jenis Soal yang Didukung
-
-### 1. Multiple Choice
-
-- Satu jawaban benar
-- Import Word mendukung sampai `5` opsi
-- Dapat memuat gambar pada soal dan opsi
-
-### 2. Multiple Answer
-
-- Lebih dari satu jawaban benar
-- Import Word mendukung sampai `12` opsi
-
-### 3. True/False
-
-- Satu pernyataan dengan jawaban `true` atau `false`
-
-### 4. True/False Matrix
-
-- Satu soal berisi beberapa pernyataan
-- Setiap pernyataan punya jawaban `true` atau `false`
-- Import Word mendukung sampai `10` pernyataan per soal
-
-### 5. Short Answer
-
-- Mendukung placeholder `[INPUT_1]` sampai `[INPUT_8]`
-- Maksimal `8` jawaban valid per soal
-- Penilaian otomatis berdasarkan jawaban yang dinormalisasi
-
-### 6. Essay
-
-- Wajib memiliki acuan jawaban atau rubrik
-- Penilaian manual dari halaman hasil
-- Rubrik bisa berisi teks dan gambar
-
-## Import Data
-
-### Import user
-
-Menu: `CBT Exams > User Import`
-
-Format file:
-
-- `CSV`
-- `XLSX`
-
-Kolom wajib:
-
-- `name`
-- `role`
-- `username` + `password`
-  atau
-- `usernamepassword` / `username_password`
-- salah satu dari:
-  - `email`
-  - `nisn`
-
-Kolom opsional:
-
-- `kode_kelas`
-- `kode_ruang`
-- `agama`
-- `foto`
-
-Catatan:
-
-- Role yang didukung: `admin`, `guru`, `siswa`
-- Alias lama seperti `administrator`, `teacher`, dan `student` juga ditangani
-- Jika `email` kosong tetapi `nisn` ada, plugin membuat email default `nisn@student.sch.id`
-- Import besar diproses bertahap untuk mengurangi timeout
-- Progress import ditampilkan realtime di halaman admin (processed/total, persentase, created/updated/failed)
-- Untuk data besar, `CSV` umumnya lebih cepat daripada `XLSX`
-- Selain import massal, halaman ini juga mendukung tambah, edit, hapus, filter, dan upload foto user secara manual
-- Untuk role siswa, jika foto kosong saat create/import/update maka plugin mengisi foto default siswa.
-
-### Import mata pelajaran
-
-Menu: `CBT Exams > Subjects / Mata Pelajaran`
-
-Format file:
-
-- `CSV`
-- `XLSX`
-
-Kolom template:
-
-- `name`
-- `code`
-- `description`
-
-Kolom `name` wajib ada.
-
-Catatan:
-
-- Import subject skala besar diproses bertahap.
-- Progress import subject ditampilkan otomatis di admin.
-
-### Import soal
-
-Menu: `CBT Exams > CBT Bank Soal`
-
-Format file:
-
-- `CSV`
-- `XLSX`
-- `DOCX`
-
-Header template spreadsheet:
-
-- `subject_code`
-- `exam_title`
-- `question_type`
-- `question_text`
-- `points`
-- `options`
-- `correct_answer`
-- `correct_text`
-
-Tipe soal yang didukung saat import:
-
-- `multiple_choice`
-- `multiple_answer`
-- `true_false`
-- `true_false_matrix`
-- `short_answer`
-- `essay`
-
-Fitur penting import soal:
-
-- Template CSV dan XLSX resmi tersedia dari admin
-- Template Word tersedia untuk semua tipe soal
-- Template Word bisa dibuat dengan jumlah blok `10` sampai `100` soal
-- Gambar yang ditempel di dokumen Word ikut terbaca saat import
-- Untuk `essay`, acuan jawaban atau rubrik wajib diisi
-- Untuk `short_answer`, gunakan placeholder `[INPUT_1]` sampai `[INPUT_8]`
-- Untuk `true_false_matrix`, isi pasangan `PERNYATAAN_x` dan `KUNCI_x`
-- Import soal skala besar diproses bertahap dengan progress bar otomatis.
-- Hapus massal soal (`Delete Selected`) juga diproses bertahap dengan progress bar otomatis.
-
-Perilaku sinkronisasi bank soal:
-
-- Saat soal bank dipilih ke exam, plugin menyimpan linkage ke soal sumber bank.
-- Jika soal di `CBT Bank Soal` diedit, seluruh salinan soal exam yang terhubung akan ikut diperbarui.
-- Namespace cache exam yang terdampak ikut diinvalidasi, sehingga peserta aktif akan menerima versi soal terbaru melalui mekanisme refresh revision.
-- Untuk soal lama yang dibuat sebelum linkage ini ada, jalankan repair `CBT Maintenance > Jalankan Backfill Link Soal Bank` agar salinan legacy yang masih cocok dipasangkan massal.
-
-## Endpoint REST API
-
-Semua endpoint selain login memerlukan header:
-
-```text
-Authorization: Bearer <jwt_token>
-```
-
-Daftar endpoint:
-
-- `POST /wp-json/cbt/v1/login`
-- `POST /wp-json/cbt/v1/logout`
-- `GET /wp-json/cbt/v1/session?attempt_id=<id_optional>`
-- `GET /wp-json/cbt/v1/exams`
-- `GET /wp-json/cbt/v1/subjects`
-- `GET /wp-json/cbt/v1/questions?exam_id=<id>&attempt_id=<id_optional>`
-- `POST /wp-json/cbt/v1/start_attempt`
-- `POST /wp-json/cbt/v1/submit_answer`
-- `POST /wp-json/cbt/v1/submit_answers_batch`
-- `POST /wp-json/cbt/v1/finish_exam`
-- `GET /wp-json/cbt/v1/ui_state`
-- `POST /wp-json/cbt/v1/ui_state`
-- `DELETE /wp-json/cbt/v1/ui_state?attempt_id=<id>`
-- `GET /wp-json/cbt/v1/result?attempt_id=<id_optional>`
-
-Endpoint yang punya perilaku penting:
-
-- `login` menerima identifier `email`, `username`, atau `nisn`
-- `session` menerima `attempt_id` opsional dan mengembalikan `question_revision` untuk attempt tersebut bila tersedia
-- `start_attempt` mendukung `exam_token` dan `resume_only`, serta mengembalikan `question_revision`
-- `questions` mendukung `offset`, `limit`, `include_existing`, dan `include_answer_manifest`, serta mengembalikan `question_revision`
-- `submit_answers_batch` dipakai frontend untuk autosave dan batch submit
-- `ui_state` menyimpan posisi dan state tampilan per attempt
-
-## Cache dan Redis
+## Redis dan Cache
 
 Plugin memiliki dua lapisan optimasi:
 
-- cache lintas request melalui WordPress object cache / transient
-- runtime buffer Redis untuk menahan burst submit jawaban
+- cache lintas request melalui object cache WordPress atau transient fallback
+- runtime Redis buffer untuk beban submit dan state runtime yang lebih berat
 
-Jika Redis belum siap:
-
-- plugin tetap berjalan
-- cache jatuh ke mode transient WordPress
-- submit jawaban tetap bisa jatuh ke database
-
-### Konfigurasi Redis Object Cache WordPress
-
-Tambahkan ke `wp-config.php`:
+Contoh konfigurasi object cache WordPress:
 
 ```php
 define('WP_CACHE', true);
@@ -668,14 +274,9 @@ define('WP_REDIS_HOST', '127.0.0.1');
 define('WP_REDIS_PORT', 6379);
 define('WP_REDIS_DATABASE', 1);
 define('WP_REDIS_PREFIX', 'cbt_exam_system:');
-
-// Opsional:
-define('WP_REDIS_PASSWORD', 'ganti-dengan-password-redis');
 ```
 
-### Konfigurasi Redis Runtime Buffer
-
-Tambahkan ke `wp-config.php`:
+Contoh konfigurasi runtime Redis buffer:
 
 ```php
 define('CBT_RUNTIME_BUFFER_ENABLED', true);
@@ -684,100 +285,69 @@ define('CBT_RUNTIME_REDIS_HOST', '127.0.0.1');
 define('CBT_RUNTIME_REDIS_PORT', 6379);
 define('CBT_RUNTIME_REDIS_DATABASE', 2);
 define('CBT_RUNTIME_REDIS_PREFIX', 'cbt_runtime:');
-
-// Opsional:
-define('CBT_RUNTIME_REDIS_PASSWORD', 'ganti-dengan-password-runtime');
 ```
 
-Saran kebijakan Redis runtime:
+`CBT Cache` sudah menyediakan:
 
-- `appendonly yes`
-- `appendfsync everysec`
-- `maxmemory-policy noeviction`
+- readiness banner
+- configuration snapshot
+- probe object cache dan runtime
+- one-click bootstrap Redis Object Cache WordPress
+- rollback Redis integration
+- invalidate namespace global, exam, user, dan attempt
+- inspeksi namespace, locks, dan UI state
 
-### Bootstrap Redis dari admin
+## Generate Dataset Uji
 
-Menu: `CBT Exams > CBT Cache`
+Preset bawaan:
 
-Halaman ini menyediakan:
+- `Small`: 5 subject, 10 exam, 200 soal, 60 siswa, 6 guru, 6 kelas, 3 ruang
+- `Medium`: 10 subject, 30 exam, 900 soal, 300 siswa, 18 guru, 12 kelas, 6 ruang
+- `Large`: 20 subject, 80 exam, 3200 soal, 1200 siswa, 48 guru, 24 kelas, 12 ruang
 
-- status readiness Redis
-- probe server Redis
-- probe object cache
-- status runtime buffer
-- bootstrap Redis WordPress sekali klik
-- rollback integrasi Redis dari sisi WordPress
-- invalidate namespace cache
-- inspeksi namespace, lock, dan UI state
+Catatan:
 
-Ubuntu quick start:
+- dataset memproses reset + seed secara bertahap
+- akun khusus yang selalu dibuat: `coblax / 223611`
+- password default dataset: `Skills39`
 
-```bash
-sudo apt update
-sudo apt install -y redis-server redis-tools php-redis
-sudo systemctl enable --now redis-server
-redis-cli ping
-php -m | grep -i redis
+## Load Test dan Performance Pack
 
-PHP_VER=$(php -v | head -n 1 | sed -E 's/^PHP ([0-9]+\.[0-9]+).*/\1/')
-echo "Detected PHP version: ${PHP_VER}"
-if systemctl list-unit-files "php${PHP_VER}-fpm.service" --no-legend 2>/dev/null | grep -q "php${PHP_VER}-fpm.service"; then
-  sudo systemctl restart "php${PHP_VER}-fpm"
-else
-  systemctl list-unit-files "php*-fpm.service" --no-legend 2>/dev/null || true
-fi
-sudo systemctl restart nginx || sudo systemctl restart apache2
-```
-
-## Maintenance
-
-Menu: `CBT Exams > CBT Maintenance`
-
-Fungsi utama:
-
-- reset seluruh data CBT dari database
-- menghapus data:
-  - subjects
-  - exams
-  - questions
-  - options
-  - attempts
-  - answers
-  - pengaturan token global
-  - state cache plugin
-  - UI state
-
-Reset hanya bisa dijalankan setelah mengetik konfirmasi persis:
-
-```text
-RESET CBT
-```
-
-## Performa dan Load Test
-
-Folder `performance/` berisi paket tuning dan uji beban untuk deployment web:
+Folder `performance/` berisi:
 
 - `performance/README.md`
 - `performance/server-tuning-2core-8gb.md`
-- `performance/load-test/k6/`
+- `performance/load-test/k6/cbt_exam_1000_users.js`
+- `performance/load-test/k6/students.sample.json`
 
-Target yang didokumentasikan:
+Fitur load test dari admin:
 
-- baseline sampai `1000` siswa realtime
-- dengan runtime Redis batch submit, target bertahap sampai `2000` siswa realtime
-- baseline server awal: `2 vCPU` dan `8 GB RAM`
+- pilih exam target
+- pilih preset `Smoke 50`, `Load 200`, `Load 500`, `Load 1000`
+- polling status job selama run aktif
+- lihat ringkasan metrik hasil run
+- download artefak stdout, stderr, summary, dan dataset siswa
 
-Saran alur tuning:
+Target dokumentasi performa saat ini:
 
-1. Terapkan tuning server.
-2. Jalankan load test bertahap.
-3. Cek bottleneck CPU, RAM, I/O, query lambat, dan error rate.
-4. Fine-tune ulang berdasarkan hasil aktual.
+- baseline web: sampai 1000 siswa realtime
+- dengan runtime Redis batch submit: target bertahap sampai 2000 siswa realtime
+- baseline server awal: 2 vCPU, 8 GB RAM
+
+## Alur Penggunaan yang Disarankan
+
+1. Import atau buat `CBT Users` lebih dulu.
+2. Buat atau import `CBT Subjects`.
+3. Isi `CBT Questions` secara manual atau import massal.
+4. Buat exam di `CBT Exams`, pilih kelas peserta, atur jadwal, durasi, dan randomisasi bila perlu.
+5. Atur token dari `CBT Tokens` bila exam memakai token global.
+6. Arahkan siswa ke halaman `/cbt-ujian`.
+7. Pantau progress siswa di `CBT Results`.
+8. Gunakan `CBT Report Exam` dan `CBT Exam Cards` saat kebutuhan administrasi cetak muncul.
 
 ## Catatan Penting
 
-- Pastikan dependency Composer sudah terpasang sebelum memakai fitur import XLSX/DOCX.
-- Jika ekstensi `zip` tidak aktif, template Word tidak bisa dibuat.
-- Jika Redis belum siap, plugin tetap aman berjalan dalam mode cadangan, tetapi mode ini bukan pilihan utama untuk ujian serentak skala besar.
-- Untuk deployment produksi, selalu set `CBT_JWT_SECRET` secara eksplisit.
-- Pastikan reverse proxy, Nginx, atau web server tidak menghilangkan header `Authorization`.
+- Pastikan dependency Composer sudah terpasang sebelum memakai fitur `XLSX` dan `DOCX`.
+- Reverse proxy atau web server tidak boleh membuang header `Authorization`.
+- Frontend shortcode sudah mengirim header no-cache agar halaman login dan ujian siswa tidak mudah ter-cache agresif.
+- Jika Redis belum siap, plugin tetap aman berjalan, tetapi mode fallback bukan opsi utama untuk ujian serentak skala besar.
