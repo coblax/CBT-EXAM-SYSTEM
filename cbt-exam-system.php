@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CBT Exam System
  * Description: Computer Based Test plugin with WordPress admin CRUD, REST API, and JWT auth.
- * Version: 1.6.2
+ * Version: 1.6.3
  * Author: COBLAX
  * Requires at least: 6.0
  * Requires PHP: 8.0
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CBT_EXAM_SYSTEM_VERSION', '1.6.2');
+define('CBT_EXAM_SYSTEM_VERSION', '1.6.3');
 define('CBT_EXAM_SYSTEM_PATH', plugin_dir_path(__FILE__));
 define('CBT_EXAM_SYSTEM_URL', plugin_dir_url(__FILE__));
 
@@ -21,6 +21,7 @@ require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-deactivator.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-runtime.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-ui-state.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-security-log.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-auth.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-frontend.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-exams-helper.php';

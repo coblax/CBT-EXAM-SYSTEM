@@ -8,7 +8,7 @@ class CBT_Activator
 {
     private const OPTION_DB_VERSION = 'cbt_exam_system_db_version';
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
-    private const DB_VERSION = '1.6.2';
+    private const DB_VERSION = '1.6.4';
 
     public static function activate(): void
     {
@@ -62,6 +62,7 @@ class CBT_Activator
             duration_minutes INT UNSIGNED NOT NULL DEFAULT 60,
             total_questions INT UNSIGNED NOT NULL DEFAULT 0,
             randomize_questions TINYINT(1) NOT NULL DEFAULT 0,
+            randomize_options TINYINT(1) NOT NULL DEFAULT 0,
             status VARCHAR(20) NOT NULL DEFAULT 'draft',
             starts_at DATETIME NULL,
             ends_at DATETIME NULL,
@@ -151,6 +152,7 @@ class CBT_Activator
             student_id BIGINT UNSIGNED NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'in_progress',
             question_order LONGTEXT NULL,
+            option_order LONGTEXT NULL,
             score DECIMAL(7,2) NOT NULL DEFAULT 0,
             max_score DECIMAL(7,2) NOT NULL DEFAULT 0,
             started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -185,6 +187,8 @@ class CBT_Activator
             KEY idx_attempt_answered_at (attempt_id, answered_at),
             KEY idx_question_id (question_id)
         ) $charset;";
+
+        $tables[] = CBT_Security_Log::get_create_table_sql($wpdb);
 
         foreach ($tables as $sql) {
             dbDelta($sql);

@@ -8,6 +8,7 @@ class CBT_Frontend
 {
     private const SHORTCODE = 'cbt_exam_frontend';
     private const SETUP_BRANDING_OPTION = 'cbt_setup_branding';
+    private const SETUP_SECURITY_OPTION = 'cbt_setup_security';
 
     /** @var bool */
     private static $localized = false;
@@ -31,15 +32,22 @@ class CBT_Frontend
             $rest_base_path = (string) wp_parse_url($rest_base_absolute, PHP_URL_PATH);
             $rest_base_path = trailingslashit($rest_base_path !== '' ? $rest_base_path : '/wp-json/cbt/v1/');
             $branding = self::get_setup_branding_config();
+            $security = self::get_setup_security_config();
 
             wp_localize_script('cbt-frontend-app', 'CBTExamFrontendConfig', [
                 'restBase' => $rest_base_absolute,
                 'restBasePath' => $rest_base_path,
                 'siteName' => $branding['school_name'],
                 'schoolName' => $branding['school_name'],
+                'schoolMotto' => $branding['school_motto'],
                 'schoolLogoUrl' => $branding['logo_url'],
                 'schoolLogo1Url' => $branding['logo_1_url'],
                 'schoolLogo2Url' => $branding['logo_2_url'],
+                'pluginAuthor' => 'COBLAX',
+                'pluginVersion' => CBT_EXAM_SYSTEM_VERSION,
+                'securityForceFullscreen' => $security['force_fullscreen'],
+                'securityBlockCopyPaste' => $security['block_copy_paste'],
+                'securityLogEvents' => $security['log_security_events'],
                 'homeUrl' => (string) home_url('/'),
                 'tokenMinLength' => 6,
                 'tokenLength' => 6,
@@ -142,7 +150,7 @@ class CBT_Frontend
     }
 
     /**
-     * @return array{school_name:string,logo_url:string,logo_1_url:string,logo_2_url:string}
+     * @return array{school_name:string,school_motto:string,logo_url:string,logo_1_url:string,logo_2_url:string}
      */
     private static function get_setup_branding_config(): array
     {
@@ -161,6 +169,9 @@ class CBT_Frontend
         if ($school_name === '') {
             $school_name = 'CBT Exam';
         }
+        $school_motto = isset($raw['school_motto'])
+            ? trim(sanitize_text_field((string) $raw['school_motto']))
+            : '';
 
         $legacy_logo_attachment_id = isset($raw['logo_attachment_id']) ? absint($raw['logo_attachment_id']) : 0;
         if ($legacy_logo_attachment_id > 0 && !wp_attachment_is_image($legacy_logo_attachment_id)) {
@@ -195,9 +206,27 @@ class CBT_Frontend
 
         return [
             'school_name' => $school_name,
+            'school_motto' => $school_motto,
             'logo_url' => $logo_1_url,
             'logo_1_url' => $logo_1_url,
             'logo_2_url' => $logo_2_url,
+        ];
+    }
+
+    /**
+     * @return array{force_fullscreen:int,block_copy_paste:int,log_security_events:int}
+     */
+    private static function get_setup_security_config(): array
+    {
+        $raw = get_option(self::SETUP_SECURITY_OPTION, []);
+        if (!is_array($raw)) {
+            $raw = [];
+        }
+
+        return [
+            'force_fullscreen' => !empty($raw['force_fullscreen']) ? 1 : 0,
+            'block_copy_paste' => !empty($raw['block_copy_paste']) ? 1 : 0,
+            'log_security_events' => !empty($raw['log_security_events']) ? 1 : 0,
         ];
     }
 }

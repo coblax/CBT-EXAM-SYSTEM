@@ -131,6 +131,12 @@ class CBT_REST
             'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
         ]);
 
+        register_rest_route('cbt/v1', '/security_event', [
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => [self::class, 'security_event'],
+            'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
+        ]);
+
         register_rest_route('cbt/v1', '/ui_state', [
             [
                 'methods' => WP_REST_Server::READABLE,
@@ -353,7 +359,7 @@ class CBT_REST
 
         $exam = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, duration_minutes, randomize_questions, status, starts_at, ends_at, target_kelas
+                "SELECT id, duration_minutes, randomize_questions, randomize_options, status, starts_at, ends_at, target_kelas
                  FROM {$exam_table}
                  WHERE id = %d",
                 $exam_id
@@ -372,7 +378,7 @@ class CBT_REST
         if ($attempt_id > 0) {
             $attempt = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT id, exam_id, student_id, status, question_order, score, max_score, started_at, extra_time_minutes
+                    "SELECT id, exam_id, student_id, status, question_order, option_order, score, max_score, started_at, extra_time_minutes
                      FROM {$attempt_table}
                      WHERE id = %d",
                     $attempt_id
@@ -589,7 +595,7 @@ class CBT_REST
 
         $exam = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, status, starts_at, ends_at, duration_minutes, randomize_questions, target_kelas
+                "SELECT id, status, starts_at, ends_at, duration_minutes, randomize_questions, randomize_options, target_kelas
                  FROM {$exam_table}
                  WHERE id = %d",
                 $exam_id
@@ -621,7 +627,7 @@ class CBT_REST
         try {
             $latest_attempt = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT id, status, started_at, finished_at, question_order, extra_time_minutes
+                    "SELECT id, status, started_at, finished_at, question_order, option_order, extra_time_minutes
                      FROM {$attempt_table}
                      WHERE exam_id = %d AND student_id = %d AND status IN ('in_progress', 'completed')
                      ORDER BY FIELD(status, 'in_progress', 'completed'), id DESC
@@ -674,6 +680,7 @@ class CBT_REST
                     'status' => (string) ($latest_attempt['status'] ?? 'in_progress'),
                     'started_at' => (string) ($latest_attempt['started_at'] ?? ''),
                     'question_order' => (string) ($latest_attempt['question_order'] ?? ''),
+                    'option_order' => (string) ($latest_attempt['option_order'] ?? ''),
                     'extra_time_minutes' => (int) ($latest_attempt['extra_time_minutes'] ?? 0),
                 ], $resolved_duration_minutes);
                 $attempt_timer = self::build_attempt_timer_payload([
@@ -729,15 +736,14 @@ class CBT_REST
                 return $token_check;
             }
 
-            $question_ids = $wpdb->get_col(
-                $wpdb->prepare(
-                    "SELECT id FROM {$question_table} WHERE exam_id = %d AND COALESCE(is_active, 1) = 1 ORDER BY id ASC",
-                    $exam_id
+            $questions = self::get_cached_exam_question_payload($exam_id);
+            $question_ids = self::extract_question_ids_from_payload($questions);
+            $option_order = self::encode_attempt_option_order_map(
+                self::build_attempt_option_order_map(
+                    $questions,
+                    (int) ($exam['randomize_options'] ?? 0) === 1
                 )
             );
-            $question_ids = array_values(array_filter(array_map('intval', $question_ids ?: []), static function (int $question_id): bool {
-                return $question_id > 0;
-            }));
             if ((int) $exam['randomize_questions'] === 1 && !empty($question_ids)) {
                 shuffle($question_ids);
             }
@@ -753,11 +759,12 @@ class CBT_REST
                     'student_id' => $user_id,
                     'status' => 'in_progress',
                     'question_order' => $question_order,
+                    'option_order' => $option_order,
                     'started_at' => $now,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ],
-                ['%d', '%d', '%s', '%s', '%s', '%s', '%s']
+                ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s']
             );
 
             if (!$inserted) {
@@ -774,6 +781,7 @@ class CBT_REST
                 'status' => 'in_progress',
                 'started_at' => $now,
                 'question_order' => $question_order,
+                'option_order' => $option_order,
             ], (int) ($exam['duration_minutes'] ?? 0));
             $attempt_timer = self::build_attempt_timer_payload([
                 'id' => $created_attempt_id,
@@ -937,6 +945,56 @@ class CBT_REST
                 CBT_Cache::release_lock('finish_attempt:' . $attempt_id);
             }
         }
+    }
+
+    public static function security_event(WP_REST_Request $request)
+    {
+        $user_id = CBT_Auth::current_user_id($request);
+        $role = CBT_Auth::current_user_role($request);
+        if ($user_id <= 0) {
+            return new WP_Error('unauthorized', 'Unauthorized', ['status' => 401]);
+        }
+
+        if (!in_array($role, ['siswa', 'student'], true)) {
+            return new WP_Error('forbidden', 'Only student role can log security events', ['status' => 403]);
+        }
+
+        if (!CBT_Security_Log::is_logging_enabled()) {
+            return rest_ensure_response([
+                'ok' => true,
+                'logged' => 0,
+                'skipped' => 1,
+                'reason' => 'logging_disabled',
+            ]);
+        }
+
+        $attempt_id = (int) $request->get_param('attempt_id');
+        if ($attempt_id <= 0) {
+            return new WP_Error('invalid_payload', 'attempt_id is required', ['status' => 400]);
+        }
+
+        $event_type = sanitize_key((string) $request->get_param('event_type'));
+        if ($event_type === '' || !isset(CBT_Security_Log::event_definitions()[$event_type])) {
+            return new WP_Error('invalid_event_type', 'Event type is not allowed', ['status' => 400]);
+        }
+
+        $attempt = self::get_attempt_for_submission($attempt_id, $user_id);
+        if (is_wp_error($attempt)) {
+            return $attempt;
+        }
+
+        $context = $request->get_param('context');
+        if (!is_array($context)) {
+            $context = [];
+        }
+
+        $logged = CBT_Security_Log::record_attempt_event((int) ($attempt['id'] ?? 0), $event_type, $context);
+
+        return rest_ensure_response([
+            'ok' => true,
+            'logged' => $logged ? 1 : 0,
+            'skipped' => $logged ? 0 : 1,
+        ]);
     }
 
     /**
@@ -1325,7 +1383,7 @@ class CBT_REST
         if ($attempt_id > 0) {
             $attempt = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT id, exam_id, student_id, status, question_order, score, max_score
+                    "SELECT id, exam_id, student_id, status, question_order, option_order, score, max_score
                      FROM {$attempt_table}
                      WHERE id = %d",
                     $attempt_id
@@ -1969,6 +2027,37 @@ class CBT_REST
             $attempt['question_order'] = $question_order_json;
         }
 
+        $persisted_option_order_map = self::normalize_attempt_option_order_map($attempt['option_order'] ?? '');
+        $runtime_option_order_map = [];
+        if ($attempt_id > 0 && CBT_Runtime::is_ready()) {
+            $runtime_option_order_map = CBT_Runtime::get_attempt_option_order($attempt_id, $runtime_option_order_found);
+            if (!$runtime_option_order_found) {
+                $runtime_option_order_map = [];
+            }
+        }
+
+        $resolved_option_order_map = self::resolve_attempt_option_order_map(
+            $questions,
+            self::merge_attempt_option_order_maps($persisted_option_order_map, $runtime_option_order_map)
+        );
+        if (!empty($resolved_option_order_map)) {
+            $questions = self::apply_attempt_option_order_to_questions($questions, $resolved_option_order_map);
+        }
+        $option_order_json = self::encode_attempt_option_order_map($resolved_option_order_map);
+        if ($attempt_id > 0 && self::attempt_option_order_maps_differ($resolved_option_order_map, $persisted_option_order_map)) {
+            $wpdb->update(
+                $attempt_table,
+                [
+                    'option_order' => $option_order_json,
+                    'updated_at' => current_time('mysql'),
+                ],
+                ['id' => $attempt_id],
+                ['%s', '%s'],
+                ['%d']
+            );
+        }
+        $attempt['option_order'] = $option_order_json;
+
         if ($attempt_id > 0 && CBT_Runtime::is_ready()) {
             self::ensure_runtime_attempt_state($attempt, $attempt_duration_minutes);
         }
@@ -2147,6 +2236,423 @@ class CBT_REST
         }
 
         return $merged_question_order_ids;
+    }
+
+    /**
+     * @param mixed $raw_option_order
+     * @return array<int,array<int,string>>
+     */
+    private static function normalize_attempt_option_order_map($raw_option_order): array
+    {
+        $decoded = $raw_option_order;
+        if (is_string($raw_option_order)) {
+            $decoded = json_decode($raw_option_order, true);
+        }
+
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($decoded as $question_id => $item_order) {
+            $safe_question_id = (int) $question_id;
+            if ($safe_question_id <= 0 || !is_array($item_order)) {
+                continue;
+            }
+
+            $tokens = [];
+            $seen_tokens = [];
+            foreach ($item_order as $item_token) {
+                if (!is_scalar($item_token)) {
+                    continue;
+                }
+
+                $token = trim((string) $item_token);
+                if ($token === '' || isset($seen_tokens[$token])) {
+                    continue;
+                }
+
+                $seen_tokens[$token] = true;
+                $tokens[] = $token;
+            }
+
+            if (!empty($tokens)) {
+                $normalized[$safe_question_id] = $tokens;
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<int,array<int,string>> $primary_option_order_map
+     * @param array<int,array<int,string>> $secondary_option_order_map
+     * @return array<int,array<int,string>>
+     */
+    private static function merge_attempt_option_order_maps(array $primary_option_order_map, array $secondary_option_order_map = []): array
+    {
+        $primary_option_order_map = self::normalize_attempt_option_order_map($primary_option_order_map);
+        $secondary_option_order_map = self::normalize_attempt_option_order_map($secondary_option_order_map);
+
+        if (empty($primary_option_order_map)) {
+            return $secondary_option_order_map;
+        }
+        if (empty($secondary_option_order_map)) {
+            return $primary_option_order_map;
+        }
+
+        $merged_option_order_map = $primary_option_order_map;
+        foreach ($secondary_option_order_map as $question_id => $item_order) {
+            $safe_question_id = (int) $question_id;
+            if ($safe_question_id <= 0 || isset($merged_option_order_map[$safe_question_id]) || empty($item_order)) {
+                continue;
+            }
+
+            $merged_option_order_map[$safe_question_id] = array_values($item_order);
+        }
+
+        return $merged_option_order_map;
+    }
+
+    /**
+     * @param array<int,array<int,string>> $option_order_map
+     */
+    private static function encode_attempt_option_order_map(array $option_order_map): string
+    {
+        $normalized_option_order_map = self::normalize_attempt_option_order_map($option_order_map);
+        if (empty($normalized_option_order_map)) {
+            return '{}';
+        }
+
+        ksort($normalized_option_order_map);
+        $encoded = wp_json_encode($normalized_option_order_map);
+        return is_string($encoded) ? $encoded : '{}';
+    }
+
+    /**
+     * @param array<int,array<int,string>> $left_option_order_map
+     * @param array<int,array<int,string>> $right_option_order_map
+     */
+    private static function attempt_option_order_maps_differ(array $left_option_order_map, array $right_option_order_map): bool
+    {
+        return self::encode_attempt_option_order_map($left_option_order_map) !== self::encode_attempt_option_order_map($right_option_order_map);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $questions
+     * @return array<int,array<int,string>>
+     */
+    private static function build_attempt_option_order_map(array $questions, bool $shuffle_items): array
+    {
+        if (!$shuffle_items) {
+            return [];
+        }
+
+        $option_order_map = [];
+
+        foreach ($questions as $question_row) {
+            $question = (array) $question_row;
+            $question_id = (int) ($question['id'] ?? 0);
+            if ($question_id <= 0 || !self::question_supports_option_randomization($question)) {
+                continue;
+            }
+
+            $item_tokens = self::extract_randomizable_question_item_keys($question);
+            if (count($item_tokens) <= 1) {
+                continue;
+            }
+
+            if ($shuffle_items) {
+                shuffle($item_tokens);
+            }
+
+            $option_order_map[$question_id] = array_values($item_tokens);
+        }
+
+        return self::normalize_attempt_option_order_map($option_order_map);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $questions
+     * @param array<int,array<int,string>> $existing_option_order_map
+     * @return array<int,array<int,string>>
+     */
+    private static function resolve_attempt_option_order_map(array $questions, array $existing_option_order_map): array
+    {
+        $resolved_option_order_map = [];
+        $existing_option_order_map = self::normalize_attempt_option_order_map($existing_option_order_map);
+
+        foreach ($questions as $question_row) {
+            $question = (array) $question_row;
+            $question_id = (int) ($question['id'] ?? 0);
+            if ($question_id <= 0 || !self::question_supports_option_randomization($question)) {
+                continue;
+            }
+
+            $current_tokens = self::extract_randomizable_question_item_keys($question);
+            if (count($current_tokens) <= 1) {
+                continue;
+            }
+
+            $resolved_tokens = self::reconcile_attempt_option_order_tokens(
+                $current_tokens,
+                (array) ($existing_option_order_map[$question_id] ?? [])
+            );
+
+            if (!empty($resolved_tokens)) {
+                $resolved_option_order_map[$question_id] = array_values($resolved_tokens);
+            }
+        }
+
+        return self::normalize_attempt_option_order_map($resolved_option_order_map);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $questions
+     * @param array<int,array<int,string>> $option_order_map
+     * @return array<int,array<string,mixed>>
+     */
+    private static function apply_attempt_option_order_to_questions(array $questions, array $option_order_map): array
+    {
+        $option_order_map = self::normalize_attempt_option_order_map($option_order_map);
+        if (empty($questions) || empty($option_order_map)) {
+            return $questions;
+        }
+
+        foreach ($questions as $index => $question_row) {
+            $question = (array) $question_row;
+            $question_id = (int) ($question['id'] ?? 0);
+            if ($question_id <= 0 || !isset($option_order_map[$question_id])) {
+                continue;
+            }
+
+            $question_type = (string) ($question['question_type'] ?? '');
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer'], true)) {
+                $ordered_options = self::order_question_options_by_attempt_sequence(
+                    is_array($question['options'] ?? null) ? $question['options'] : [],
+                    $option_order_map[$question_id]
+                );
+                foreach ($ordered_options as $option_index => $option_row) {
+                    $option = (array) $option_row;
+                    $option['option_key'] = self::build_display_option_key($option_index);
+                    $ordered_options[$option_index] = $option;
+                }
+                $question['options'] = $ordered_options;
+            } elseif ($question_type === 'true_false_matrix') {
+                $matrix_meta = isset($question['true_false_matrix_meta']) && is_array($question['true_false_matrix_meta'])
+                    ? $question['true_false_matrix_meta']
+                    : [];
+                $matrix_meta['items'] = self::order_true_false_matrix_items_by_attempt_sequence(
+                    isset($matrix_meta['items']) && is_array($matrix_meta['items']) ? $matrix_meta['items'] : [],
+                    $option_order_map[$question_id]
+                );
+                $question['true_false_matrix_meta'] = $matrix_meta;
+            }
+
+            $questions[$index] = $question;
+        }
+
+        return $questions;
+    }
+
+    /**
+     * @param array<string,mixed> $question
+     */
+    private static function question_supports_option_randomization(array $question): bool
+    {
+        return in_array((string) ($question['question_type'] ?? ''), ['multiple_choice', 'multiple_answer', 'true_false_matrix'], true);
+    }
+
+    /**
+     * @param array<string,mixed> $question
+     * @return array<int,string>
+     */
+    private static function extract_randomizable_question_item_keys(array $question): array
+    {
+        $question_type = (string) ($question['question_type'] ?? '');
+
+        if (in_array($question_type, ['multiple_choice', 'multiple_answer'], true)) {
+            $tokens = [];
+            $options = is_array($question['options'] ?? null) ? $question['options'] : [];
+            foreach ($options as $option_row) {
+                $option_id = (int) (((array) $option_row)['id'] ?? 0);
+                if ($option_id <= 0) {
+                    continue;
+                }
+
+                $tokens[] = (string) $option_id;
+            }
+            return array_values(array_unique($tokens));
+        }
+
+        if ($question_type === 'true_false_matrix') {
+            $matrix_meta = isset($question['true_false_matrix_meta']) && is_array($question['true_false_matrix_meta'])
+                ? $question['true_false_matrix_meta']
+                : [];
+            $items = isset($matrix_meta['items']) && is_array($matrix_meta['items']) ? $matrix_meta['items'] : [];
+            $tokens = [];
+            foreach ($items as $item_index => $item_row) {
+                $item = (array) $item_row;
+                $item_key = trim((string) ($item['key'] ?? ($item_index + 1)));
+                if ($item_key === '') {
+                    continue;
+                }
+
+                $tokens[] = $item_key;
+            }
+            return array_values(array_unique($tokens));
+        }
+
+        return [];
+    }
+
+    /**
+     * @param array<int,string> $current_tokens
+     * @param array<int,string> $requested_tokens
+     * @return array<int,string>
+     */
+    private static function reconcile_attempt_option_order_tokens(array $current_tokens, array $requested_tokens): array
+    {
+        $current_tokens = array_values(array_unique(array_filter(array_map('strval', $current_tokens), static function (string $token): bool {
+            return $token !== '';
+        })));
+        $requested_tokens = array_values(array_unique(array_filter(array_map('strval', $requested_tokens), static function (string $token): bool {
+            return trim($token) !== '';
+        })));
+
+        if (empty($current_tokens) || empty($requested_tokens)) {
+            return [];
+        }
+
+        $allowed_tokens = array_fill_keys($current_tokens, true);
+        $ordered_tokens = [];
+        $ordered_lookup = [];
+        foreach ($requested_tokens as $token) {
+            if (!isset($allowed_tokens[$token]) || isset($ordered_lookup[$token])) {
+                continue;
+            }
+
+            $ordered_tokens[] = $token;
+            $ordered_lookup[$token] = true;
+        }
+
+        if (empty($ordered_tokens)) {
+            return $current_tokens;
+        }
+
+        foreach ($current_tokens as $token) {
+            if (isset($ordered_lookup[$token])) {
+                continue;
+            }
+
+            $ordered_tokens[] = $token;
+        }
+
+        return $ordered_tokens;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $options
+     * @param array<int,string> $option_order_tokens
+     * @return array<int,array<string,mixed>>
+     */
+    private static function order_question_options_by_attempt_sequence(array $options, array $option_order_tokens): array
+    {
+        if (empty($options) || empty($option_order_tokens)) {
+            return array_values($options);
+        }
+
+        $options_by_id = [];
+        foreach ($options as $option_row) {
+            $option = (array) $option_row;
+            $option_id = (int) ($option['id'] ?? 0);
+            if ($option_id <= 0) {
+                continue;
+            }
+
+            $options_by_id[$option_id] = $option;
+        }
+
+        $ordered_options = [];
+        $ordered_lookup = [];
+        foreach ($option_order_tokens as $option_token) {
+            $option_id = (int) $option_token;
+            if ($option_id <= 0 || !isset($options_by_id[$option_id]) || isset($ordered_lookup[$option_id])) {
+                continue;
+            }
+
+            $ordered_options[] = $options_by_id[$option_id];
+            $ordered_lookup[$option_id] = true;
+        }
+
+        foreach ($options as $option_row) {
+            $option = (array) $option_row;
+            $option_id = (int) ($option['id'] ?? 0);
+            if ($option_id <= 0 || isset($ordered_lookup[$option_id])) {
+                continue;
+            }
+
+            $ordered_options[] = $option;
+        }
+
+        return array_values($ordered_options);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $items
+     * @param array<int,string> $item_order_tokens
+     * @return array<int,array<string,mixed>>
+     */
+    private static function order_true_false_matrix_items_by_attempt_sequence(array $items, array $item_order_tokens): array
+    {
+        if (empty($items) || empty($item_order_tokens)) {
+            return array_values($items);
+        }
+
+        $items_by_key = [];
+        foreach ($items as $item_index => $item_row) {
+            $item = (array) $item_row;
+            $item_key = trim((string) ($item['key'] ?? ($item_index + 1)));
+            if ($item_key === '') {
+                continue;
+            }
+
+            $items_by_key[$item_key] = $item;
+        }
+
+        $ordered_items = [];
+        $ordered_lookup = [];
+        foreach ($item_order_tokens as $item_token) {
+            $token = trim((string) $item_token);
+            if ($token === '' || !isset($items_by_key[$token]) || isset($ordered_lookup[$token])) {
+                continue;
+            }
+
+            $ordered_items[] = $items_by_key[$token];
+            $ordered_lookup[$token] = true;
+        }
+
+        foreach ($items as $item_index => $item_row) {
+            $item = (array) $item_row;
+            $item_key = trim((string) ($item['key'] ?? ($item_index + 1)));
+            if ($item_key === '' || isset($ordered_lookup[$item_key])) {
+                continue;
+            }
+
+            $ordered_items[] = $item;
+        }
+
+        return array_values($ordered_items);
+    }
+
+    private static function build_display_option_key(int $index): string
+    {
+        $code = 65 + $index;
+        if ($code >= 65 && $code <= 90) {
+            return chr($code);
+        }
+
+        return (string) ($index + 1);
     }
 
     /**
@@ -2788,7 +3294,7 @@ class CBT_REST
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
         $attempt = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, exam_id, student_id, status, question_order, score, max_score, started_at, extra_time_minutes
+                "SELECT id, exam_id, student_id, status, question_order, option_order, score, max_score, started_at, extra_time_minutes
                  FROM {$attempt_table}
                  WHERE id = %d
                  LIMIT 1",
@@ -3046,6 +3552,18 @@ class CBT_REST
             : (string) ($attempt['question_order'] ?? '');
         $questions = self::append_missing_attempt_review_questions($questions, $exam_id, $attempt_question_order);
 
+        $attempt_option_order_map = self::normalize_attempt_option_order_map($attempt['option_order'] ?? '');
+        if (CBT_Runtime::is_ready() && (string) ($attempt['status'] ?? '') === 'in_progress') {
+            $runtime_attempt_option_order_map = CBT_Runtime::get_attempt_option_order($attempt_id, $runtime_attempt_option_order_found);
+            if (!$runtime_attempt_option_order_found) {
+                $runtime_attempt_option_order_map = [];
+            }
+            $attempt_option_order_map = self::merge_attempt_option_order_maps(
+                $attempt_option_order_map,
+                $runtime_attempt_option_order_map
+            );
+        }
+
         if (!is_array($questions) || empty($questions)) {
             return [];
         }
@@ -3083,6 +3601,24 @@ class CBT_REST
                     'is_correct' => (int) ($option_row['is_correct'] ?? 0),
                 ];
             }
+        }
+
+        foreach ($options_by_question as $question_id => $option_rows) {
+            $question_id = (int) $question_id;
+            if ($question_id <= 0 || !isset($attempt_option_order_map[$question_id])) {
+                continue;
+            }
+
+            $ordered_option_rows = self::order_question_options_by_attempt_sequence(
+                is_array($option_rows) ? $option_rows : [],
+                (array) $attempt_option_order_map[$question_id]
+            );
+            foreach ($ordered_option_rows as $option_index => $option_row) {
+                $option = (array) $option_row;
+                $option['option_key'] = self::build_display_option_key($option_index);
+                $ordered_option_rows[$option_index] = $option;
+            }
+            $options_by_question[$question_id] = $ordered_option_rows;
         }
 
         $answer_rows = $wpdb->get_results(
@@ -3231,9 +3767,25 @@ class CBT_REST
                 }
             } elseif ($question_type === 'true_false_matrix') {
                 $matrix_config = self::normalize_true_false_matrix_config((string) ($question['correct_text'] ?? ''));
-                $submitted_matrix = self::normalize_true_false_matrix_submission($answer_text, count($matrix_config));
-                foreach ($matrix_config as $idx => $row) {
-                    $key = (string) ($idx + 1);
+                $matrix_items = array_map(static function (array $row, int $idx): array {
+                    return [
+                        'key' => (string) ($idx + 1),
+                        'text' => (string) ($row['text'] ?? ''),
+                        'answer' => (string) ($row['answer'] ?? 'true'),
+                    ];
+                }, $matrix_config, array_keys($matrix_config));
+                if (isset($attempt_option_order_map[$question_id])) {
+                    $matrix_items = self::order_true_false_matrix_items_by_attempt_sequence(
+                        $matrix_items,
+                        (array) $attempt_option_order_map[$question_id]
+                    );
+                }
+                $submitted_matrix = self::normalize_true_false_matrix_submission($answer_text, count($matrix_items));
+                foreach ($matrix_items as $idx => $row) {
+                    $key = trim((string) ($row['key'] ?? ($idx + 1)));
+                    if ($key === '') {
+                        $key = (string) ($idx + 1);
+                    }
                     $submitted_value = (string) ($submitted_matrix[$key] ?? '');
                     $correct_value = ((string) ($row['answer'] ?? 'true') === 'false') ? 'false' : 'true';
                     $true_false_matrix_rows[] = [

@@ -772,11 +772,14 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
 .cbt-login-hero {
     position: relative;
     overflow: hidden;
-    border-radius: var(--cbt-radius);
-    padding: 30px 28px;
-    background: linear-gradient(138deg, #0f4c81 0%, #1b7aa5 55%, #38a8ce 100%);
+    border-radius: 28px;
+    padding: 34px 32px 30px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background:
+        linear-gradient(122deg, rgba(255, 255, 255, 0.14) 0 18%, transparent 18% 100%),
+        linear-gradient(145deg, #2647b9 0%, #3569ea 56%, #548bff 100%);
     color: #fff;
-    box-shadow: 0 18px 36px rgba(15, 76, 129, 0.26);
+    box-shadow: 0 24px 46px rgba(38, 71, 185, 0.24);
 }
 
 .cbt-login-hero::before,
@@ -788,19 +791,20 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
 }
 
 .cbt-login-hero::before {
-    width: 210px;
-    height: 210px;
-    top: -90px;
-    right: -80px;
-    background: rgba(255, 255, 255, 0.16);
+    width: 260px;
+    height: 260px;
+    top: -150px;
+    left: -110px;
+    background: rgba(255, 255, 255, 0.12);
 }
 
 .cbt-login-hero::after {
-    width: 160px;
-    height: 160px;
-    bottom: -70px;
-    left: -60px;
-    background: rgba(255, 255, 255, 0.1);
+    width: calc(100% + 80px);
+    height: 12px;
+    bottom: -5px;
+    left: -40px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(193, 211, 255, 0.96) 32%, rgba(146, 170, 255, 0.42) 100%);
 }
 
 .cbt-login-hero > * {
@@ -819,59 +823,160 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
 
 .cbt-login-hero h1 {
     margin: 0;
-    font-size: clamp(28px, 3vw, 36px);
-    line-height: 1.12;
-    letter-spacing: -0.02em;
+    font-size: clamp(36px, 4.6vw, 58px);
+    line-height: 0.96;
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
+    text-wrap: balance;
 }
 
 .cbt-login-description {
-    margin: 14px 0 0;
-    max-width: 580px;
+    margin: 18px 0 0 122px;
+    max-width: 520px;
     font-size: 14px;
     color: rgba(255, 255, 255, 0.92);
     line-height: 1.6;
 }
 
+.cbt-login-flow-label {
+    margin: 18px 0 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.7);
+}
+
 .cbt-login-steps {
-    margin-top: 22px;
+    margin-top: 12px;
     display: grid;
-    gap: 10px;
-    max-width: 540px;
+    gap: 12px;
+    max-width: 580px;
 }
 
 .cbt-login-step {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 11px 12px;
-    border-radius: 12px;
-    border: 0;
-    background: rgba(255, 255, 255, 0.12);
+    position: relative;
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+    padding: 16px 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08)),
+        rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 16px 28px rgba(10, 55, 96, 0.16);
+    backdrop-filter: blur(12px);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.cbt-login-step span {
+.cbt-login-step::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    pointer-events: none;
+}
+
+.cbt-login-step:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.26);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 20px 34px rgba(10, 55, 96, 0.22);
+}
+
+.cbt-login-step-number {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 9px;
-    flex: 0 0 26px;
-    background: #fff;
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    flex: 0 0 52px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(232, 243, 255, 0.94));
     color: #0f4c81;
-    font-size: 13px;
+    font-size: 19px;
     font-weight: 800;
+    box-shadow:
+        0 10px 18px rgba(7, 37, 66, 0.16),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.cbt-login-step-copy {
+    min-width: 0;
+}
+
+.cbt-login-step-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
 }
 
 .cbt-login-step strong {
-    display: block;
-    font-size: 13px;
+    display: inline-block;
+    font-size: 16px;
+    font-weight: 800;
     line-height: 1.2;
+    letter-spacing: -0.01em;
+}
+
+.cbt-login-step-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(6, 24, 43, 0.18);
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.cbt-login-step p {
+    margin: 9px 0 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.94);
+}
+
+.cbt-login-step-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.cbt-login-step-meta small {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.88);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.cbt-login-step > * {
+    position: relative;
+    z-index: 1;
 }
 
 .cbt-login-step small {
     display: block;
-    margin-top: 2px;
     font-size: 12px;
     line-height: 1.4;
     color: rgba(255, 255, 255, 0.9);
@@ -899,6 +1004,11 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
 .cbt-login-panel .cbt-form-grid {
     margin-top: 0;
     gap: 13px;
+}
+
+.cbt-login-panel .cbt-field label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
 }
 
 .cbt-login-panel .cbt-input::placeholder {
@@ -979,6 +1089,9 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     font-size: 14px;
     font-weight: 800;
     color: #0d2744;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .cbt-exam-meta {
@@ -986,11 +1099,52 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     color: var(--cbt-muted);
     font-size: 12px;
     line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .cbt-exam-meta-attempt {
     font-weight: 700;
     color: #2f4d6a;
+}
+
+.cbt-exam-meta-summary {
+    font-weight: 600;
+    color: #35506b;
+    margin-top: 8px;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+.cbt-exam-meta-summary .cbt-exam-meta-full {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+}
+
+.cbt-exam-meta-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid #dbe7f5;
+    background: #f8fbff;
+    color: #35506b;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.cbt-exam-meta-chip.is-accent {
+    border-color: #bfd8f4;
+    background: #eef6ff;
+    color: #1d4ed8;
 }
 
 .cbt-exam-meta-full {
@@ -999,6 +1153,430 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
 
 .cbt-exam-meta-compact {
     display: none;
+}
+
+.cbt-exam-picker-mobile {
+    display: none;
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid #dbe7f5;
+    background: linear-gradient(180deg, #fafdff 0%, #f4f9ff 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.cbt-exam-picker-mobile-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.cbt-exam-picker-mobile-kicker {
+    margin: 0;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #1d4ed8;
+}
+
+.cbt-exam-picker-mobile-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid #bfd8f4;
+    background: #eef6ff;
+    color: #1d4ed8;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.cbt-exam-picker-mobile .cbt-field label {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #35506b;
+}
+
+.cbt-exam-picker-dropdown {
+    position: relative;
+}
+
+.cbt-exam-picker-trigger {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 62px;
+    padding: 13px 14px 13px 16px;
+    border: 1px solid #bfd8f4;
+    border-radius: 20px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 248, 255, 0.94)),
+        #fff;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.94),
+        0 14px 28px rgba(37, 99, 235, 0.08);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.cbt-exam-picker-trigger:hover:not(:disabled),
+.cbt-exam-picker-dropdown.is-open .cbt-exam-picker-trigger {
+    border-color: #60a5fa;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.98),
+        0 18px 30px rgba(37, 99, 235, 0.14);
+}
+
+.cbt-exam-picker-trigger:focus-visible {
+    outline: 0;
+    border-color: #3b82f6;
+    box-shadow:
+        0 0 0 4px rgba(59, 130, 246, 0.16),
+        0 18px 30px rgba(37, 99, 235, 0.14);
+}
+
+.cbt-exam-picker-trigger:disabled {
+    cursor: not-allowed;
+    opacity: 0.72;
+}
+
+.cbt-exam-picker-trigger-copy {
+    display: block;
+    min-width: 0;
+}
+
+.cbt-exam-picker-trigger-label {
+    display: block;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #1d4ed8;
+}
+
+.cbt-exam-picker-trigger-value {
+    display: block;
+    margin-top: 5px;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    color: #102a43;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.cbt-exam-picker-trigger-note {
+    display: block;
+    margin-top: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #5d748d;
+}
+
+.cbt-exam-picker-trigger-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    background: #eef6ff;
+    color: #1d4ed8;
+    pointer-events: none;
+    transition: transform 0.18s ease, background-color 0.18s ease;
+}
+
+.cbt-exam-picker-dropdown.is-open .cbt-exam-picker-trigger-icon {
+    transform: rotate(180deg);
+}
+
+.cbt-exam-picker-trigger-icon svg,
+.cbt-exam-picker-option-indicator svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.cbt-exam-picker-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    display: grid;
+    gap: 6px;
+    max-height: min(320px, 56vh);
+    padding: 8px;
+    overflow-y: auto;
+    border: 1px solid #cfe0f2;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+    backdrop-filter: blur(18px);
+}
+
+.cbt-exam-picker-option {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 12px 12px 14px;
+    border: 0;
+    border-radius: 16px;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.cbt-exam-picker-option:hover:not(:disabled),
+.cbt-exam-picker-option:focus-visible {
+    outline: 0;
+    background: rgba(239, 246, 255, 0.9);
+    box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.92);
+}
+
+.cbt-exam-picker-option:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.cbt-exam-picker-option.is-active {
+    background:
+        linear-gradient(135deg, rgba(219, 234, 254, 0.96), rgba(239, 246, 255, 0.94)),
+        #eff6ff;
+    box-shadow:
+        inset 0 0 0 1px rgba(96, 165, 250, 0.68),
+        0 12px 22px rgba(37, 99, 235, 0.1);
+}
+
+.cbt-exam-picker-option-main {
+    min-width: 0;
+}
+
+.cbt-exam-picker-option-title {
+    display: block;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    color: #102a43;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbt-exam-picker-option-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 7px;
+}
+
+.cbt-exam-picker-option-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    border: 1px solid #dbe7f5;
+    background: #f8fbff;
+    color: #58708a;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.cbt-exam-picker-option-chip.is-ready {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.cbt-exam-picker-option-chip.is-progress {
+    border-color: #bfdbfe;
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.cbt-exam-picker-option-chip.is-completed {
+    border-color: #bbf7d0;
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.cbt-exam-picker-option-chip.is-warn {
+    border-color: #fde68a;
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.cbt-exam-picker-option-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: rgba(219, 234, 254, 0.9);
+    color: #2563eb;
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.88);
+    transition: opacity 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
+}
+
+.cbt-exam-picker-option.is-active .cbt-exam-picker-option-indicator {
+    opacity: 1;
+    transform: scale(1);
+    background: #2563eb;
+    color: #fff;
+}
+
+.cbt-exam-picker-mobile-help {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid #e4edf8;
+    background: rgba(255, 255, 255, 0.78);
+    font-size: 12px;
+    line-height: 1.6;
+    color: #5b6e82;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-mobile {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: none;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-mobile-kicker {
+    color: #7dd3fc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-mobile-count {
+    border-color: rgba(96, 165, 250, 0.22);
+    background: rgba(37, 99, 235, 0.16);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-mobile .cbt-field label {
+    color: #bfd7ff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-trigger {
+    border-color: rgba(96, 165, 250, 0.18);
+    background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.84)),
+        rgba(15, 23, 42, 0.9);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 16px 28px rgba(2, 6, 23, 0.28);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-trigger-label {
+    color: #7dd3fc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-trigger-value {
+    color: #f8fafc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-trigger-note {
+    color: #9bb7d3;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-trigger-icon {
+    background: rgba(37, 99, 235, 0.16);
+    color: #93c5fd;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-menu {
+    border-color: rgba(148, 163, 184, 0.16);
+    background: rgba(15, 23, 42, 0.96);
+    box-shadow: 0 24px 50px rgba(2, 6, 23, 0.36);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option:focus-visible {
+    background: rgba(30, 41, 59, 0.88);
+    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.2);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option.is-active {
+    background:
+        linear-gradient(135deg, rgba(30, 64, 175, 0.28), rgba(15, 23, 42, 0.9)),
+        rgba(15, 23, 42, 0.92);
+    box-shadow:
+        inset 0 0 0 1px rgba(96, 165, 250, 0.34),
+        0 12px 24px rgba(2, 6, 23, 0.28);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-title {
+    color: #f8fafc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-chip {
+    border-color: rgba(148, 163, 184, 0.14);
+    background: rgba(30, 41, 59, 0.86);
+    color: #aab6c5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-chip.is-ready,
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-chip.is-progress {
+    border-color: rgba(96, 165, 250, 0.24);
+    background: rgba(30, 64, 175, 0.22);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-chip.is-completed {
+    border-color: rgba(74, 222, 128, 0.26);
+    background: rgba(20, 83, 45, 0.34);
+    color: #bbf7d0;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-chip.is-warn {
+    border-color: rgba(251, 191, 36, 0.24);
+    background: rgba(120, 53, 15, 0.34);
+    color: #fde68a;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-indicator {
+    background: rgba(30, 64, 175, 0.3);
+    color: #93c5fd;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option.is-active .cbt-exam-picker-option-indicator {
+    background: #3b82f6;
+    color: #eff6ff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-mobile-help {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #aab6c5;
 }
 
 .cbt-exam-layout {
@@ -4964,6 +5542,51 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
         padding: 14px;
     }
 
+    .cbt-exam-picker-mobile {
+        display: block;
+        padding: 12px;
+        border-radius: 16px;
+    }
+
+    .cbt-exam-picker-card .cbt-exam-list {
+        display: none;
+    }
+
+    .cbt-exam-picker-mobile-head {
+        margin-bottom: 10px;
+    }
+
+    .cbt-exam-picker-trigger {
+        min-height: 56px;
+        padding: 12px 12px 12px 14px;
+        border-radius: 16px;
+    }
+
+    .cbt-exam-picker-trigger-value {
+        font-size: 14px;
+    }
+
+    .cbt-exam-picker-trigger-note {
+        font-size: 10px;
+    }
+
+    .cbt-exam-picker-menu {
+        top: calc(100% + 8px);
+        padding: 6px;
+        border-radius: 16px;
+    }
+
+    .cbt-exam-picker-option {
+        padding: 11px 11px 11px 12px;
+        border-radius: 14px;
+    }
+
+    .cbt-exam-picker-mobile-help {
+        margin-top: 10px;
+        padding: 9px 10px;
+        font-size: 11px;
+    }
+
     .cbt-exam-list {
         gap: 8px;
     }
@@ -5308,6 +5931,7 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
 }
 
 .cbt-exam-stage-shell {
+    position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
@@ -5316,6 +5940,89 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
 
 .cbt-exam-stage-shell > .cbt-exam-layout {
     min-width: 0;
+}
+
+.cbt-exam-fullscreen-guard {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.44);
+    backdrop-filter: blur(6px);
+}
+
+.cbt-exam-fullscreen-guard-card {
+    width: min(100%, 460px);
+    display: grid;
+    gap: 14px;
+    padding: 24px;
+    border: 1px solid rgba(191, 211, 233, 0.86);
+    border-radius: 22px;
+    background:
+        radial-gradient(circle at top right, rgba(96, 165, 250, 0.16), transparent 34%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.96));
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+
+.cbt-exam-fullscreen-guard-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    width: fit-content;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: #e8f1ff;
+    color: #0f4fa8;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.cbt-exam-fullscreen-guard-card h3 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.2;
+    color: #0f172a;
+}
+
+.cbt-exam-fullscreen-guard-card p {
+    margin: 0;
+    color: #475569;
+    line-height: 1.7;
+}
+
+.cbt-exam-fullscreen-guard-actions {
+    margin-top: 4px;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-fullscreen-guard {
+    background: rgba(2, 6, 23, 0.58);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-fullscreen-guard-card {
+    border-color: rgba(148, 163, 184, 0.2);
+    background:
+        radial-gradient(circle at top right, rgba(59, 130, 246, 0.16), transparent 36%),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(17, 24, 39, 0.96));
+    box-shadow: 0 24px 60px rgba(2, 6, 23, 0.34);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-fullscreen-guard-chip {
+    background: rgba(37, 99, 235, 0.18);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-fullscreen-guard-card h3 {
+    color: #f8fafc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-fullscreen-guard-card p {
+    color: #cbd5e1;
 }
 
 .cbt-calculator-toggle {
@@ -7187,22 +7894,43 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-login-hero {
-    border: 1px solid var(--cbt-dark-surface-3);
-    background: linear-gradient(180deg, #181818 0%, #202124 100%);
-    color: var(--cbt-text);
-    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.26);
+    border-color: rgba(148, 163, 184, 0.16);
+    background:
+        linear-gradient(120deg, rgba(255, 255, 255, 0.06) 0 16%, transparent 16% 100%),
+        linear-gradient(145deg, #13255f 0%, #2040a4 58%, #3f67df 100%);
+    color: #f8fbff;
+    box-shadow: 0 24px 44px rgba(2, 6, 23, 0.32);
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-login-hero::before {
-    background: rgba(14, 99, 156, 0.24);
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-login-hero::after {
-    background: rgba(215, 186, 125, 0.12);
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(165, 180, 252, 0.86) 34%, rgba(129, 140, 248, 0.34) 100%);
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-login-kicker {
     color: #8ab4f8;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero-school-tag {
+    border-color: rgba(191, 219, 254, 0.18);
+    background: rgba(255, 255, 255, 0.08);
+    color: #dbeafe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero-motto-line {
+    background: rgba(191, 219, 254, 0.28);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero-motto {
+    color: rgba(219, 234, 254, 0.8);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero-logo-wrap {
+    background: transparent;
+    box-shadow: none;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-login-description {
@@ -7494,6 +8222,18 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     color: #b9c4d1;
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-exam-meta-chip {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #c9d6e5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-meta-chip.is-accent {
+    border-color: rgba(96, 165, 250, 0.24);
+    background: rgba(37, 99, 235, 0.16);
+    color: #bfdbfe;
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-option-key,
 .cbt-web-shell.cbt-theme-dark .cbt-short-inline-key,
 .cbt-web-shell.cbt-theme-dark .cbt-review-chip {
@@ -7753,12 +8493,11 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
 }
 
 .cbt-web-shell.cbt-theme-light .cbt-login-hero {
-    border: 1px solid #2f6fbf;
+    border-color: rgba(164, 185, 255, 0.38);
     background:
-        linear-gradient(122deg, rgba(255, 255, 255, 0.12) 0 12%, transparent 12% 100%),
-        linear-gradient(150deg, rgba(255, 255, 255, 0.08) 0 20%, transparent 20% 68%, rgba(255, 255, 255, 0.05) 68% 100%),
-        linear-gradient(135deg, #0f7fdc 0%, #2e68b4 100%);
-    box-shadow: 0 18px 36px rgba(44, 103, 184, 0.2);
+        linear-gradient(122deg, rgba(255, 255, 255, 0.14) 0 18%, transparent 18% 100%),
+        linear-gradient(145deg, #2647b9 0%, #3569ea 56%, #548bff 100%);
+    box-shadow: 0 24px 46px rgba(44, 103, 184, 0.22);
 }
 
 .cbt-web-shell.cbt-theme-light .cbt-login-hero::before {
@@ -8474,7 +9213,16 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
-    column-gap: 8px;
+    column-gap: 20px;
+    max-width: 100%;
+}
+
+.cbt-login-hero-title {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
 }
 
 .cbt-login-hero-heading h1 {
@@ -8484,30 +9232,107 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     word-break: break-word;
 }
 
+.cbt-login-hero-school-tag {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.84);
+}
+
+.cbt-login-hero-motto-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    max-width: 520px;
+    margin-top: 14px;
+}
+
+.cbt-login-hero-motto-line {
+    display: inline-block;
+    flex: 0 0 72px;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.34);
+}
+
+.cbt-login-hero-motto {
+    margin: 0;
+    min-width: 0;
+    max-width: none;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font-size: clamp(11px, 1vw, 14px);
+    font-weight: 700;
+    line-height: 1.45;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.78);
+}
+
 .cbt-login-hero-logo-wrap {
     margin: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
-    width: auto;
-    max-width: 260px;
-    min-height: 0;
+    width: 132px;
+    height: 132px;
+    max-width: none;
+    min-height: 132px;
     padding: 0;
     border: 0;
     background: transparent;
     border-radius: 0;
+    box-shadow: none;
+    position: relative;
+    overflow: visible;
+}
+
+.cbt-login-hero-logo-wrap::before {
+    content: none;
 }
 
 .cbt-login-hero-logo {
     display: block;
-    max-width: 260px;
-    max-height: 138px;
+    max-width: none;
+    max-height: none;
     width: 100%;
-    height: auto;
+    height: 100%;
     object-fit: contain;
     object-position: center;
-    border-radius: 6px;
+    border-radius: 0;
+    filter: drop-shadow(0 12px 24px rgba(14, 26, 88, 0.22));
+    position: relative;
+    z-index: 1;
+}
+
+.cbt-login-hero-logo-wrap.is-fallback {
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.cbt-login-hero-logo-fallback {
+    width: 100%;
+    height: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+}
+
+.cbt-login-hero-logo-fallback svg {
+    width: 100%;
+    height: 100%;
 }
 
 @media (max-width: 640px) {
@@ -8515,17 +9340,2202 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
         flex-direction: column;
         align-items: flex-start;
         display: flex;
-        gap: 6px;
+        gap: 12px;
+    }
+
+    .cbt-login-hero-title {
+        width: 100%;
+    }
+
+    .cbt-login-description {
+        margin-left: 0;
+        max-width: none;
+    }
+
+    .cbt-login-hero-school-tag {
+        min-height: 24px;
+        padding: 0 10px;
+        font-size: 9px;
+        letter-spacing: 0.16em;
+    }
+
+    .cbt-login-hero-motto-row {
+        gap: 10px;
+        margin-top: 12px;
+    }
+
+    .cbt-login-hero-motto-line {
+        flex-basis: 42px;
+    }
+
+    .cbt-login-hero-motto {
+        font-size: 11px;
+        letter-spacing: 0.18em;
     }
 
     .cbt-login-hero-logo-wrap {
-        max-width: 210px;
-        min-height: 0;
+        width: 114px;
+        height: 114px;
+        min-height: 114px;
         padding: 0;
     }
 
     .cbt-login-hero-logo {
-        max-width: 210px;
-        max-height: 112px;
+        max-width: none;
+        max-height: none;
+    }
+}
+
+/* Keep this login flow block at the end so it overrides legacy step styles. */
+.cbt-login-flow-label {
+    margin: 22px 0 0 124px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.74);
+}
+
+.cbt-login-steps {
+    margin: 14px 0 0 124px;
+    display: grid;
+    gap: 14px;
+    width: min(580px, calc(100% - 124px));
+    max-width: 100%;
+}
+
+.cbt-login-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: 54px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+    padding: 18px 18px 17px;
+    overflow: hidden;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08)),
+        linear-gradient(135deg, rgba(59, 130, 246, 0.22), rgba(30, 64, 175, 0.14));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 18px 30px rgba(12, 41, 74, 0.18);
+    backdrop-filter: blur(14px);
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cbt-login-step::before {
+    content: "";
+    position: absolute;
+    inset: 12px auto 12px 0;
+    width: 4px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(191, 219, 254, 0.3));
+    opacity: 0.9;
+}
+
+.cbt-login-step::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    pointer-events: none;
+}
+
+.cbt-login-step > * {
+    position: relative;
+    z-index: 1;
+}
+
+.cbt-login-step:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.28);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 22px 36px rgba(12, 41, 74, 0.24);
+}
+
+.cbt-login-step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    flex: 0 0 54px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.68);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(229, 239, 255, 0.94));
+    color: #0f4c81;
+    font-size: 19px;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow:
+        0 12px 22px rgba(9, 37, 66, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.cbt-login-step-copy {
+    min-width: 0;
+}
+
+.cbt-login-step-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.cbt-login-step strong {
+    display: inline-block;
+    flex: 1 1 220px;
+    margin: 0;
+    font-size: 17px;
+    font-weight: 800;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    color: #f8fbff;
+}
+
+.cbt-login-step-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto;
+    flex: 0 0 auto;
+    min-height: 26px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(8, 31, 58, 0.2);
+    color: rgba(255, 255, 255, 0.94);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    box-shadow: none;
+}
+
+.cbt-login-step p {
+    margin: 10px 0 0;
+    max-width: 48ch;
+    font-size: 13px;
+    line-height: 1.65;
+    color: rgba(239, 246, 255, 0.94);
+}
+
+.cbt-login-step-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.cbt-login-step-meta small {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto;
+    flex: 0 0 auto;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.88);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: none;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-flow-label {
+    color: #92a0b2;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step {
+    border-color: rgba(255, 255, 255, 0.08);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+        linear-gradient(135deg, rgba(13, 27, 42, 0.94), rgba(8, 15, 25, 0.98));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 18px 34px rgba(0, 0, 0, 0.26);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step::before {
+    background: linear-gradient(180deg, rgba(66, 153, 225, 0.94), rgba(35, 94, 168, 0.34));
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step::after {
+    border-color: rgba(255, 255, 255, 0.04);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step strong {
+    color: #f5f7fa;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step p {
+    color: #c4cfdb;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step-number {
+    border-color: rgba(93, 184, 255, 0.34);
+    background: linear-gradient(180deg, #1690dd 0%, #146aa3 100%);
+    color: #ffffff;
+    box-shadow:
+        0 14px 24px rgba(8, 38, 59, 0.36),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step-chip {
+    border-color: rgba(93, 184, 255, 0.2);
+    background: rgba(22, 144, 221, 0.14);
+    color: #e6f4ff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step-meta small {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #aeb9c8;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step {
+    border-color: rgba(255, 255, 255, 0.2);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.08)),
+        linear-gradient(135deg, rgba(59, 130, 246, 0.26), rgba(37, 99, 235, 0.16));
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step::before {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(191, 219, 254, 0.34));
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step-number {
+    border-color: rgba(255, 255, 255, 0.72);
+    background: linear-gradient(180deg, #ffffff 0%, #e6f0ff 100%);
+    color: #1f4f91;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step-chip {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(8, 31, 58, 0.18);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step-meta small {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.11);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+@media (max-width: 640px) {
+    .cbt-login-steps {
+        gap: 12px;
+    }
+
+    .cbt-login-step {
+        grid-template-columns: 46px minmax(0, 1fr);
+        gap: 12px;
+        padding: 14px 14px 13px;
+        border-radius: 18px;
+    }
+
+    .cbt-login-step-number {
+        width: 46px;
+        height: 46px;
+        flex-basis: 46px;
+        border-radius: 15px;
+        font-size: 17px;
+    }
+
+    .cbt-login-step strong {
+        flex-basis: 100%;
+        font-size: 15px;
+    }
+
+    .cbt-login-step p {
+        margin-top: 8px;
+        font-size: 12px;
+    }
+
+    .cbt-login-step-meta {
+        gap: 6px;
+        margin-top: 10px;
+    }
+
+    .cbt-login-step-meta small {
+        min-height: 24px;
+        padding: 0 8px;
+        font-size: 10px;
+    }
+}
+
+@media (max-width: 420px) {
+    .cbt-login-step {
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 10px;
+        padding: 12px 12px 11px;
+    }
+
+    .cbt-login-step::before {
+        inset: 10px auto 10px 0;
+    }
+
+    .cbt-login-step-number {
+        width: 40px;
+        height: 40px;
+        flex-basis: 40px;
+        border-radius: 13px;
+        font-size: 15px;
+    }
+
+    .cbt-login-step-chip {
+        min-height: 23px;
+        padding: 0 9px;
+        font-size: 10px;
+    }
+}
+
+/* Keep this confirm card block at the end so it overrides legacy confirmation styles. */
+.cbt-confirm-card {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    padding: clamp(20px, 2.4vw, 30px);
+    background:
+        radial-gradient(circle at top right, rgba(96, 165, 250, 0.16), transparent 32%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.96));
+}
+
+.cbt-confirm-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(37, 99, 235, 0.18), rgba(37, 99, 235, 0));
+    pointer-events: none;
+}
+
+.cbt-confirm-hero {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.cbt-confirm-hero-copy {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.cbt-confirm-kicker {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #1d4ed8;
+}
+
+.cbt-confirm-card h3 {
+    margin-bottom: 6px;
+    font-size: clamp(24px, 2.6vw, 30px);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #0f2f55;
+    text-wrap: balance;
+}
+
+.cbt-confirm-selected-title {
+    margin: 0 0 10px;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.45;
+    color: #163b68;
+}
+
+.cbt-confirm-status-list {
+    display: flex;
+    flex: 1 1 240px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    max-width: none;
+}
+
+.cbt-confirm-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid #dbe7f5;
+    background: #f8fbff;
+    color: #35506b;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.cbt-confirm-pill.is-ready {
+    border-color: rgba(14, 159, 110, 0.18);
+    background: rgba(14, 159, 110, 0.12);
+    color: #057857;
+}
+
+.cbt-confirm-pill.is-warn {
+    border-color: rgba(245, 158, 11, 0.22);
+    background: rgba(245, 158, 11, 0.12);
+    color: #9a6700;
+}
+
+.cbt-confirm-pill.is-done {
+    border-color: rgba(37, 99, 235, 0.2);
+    background: rgba(37, 99, 235, 0.12);
+    color: #1d4ed8;
+}
+
+.cbt-confirm-pill.is-muted {
+    border-color: rgba(148, 163, 184, 0.2);
+    background: rgba(148, 163, 184, 0.1);
+    color: #64748b;
+}
+
+.cbt-confirm-pill.is-neutral {
+    background: #fff;
+    color: #334155;
+}
+
+.cbt-confirm-pill.is-soft {
+    border-color: rgba(37, 99, 235, 0.12);
+    background: rgba(37, 99, 235, 0.08);
+    color: #35506b;
+}
+
+.cbt-confirm-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+    margin-top: 18px;
+}
+
+.cbt-confirm-main,
+.cbt-confirm-aside {
+    min-width: 0;
+}
+
+.cbt-confirm-main {
+    display: grid;
+    gap: 14px;
+}
+
+.cbt-confirm-section {
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(210, 223, 238, 0.92);
+    background: linear-gradient(180deg, #fff, #f8fbff);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.cbt-confirm-section-head {
+    margin-bottom: 14px;
+}
+
+.cbt-confirm-section-head h4 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.cbt-confirm-section-head p {
+    margin: 4px 0 0;
+    font-size: 12px;
+    line-height: 1.55;
+    color: #64748b;
+}
+
+.cbt-confirm-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.cbt-confirm-fact {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    padding: 14px 15px;
+    border-radius: 16px;
+    border: 1px solid rgba(214, 225, 239, 0.95);
+    background: rgba(255, 255, 255, 0.82);
+}
+
+.cbt-confirm-fact.is-wide {
+    grid-column: 1 / -1;
+}
+
+.cbt-confirm-fact-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #5f6b7a;
+}
+
+.cbt-confirm-fact-value {
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.35;
+    color: #102a43;
+    overflow-wrap: anywhere;
+}
+
+.cbt-confirm-fact-meta {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #64748b;
+}
+
+.cbt-confirm-token-panel {
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(191, 219, 254, 0.62);
+    background: linear-gradient(180deg, rgba(239, 246, 255, 0.88), rgba(255, 255, 255, 0.92));
+}
+
+.cbt-confirm-card .cbt-confirm-field {
+    margin: 0;
+}
+
+.cbt-confirm-card .cbt-confirm-field label {
+    margin-bottom: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #35506b;
+}
+
+.cbt-confirm-card .cbt-confirm-field-token .cbt-input {
+    min-height: 52px;
+    border-radius: 14px;
+    background: #fff;
+}
+
+.cbt-confirm-card .cbt-confirm-field-token .cbt-input[readonly] {
+    color: #35506b;
+    font-weight: 700;
+}
+
+.cbt-confirm-card .cbt-confirm-field-token .cbt-input-token {
+    letter-spacing: 0.18em;
+    font-size: clamp(20px, 2.4vw, 26px);
+}
+
+.cbt-confirm-token-note {
+    margin: 10px 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #5b6e82;
+}
+
+.cbt-confirm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 0;
+}
+
+.cbt-confirm-actions .cbt-button {
+    min-height: 44px;
+    padding: 0 16px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.cbt-confirm-aside {
+    display: grid;
+    gap: 12px;
+}
+
+.cbt-confirm-profile-card {
+    position: relative;
+    overflow: hidden;
+    padding: 18px;
+    border-radius: 20px;
+    border: 1px solid rgba(202, 216, 234, 0.92);
+    background: linear-gradient(180deg, #ffffff 0%, #f4f9ff 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.cbt-confirm-profile-card::before {
+    content: "";
+    position: absolute;
+    inset: -40px -40px auto auto;
+    width: 180px;
+    height: 180px;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(96, 165, 250, 0.16), transparent 70%);
+    pointer-events: none;
+}
+
+.cbt-confirm-profile {
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    padding: 0;
+    align-items: center;
+}
+
+.cbt-confirm-profile-avatar-button {
+    border-radius: 28px;
+}
+
+.cbt-confirm-profile-avatar-button:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.4);
+    outline-offset: 4px;
+}
+
+.cbt-confirm-profile-avatar,
+.cbt-confirm-profile-avatar-fallback {
+    width: min(100%, 220px);
+    max-width: 220px;
+    aspect-ratio: 3 / 4;
+    height: auto;
+    border-radius: 24px;
+}
+
+.cbt-confirm-profile-avatar {
+    border: 1px solid #d0dded;
+    box-shadow: 0 16px 28px rgba(15, 23, 42, 0.12);
+    background: #fff;
+}
+
+.cbt-confirm-profile-avatar-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 54px;
+}
+
+.cbt-confirm-profile-copy {
+    position: relative;
+    z-index: 1;
+    margin-top: 16px;
+}
+
+.cbt-confirm-profile-label {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #1d4ed8;
+}
+
+.cbt-confirm-profile-copy h4 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: #102a43;
+    overflow-wrap: anywhere;
+}
+
+.cbt-confirm-profile-subtitle {
+    margin: 6px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #5f6b7a;
+}
+
+.cbt-confirm-profile-meta {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.cbt-confirm-aside-note {
+    position: relative;
+    z-index: 1;
+    margin-top: 16px;
+    padding: 14px 15px;
+    border-radius: 16px;
+    border: 1px solid rgba(191, 219, 254, 0.62);
+    background: rgba(239, 246, 255, 0.78);
+}
+
+.cbt-confirm-aside-note strong {
+    display: block;
+    margin: 0 0 6px;
+    font-size: 13px;
+    color: #163b68;
+}
+
+.cbt-confirm-aside-note span {
+    display: block;
+    font-size: 12px;
+    line-height: 1.55;
+    color: #52667b;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-card {
+    background:
+        radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 32%),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(10, 16, 28, 0.98));
+    border-color: var(--cbt-dark-surface-3);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-hero {
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-kicker,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-label {
+    color: #7dd3fc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-selected-title,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-card h3,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-fact-value,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-copy h4,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-aside-note strong {
+    color: #f8fafc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-section,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-card,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-token-panel,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-fact,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-aside-note {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: none;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-section-head p,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-fact-label,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-fact-meta,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-token-note,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-subtitle,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-aside-note span {
+    color: #aab6c5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-card .cbt-confirm-field label {
+    color: #bfd7ff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-card .cbt-confirm-field-token .cbt-input {
+    border-color: #334155;
+    background: #101825;
+    color: #f8fafc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-pill {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #d7e3f4;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-pill.is-ready {
+    border-color: rgba(16, 185, 129, 0.2);
+    background: rgba(16, 185, 129, 0.12);
+    color: #6ee7b7;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-pill.is-warn {
+    border-color: rgba(245, 158, 11, 0.22);
+    background: rgba(245, 158, 11, 0.12);
+    color: #fbbf24;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-pill.is-done {
+    border-color: rgba(96, 165, 250, 0.22);
+    background: rgba(96, 165, 250, 0.12);
+    color: #93c5fd;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-pill.is-muted {
+    border-color: rgba(148, 163, 184, 0.16);
+    background: rgba(148, 163, 184, 0.1);
+    color: #94a3b8;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-pill.is-neutral,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-pill.is-soft {
+    color: #d7e3f4;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-card::before {
+    background: radial-gradient(circle, rgba(56, 189, 248, 0.16), transparent 70%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-avatar {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: #111827;
+}
+
+@media (min-width: 621px) {
+    .cbt-confirm-card {
+        display: block;
+        grid-template-columns: none;
+        grid-template-areas: none;
+        column-gap: 0;
+        row-gap: 0;
+    }
+}
+
+@media (min-width: 1440px) {
+    .cbt-confirm-shell {
+        grid-template-columns: minmax(0, 1.18fr) minmax(280px, 0.82fr);
+    }
+}
+
+@media (max-width: 720px) {
+    .cbt-confirm-hero {
+        flex-direction: column;
+    }
+
+    .cbt-confirm-status-list {
+        justify-content: flex-start;
+        max-width: none;
+    }
+
+    .cbt-confirm-info-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .cbt-confirm-fact.is-wide {
+        grid-column: auto;
+    }
+}
+
+@media (max-width: 620px) {
+    .cbt-confirm-card {
+        display: block;
+        padding: 16px;
+        grid-template-columns: none;
+        grid-template-areas: none;
+        column-gap: 0;
+        row-gap: 0;
+    }
+
+    .cbt-confirm-card h3 {
+        font-size: 24px;
+    }
+
+    .cbt-confirm-selected-title {
+        font-size: 14px;
+    }
+
+    .cbt-confirm-shell {
+        gap: 14px;
+        margin-top: 14px;
+    }
+
+    .cbt-confirm-section,
+    .cbt-confirm-profile-card {
+        padding: 14px;
+        border-radius: 16px;
+    }
+
+    .cbt-confirm-profile-avatar,
+    .cbt-confirm-profile-avatar-fallback {
+        max-width: 160px;
+        border-radius: 20px;
+    }
+
+    .cbt-confirm-profile-avatar-fallback {
+        font-size: 44px;
+    }
+
+    .cbt-confirm-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cbt-confirm-actions .cbt-button {
+        width: 100%;
+        min-height: 40px;
+    }
+
+    .cbt-confirm-card .cbt-confirm-field-token .cbt-input-token {
+        letter-spacing: 0.14em;
+    }
+}
+
+@media (max-width: 420px) {
+    .cbt-confirm-card {
+        padding: 14px;
+    }
+
+    .cbt-confirm-pill {
+        min-height: 30px;
+        padding: 0 10px;
+        font-size: 11px;
+    }
+
+    .cbt-confirm-section,
+    .cbt-confirm-profile-card,
+    .cbt-confirm-token-panel {
+        padding: 12px;
+    }
+
+    .cbt-confirm-fact {
+        padding: 12px;
+        border-radius: 14px;
+    }
+
+    .cbt-confirm-fact-value {
+        font-size: 14px;
+    }
+
+    .cbt-confirm-profile-avatar,
+    .cbt-confirm-profile-avatar-fallback {
+        max-width: 132px;
+        border-radius: 18px;
+    }
+
+    .cbt-confirm-profile-avatar-fallback {
+        font-size: 38px;
+    }
+
+    .cbt-confirm-actions {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .cbt-confirm-card .cbt-confirm-field-token .cbt-input {
+        min-height: 46px;
+    }
+
+    .cbt-confirm-token-note {
+        font-size: 11px;
+    }
+}
+
+/* Final cleanup for login flow cards: simpler hierarchy, no floating chip. */
+.cbt-login-steps {
+    gap: 12px;
+}
+
+.cbt-login-step {
+    display: block;
+    padding: 18px 20px 17px;
+    border-radius: 22px;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.07)),
+        linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(30, 64, 175, 0.12));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 16px 28px rgba(12, 41, 74, 0.16);
+}
+
+.cbt-login-step::before {
+    inset: 0 auto auto 20px;
+    width: 58px;
+    height: 3px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.92), rgba(191, 219, 254, 0.2));
+    opacity: 0.9;
+}
+
+.cbt-login-step-head {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+}
+
+.cbt-login-step-number {
+    width: 44px;
+    height: 32px;
+    flex: 0 0 44px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(8, 31, 58, 0.18);
+    color: rgba(255, 255, 255, 0.94);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    box-shadow: none;
+}
+
+.cbt-login-step-copy {
+    display: grid;
+    gap: 5px;
+    padding-top: 1px;
+}
+
+.cbt-login-step-kicker {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(219, 234, 254, 0.74);
+}
+
+.cbt-login-step strong {
+    flex: none;
+    font-size: 20px;
+    line-height: 1.18;
+    color: #f8fbff;
+}
+
+.cbt-login-step-chip {
+    display: none;
+}
+
+.cbt-login-step p {
+    margin: 14px 0 0 58px;
+    max-width: 44ch;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.cbt-login-step-meta {
+    gap: 8px;
+    margin-top: 12px;
+    margin-left: 58px;
+}
+
+.cbt-login-step-meta small {
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(8, 31, 58, 0.14);
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 10.5px;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step {
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.02)),
+        linear-gradient(135deg, rgba(10, 24, 39, 0.96), rgba(7, 14, 24, 0.98));
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step::before {
+    background: linear-gradient(90deg, rgba(125, 211, 252, 0.9), rgba(29, 78, 216, 0.2));
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step-number {
+    border-color: rgba(125, 211, 252, 0.18);
+    background: rgba(10, 24, 39, 0.5);
+    color: #e0f2fe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step-kicker {
+    color: #8ab4d8;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step-meta small {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #b8c7d8;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step-number {
+    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(8, 31, 58, 0.16);
+    color: rgba(255, 255, 255, 0.96);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step-kicker {
+    color: rgba(219, 234, 254, 0.76);
+}
+
+@media (max-width: 640px) {
+    .cbt-login-step {
+        padding: 15px 16px 14px;
+        border-radius: 18px;
+    }
+
+    .cbt-login-step::before {
+        left: 16px;
+        width: 48px;
+    }
+
+    .cbt-login-step-head {
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 12px;
+    }
+
+    .cbt-login-step-number {
+        width: 40px;
+        height: 30px;
+        flex-basis: 40px;
+        border-radius: 10px;
+        font-size: 11px;
+    }
+
+    .cbt-login-step strong {
+        font-size: 17px;
+    }
+
+    .cbt-login-step p,
+    .cbt-login-step-meta {
+        margin-left: 52px;
+    }
+}
+
+@media (max-width: 420px) {
+    .cbt-login-step {
+        padding: 13px 14px 12px;
+    }
+
+    .cbt-login-step::before {
+        left: 14px;
+        width: 42px;
+    }
+
+    .cbt-login-step-head {
+        grid-template-columns: 36px minmax(0, 1fr);
+        gap: 10px;
+    }
+
+    .cbt-login-step-number {
+        width: 36px;
+        height: 28px;
+        flex-basis: 36px;
+        border-radius: 10px;
+        letter-spacing: 0.08em;
+    }
+
+    .cbt-login-step-kicker {
+        font-size: 9px;
+    }
+
+    .cbt-login-step strong {
+        font-size: 15px;
+    }
+
+    .cbt-login-step p,
+    .cbt-login-step-meta {
+        margin-left: 46px;
+    }
+
+    .cbt-login-step p {
+        margin-top: 10px;
+        font-size: 12px;
+    }
+
+    .cbt-login-step-meta {
+        gap: 6px;
+    }
+
+    .cbt-login-step-meta small {
+        min-height: 24px;
+        padding: 0 8px;
+        font-size: 10px;
+    }
+}
+
+/* Safety fallback for the exam confirmation card. Keep a simple one-column flow
+   so the layout stays readable even when the card lives inside a narrow container. */
+.cbt-confirm-card-simple {
+    display: block !important;
+    grid-template-columns: none !important;
+    grid-template-areas: none !important;
+    column-gap: 0 !important;
+    row-gap: 0 !important;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-status-list {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    margin-top: 14px;
+    max-width: none;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-profile {
+    margin: 16px auto 0;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-profile-avatar,
+.cbt-confirm-card-simple .cbt-confirm-profile-avatar-fallback {
+    width: min(100%, 180px) !important;
+    max-width: 180px !important;
+    height: auto !important;
+    aspect-ratio: 3 / 4;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-form-grid {
+    display: grid !important;
+    grid-area: auto !important;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+    gap: 12px !important;
+    margin-top: 16px !important;
+    min-width: 0;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-field {
+    min-width: 0;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-field-token,
+.cbt-confirm-card-simple .cbt-confirm-field-note {
+    grid-column: 1 / -1;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-field-note {
+    margin-top: 2px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid #dbe7f5;
+    background: linear-gradient(180deg, #f8fbff, #f1f7ff);
+}
+
+.cbt-confirm-card-simple .cbt-confirm-field-note .cbt-confirm-token-note {
+    margin: 0;
+    color: #334155;
+    line-height: 1.7;
+    text-align: justify;
+    text-justify: inter-word;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note .cbt-confirm-token-note {
+    color: #d7e3f4;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-actions {
+    display: grid !important;
+    grid-area: auto !important;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+    gap: 10px;
+    margin-top: 14px !important;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-actions .cbt-button {
+    width: 100%;
+    min-height: 42px;
+    white-space: normal;
+}
+
+@media (max-width: 520px) {
+    .cbt-confirm-card-simple .cbt-confirm-form-grid,
+    .cbt-confirm-card-simple .cbt-confirm-actions {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .cbt-confirm-card-simple .cbt-confirm-profile-avatar,
+    .cbt-confirm-card-simple .cbt-confirm-profile-avatar-fallback {
+        max-width: 148px !important;
+    }
+}
+
+.cbt-exam-picker-title {
+    margin-bottom: 8px;
+    font-size: clamp(22px, 2.3vw, 27px);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #0f2f55;
+    text-wrap: balance;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-title {
+    color: #f8fafc;
+}
+
+.cbt-exam-item.cbt-exam-item-modern {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    padding: 16px 16px 15px 18px;
+    border-radius: 18px;
+    border: 1px solid #dbe7f5;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    text-align: left;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
+    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.cbt-exam-item.cbt-exam-item-modern::before {
+    content: "";
+    position: absolute;
+    inset: 14px auto 14px 0;
+    width: 5px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #60a5fa 0%, #2563eb 100%);
+    opacity: 0;
+    transition: opacity 0.16s ease;
+}
+
+.cbt-exam-item.cbt-exam-item-modern:hover {
+    transform: translateY(-1px);
+    border-color: #bfd8f4;
+    background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+    box-shadow: 0 16px 28px rgba(37, 99, 235, 0.08);
+}
+
+.cbt-exam-item.cbt-exam-item-modern.is-active {
+    border-color: #93c5fd;
+    background: linear-gradient(180deg, #ffffff 0%, #f4f9ff 100%);
+    box-shadow: 0 18px 30px rgba(37, 99, 235, 0.12);
+}
+
+.cbt-exam-item.cbt-exam-item-modern.is-active::before {
+    opacity: 1;
+}
+
+.cbt-exam-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.cbt-exam-card-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: #102a43;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.cbt-exam-card-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-height: 28px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 1px solid #dbe7f5;
+    background: #f8fbff;
+    color: #35506b;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.cbt-exam-card-status.is-published {
+    border-color: rgba(34, 197, 94, 0.2);
+    background: rgba(34, 197, 94, 0.1);
+    color: #15803d;
+}
+
+.cbt-exam-card-status.is-muted {
+    border-color: rgba(148, 163, 184, 0.24);
+    background: rgba(148, 163, 184, 0.12);
+    color: #64748b;
+}
+
+.cbt-exam-card-chips {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+    gap: 8px;
+    margin-top: 14px;
+    width: 100%;
+}
+
+.cbt-exam-card-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    min-width: 0;
+    min-height: 30px;
+    padding: 0 11px;
+    border-radius: 12px;
+    border: 1px solid #e2ebf5;
+    background: #f8fbff;
+    color: #35506b;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.cbt-exam-card-chip-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbt-exam-card-chip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    color: currentColor;
+}
+
+.cbt-exam-card-chip-icon svg {
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.cbt-exam-card-chip.is-accent {
+    border-color: #bfd8f4;
+    background: #eef6ff;
+    color: #1d4ed8;
+}
+
+.cbt-exam-card-chip.is-soft {
+    border-color: #e2ebf5;
+    background: #f8fafc;
+    color: #52667b;
+}
+
+.cbt-exam-card-chip.is-ready {
+    border-color: rgba(37, 99, 235, 0.18);
+    background: rgba(37, 99, 235, 0.08);
+    color: #1d4ed8;
+}
+
+.cbt-exam-card-chip.is-warn {
+    border-color: rgba(245, 158, 11, 0.24);
+    background: rgba(245, 158, 11, 0.1);
+    color: #b45309;
+}
+
+.cbt-exam-card-chip.is-success {
+    border-color: rgba(34, 197, 94, 0.22);
+    background: rgba(34, 197, 94, 0.1);
+    color: #15803d;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-item.cbt-exam-item-modern {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.02));
+    box-shadow: 0 16px 30px rgba(0, 0, 0, 0.22);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-item.cbt-exam-item-modern:hover {
+    border-color: rgba(96, 165, 250, 0.22);
+    background: linear-gradient(180deg, rgba(37, 99, 235, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-item.cbt-exam-item-modern.is-active {
+    border-color: rgba(96, 165, 250, 0.3);
+    background: linear-gradient(180deg, rgba(37, 99, 235, 0.16), rgba(255, 255, 255, 0.04));
+    box-shadow: 0 18px 32px rgba(0, 0, 0, 0.28);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-card-title {
+    color: #f8fafc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-card-status {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #d7e3f4;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-card-status.is-published {
+    border-color: rgba(74, 222, 128, 0.18);
+    background: rgba(34, 197, 94, 0.12);
+    color: #86efac;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-card-status.is-muted {
+    border-color: rgba(148, 163, 184, 0.14);
+    background: rgba(148, 163, 184, 0.08);
+    color: #aab6c5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-card-chip {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #d7e3f4;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-card-chip.is-accent {
+    border-color: rgba(96, 165, 250, 0.24);
+    background: rgba(37, 99, 235, 0.16);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-card-chip.is-soft {
+    color: #b9c4d1;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-card-chip.is-ready {
+    border-color: rgba(96, 165, 250, 0.22);
+    background: rgba(37, 99, 235, 0.16);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-card-chip.is-warn {
+    border-color: rgba(245, 158, 11, 0.22);
+    background: rgba(245, 158, 11, 0.14);
+    color: #fbbf24;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-card-chip.is-success {
+    border-color: rgba(74, 222, 128, 0.2);
+    background: rgba(34, 197, 94, 0.14);
+    color: #86efac;
+}
+
+@media (min-width: 1081px) {
+    .cbt-confirm-stage-grid {
+        align-items: stretch;
+    }
+
+    .cbt-confirm-stage-grid > .cbt-card {
+        height: 100%;
+        align-self: stretch;
+    }
+
+    .cbt-exam-picker-card {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .cbt-exam-picker-card .cbt-exam-list {
+        flex: 1 1 auto;
+        align-content: start;
+    }
+}
+
+.cbt-button-refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.cbt-button-refresh-icon {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+}
+
+.cbt-button-refresh-icon svg {
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.cbt-button-refresh-label {
+    line-height: 1;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-actions .cbt-button {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 800;
+}
+
+/* Final login flow redesign based on the latest direction from the user. */
+.cbt-login-flow-label {
+    margin: 22px 0 0;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(219, 234, 254, 0.8);
+}
+
+.cbt-login-steps {
+    display: grid;
+    gap: 12px;
+    margin: 14px 0 0;
+    width: min(700px, 100%);
+    max-width: 100%;
+}
+
+.cbt-login-flow-card {
+    --cbt-flow-accent: #2b6cb0;
+    --cbt-flow-icon-bg: rgba(255, 255, 255, 0.7);
+    --cbt-flow-icon-border: rgba(255, 255, 255, 0.5);
+    --cbt-flow-glow: rgba(255, 255, 255, 0.22);
+    position: relative;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    overflow: hidden;
+    padding: 16px 18px 16px 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(246, 249, 255, 0.82)),
+        linear-gradient(180deg, rgba(248, 250, 252, 0.22), rgba(255, 255, 255, 0.08));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.78),
+        0 18px 28px rgba(12, 41, 74, 0.16);
+    backdrop-filter: blur(14px);
+}
+
+.cbt-login-flow-card::before {
+    content: "";
+    position: absolute;
+    inset: auto -34px -58px auto;
+    width: 150px;
+    height: 150px;
+    border-radius: 999px;
+    background: radial-gradient(circle, var(--cbt-flow-glow), transparent 72%);
+    pointer-events: none;
+}
+
+.cbt-login-flow-card.is-verify {
+    --cbt-flow-accent: #7c4dff;
+    --cbt-flow-glow: rgba(199, 210, 254, 0.26);
+}
+
+.cbt-login-flow-card.is-submit {
+    --cbt-flow-accent: #c026d3;
+    --cbt-flow-glow: rgba(233, 213, 255, 0.26);
+}
+
+.cbt-login-flow-icon {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    border: 1px solid var(--cbt-flow-icon-border);
+    background: var(--cbt-flow-icon-bg);
+    color: var(--cbt-flow-accent);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.6),
+        0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.cbt-login-flow-icon svg {
+    display: block;
+    width: 16px;
+    height: 16px;
+}
+
+.cbt-login-flow-content {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.cbt-login-flow-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.cbt-login-flow-number {
+    flex: 0 0 auto;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: var(--cbt-flow-accent);
+    opacity: 0.9;
+}
+
+.cbt-login-flow-title {
+    min-width: 0;
+    display: block;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 19px;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    color: #0f2f55;
+}
+
+.cbt-login-flow-desc {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+    line-height: 1.5;
+    color: rgba(50, 76, 108, 0.88);
+}
+
+.cbt-login-flow-tags {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    min-width: 0;
+}
+
+@media (max-width: 640px) {
+    .cbt-login-flow-label {
+        margin-left: 0;
+    }
+
+    .cbt-login-steps {
+        margin-left: 0;
+        width: 100%;
+        max-width: 100%;
+    }
+}
+
+@media (min-width: 1080px) {
+    .cbt-login-shell {
+        grid-template-columns: minmax(380px, 1.28fr) minmax(300px, 0.92fr);
+    }
+
+    .cbt-login-hero {
+        padding-inline: 34px;
+    }
+
+    .cbt-login-description {
+        max-width: 660px;
+    }
+
+    .cbt-login-flow-label {
+        margin-left: 0;
+    }
+
+    .cbt-login-steps {
+        margin-left: 0;
+        width: min(700px, 100%);
+        max-width: 100%;
+    }
+}
+
+.cbt-login-flow-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 26px;
+    padding: 0 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background: rgba(255, 255, 255, 0.54);
+    color: #46607f;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-flow-label {
+    color: #9bb7d3;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-flow-card {
+    border-color: rgba(255, 255, 255, 0.08);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+        linear-gradient(135deg, rgba(10, 24, 39, 0.96), rgba(7, 14, 24, 0.98));
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-flow-icon {
+    background: rgba(10, 24, 39, 0.5);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-flow-title {
+    color: #f8fbff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-flow-desc {
+    color: #c4cfdb;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-flow-tag {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #b8c7d8;
+}
+
+@media (max-width: 640px) {
+    .cbt-login-flow-card {
+        grid-template-columns: 38px minmax(0, 1fr);
+        gap: 12px;
+        padding: 14px 14px 13px;
+        border-radius: 16px;
+    }
+
+    .cbt-login-flow-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+    }
+
+    .cbt-login-flow-title {
+        font-size: 17px;
+    }
+
+    .cbt-login-flow-desc {
+        font-size: 13px;
+    }
+
+    .cbt-login-flow-tags {
+        gap: 6px;
+    }
+}
+
+@media (max-width: 420px) {
+    .cbt-login-flow-card {
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 10px;
+        padding: 12px 12px 11px;
+    }
+
+    .cbt-login-flow-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 11px;
+    }
+
+    .cbt-login-flow-icon svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .cbt-login-flow-number {
+        font-size: 10px;
+    }
+
+    .cbt-login-flow-title {
+        font-size: 13px;
+    }
+
+    .cbt-login-flow-desc {
+        font-size: 11px;
+    }
+
+    .cbt-login-flow-tag {
+        min-height: 22px;
+        padding: 0 6px;
+        font-size: 10px;
+    }
+}
+
+.cbt-question-exam-footer {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 5px 8px;
+    border: 1px solid rgba(191, 211, 233, 0.88);
+    border-radius: 14px;
+    background:
+        radial-gradient(circle at top right, rgba(96, 165, 250, 0.2), transparent 34%),
+        linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(248, 251, 255, 0.94)),
+        #f8fbff;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.86),
+        0 6px 14px rgba(15, 76, 129, 0.05);
+    overflow: hidden;
+}
+
+.cbt-question-exam-footer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(255, 255, 255, 0.18), transparent 38%, transparent 64%, rgba(96, 165, 250, 0.08));
+    pointer-events: none;
+}
+
+.cbt-question-exam-footer > * {
+    position: relative;
+    z-index: 1;
+}
+
+.cbt-question-exam-footer-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(226, 238, 255, 0.92)),
+        #fff;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.92),
+        0 4px 10px rgba(37, 99, 235, 0.09);
+}
+
+.cbt-question-exam-footer-badge-core {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #2563eb, #60a5fa);
+    box-shadow:
+        0 0 0 2px rgba(37, 99, 235, 0.14),
+        0 0 8px rgba(59, 130, 246, 0.2);
+}
+
+.cbt-question-exam-footer-copy {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+}
+
+.cbt-question-exam-footer-label {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    font-size: 7px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #4f6f93;
+    margin-bottom: 0;
+}
+
+.cbt-question-exam-footer-value {
+    display: block;
+    min-width: 0;
+    margin: 0;
+    font-size: clamp(11px, 0.84rem, 13px);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    color: #0f2f55;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+}
+
+.cbt-question-exam-footer-meta {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: end;
+    justify-content: end;
+    gap: 1px 4px;
+    min-width: 68px;
+    padding: 4px 6px;
+    border-radius: 10px;
+    border: 1px solid rgba(191, 211, 233, 0.95);
+    background: rgba(255, 255, 255, 0.76);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.9),
+        0 4px 10px rgba(15, 76, 129, 0.04);
+    text-align: right;
+}
+
+.cbt-question-exam-footer-meta-label {
+    display: block;
+    grid-column: 1 / -1;
+    font-size: 7px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #5d7a9a;
+}
+
+.cbt-question-exam-footer-meta-value {
+    display: block;
+    margin-top: 0;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+    color: #1d4ed8;
+}
+
+.cbt-question-exam-footer-meta-note {
+    display: block;
+    margin-top: 0;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    color: #5d748d;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer {
+    border-color: rgba(255, 255, 255, 0.08);
+    background:
+        radial-gradient(circle at top right, rgba(96, 165, 250, 0.14), transparent 36%),
+        linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(15, 23, 42, 0.58)),
+        rgba(15, 23, 42, 0.72);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 10px 20px rgba(2, 6, 23, 0.24);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-badge {
+    background:
+        linear-gradient(180deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.92)),
+        rgba(15, 23, 42, 0.9);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 6px 14px rgba(2, 6, 23, 0.2);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-label {
+    color: #9bb7d3;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-value {
+    color: #f8fbff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta {
+    border-color: rgba(148, 163, 184, 0.18);
+    background: rgba(15, 23, 42, 0.52);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 8px 16px rgba(2, 6, 23, 0.18);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-label {
+    color: #8ea9c5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-value {
+    color: #93c5fd;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-note {
+    color: #9bb7d3;
+}
+
+@media (max-width: 640px) {
+    .cbt-question-exam-footer {
+        grid-template-columns: auto minmax(0, 1fr);
+        margin-top: 7px;
+        padding: 7px;
+        border-radius: 13px;
+        gap: 6px 7px;
+    }
+
+    .cbt-question-exam-footer-label {
+        font-size: 7px;
+        letter-spacing: 0.14em;
+    }
+
+    .cbt-question-exam-footer-badge {
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+    }
+
+    .cbt-question-exam-footer-value {
+        font-size: 10px;
+        line-height: 1.1;
+    }
+
+    .cbt-question-exam-footer-meta {
+        grid-column: 1 / -1;
+        width: 100%;
+        min-width: 0;
+        justify-content: start;
+        text-align: left;
+    }
+
+    .cbt-question-exam-footer-meta-value {
+        font-size: 11px;
+    }
+
+    .cbt-question-exam-footer-meta-note {
+        font-size: 8px;
+    }
+}
+
+.cbt-login-meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 12px;
+    text-align: center;
+}
+
+.cbt-login-meta-item {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(191, 211, 233, 0.82);
+    background: rgba(248, 251, 255, 0.96);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+    color: #59718a;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.cbt-login-meta-version {
+    color: #315f98;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-meta-item {
+    border-color: rgba(148, 163, 184, 0.18);
+    background: rgba(15, 23, 42, 0.42);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    color: #aab6c5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-meta-version {
+    color: #93c5fd;
+}
+
+@media (max-width: 640px) {
+    .cbt-login-meta {
+        gap: 6px;
+        margin-top: 10px;
+    }
+
+    .cbt-login-meta-item {
+        min-height: 26px;
+        padding: 0 9px;
+        font-size: 10px;
     }
 }

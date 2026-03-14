@@ -140,7 +140,9 @@ class CBT_Runtime
         $answers_key = self::attempt_answers_key($attempt_id);
         $dirty_key = self::attempt_dirty_key($attempt_id);
         $question_order_key = self::attempt_question_order_key($attempt_id);
+        $option_order_key = self::attempt_option_order_key($attempt_id);
         $question_order_ids = self::normalize_question_order_ids($attempt['question_order'] ?? []);
+        $option_order_map = self::normalize_attempt_option_order($attempt['option_order'] ?? []);
 
         $meta = self::decode_json_string((string) $redis->get($meta_key));
         $last_flushed_at = is_array($meta) ? (int) ($meta['last_flushed_at'] ?? 0) : 0;
@@ -163,6 +165,11 @@ class CBT_Runtime
             $redis->setEx($question_order_key, $ttl, self::encode_json_string($question_order_ids));
         } elseif ((int) $redis->exists($question_order_key) > 0) {
             $redis->expire($question_order_key, $ttl);
+        }
+        if (!empty($option_order_map)) {
+            $redis->setEx($option_order_key, $ttl, self::encode_json_string($option_order_map));
+        } elseif ((int) $redis->exists($option_order_key) > 0) {
+            $redis->expire($option_order_key, $ttl);
         }
 
         if ((int) $redis->exists($answers_key) === 0 && !empty($answer_rows)) {
@@ -196,6 +203,9 @@ class CBT_Runtime
         $redis->expire($dirty_key, $ttl);
         if ((int) $redis->exists($question_order_key) > 0) {
             $redis->expire($question_order_key, $ttl);
+        }
+        if ((int) $redis->exists($option_order_key) > 0) {
+            $redis->expire($option_order_key, $ttl);
         }
 
         return true;
@@ -397,6 +407,31 @@ class CBT_Runtime
         }
 
         return self::normalize_question_order_ids($encoded);
+    }
+
+    /**
+     * @return array<int,array<int,string>>
+     */
+    public static function get_attempt_option_order(int $attempt_id, ?bool &$state_found = null): array
+    {
+        $state_found = false;
+        $attempt_id = absint($attempt_id);
+        if ($attempt_id <= 0) {
+            return [];
+        }
+
+        $redis = self::redis();
+        if (!$redis instanceof Redis) {
+            return [];
+        }
+
+        $encoded = (string) $redis->get(self::attempt_option_order_key($attempt_id));
+        $state_found = ($encoded !== '');
+        if (!$state_found) {
+            return [];
+        }
+
+        return self::normalize_attempt_option_order($encoded);
     }
 
     /**
@@ -713,7 +748,8 @@ class CBT_Runtime
             self::attempt_meta_key($attempt_id),
             self::attempt_answers_key($attempt_id),
             self::attempt_dirty_key($attempt_id),
-            self::attempt_question_order_key($attempt_id)
+            self::attempt_question_order_key($attempt_id),
+            self::attempt_option_order_key($attempt_id)
         );
         $redis->zRem(self::flush_due_key(), (string) $attempt_id);
         $redis->zRem(self::active_attempts_key(), (string) $attempt_id);
@@ -1043,6 +1079,11 @@ class CBT_Runtime
         return self::prefixed_key('attempt:' . $attempt_id . ':question_order');
     }
 
+    private static function attempt_option_order_key(int $attempt_id): string
+    {
+        return self::prefixed_key('attempt:' . $attempt_id . ':option_order');
+    }
+
     private static function attempt_dirty_key(int $attempt_id): string
     {
         return self::prefixed_key('attempt:' . $attempt_id . ':dirty');
@@ -1102,6 +1143,9 @@ class CBT_Runtime
         if ((int) $redis->exists(self::attempt_question_order_key($attempt_id)) > 0) {
             $redis->expire(self::attempt_question_order_key($attempt_id), $ttl);
         }
+        if ((int) $redis->exists(self::attempt_option_order_key($attempt_id)) > 0) {
+            $redis->expire(self::attempt_option_order_key($attempt_id), $ttl);
+        }
         $redis->expire(self::attempt_dirty_key($attempt_id), $ttl);
     }
 
@@ -1123,6 +1167,52 @@ class CBT_Runtime
         return array_values(array_unique(array_filter(array_map('intval', $decoded), static function (int $question_id): bool {
             return $question_id > 0;
         })));
+    }
+
+    /**
+     * @param mixed $raw_option_order
+     * @return array<int,array<int,string>>
+     */
+    private static function normalize_attempt_option_order($raw_option_order): array
+    {
+        $decoded = $raw_option_order;
+        if (is_string($raw_option_order)) {
+            $decoded = json_decode($raw_option_order, true);
+        }
+
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($decoded as $question_id => $item_order) {
+            $safe_question_id = (int) $question_id;
+            if ($safe_question_id <= 0 || !is_array($item_order)) {
+                continue;
+            }
+
+            $tokens = [];
+            $seen_tokens = [];
+            foreach ($item_order as $item_token) {
+                if (!is_scalar($item_token)) {
+                    continue;
+                }
+
+                $token = trim((string) $item_token);
+                if ($token === '' || isset($seen_tokens[$token])) {
+                    continue;
+                }
+
+                $seen_tokens[$token] = true;
+                $tokens[] = $token;
+            }
+
+            if (!empty($tokens)) {
+                $normalized[$safe_question_id] = $tokens;
+            }
+        }
+
+        return $normalized;
     }
 
     private static function schedule_attempt_flush(Redis $redis, int $attempt_id, int $delay_seconds): void

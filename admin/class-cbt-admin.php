@@ -11,6 +11,7 @@ class CBT_Admin
     private const REDIS_CONFIG_BLOCK_START = "/** BEGIN CBT Redis Object Cache */";
     private const REDIS_CONFIG_BLOCK_END = "/** END CBT Redis Object Cache */";
     private const SETUP_BRANDING_OPTION = 'cbt_setup_branding';
+    private const SETUP_SECURITY_OPTION = 'cbt_setup_security';
     private const USER_META_PLAIN_PASSWORD = 'cbt_plain_password';
     private const DEFAULT_STUDENT_PHOTO_RELATIVE_PATH = 'public/images/default-student-avatar.svg';
     private const TEST_DATA_SEED_CONFIRM_PHRASE = 'GENERATE TEST DATA';
@@ -38,6 +39,8 @@ class CBT_Admin
         add_action('admin_post_cbt_delete_exam', [self::class, 'handle_delete_exam']);
         add_action('admin_post_cbt_save_global_exam_token', [self::class, 'handle_save_global_exam_token']);
         add_action('admin_post_cbt_save_setup_branding', [self::class, 'handle_save_setup_branding']);
+        add_action('admin_post_cbt_save_setup_security', [self::class, 'handle_save_setup_security']);
+        add_action('admin_post_cbt_manage_security_logs', [self::class, 'handle_manage_security_logs']);
         add_action('wp_ajax_cbt_sync_exam_builder_selection', [self::class, 'handle_sync_exam_builder_selection']);
         add_action('wp_ajax_cbt_start_exam_save_progress', [self::class, 'handle_start_exam_save_progress']);
         add_action('wp_ajax_cbt_continue_exam_save_progress', [self::class, 'handle_continue_exam_save_progress']);
@@ -1031,6 +1034,15 @@ class CBT_Admin
                                         <label class="cbt-exam-inline-toggle">
                                             <input type="checkbox" id="cbt-exam-randomize" name="randomize_questions" value="1" <?php checked((int) ($editing_exam['randomize_questions'] ?? 0), 1); ?> />
                                             Acak urutan soal untuk siswa
+                                        </label>
+                                    </td>
+                                </tr>
+                                <tr class="cbt-exam-detail-row cbt-exam-detail-row--toggle">
+                                    <th><label for="cbt-exam-randomize-options">Acak Opsi Jawaban</label></th>
+                                    <td>
+                                        <label class="cbt-exam-inline-toggle">
+                                            <input type="checkbox" id="cbt-exam-randomize-options" name="randomize_options" value="1" <?php checked((int) ($editing_exam['randomize_options'] ?? 0), 1); ?> />
+                                            Acak urutan opsi untuk Multiple Choice, Multiple Answer, dan TF Matrix
                                         </label>
                                     </td>
                                 </tr>
@@ -5281,12 +5293,21 @@ class CBT_Admin
         $error = isset($_GET['cbt_err']) ? sanitize_text_field(wp_unslash($_GET['cbt_err'])) : '';
         $branding = self::get_setup_branding_settings();
         $school_name = (string) ($branding['school_name'] ?? '');
+        $school_motto = (string) ($branding['school_motto'] ?? '');
         $school_npsn = (string) ($branding['school_npsn'] ?? '');
         $school_address = (string) ($branding['school_address'] ?? '');
         $school_village = (string) ($branding['school_village'] ?? '');
         $school_district_city_ln = (string) ($branding['school_district_city_ln'] ?? '');
         $school_regency_country_ln = (string) ($branding['school_regency_country_ln'] ?? '');
         $school_province_abroad_ln = (string) ($branding['school_province_abroad_ln'] ?? '');
+        $security = self::get_setup_security_settings();
+        $security_force_fullscreen = !empty($security['force_fullscreen']);
+        $security_block_copy_paste = !empty($security['block_copy_paste']);
+        $security_log_events_enabled = !empty($security['log_security_events']);
+        $security_log_event_definitions = CBT_Security_Log::event_definitions();
+        $security_logs = CBT_Security_Log::get_recent_logs(50, [
+            'teacher_id' => self::is_admin_scope() ? 0 : get_current_user_id(),
+        ]);
         $logo_1_attachment_id = (int) ($branding['logo_1_attachment_id'] ?? 0);
         $logo_1_url = '';
         if ($logo_1_attachment_id > 0) {
@@ -5353,6 +5374,52 @@ class CBT_Admin
                 color: #4b5563;
                 font-size: 14px;
                 line-height: 1.6;
+            }
+            .cbt-setup-tabs {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+                margin-top: 18px;
+            }
+            .cbt-setup-tab {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 32px;
+                padding: 0 14px;
+                border: 1px solid #cfe0f7;
+                border-radius: 999px;
+                background: #eef4ff;
+                color: #27528c;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                cursor: pointer;
+                transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease, color 140ms ease, transform 140ms ease;
+            }
+            .cbt-setup-tab:hover,
+            .cbt-setup-tab:focus {
+                border-color: #8bb3e4;
+                background: #f6f9ff;
+                color: #173f73;
+                box-shadow: 0 10px 20px rgba(59, 130, 246, 0.10);
+                transform: translateY(-1px);
+                outline: none;
+            }
+            .cbt-setup-tab.is-active {
+                border-color: #2563eb;
+                background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+                color: #ffffff;
+                box-shadow: 0 12px 22px rgba(37, 99, 235, 0.18);
+            }
+            .cbt-setup-panels {
+                display: grid;
+                gap: 18px;
+            }
+            .cbt-setup-panel[hidden] {
+                display: none !important;
             }
             .cbt-setup-form {
                 display: grid;
@@ -5596,12 +5663,387 @@ class CBT_Admin
                 color: #ffffff;
                 box-shadow: 0 14px 28px rgba(34, 113, 177, 0.2);
             }
+            .cbt-setup-security-grid {
+                display: flex;
+                flex-direction: column;
+                gap: 28px;
+            }
+            .cbt-setup-security-card {
+                box-sizing: border-box;
+            }
+            .cbt-setup-security-note {
+                padding: 18px;
+                border: 1px dashed #c7d2e0;
+                border-radius: 18px;
+                background: linear-gradient(180deg, #fbfdff 0%, #f8fbff 100%);
+            }
+            .cbt-setup-security-note p {
+                margin: 0;
+                color: #4b5563;
+                line-height: 1.65;
+            }
+            .cbt-setup-security-form {
+                display: grid;
+                gap: 16px;
+            }
+            .cbt-setup-security-option {
+                padding: 16px 18px;
+                border: 1px solid #d7e4f5;
+                border-radius: 16px;
+                background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+            }
+            .cbt-setup-security-checkbox {
+                display: flex;
+                align-items: flex-start;
+                gap: 12px;
+                cursor: pointer;
+            }
+            .cbt-setup-security-checkbox input[type="checkbox"] {
+                margin: 3px 0 0;
+            }
+            .cbt-setup-security-checkbox strong {
+                display: block;
+                margin: 0 0 4px;
+                font-size: 14px;
+                line-height: 1.35;
+                color: #111827;
+            }
+            .cbt-setup-security-checkbox span {
+                display: block;
+                color: #5b6574;
+                line-height: 1.55;
+            }
+            .cbt-setup-security-actions {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 18px 22px;
+                border: 1px solid #dcdcde;
+                border-radius: 18px;
+                background: #ffffff;
+                box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+            }
+            .cbt-setup-security-actions .description {
+                margin: 0;
+                color: #646970;
+                line-height: 1.5;
+            }
+            .cbt-setup-security-log-card {
+                grid-column: 1 / -1;
+                padding: 24px;
+                margin-top: 4px;
+            }
+            .cbt-setup-security-log-card .cbt-setup-card-header {
+                margin-bottom: 18px;
+                padding: 0;
+                border: 0;
+                border-radius: 0;
+                background: transparent;
+                box-shadow: none;
+            }
+            .cbt-setup-security-log-body {
+                display: grid;
+                gap: 18px;
+                padding: 0;
+            }
+            .cbt-setup-security-log-manage-form {
+                display: grid;
+                gap: 18px;
+            }
+            .cbt-setup-security-log-toolbar {
+                display: grid;
+                gap: 16px;
+                padding: 16px;
+                border: 1px solid #dde4ee;
+                border-radius: 16px;
+                background: linear-gradient(180deg, #fbfdff 0%, #f6f9fc 100%);
+            }
+            .cbt-setup-security-log-filter-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 14px 12px;
+            }
+            .cbt-setup-security-log-toolbar-footer {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 14px;
+                flex-wrap: wrap;
+                padding-top: 2px;
+                border-top: 1px solid #e2e8f0;
+            }
+            .cbt-setup-security-log-toolbar-live {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                flex-wrap: wrap;
+                min-width: 0;
+            }
+            .cbt-setup-security-log-toolbar-actions {
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+                gap: 12px;
+                flex-wrap: wrap;
+                margin-left: auto;
+            }
+            .cbt-setup-security-log-refresh-region {
+                display: grid;
+                gap: 16px;
+            }
+            .cbt-setup-security-log-state {
+                margin: 0;
+                padding: 12px 14px;
+                border-radius: 14px;
+                background: #f8fbff;
+                border: 1px solid #d7e4f5;
+                color: #4b5563;
+                line-height: 1.6;
+            }
+            .cbt-setup-security-log-state.is-disabled {
+                background: #fff9e8;
+                border-color: #f5d98c;
+                color: #8a5a00;
+            }
+            .cbt-setup-security-log-summary {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                flex-wrap: wrap;
+                padding: 14px 16px;
+                border: 1px solid #dde4ee;
+                border-radius: 16px;
+                background: linear-gradient(180deg, #fbfdff 0%, #f6f9fc 100%);
+                color: #4b5563;
+                line-height: 1.55;
+            }
+            .cbt-setup-security-log-summary p {
+                margin: 0;
+            }
+            .cbt-setup-security-log-toolbar-actions .button {
+                min-height: 40px;
+                padding: 0 14px;
+                border-radius: 12px;
+                font-weight: 600;
+            }
+            .cbt-setup-security-log-delete-button {
+                border-color: #f2c6c6;
+                background: linear-gradient(180deg, #ffffff 0%, #fff7f7 100%);
+                color: #b42318;
+                box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+            }
+            .cbt-setup-security-log-delete-button:hover,
+            .cbt-setup-security-log-delete-button:focus {
+                transform: translateY(-1px);
+                border-color: #e7aaaa;
+                background: linear-gradient(180deg, #ffffff 0%, #fff1f1 100%);
+                color: #912018;
+                box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+            }
+            .cbt-setup-security-log-delete-button[disabled] {
+                opacity: 0.55;
+                cursor: not-allowed;
+                box-shadow: none;
+                transform: none;
+            }
+            .cbt-setup-security-log-filter {
+                display: grid;
+                gap: 6px;
+                min-width: 0;
+            }
+            .cbt-setup-security-log-filter label {
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+                color: #334155;
+            }
+            .cbt-setup-security-log-filter select {
+                min-height: 40px;
+                width: 100%;
+                padding: 0 12px;
+                border: 1px solid #c7d2e0;
+                border-radius: 12px;
+                background: #fbfdff;
+                color: #111827;
+                box-shadow: none;
+            }
+            .cbt-setup-security-log-filter input[type="search"] {
+                min-height: 40px;
+                width: 100%;
+                padding: 0 12px;
+                border: 1px solid #c7d2e0;
+                border-radius: 12px;
+                background: #fbfdff;
+                color: #111827;
+                box-shadow: none;
+            }
+            .cbt-setup-security-log-filter select:focus {
+                border-color: #3b82f6;
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+                outline: none;
+            }
+            .cbt-setup-security-log-filter input[type="search"]:focus {
+                border-color: #3b82f6;
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+                outline: none;
+            }
+            .cbt-setup-security-log-auto-refresh {
+                display: inline-flex;
+                align-items: center;
+                gap: 10px;
+                min-height: 40px;
+                padding: 0 14px;
+                border: 1px solid #d7e4f5;
+                border-radius: 999px;
+                background: #f8fbff;
+                color: #1d4f91;
+                font-weight: 600;
+                cursor: pointer;
+            }
+            .cbt-setup-security-log-auto-refresh input[type="checkbox"] {
+                margin: 0;
+            }
+            .cbt-setup-security-log-live-status {
+                font-size: 12px;
+                color: #64748b;
+                line-height: 1.5;
+                display: inline-flex;
+                align-items: center;
+                min-height: 40px;
+            }
+            .cbt-setup-security-log-live-status.is-loading {
+                color: #0f4fa8;
+            }
+            .cbt-setup-security-log-live-status.is-error {
+                color: #b42318;
+            }
+            .cbt-setup-security-log-table-shell {
+                overflow-x: auto;
+                border: 1px solid #dde4ee;
+                border-radius: 16px;
+                background: #ffffff;
+            }
+            .cbt-setup-security-log-table {
+                margin: 0;
+                border: 0;
+                box-shadow: none;
+            }
+            .cbt-setup-security-log-table .check-column {
+                width: 42px;
+                padding-left: 12px;
+                padding-right: 8px;
+            }
+            .cbt-setup-security-log-table .check-column input[type="checkbox"] {
+                margin: 0;
+            }
+            .cbt-setup-security-log-table thead th {
+                background: #f8fbff;
+                color: #334155;
+            }
+            .cbt-setup-security-log-table td {
+                vertical-align: top;
+            }
+            .cbt-setup-security-log-attempt {
+                font-weight: 600;
+                color: #1d4f91;
+            }
+            .cbt-setup-security-log-student {
+                display: grid;
+                gap: 6px;
+            }
+            .cbt-setup-security-log-student-name {
+                font-weight: 600;
+                color: #0f172a;
+            }
+            .cbt-setup-security-log-student-meta {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+                color: #64748b;
+                font-size: 12px;
+                line-height: 1.45;
+            }
+            .cbt-setup-security-log-student-meta span {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                padding: 2px 8px;
+                border: 1px solid #d7e4f5;
+                border-radius: 999px;
+                background: #f8fbff;
+            }
+            .cbt-setup-security-log-student-meta span strong {
+                font-weight: 700;
+            }
+            .cbt-setup-security-log-student-meta .is-kelas {
+                border-color: #bfdbfe;
+                background: #eff6ff;
+                color: #1d4ed8;
+            }
+            .cbt-setup-security-log-student-meta .is-ruang {
+                border-color: #c7ead8;
+                background: #effcf5;
+                color: #15803d;
+            }
+            .cbt-setup-security-log-event {
+                display: grid;
+                gap: 8px;
+            }
+            .cbt-setup-security-log-badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 24px;
+                padding: 0 10px;
+                border-radius: 999px;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+                white-space: nowrap;
+            }
+            .cbt-setup-security-log-badge.is-warning {
+                background: #fff4db;
+                color: #9a6700;
+            }
+            .cbt-setup-security-log-badge.is-critical {
+                background: #ffe3e3;
+                color: #b42318;
+            }
+            .cbt-setup-security-log-badge.is-info {
+                background: #e8f1ff;
+                color: #0f4fa8;
+            }
+            .cbt-setup-security-log-detail {
+                min-width: 240px;
+                color: #4b5563;
+                line-height: 1.55;
+            }
+            .cbt-setup-security-log-empty {
+                padding: 20px 18px !important;
+                text-align: center;
+                color: #6b7280;
+            }
             @media (max-width: 960px) {
                 .cbt-setup-hero,
                 .cbt-setup-card-header,
-                .cbt-setup-actions {
+                .cbt-setup-actions,
+                .cbt-setup-security-actions {
                     flex-direction: column;
                     align-items: stretch;
+                }
+                .cbt-setup-security-log-toolbar-live,
+                .cbt-setup-security-log-toolbar-footer,
+                .cbt-setup-security-log-toolbar-actions {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+                .cbt-setup-security-log-toolbar-actions {
+                    margin-left: 0;
                 }
                 .cbt-setup-field-grid,
                 .cbt-setup-logo-grid {
@@ -5616,15 +6058,28 @@ class CBT_Admin
                 .cbt-setup-card {
                     padding: 20px;
                 }
+                .cbt-setup-security-log-card {
+                    padding: 20px;
+                    margin-top: 2px;
+                }
+                .cbt-setup-security-log-card .cbt-setup-card-header {
+                    margin-bottom: 16px;
+                }
+                .cbt-setup-security-log-body {
+                    padding: 0;
+                }
             }
         </style>
         <div class="wrap cbt-setup-page">
             <div class="cbt-setup-shell">
                 <section class="cbt-setup-hero">
                     <div class="cbt-setup-hero-copy">
-                        <span class="cbt-setup-kicker">Branding</span>
                         <h1>CBT Setup</h1>
-                        <p>Atur identitas sekolah dan aset brand CBT untuk halaman login, topbar, kartu ujian, dan report agar tampil lebih konsisten.</p>
+                        <p>Kelola branding sekolah untuk frontend CBT dan dokumen terkait, lalu siapkan ruang security terpisah agar pengembangan pengamanan ujian berikutnya lebih rapi.</p>
+                        <div class="cbt-setup-tabs" role="tablist" aria-label="Bagian setup CBT">
+                            <button type="button" class="cbt-setup-tab is-active" id="cbt-setup-tab-branding" data-setup-tab-button="branding" role="tab" aria-selected="true" aria-controls="cbt-setup-panel-branding">Branding</button>
+                            <button type="button" class="cbt-setup-tab" id="cbt-setup-tab-security" data-setup-tab-button="security" role="tab" aria-selected="false" aria-controls="cbt-setup-panel-security">Security</button>
+                        </div>
                     </div>
                 </section>
 
@@ -5635,179 +6090,460 @@ class CBT_Admin
                     <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
                 <?php endif; ?>
 
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-form">
-                    <?php wp_nonce_field('cbt_save_setup_branding'); ?>
-                    <input type="hidden" name="action" value="cbt_save_setup_branding" />
+                <div class="cbt-setup-panels">
+                    <div class="cbt-setup-panel is-active" id="cbt-setup-panel-branding" data-setup-panel="branding" role="tabpanel" aria-labelledby="cbt-setup-tab-branding">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-form">
+                            <?php wp_nonce_field('cbt_save_setup_branding'); ?>
+                            <input type="hidden" name="action" value="cbt_save_setup_branding" />
 
-                    <section class="cbt-setup-card">
-                        <div class="cbt-setup-card-header">
-                            <div>
-                                <h2>Identitas Sekolah</h2>
-                                <p>Informasi ini dipakai untuk branding sekolah pada area CBT dan dokumen cetak yang terkait.</p>
-                            </div>
-                            <div class="cbt-setup-card-header-actions">
-                                <button type="button" id="cbt-setup-clear-identity" class="cbt-setup-clear-button">Clear Identitas</button>
-                            </div>
-                        </div>
-                        <div class="cbt-setup-field-grid" id="cbt-setup-identity-fields">
-                            <div class="cbt-setup-field cbt-setup-field--full">
-                                <label for="cbt-setup-school-name">Nama Sekolah CBT</label>
-                                <input
-                                    type="text"
-                                    id="cbt-setup-school-name"
-                                    name="school_name"
-                                    value="<?php echo esc_attr($school_name); ?>"
-                                    placeholder="<?php echo esc_attr((string) get_bloginfo('name')); ?>"
-                                />
-                                <p class="description">Jika kosong, otomatis memakai nama situs WordPress.</p>
-                            </div>
-                            <div class="cbt-setup-field">
-                                <label for="cbt-setup-school-npsn">NPSN</label>
-                                <input
-                                    type="text"
-                                    id="cbt-setup-school-npsn"
-                                    name="school_npsn"
-                                    value="<?php echo esc_attr($school_npsn); ?>"
-                                    placeholder="Contoh: 10900452"
-                                />
-                            </div>
-                            <div class="cbt-setup-field cbt-setup-field--full">
-                                <label for="cbt-setup-school-address">Alamat</label>
-                                <textarea
-                                    id="cbt-setup-school-address"
-                                    name="school_address"
-                                    rows="3"
-                                    placeholder="Contoh: Jl. Jendral Sudirman KM. 7, Perawas"
-                                ><?php echo esc_textarea($school_address); ?></textarea>
-                                <p class="description">Bisa diisi sampai 3 baris agar alamat sekolah lebih rapi dan lengkap.</p>
-                            </div>
-                            <div class="cbt-setup-field">
-                                <label for="cbt-setup-school-village">Desa/Kelurahan</label>
-                                <input
-                                    type="text"
-                                    id="cbt-setup-school-village"
-                                    name="school_village"
-                                    value="<?php echo esc_attr($school_village); ?>"
-                                    placeholder="Contoh: PERAWAS"
-                                />
-                            </div>
-                            <div class="cbt-setup-field">
-                                <label for="cbt-setup-school-district-city-ln">Kecamatan/Kota (LN)</label>
-                                <input
-                                    type="text"
-                                    id="cbt-setup-school-district-city-ln"
-                                    name="school_district_city_ln"
-                                    value="<?php echo esc_attr($school_district_city_ln); ?>"
-                                    placeholder="Contoh: KEC. TANJUNG PANDAN"
-                                />
-                            </div>
-                            <div class="cbt-setup-field">
-                                <label for="cbt-setup-school-regency-country-ln">Kab.-Kota/Negara (LN)</label>
-                                <input
-                                    type="text"
-                                    id="cbt-setup-school-regency-country-ln"
-                                    name="school_regency_country_ln"
-                                    value="<?php echo esc_attr($school_regency_country_ln); ?>"
-                                    placeholder="Contoh: KAB. BELITUNG"
-                                />
-                            </div>
-                            <div class="cbt-setup-field">
-                                <label for="cbt-setup-school-province-abroad-ln">Propinsi/Luar Negeri (LN)</label>
-                                <input
-                                    type="text"
-                                    id="cbt-setup-school-province-abroad-ln"
-                                    name="school_province_abroad_ln"
-                                    value="<?php echo esc_attr($school_province_abroad_ln); ?>"
-                                    placeholder="Contoh: PROV. KEPULAUAN BANGKA BELITUNG"
-                                />
-                            </div>
-                        </div>
-                    </section>
+                            <section class="cbt-setup-card">
+                                <div class="cbt-setup-card-header">
+                                    <div>
+                                        <h2>Identitas Sekolah</h2>
+                                        <p>Informasi ini dipakai untuk branding sekolah pada area CBT dan dokumen cetak yang terkait.</p>
+                                    </div>
+                                    <div class="cbt-setup-card-header-actions">
+                                        <button type="button" id="cbt-setup-clear-identity" class="cbt-setup-clear-button">Clear Identitas</button>
+                                    </div>
+                                </div>
+                                <div class="cbt-setup-field-grid" id="cbt-setup-identity-fields">
+                                    <div class="cbt-setup-field cbt-setup-field--full">
+                                        <label for="cbt-setup-school-name">Nama Sekolah CBT</label>
+                                        <input
+                                            type="text"
+                                            id="cbt-setup-school-name"
+                                            name="school_name"
+                                            value="<?php echo esc_attr($school_name); ?>"
+                                            placeholder="<?php echo esc_attr((string) get_bloginfo('name')); ?>"
+                                        />
+                                        <p class="description">Jika kosong, otomatis memakai nama situs WordPress.</p>
+                                    </div>
+                                    <div class="cbt-setup-field cbt-setup-field--full">
+                                        <label for="cbt-setup-school-motto">Moto Sekolah</label>
+                                        <input
+                                            type="text"
+                                            id="cbt-setup-school-motto"
+                                            name="school_motto"
+                                            value="<?php echo esc_attr($school_motto); ?>"
+                                            placeholder="Contoh: Berkarakter, Unggul, dan Berprestasi"
+                                        />
+                                        <p class="description">Opsional. Akan dipakai sebagai teks pembuka di frontend CBT dan tagline pada dokumen cetak yang mendukung branding.</p>
+                                    </div>
+                                    <div class="cbt-setup-field">
+                                        <label for="cbt-setup-school-npsn">NPSN</label>
+                                        <input
+                                            type="text"
+                                            id="cbt-setup-school-npsn"
+                                            name="school_npsn"
+                                            value="<?php echo esc_attr($school_npsn); ?>"
+                                            placeholder="Contoh: 10900452"
+                                        />
+                                    </div>
+                                    <div class="cbt-setup-field cbt-setup-field--full">
+                                        <label for="cbt-setup-school-address">Alamat</label>
+                                        <textarea
+                                            id="cbt-setup-school-address"
+                                            name="school_address"
+                                            rows="3"
+                                            placeholder="Contoh: Jl. Jendral Sudirman KM. 7, Perawas"
+                                        ><?php echo esc_textarea($school_address); ?></textarea>
+                                        <p class="description">Bisa diisi sampai 3 baris agar alamat sekolah lebih rapi dan lengkap.</p>
+                                    </div>
+                                    <div class="cbt-setup-field">
+                                        <label for="cbt-setup-school-village">Desa/Kelurahan</label>
+                                        <input
+                                            type="text"
+                                            id="cbt-setup-school-village"
+                                            name="school_village"
+                                            value="<?php echo esc_attr($school_village); ?>"
+                                            placeholder="Contoh: PERAWAS"
+                                        />
+                                    </div>
+                                    <div class="cbt-setup-field">
+                                        <label for="cbt-setup-school-district-city-ln">Kecamatan/Kota (LN)</label>
+                                        <input
+                                            type="text"
+                                            id="cbt-setup-school-district-city-ln"
+                                            name="school_district_city_ln"
+                                            value="<?php echo esc_attr($school_district_city_ln); ?>"
+                                            placeholder="Contoh: KEC. TANJUNG PANDAN"
+                                        />
+                                    </div>
+                                    <div class="cbt-setup-field">
+                                        <label for="cbt-setup-school-regency-country-ln">Kab.-Kota/Negara (LN)</label>
+                                        <input
+                                            type="text"
+                                            id="cbt-setup-school-regency-country-ln"
+                                            name="school_regency_country_ln"
+                                            value="<?php echo esc_attr($school_regency_country_ln); ?>"
+                                            placeholder="Contoh: KAB. BELITUNG"
+                                        />
+                                    </div>
+                                    <div class="cbt-setup-field">
+                                        <label for="cbt-setup-school-province-abroad-ln">Propinsi/Luar Negeri (LN)</label>
+                                        <input
+                                            type="text"
+                                            id="cbt-setup-school-province-abroad-ln"
+                                            name="school_province_abroad_ln"
+                                            value="<?php echo esc_attr($school_province_abroad_ln); ?>"
+                                            placeholder="Contoh: PROV. KEPULAUAN BANGKA BELITUNG"
+                                        />
+                                    </div>
+                                </div>
+                            </section>
 
-                    <section class="cbt-setup-card">
-                        <div class="cbt-setup-card-header">
-                            <div>
-                                <h2>Logo Brand</h2>
-                                <p>Pilih logo yang dipakai pada area frontend CBT, kartu ujian, dan report cetak.</p>
+                            <section class="cbt-setup-card">
+                                <div class="cbt-setup-card-header">
+                                    <div>
+                                        <h2>Logo Brand</h2>
+                                        <p>Pilih logo yang dipakai pada area frontend CBT, kartu ujian, dan report cetak.</p>
+                                    </div>
+                                    <span class="cbt-setup-card-chip">Media Library</span>
+                                </div>
+                                <div class="cbt-setup-logo-grid">
+                                    <article class="cbt-setup-logo-card">
+                                        <input
+                                            type="hidden"
+                                            id="cbt-setup-logo-1-attachment-id"
+                                            name="logo_1_attachment_id"
+                                            value="<?php echo esc_attr($logo_1_attachment_id > 0 ? (string) $logo_1_attachment_id : ''); ?>"
+                                        />
+                                        <div class="cbt-setup-logo-meta">
+                                            <h3>Logo 1 · Sekolah</h3>
+                                            <p>Dipakai untuk topbar frontend, hero login, mobile brand, kartu ujian, dan report exam.</p>
+                                        </div>
+                                        <div
+                                            id="cbt-setup-logo-1-preview"
+                                            class="cbt-setup-logo-preview"
+                                            style="display:<?php echo $logo_1_url !== '' ? 'flex' : 'none'; ?>;"
+                                        >
+                                            <img
+                                                id="cbt-setup-logo-1-preview-image"
+                                                src="<?php echo esc_url($logo_1_url); ?>"
+                                                alt=""
+                                            />
+                                        </div>
+                                        <p id="cbt-setup-logo-1-empty" class="description cbt-setup-logo-empty" style="display:<?php echo $logo_1_url === '' ? 'block' : 'none'; ?>;">Belum ada logo dipilih.</p>
+                                        <div class="cbt-setup-logo-actions">
+                                            <button type="button" id="cbt-setup-logo-1-pick" class="button cbt-setup-logo-pick-button">
+                                                <?php echo esc_html($logo_1_attachment_id > 0 ? 'Ganti Logo' : 'Pilih Logo'); ?>
+                                            </button>
+                                            <button type="button" id="cbt-setup-logo-1-remove" class="button button-secondary cbt-setup-logo-remove-button" style="display:<?php echo $logo_1_attachment_id > 0 ? 'inline-flex' : 'none'; ?>;">Hapus Logo</button>
+                                        </div>
+                                        <p class="cbt-setup-logo-note">Gunakan gambar dari Media Library WordPress dengan latar transparan bila memungkinkan.</p>
+                                    </article>
+
+                                    <article class="cbt-setup-logo-card">
+                                        <input
+                                            type="hidden"
+                                            id="cbt-setup-logo-2-attachment-id"
+                                            name="logo_2_attachment_id"
+                                            value="<?php echo esc_attr($logo_2_attachment_id > 0 ? (string) $logo_2_attachment_id : ''); ?>"
+                                        />
+                                        <div class="cbt-setup-logo-meta">
+                                            <h3>Logo 2 · Dinas Pendidikan</h3>
+                                            <p>Dipakai untuk pasangan logo pada kartu ujian dan report exam.</p>
+                                        </div>
+                                        <div
+                                            id="cbt-setup-logo-2-preview"
+                                            class="cbt-setup-logo-preview"
+                                            style="display:<?php echo $logo_2_url !== '' ? 'flex' : 'none'; ?>;"
+                                        >
+                                            <img
+                                                id="cbt-setup-logo-2-preview-image"
+                                                src="<?php echo esc_url($logo_2_url); ?>"
+                                                alt=""
+                                            />
+                                        </div>
+                                        <p id="cbt-setup-logo-2-empty" class="description cbt-setup-logo-empty" style="display:<?php echo $logo_2_url === '' ? 'block' : 'none'; ?>;">Belum ada logo dipilih.</p>
+                                        <div class="cbt-setup-logo-actions">
+                                            <button type="button" id="cbt-setup-logo-2-pick" class="button cbt-setup-logo-pick-button">
+                                                <?php echo esc_html($logo_2_attachment_id > 0 ? 'Ganti Logo' : 'Pilih Logo'); ?>
+                                            </button>
+                                            <button type="button" id="cbt-setup-logo-2-remove" class="button button-secondary cbt-setup-logo-remove-button" style="display:<?php echo $logo_2_attachment_id > 0 ? 'inline-flex' : 'none'; ?>;">Hapus Logo</button>
+                                        </div>
+                                        <p class="cbt-setup-logo-note">Gunakan gambar dari Media Library WordPress dengan proporsi horizontal atau square.</p>
+                                    </article>
+                                </div>
+                            </section>
+
+                            <div class="cbt-setup-actions">
+                                <p class="description">Perubahan ini langsung dipakai untuk branding frontend CBT dan dokumen cetak terkait.</p>
+                                <button type="submit" class="button button-primary button-large cbt-setup-save-button">Simpan Setup Branding</button>
                             </div>
-                            <span class="cbt-setup-card-chip">Media Library</span>
-                        </div>
-                        <div class="cbt-setup-logo-grid">
-                            <article class="cbt-setup-logo-card">
-                                <input
-                                    type="hidden"
-                                    id="cbt-setup-logo-1-attachment-id"
-                                    name="logo_1_attachment_id"
-                                    value="<?php echo esc_attr($logo_1_attachment_id > 0 ? (string) $logo_1_attachment_id : ''); ?>"
-                                />
-                                <div class="cbt-setup-logo-meta">
-                                    <h3>Logo 1 · Sekolah</h3>
-                                    <p>Dipakai untuk topbar frontend, hero login, mobile brand, kartu ujian, dan report exam.</p>
-                                </div>
-                                <div
-                                    id="cbt-setup-logo-1-preview"
-                                    class="cbt-setup-logo-preview"
-                                    style="display:<?php echo $logo_1_url !== '' ? 'flex' : 'none'; ?>;"
-                                >
-                                    <img
-                                        id="cbt-setup-logo-1-preview-image"
-                                        src="<?php echo esc_url($logo_1_url); ?>"
-                                        alt=""
-                                    />
-                                </div>
-                                <p id="cbt-setup-logo-1-empty" class="description cbt-setup-logo-empty" style="display:<?php echo $logo_1_url === '' ? 'block' : 'none'; ?>;">Belum ada logo dipilih.</p>
-                                <div class="cbt-setup-logo-actions">
-                                    <button type="button" id="cbt-setup-logo-1-pick" class="button cbt-setup-logo-pick-button">
-                                        <?php echo esc_html($logo_1_attachment_id > 0 ? 'Ganti Logo' : 'Pilih Logo'); ?>
-                                    </button>
-                                    <button type="button" id="cbt-setup-logo-1-remove" class="button button-secondary cbt-setup-logo-remove-button" style="display:<?php echo $logo_1_attachment_id > 0 ? 'inline-flex' : 'none'; ?>;">Hapus Logo</button>
-                                </div>
-                                <p class="cbt-setup-logo-note">Gunakan gambar dari Media Library WordPress dengan latar transparan bila memungkinkan.</p>
-                            </article>
-
-                            <article class="cbt-setup-logo-card">
-                                <input
-                                    type="hidden"
-                                    id="cbt-setup-logo-2-attachment-id"
-                                    name="logo_2_attachment_id"
-                                    value="<?php echo esc_attr($logo_2_attachment_id > 0 ? (string) $logo_2_attachment_id : ''); ?>"
-                                />
-                                <div class="cbt-setup-logo-meta">
-                                    <h3>Logo 2 · Dinas Pendidikan</h3>
-                                    <p>Dipakai untuk pasangan logo pada kartu ujian dan report exam.</p>
-                                </div>
-                                <div
-                                    id="cbt-setup-logo-2-preview"
-                                    class="cbt-setup-logo-preview"
-                                    style="display:<?php echo $logo_2_url !== '' ? 'flex' : 'none'; ?>;"
-                                >
-                                    <img
-                                        id="cbt-setup-logo-2-preview-image"
-                                        src="<?php echo esc_url($logo_2_url); ?>"
-                                        alt=""
-                                    />
-                                </div>
-                                <p id="cbt-setup-logo-2-empty" class="description cbt-setup-logo-empty" style="display:<?php echo $logo_2_url === '' ? 'block' : 'none'; ?>;">Belum ada logo dipilih.</p>
-                                <div class="cbt-setup-logo-actions">
-                                    <button type="button" id="cbt-setup-logo-2-pick" class="button cbt-setup-logo-pick-button">
-                                        <?php echo esc_html($logo_2_attachment_id > 0 ? 'Ganti Logo' : 'Pilih Logo'); ?>
-                                    </button>
-                                    <button type="button" id="cbt-setup-logo-2-remove" class="button button-secondary cbt-setup-logo-remove-button" style="display:<?php echo $logo_2_attachment_id > 0 ? 'inline-flex' : 'none'; ?>;">Hapus Logo</button>
-                                </div>
-                                <p class="cbt-setup-logo-note">Gunakan gambar dari Media Library WordPress dengan proporsi horizontal atau square.</p>
-                            </article>
-                        </div>
-                    </section>
-
-                    <div class="cbt-setup-actions">
-                        <p class="description">Perubahan ini langsung dipakai untuk branding frontend CBT dan dokumen cetak terkait.</p>
-                        <button type="submit" class="button button-primary button-large cbt-setup-save-button">Simpan Setup Branding</button>
+                        </form>
                     </div>
-                </form>
+
+                    <div class="cbt-setup-panel" id="cbt-setup-panel-security" data-setup-panel="security" role="tabpanel" aria-labelledby="cbt-setup-tab-security" hidden>
+                        <div class="cbt-setup-security-grid">
+                            <section class="cbt-setup-card cbt-setup-security-card">
+                                <div class="cbt-setup-card-header">
+                                    <div>
+                                        <h2>Security</h2>
+                                        <p>Tab ini menampung kontrol keamanan yang langsung memengaruhi perilaku peserta saat ujian berlangsung.</p>
+                                    </div>
+                                    <span class="cbt-setup-card-chip">Control</span>
+                                </div>
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-security-form">
+                                    <?php wp_nonce_field('cbt_save_setup_security'); ?>
+                                    <input type="hidden" name="action" value="cbt_save_setup_security" />
+                                    <div class="cbt-setup-security-option">
+                                        <label class="cbt-setup-security-checkbox" for="cbt-setup-security-force-fullscreen">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-security-force-fullscreen"
+                                                name="force_fullscreen"
+                                                value="1"
+                                                <?php checked($security_force_fullscreen); ?>
+                                            />
+                                            <span>
+                                                <strong>Fullscreen Saat Ujian</strong>
+                                                <span>Jika diaktifkan, peserta akan diminta masuk mode fullscreen saat mulai atau melanjutkan ujian. Interaksi soal akan dibatasi sampai fullscreen aktif.</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div class="cbt-setup-security-option">
+                                        <label class="cbt-setup-security-checkbox" for="cbt-setup-security-log-events">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-security-log-events"
+                                                name="log_security_events"
+                                                value="1"
+                                                <?php checked($security_log_events_enabled); ?>
+                                            />
+                                            <span>
+                                                <strong>Aktifkan Logging Security</strong>
+                                                <span>Catat event inti seperti keluar fullscreen, pindah tab, refresh/tutup halaman, sesi dicabut, dan reset login admin. Histori log tampil di bawah form ini selama 30 hari terakhir.</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div class="cbt-setup-security-option">
+                                        <label class="cbt-setup-security-checkbox" for="cbt-setup-security-block-copy-paste">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-security-block-copy-paste"
+                                                name="block_copy_paste"
+                                                value="1"
+                                                <?php checked($security_block_copy_paste); ?>
+                                            />
+                                            <span>
+                                                <strong>Blok Copy / Paste Saat Ujian</strong>
+                                                <span>Jika diaktifkan, aksi copy, cut, dan paste diblok selama peserta berada di halaman ujian. Cocok untuk meminimalkan pemindahan jawaban lewat clipboard.</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div class="cbt-setup-security-actions">
+                                        <p class="description">Simpan perubahan security untuk langsung diterapkan pada frontend ujian.</p>
+                                        <button type="submit" class="button button-primary button-large cbt-setup-save-button">Simpan Pengaturan Security</button>
+                                    </div>
+                                </form>
+                            </section>
+
+                            <section id="cbt-setup-security-log-card" class="cbt-setup-card cbt-setup-security-card cbt-setup-security-log-card">
+                                <div class="cbt-setup-card-header">
+                                    <div>
+                                        <h2>Histori Security Log</h2>
+                                        <p>Menampilkan 50 event terbaru dari frontend ujian dan event security penting dari sisi server.</p>
+                                    </div>
+                                    <span class="cbt-setup-card-chip" data-security-log-status-chip><?php echo $security_log_events_enabled ? 'Logging On' : 'Logging Off'; ?></span>
+                                </div>
+                                <div class="cbt-setup-security-log-body">
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-security-log-manage-form" id="cbt-setup-security-log-manage-form">
+                                        <?php wp_nonce_field('cbt_manage_security_logs'); ?>
+                                        <input type="hidden" name="action" value="cbt_manage_security_logs" />
+                                        <input type="hidden" name="delete_scope" value="" data-security-log-delete-scope />
+                                        <div class="cbt-setup-security-log-toolbar">
+                                            <div class="cbt-setup-security-log-filter-grid">
+                                                <div class="cbt-setup-security-log-filter">
+                                                    <label for="cbt-setup-security-log-filter-severity">Filter Severity</label>
+                                                    <select id="cbt-setup-security-log-filter-severity">
+                                                        <option value="all">Semua severity</option>
+                                                        <option value="warning">Warning</option>
+                                                        <option value="critical">Critical</option>
+                                                        <option value="info">Info</option>
+                                                    </select>
+                                                </div>
+                                                <div class="cbt-setup-security-log-filter">
+                                                    <label for="cbt-setup-security-log-filter-event">Filter Event</label>
+                                                    <select id="cbt-setup-security-log-filter-event">
+                                                        <option value="all">Semua event</option>
+                                                        <?php foreach ($security_log_event_definitions as $event_key => $event_definition): ?>
+                                                            <option value="<?php echo esc_attr((string) $event_key); ?>"><?php echo esc_html((string) ($event_definition['label'] ?? $event_key)); ?></option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                </div>
+                                                <div class="cbt-setup-security-log-filter">
+                                                    <label for="cbt-setup-security-log-filter-kelas">Filter Kelas</label>
+                                                    <select id="cbt-setup-security-log-filter-kelas">
+                                                        <option value="all">Semua kelas</option>
+                                                    </select>
+                                                </div>
+                                                <div class="cbt-setup-security-log-filter">
+                                                    <label for="cbt-setup-security-log-filter-ruang">Filter Ruang</label>
+                                                    <select id="cbt-setup-security-log-filter-ruang">
+                                                        <option value="all">Semua ruang</option>
+                                                    </select>
+                                                </div>
+                                                <div class="cbt-setup-security-log-filter">
+                                                    <label for="cbt-setup-security-log-filter-student-name">Filter Nama</label>
+                                                    <input type="search" id="cbt-setup-security-log-filter-student-name" placeholder="Cari nama siswa..." />
+                                                </div>
+                                            </div>
+                                            <div class="cbt-setup-security-log-toolbar-footer">
+                                                <div class="cbt-setup-security-log-toolbar-live">
+                                                    <label class="cbt-setup-security-log-auto-refresh" for="cbt-setup-security-log-auto-refresh">
+                                                        <input type="checkbox" id="cbt-setup-security-log-auto-refresh" />
+                                                        <span>Auto refresh 10 detik</span>
+                                                    </label>
+                                                    <span id="cbt-setup-security-log-live-status" class="cbt-setup-security-log-live-status">Auto refresh nonaktif.</span>
+                                                </div>
+                                                <div class="cbt-setup-security-log-toolbar-actions">
+                                                    <button type="submit" class="button cbt-setup-security-log-delete-button" data-security-log-submit="selected" disabled>Delete Selected</button>
+                                                    <button type="submit" class="button cbt-setup-security-log-delete-button" data-security-log-submit="all"<?php echo empty($security_logs) ? ' disabled' : ''; ?>>Delete All</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="cbt-setup-security-log-refresh-region" data-security-log-refresh-region>
+                                            <p class="cbt-setup-security-log-state<?php echo $security_log_events_enabled ? '' : ' is-disabled'; ?>">
+                                                <?php if ($security_log_events_enabled): ?>
+                                                    Logging security aktif. Event baru akan dicatat selama attempt ujian berjalan, lalu log otomatis dipangkas setelah 30 hari.
+                                                <?php else: ?>
+                                                    Logging security sedang nonaktif. Histori lama tetap bisa dilihat, tetapi event baru tidak akan dicatat sampai checklist logging diaktifkan lagi.
+                                                <?php endif; ?>
+                                            </p>
+                                            <div class="cbt-setup-security-log-summary">
+                                                <p>Retensi log v1: <strong>30 hari</strong>. Gunakan filter di atas untuk fokus ke severity atau event tertentu saat review log berlangsung.</p>
+                                            </div>
+                                            <div class="cbt-setup-security-log-table-shell">
+                                                <table class="widefat striped cbt-setup-security-log-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th class="check-column"><input type="checkbox" data-security-log-select-all /></th>
+                                                            <th>Waktu</th>
+                                                            <th>Siswa</th>
+                                                            <th>Exam</th>
+                                                            <th>Attempt</th>
+                                                            <th>Event</th>
+                                                            <th>Detail</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="cbt-setup-security-log-tbody">
+                                                        <?php if (empty($security_logs)): ?>
+                                                            <tr data-security-log-empty-default>
+                                                                <td colspan="7" class="cbt-setup-security-log-empty">Belum ada histori security log yang tercatat.</td>
+                                                            </tr>
+                                                        <?php else: ?>
+                                                            <?php foreach ($security_logs as $security_log): ?>
+                                                                <?php
+                                                                $security_log_id = (int) ($security_log['id'] ?? 0);
+                                                                $severity = sanitize_key((string) ($security_log['severity'] ?? 'info'));
+                                                                if (!in_array($severity, ['warning', 'critical', 'info'], true)) {
+                                                                    $severity = 'info';
+                                                                }
+                                                                $event_type = sanitize_key((string) ($security_log['event_type'] ?? ''));
+                                                                $student_kelas = sanitize_text_field((string) ($security_log['student_kode_kelas'] ?? ''));
+                                                                $student_ruang = sanitize_text_field((string) ($security_log['student_kode_ruang'] ?? ''));
+                                                                $student_name = (string) ($security_log['student_name'] ?? '-');
+                                                                ?>
+                                                                <tr
+                                                                    data-security-log-row
+                                                                    data-log-severity="<?php echo esc_attr($severity); ?>"
+                                                                    data-log-event="<?php echo esc_attr($event_type); ?>"
+                                                                    data-log-kelas="<?php echo esc_attr($student_kelas); ?>"
+                                                                    data-log-ruang="<?php echo esc_attr($student_ruang); ?>"
+                                                                    data-log-student-name="<?php echo esc_attr(function_exists('mb_strtolower') ? mb_strtolower($student_name, 'UTF-8') : strtolower($student_name)); ?>"
+                                                                >
+                                                                    <td class="check-column">
+                                                                        <input type="checkbox" name="selected_log_ids[]" value="<?php echo esc_attr((string) $security_log_id); ?>" data-security-log-select />
+                                                                    </td>
+                                                                    <td><?php echo esc_html((string) ($security_log['occurred_at'] ?? '-')); ?></td>
+                                                                <td>
+                                                                        <div class="cbt-setup-security-log-student">
+                                                                            <div class="cbt-setup-security-log-student-name"><?php echo esc_html($student_name); ?></div>
+                                                                            <?php if (!empty($security_log['student_kode_kelas']) || !empty($security_log['student_kode_ruang'])): ?>
+                                                                                <div class="cbt-setup-security-log-student-meta">
+                                                                                    <?php if ($student_kelas !== ''): ?>
+                                                                                        <span class="is-kelas"><strong>K:</strong> <?php echo esc_html($student_kelas); ?></span>
+                                                                                    <?php endif; ?>
+                                                                                    <?php if ($student_ruang !== ''): ?>
+                                                                                        <span class="is-ruang"><strong>R:</strong> <?php echo esc_html($student_ruang); ?></span>
+                                                                                    <?php endif; ?>
+                                                                                </div>
+                                                                            <?php endif; ?>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td><?php echo esc_html((string) ($security_log['exam_title'] ?? '-')); ?></td>
+                                                                    <td><span class="cbt-setup-security-log-attempt">#<?php echo esc_html((string) ((int) ($security_log['attempt_id'] ?? 0))); ?></span></td>
+                                                                    <td>
+                                                                        <div class="cbt-setup-security-log-event">
+                                                                            <span class="cbt-setup-security-log-badge is-<?php echo esc_attr($severity); ?>"><?php echo esc_html($severity); ?></span>
+                                                                            <strong><?php echo esc_html((string) ($security_log['event_label'] ?? $security_log['event_type'] ?? 'Event')); ?></strong>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td class="cbt-setup-security-log-detail"><?php echo esc_html((string) ($security_log['message'] ?? '-')); ?></td>
+                                                                </tr>
+                                                            <?php endforeach; ?>
+                                                            <tr id="cbt-setup-security-log-filter-empty" hidden>
+                                                                <td colspan="7" class="cbt-setup-security-log-empty">Tidak ada histori log yang cocok dengan filter saat ini.</td>
+                                                            </tr>
+                                                        <?php endif; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <script>
             (function () {
+                function bindSetupTabs() {
+                    var tabButtons = document.querySelectorAll('[data-setup-tab-button]');
+                    var panels = document.querySelectorAll('[data-setup-panel]');
+
+                    if (!tabButtons.length || !panels.length) {
+                        return;
+                    }
+
+                    function setActiveTab(tabName, updateUrl) {
+                        var normalized = tabName === 'security' ? 'security' : 'branding';
+                        var index = 0;
+                        var nextUrl = '';
+
+                        for (index = 0; index < tabButtons.length; index += 1) {
+                            var button = tabButtons[index];
+                            var isActive = button.getAttribute('data-setup-tab-button') === normalized;
+                            button.classList.toggle('is-active', isActive);
+                            button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                            button.setAttribute('tabindex', isActive ? '0' : '-1');
+                        }
+
+                        for (index = 0; index < panels.length; index += 1) {
+                            var panel = panels[index];
+                            var panelActive = panel.getAttribute('data-setup-panel') === normalized;
+                            panel.classList.toggle('is-active', panelActive);
+                            panel.hidden = !panelActive;
+                        }
+
+                        if (updateUrl && window.history && typeof window.history.replaceState === 'function') {
+                            nextUrl = window.location.pathname + window.location.search + (normalized === 'security' ? '#security' : '');
+                            window.history.replaceState(null, document.title, nextUrl);
+                        }
+                    }
+
+                    for (var i = 0; i < tabButtons.length; i += 1) {
+                        tabButtons[i].addEventListener('click', function () {
+                            setActiveTab(this.getAttribute('data-setup-tab-button') || 'branding', true);
+                        });
+                    }
+
+                    setActiveTab(window.location.hash === '#security' ? 'security' : 'branding', false);
+                }
+
                 function bindLogoField(config) {
                     var mediaFrame = null;
                     var logoInput = document.getElementById(config.inputId);
@@ -5924,6 +6660,431 @@ class CBT_Admin
                     });
                 }
 
+                function bindSecurityLogTools() {
+                    var card = document.getElementById('cbt-setup-security-log-card');
+                    var manageForm = document.getElementById('cbt-setup-security-log-manage-form');
+                    var severityFilter = document.getElementById('cbt-setup-security-log-filter-severity');
+                    var eventFilter = document.getElementById('cbt-setup-security-log-filter-event');
+                    var kelasFilter = document.getElementById('cbt-setup-security-log-filter-kelas');
+                    var ruangFilter = document.getElementById('cbt-setup-security-log-filter-ruang');
+                    var studentNameFilter = document.getElementById('cbt-setup-security-log-filter-student-name');
+                    var autoRefreshToggle = document.getElementById('cbt-setup-security-log-auto-refresh');
+                    var liveStatus = document.getElementById('cbt-setup-security-log-live-status');
+                    var securityPanel = document.getElementById('cbt-setup-panel-security');
+                    var deleteScopeInput = card ? card.querySelector('[data-security-log-delete-scope]') : null;
+                    var deleteSelectedButton = card ? card.querySelector('[data-security-log-submit="selected"]') : null;
+                    var deleteAllButton = card ? card.querySelector('[data-security-log-submit="all"]') : null;
+                    var autoRefreshTimer = 0;
+                    var refreshInFlight = false;
+                    var storageKey = 'cbt_setup_security_log_auto_refresh_enabled';
+
+                    if (!card || !manageForm || !severityFilter || !eventFilter || !kelasFilter || !ruangFilter || !studentNameFilter || !autoRefreshToggle || !liveStatus || !securityPanel) {
+                        return;
+                    }
+
+                    function setLiveStatus(message, tone) {
+                        liveStatus.textContent = String(message || '');
+                        liveStatus.classList.remove('is-loading', 'is-error');
+
+                        if (tone === 'loading') {
+                            liveStatus.classList.add('is-loading');
+                        } else if (tone === 'error') {
+                            liveStatus.classList.add('is-error');
+                        }
+                    }
+
+                    function getCurrentRows() {
+                        return card.querySelectorAll('[data-security-log-row]');
+                    }
+
+                    function getDefaultEmptyRow() {
+                        return card.querySelector('[data-security-log-empty-default]');
+                    }
+
+                    function getFilterEmptyRow() {
+                        return document.getElementById('cbt-setup-security-log-filter-empty');
+                    }
+
+                    function normalizeFilterValue(value) {
+                        return String(value || '').trim().toLowerCase();
+                    }
+
+                    function rebuildDynamicFilterOptions(selectElement, attributeName, defaultLabel) {
+                        var rows = getCurrentRows();
+                        var currentValue = String(selectElement.value || 'all');
+                        var values = [];
+                        var seen = {};
+                        var index = 0;
+                        var rowValue = '';
+                        var option = null;
+
+                        selectElement.innerHTML = '';
+                        option = document.createElement('option');
+                        option.value = 'all';
+                        option.textContent = defaultLabel;
+                        selectElement.appendChild(option);
+
+                        for (index = 0; index < rows.length; index += 1) {
+                            rowValue = String(rows[index].getAttribute(attributeName) || '').trim();
+                            if (rowValue === '') {
+                                continue;
+                            }
+
+                            if (seen[rowValue]) {
+                                continue;
+                            }
+
+                            seen[rowValue] = true;
+                            values.push(rowValue);
+                        }
+
+                        values.sort(function (left, right) {
+                            return left.localeCompare(right, undefined, { sensitivity: 'base', numeric: true });
+                        });
+
+                        for (index = 0; index < values.length; index += 1) {
+                            option = document.createElement('option');
+                            option.value = values[index];
+                            option.textContent = values[index];
+                            selectElement.appendChild(option);
+                        }
+
+                        if (currentValue !== 'all' && seen[currentValue]) {
+                            selectElement.value = currentValue;
+                        } else {
+                            selectElement.value = 'all';
+                        }
+                    }
+
+                    function syncDynamicFilterOptions() {
+                        rebuildDynamicFilterOptions(kelasFilter, 'data-log-kelas', 'Semua kelas');
+                        rebuildDynamicFilterOptions(ruangFilter, 'data-log-ruang', 'Semua ruang');
+                    }
+
+                    function getSelectAllCheckbox() {
+                        return card.querySelector('[data-security-log-select-all]');
+                    }
+
+                    function getRowCheckboxes(visibleOnly) {
+                        var rows = getCurrentRows();
+                        var checkboxes = [];
+                        var index = 0;
+
+                        for (index = 0; index < rows.length; index += 1) {
+                            var row = rows[index];
+                            var checkbox = row.querySelector('[data-security-log-select]');
+
+                            if (!checkbox) {
+                                continue;
+                            }
+
+                            if (visibleOnly && row.hidden) {
+                                continue;
+                            }
+
+                            checkboxes.push(checkbox);
+                        }
+
+                        return checkboxes;
+                    }
+
+                    function getCheckedRowCount() {
+                        var checkboxes = getRowCheckboxes(false);
+                        var checkedCount = 0;
+                        var index = 0;
+
+                        for (index = 0; index < checkboxes.length; index += 1) {
+                            if (checkboxes[index].checked) {
+                                checkedCount += 1;
+                            }
+                        }
+
+                        return checkedCount;
+                    }
+
+                    function updateBulkActionState() {
+                        var allCheckboxes = getRowCheckboxes(false);
+                        var visibleCheckboxes = getRowCheckboxes(true);
+                        var checkedCount = getCheckedRowCount();
+                        var visibleCheckedCount = 0;
+                        var index = 0;
+                        var selectAllCheckbox = getSelectAllCheckbox();
+
+                        for (index = 0; index < visibleCheckboxes.length; index += 1) {
+                            if (visibleCheckboxes[index].checked) {
+                                visibleCheckedCount += 1;
+                            }
+                        }
+
+                        if (deleteSelectedButton) {
+                            deleteSelectedButton.disabled = checkedCount === 0;
+                            deleteSelectedButton.textContent = checkedCount > 0
+                                ? ('Delete Selected (' + String(checkedCount) + ')')
+                                : 'Delete Selected';
+                        }
+
+                        if (deleteAllButton) {
+                            deleteAllButton.disabled = allCheckboxes.length === 0;
+                        }
+
+                        if (!selectAllCheckbox) {
+                            return;
+                        }
+
+                        if (visibleCheckboxes.length === 0) {
+                            selectAllCheckbox.checked = false;
+                            selectAllCheckbox.indeterminate = false;
+                            selectAllCheckbox.disabled = true;
+                            return;
+                        }
+
+                        selectAllCheckbox.disabled = false;
+                        selectAllCheckbox.checked = visibleCheckedCount > 0 && visibleCheckedCount === visibleCheckboxes.length;
+                        selectAllCheckbox.indeterminate = visibleCheckedCount > 0 && visibleCheckedCount < visibleCheckboxes.length;
+                    }
+
+                    function applySecurityLogFilters() {
+                        var rows = getCurrentRows();
+                        var severityValue = String(severityFilter.value || 'all');
+                        var eventValue = String(eventFilter.value || 'all');
+                        var kelasValue = String(kelasFilter.value || 'all');
+                        var ruangValue = String(ruangFilter.value || 'all');
+                        var studentNameValue = normalizeFilterValue(studentNameFilter.value || '');
+                        var visibleCount = 0;
+                        var index = 0;
+                        var defaultEmptyRow = getDefaultEmptyRow();
+                        var filterEmptyRow = getFilterEmptyRow();
+
+                        if (defaultEmptyRow) {
+                            defaultEmptyRow.hidden = rows.length > 0;
+                        }
+
+                        for (index = 0; index < rows.length; index += 1) {
+                            var row = rows[index];
+                            var rowSeverity = String(row.getAttribute('data-log-severity') || '');
+                            var rowEvent = String(row.getAttribute('data-log-event') || '');
+                            var rowKelas = String(row.getAttribute('data-log-kelas') || '');
+                            var rowRuang = String(row.getAttribute('data-log-ruang') || '');
+                            var rowStudentName = normalizeFilterValue(row.getAttribute('data-log-student-name') || '');
+                            var matchesSeverity = severityValue === 'all' || rowSeverity === severityValue;
+                            var matchesEvent = eventValue === 'all' || rowEvent === eventValue;
+                            var matchesKelas = kelasValue === 'all' || rowKelas === kelasValue;
+                            var matchesRuang = ruangValue === 'all' || rowRuang === ruangValue;
+                            var matchesStudentName = studentNameValue === '' || rowStudentName.indexOf(studentNameValue) >= 0;
+                            var isVisible = matchesSeverity && matchesEvent && matchesKelas && matchesRuang && matchesStudentName;
+
+                            row.hidden = !isVisible;
+                            if (!isVisible) {
+                                var rowCheckbox = row.querySelector('[data-security-log-select]');
+                                if (rowCheckbox) {
+                                    rowCheckbox.checked = false;
+                                }
+                            }
+                            if (isVisible) {
+                                visibleCount += 1;
+                            }
+                        }
+
+                        if (filterEmptyRow) {
+                            filterEmptyRow.hidden = rows.length === 0 || visibleCount > 0;
+                        }
+
+                        updateBulkActionState();
+                    }
+
+                    function readStoredAutoRefreshPreference() {
+                        try {
+                            return window.localStorage && window.localStorage.getItem(storageKey) === '1';
+                        } catch (error) {
+                            return false;
+                        }
+                    }
+
+                    function storeAutoRefreshPreference(enabled) {
+                        try {
+                            if (window.localStorage) {
+                                window.localStorage.setItem(storageKey, enabled ? '1' : '0');
+                            }
+                        } catch (error) {
+                            // Ignore storage errors.
+                        }
+                    }
+
+                    function stopAutoRefresh() {
+                        if (autoRefreshTimer) {
+                            window.clearInterval(autoRefreshTimer);
+                        }
+                        autoRefreshTimer = 0;
+                    }
+
+                    function isSecurityPanelActive() {
+                        return !securityPanel.hidden;
+                    }
+
+                    function refreshSecurityLogCard() {
+                        if (refreshInFlight || !autoRefreshToggle.checked) {
+                            return;
+                        }
+
+                        if (!isSecurityPanelActive() || document.visibilityState === 'hidden') {
+                            return;
+                        }
+
+                        var refreshRegion = card.querySelector('[data-security-log-refresh-region]');
+                        if (!refreshRegion) {
+                            return;
+                        }
+
+                        refreshInFlight = true;
+                        setLiveStatus('Memuat log terbaru...', 'loading');
+
+                        var refreshUrl = new URL(window.location.href);
+                        refreshUrl.hash = '';
+                        refreshUrl.searchParams.set('_cbt_security_refresh', String(Date.now()));
+
+                        fetch(refreshUrl.toString(), {
+                            method: 'GET',
+                            credentials: 'same-origin',
+                            headers: {
+                                'Cache-Control': 'no-cache'
+                            }
+                        })
+                            .then(function (response) {
+                                if (!response.ok) {
+                                    throw new Error('Refresh gagal.');
+                                }
+                                return response.text();
+                            })
+                            .then(function (html) {
+                                var parser = new window.DOMParser();
+                                var nextDocument = parser.parseFromString(html, 'text/html');
+                                var nextRefreshRegion = nextDocument.querySelector('[data-security-log-refresh-region]');
+                                var nextStatusChip = nextDocument.querySelector('[data-security-log-status-chip]');
+                                var currentStatusChip = card.querySelector('[data-security-log-status-chip]');
+
+                                if (!nextRefreshRegion) {
+                                    throw new Error('Blok log tidak ditemukan.');
+                                }
+
+                                refreshRegion.innerHTML = nextRefreshRegion.innerHTML;
+
+                                if (currentStatusChip && nextStatusChip) {
+                                    currentStatusChip.textContent = String(nextStatusChip.textContent || '');
+                                }
+
+                                if (deleteScopeInput) {
+                                    deleteScopeInput.value = '';
+                                }
+
+                                syncDynamicFilterOptions();
+                                applySecurityLogFilters();
+                                setLiveStatus('Auto refresh aktif setiap 10 detik.', '');
+                            })
+                            .catch(function () {
+                                setLiveStatus('Auto refresh gagal. Coba refresh halaman.', 'error');
+                            })
+                            .finally(function () {
+                                refreshInFlight = false;
+                            });
+                    }
+
+                    function syncAutoRefreshState() {
+                        stopAutoRefresh();
+                        storeAutoRefreshPreference(autoRefreshToggle.checked);
+
+                        if (!autoRefreshToggle.checked) {
+                            setLiveStatus('Auto refresh nonaktif.', '');
+                            return;
+                        }
+
+                        setLiveStatus('Auto refresh aktif setiap 10 detik.', '');
+                        autoRefreshTimer = window.setInterval(function () {
+                            refreshSecurityLogCard();
+                        }, 10000);
+                        refreshSecurityLogCard();
+                    }
+
+                    autoRefreshToggle.checked = readStoredAutoRefreshPreference();
+                    syncDynamicFilterOptions();
+                    applySecurityLogFilters();
+                    syncAutoRefreshState();
+
+                    severityFilter.addEventListener('change', applySecurityLogFilters);
+                    eventFilter.addEventListener('change', applySecurityLogFilters);
+                    kelasFilter.addEventListener('change', applySecurityLogFilters);
+                    ruangFilter.addEventListener('change', applySecurityLogFilters);
+                    studentNameFilter.addEventListener('input', applySecurityLogFilters);
+                    autoRefreshToggle.addEventListener('change', syncAutoRefreshState);
+
+                    card.addEventListener('change', function (event) {
+                        var target = event.target;
+                        var visibleCheckboxes = [];
+                        var index = 0;
+
+                        if (!target || typeof target.matches !== 'function') {
+                            return;
+                        }
+
+                        if (target.matches('[data-security-log-select-all]')) {
+                            visibleCheckboxes = getRowCheckboxes(true);
+
+                            for (index = 0; index < visibleCheckboxes.length; index += 1) {
+                                visibleCheckboxes[index].checked = !!target.checked;
+                            }
+
+                            updateBulkActionState();
+                            return;
+                        }
+
+                        if (target.matches('[data-security-log-select]')) {
+                            updateBulkActionState();
+                        }
+                    });
+
+                    if (deleteSelectedButton && deleteScopeInput) {
+                        deleteSelectedButton.addEventListener('click', function (event) {
+                            var checkedCount = getCheckedRowCount();
+
+                            deleteScopeInput.value = 'selected';
+
+                            if (checkedCount <= 0) {
+                                event.preventDefault();
+                                return;
+                            }
+
+                            if (!window.confirm('Hapus ' + String(checkedCount) + ' security log yang dipilih?')) {
+                                event.preventDefault();
+                                deleteScopeInput.value = '';
+                            }
+                        });
+                    }
+
+                    if (deleteAllButton && deleteScopeInput) {
+                        deleteAllButton.addEventListener('click', function (event) {
+                            var rowCount = getCurrentRows().length;
+
+                            deleteScopeInput.value = 'all';
+
+                            if (rowCount <= 0) {
+                                event.preventDefault();
+                                return;
+                            }
+
+                            if (!window.confirm('Hapus semua histori security log? Tindakan ini tidak dapat dibatalkan.')) {
+                                event.preventDefault();
+                                deleteScopeInput.value = '';
+                            }
+                        });
+                    }
+
+                    document.addEventListener('visibilitychange', function () {
+                        if (document.visibilityState === 'visible' && autoRefreshToggle.checked && isSecurityPanelActive()) {
+                            refreshSecurityLogCard();
+                        }
+                    });
+                }
+
+                bindSetupTabs();
                 bindLogoField({
                     inputId: 'cbt-setup-logo-1-attachment-id',
                     previewId: 'cbt-setup-logo-1-preview',
@@ -5943,6 +7104,7 @@ class CBT_Admin
                     mediaTitle: 'Pilih Logo 2 - Dinas Pendidikan'
                 });
                 bindClearIdentityFields();
+                bindSecurityLogTools();
             })();
         </script>
         <?php
@@ -17788,6 +18950,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         $report_rows = self::get_exam_report_rows($exam_id, $selected_kelas, $is_admin_scope, $current_user_id);
         $branding = self::get_setup_branding_print_context();
         $site_name = trim((string) ($branding['school_name'] ?? ''));
+        $site_motto = trim((string) ($branding['school_motto'] ?? ''));
         if ($site_name === '') {
             $site_name = trim((string) get_bloginfo('name'));
         }
@@ -17914,6 +19077,12 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     text-transform: uppercase;
                     line-height: 1.2;
                 }
+                .report-school-motto {
+                    margin: 0 0 4px;
+                    font-size: 11px;
+                    line-height: 1.35;
+                    color: #475569;
+                }
                 .report-meta {
                     display: grid;
                     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -18023,6 +19192,9 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     </div>
                     <div class="report-header-main">
                         <div class="report-school-name"><?php echo esc_html($site_name); ?></div>
+                        <?php if ($site_motto !== ''): ?>
+                            <div class="report-school-motto"><?php echo esc_html($site_motto); ?></div>
+                        <?php endif; ?>
                         <h1 class="report-title">CBT Report Exam</h1>
                     </div>
                     <div class="report-logo is-right">
@@ -18591,6 +19763,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
         $branding = self::get_setup_branding_print_context();
         $school_name = trim((string) ($branding['school_name'] ?? ''));
+        $school_motto = trim((string) ($branding['school_motto'] ?? ''));
         if ($school_name === '') {
             $school_name = trim((string) get_bloginfo('name'));
         }
@@ -18741,6 +19914,12 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     text-transform: uppercase;
                     line-height: 1.2;
                 }
+                .exam-card-school-motto {
+                    margin-top: 0.5mm;
+                    font-size: 8.5px;
+                    line-height: 1.2;
+                    color: #475569;
+                }
                 .exam-card-title {
                     margin-top: 1px;
                     font-weight: 700;
@@ -18876,6 +20055,9 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                                 </div>
                                 <div class="exam-card-head-main">
                                     <div class="exam-card-school-name"><?php echo esc_html($school_name); ?></div>
+                                    <?php if ($school_motto !== ''): ?>
+                                        <div class="exam-card-school-motto"><?php echo esc_html($school_motto); ?></div>
+                                    <?php endif; ?>
                                     <div class="exam-card-title">KARTU PESERTA UJIAN CBT</div>
                                 </div>
                                 <div class="exam-card-school-logo is-right">
@@ -22168,6 +23350,9 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         $school_name = isset($_POST['school_name'])
             ? trim(sanitize_text_field(wp_unslash((string) $_POST['school_name'])))
             : '';
+        $school_motto = isset($_POST['school_motto'])
+            ? trim(sanitize_text_field(wp_unslash((string) $_POST['school_motto'])))
+            : '';
         $school_npsn = isset($_POST['school_npsn'])
             ? trim(sanitize_text_field(wp_unslash((string) $_POST['school_npsn'])))
             : '';
@@ -22201,6 +23386,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             self::SETUP_BRANDING_OPTION,
             [
                 'school_name' => $school_name,
+                'school_motto' => $school_motto,
                 'school_npsn' => $school_npsn,
                 'school_address' => $school_address,
                 'school_village' => $school_village,
@@ -22215,6 +23401,91 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         );
 
         wp_safe_redirect(admin_url('admin.php?page=cbt-setup&cbt_msg=' . rawurlencode('Setup branding berhasil disimpan.')));
+        exit;
+    }
+
+    public static function handle_save_setup_security(): void
+    {
+        if (!self::can_manage_exams()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_save_setup_security');
+
+        $force_fullscreen = isset($_POST['force_fullscreen']) && (string) wp_unslash($_POST['force_fullscreen']) === '1';
+        $block_copy_paste = isset($_POST['block_copy_paste']) && (string) wp_unslash($_POST['block_copy_paste']) === '1';
+        $log_security_events = isset($_POST['log_security_events']) && (string) wp_unslash($_POST['log_security_events']) === '1';
+
+        update_option(
+            self::SETUP_SECURITY_OPTION,
+            [
+                'force_fullscreen' => $force_fullscreen ? 1 : 0,
+                'block_copy_paste' => $block_copy_paste ? 1 : 0,
+                'log_security_events' => $log_security_events ? 1 : 0,
+            ],
+            false
+        );
+
+        wp_safe_redirect(
+            admin_url('admin.php?page=cbt-setup&cbt_msg=' . rawurlencode('Pengaturan security berhasil disimpan.')) . '#security'
+        );
+        exit;
+    }
+
+    public static function handle_manage_security_logs(): void
+    {
+        if (!self::can_manage_exams()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_manage_security_logs');
+
+        $teacher_id = self::is_admin_scope() ? 0 : get_current_user_id();
+        $delete_scope = isset($_POST['delete_scope'])
+            ? sanitize_key((string) wp_unslash($_POST['delete_scope']))
+            : '';
+
+        $redirect_url = admin_url('admin.php?page=cbt-setup');
+        $redirect_suffix = '#security';
+
+        if ($delete_scope === 'selected') {
+            $selected_log_ids = isset($_POST['selected_log_ids']) && is_array($_POST['selected_log_ids'])
+                ? array_values(array_unique(array_filter(array_map('absint', wp_unslash($_POST['selected_log_ids'])))))
+                : [];
+
+            if (empty($selected_log_ids)) {
+                wp_safe_redirect($redirect_url . '&cbt_err=' . rawurlencode('Pilih minimal satu security log untuk dihapus.') . $redirect_suffix);
+                exit;
+            }
+
+            $deleted_count = CBT_Security_Log::delete_logs($selected_log_ids, [
+                'teacher_id' => $teacher_id,
+            ]);
+
+            if ($deleted_count > 0) {
+                wp_safe_redirect($redirect_url . '&cbt_msg=' . rawurlencode(sprintf('Security log berhasil dihapus: %d.', $deleted_count)) . $redirect_suffix);
+                exit;
+            }
+
+            wp_safe_redirect($redirect_url . '&cbt_err=' . rawurlencode('Log yang dipilih tidak ditemukan atau tidak bisa dihapus.') . $redirect_suffix);
+            exit;
+        }
+
+        if ($delete_scope === 'all') {
+            $deleted_count = CBT_Security_Log::delete_all_logs([
+                'teacher_id' => $teacher_id,
+            ]);
+
+            if ($deleted_count > 0) {
+                wp_safe_redirect($redirect_url . '&cbt_msg=' . rawurlencode(sprintf('Semua security log berhasil dihapus: %d.', $deleted_count)) . $redirect_suffix);
+                exit;
+            }
+
+            wp_safe_redirect($redirect_url . '&cbt_err=' . rawurlencode('Tidak ada security log yang bisa dihapus.') . $redirect_suffix);
+            exit;
+        }
+
+        wp_safe_redirect($redirect_url . '&cbt_err=' . rawurlencode('Aksi security log tidak dikenali.') . $redirect_suffix);
         exit;
     }
 
@@ -23064,6 +24335,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         $description = isset($request['description']) ? wp_kses_post(wp_unslash($request['description'])) : '';
         $duration = max(1, isset($request['duration_minutes']) ? absint(wp_unslash($request['duration_minutes'])) : 60);
         $randomize = isset($request['randomize_questions']) ? 1 : 0;
+        $randomize_options = isset($request['randomize_options']) ? 1 : 0;
         $status = isset($request['status']) ? sanitize_text_field(wp_unslash($request['status'])) : 'draft';
         $allowed_statuses = ['draft', 'published', 'closed'];
         if (!in_array($status, $allowed_statuses, true)) {
@@ -23098,6 +24370,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             'description' => $description,
             'duration' => $duration,
             'randomize' => $randomize,
+            'randomize_options' => $randomize_options,
             'status' => $status,
             'starts_at' => $starts_at,
             'ends_at' => $ends_at,
@@ -23134,6 +24407,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             'duration_minutes' => (int) ($payload['duration'] ?? 60),
             'total_questions' => $existing_question_count,
             'randomize_questions' => (int) ($payload['randomize'] ?? 0),
+            'randomize_options' => (int) ($payload['randomize_options'] ?? 0),
             'status' => (string) ($payload['status'] ?? 'draft'),
             'starts_at' => $payload['starts_at'] ?? null,
             'ends_at' => $payload['ends_at'] ?? null,
@@ -23158,7 +24432,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 $table,
                 $data,
                 ['id' => $id],
-                ['%d', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s'],
+                ['%d', '%s', '%s', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s'],
                 ['%d']
             );
             if ($updated === false) {
@@ -23171,7 +24445,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             $inserted = $wpdb->insert(
                 $table,
                 $data,
-                ['%d', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s']
+                ['%d', '%s', '%s', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s']
             );
             if (!$inserted) {
                 return new WP_Error('insert_failed', 'Gagal membuat exam.');
@@ -23789,6 +25063,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         $description = isset($_POST['description']) ? wp_kses_post(wp_unslash($_POST['description'])) : '';
         $duration = max(1, isset($_POST['duration_minutes']) ? absint($_POST['duration_minutes']) : 60);
         $randomize = isset($_POST['randomize_questions']) ? 1 : 0;
+        $randomize_options = isset($_POST['randomize_options']) ? 1 : 0;
         $status = isset($_POST['status']) ? sanitize_text_field(wp_unslash($_POST['status'])) : 'draft';
         $allowed_statuses = ['draft', 'published', 'closed'];
         if (!in_array($status, $allowed_statuses, true)) {
@@ -23831,6 +25106,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             'duration_minutes' => $duration,
             'total_questions' => $existing_question_count,
             'randomize_questions' => $randomize,
+            'randomize_options' => $randomize_options,
             'status' => $status,
             'starts_at' => $starts_at,
             'ends_at' => $ends_at,
@@ -23855,7 +25131,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 $table,
                 $data,
                 ['id' => $id],
-                ['%d', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s'],
+                ['%d', '%s', '%s', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s'],
                 ['%d']
             );
             if ($updated === false) {
@@ -23868,7 +25144,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             $inserted = $wpdb->insert(
                 $table,
                 $data,
-                ['%d', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s']
+                ['%d', '%s', '%s', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s']
             );
             if (!$inserted) {
                 self::redirect_exam_with_error('Gagal membuat exam.');
@@ -30088,7 +31364,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         if ($is_admin_scope) {
             $attempt = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT a.id, a.exam_id, a.student_id, a.status, a.started_at, a.question_order, a.extra_time_minutes, e.duration_minutes
+                    "SELECT a.id, a.exam_id, a.student_id, a.status, a.started_at, a.question_order, a.option_order, a.extra_time_minutes, e.duration_minutes
                      FROM {$attempt_table} a
                      INNER JOIN {$exam_table} e ON e.id = a.exam_id
                      WHERE a.id = %d",
@@ -30099,7 +31375,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         } else {
             $attempt = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT a.id, a.exam_id, a.student_id, a.status, a.started_at, a.question_order, a.extra_time_minutes, e.duration_minutes
+                    "SELECT a.id, a.exam_id, a.student_id, a.status, a.started_at, a.question_order, a.option_order, a.extra_time_minutes, e.duration_minutes
                      FROM {$attempt_table} a
                      INNER JOIN {$exam_table} e ON e.id = a.exam_id
                      WHERE a.id = %d AND e.created_by = %d",
@@ -30150,6 +31426,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     'status' => (string) ($attempt['status'] ?? 'in_progress'),
                     'started_at' => (string) ($attempt['started_at'] ?? ''),
                     'question_order' => (string) ($attempt['question_order'] ?? ''),
+                    'option_order' => (string) ($attempt['option_order'] ?? ''),
                 ],
                 $effective_duration_minutes
             );
@@ -30398,6 +31675,10 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         }
 
         CBT_Cache::invalidate_user($student_id);
+        CBT_Security_Log::record_attempt_event((int) ($attempt['id'] ?? 0), 'admin_reset_login', [
+            'actor_user_id' => get_current_user_id(),
+            'source' => 'admin_reset_user_login',
+        ]);
 
         $redirect_with('Login siswa berhasil di-reset. Browser lama akan diminta login ulang dan siswa bisa login kembali.');
     }
@@ -32024,12 +33305,13 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
     }
 
     /**
-     * @return array{school_name:string,logo_url:string,logo_1_url:string,logo_2_url:string}
+     * @return array{school_name:string,school_motto:string,logo_url:string,logo_1_url:string,logo_2_url:string}
      */
     private static function get_setup_branding_print_context(): array
     {
         $branding = self::get_setup_branding_settings();
         $school_name = trim((string) ($branding['school_name'] ?? ''));
+        $school_motto = trim((string) ($branding['school_motto'] ?? ''));
 
         $logo_1_url = '';
         $logo_1_attachment_id = (int) ($branding['logo_1_attachment_id'] ?? 0);
@@ -32051,6 +33333,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
         return [
             'school_name' => $school_name,
+            'school_motto' => $school_motto,
             'logo_url' => $logo_1_url,
             'logo_1_url' => $logo_1_url,
             'logo_2_url' => $logo_2_url,
@@ -32343,6 +33626,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
     /**
      * @return array{
      *     school_name:string,
+     *     school_motto:string,
      *     school_npsn:string,
      *     school_address:string,
      *     school_village:string,
@@ -32363,6 +33647,9 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
         $school_name = isset($raw['school_name'])
             ? trim(sanitize_text_field((string) $raw['school_name']))
+            : '';
+        $school_motto = isset($raw['school_motto'])
+            ? trim(sanitize_text_field((string) $raw['school_motto']))
             : '';
         $school_npsn = isset($raw['school_npsn'])
             ? trim(sanitize_text_field((string) $raw['school_npsn']))
@@ -32399,6 +33686,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
         return [
             'school_name' => $school_name,
+            'school_motto' => $school_motto,
             'school_npsn' => $school_npsn,
             'school_address' => $school_address,
             'school_village' => $school_village,
@@ -32408,6 +33696,24 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             'logo_attachment_id' => $logo_1_attachment_id,
             'logo_1_attachment_id' => $logo_1_attachment_id,
             'logo_2_attachment_id' => $logo_2_attachment_id,
+        ];
+    }
+
+    private static function get_setup_security_settings(): array
+    {
+        $raw = get_option(self::SETUP_SECURITY_OPTION, []);
+        if (!is_array($raw)) {
+            $raw = [];
+        }
+
+        $force_fullscreen = !empty($raw['force_fullscreen']);
+        $block_copy_paste = !empty($raw['block_copy_paste']);
+        $log_security_events = !empty($raw['log_security_events']);
+
+        return [
+            'force_fullscreen' => $force_fullscreen ? 1 : 0,
+            'block_copy_paste' => $block_copy_paste ? 1 : 0,
+            'log_security_events' => $log_security_events ? 1 : 0,
         ];
     }
 
@@ -32421,6 +33727,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         return [
             $prefix . 'cbt_answers',
             $prefix . 'cbt_attempts',
+            $prefix . 'cbt_security_logs',
             $prefix . 'cbt_options',
             $prefix . 'cbt_question_essay',
             $prefix . 'cbt_question_short_answer',

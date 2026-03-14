@@ -165,6 +165,10 @@ class CBT_Auth
             $active_session_key = self::get_active_login_session($user_id);
 
             if ($user_id <= 0 || $session_key === '' || $active_session_key === '' || !hash_equals($active_session_key, $session_key)) {
+                CBT_Security_Log::record_latest_student_attempt_event($user_id, 'session_revoked', [
+                    'request_route' => method_exists($request, 'get_route') ? (string) $request->get_route() : '',
+                    'request_method' => method_exists($request, 'get_method') ? (string) $request->get_method() : '',
+                ]);
                 $error = new WP_Error(
                     'session_revoked',
                     'Sesi login ini sudah digantikan oleh login lain. Silakan login kembali.',

@@ -2,13 +2,13 @@
 
 Plugin WordPress untuk ujian CBT berbasis web dengan panel admin penuh, REST API berbasis JWT, frontend siswa berbasis JavaScript, dan toolkit operasional untuk ujian serentak.
 
-Versi plugin saat ini: `1.6.2`
+Versi plugin saat ini: `1.6.3`
 
 ## Ringkasan
 
 Plugin ini sudah mencakup alur inti CBT dari hulu ke hilir:
 
-- pengelolaan subject, user, bank soal, exam, token, hasil, kartu ujian, dan report dari dashboard WordPress
+- pengelolaan subject, user, bank soal, exam, token, setup branding-security, hasil, kartu ujian, dan report dari dashboard WordPress
 - frontend siswa dengan login `email`, `username`, atau `NISN`
 - 6 tipe soal dengan auto grading untuk tipe objektif dan koreksi manual untuk essay
 - kontrol operasional untuk reset attempt, tambah waktu, force complete, cache invalidation, Redis bootstrap, generate dataset uji, sampai load test `k6`
@@ -20,12 +20,13 @@ Plugin ini sudah mencakup alur inti CBT dari hulu ke hilir:
 - Menu admin lengkap: `CBT Exams`, `CBT Tokens`, `CBT Setup`, `CBT Maintenance`, `CBT Cache`, `CBT Subjects`, `CBT Users`, `CBT Exam Cards`, `CBT Questions`, `CBT Results`, `CBT Report Exam`.
 - Builder exam modern dengan dua panel (`Form Exam` dan `Daftar Exam`), checklist target kelas, sinkronisasi pilihan soal, preview soal, dan progress overlay saat update exam besar sedang diproses.
 - Filter admin otomatis dengan partial refresh pada daftar exam, daftar subject, daftar user, dan katalog soal di builder exam.
+- `CBT Setup` sekarang memisahkan branding dan security, termasuk fullscreen wajib, blok `copy/cut/paste`, logging security, serta histori event dengan filter kelas, ruang, nama, severity, dan event.
 - Branding CBT dari admin: nama sekolah, `logo_1`, dan `logo_2` untuk frontend, kartu ujian, dan report print-ready.
 - Monitoring hasil dengan auto refresh 10 detik, timer remaining time per attempt, detail jawaban full-width, dan kontrol operasional tanpa keluar dari halaman hasil.
 
 ### Ujian, Soal, dan Penilaian
 
-- Exam mendukung subject, durasi, status `draft/published/closed`, jadwal mulai-selesai, target kelas, token per exam, dan randomisasi urutan soal.
+- Exam mendukung subject, durasi, status `draft/published/closed`, jadwal mulai-selesai, target kelas, token per exam, randomisasi urutan soal, dan randomisasi opsi jawaban per siswa untuk `multiple_choice`, `multiple_answer`, dan `true_false_matrix`.
 - Global token 6 karakter dapat diatur manual, dirotasi otomatis setiap 5-60 menit, diregenerate manual, dan di-auto-apply di frontend.
 - Bank soal mendukung status aktif/nonaktif (`is_active`) sehingga soal bisa dinonaktifkan tanpa dihapus.
 - Saat soal bank dipakai di exam, plugin menjaga linkage ke soal sumber agar perubahan soal bank bisa tersinkron ke salinan soal exam terkait.
@@ -38,9 +39,17 @@ Plugin ini sudah mencakup alur inti CBT dari hulu ke hilir:
 - Login dengan `email`, `username`, atau `NISN`, memakai JWT untuk autentikasi REST API.
 - Satu sesi login aktif per akun untuk mencegah login ganda bersamaan.
 - Resume attempt, autosave per soal, batch submit, timer dari server, auto finish saat waktu habis, penanda soal ragu-ragu, dan kalkulator bawaan.
+- Guard security frontend mendukung fullscreen wajib, blok clipboard khusus saat stage ujian aktif, serta event log untuk `fullscreen_exit`, `tab_hidden`, `window_blur`, `page_leave`, `clipboard_blocked`, dan `session_revoked`.
 - UI state per attempt disimpan ke server, sementara preferensi lokal seperti font, tema, panel navigasi, dan posisi kalkulator tetap disimpan di browser.
 - Soal yang sudah dimuat disimpan ke `sessionStorage`, `localStorage`, dan `IndexedDB`, lalu dipadukan kembali saat reload agar perpindahan dan resume attempt lebih stabil.
 - Runtime frontend sudah mendukung prefetch soal bertahap, no-cache headers pada halaman shortcode, dan review jawaban arsip saat attempt lama berisi soal yang kini nonaktif.
+
+### Security dan Audit
+
+- Security log menyimpan 50 event terbaru di panel setup, dengan retensi 30 hari dan pruning otomatis.
+- Toolbar log mendukung auto refresh, filter `severity`, `event`, `kelas`, `ruang`, pencarian nama siswa, serta aksi `Delete Selected` dan `Delete All`.
+- Kolom siswa pada security log menampilkan identitas singkat `K:` untuk kelas dan `R:` untuk ruang.
+- Event security dicatat dari sisi frontend dan server agar insiden seperti reset login admin atau sesi dicabut tetap masuk histori.
 
 ### Hasil, Cetak, dan Report
 
@@ -66,7 +75,7 @@ Plugin ini sudah mencakup alur inti CBT dari hulu ke hilir:
 | --- | --- |
 | `CBT Exams` | Builder exam, daftar exam, filter exam, sinkronisasi soal, dan ringkasan attempt aktif |
 | `CBT Tokens` | Token global semua exam, rotasi otomatis, dan auto-apply token di frontend |
-| `CBT Setup` | Nama sekolah, `logo_1`, `logo_2`, dan branding print/frontend |
+| `CBT Setup` | Branding sekolah, kontrol security ujian, dan histori security log |
 | `CBT Maintenance` | Reset database CBT, generate dataset uji, dan load test terintegrasi |
 | `CBT Cache` | Readiness Redis, bootstrap/rollback Redis, namespace cache, locks, dan UI state |
 | `CBT Subjects` | CRUD subject, import `CSV/XLSX`, filter otomatis, dan bulk delete |
@@ -87,13 +96,15 @@ Plugin ini sudah mencakup alur inti CBT dari hulu ke hilir:
   - jadwal mulai dan selesai
   - target kelas
   - randomisasi soal
+  - randomisasi opsi jawaban untuk `multiple_choice`, `multiple_answer`, dan `true_false_matrix`
   - token per exam
 - Attempt mendukung:
   - start baru atau `resume_only`
   - penyimpanan urutan soal per attempt
+  - penyimpanan urutan opsi per attempt untuk tipe soal yang dirandom
   - tambahan waktu (`extra_time_minutes`)
   - review hasil setelah selesai
-- Runtime berusaha menjaga urutan soal tetap stabil walaupun struktur soal exam berubah di tengah jalan.
+- Runtime berusaha menjaga urutan soal dan urutan opsi yang sudah tersimpan tetap stabil walaupun struktur soal exam berubah di tengah jalan.
 
 ### 2. Tipe Soal
 
@@ -155,6 +166,7 @@ Endpoint utama:
 - `GET /wp-json/cbt/v1/subjects`
 - `GET /wp-json/cbt/v1/questions`
 - `POST /wp-json/cbt/v1/start_attempt`
+- `POST /wp-json/cbt/v1/security_event`
 - `POST /wp-json/cbt/v1/submit_answer`
 - `POST /wp-json/cbt/v1/submit_answers_batch`
 - `POST /wp-json/cbt/v1/finish_exam`
@@ -166,6 +178,7 @@ Perilaku penting endpoint:
 - `login` menerima identifier `email`, `username`, atau `nisn`
 - `questions` mendukung `offset`, `limit`, `include_existing`, dan `include_answer_manifest`
 - `start_attempt` mendukung `exam_token` dan `resume_only`
+- `security_event` menerima log keamanan best-effort dari frontend saat ujian aktif
 - payload timer dari server sudah menyertakan `remaining_seconds`, `server_now`, dan `extra_time_minutes`
 - runtime dapat mendefer scoring submit saat server sedang sibuk agar alur start exam dan ambil soal tetap lebih prioritas
 
@@ -184,12 +197,14 @@ Saat aktivasi, plugin membuat tabel:
 - `wp_cbt_question_essay`
 - `wp_cbt_attempts`
 - `wp_cbt_answers`
+- `wp_cbt_security_logs`
 
 Catatan:
 
 - `true_false_matrix` tidak memakai tabel detail terpisah; payload matrix disimpan pada detail soal.
 - `wp_cbt_questions` memakai `source_question_id` untuk linkage ke bank soal sumber dan `is_active` untuk aktif/nonaktif.
-- `wp_cbt_attempts` memakai `question_order` dan `extra_time_minutes`.
+- `wp_cbt_attempts` memakai `question_order`, `option_order`, dan `extra_time_minutes`.
+- `wp_cbt_security_logs` menyimpan histori event security dari frontend ujian dan event penting dari sisi server.
 - Plugin juga menjaga role, capability, halaman frontend, dan migrasi schema tetap sinkron saat plugin dimuat.
 
 ## Role dan Capability

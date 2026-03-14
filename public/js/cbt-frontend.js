@@ -45,6 +45,7 @@
         token: '',
         user: null,
         exams: [],
+        examPickerMobileOpen: false,
         selectedExamId: 0,
         examToken: '',
         attemptId: 0,
@@ -81,7 +82,8 @@
         calculatorVisible: false,
         calculatorExpression: '',
         calculatorResult: '',
-        calculatorError: ''
+        calculatorError: '',
+        isFullscreenActive: false
     };
     var AUTO_SAVE_CHOICE_DELAY_MS = 2000;
     var AUTO_SAVE_TEXT_DELAY_MS = 3500;
@@ -92,6 +94,7 @@
     var ATTEMPT_UI_STATE_SYNC_DELAY_MS = 1200;
     var ATTEMPT_UI_STATE_NAVIGATION_SYNC_DELAY_MS = 1600;
     var SESSION_HEARTBEAT_INTERVAL_MS = 20000;
+    var WINDOW_BLUR_LOG_DELAY_MS = 800;
     var autoSaveTimersByQuestion = {};
     var autoSaveCongestedUntil = 0;
     var lastSubmittedPayloadByQuestion = {};
@@ -117,6 +120,13 @@
     var questionRevisionRefreshInFlight = null;
     var questionDataGeneration = 0;
     var pendingRevisionSafeAnswerRestoreByQuestion = {};
+    var securityEventLastSentAtByKey = {};
+    var pageLeaveLoggedAttemptId = 0;
+    var tabHiddenLogTimer = 0;
+    var tabHiddenLogScheduledAttemptId = 0;
+    var windowBlurLogTimer = 0;
+    var windowBlurLogScheduledAttemptId = 0;
+    var fullscreenExitLogSuppressedUntil = 0;
 
     function getSessionStorage() {
         if (cachedSessionStorage !== undefined) {
@@ -3417,6 +3427,172 @@
         });
     }
 
+    function sendSecurityEventSilently(eventType, context, options) {
+        options = options || {};
+
+        var safeEventType = String(eventType || '').trim();
+        var attemptId = Number(options.attemptId !== undefined ? options.attemptId : state.attemptId) || 0;
+        var stage = String(options.stage !== undefined ? options.stage : state.stage || '');
+        var authToken = options.token !== undefined ? String(options.token || '') : String(state.token || '');
+        var keepalive = !!options.keepalive;
+        var debounceMs = Math.max(0, Number(options.debounceMs) || 0);
+        var requireFullscreen = !!options.requireFullscreen;
+
+        if (safeEventType === '' || attemptId <= 0 || stage !== 'exam' || authToken === '' || !isSecurityLoggingEnabled()) {
+            return false;
+        }
+
+        if (requireFullscreen && !isExamFullscreenRequired()) {
+            return false;
+        }
+
+        if (shouldThrottleSecurityEvent(safeEventType, attemptId, debounceMs)) {
+            return false;
+        }
+
+        try {
+            fetch(buildUrl('security_event'), {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + authToken
+                },
+                body: JSON.stringify({
+                    attempt_id: attemptId,
+                    event_type: safeEventType,
+                    context: context && typeof context === 'object' ? context : {}
+                }),
+                keepalive: keepalive
+            }).catch(function () {
+                // Best-effort security event logging.
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function cancelScheduledTabHiddenSecurityLog() {
+        if (tabHiddenLogTimer) {
+            window.clearTimeout(tabHiddenLogTimer);
+        }
+        tabHiddenLogTimer = 0;
+        tabHiddenLogScheduledAttemptId = 0;
+    }
+
+    function cancelScheduledWindowBlurSecurityLog() {
+        if (windowBlurLogTimer) {
+            window.clearTimeout(windowBlurLogTimer);
+        }
+        windowBlurLogTimer = 0;
+        windowBlurLogScheduledAttemptId = 0;
+    }
+
+    function isWindowBlurLoggingActiveForAttempt() {
+        return isSecurityLoggingActiveForAttempt() && !state.isFinishing;
+    }
+
+    function scheduleTabHiddenSecurityLog() {
+        if (!isSecurityLoggingActiveForAttempt()) {
+            return;
+        }
+
+        var attemptId = Number(state.attemptId) || 0;
+        if (attemptId <= 0) {
+            return;
+        }
+
+        cancelScheduledTabHiddenSecurityLog();
+        tabHiddenLogScheduledAttemptId = attemptId;
+        tabHiddenLogTimer = window.setTimeout(function () {
+            tabHiddenLogTimer = 0;
+            tabHiddenLogScheduledAttemptId = 0;
+
+            if (!isSecurityLoggingActiveForAttempt()) {
+                return;
+            }
+            if (pageLeaveLoggedAttemptId === attemptId) {
+                return;
+            }
+            if (document.visibilityState !== 'hidden') {
+                return;
+            }
+
+            sendSecurityEventSilently('tab_hidden', {
+                source: 'visibilitychange',
+                visibility_state: String(document.visibilityState || '')
+            }, {
+                attemptId: attemptId,
+                keepalive: true,
+                debounceMs: 1500
+            });
+        }, 500);
+    }
+
+    function scheduleWindowBlurSecurityLog(source) {
+        if (!isWindowBlurLoggingActiveForAttempt()) {
+            return;
+        }
+
+        var attemptId = Number(state.attemptId) || 0;
+        if (attemptId <= 0) {
+            return;
+        }
+
+        cancelScheduledWindowBlurSecurityLog();
+        windowBlurLogScheduledAttemptId = attemptId;
+        windowBlurLogTimer = window.setTimeout(function () {
+            var hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+            windowBlurLogTimer = 0;
+            windowBlurLogScheduledAttemptId = 0;
+
+            if (!isWindowBlurLoggingActiveForAttempt()) {
+                return;
+            }
+            if (pageLeaveLoggedAttemptId === attemptId) {
+                return;
+            }
+            if (document.visibilityState === 'hidden') {
+                return;
+            }
+            if (hasFocus) {
+                return;
+            }
+
+            sendSecurityEventSilently('window_blur', {
+                source: String(source || 'blur'),
+                visibility_state: String(document.visibilityState || ''),
+                has_focus: hasFocus ? 1 : 0
+            }, {
+                attemptId: attemptId,
+                keepalive: true,
+                debounceMs: 2500
+            });
+        }, WINDOW_BLUR_LOG_DELAY_MS);
+    }
+
+    function logPageLeaveSecurityEvent(source) {
+        if (!isSecurityLoggingActiveForAttempt()) {
+            return;
+        }
+
+        var attemptId = Number(state.attemptId) || 0;
+        if (attemptId <= 0 || pageLeaveLoggedAttemptId === attemptId) {
+            return;
+        }
+
+        pageLeaveLoggedAttemptId = attemptId;
+        cancelScheduledTabHiddenSecurityLog();
+        cancelScheduledWindowBlurSecurityLog();
+        sendSecurityEventSilently('page_leave', {
+            source: String(source || 'pagehide')
+        }, {
+            attemptId: attemptId,
+            keepalive: true
+        });
+    }
+
     async function api(path, options) {
         options = options || {};
         var method = options.method || 'GET';
@@ -3927,8 +4103,279 @@
         return value || 'CBT Exam';
     }
 
+    function getConfiguredSchoolMotto() {
+        return String(config.schoolMotto || '').trim();
+    }
+
     function getConfiguredSchoolLogoUrl() {
         return normalizePhotoUrl(config.schoolLogoUrl || '');
+    }
+
+    function getConfiguredPluginAuthor() {
+        return String(config.pluginAuthor || 'COBLAX').trim();
+    }
+
+    function getConfiguredPluginVersion() {
+        return String(config.pluginVersion || '').trim();
+    }
+
+    function isExamFullscreenRequired() {
+        return Number(config.securityForceFullscreen || 0) === 1;
+    }
+
+    function isExamCopyPasteBlocked() {
+        return Number(config.securityBlockCopyPaste || 0) === 1;
+    }
+
+    function isSecurityLoggingEnabled() {
+        return Number(config.securityLogEvents || 0) === 1;
+    }
+
+    function isSecurityLoggingActiveForAttempt() {
+        return isSecurityLoggingEnabled() && state.stage === 'exam' && (Number(state.attemptId) || 0) > 0;
+    }
+
+    function clearSecurityLoggingRuntimeState() {
+        if (tabHiddenLogTimer) {
+            window.clearTimeout(tabHiddenLogTimer);
+        }
+        tabHiddenLogTimer = 0;
+        tabHiddenLogScheduledAttemptId = 0;
+        pageLeaveLoggedAttemptId = 0;
+        securityEventLastSentAtByKey = {};
+    }
+
+    function shouldThrottleSecurityEvent(eventType, attemptId, debounceMs) {
+        var safeAttemptId = Number(attemptId) || 0;
+        var safeDebounceMs = Math.max(0, Number(debounceMs) || 0);
+        var throttleKey = String(eventType || '') + ':' + String(safeAttemptId);
+        var now = Date.now();
+        var lastSentAt = Number(securityEventLastSentAtByKey[throttleKey] || 0);
+
+        if (safeDebounceMs > 0 && lastSentAt > 0 && (lastSentAt + safeDebounceMs) > now) {
+            return true;
+        }
+
+        securityEventLastSentAtByKey[throttleKey] = now;
+        return false;
+    }
+
+    function getFullscreenElement() {
+        if (document.fullscreenElement) {
+            return document.fullscreenElement;
+        }
+        if (document.webkitFullscreenElement) {
+            return document.webkitFullscreenElement;
+        }
+        if (document.mozFullScreenElement) {
+            return document.mozFullScreenElement;
+        }
+        if (document.msFullscreenElement) {
+            return document.msFullscreenElement;
+        }
+        return null;
+    }
+
+    function syncFullscreenState(shouldRender) {
+        var nextState = !!getFullscreenElement();
+        if (state.isFullscreenActive === nextState) {
+            return;
+        }
+
+        state.isFullscreenActive = nextState;
+
+        if (shouldRender) {
+            render();
+        }
+    }
+
+    function isExamFullscreenBlockingActive() {
+        return state.stage === 'exam' && isExamFullscreenRequired() && !state.isFullscreenActive;
+    }
+
+    function isExamClipboardBlockingActive() {
+        return state.stage === 'exam' && isExamCopyPasteBlocked();
+    }
+
+    function handleBlockedClipboardAction(action, sourceEvent) {
+        var safeAction = String(action || '').trim().toLowerCase();
+        var safeSource = sourceEvent && sourceEvent.type ? String(sourceEvent.type) : '';
+
+        if (!isExamClipboardBlockingActive()) {
+            return false;
+        }
+
+        if (sourceEvent && typeof sourceEvent.preventDefault === 'function') {
+            sourceEvent.preventDefault();
+        }
+        if (sourceEvent && typeof sourceEvent.stopPropagation === 'function') {
+            sourceEvent.stopPropagation();
+        }
+
+        sendSecurityEventSilently('clipboard_blocked', {
+            action: safeAction || 'clipboard',
+            source: safeSource || safeAction || 'clipboard'
+        }, {
+            attemptId: Number(state.attemptId) || 0,
+            keepalive: true,
+            debounceMs: 1500
+        });
+
+        return true;
+    }
+
+    function requestFullscreenForElement(targetElement) {
+        if (!targetElement) {
+            return Promise.resolve(false);
+        }
+
+        try {
+            if (typeof targetElement.requestFullscreen === 'function') {
+                return Promise.resolve(targetElement.requestFullscreen()).then(function () {
+                    return true;
+                });
+            }
+            if (typeof targetElement.webkitRequestFullscreen === 'function') {
+                targetElement.webkitRequestFullscreen();
+                return Promise.resolve(true);
+            }
+            if (typeof targetElement.mozRequestFullScreen === 'function') {
+                targetElement.mozRequestFullScreen();
+                return Promise.resolve(true);
+            }
+            if (typeof targetElement.msRequestFullscreen === 'function') {
+                targetElement.msRequestFullscreen();
+                return Promise.resolve(true);
+            }
+        } catch (error) {
+            return Promise.reject(error);
+        }
+
+        return Promise.resolve(false);
+    }
+
+    function exitFullscreenSilently() {
+        fullscreenExitLogSuppressedUntil = Date.now() + 2000;
+
+        try {
+            if (document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+                document.exitFullscreen().catch(function () {
+                    // Ignore fullscreen exit errors.
+                });
+                return;
+            }
+            if (document.webkitFullscreenElement && typeof document.webkitExitFullscreen === 'function') {
+                document.webkitExitFullscreen();
+                return;
+            }
+            if (document.mozFullScreenElement && typeof document.mozCancelFullScreen === 'function') {
+                document.mozCancelFullScreen();
+                return;
+            }
+            if (document.msFullscreenElement && typeof document.msExitFullscreen === 'function') {
+                document.msExitFullscreen();
+            }
+        } catch (error) {
+            // Ignore fullscreen exit errors.
+        }
+    }
+
+    async function requestExamFullscreen(options) {
+        options = options || {};
+
+        if (!isExamFullscreenRequired()) {
+            return true;
+        }
+
+        syncFullscreenState(false);
+        if (state.isFullscreenActive) {
+            return true;
+        }
+
+        var fullscreenTarget = document.documentElement || document.body || root;
+        try {
+            var entered = await requestFullscreenForElement(fullscreenTarget);
+            syncFullscreenState(false);
+
+            if (entered) {
+                state.isFullscreenActive = true;
+                clearMessages();
+                return true;
+            }
+        } catch (error) {
+            syncFullscreenState(false);
+        }
+
+        if (!options.silent) {
+            state.error = 'Mode fullscreen wajib aktif untuk ujian ini. Izinkan fullscreen lalu coba lagi.';
+        }
+        return false;
+    }
+
+    function renderExamFullscreenPrompt() {
+        if (!isExamFullscreenBlockingActive()) {
+            return '';
+        }
+
+        return [
+            '<div class="cbt-exam-fullscreen-guard" role="alert" aria-live="assertive">',
+            '<div class="cbt-exam-fullscreen-guard-card">',
+            '<span class="cbt-exam-fullscreen-guard-chip">Security</span>',
+            '<h3>Mode Fullscreen Wajib Aktif</h3>',
+            '<p>Ujian ini menggunakan pengamanan fullscreen. Aktifkan fullscreen terlebih dahulu untuk melanjutkan pengerjaan soal.</p>',
+            '<div class="cbt-actions cbt-exam-fullscreen-guard-actions">',
+            '<button class="cbt-button cbt-button-primary" data-action="enter-fullscreen" type="button">Aktifkan Fullscreen</button>',
+            '<button class="cbt-button cbt-button-secondary" data-action="logout" type="button">Logout</button>',
+            '</div>',
+            '</div>',
+            '</div>'
+        ].join('');
+    }
+
+    function normalizeLoginHeroSchoolTag(prefix, number) {
+        var normalizedPrefix = String(prefix || '').replace(/\s+/g, ' ').trim().toUpperCase();
+        var compactPrefix = normalizedPrefix;
+
+        if (/^SMK(?:\s+N(?:EGERI)?)?$/.test(normalizedPrefix) || normalizedPrefix === 'SMKN') {
+            compactPrefix = 'SMKN';
+        } else if (/^SMA(?:\s+N(?:EGERI)?)?$/.test(normalizedPrefix) || normalizedPrefix === 'SMAN') {
+            compactPrefix = 'SMAN';
+        } else if (/^SMP(?:\s+N(?:EGERI)?)?$/.test(normalizedPrefix) || normalizedPrefix === 'SMPN') {
+            compactPrefix = 'SMPN';
+        } else if (/^SD(?:\s+N(?:EGERI)?)?$/.test(normalizedPrefix) || normalizedPrefix === 'SDN') {
+            compactPrefix = 'SDN';
+        } else if (/^MTSN?$/.test(normalizedPrefix)) {
+            compactPrefix = normalizedPrefix === 'MTS' ? 'MTS' : 'MTSN';
+        } else if (/^MA(?:\s+NEGERI)?$/.test(normalizedPrefix) || normalizedPrefix === 'MAN') {
+            compactPrefix = (normalizedPrefix.indexOf('NEGERI') >= 0 || normalizedPrefix === 'MAN') ? 'MAN' : 'MA';
+        } else if (normalizedPrefix === 'MI') {
+            compactPrefix = 'MI';
+        }
+
+        var normalizedNumber = String(number || '').trim();
+        return normalizedNumber !== '' ? (compactPrefix + ' ' + normalizedNumber) : compactPrefix;
+    }
+
+    function getLoginHeroSchoolBranding(schoolName) {
+        var normalized = String(schoolName || '').replace(/\s+/g, ' ').trim();
+        var branding = {
+            tag: 'Portal CBT',
+            title: normalized || 'CBT Exam'
+        };
+
+        if (normalized === '') {
+            return branding;
+        }
+
+        var match = normalized.match(/^(SMK(?:\s+N(?:EGERI)?)?|SMKN|SMA(?:\s+N(?:EGERI)?)?|SMAN|SMP(?:\s+N(?:EGERI)?)?|SMPN|SD(?:\s+N(?:EGERI)?)?|SDN|MI|MTSN?|MAN|MA(?:\s+NEGERI)?)(?:\s+(\d+))?\s+(.+)$/i);
+        if (!match) {
+            return branding;
+        }
+
+        branding.tag = normalizeLoginHeroSchoolTag(match[1], match[2]);
+        branding.title = String(match[3] || normalized).trim() || normalized;
+
+        return branding;
     }
 
     function getCurrentUserName() {
@@ -5596,6 +6043,8 @@
     function resetExamSession() {
         var previousAttemptId = Number(state.attemptId) || 0;
         stopTimer();
+        exitFullscreenSilently();
+        clearSecurityLoggingRuntimeState();
         clearAutoSaveRuntimeState();
         clearQuestionPrefetchRuntimeState();
         clearAttemptUiStateSyncTimer();
@@ -5604,6 +6053,7 @@
         questionRevisionRefreshInFlight = null;
         bumpQuestionDataGeneration();
         lastAttemptUiStateSyncSignature = '';
+        state.examPickerMobileOpen = false;
         state.examToken = '';
         state.attemptId = 0;
         resetQuestionDataState();
@@ -5617,6 +6067,7 @@
         state.calculatorExpression = '';
         state.calculatorResult = '';
         state.calculatorError = '';
+        state.isFullscreenActive = false;
         if (previousAttemptId > 0 && state.stage !== 'exam') {
             clearPersistedAttemptUiState(previousAttemptId);
             clearPersistedQuestionCache(previousAttemptId);
@@ -5629,6 +6080,8 @@
         var previousAttemptId = Number(state.attemptId) || 0;
         stopTimer();
         stopSessionHeartbeat();
+        exitFullscreenSilently();
+        clearSecurityLoggingRuntimeState();
         clearAutoSaveRuntimeState();
         clearQuestionPrefetchRuntimeState();
         clearAttemptUiStateSyncTimer();
@@ -5649,6 +6102,7 @@
         state.token = '';
         state.user = null;
         state.exams = [];
+        state.examPickerMobileOpen = false;
         state.selectedExamId = 0;
         state.examToken = '';
         state.attemptId = 0;
@@ -5664,6 +6118,7 @@
         state.calculatorExpression = '';
         state.calculatorResult = '';
         state.calculatorError = '';
+        state.isFullscreenActive = false;
         if (previousAttemptId > 0) {
             clearPersistedAttemptUiState(previousAttemptId);
             clearPersistedQuestionCache(previousAttemptId);
@@ -5723,6 +6178,7 @@
     async function loadExams() {
         var payload = await api('exams');
         state.exams = Array.isArray(payload.items) ? payload.items : [];
+        state.examPickerMobileOpen = false;
         var currentUserPayload = payload && typeof payload === 'object' && payload.current_user && typeof payload.current_user === 'object'
             ? payload.current_user
             : null;
@@ -5859,6 +6315,7 @@
         if (state.attemptId <= 0) {
             throw new Error('Attempt ID tidak valid.');
         }
+        clearSecurityLoggingRuntimeState();
         clearQuestionPrefetchRuntimeState();
         clearAttemptUiStateSyncTimer();
         clearPendingRevisionSafeAnswerRestoreState();
@@ -6116,6 +6573,19 @@
             submittedToken = '';
         }
 
+        var shouldExitFullscreenOnFailure = false;
+        if (isExamFullscreenRequired()) {
+            syncFullscreenState(false);
+            shouldExitFullscreenOnFailure = !state.isFullscreenActive;
+            var fullscreenReady = await requestExamFullscreen({
+                silent: false
+            });
+            if (!fullscreenReady) {
+                render();
+                return;
+            }
+        }
+
         state.busy = true;
         render();
 
@@ -6130,6 +6600,10 @@
 
             await openAttemptSession(selectedExam, startPayload);
         } catch (error) {
+            if (shouldExitFullscreenOnFailure) {
+                exitFullscreenSilently();
+                syncFullscreenState(false);
+            }
             state.error = error instanceof Error ? error.message : 'Gagal memulai ujian.';
         } finally {
             state.busy = false;
@@ -6366,6 +6840,8 @@
 
             state.result = resultPayload;
             state.stage = 'result';
+            exitFullscreenSilently();
+            syncFullscreenState(false);
             state.success = autoSubmit ? 'Waktu habis. Ujian otomatis diselesaikan.' : 'Ujian selesai.';
             state.error = '';
         } catch (error) {
@@ -6625,10 +7101,21 @@
     function renderLoginStage() {
         var schoolNameRaw = getConfiguredSchoolName();
         var schoolName = escapeHtml(schoolNameRaw);
+        var schoolBranding = getLoginHeroSchoolBranding(schoolNameRaw);
+        var schoolBrandTag = escapeHtml(schoolBranding.tag || 'Portal CBT');
+        var schoolBrandTitle = escapeHtml(schoolBranding.title || schoolNameRaw);
+        var schoolMottoRaw = getConfiguredSchoolMotto();
+        var schoolMotto = schoolMottoRaw !== '' ? escapeHtml(schoolMottoRaw) : '';
+        var heroMottoBlock = schoolMotto !== ''
+            ? '<div class="cbt-login-hero-motto-row"><span class="cbt-login-hero-motto-line" aria-hidden="true"></span><p class="cbt-login-hero-motto">' + schoolMotto + '</p></div>'
+            : '';
+        var heroDescription = schoolMotto === ''
+            ? 'Masuk dengan akun resmi, pilih ujian yang aktif, lalu kerjakan dengan autosave dan timer yang sinkron dari server.'
+            : '';
         var schoolLogoUrl = getConfiguredSchoolLogoUrl();
         var heroLogoBlock = schoolLogoUrl !== ''
             ? '<div class="cbt-login-hero-logo-wrap"><img class="cbt-login-hero-logo" src="' + escapeHtml(schoolLogoUrl) + '" alt="' + schoolName + '" loading="lazy" decoding="async" /></div>'
-            : '';
+            : '<div class="cbt-login-hero-logo-wrap is-fallback" aria-hidden="true"><span class="cbt-login-hero-logo-fallback"><svg viewBox="0 0 64 64" focusable="false"><path d="M32 8 47 14v15c0 11-6.8 21.1-15 26-8.2-4.9-15-15-15-26V14L32 8Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"></path><path d="M32 20v18" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path><path d="M23 29h18" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path></svg></span></div>';
         var mobilePanelLogoBlock = schoolLogoUrl !== ''
             ? '<div class="cbt-login-panel-brand-mobile"><img class="cbt-login-panel-brand-mobile-logo" src="' + escapeHtml(schoolLogoUrl) + '" alt="' + schoolName + '" loading="lazy" decoding="async" /></div>'
             : '';
@@ -6636,35 +7123,229 @@
         var loginButtonClass = state.busy ? 'cbt-button cbt-button-primary cbt-button-login is-loading' : 'cbt-button cbt-button-primary cbt-button-login';
         var loginButtonLabel = state.busy ? 'Memverifikasi...' : 'LOGIN';
         var togglePasswordLabel = state.loginPasswordVisible ? 'Sembunyikan' : 'Tampilkan';
+        var pluginAuthorRaw = getConfiguredPluginAuthor();
+        var pluginVersionRaw = getConfiguredPluginVersion();
+        var loginMetaItems = [];
+
+        if (pluginAuthorRaw !== '') {
+            loginMetaItems.push('<span class="cbt-login-meta-item cbt-login-meta-copy">&copy; ' + escapeHtml(pluginAuthorRaw) + '</span>');
+        }
+        if (pluginVersionRaw !== '') {
+            loginMetaItems.push('<span class="cbt-login-meta-item cbt-login-meta-version">Versi ' + escapeHtml(pluginVersionRaw) + '</span>');
+        }
+
+        var loginMetaBlock = loginMetaItems.length
+            ? '<div class="cbt-login-meta" aria-label="Informasi sistem">' + loginMetaItems.join('') + '</div>'
+            : '';
 
         return [
             '<section class="cbt-login-shell">',
             '<div class="cbt-login-hero">',
-            '<p class="cbt-login-kicker">Portal Ujian Berbasis Komputer</p>',
             '<div class="cbt-login-hero-heading">',
             heroLogoBlock,
-            '<h1>' + schoolName + '</h1>',
+            '<div class="cbt-login-hero-title">',
+            '<span class="cbt-login-hero-school-tag">' + schoolBrandTag + '</span>',
+            '<h1>' + schoolBrandTitle + '</h1>',
+            heroMottoBlock,
             '</div>',
-            '<p class="cbt-login-description">Platform ujian online untuk siswa dan guru. Masuk dengan akun terdaftar untuk melanjutkan ke daftar exam.</p>',
-            '<div class="cbt-login-steps">',
-            '<article class="cbt-login-step"><span>1</span><div><strong>Masuk</strong><small>Email/Username/NISN dan password.</small></div></article>',
-            '<article class="cbt-login-step"><span>2</span><div><strong>Konfirmasi</strong><small>Pilih exam lalu konfirmasi token (jika diminta).</small></div></article>',
-            '<article class="cbt-login-step"><span>3</span><div><strong>Kerjakan Ujian</strong><small>Jawab semua soal lalu kumpulkan sebelum waktu habis.</small></div></article>',
+            '</div>',
+            heroDescription !== '' ? '<p class="cbt-login-description">' + heroDescription + '</p>' : '',
+            '<p class="cbt-login-flow-label">Alur masuk ujian</p>',
+            '<div class="cbt-login-steps" aria-label="Alur masuk ke ujian CBT">',
+            '<article class="cbt-login-flow-card is-login"><div class="cbt-login-flow-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" focusable="false"><path d="M14 6h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M10 8l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M4 12h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></div><div class="cbt-login-flow-content"><div class="cbt-login-flow-title-row"><span class="cbt-login-flow-number">01</span><strong class="cbt-login-flow-title">Masuk dengan akun resmi</strong></div><p class="cbt-login-flow-desc">Masuk memakai email, username, atau NISN yang terdaftar.</p><div class="cbt-login-flow-tags"><div class="cbt-login-flow-tag">Email / Username / NISN</div><div class="cbt-login-flow-tag">1 akun = 1 sesi</div></div></div></article>',
+            '<article class="cbt-login-flow-card is-verify"><div class="cbt-login-flow-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" focusable="false"><rect x="6" y="4.5" width="12" height="15" rx="2.5" stroke="currentColor" stroke-width="1.8"></rect><path d="M9.2 4.5h5.6v2.2H9.2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path><path d="m9.5 12.3 1.7 1.7 3.4-3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></div><div class="cbt-login-flow-content"><div class="cbt-login-flow-title-row"><span class="cbt-login-flow-number">02</span><strong class="cbt-login-flow-title">Pilih ujian dan verifikasi token</strong></div><p class="cbt-login-flow-desc">Pilih ujian, lalu isi token hanya jika memang diwajibkan.</p><div class="cbt-login-flow-tags"><div class="cbt-login-flow-tag">Token global / per ujian</div><div class="cbt-login-flow-tag">Sesi aktif bisa dilanjutkan</div></div></div></article>',
+            '<article class="cbt-login-flow-card is-submit"><div class="cbt-login-flow-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" focusable="false"><path d="M20 4 10 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="m20 4-6 16-4-6-6-4 16-6Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></div><div class="cbt-login-flow-content"><div class="cbt-login-flow-title-row"><span class="cbt-login-flow-number">03</span><strong class="cbt-login-flow-title">Kerjakan, review, lalu kumpulkan</strong></div><p class="cbt-login-flow-desc">Jawaban autosave aktif; review sebentar lalu kumpulkan.</p><div class="cbt-login-flow-tags"><div class="cbt-login-flow-tag">Autosave aktif</div><div class="cbt-login-flow-tag">Timer sinkron server</div></div></div></article>',
             '</div>',
             '</div>',
             '<div class="cbt-login-panel">',
             '<h3>Masuk ke CBT</h3>',
             mobilePanelLogoBlock,
             '<form id="cbt-login-form" class="cbt-form-grid">',
-            '<div class="cbt-field"><label for="cbt-identifier">Email / Username / NISN</label><input id="cbt-identifier" class="cbt-input" name="identifier" autocomplete="username" value="' + escapeHtml(state.loginIdentifier) + '" placeholder="Contoh: 231045 atau siswa@smkn1tpd.sch.id" required /></div>',
-            '<div class="cbt-field"><label for="cbt-password">Password</label><div class="cbt-password-field"><input id="cbt-password" class="cbt-input" name="password" type="' + passwordType + '" autocomplete="current-password" value="' + escapeHtml(state.loginPassword) + '" placeholder="Masukkan password akun" required /><button class="cbt-password-toggle' + (state.loginPasswordVisible ? ' is-visible' : '') + '" data-action="toggle-password" type="button" aria-label="' + togglePasswordLabel + '" title="' + togglePasswordLabel + '"' + (state.busy ? ' disabled' : '') + '><span class="cbt-password-toggle-icon" aria-hidden="true"><span class="cbt-password-toggle-icon-eye"><svg viewBox="0 0 24 24" focusable="false"><path d="M1.5 12S5.5 5.5 12 5.5 22.5 12 22.5 12 18.5 18.5 12 18.5 1.5 12 1.5 12Z"></path><circle cx="12" cy="12" r="3.2"></circle></svg></span><span class="cbt-password-toggle-icon-eye-off"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.2 3.2 20.8 20.8"></path><path d="M9.9 5.9A12.2 12.2 0 0 1 12 5.5c6.5 0 10.5 6.5 10.5 6.5a18.9 18.9 0 0 1-3.4 4.2"></path><path d="M6.4 8A18.3 18.3 0 0 0 1.5 12s4 6.5 10.5 6.5a11.6 11.6 0 0 0 4-.7"></path><path d="M14.3 14.3A3.2 3.2 0 0 1 9.7 9.7"></path></svg></span></span><span class="cbt-password-toggle-label">' + escapeHtml(togglePasswordLabel) + '</span></button></div></div>',
+            '<div class="cbt-field"><label for="cbt-identifier">EMAIL / USERNAME / NISN</label><input id="cbt-identifier" class="cbt-input" name="identifier" autocomplete="username" value="' + escapeHtml(state.loginIdentifier) + '" placeholder="Contoh: 231045 atau siswa@smkn1tpd.sch.id" required /></div>',
+            '<div class="cbt-field"><label for="cbt-password">PASSWORD</label><div class="cbt-password-field"><input id="cbt-password" class="cbt-input" name="password" type="' + passwordType + '" autocomplete="current-password" value="' + escapeHtml(state.loginPassword) + '" placeholder="Masukkan password akun" required /><button class="cbt-password-toggle' + (state.loginPasswordVisible ? ' is-visible' : '') + '" data-action="toggle-password" type="button" aria-label="' + togglePasswordLabel + '" title="' + togglePasswordLabel + '"' + (state.busy ? ' disabled' : '') + '><span class="cbt-password-toggle-icon" aria-hidden="true"><span class="cbt-password-toggle-icon-eye"><svg viewBox="0 0 24 24" focusable="false"><path d="M1.5 12S5.5 5.5 12 5.5 22.5 12 22.5 12 18.5 18.5 12 18.5 1.5 12 1.5 12Z"></path><circle cx="12" cy="12" r="3.2"></circle></svg></span><span class="cbt-password-toggle-icon-eye-off"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.2 3.2 20.8 20.8"></path><path d="M9.9 5.9A12.2 12.2 0 0 1 12 5.5c6.5 0 10.5 6.5 10.5 6.5a18.9 18.9 0 0 1-3.4 4.2"></path><path d="M6.4 8A18.3 18.3 0 0 0 1.5 12s4 6.5 10.5 6.5a11.6 11.6 0 0 0 4-.7"></path><path d="M14.3 14.3A3.2 3.2 0 0 1 9.7 9.7"></path></svg></span></span><span class="cbt-password-toggle-label">' + escapeHtml(togglePasswordLabel) + '</span></button></div></div>',
             '<div class="cbt-actions"><button class="' + loginButtonClass + '" type="submit"' + (state.busy ? ' disabled' : '') + '><span class="cbt-button-spinner" aria-hidden="true"></span><span>' + loginButtonLabel + '</span></button></div>',
             '</form>',
             renderAlert(),
             '<p class="cbt-login-help">Jika gagal login, hubungi admin sekolah atau pengawas ujian.</p>',
+            loginMetaBlock,
             '</div>',
             '</section>'
         ].join('');
+    }
+
+    function renderConfirmStatusPill(label, tone) {
+        var classes = ['cbt-confirm-pill'];
+        if (tone) {
+            classes.push(tone);
+        }
+
+        return '<span class="' + classes.join(' ') + '">' + escapeHtml(label || '-') + '</span>';
+    }
+
+    function renderConfirmInfoCard(label, value, meta, extraClass) {
+        var classes = ['cbt-confirm-fact'];
+        var safeValue = value === undefined || value === null || String(value).trim() === '' ? '-' : String(value);
+        var safeMeta = meta === undefined || meta === null || String(meta).trim() === '' ? '' : String(meta);
+
+        if (extraClass) {
+            classes.push(extraClass);
+        }
+
+        return [
+            '<div class="' + classes.join(' ') + '">',
+            '<span class="cbt-confirm-fact-label">' + escapeHtml(label || '-') + '</span>',
+            '<strong class="cbt-confirm-fact-value">' + escapeHtml(safeValue) + '</strong>',
+            safeMeta !== '' ? '<small class="cbt-confirm-fact-meta">' + escapeHtml(safeMeta) + '</small>' : '',
+            '</div>'
+        ].join('');
+    }
+
+    function renderRefreshButton(disabled, extraClass) {
+        var classes = ['cbt-button', 'cbt-button-secondary', 'cbt-button-refresh'];
+
+        if (extraClass) {
+            classes.push(extraClass);
+        }
+
+        return [
+            '<button class="' + classes.join(' ') + '" data-action="reload-exams" type="button"' + (disabled ? ' disabled' : '') + '>',
+            '<span class="cbt-button-refresh-icon" aria-hidden="true">',
+            '<svg viewBox="0 0 24 24" focusable="false">',
+            '<path d="M20 11a8 8 0 1 0 2 5.3"></path>',
+            '<path d="M20 4v7h-7"></path>',
+            '</svg>',
+            '</span>',
+            '<span class="cbt-button-refresh-label">REFRESH</span>',
+            '</button>'
+        ].join('');
+    }
+
+    function formatExamStatusBadgeLabel(status) {
+        var normalized = String(status || '').replace(/[_-]+/g, ' ').trim().toLowerCase();
+        if (normalized === '') {
+            return '-';
+        }
+
+        return normalized.replace(/\b[a-z]/g, function (character) {
+            return character.toUpperCase();
+        });
+    }
+
+    function renderExamCardChip(label, iconName, tone) {
+        var classes = ['cbt-exam-card-chip'];
+        if (tone) {
+            classes.push(tone);
+        }
+
+        var iconMarkup = '';
+        if (iconName === 'calendar') {
+            iconMarkup = '<svg viewBox="0 0 24 24" focusable="false"><path d="M7 3v3"></path><path d="M17 3v3"></path><rect x="4" y="5.5" width="16" height="14" rx="2"></rect><path d="M4 9.5h16"></path></svg>';
+        } else if (iconName === 'clock') {
+            iconMarkup = '<svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l2.5 2"></path></svg>';
+        } else if (iconName === 'access') {
+            iconMarkup = '<svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="8"></circle><path d="M9 12.5l2 2 4-5"></path></svg>';
+        } else {
+            iconMarkup = '<svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg>';
+        }
+
+        return [
+            '<span class="' + classes.join(' ') + '">',
+            '<span class="cbt-exam-card-chip-icon" aria-hidden="true">' + iconMarkup + '</span>',
+            '<span class="cbt-exam-card-chip-label">' + escapeHtml(label || '-') + '</span>',
+            '</span>'
+        ].join('');
+    }
+
+    function formatExamPickerOptionLabel(exam) {
+        var examId = Number(exam && exam.id) || 0;
+        var title = String(exam && exam.title ? exam.title : '').trim();
+        var subject = String(exam && exam.subject_name ? exam.subject_name : '').trim();
+        var titleNormalized = title.toLowerCase();
+        var subjectNormalized = subject.toLowerCase();
+        var label = title;
+
+        if (label === '') {
+            label = subject !== '' ? subject : ('Ujian #' + String(examId || '-'));
+        } else if (subject !== '' && subjectNormalized !== '' && titleNormalized.indexOf(subjectNormalized) === -1) {
+            var combinedLabel = title + ' - ' + subject;
+            label = combinedLabel.length <= 44 ? combinedLabel : title;
+        }
+
+        if (label.length > 44) {
+            label = label.slice(0, 41).trim() + '...';
+        }
+
+        return label;
+    }
+
+    function renderExamPickerMobileOption(exam) {
+        var optionId = Number(exam && exam.id) || 0;
+        var isActive = optionId === Number(state.selectedExamId);
+        var durationMinutes = Number(exam && exam.duration_minutes) || 0;
+        var startsAtLabel = formatDateTimeCompact(exam && exam.starts_at ? exam.starts_at : '');
+        var latestAttemptStatus = String(exam && exam.latest_attempt_status ? exam.latest_attempt_status : '').toLowerCase();
+        var availableNow = Number(exam && exam.is_available_now ? exam.is_available_now : 0) === 1;
+        var classAllowed = Number(exam && exam.is_class_allowed ? exam.is_class_allowed : 0) === 1;
+        var withinSchedule = Number(exam && exam.is_within_schedule ? exam.is_within_schedule : 0) === 1;
+        var availabilityReason = String(exam && exam.availability_reason ? exam.availability_reason : '');
+        var availabilityLabel = 'Siap';
+        var availabilityTone = 'is-ready';
+        var classes = ['cbt-exam-picker-option'];
+
+        if (isActive) {
+            classes.push('is-active');
+        }
+
+        if (latestAttemptStatus === 'completed') {
+            availabilityLabel = 'Selesai';
+            availabilityTone = 'is-completed';
+        } else if (latestAttemptStatus === 'in_progress') {
+            availabilityLabel = 'Lanjutkan';
+            availabilityTone = 'is-progress';
+        } else if (!availableNow) {
+            availabilityTone = 'is-warn';
+            if (!classAllowed) {
+                availabilityLabel = 'Kelas';
+            } else if (!withinSchedule) {
+                if (availabilityReason === 'not_started') {
+                    availabilityLabel = 'Belum mulai';
+                } else if (availabilityReason === 'ended') {
+                    availabilityLabel = 'Berakhir';
+                } else {
+                    availabilityLabel = 'Jadwal';
+                }
+            } else {
+                availabilityLabel = 'Tutup';
+            }
+        }
+
+        return [
+            '<button type="button" class="' + classes.join(' ') + '" data-action="select-exam-mobile" data-id="' + escapeHtml(optionId) + '" role="option" aria-selected="' + (isActive ? 'true' : 'false') + '"' + (state.busy ? ' disabled' : '') + '>',
+            '<span class="cbt-exam-picker-option-main">',
+            '<span class="cbt-exam-picker-option-title">' + escapeHtml(formatExamPickerOptionLabel(exam)) + '</span>',
+            '<span class="cbt-exam-picker-option-meta">',
+            '<span class="cbt-exam-picker-option-chip">' + escapeHtml(startsAtLabel) + '</span>',
+            '<span class="cbt-exam-picker-option-chip">' + escapeHtml(String(durationMinutes) + ' menit') + '</span>',
+            '<span class="cbt-exam-picker-option-chip ' + availabilityTone + '">' + escapeHtml(availabilityLabel) + '</span>',
+            '</span>',
+            '</span>',
+            '<span class="cbt-exam-picker-option-indicator" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M20 7 10 17l-5-5"></path></svg></span>',
+            '</button>'
+        ].join('');
+    }
+
+    function updateSelectedExam(examId) {
+        var normalizedExamId = Number(examId) || 0;
+        if (normalizedExamId <= 0) {
+            return;
+        }
+
+        state.examPickerMobileOpen = false;
+        state.selectedExamId = normalizedExamId;
+        state.examToken = '';
+        clearMessages();
+        persistAuthSession();
+        render();
     }
 
     function renderConfirmStage() {
@@ -6674,7 +7355,7 @@
                 '<h3>Belum Ada Exam Aktif</h3>',
                 '<p class="cbt-subtitle">Akun ini belum memiliki exam yang tersedia saat ini.</p>',
                 '<div class="cbt-actions">',
-                '<button class="cbt-button cbt-button-secondary" data-action="reload-exams" type="button"' + (state.busy ? ' disabled' : '') + '>Refresh</button>',
+                renderRefreshButton(state.busy),
                 '<button class="cbt-button cbt-button-danger" data-action="logout" type="button">Logout</button>',
                 '</div>',
                 renderAlert(),
@@ -6701,15 +7382,127 @@
         var tokenRefreshMinutes = Number(selectedExam && selectedExam.token_refresh_minutes ? selectedExam.token_refresh_minutes : 0);
         var tokenInfoText = hasSelectedExam
             ? (selectedExamCompleted
-                ? 'Ujian untuk exam ini sudah selesai. Anda bisa melihat hasil nilai dari attempt terakhir.'
+                ? 'Ujian ini sudah selesai. Anda bisa melihat hasil nilai dari attempt terakhir.'
                 : (selectedExamRequiresToken
                     ? (
                         tokenInputRequired
-                            ? ('Exam ini membutuhkan token global.' + (tokenRefreshMinutes > 0 ? (' Refresh setiap ' + tokenRefreshMinutes + ' menit.') : ''))
-                            : ('Token exam diisi otomatis oleh sistem.' + (tokenRefreshMinutes > 0 ? (' Refresh setiap ' + tokenRefreshMinutes + ' menit.') : ''))
+                            ? ('Ujian ini membutuhkan token.' + (tokenRefreshMinutes > 0 ? (' Refresh setiap ' + tokenRefreshMinutes + ' menit.') : ''))
+                            : ('Token ujian diisi otomatis oleh sistem.' + (tokenRefreshMinutes > 0 ? (' Refresh setiap ' + tokenRefreshMinutes + ' menit.') : ''))
                     )
-                    : 'Exam ini tidak membutuhkan token.'))
-            : 'Pilih exam terlebih dahulu dari daftar di kiri.';
+                    : 'Ujian ini tidak membutuhkan token.'))
+            : 'Pilih ujian terlebih dahulu dari daftar di kiri.';
+        var userUsername = String(state.user && state.user.username ? state.user.username : '-');
+        var userClassCode = String(state.user && state.user.kode_kelas ? state.user.kode_kelas : '-');
+        var userRoomCode = String(state.user && state.user.kode_ruang ? state.user.kode_ruang : '-');
+        var selectedExamTitle = hasSelectedExam ? String(selectedExam.title || '-') : 'Belum ada ujian dipilih';
+        var selectedExamSubject = hasSelectedExam ? String(selectedExam.subject_name || '-') : 'Pilih ujian dari daftar kiri';
+        var selectedExamStatusLabel = hasSelectedExam ? String(selectedExam.status || '-') : 'Menunggu pilihan';
+        var selectedExamStartsAt = hasSelectedExam ? formatDateTime(selectedExam.starts_at) : '-';
+        var selectedExamDurationMinutes = hasSelectedExam ? (Number(selectedExam.duration_minutes) || 0) : 0;
+        var selectedExamDurationLabel = hasSelectedExam
+            ? (selectedExamDurationMinutes > 0 ? (selectedExamDurationMinutes + ' menit') : 'Durasi belum diatur')
+            : 'Menunggu pilihan';
+        var selectedExamLatestPercentage = Number(selectedExam && selectedExam.latest_attempt_percentage);
+        var selectedAccessLabel = 'Siap dikerjakan';
+        var selectedAccessTone = 'is-ready';
+        if (!hasSelectedExam) {
+            selectedAccessLabel = 'Belum pilih ujian';
+            selectedAccessTone = 'is-muted';
+        } else if (selectedExamCompleted) {
+            selectedAccessLabel = 'Hasil tersedia';
+            selectedAccessTone = 'is-done';
+        } else if (selectedAttemptStatus === 'in_progress') {
+            selectedAccessLabel = 'Lanjutkan ujian';
+            selectedAccessTone = 'is-ready';
+        } else if (Number(selectedExam && selectedExam.is_available_now ? selectedExam.is_available_now : 0) !== 1) {
+            selectedAccessTone = 'is-warn';
+            if (Number(selectedExam && selectedExam.is_class_allowed ? selectedExam.is_class_allowed : 0) !== 1) {
+                selectedAccessLabel = 'Kelas tidak sesuai';
+            } else if (Number(selectedExam && selectedExam.is_within_schedule ? selectedExam.is_within_schedule : 0) !== 1) {
+                var selectedAvailabilityReason = String(selectedExam && selectedExam.availability_reason ? selectedExam.availability_reason : '');
+                if (selectedAvailabilityReason === 'not_started') {
+                    selectedAccessLabel = 'Belum mulai';
+                } else if (selectedAvailabilityReason === 'ended') {
+                    selectedAccessLabel = 'Jadwal selesai';
+                } else {
+                    selectedAccessLabel = 'Di luar jadwal';
+                }
+            } else {
+                selectedAccessLabel = 'Belum tersedia';
+            }
+        }
+
+        var selectedAttemptLabel = 'Belum mulai';
+        var selectedAttemptTone = 'is-neutral';
+        var selectedAttemptMeta = 'Belum ada sesi ujian tersimpan.';
+        if (!hasSelectedExam) {
+            selectedAttemptLabel = 'Menunggu pilihan';
+            selectedAttemptTone = 'is-muted';
+            selectedAttemptMeta = 'Pilih salah satu ujian dari panel kiri.';
+        } else if (selectedExamCompleted) {
+            selectedAttemptLabel = 'Sudah selesai';
+            selectedAttemptTone = 'is-done';
+            selectedAttemptMeta = Number.isFinite(selectedExamLatestPercentage)
+                ? ('Nilai terakhir ' + formatScoreValue(selectedExamLatestPercentage) + '%')
+                : 'Hasil attempt terakhir tersedia.';
+        } else if (selectedAttemptStatus === 'in_progress') {
+            selectedAttemptLabel = 'Sesi aktif';
+            selectedAttemptTone = 'is-ready';
+            selectedAttemptMeta = 'Anda akan melanjutkan dari progres terakhir.';
+        }
+
+        var selectedTokenLabel = 'Menunggu pilihan';
+        var selectedTokenTone = 'is-muted';
+        if (hasSelectedExam) {
+            if (tokenInputRequired) {
+                selectedTokenLabel = 'Token manual';
+                selectedTokenTone = 'is-warn';
+            } else if (selectedExamRequiresToken || selectedExamAutoToken) {
+                selectedTokenLabel = 'Token otomatis';
+                selectedTokenTone = 'is-ready';
+            } else {
+                selectedTokenLabel = 'Tanpa token';
+                selectedTokenTone = 'is-neutral';
+            }
+        }
+
+        var tokenFieldValue = !hasSelectedExam
+            ? 'Pilih ujian dahulu'
+            : (selectedExamAutoTokenValue !== ''
+                ? selectedExamAutoTokenValue
+                : ((selectedExamRequiresToken || selectedExamAutoToken) ? 'Otomatis oleh sistem' : 'Tidak diperlukan'));
+        var tokenFieldHelpText = !hasSelectedExam
+            ? 'Pilih ujian dari daftar kiri untuk melihat kebutuhan token.'
+            : (selectedExamCompleted
+                ? 'Attempt terakhir untuk ujian ini sudah selesai. Anda masih bisa membuka hasil nilainya.'
+                : (tokenInputRequired
+                    ? 'Masukkan token 6 karakter sebelum memulai atau melanjutkan ujian.'
+                    : ((selectedExamRequiresToken || selectedExamAutoToken)
+                        ? 'Token tidak perlu diketik manual karena akan diisi oleh sistem.'
+                        : 'Ujian ini dapat dimulai tanpa token.')));
+        if (tokenRefreshMinutes > 0 && hasSelectedExam && !selectedExamCompleted) {
+            tokenFieldHelpText += ' Gunakan token terbaru karena sistem dapat memperbaruinya setiap ' + tokenRefreshMinutes + ' menit.';
+        }
+
+        var confirmQuickText = !hasSelectedExam
+            ? 'Pilih salah satu ujian dari daftar kiri untuk mengaktifkan detail dan tombol aksi.'
+            : (
+                selectedAttemptStatus === 'in_progress'
+                    ? 'Sesi sebelumnya masih aktif. Anda akan melanjutkan dari progres terakhir.'
+                    : (
+                        selectedExamCompleted
+                            ? 'Attempt terakhir sudah selesai. Gunakan tombol lihat nilai untuk membuka hasilnya.'
+                            : 'Pastikan jadwal, token, dan data peserta sudah benar sebelum menekan mulai.'
+                    )
+            );
+        var confirmSupportText = tokenFieldHelpText;
+        if (confirmQuickText && tokenFieldHelpText.indexOf(confirmQuickText) === -1) {
+            confirmSupportText += ' ' + confirmQuickText;
+        }
+
+        var primaryActionLabel = state.busy
+            ? (selectedExamCompleted ? 'Memuat...' : (selectedAttemptStatus === 'in_progress' ? 'Membuka...' : 'Memulai...'))
+            : (selectedExamCompleted ? 'Lihat Nilai' : (selectedAttemptStatus === 'in_progress' ? 'Lanjutkan Ujian' : 'Mulai Ujian'));
         var examItems = state.exams.map(function (exam) {
             var isActive = Number(exam.id) === Number(state.selectedExamId);
             var status = String(exam.status || '-');
@@ -6726,7 +7519,6 @@
             var examAttemptCompact = 'Belum';
             var accessLabel = 'Akses: siap';
             var itemClasses = ['cbt-exam-item'];
-            var summaryCompactStatus = 'siap';
 
             if (isActive) {
                 itemClasses.push('is-active');
@@ -6735,17 +7527,14 @@
                 itemClasses.push('is-completed');
                 examAttemptLabel = 'Sudah selesai';
                 examAttemptCompact = 'Selesai';
-                summaryCompactStatus = 'Selesai';
                 if (Number.isFinite(latestAttemptPercentage)) {
                     examAttemptExtra = ' | Nilai: ' + formatScoreValue(latestAttemptPercentage) + '%';
                     examAttemptCompact += ' | ' + formatScoreValue(latestAttemptPercentage) + '%';
-                    summaryCompactStatus += ' ' + formatScoreValue(latestAttemptPercentage) + '%';
                 }
             } else if (latestAttemptStatus === 'in_progress') {
                 itemClasses.push('is-in-progress');
                 examAttemptLabel = 'Sedang dikerjakan';
                 examAttemptCompact = 'Dikerjakan';
-                summaryCompactStatus = 'Dikerjakan';
             } else {
                 itemClasses.push('is-not-started');
             }
@@ -6767,34 +7556,94 @@
             }
 
             var accessCompactLabel = accessLabel.replace(/^Akses:\s*/i, '');
-            var scheduleCompactLabel = formatDateTimeCompact(exam.starts_at) + ' | ' + String(duration) + 'm';
-            if (latestAttemptStatus !== 'completed' && latestAttemptStatus !== 'in_progress') {
-                summaryCompactStatus = accessCompactLabel;
+            var startsAtCompact = formatDateTimeCompact(exam.starts_at);
+            var statusBadgeLabel = formatExamStatusBadgeLabel(status);
+            var statusBadgeClass = 'is-neutral';
+            var accessChipClass = availableNow ? 'is-ready' : 'is-warn';
+            var attemptChipClass = 'is-warn';
+
+            itemClasses.push('cbt-exam-item-modern');
+
+            if (String(status || '').toLowerCase().indexOf('publish') >= 0 || String(status || '').toLowerCase().indexOf('aktif') >= 0) {
+                statusBadgeClass = 'is-published';
+            } else if (String(status || '').toLowerCase().indexOf('draft') >= 0 || String(status || '').toLowerCase().indexOf('arsip') >= 0) {
+                statusBadgeClass = 'is-muted';
             }
-            scheduleCompactLabel += ' | ' + summaryCompactStatus;
+
+            if (latestAttemptStatus === 'completed') {
+                attemptChipClass = 'is-success';
+            } else if (latestAttemptStatus === 'in_progress') {
+                attemptChipClass = 'is-ready';
+            }
 
             return [
                 '<button type="button" class="' + itemClasses.join(' ') + '" data-action="select-exam" data-id="' + escapeHtml(exam.id) + '" aria-pressed="' + (isActive ? 'true' : 'false') + '">',
-                '<p class="cbt-exam-title">' + escapeHtml(exam.title || '-') + '</p>',
-                '<p class="cbt-exam-meta cbt-exam-meta-subject"><span class="cbt-exam-meta-full">' + escapeHtml(exam.subject_name || '-') + ' | ' + escapeHtml(status) + '</span><span class="cbt-exam-meta-compact">' + escapeHtml(exam.subject_name || '-') + '</span></p>',
-                '<p class="cbt-exam-meta cbt-exam-meta-schedule"><span class="cbt-exam-meta-full">Mulai: ' + escapeHtml(startsAt) + ' | Durasi: ' + escapeHtml(duration) + ' menit</span><span class="cbt-exam-meta-compact">' + escapeHtml(scheduleCompactLabel) + '</span></p>',
-                '<p class="cbt-exam-meta cbt-exam-meta-access"><span class="cbt-exam-meta-full">' + escapeHtml(accessLabel) + '</span><span class="cbt-exam-meta-compact">' + escapeHtml(accessCompactLabel) + '</span></p>',
-                '<p class="cbt-exam-meta cbt-exam-meta-attempt"><span class="cbt-exam-meta-full">Status Ujian: ' + escapeHtml(examAttemptLabel + examAttemptExtra) + '</span><span class="cbt-exam-meta-compact">' + escapeHtml(examAttemptCompact) + '</span></p>',
+                '<span class="cbt-exam-card-head">',
+                '<span class="cbt-exam-title cbt-exam-card-title" title="' + escapeHtml(exam.title || '-') + '">' + escapeHtml(exam.title || '-') + '</span>',
+                '<span class="cbt-exam-card-status ' + statusBadgeClass + '">' + escapeHtml(statusBadgeLabel) + '</span>',
+                '</span>',
+                '<span class="cbt-exam-card-chips">',
+                renderExamCardChip(startsAtCompact, 'calendar', 'is-accent'),
+                renderExamCardChip(String(duration) + ' menit', 'clock', 'is-soft'),
+                renderExamCardChip(accessCompactLabel, 'access', accessChipClass),
+                renderExamCardChip(examAttemptCompact, 'attempt', attemptChipClass),
+                '</span>',
                 '</button>'
             ].join('');
         }).join('');
+        var selectedExamPickerLabel = hasSelectedExam
+            ? formatExamPickerOptionLabel(selectedExam)
+            : 'Pilih salah satu ujian';
+        var selectedExamPickerStartsAt = hasSelectedExam ? formatDateTimeCompact(selectedExam.starts_at) : '';
+        var selectedExamPickerDuration = hasSelectedExam ? (Number(selectedExam.duration_minutes) || 0) : 0;
+        var selectedExamPickerNote = hasSelectedExam
+            ? (selectedExamPickerStartsAt + ' | ' + (selectedExamPickerDuration > 0 ? (String(selectedExamPickerDuration) + ' menit') : 'Durasi belum diatur'))
+            : (String(state.exams.length) + ' ujian tersedia');
+        var examPickerDropdownClass = 'cbt-exam-picker-dropdown' + (state.examPickerMobileOpen ? ' is-open' : '');
+        var examPickerOptions = state.exams.map(function (exam) {
+            return renderExamPickerMobileOption(exam);
+        }).join('');
 
         return [
-            '<div class="cbt-grid-2">',
-            '<section class="cbt-card">',
-            '<h3>Pilih Exam</h3>',
-            '<p class="cbt-subtitle">Daftar exam sesuai hak akses akun yang login.</p>',
+            '<div class="cbt-grid-2 cbt-confirm-stage-grid">',
+            '<section class="cbt-card cbt-exam-picker-card">',
+            '<h3 class="cbt-exam-picker-title">Pilih Ujian</h3>',
+            '<p class="cbt-subtitle">Daftar ujian sesuai hak akses akun yang login.</p>',
+            '<div class="cbt-exam-picker-mobile">',
+            '<div class="cbt-exam-picker-mobile-head">',
+            '<p class="cbt-exam-picker-mobile-kicker">Pilih Cepat</p>',
+            '<span class="cbt-exam-picker-mobile-count">' + escapeHtml(String(state.exams.length)) + ' ujian</span>',
+            '</div>',
+            '<div class="cbt-field">',
+            '<label id="cbt-exam-picker-mobile-label">Pilih Ujian</label>',
+            '<div class="' + examPickerDropdownClass + '">',
+            '<button id="cbt-exam-picker-trigger" class="cbt-exam-picker-trigger" data-action="toggle-exam-picker-mobile" type="button" aria-haspopup="listbox" aria-expanded="' + (state.examPickerMobileOpen ? 'true' : 'false') + '" aria-controls="cbt-exam-picker-menu" aria-labelledby="cbt-exam-picker-mobile-label cbt-exam-picker-trigger-value"' + (state.busy ? ' disabled' : '') + '>',
+            '<span class="cbt-exam-picker-trigger-copy">',
+            '<span class="cbt-exam-picker-trigger-label">Ujian Dipilih</span>',
+            '<strong id="cbt-exam-picker-trigger-value" class="cbt-exam-picker-trigger-value">' + escapeHtml(selectedExamPickerLabel) + '</strong>',
+            '<small class="cbt-exam-picker-trigger-note">' + escapeHtml(selectedExamPickerNote) + '</small>',
+            '</span>',
+            '<span class="cbt-exam-picker-trigger-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M6 9l6 6 6-6"></path></svg></span>',
+            '</button>',
+            (state.examPickerMobileOpen
+                ? ('<div id="cbt-exam-picker-menu" class="cbt-exam-picker-menu" role="listbox" aria-labelledby="cbt-exam-picker-mobile-label">' + examPickerOptions + '</div>')
+                : ''),
+            '</div>',
+            '</div>',
+            '<p class="cbt-exam-picker-mobile-help">Pilih ujian dari panel ini untuk melihat ringkasan dan tombol aksi yang sesuai.</p>',
+            '</div>',
             '<div class="cbt-exam-list">' + examItems + '</div>',
-            renderAlert(),
             '</section>',
-            '<section class="cbt-card cbt-confirm-card">',
+            '<section class="cbt-card cbt-confirm-card cbt-confirm-card-simple">',
+            '<p class="cbt-confirm-kicker">Siap Ujian</p>',
             '<h3>Konfirmasi Ujian</h3>',
-            '<p class="cbt-subtitle">' + tokenInfoText + '</p>',
+            '<p class="cbt-confirm-selected-title">' + escapeHtml(selectedExamTitle) + '</p>',
+            '<p class="cbt-subtitle">' + escapeHtml(tokenInfoText) + '</p>',
+            '<div class="cbt-confirm-status-list">',
+            renderConfirmStatusPill(selectedAccessLabel, selectedAccessTone),
+            renderConfirmStatusPill(selectedTokenLabel, selectedTokenTone),
+            renderConfirmStatusPill(selectedAttemptLabel, selectedAttemptTone),
+            '</div>',
             '<div class="cbt-confirm-profile">',
             (
                 userPhoto !== ''
@@ -6803,25 +7652,31 @@
             ),
             '</div>',
             '<div class="cbt-form-grid cbt-confirm-form-grid">',
-            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Username</label><input class="cbt-input" value="' + escapeHtml(state.user && state.user.username ? state.user.username : '-') + '" readonly /></div>',
-            '<div class="cbt-field cbt-confirm-field"><label>Nama</label><input class="cbt-input" value="' + escapeHtml(userName || '-') + '" readonly /></div>',
-            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Kelas</label><input class="cbt-input" value="' + escapeHtml(state.user && state.user.kode_kelas ? state.user.kode_kelas : '-') + '" readonly /></div>',
-            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Ruangan</label><input class="cbt-input" value="' + escapeHtml(state.user && state.user.kode_ruang ? state.user.kode_ruang : '-') + '" readonly /></div>',
-            '<div class="cbt-field cbt-confirm-field"><label>Exam</label><input class="cbt-input" value="' + escapeHtml(selectedExam ? (selectedExam.title || '-') : '-') + '" readonly /></div>',
-            '<div class="cbt-field cbt-confirm-field"><label>Mata Pelajaran</label><input class="cbt-input" value="' + escapeHtml(selectedExam ? (selectedExam.subject_name || '-') : '-') + '" readonly /></div>',
+            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Username</label><input class="cbt-input" value="' + escapeHtml(userUsername) + '" readonly /></div>',
+            '<div class="cbt-field cbt-confirm-field"><label>Nama Peserta</label><input class="cbt-input" value="' + escapeHtml(userName || '-') + '" readonly /></div>',
+            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Kelas</label><input class="cbt-input" value="' + escapeHtml(userClassCode) + '" readonly /></div>',
+            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Ruangan</label><input class="cbt-input" value="' + escapeHtml(userRoomCode) + '" readonly /></div>',
+            '<div class="cbt-field cbt-confirm-field"><label>Ujian</label><input class="cbt-input" value="' + escapeHtml(selectedExamTitle) + '" readonly /></div>',
+            '<div class="cbt-field cbt-confirm-field"><label>Mata Pelajaran</label><input class="cbt-input" value="' + escapeHtml(selectedExamSubject) + '" readonly /></div>',
+            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Mulai</label><input class="cbt-input" value="' + escapeHtml(selectedExamStartsAt) + '" readonly /></div>',
+            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Durasi</label><input class="cbt-input" value="' + escapeHtml(selectedExamDurationLabel) + '" readonly /></div>',
+            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Status Akses</label><input class="cbt-input" value="' + escapeHtml(selectedAccessLabel) + '" readonly /></div>',
+            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Status Attempt</label><input class="cbt-input" value="' + escapeHtml(selectedAttemptLabel) + '" readonly /></div>',
             (
                 tokenInputRequired
-                    ? '<div class="cbt-field cbt-confirm-field cbt-confirm-field-token"><label for="cbt-exam-token">Token</label><input id="cbt-exam-token" class="cbt-input cbt-input-token" name="exam_token" maxlength="6" value="' + escapeHtml(state.examToken) + '" placeholder="6 karakter (tanpa 0 O I L)"' + (hasSelectedExam && !selectedExamCompleted ? '' : ' disabled') + ' /></div>'
-                    : '<div class="cbt-field cbt-confirm-field cbt-confirm-field-token"><label>Token</label><input class="cbt-input" value="' + escapeHtml(selectedExamAutoTokenValue !== '' ? selectedExamAutoTokenValue : ((selectedExamRequiresToken || selectedExamAutoToken) ? 'Otomatis oleh sistem' : 'Tidak diperlukan')) + '" readonly /></div>'
+                    ? '<div class="cbt-field cbt-confirm-field cbt-confirm-field-token"><label for="cbt-exam-token">Token Ujian</label><input id="cbt-exam-token" class="cbt-input cbt-input-token" name="exam_token" maxlength="6" value="' + escapeHtml(state.examToken) + '" placeholder="6 karakter (tanpa 0 O I L)"' + (hasSelectedExam && !selectedExamCompleted ? '' : ' disabled') + ' /></div>'
+                    : '<div class="cbt-field cbt-confirm-field cbt-confirm-field-token"><label>Token Ujian</label><input class="cbt-input" value="' + escapeHtml(tokenFieldValue) + '" readonly /></div>'
             ),
+            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-note"><p class="cbt-confirm-token-note">' + escapeHtml(confirmSupportText) + '</p></div>',
             '</div>',
+            renderAlert(),
             '<div class="cbt-actions cbt-confirm-actions">',
             (
                 selectedExamCompleted
-                    ? '<button class="cbt-button cbt-button-primary" data-action="view-result" type="button"' + (state.busy || !hasSelectedExam || selectedExamAttemptId <= 0 ? ' disabled' : '') + '>' + (state.busy ? 'Memuat...' : 'Lihat Nilai') + '</button>'
-                    : '<button class="cbt-button cbt-button-primary" data-action="start-exam" type="button"' + (state.busy || !hasSelectedExam ? ' disabled' : '') + '>' + (state.busy ? 'Memulai...' : 'Mulai Ujian') + '</button>'
+                    ? '<button class="cbt-button cbt-button-primary" data-action="view-result" type="button"' + (state.busy || !hasSelectedExam || selectedExamAttemptId <= 0 ? ' disabled' : '') + '>' + primaryActionLabel + '</button>'
+                    : '<button class="cbt-button cbt-button-primary" data-action="start-exam" type="button"' + (state.busy || !hasSelectedExam ? ' disabled' : '') + '>' + primaryActionLabel + '</button>'
             ),
-            '<button class="cbt-button cbt-button-secondary" data-action="reload-exams" type="button"' + (state.busy ? ' disabled' : '') + '>Refresh Exam</button>',
+            renderRefreshButton(state.busy),
             '</div>',
             '</section>',
             '</div>'
@@ -6949,10 +7804,16 @@
         }
 
         var progressSummary = getExamProgressSummary();
+        var selectedExam = getSelectedExam();
+        var activeExamTitle = selectedExam && selectedExam.title ? String(selectedExam.title) : '-';
         var answeredCount = progressSummary.answeredQuestions;
         var answeredPercentage = totalQuestions > 0 ? (answeredCount / totalQuestions) * 100 : 0;
         var answeredPercentageText = formatScoreValue(answeredPercentage);
         var answeredPercentageWidth = Math.max(0, Math.min(100, answeredPercentage)).toFixed(2);
+        var examFooterProgressValue = totalQuestions > 0 ? (answeredPercentageText + '%') : '-';
+        var examFooterProgressNote = totalQuestions > 0
+            ? (String(answeredCount) + '/' + String(totalQuestions) + ' soal')
+            : 'Belum ada soal';
         var doubtfulCount = progressSummary.doubtfulQuestions;
         var unansweredCount = Math.max(0, totalQuestions - answeredCount);
         var changedQuestionCount = getChangedQuestionCount();
@@ -7093,6 +7954,18 @@
             '<div class="cbt-question-quick-nav cbt-question-quick-nav-bottom" role="group" aria-label="Navigasi Cepat Soal">',
             quickNavigationMarkup,
             '</div>',
+            '<div class="cbt-question-exam-footer" title="' + escapeHtml(activeExamTitle) + '">',
+            '<span class="cbt-question-exam-footer-badge" aria-hidden="true"><span class="cbt-question-exam-footer-badge-core"></span></span>',
+            '<div class="cbt-question-exam-footer-copy">',
+            '<span class="cbt-question-exam-footer-label">Ujian Aktif</span>',
+            '<strong class="cbt-question-exam-footer-value">' + escapeHtml(activeExamTitle) + '</strong>',
+            '</div>',
+            '<div class="cbt-question-exam-footer-meta" aria-label="Progress ' + escapeHtml(examFooterProgressValue) + ', ' + escapeHtml(examFooterProgressNote) + ' terjawab">',
+            '<span class="cbt-question-exam-footer-meta-label">Progress</span>',
+            '<strong class="cbt-question-exam-footer-meta-value">' + escapeHtml(examFooterProgressValue) + '</strong>',
+            '<small class="cbt-question-exam-footer-meta-note">' + escapeHtml(examFooterProgressNote) + '</small>',
+            '</div>',
+            '</div>',
             '</div>',
             '</section>'
         ].join('');
@@ -7106,6 +7979,7 @@
         var examLayoutMarkup = '<div class="' + examLayoutClass + '">' + layoutContent + '</div>';
         var calculatorMarkup = renderCalculatorPanel();
         var stageShellClass = 'cbt-exam-stage-shell cbt-calc-pos-' + calculatorPanelPosition + (state.calculatorVisible ? '' : ' is-calc-hidden');
+        var fullscreenPromptMarkup = renderExamFullscreenPrompt();
         var stageContent;
 
         if (calculatorPanelPosition === 'left') {
@@ -7118,7 +7992,7 @@
             stageContent = examLayoutMarkup + calculatorMarkup;
         }
 
-        return '<div class="' + stageShellClass + '">' + stageContent + '</div>';
+        return '<div class="' + stageShellClass + '">' + fullscreenPromptMarkup + stageContent + '</div>';
     }
 
     function formatScoreValue(value) {
@@ -7928,6 +8802,23 @@
             return;
         }
 
+        if (action === 'enter-fullscreen') {
+            requestExamFullscreen({
+                silent: false
+            }).then(function (entered) {
+                if (entered) {
+                    clearMessages();
+                }
+                render();
+            });
+            return;
+        }
+
+        if (isExamFullscreenBlockingActive() && action !== 'logout' && action !== 'toggle-theme') {
+            event.preventDefault();
+            return;
+        }
+
         if (state.stage === 'exam') {
             noteQuestionPrefetchActivity();
         }
@@ -8022,13 +8913,30 @@
 
         if (action === 'select-exam') {
             var examId = Number(actionNode.getAttribute('data-id')) || 0;
-            if (examId > 0) {
-                state.selectedExamId = examId;
-                state.examToken = '';
-                clearMessages();
-                persistAuthSession();
-                render();
+            updateSelectedExam(examId);
+            return;
+        }
+
+        if (action === 'toggle-exam-picker-mobile') {
+            if (state.busy) {
+                return;
             }
+
+            state.examPickerMobileOpen = !state.examPickerMobileOpen;
+            render();
+
+            if (state.examPickerMobileOpen) {
+                var activePickerOption = root.querySelector('.cbt-exam-picker-option.is-active, .cbt-exam-picker-option');
+                if (activePickerOption instanceof HTMLButtonElement) {
+                    activePickerOption.focus();
+                }
+            }
+            return;
+        }
+
+        if (action === 'select-exam-mobile') {
+            var mobileExamId = Number(actionNode.getAttribute('data-id')) || 0;
+            updateSelectedExam(mobileExamId);
             return;
         }
 
@@ -8238,12 +9146,23 @@
         }
         var targetAction = String(target.getAttribute('data-action') || '');
 
+        if (isExamFullscreenBlockingActive()) {
+            return;
+        }
+
         if (isQuestionRevisionRefreshActive() && targetAction.indexOf('answer-') === 0) {
             return;
         }
 
         if (state.stage === 'exam') {
             noteQuestionPrefetchActivity();
+        }
+
+        if (targetAction === 'select-exam-mobile') {
+            if (target instanceof HTMLSelectElement) {
+                updateSelectedExam(target.value);
+            }
+            return;
         }
 
         if (targetAction === 'answer-single') {
@@ -8311,12 +9230,34 @@
         }
     });
 
+    document.addEventListener('click', function (event) {
+        if (!state.examPickerMobileOpen) {
+            return;
+        }
+
+        var target = event.target;
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+
+        if (target.closest('.cbt-exam-picker-dropdown')) {
+            return;
+        }
+
+        state.examPickerMobileOpen = false;
+        render();
+    });
+
     root.addEventListener('input', function (event) {
         var target = event.target;
         if (!(target instanceof HTMLElement)) {
             return;
         }
         var action = String(target.getAttribute('data-action') || '');
+
+        if (isExamFullscreenBlockingActive()) {
+            return;
+        }
 
         if (isQuestionRevisionRefreshActive() && action.indexOf('answer-') === 0) {
             return;
@@ -8450,6 +9391,34 @@
             return;
         }
 
+        if ((event.ctrlKey || event.metaKey || event.shiftKey) && isExamClipboardBlockingActive()) {
+            var key = String(event.key || '').toLowerCase();
+            var shouldBlockClipboardShortcut = false;
+            var clipboardAction = '';
+
+            if ((event.ctrlKey || event.metaKey) && (key === 'c' || key === 'x' || key === 'v')) {
+                shouldBlockClipboardShortcut = true;
+                clipboardAction = key === 'c' ? 'copy' : (key === 'x' ? 'cut' : 'paste');
+            } else if ((event.ctrlKey || event.metaKey) && key === 'insert') {
+                shouldBlockClipboardShortcut = true;
+                clipboardAction = 'copy';
+            } else if (event.shiftKey && key === 'insert') {
+                shouldBlockClipboardShortcut = true;
+                clipboardAction = 'paste';
+            } else if (event.shiftKey && key === 'delete') {
+                shouldBlockClipboardShortcut = true;
+                clipboardAction = 'cut';
+            }
+
+            if (shouldBlockClipboardShortcut && handleBlockedClipboardAction(clipboardAction, event)) {
+                return;
+            }
+        }
+
+        if (isExamFullscreenBlockingActive()) {
+            return;
+        }
+
         if (
             state.stage === 'exam'
             && !state.finishConfirmOpen
@@ -8474,6 +9443,13 @@
         }
 
         if (event.key === 'Escape') {
+            if (state.examPickerMobileOpen) {
+                event.preventDefault();
+                state.examPickerMobileOpen = false;
+                render();
+                return;
+            }
+
             if (state.userPhotoModalOpen) {
                 event.preventDefault();
                 state.userPhotoModalOpen = false;
@@ -8519,6 +9495,48 @@
         scheduleNavigationGridLayout();
     });
 
+    ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(function (eventName) {
+        document.addEventListener(eventName, function () {
+            var wasFullscreenActive = state.isFullscreenActive;
+            syncFullscreenState(true);
+
+            if (
+                wasFullscreenActive
+                && !state.isFullscreenActive
+                && isExamFullscreenRequired()
+                && isSecurityLoggingActiveForAttempt()
+                && Date.now() > fullscreenExitLogSuppressedUntil
+            ) {
+                sendSecurityEventSilently('fullscreen_exit', {
+                    source: 'fullscreenchange'
+                }, {
+                    attemptId: Number(state.attemptId) || 0,
+                    keepalive: true,
+                    debounceMs: 1500,
+                    requireFullscreen: true
+                });
+            }
+        });
+    });
+
+    ['copy', 'cut', 'paste'].forEach(function (eventName) {
+        document.addEventListener(eventName, function (event) {
+            handleBlockedClipboardAction(eventName, event);
+        }, true);
+    });
+
+    document.addEventListener('beforeinput', function (event) {
+        var inputType = event && event.inputType ? String(event.inputType) : '';
+
+        if (!isExamClipboardBlockingActive()) {
+            return;
+        }
+
+        if (inputType === 'insertFromPaste' || inputType === 'insertFromPasteAsQuotation' || inputType === 'deleteByCut') {
+            handleBlockedClipboardAction(inputType.indexOf('deleteByCut') === 0 ? 'cut' : 'paste', event);
+        }
+    });
+
     if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
         document.fonts.ready.then(function () {
             fitLoginHeroSchoolName();
@@ -8549,7 +9567,14 @@
     }
 
     document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') {
+            cancelScheduledTabHiddenSecurityLog();
+            cancelScheduledWindowBlurSecurityLog();
+        }
+
         if (document.visibilityState === 'hidden') {
+            cancelScheduledWindowBlurSecurityLog();
+            scheduleTabHiddenSecurityLog();
             persistCurrentQuestionCacheLocally();
             flushPendingAnswerBatchSilently({
                 flushAll: true,
@@ -8562,7 +9587,32 @@
         }
     });
 
+    window.addEventListener('blur', function () {
+        if (!isWindowBlurLoggingActiveForAttempt()) {
+            return;
+        }
+        if (document.visibilityState === 'hidden') {
+            return;
+        }
+
+        scheduleWindowBlurSecurityLog('blur');
+        persistCurrentQuestionCacheLocally();
+        flushPendingAnswerBatchSilently({
+            flushAll: true,
+            keepalive: true
+        });
+        flushAttemptUiStateSilently({
+            force: true,
+            keepalive: true
+        });
+    });
+
+    window.addEventListener('focus', function () {
+        cancelScheduledWindowBlurSecurityLog();
+    });
+
     window.addEventListener('pagehide', function () {
+        logPageLeaveSecurityEvent('pagehide');
         persistCurrentQuestionCacheLocally();
         flushPendingAnswerBatchSilently({
             flushAll: true,
@@ -8575,6 +9625,7 @@
     });
 
     window.addEventListener('beforeunload', function () {
+        logPageLeaveSecurityEvent('beforeunload');
         persistCurrentQuestionCacheLocally();
         flushPendingAnswerBatchSilently({
             flushAll: true,
@@ -8643,6 +9694,7 @@
     }
     compactViewportState = isCompactViewport();
     applyUiPreferences();
+    syncFullscreenState(false);
 
     bootstrapFromPersistedSession();
 })();
