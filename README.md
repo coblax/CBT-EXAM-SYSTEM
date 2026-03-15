@@ -20,7 +20,7 @@ Plugin ini sudah mencakup alur inti CBT dari hulu ke hilir:
 - Menu admin lengkap: `CBT Exams`, `CBT Tokens`, `CBT Setup`, `CBT Maintenance`, `CBT Cache`, `CBT Subjects`, `CBT Users`, `CBT Exam Cards`, `CBT Questions`, `CBT Results`, `CBT Report Exam`.
 - Builder exam modern dengan dua panel (`Form Exam` dan `Daftar Exam`), checklist target kelas, sinkronisasi pilihan soal, preview soal, dan progress overlay saat update exam besar sedang diproses.
 - Filter admin otomatis dengan partial refresh pada daftar exam, daftar subject, daftar user, dan katalog soal di builder exam.
-- `CBT Setup` sekarang memisahkan branding dan security, termasuk fullscreen wajib, blok `copy/cut/paste`, logging security, serta histori event dengan filter kelas, ruang, nama, severity, dan event.
+- `CBT Setup` sekarang memisahkan `Branding`, `Security`, dan `Security Log`, termasuk fullscreen wajib, blok `copy/cut/paste`, logging security, panel `Must Watch`, dan histori event dengan filter kelas, ruang, nama, severity, event, serta device.
 - Branding CBT dari admin: nama sekolah, `logo_1`, dan `logo_2` untuk frontend, kartu ujian, dan report print-ready.
 - Monitoring hasil dengan auto refresh 10 detik, timer remaining time per attempt, detail jawaban full-width, dan kontrol operasional tanpa keluar dari halaman hasil.
 
@@ -46,10 +46,11 @@ Plugin ini sudah mencakup alur inti CBT dari hulu ke hilir:
 
 ### Security dan Audit
 
-- Security log menyimpan 50 event terbaru di panel setup, dengan retensi 30 hari dan pruning otomatis.
-- Toolbar log mendukung auto refresh, filter `severity`, `event`, `kelas`, `ruang`, pencarian nama siswa, serta aksi `Delete Selected` dan `Delete All`.
-- Kolom siswa pada security log menampilkan identitas singkat `K:` untuk kelas dan `R:` untuk ruang.
-- Event security dicatat dari sisi frontend dan server agar insiden seperti reset login admin atau sesi dicabut tetap masuk histori.
+- Tab `Security Log` menampilkan 20 event terbaru dengan retensi 30 hari dan pruning otomatis.
+- Panel `Must Watch` menghitung attempt aktif berisiko secara live dari histori event, dilengkapi quick sorting `Auto`, `Skor tertinggi`, `Terbaru`, fokus cepat ke histori log, dan aksi `Buka Results`, `Reset Login`, serta `Force Complete`.
+- Toolbar log mendukung auto refresh, filter `severity`, `event`, `device`, `kelas`, `ruang`, pencarian nama siswa, fokus kontekstual dari panel `Must Watch`, serta aksi `Delete Selected` dan `Delete All`.
+- Kolom siswa pada security log menampilkan identitas singkat `K:` untuk kelas dan `R:` untuk ruang, sementara detail event juga memuat konteks device/platform agar review insiden lebih cepat.
+- Event security dicatat dari sisi frontend dan server agar insiden seperti reset login admin, force complete admin, atau sesi dicabut tetap masuk histori.
 
 ### Hasil, Cetak, dan Report
 
@@ -75,7 +76,7 @@ Plugin ini sudah mencakup alur inti CBT dari hulu ke hilir:
 | --- | --- |
 | `CBT Exams` | Builder exam, daftar exam, filter exam, sinkronisasi soal, dan ringkasan attempt aktif |
 | `CBT Tokens` | Token global semua exam, rotasi otomatis, dan auto-apply token di frontend |
-| `CBT Setup` | Branding sekolah, kontrol security ujian, dan histori security log |
+| `CBT Setup` | Branding sekolah, kontrol security ujian, panel `Must Watch`, dan histori security log |
 | `CBT Maintenance` | Reset database CBT, generate dataset uji, dan load test terintegrasi |
 | `CBT Cache` | Readiness Redis, bootstrap/rollback Redis, namespace cache, locks, dan UI state |
 | `CBT Subjects` | CRUD subject, import `CSV/XLSX`, filter otomatis, dan bulk delete |

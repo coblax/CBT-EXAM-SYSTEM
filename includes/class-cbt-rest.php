@@ -987,6 +987,7 @@ class CBT_REST
         if (!is_array($context)) {
             $context = [];
         }
+        $context = self::enrich_security_event_context($request, $context);
 
         $logged = CBT_Security_Log::record_attempt_event((int) ($attempt['id'] ?? 0), $event_type, $context);
 
@@ -995,6 +996,81 @@ class CBT_REST
             'logged' => $logged ? 1 : 0,
             'skipped' => $logged ? 0 : 1,
         ]);
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     * @return array<string,mixed>
+     */
+    private static function enrich_security_event_context(WP_REST_Request $request, array $context): array
+    {
+        $user_agent = '';
+
+        if (method_exists($request, 'get_header')) {
+            $user_agent = (string) $request->get_header('user_agent');
+            if ($user_agent === '') {
+                $user_agent = (string) $request->get_header('user-agent');
+            }
+        }
+
+        if (empty($context['device_type'])) {
+            $context['device_type'] = self::detect_security_request_device_type($user_agent);
+        }
+
+        if (empty($context['device_platform'])) {
+            $context['device_platform'] = self::detect_security_request_device_platform($user_agent);
+        }
+
+        return $context;
+    }
+
+    private static function detect_security_request_device_type(string $user_agent): string
+    {
+        $user_agent = strtolower($user_agent);
+        if ($user_agent === '') {
+            return 'unknown';
+        }
+
+        $is_tablet = (bool) preg_match('/\b(ipad|tablet|playbook|silk)\b/', $user_agent)
+            || (strpos($user_agent, 'android') !== false && strpos($user_agent, 'mobile') === false);
+        if ($is_tablet) {
+            return 'tablet';
+        }
+
+        if (preg_match('/\b(mobi|iphone|ipod|android.*mobile|windows phone)\b/', $user_agent)) {
+            return 'mobile';
+        }
+
+        return 'desktop';
+    }
+
+    private static function detect_security_request_device_platform(string $user_agent): string
+    {
+        $user_agent = strtolower($user_agent);
+        if ($user_agent === '') {
+            return 'unknown';
+        }
+
+        if (strpos($user_agent, 'android') !== false) {
+            return 'android';
+        }
+        if (preg_match('/\b(iphone|ipad|ipod)\b/', $user_agent)) {
+            return 'ios';
+        }
+        if (strpos($user_agent, 'cros') !== false) {
+            return 'chromeos';
+        }
+        if (strpos($user_agent, 'windows') !== false) {
+            return 'windows';
+        }
+        if (strpos($user_agent, 'mac os') !== false || strpos($user_agent, 'macintosh') !== false) {
+            return 'macos';
+        }
+        if (strpos($user_agent, 'linux') !== false || strpos($user_agent, 'x11') !== false) {
+            return 'linux';
+        }
+
+        return 'unknown';
     }
 
     /**

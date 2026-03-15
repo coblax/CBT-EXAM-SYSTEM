@@ -294,6 +294,128 @@
         return Boolean(window && window.innerWidth <= NAV_SIDE_LAYOUT_BREAKPOINT);
     }
 
+    function getSecurityViewportWidth() {
+        var documentWidth = document && document.documentElement
+            ? Number(document.documentElement.clientWidth) || 0
+            : 0;
+        var windowWidth = window ? Number(window.innerWidth) || 0 : 0;
+        return Math.max(documentWidth, windowWidth, 0);
+    }
+
+    function getSecurityViewportHeight() {
+        var documentHeight = document && document.documentElement
+            ? Number(document.documentElement.clientHeight) || 0
+            : 0;
+        var windowHeight = window ? Number(window.innerHeight) || 0 : 0;
+        return Math.max(documentHeight, windowHeight, 0);
+    }
+
+    function detectSecurityDevicePlatform() {
+        var nav = window && window.navigator ? window.navigator : {};
+        var ua = String(nav.userAgent || '').toLowerCase();
+        var platform = String(nav.platform || '').toLowerCase();
+        var uaDataPlatform = nav.userAgentData && typeof nav.userAgentData.platform === 'string'
+            ? String(nav.userAgentData.platform).toLowerCase()
+            : '';
+
+        if (ua.indexOf('android') >= 0 || uaDataPlatform.indexOf('android') >= 0) {
+            return 'android';
+        }
+        if (/\b(iphone|ipad|ipod)\b/.test(ua) || uaDataPlatform.indexOf('ios') >= 0) {
+            return 'ios';
+        }
+        if (ua.indexOf('cros') >= 0 || uaDataPlatform.indexOf('chrome') >= 0) {
+            return 'chromeos';
+        }
+        if (ua.indexOf('windows') >= 0 || platform.indexOf('win') >= 0 || uaDataPlatform.indexOf('win') >= 0) {
+            return 'windows';
+        }
+        if (ua.indexOf('mac os') >= 0 || ua.indexOf('macintosh') >= 0 || platform.indexOf('mac') >= 0 || uaDataPlatform.indexOf('mac') >= 0) {
+            return 'macos';
+        }
+        if (ua.indexOf('linux') >= 0 || platform.indexOf('linux') >= 0 || uaDataPlatform.indexOf('linux') >= 0 || platform.indexOf('x11') >= 0) {
+            return 'linux';
+        }
+
+        return 'unknown';
+    }
+
+    function detectSecurityDeviceType() {
+        var nav = window && window.navigator ? window.navigator : {};
+        var ua = String(nav.userAgent || '').toLowerCase();
+        var viewportWidth = getSecurityViewportWidth();
+        var touchPoints = Math.max(0, Number(nav.maxTouchPoints) || 0);
+        var isCoarsePointer = false;
+        var uaDataMobile = nav.userAgentData && typeof nav.userAgentData.mobile === 'boolean'
+            ? nav.userAgentData.mobile
+            : null;
+        var isIpadLike = (ua.indexOf('ipad') >= 0)
+            || (ua.indexOf('macintosh') >= 0 && touchPoints > 1);
+        var isTabletUa = /\b(tablet|playbook|silk)\b/.test(ua)
+            || /\bandroid(?!.*mobile)\b/.test(ua)
+            || isIpadLike;
+        var isMobileUa = /\bmobi|iphone|ipod|android.*mobile|windows phone\b/.test(ua);
+
+        try {
+            isCoarsePointer = !!(window && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches);
+        } catch (error) {
+            isCoarsePointer = false;
+        }
+
+        if (isTabletUa) {
+            return 'tablet';
+        }
+
+        if (uaDataMobile === true || isMobileUa) {
+            return 'mobile';
+        }
+
+        if (isCoarsePointer && touchPoints > 0 && viewportWidth > 0 && viewportWidth <= 820) {
+            return 'mobile';
+        }
+
+        return 'desktop';
+    }
+
+    function detectSecurityInputMode() {
+        var nav = window && window.navigator ? window.navigator : {};
+        var touchPoints = Math.max(0, Number(nav.maxTouchPoints) || 0);
+
+        try {
+            if (window && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches) {
+                return 'touch';
+            }
+        } catch (error) {
+            // Ignore matchMedia capability failures.
+        }
+
+        return touchPoints > 0 ? 'touch' : 'pointer';
+    }
+
+    function buildSecurityClientContext(baseContext) {
+        var context = baseContext && typeof baseContext === 'object' ? Object.assign({}, baseContext) : {};
+        var viewportWidth = getSecurityViewportWidth();
+        var viewportHeight = getSecurityViewportHeight();
+
+        if (!context.device_type) {
+            context.device_type = detectSecurityDeviceType();
+        }
+        if (!context.device_platform) {
+            context.device_platform = detectSecurityDevicePlatform();
+        }
+        if (!context.input_mode) {
+            context.input_mode = detectSecurityInputMode();
+        }
+        if (!context.viewport_width && viewportWidth > 0) {
+            context.viewport_width = viewportWidth;
+        }
+        if (!context.viewport_height && viewportHeight > 0) {
+            context.viewport_height = viewportHeight;
+        }
+
+        return context;
+    }
+
     function getEffectiveNavPanelPosition() {
         var normalized = normalizeNavPanelPosition(state.navPanelPosition);
         if (isCompactNavViewport() && (normalized === 'left' || normalized === 'right')) {
@@ -3437,6 +3559,7 @@
         var keepalive = !!options.keepalive;
         var debounceMs = Math.max(0, Number(options.debounceMs) || 0);
         var requireFullscreen = !!options.requireFullscreen;
+        var payloadContext = buildSecurityClientContext(context && typeof context === 'object' ? context : {});
 
         if (safeEventType === '' || attemptId <= 0 || stage !== 'exam' || authToken === '' || !isSecurityLoggingEnabled()) {
             return false;
@@ -3461,7 +3584,7 @@
                 body: JSON.stringify({
                     attempt_id: attemptId,
                     event_type: safeEventType,
-                    context: context && typeof context === 'object' ? context : {}
+                    context: payloadContext
                 }),
                 keepalive: keepalive
             }).catch(function () {

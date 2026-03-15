@@ -69,6 +69,7 @@ class CBT_Admin
         add_action('admin_post_cbt_reset_user_login', [self::class, 'handle_reset_user_login']);
         add_action('admin_post_cbt_reset_attempt', [self::class, 'handle_reset_attempt']);
         add_action('admin_post_cbt_extend_attempt_time', [self::class, 'handle_extend_attempt_time']);
+        add_action('admin_post_cbt_force_complete_attempt', [self::class, 'handle_force_complete_attempt']);
         add_action('admin_post_cbt_bulk_reset_attempts', [self::class, 'handle_bulk_reset_attempts']);
         add_action('admin_post_cbt_bulk_force_complete_attempts', [self::class, 'handle_bulk_force_complete_attempts']);
         add_action('admin_post_cbt_export_exam_report_pdf', [self::class, 'handle_export_exam_report_pdf']);
@@ -418,10 +419,15 @@ class CBT_Admin
         $source_question_total_pages = 1;
         $source_questions = [];
         if ($should_load_question_catalog) {
+            $source_active_clause = 'COALESCE(q.is_active, 1) = 1';
             $source_where_parts = [
+                $source_active_clause,
                 $wpdb->prepare('e.title LIKE %s', 'Bank Soal - %'),
             ];
-            $source_where_parts_legacy = [];
+            $source_where_parts_legacy = [
+                $source_active_clause,
+                '(q.source_question_id IS NULL OR q.source_question_id = 0)',
+            ];
             if (!$is_admin_scope) {
                 $created_by_clause = $wpdb->prepare('e.created_by = %d', $current_user_id);
                 $source_where_parts[] = $created_by_clause;
@@ -1436,13 +1442,27 @@ class CBT_Admin
                             $schedule_display = !empty($schedule_parts) ? implode(' | ', $schedule_parts) : '-';
                             $status_value = (string) ($exam['status'] ?? 'draft');
                             $status_class = sanitize_html_class($status_value);
+                            $randomize_questions_enabled = !empty($exam['randomize_questions']);
+                            $randomize_options_enabled = !empty($exam['randomize_options']);
                             ?>
                             <tr>
                                 <td><?php echo (int) $exam['id']; ?></td>
                                 <td><?php echo esc_html((string) ($exam['subject_name'] ?? '-')); ?></td>
                                 <td><?php echo esc_html((string) ($exam['title'] ?? '')); ?></td>
                                 <td><?php echo esc_html($kelas_display); ?></td>
-                                <td><span class="cbt-exam-status-pill cbt-exam-status-pill--<?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_value); ?></span></td>
+                                <td>
+                                    <div class="cbt-exam-status-stack">
+                                        <span class="cbt-exam-status-pill cbt-exam-status-pill--<?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_value); ?></span>
+                                        <div class="cbt-exam-status-flags">
+                                            <span class="cbt-exam-status-flag cbt-exam-status-flag--question<?php echo $randomize_questions_enabled ? ' is-active' : ' is-inactive'; ?>">
+                                                <?php echo esc_html($randomize_questions_enabled ? 'Acak Soal On' : 'Acak Soal Off'); ?>
+                                            </span>
+                                            <span class="cbt-exam-status-flag cbt-exam-status-flag--option<?php echo $randomize_options_enabled ? ' is-active' : ' is-inactive'; ?>">
+                                                <?php echo esc_html($randomize_options_enabled ? 'Acak Opsi On' : 'Acak Opsi Off'); ?>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </td>
                                 <td><?php echo esc_html($schedule_display); ?></td>
                                 <td><?php echo esc_html((string) ((int) ($exam['duration_minutes'] ?? 0))); ?> menit</td>
                                 <td><?php echo esc_html((string) ((int) ($exam['question_count'] ?? 0))); ?></td>
@@ -1511,6 +1531,14 @@ class CBT_Admin
             </div>
         </div>
             <style>
+                #wpbody-content {
+                    padding-bottom: 88px;
+                    box-sizing: border-box;
+                }
+                #wpfooter {
+                    position: static;
+                    margin-top: 24px;
+                }
                 .cbt-exams-page {
                     max-width: 1220px;
                 }
@@ -2371,6 +2399,48 @@ class CBT_Admin
                 .cbt-exam-status-pill--closed {
                     background: #eff6ff;
                     color: #1d4ed8;
+                }
+                .cbt-exam-status-stack {
+                    display: grid;
+                    gap: 8px;
+                    align-content: start;
+                }
+                .cbt-exam-status-flags {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                }
+                .cbt-exam-status-flag {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 24px;
+                    padding: 0 10px;
+                    border: 1px solid transparent;
+                    border-radius: 999px;
+                    font-size: 11px;
+                    font-weight: 700;
+                    line-height: 1;
+                    white-space: nowrap;
+                }
+                .cbt-exam-status-flag--question.is-active {
+                    background: #dbeafe;
+                    border-color: #bfdbfe;
+                    color: #1d4ed8;
+                }
+                .cbt-exam-status-flag--question.is-inactive {
+                    background: #eff6ff;
+                    border-color: #dbeafe;
+                    color: #64748b;
+                }
+                .cbt-exam-status-flag--option.is-active {
+                    background: #fef3c7;
+                    border-color: #fde68a;
+                    color: #b45309;
+                }
+                .cbt-exam-status-flag--option.is-inactive {
+                    background: #fff7ed;
+                    border-color: #fed7aa;
+                    color: #78716c;
                 }
                 .cbt-exam-monitoring-stack {
                     display: grid;
@@ -5281,6 +5351,160 @@ class CBT_Admin
         <?php
     }
 
+    /**
+     * @param array<int,array<string,mixed>> $must_watch_attempts
+     */
+    private static function render_setup_security_log_must_watch_panel(array $must_watch_attempts): void
+    {
+        $must_watch_total = count($must_watch_attempts);
+        ?>
+        <section class="cbt-setup-security-log-watch">
+            <div class="cbt-setup-security-log-watch-header">
+                <div>
+                    <h3>Must Watch</h3>
+                    <p>Attempt aktif dengan indikator kecurangan yang sudah cukup untuk diprioritaskan pengawas.</p>
+                </div>
+                <div class="cbt-setup-security-log-watch-head-actions">
+                    <div class="cbt-setup-security-log-watch-sort" role="group" aria-label="Urutkan Must Watch">
+                        <button type="button" class="cbt-setup-security-log-watch-sort-button is-active" data-security-log-watch-sort="auto" aria-pressed="true">Auto</button>
+                        <button type="button" class="cbt-setup-security-log-watch-sort-button" data-security-log-watch-sort="score" aria-pressed="false">Skor tertinggi</button>
+                        <button type="button" class="cbt-setup-security-log-watch-sort-button" data-security-log-watch-sort="recent" aria-pressed="false">Terbaru</button>
+                    </div>
+                    <span class="cbt-setup-card-chip"><?php echo esc_html(sprintf('%d aktif diawasi', $must_watch_total)); ?></span>
+                </div>
+            </div>
+
+            <?php if (empty($must_watch_attempts)): ?>
+                <div class="cbt-setup-security-log-watch-empty">Belum ada attempt aktif yang masuk Must Watch.</div>
+            <?php else: ?>
+                <div class="cbt-setup-security-log-watch-list">
+                    <?php foreach ($must_watch_attempts as $must_watch_index => $must_watch_attempt): ?>
+                        <?php
+                        $attempt_id = (int) ($must_watch_attempt['attempt_id'] ?? 0);
+                        $exam_id = (int) ($must_watch_attempt['exam_id'] ?? 0);
+                        $student_name = (string) ($must_watch_attempt['student_name'] ?? '-');
+                        $student_login = trim((string) ($must_watch_attempt['student_login'] ?? ''));
+                        $student_kelas = sanitize_text_field((string) ($must_watch_attempt['student_kode_kelas'] ?? ''));
+                        $student_ruang = sanitize_text_field((string) ($must_watch_attempt['student_kode_ruang'] ?? ''));
+                        $exam_title = trim((string) ($must_watch_attempt['exam_title'] ?? '')) !== ''
+                            ? (string) $must_watch_attempt['exam_title']
+                            : ($exam_id > 0 ? ('Exam #' . $exam_id) : '-');
+                        $risk_score = max(0, (int) ($must_watch_attempt['risk_score'] ?? 0));
+                        $risk_tone = sanitize_key((string) ($must_watch_attempt['risk_tone'] ?? 'watch'));
+                        if (!in_array($risk_tone, ['watch', 'high-risk'], true)) {
+                            $risk_tone = 'watch';
+                        }
+                        $risk_label = trim((string) ($must_watch_attempt['risk_label'] ?? 'Must Watch'));
+                        if ($risk_label === '') {
+                            $risk_label = $risk_tone === 'high-risk' ? 'High Risk' : 'Must Watch';
+                        }
+                        $primary_event_type = sanitize_key((string) ($must_watch_attempt['primary_event_type'] ?? ''));
+                        $primary_event_label = trim((string) ($must_watch_attempt['primary_event_label'] ?? ''));
+                        $last_event_at = (string) ($must_watch_attempt['last_event_at'] ?? '-');
+                        $last_device_type = sanitize_key((string) ($must_watch_attempt['last_device_type'] ?? 'unknown'));
+                        if (!in_array($last_device_type, ['desktop', 'mobile', 'tablet', 'server', 'unknown'], true)) {
+                            $last_device_type = 'unknown';
+                        }
+                        $last_device_label = trim((string) ($must_watch_attempt['last_device_label'] ?? 'Unknown'));
+                        if ($last_device_label === '') {
+                            $last_device_label = 'Unknown';
+                        }
+                        $last_device_summary = trim((string) ($must_watch_attempt['last_device_summary'] ?? $last_device_label));
+                        $top_indicators = array_values(array_filter(array_map('strval', (array) ($must_watch_attempt['top_indicators'] ?? []))));
+                        $results_args = [
+                            'page' => 'cbt-results',
+                            'cbt_attempt_status' => 'in_progress',
+                        ];
+                        if ($exam_id > 0) {
+                            $results_args['cbt_exam_id'] = $exam_id;
+                        }
+                        if ($student_login !== '') {
+                            $results_args['cbt_student_q'] = $student_login;
+                        }
+                        $results_url = add_query_arg($results_args, admin_url('admin.php'));
+                        ?>
+                        <article
+                            class="cbt-setup-security-log-watch-item is-<?php echo esc_attr($risk_tone); ?>"
+                            data-security-log-focus-card
+                            data-focus-attempt="<?php echo esc_attr((string) $attempt_id); ?>"
+                            data-focus-student="<?php echo esc_attr($student_name); ?>"
+                            data-focus-kelas="<?php echo esc_attr($student_kelas); ?>"
+                            data-focus-ruang="<?php echo esc_attr($student_ruang); ?>"
+                            data-focus-event="<?php echo esc_attr($primary_event_type); ?>"
+                            data-focus-event-label="<?php echo esc_attr($primary_event_label); ?>"
+                            data-sort-order="<?php echo esc_attr((string) ((int) $must_watch_index)); ?>"
+                            data-sort-score="<?php echo esc_attr((string) $risk_score); ?>"
+                            data-sort-last-at="<?php echo esc_attr($last_event_at); ?>"
+                            title="Klik untuk fokus ke histori log attempt ini."
+                        >
+                            <div class="cbt-setup-security-log-watch-item-top">
+                                <div class="cbt-setup-security-log-watch-item-student">
+                                    <strong><?php echo esc_html($student_name); ?></strong>
+                                </div>
+                                <div class="cbt-setup-security-log-watch-item-side">
+                                    <span class="cbt-setup-security-log-badge is-<?php echo esc_attr($risk_tone); ?>"><?php echo esc_html($risk_label); ?></span>
+                                    <span class="cbt-setup-security-log-badge is-score"><?php echo esc_html('Skor ' . $risk_score); ?></span>
+                                    <span class="cbt-setup-security-log-badge is-device-<?php echo esc_attr($last_device_type); ?>"><?php echo esc_html($last_device_label); ?></span>
+                                </div>
+                            </div>
+
+                            <?php if ($student_kelas !== '' || $student_ruang !== ''): ?>
+                                <div class="cbt-setup-security-log-student-meta">
+                                    <?php if ($student_kelas !== ''): ?>
+                                        <span class="is-kelas"><strong>K:</strong> <?php echo esc_html($student_kelas); ?></span>
+                                    <?php endif; ?>
+                                    <?php if ($student_ruang !== ''): ?>
+                                        <span class="is-ruang"><strong>R:</strong> <?php echo esc_html($student_ruang); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="cbt-setup-security-log-watch-item-copy">
+                                <div class="cbt-setup-security-log-watch-item-summary"><strong>Exam:</strong> <?php echo esc_html($exam_title); ?></div>
+                                <div class="cbt-setup-security-log-watch-item-meta">
+                                    <span><strong>Attempt:</strong> <?php echo esc_html('#' . $attempt_id); ?></span>
+                                    <span><strong>Terakhir:</strong> <?php echo esc_html($last_event_at); ?></span>
+                                </div>
+                                <div class="cbt-setup-security-log-watch-item-device"><?php echo esc_html($last_device_summary); ?></div>
+                            </div>
+
+                            <?php if (!empty($top_indicators)): ?>
+                                <div class="cbt-setup-security-log-watch-item-indicators">
+                                    <?php foreach ($top_indicators as $indicator): ?>
+                                        <span class="cbt-setup-security-log-watch-indicator"><?php echo esc_html($indicator); ?></span>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="cbt-setup-security-log-watch-item-actions">
+                                <a class="button button-secondary button-small" href="<?php echo esc_url($results_url); ?>" target="_blank" rel="noopener noreferrer">Buka Results</a>
+
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Reset login siswa ini dari panel Must Watch? Semua browser aktif user ini akan diminta login ulang.');">
+                                    <?php wp_nonce_field('cbt_reset_user_login_' . $attempt_id); ?>
+                                    <input type="hidden" name="action" value="cbt_reset_user_login" />
+                                    <input type="hidden" name="attempt_id" value="<?php echo (int) $attempt_id; ?>" />
+                                    <input type="hidden" name="return_page" value="cbt-setup" />
+                                    <input type="hidden" name="return_hash" value="security-log" />
+                                    <button class="button button-small" type="submit">Reset Login</button>
+                                </form>
+
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Paksa attempt ini selesai sekarang? Attempt tidak bisa dilanjutkan lagi oleh siswa.');">
+                                    <?php wp_nonce_field('cbt_force_complete_attempt_' . $attempt_id); ?>
+                                    <input type="hidden" name="action" value="cbt_force_complete_attempt" />
+                                    <input type="hidden" name="attempt_id" value="<?php echo (int) $attempt_id; ?>" />
+                                    <input type="hidden" name="return_page" value="cbt-setup" />
+                                    <input type="hidden" name="return_hash" value="security-log" />
+                                    <button class="button button-primary button-small" type="submit">Force Complete</button>
+                                </form>
+                            </div>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </section>
+        <?php
+    }
+
     public static function render_setup_page(): void
     {
         if (!self::can_manage_exams()) {
@@ -5305,7 +5529,10 @@ class CBT_Admin
         $security_block_copy_paste = !empty($security['block_copy_paste']);
         $security_log_events_enabled = !empty($security['log_security_events']);
         $security_log_event_definitions = CBT_Security_Log::event_definitions();
-        $security_logs = CBT_Security_Log::get_recent_logs(50, [
+        $security_log_must_watch_attempts = CBT_Security_Log::get_must_watch_attempts(5, [
+            'teacher_id' => self::is_admin_scope() ? 0 : get_current_user_id(),
+        ]);
+        $security_logs = CBT_Security_Log::get_recent_logs(20, [
             'teacher_id' => self::is_admin_scope() ? 0 : get_current_user_id(),
         ]);
         $logo_1_attachment_id = (int) ($branding['logo_1_attachment_id'] ?? 0);
@@ -5747,6 +5974,228 @@ class CBT_Admin
                 gap: 18px;
                 padding: 0;
             }
+            .cbt-setup-security-log-watch-region,
+            .cbt-setup-security-log-table-region {
+                display: grid;
+                gap: 16px;
+            }
+            .cbt-setup-security-log-watch {
+                display: grid;
+                gap: 14px;
+                padding: 18px;
+                border: 1px solid #fde2b7;
+                border-radius: 18px;
+                background:
+                    radial-gradient(circle at top right, rgba(251, 191, 36, 0.14), transparent 34%),
+                    linear-gradient(180deg, #fffdf8 0%, #fffaf1 100%);
+            }
+            .cbt-setup-security-log-watch-header {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 12px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-watch-head-actions {
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-watch-header h3 {
+                margin: 0 0 4px;
+                font-size: 16px;
+                line-height: 1.2;
+                color: #111827;
+            }
+            .cbt-setup-security-log-watch-header p {
+                margin: 0;
+                color: #5b6574;
+                line-height: 1.55;
+            }
+            .cbt-setup-security-log-watch-sort {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                padding: 4px;
+                border: 1px solid #e6ebf2;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.72);
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            }
+            .cbt-setup-security-log-watch-sort-button {
+                min-height: 30px;
+                padding: 0 12px;
+                border: 0;
+                border-radius: 999px;
+                background: transparent;
+                color: #526072;
+                font-size: 12px;
+                font-weight: 700;
+                line-height: 1;
+                cursor: pointer;
+                transition: background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+                white-space: nowrap;
+            }
+            .cbt-setup-security-log-watch-sort-button:hover,
+            .cbt-setup-security-log-watch-sort-button:focus {
+                background: #eef4fb;
+                color: #163b63;
+                outline: none;
+            }
+            .cbt-setup-security-log-watch-sort-button.is-active {
+                background: linear-gradient(180deg, #2f7bc0 0%, #2168ac 100%);
+                color: #ffffff;
+                box-shadow: 0 6px 16px rgba(33, 104, 172, 0.18);
+            }
+            .cbt-setup-security-log-watch-empty {
+                padding: 14px 16px;
+                border: 1px dashed #f2c979;
+                border-radius: 14px;
+                background: rgba(255, 255, 255, 0.66);
+                color: #7c5b18;
+                line-height: 1.55;
+            }
+            .cbt-setup-security-log-watch-list {
+                display: grid;
+                gap: 14px;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                align-items: start;
+                max-height: min(62vh, 620px);
+                overflow-y: auto;
+                padding-right: 8px;
+                align-content: start;
+                scrollbar-gutter: stable;
+            }
+            .cbt-setup-security-log-watch-list::-webkit-scrollbar {
+                width: 10px;
+            }
+            .cbt-setup-security-log-watch-list::-webkit-scrollbar-track {
+                background: rgba(255, 255, 255, 0.55);
+                border-radius: 999px;
+            }
+            .cbt-setup-security-log-watch-list::-webkit-scrollbar-thumb {
+                background: rgba(180, 120, 18, 0.28);
+                border: 2px solid rgba(255, 255, 255, 0.6);
+                border-radius: 999px;
+            }
+            .cbt-setup-security-log-watch-item {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                padding: 16px 18px;
+                border: 1px solid #f0d7a6;
+                border-radius: 16px;
+                background: rgba(255, 255, 255, 0.9);
+                box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+                cursor: pointer;
+                transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+            }
+            .cbt-setup-security-log-watch-item:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
+            }
+            .cbt-setup-security-log-watch-item.is-watch {
+                border-color: #f5d48a;
+                background: linear-gradient(180deg, #fffefa 0%, #fff8eb 100%);
+            }
+            .cbt-setup-security-log-watch-item.is-high-risk {
+                border-color: #f0b7b7;
+                background: linear-gradient(180deg, #fffafa 0%, #fff1f1 100%);
+            }
+            .cbt-setup-security-log-watch-item-top {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 10px 12px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-watch-item-copy {
+                display: grid;
+                gap: 7px;
+                min-width: 0;
+            }
+            .cbt-setup-security-log-watch-item-student {
+                min-width: 0;
+            }
+            .cbt-setup-security-log-watch-item-student strong {
+                font-size: 14px;
+                line-height: 1.35;
+                color: #0f172a;
+            }
+            .cbt-setup-security-log-watch-item-summary {
+                color: #334155;
+                font-size: 13px;
+                line-height: 1.55;
+            }
+            .cbt-setup-security-log-watch-item-meta {
+                display: flex;
+                align-items: center;
+                gap: 6px 12px;
+                flex-wrap: wrap;
+                color: #475569;
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .cbt-setup-security-log-watch-item-device {
+                font-size: 12px;
+                color: #64748b;
+                line-height: 1.45;
+            }
+            .cbt-setup-security-log-watch-item-side {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+            }
+            .cbt-setup-security-log-watch-item-indicators {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+                margin-top: 2px;
+            }
+            .cbt-setup-security-log-watch-indicator {
+                display: inline-flex;
+                align-items: center;
+                flex: 0 0 auto;
+                min-height: 28px;
+                padding: 0 10px;
+                border: 1px solid #d7e4f5;
+                border-radius: 999px;
+                background: #f8fbff;
+                color: #334155;
+                font-size: 12px;
+                font-weight: 600;
+                white-space: nowrap;
+            }
+            .cbt-setup-security-log-watch-item-actions {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 8px;
+                margin-top: 4px;
+            }
+            .cbt-setup-security-log-watch-item-actions form {
+                margin: 0;
+                display: block;
+            }
+            .cbt-setup-security-log-watch-item-actions .button {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                min-height: 36px;
+                line-height: 1.2;
+                padding: 8px 10px;
+                white-space: nowrap;
+            }
+            @media (max-width: 1320px) {
+                .cbt-setup-security-log-watch-item-actions {
+                    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+                }
+            }
             .cbt-setup-security-log-manage-form {
                 display: grid;
                 gap: 18px;
@@ -5787,40 +6236,6 @@ class CBT_Admin
                 gap: 12px;
                 flex-wrap: wrap;
                 margin-left: auto;
-            }
-            .cbt-setup-security-log-refresh-region {
-                display: grid;
-                gap: 16px;
-            }
-            .cbt-setup-security-log-state {
-                margin: 0;
-                padding: 12px 14px;
-                border-radius: 14px;
-                background: #f8fbff;
-                border: 1px solid #d7e4f5;
-                color: #4b5563;
-                line-height: 1.6;
-            }
-            .cbt-setup-security-log-state.is-disabled {
-                background: #fff9e8;
-                border-color: #f5d98c;
-                color: #8a5a00;
-            }
-            .cbt-setup-security-log-summary {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 12px;
-                flex-wrap: wrap;
-                padding: 14px 16px;
-                border: 1px solid #dde4ee;
-                border-radius: 16px;
-                background: linear-gradient(180deg, #fbfdff 0%, #f6f9fc 100%);
-                color: #4b5563;
-                line-height: 1.55;
-            }
-            .cbt-setup-security-log-summary p {
-                margin: 0;
             }
             .cbt-setup-security-log-toolbar-actions .button {
                 min-height: 40px;
@@ -5914,6 +6329,34 @@ class CBT_Admin
                 align-items: center;
                 min-height: 40px;
             }
+            .cbt-setup-security-log-focus-state {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                min-height: 40px;
+                padding: 0 14px;
+                border: 1px solid #f3d28e;
+                border-radius: 999px;
+                background: #fff9ec;
+                color: #8a5a00;
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1.4;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-focus-state .button-link {
+                padding: 0;
+                min-height: auto;
+                color: #0f4fa8;
+                font-weight: 700;
+                text-decoration: none;
+                cursor: pointer;
+            }
+            .cbt-setup-security-log-focus-state .button-link:hover,
+            .cbt-setup-security-log-focus-state .button-link:focus {
+                color: #0b3b7d;
+                text-decoration: underline;
+            }
             .cbt-setup-security-log-live-status.is-loading {
                 color: #0f4fa8;
             }
@@ -5991,7 +6434,13 @@ class CBT_Admin
             }
             .cbt-setup-security-log-event {
                 display: grid;
-                gap: 8px;
+                gap: 6px;
+            }
+            .cbt-setup-security-log-event-badges {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                flex-wrap: wrap;
             }
             .cbt-setup-security-log-badge {
                 display: inline-flex;
@@ -6018,6 +6467,43 @@ class CBT_Admin
                 background: #e8f1ff;
                 color: #0f4fa8;
             }
+            .cbt-setup-security-log-badge.is-watch {
+                background: #fff4db;
+                color: #9a6700;
+            }
+            .cbt-setup-security-log-badge.is-high-risk {
+                background: #ffe3e3;
+                color: #b42318;
+            }
+            .cbt-setup-security-log-badge.is-score {
+                background: #eef2ff;
+                color: #4338ca;
+            }
+            .cbt-setup-security-log-badge.is-device-desktop {
+                background: #eff6ff;
+                color: #1d4ed8;
+            }
+            .cbt-setup-security-log-badge.is-device-mobile {
+                background: #ecfdf5;
+                color: #15803d;
+            }
+            .cbt-setup-security-log-badge.is-device-tablet {
+                background: #fff7ed;
+                color: #c2410c;
+            }
+            .cbt-setup-security-log-badge.is-device-server {
+                background: #f3f4f6;
+                color: #4b5563;
+            }
+            .cbt-setup-security-log-badge.is-device-unknown {
+                background: #f8fafc;
+                color: #64748b;
+            }
+            .cbt-setup-security-log-event-meta {
+                font-size: 12px;
+                color: #64748b;
+                line-height: 1.45;
+            }
             .cbt-setup-security-log-detail {
                 min-width: 240px;
                 color: #4b5563;
@@ -6038,12 +6524,29 @@ class CBT_Admin
                 }
                 .cbt-setup-security-log-toolbar-live,
                 .cbt-setup-security-log-toolbar-footer,
-                .cbt-setup-security-log-toolbar-actions {
+                .cbt-setup-security-log-toolbar-actions,
+                .cbt-setup-security-log-watch-header {
                     flex-direction: column;
                     align-items: stretch;
                 }
                 .cbt-setup-security-log-toolbar-actions {
                     margin-left: 0;
+                }
+                .cbt-setup-security-log-watch-item-top {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+                .cbt-setup-security-log-watch-list {
+                    max-height: none;
+                    overflow: visible;
+                    padding-right: 0;
+                }
+                .cbt-setup-security-log-watch-item-side {
+                    justify-content: flex-start;
+                }
+                .cbt-setup-security-log-watch-item-actions {
+                    display: grid;
+                    grid-template-columns: 1fr;
                 }
                 .cbt-setup-field-grid,
                 .cbt-setup-logo-grid {
@@ -6079,6 +6582,7 @@ class CBT_Admin
                         <div class="cbt-setup-tabs" role="tablist" aria-label="Bagian setup CBT">
                             <button type="button" class="cbt-setup-tab is-active" id="cbt-setup-tab-branding" data-setup-tab-button="branding" role="tab" aria-selected="true" aria-controls="cbt-setup-panel-branding">Branding</button>
                             <button type="button" class="cbt-setup-tab" id="cbt-setup-tab-security" data-setup-tab-button="security" role="tab" aria-selected="false" aria-controls="cbt-setup-panel-security">Security</button>
+                            <button type="button" class="cbt-setup-tab" id="cbt-setup-tab-security-log" data-setup-tab-button="security-log" role="tab" aria-selected="false" aria-controls="cbt-setup-panel-security-log">Security Log</button>
                         </div>
                     </div>
                 </section>
@@ -6313,7 +6817,7 @@ class CBT_Admin
                                             />
                                             <span>
                                                 <strong>Aktifkan Logging Security</strong>
-                                                <span>Catat event inti seperti keluar fullscreen, pindah tab, refresh/tutup halaman, sesi dicabut, dan reset login admin. Histori log tampil di bawah form ini selama 30 hari terakhir.</span>
+                                                <span>Catat event inti seperti keluar fullscreen, pindah tab, refresh/tutup halaman, sesi dicabut, dan reset login admin. Histori log bisa dipantau di tab Security Log selama 30 hari terakhir.</span>
                                             </span>
                                         </label>
                                     </div>
@@ -6338,20 +6842,31 @@ class CBT_Admin
                                     </div>
                                 </form>
                             </section>
+                        </div>
+                    </div>
 
+                    <div class="cbt-setup-panel" id="cbt-setup-panel-security-log" data-setup-panel="security-log" role="tabpanel" aria-labelledby="cbt-setup-tab-security-log" hidden>
+                        <div class="cbt-setup-security-grid">
                             <section id="cbt-setup-security-log-card" class="cbt-setup-card cbt-setup-security-card cbt-setup-security-log-card">
                                 <div class="cbt-setup-card-header">
                                     <div>
                                         <h2>Histori Security Log</h2>
-                                        <p>Menampilkan 50 event terbaru dari frontend ujian dan event security penting dari sisi server.</p>
+                                        <p>Menampilkan 20 event terbaru dari frontend ujian dan event security penting dari sisi server.</p>
                                     </div>
                                     <span class="cbt-setup-card-chip" data-security-log-status-chip><?php echo $security_log_events_enabled ? 'Logging On' : 'Logging Off'; ?></span>
                                 </div>
                                 <div class="cbt-setup-security-log-body">
+                                    <div class="cbt-setup-security-log-watch-region" data-security-log-watch-region>
+                                        <?php self::render_setup_security_log_must_watch_panel($security_log_must_watch_attempts); ?>
+                                    </div>
                                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-security-log-manage-form" id="cbt-setup-security-log-manage-form">
                                         <?php wp_nonce_field('cbt_manage_security_logs'); ?>
                                         <input type="hidden" name="action" value="cbt_manage_security_logs" />
                                         <input type="hidden" name="delete_scope" value="" data-security-log-delete-scope />
+                                        <div id="cbt-setup-security-log-focus-state" class="cbt-setup-security-log-focus-state" hidden>
+                                            <span id="cbt-setup-security-log-focus-label"></span>
+                                            <button type="button" class="button-link" id="cbt-setup-security-log-focus-clear">Reset fokus</button>
+                                        </div>
                                         <div class="cbt-setup-security-log-toolbar">
                                             <div class="cbt-setup-security-log-filter-grid">
                                                 <div class="cbt-setup-security-log-filter">
@@ -6370,6 +6885,12 @@ class CBT_Admin
                                                         <?php foreach ($security_log_event_definitions as $event_key => $event_definition): ?>
                                                             <option value="<?php echo esc_attr((string) $event_key); ?>"><?php echo esc_html((string) ($event_definition['label'] ?? $event_key)); ?></option>
                                                         <?php endforeach; ?>
+                                                    </select>
+                                                </div>
+                                                <div class="cbt-setup-security-log-filter">
+                                                    <label for="cbt-setup-security-log-filter-device">Filter Device</label>
+                                                    <select id="cbt-setup-security-log-filter-device">
+                                                        <option value="all">Semua device</option>
                                                     </select>
                                                 </div>
                                                 <div class="cbt-setup-security-log-filter">
@@ -6403,17 +6924,7 @@ class CBT_Admin
                                                 </div>
                                             </div>
                                         </div>
-                                        <div class="cbt-setup-security-log-refresh-region" data-security-log-refresh-region>
-                                            <p class="cbt-setup-security-log-state<?php echo $security_log_events_enabled ? '' : ' is-disabled'; ?>">
-                                                <?php if ($security_log_events_enabled): ?>
-                                                    Logging security aktif. Event baru akan dicatat selama attempt ujian berjalan, lalu log otomatis dipangkas setelah 30 hari.
-                                                <?php else: ?>
-                                                    Logging security sedang nonaktif. Histori lama tetap bisa dilihat, tetapi event baru tidak akan dicatat sampai checklist logging diaktifkan lagi.
-                                                <?php endif; ?>
-                                            </p>
-                                            <div class="cbt-setup-security-log-summary">
-                                                <p>Retensi log v1: <strong>30 hari</strong>. Gunakan filter di atas untuk fokus ke severity atau event tertentu saat review log berlangsung.</p>
-                                            </div>
+                                        <div class="cbt-setup-security-log-table-region" data-security-log-table-region>
                                             <div class="cbt-setup-security-log-table-shell">
                                                 <table class="widefat striped cbt-setup-security-log-table">
                                                     <thead>
@@ -6441,6 +6952,15 @@ class CBT_Admin
                                                                     $severity = 'info';
                                                                 }
                                                                 $event_type = sanitize_key((string) ($security_log['event_type'] ?? ''));
+                                                                $device_type = sanitize_key((string) ($security_log['device_type'] ?? 'unknown'));
+                                                                if (!in_array($device_type, ['desktop', 'mobile', 'tablet', 'server', 'unknown'], true)) {
+                                                                    $device_type = 'unknown';
+                                                                }
+                                                                $device_label = trim((string) ($security_log['device_label'] ?? 'Unknown'));
+                                                                if ($device_label === '') {
+                                                                    $device_label = 'Unknown';
+                                                                }
+                                                                $device_summary = trim((string) ($security_log['device_summary'] ?? $device_label));
                                                                 $student_kelas = sanitize_text_field((string) ($security_log['student_kode_kelas'] ?? ''));
                                                                 $student_ruang = sanitize_text_field((string) ($security_log['student_kode_ruang'] ?? ''));
                                                                 $student_name = (string) ($security_log['student_name'] ?? '-');
@@ -6449,9 +6969,12 @@ class CBT_Admin
                                                                     data-security-log-row
                                                                     data-log-severity="<?php echo esc_attr($severity); ?>"
                                                                     data-log-event="<?php echo esc_attr($event_type); ?>"
+                                                                    data-log-device="<?php echo esc_attr($device_type); ?>"
+                                                                    data-log-device-label="<?php echo esc_attr($device_label); ?>"
                                                                     data-log-kelas="<?php echo esc_attr($student_kelas); ?>"
                                                                     data-log-ruang="<?php echo esc_attr($student_ruang); ?>"
                                                                     data-log-student-name="<?php echo esc_attr(function_exists('mb_strtolower') ? mb_strtolower($student_name, 'UTF-8') : strtolower($student_name)); ?>"
+                                                                    data-log-attempt="<?php echo esc_attr((string) ((int) ($security_log['attempt_id'] ?? 0))); ?>"
                                                                 >
                                                                     <td class="check-column">
                                                                         <input type="checkbox" name="selected_log_ids[]" value="<?php echo esc_attr((string) $security_log_id); ?>" data-security-log-select />
@@ -6476,11 +6999,15 @@ class CBT_Admin
                                                                     <td><span class="cbt-setup-security-log-attempt">#<?php echo esc_html((string) ((int) ($security_log['attempt_id'] ?? 0))); ?></span></td>
                                                                     <td>
                                                                         <div class="cbt-setup-security-log-event">
-                                                                            <span class="cbt-setup-security-log-badge is-<?php echo esc_attr($severity); ?>"><?php echo esc_html($severity); ?></span>
+                                                                            <div class="cbt-setup-security-log-event-badges">
+                                                                                <span class="cbt-setup-security-log-badge is-<?php echo esc_attr($severity); ?>"><?php echo esc_html($severity); ?></span>
+                                                                                <span class="cbt-setup-security-log-badge is-device-<?php echo esc_attr($device_type); ?>"><?php echo esc_html($device_label); ?></span>
+                                                                            </div>
                                                                             <strong><?php echo esc_html((string) ($security_log['event_label'] ?? $security_log['event_type'] ?? 'Event')); ?></strong>
+                                                                            <span class="cbt-setup-security-log-event-meta"><?php echo esc_html($device_summary); ?></span>
                                                                         </div>
                                                                     </td>
-                                                                    <td class="cbt-setup-security-log-detail"><?php echo esc_html((string) ($security_log['message'] ?? '-')); ?></td>
+                                                                    <td class="cbt-setup-security-log-detail"><?php echo esc_html((string) ($security_log['message_display'] ?? $security_log['message'] ?? '-')); ?></td>
                                                                 </tr>
                                                             <?php endforeach; ?>
                                                             <tr id="cbt-setup-security-log-filter-empty" hidden>
@@ -6510,9 +7037,15 @@ class CBT_Admin
                     }
 
                     function setActiveTab(tabName, updateUrl) {
-                        var normalized = tabName === 'security' ? 'security' : 'branding';
+                        var normalized = 'branding';
                         var index = 0;
                         var nextUrl = '';
+
+                        if (tabName === 'security') {
+                            normalized = 'security';
+                        } else if (tabName === 'security-log') {
+                            normalized = 'security-log';
+                        }
 
                         for (index = 0; index < tabButtons.length; index += 1) {
                             var button = tabButtons[index];
@@ -6530,7 +7063,12 @@ class CBT_Admin
                         }
 
                         if (updateUrl && window.history && typeof window.history.replaceState === 'function') {
-                            nextUrl = window.location.pathname + window.location.search + (normalized === 'security' ? '#security' : '');
+                            nextUrl = window.location.pathname + window.location.search;
+                            if (normalized === 'security') {
+                                nextUrl += '#security';
+                            } else if (normalized === 'security-log') {
+                                nextUrl += '#security-log';
+                            }
                             window.history.replaceState(null, document.title, nextUrl);
                         }
                     }
@@ -6541,7 +7079,7 @@ class CBT_Admin
                         });
                     }
 
-                    setActiveTab(window.location.hash === '#security' ? 'security' : 'branding', false);
+                    setActiveTab(window.location.hash === '#security-log' ? 'security-log' : (window.location.hash === '#security' ? 'security' : 'branding'), false);
                 }
 
                 function bindLogoField(config) {
@@ -6665,20 +7203,34 @@ class CBT_Admin
                     var manageForm = document.getElementById('cbt-setup-security-log-manage-form');
                     var severityFilter = document.getElementById('cbt-setup-security-log-filter-severity');
                     var eventFilter = document.getElementById('cbt-setup-security-log-filter-event');
+                    var deviceFilter = document.getElementById('cbt-setup-security-log-filter-device');
                     var kelasFilter = document.getElementById('cbt-setup-security-log-filter-kelas');
                     var ruangFilter = document.getElementById('cbt-setup-security-log-filter-ruang');
                     var studentNameFilter = document.getElementById('cbt-setup-security-log-filter-student-name');
                     var autoRefreshToggle = document.getElementById('cbt-setup-security-log-auto-refresh');
                     var liveStatus = document.getElementById('cbt-setup-security-log-live-status');
-                    var securityPanel = document.getElementById('cbt-setup-panel-security');
+                    var focusState = document.getElementById('cbt-setup-security-log-focus-state');
+                    var focusLabel = document.getElementById('cbt-setup-security-log-focus-label');
+                    var focusClearButton = document.getElementById('cbt-setup-security-log-focus-clear');
+                    var securityLogPanel = document.getElementById('cbt-setup-panel-security-log');
+                    var watchRegion = card ? card.querySelector('[data-security-log-watch-region]') : null;
+                    var tableRegion = card ? card.querySelector('[data-security-log-table-region]') : null;
                     var deleteScopeInput = card ? card.querySelector('[data-security-log-delete-scope]') : null;
                     var deleteSelectedButton = card ? card.querySelector('[data-security-log-submit="selected"]') : null;
                     var deleteAllButton = card ? card.querySelector('[data-security-log-submit="all"]') : null;
                     var autoRefreshTimer = 0;
                     var refreshInFlight = false;
                     var storageKey = 'cbt_setup_security_log_auto_refresh_enabled';
+                    var watchSortStorageKey = 'cbt_setup_security_log_watch_sort_mode';
+                    var activeWatchFocusAttempt = '';
+                    var activeWatchFocusStudent = '';
+                    var activeWatchFocusKelas = '';
+                    var activeWatchFocusRuang = '';
+                    var activeWatchFocusEventType = '';
+                    var activeWatchFocusEventLabel = '';
+                    var activeWatchSortMode = 'auto';
 
-                    if (!card || !manageForm || !severityFilter || !eventFilter || !kelasFilter || !ruangFilter || !studentNameFilter || !autoRefreshToggle || !liveStatus || !securityPanel) {
+                    if (!card || !manageForm || !severityFilter || !eventFilter || !deviceFilter || !kelasFilter || !ruangFilter || !studentNameFilter || !autoRefreshToggle || !liveStatus || !securityLogPanel || !tableRegion) {
                         return;
                     }
 
@@ -6709,13 +7261,223 @@ class CBT_Admin
                         return String(value || '').trim().toLowerCase();
                     }
 
-                    function rebuildDynamicFilterOptions(selectElement, attributeName, defaultLabel) {
+                    function normalizeWatchSortMode(value) {
+                        var mode = String(value || '').trim().toLowerCase();
+                        if (mode !== 'score' && mode !== 'recent') {
+                            return 'auto';
+                        }
+
+                        return mode;
+                    }
+
+                    function readStoredWatchSortMode() {
+                        try {
+                            if (window.localStorage) {
+                                return normalizeWatchSortMode(window.localStorage.getItem(watchSortStorageKey) || 'auto');
+                            }
+                        } catch (error) {
+                            // Ignore storage errors.
+                        }
+
+                        return 'auto';
+                    }
+
+                    function storeWatchSortMode(mode) {
+                        try {
+                            if (window.localStorage) {
+                                window.localStorage.setItem(watchSortStorageKey, normalizeWatchSortMode(mode));
+                            }
+                        } catch (error) {
+                            // Ignore storage errors.
+                        }
+                    }
+
+                    function getWatchList() {
+                        return card.querySelector('.cbt-setup-security-log-watch-list');
+                    }
+
+                    function syncWatchSortButtons() {
+                        var buttons = watchRegion ? watchRegion.querySelectorAll('[data-security-log-watch-sort]') : [];
+                        var index = 0;
+
+                        for (index = 0; index < buttons.length; index += 1) {
+                            var buttonMode = normalizeWatchSortMode(buttons[index].getAttribute('data-security-log-watch-sort') || 'auto');
+                            var isActive = buttonMode === activeWatchSortMode;
+                            buttons[index].classList.toggle('is-active', isActive);
+                            buttons[index].setAttribute('aria-pressed', isActive ? 'true' : 'false');
+                        }
+                    }
+
+                    function applyMustWatchSort(mode) {
+                        var watchList = getWatchList();
+                        var items = [];
+
+                        activeWatchSortMode = normalizeWatchSortMode(mode);
+                        syncWatchSortButtons();
+
+                        if (!watchList) {
+                            return;
+                        }
+
+                        items = Array.prototype.slice.call(watchList.querySelectorAll('[data-security-log-focus-card]'));
+                        if (items.length <= 1) {
+                            return;
+                        }
+
+                        items.sort(function (left, right) {
+                            var leftOrder = parseInt(left.getAttribute('data-sort-order') || '0', 10) || 0;
+                            var rightOrder = parseInt(right.getAttribute('data-sort-order') || '0', 10) || 0;
+                            var leftScore = parseInt(left.getAttribute('data-sort-score') || '0', 10) || 0;
+                            var rightScore = parseInt(right.getAttribute('data-sort-score') || '0', 10) || 0;
+                            var leftLastAt = String(left.getAttribute('data-sort-last-at') || '');
+                            var rightLastAt = String(right.getAttribute('data-sort-last-at') || '');
+
+                            if (activeWatchSortMode === 'score') {
+                                if (leftScore !== rightScore) {
+                                    return rightScore - leftScore;
+                                }
+
+                                if (leftLastAt !== rightLastAt) {
+                                    return rightLastAt.localeCompare(leftLastAt);
+                                }
+
+                                return leftOrder - rightOrder;
+                            }
+
+                            if (activeWatchSortMode === 'recent') {
+                                if (leftLastAt !== rightLastAt) {
+                                    return rightLastAt.localeCompare(leftLastAt);
+                                }
+
+                                if (leftScore !== rightScore) {
+                                    return rightScore - leftScore;
+                                }
+
+                                return leftOrder - rightOrder;
+                            }
+
+                            return leftOrder - rightOrder;
+                        });
+
+                        items.forEach(function (item) {
+                            watchList.appendChild(item);
+                        });
+                    }
+
+                    function hasSelectOption(selectElement, optionValue) {
+                        var options = selectElement ? selectElement.options : [];
+                        var index = 0;
+
+                        for (index = 0; index < options.length; index += 1) {
+                            if (String(options[index].value || '') === String(optionValue || '')) {
+                                return true;
+                            }
+                        }
+
+                        return false;
+                    }
+
+                    function updateWatchFocusState() {
+                        var labelParts = [];
+
+                        if (!focusState || !focusLabel) {
+                            return;
+                        }
+
+                        if (activeWatchFocusAttempt === '') {
+                            focusState.hidden = true;
+                            focusLabel.textContent = '';
+                            return;
+                        }
+
+                        if (activeWatchFocusStudent !== '') {
+                            labelParts.push(activeWatchFocusStudent);
+                        }
+
+                        if (activeWatchFocusKelas !== '') {
+                            labelParts.push('K: ' + activeWatchFocusKelas);
+                        }
+
+                        if (activeWatchFocusRuang !== '') {
+                            labelParts.push('R: ' + activeWatchFocusRuang);
+                        }
+
+                        labelParts.push('Attempt #' + activeWatchFocusAttempt);
+
+                        focusLabel.textContent = 'Fokus: ' + labelParts.join(' • ');
+                        focusState.hidden = false;
+                    }
+
+                    function clearWatchFocus(resetVisibleFilters) {
+                        activeWatchFocusAttempt = '';
+                        activeWatchFocusStudent = '';
+                        activeWatchFocusKelas = '';
+                        activeWatchFocusRuang = '';
+                        activeWatchFocusEventType = '';
+                        activeWatchFocusEventLabel = '';
+
+                        if (resetVisibleFilters !== false) {
+                            severityFilter.value = 'all';
+                            eventFilter.value = 'all';
+                            deviceFilter.value = 'all';
+                            kelasFilter.value = 'all';
+                            ruangFilter.value = 'all';
+                            studentNameFilter.value = '';
+                        }
+
+                        updateWatchFocusState();
+                        applySecurityLogFilters();
+                    }
+
+                    function focusLogsFromWatchCard(cardElement) {
+                        var nextAttempt = cardElement ? String(cardElement.getAttribute('data-focus-attempt') || '').trim() : '';
+                        var nextStudent = cardElement ? String(cardElement.getAttribute('data-focus-student') || '').trim() : '';
+                        var nextKelas = cardElement ? String(cardElement.getAttribute('data-focus-kelas') || '').trim() : '';
+                        var nextRuang = cardElement ? String(cardElement.getAttribute('data-focus-ruang') || '').trim() : '';
+
+                        if (nextAttempt === '') {
+                            return;
+                        }
+
+                        activeWatchFocusAttempt = nextAttempt;
+                        activeWatchFocusStudent = nextStudent;
+                        activeWatchFocusKelas = nextKelas;
+                        activeWatchFocusRuang = nextRuang;
+                        activeWatchFocusEventType = '';
+                        activeWatchFocusEventLabel = '';
+
+                        severityFilter.value = 'all';
+                        deviceFilter.value = 'all';
+                        if (nextKelas !== '' && hasSelectOption(kelasFilter, nextKelas)) {
+                            kelasFilter.value = nextKelas;
+                        } else {
+                            kelasFilter.value = 'all';
+                        }
+                        if (nextRuang !== '' && hasSelectOption(ruangFilter, nextRuang)) {
+                            ruangFilter.value = nextRuang;
+                        } else {
+                            ruangFilter.value = 'all';
+                        }
+                        studentNameFilter.value = nextStudent;
+                        eventFilter.value = 'all';
+
+                        updateWatchFocusState();
+                        applySecurityLogFilters();
+
+                        if (tableRegion && typeof tableRegion.scrollIntoView === 'function') {
+                            tableRegion.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    }
+
+                    function rebuildDynamicFilterOptions(selectElement, attributeName, defaultLabel, labelAttributeName) {
                         var rows = getCurrentRows();
                         var currentValue = String(selectElement.value || 'all');
                         var values = [];
                         var seen = {};
+                        var labelsByValue = {};
                         var index = 0;
                         var rowValue = '';
+                        var rowLabel = '';
                         var option = null;
 
                         selectElement.innerHTML = '';
@@ -6735,6 +7497,8 @@ class CBT_Admin
                             }
 
                             seen[rowValue] = true;
+                            rowLabel = labelAttributeName ? String(rows[index].getAttribute(labelAttributeName) || '').trim() : '';
+                            labelsByValue[rowValue] = rowLabel !== '' ? rowLabel : rowValue;
                             values.push(rowValue);
                         }
 
@@ -6745,7 +7509,7 @@ class CBT_Admin
                         for (index = 0; index < values.length; index += 1) {
                             option = document.createElement('option');
                             option.value = values[index];
-                            option.textContent = values[index];
+                            option.textContent = labelsByValue[values[index]] || values[index];
                             selectElement.appendChild(option);
                         }
 
@@ -6757,6 +7521,7 @@ class CBT_Admin
                     }
 
                     function syncDynamicFilterOptions() {
+                        rebuildDynamicFilterOptions(deviceFilter, 'data-log-device', 'Semua device', 'data-log-device-label');
                         rebuildDynamicFilterOptions(kelasFilter, 'data-log-kelas', 'Semua kelas');
                         rebuildDynamicFilterOptions(ruangFilter, 'data-log-ruang', 'Semua ruang');
                     }
@@ -6847,9 +7612,11 @@ class CBT_Admin
                         var rows = getCurrentRows();
                         var severityValue = String(severityFilter.value || 'all');
                         var eventValue = String(eventFilter.value || 'all');
+                        var deviceValue = String(deviceFilter.value || 'all');
                         var kelasValue = String(kelasFilter.value || 'all');
                         var ruangValue = String(ruangFilter.value || 'all');
                         var studentNameValue = normalizeFilterValue(studentNameFilter.value || '');
+                        var attemptValue = String(activeWatchFocusAttempt || '');
                         var visibleCount = 0;
                         var index = 0;
                         var defaultEmptyRow = getDefaultEmptyRow();
@@ -6863,15 +7630,19 @@ class CBT_Admin
                             var row = rows[index];
                             var rowSeverity = String(row.getAttribute('data-log-severity') || '');
                             var rowEvent = String(row.getAttribute('data-log-event') || '');
+                            var rowDevice = String(row.getAttribute('data-log-device') || '');
                             var rowKelas = String(row.getAttribute('data-log-kelas') || '');
                             var rowRuang = String(row.getAttribute('data-log-ruang') || '');
+                            var rowAttempt = String(row.getAttribute('data-log-attempt') || '');
                             var rowStudentName = normalizeFilterValue(row.getAttribute('data-log-student-name') || '');
                             var matchesSeverity = severityValue === 'all' || rowSeverity === severityValue;
                             var matchesEvent = eventValue === 'all' || rowEvent === eventValue;
+                            var matchesDevice = deviceValue === 'all' || rowDevice === deviceValue;
                             var matchesKelas = kelasValue === 'all' || rowKelas === kelasValue;
                             var matchesRuang = ruangValue === 'all' || rowRuang === ruangValue;
+                            var matchesAttempt = attemptValue === '' || rowAttempt === attemptValue;
                             var matchesStudentName = studentNameValue === '' || rowStudentName.indexOf(studentNameValue) >= 0;
-                            var isVisible = matchesSeverity && matchesEvent && matchesKelas && matchesRuang && matchesStudentName;
+                            var isVisible = matchesSeverity && matchesEvent && matchesDevice && matchesKelas && matchesRuang && matchesAttempt && matchesStudentName;
 
                             row.hidden = !isVisible;
                             if (!isVisible) {
@@ -6917,8 +7688,8 @@ class CBT_Admin
                         autoRefreshTimer = 0;
                     }
 
-                    function isSecurityPanelActive() {
-                        return !securityPanel.hidden;
+                    function isSecurityLogPanelActive() {
+                        return !securityLogPanel.hidden;
                     }
 
                     function refreshSecurityLogCard() {
@@ -6926,12 +7697,7 @@ class CBT_Admin
                             return;
                         }
 
-                        if (!isSecurityPanelActive() || document.visibilityState === 'hidden') {
-                            return;
-                        }
-
-                        var refreshRegion = card.querySelector('[data-security-log-refresh-region]');
-                        if (!refreshRegion) {
+                        if (!isSecurityLogPanelActive() || document.visibilityState === 'hidden') {
                             return;
                         }
 
@@ -6958,15 +7724,20 @@ class CBT_Admin
                             .then(function (html) {
                                 var parser = new window.DOMParser();
                                 var nextDocument = parser.parseFromString(html, 'text/html');
-                                var nextRefreshRegion = nextDocument.querySelector('[data-security-log-refresh-region]');
+                                var nextWatchRegion = nextDocument.querySelector('[data-security-log-watch-region]');
+                                var nextTableRegion = nextDocument.querySelector('[data-security-log-table-region]');
                                 var nextStatusChip = nextDocument.querySelector('[data-security-log-status-chip]');
                                 var currentStatusChip = card.querySelector('[data-security-log-status-chip]');
 
-                                if (!nextRefreshRegion) {
+                                if (!nextTableRegion) {
                                     throw new Error('Blok log tidak ditemukan.');
                                 }
 
-                                refreshRegion.innerHTML = nextRefreshRegion.innerHTML;
+                                if (watchRegion && nextWatchRegion) {
+                                    watchRegion.innerHTML = nextWatchRegion.innerHTML;
+                                }
+
+                                tableRegion.innerHTML = nextTableRegion.innerHTML;
 
                                 if (currentStatusChip && nextStatusChip) {
                                     currentStatusChip.textContent = String(nextStatusChip.textContent || '');
@@ -6977,6 +7748,7 @@ class CBT_Admin
                                 }
 
                                 syncDynamicFilterOptions();
+                                applyMustWatchSort(activeWatchSortMode);
                                 applySecurityLogFilters();
                                 setLiveStatus('Auto refresh aktif setiap 10 detik.', '');
                             })
@@ -7005,16 +7777,59 @@ class CBT_Admin
                     }
 
                     autoRefreshToggle.checked = readStoredAutoRefreshPreference();
+                    activeWatchSortMode = readStoredWatchSortMode();
                     syncDynamicFilterOptions();
+                    syncWatchSortButtons();
+                    updateWatchFocusState();
+                    applyMustWatchSort(activeWatchSortMode);
                     applySecurityLogFilters();
                     syncAutoRefreshState();
 
                     severityFilter.addEventListener('change', applySecurityLogFilters);
                     eventFilter.addEventListener('change', applySecurityLogFilters);
+                    deviceFilter.addEventListener('change', applySecurityLogFilters);
                     kelasFilter.addEventListener('change', applySecurityLogFilters);
                     ruangFilter.addEventListener('change', applySecurityLogFilters);
                     studentNameFilter.addEventListener('input', applySecurityLogFilters);
                     autoRefreshToggle.addEventListener('change', syncAutoRefreshState);
+
+                    if (focusClearButton) {
+                        focusClearButton.addEventListener('click', function () {
+                            clearWatchFocus(true);
+                        });
+                    }
+
+                    if (watchRegion) {
+                        watchRegion.addEventListener('click', function (event) {
+                            var target = event.target;
+                            var focusCard = null;
+                            var sortButton = null;
+
+                            if (!target || typeof target.closest !== 'function') {
+                                return;
+                            }
+
+                            sortButton = target.closest('[data-security-log-watch-sort]');
+                            if (sortButton) {
+                                event.preventDefault();
+                                activeWatchSortMode = normalizeWatchSortMode(sortButton.getAttribute('data-security-log-watch-sort') || 'auto');
+                                storeWatchSortMode(activeWatchSortMode);
+                                applyMustWatchSort(activeWatchSortMode);
+                                return;
+                            }
+
+                            if (target.closest('a, button, input, select, textarea, label, form')) {
+                                return;
+                            }
+
+                            focusCard = target.closest('[data-security-log-focus-card]');
+                            if (!focusCard) {
+                                return;
+                            }
+
+                            focusLogsFromWatchCard(focusCard);
+                        });
+                    }
 
                     card.addEventListener('change', function (event) {
                         var target = event.target;
@@ -7078,7 +7893,7 @@ class CBT_Admin
                     }
 
                     document.addEventListener('visibilitychange', function () {
-                        if (document.visibilityState === 'visible' && autoRefreshToggle.checked && isSecurityPanelActive()) {
+                        if (document.visibilityState === 'visible' && autoRefreshToggle.checked && isSecurityLogPanelActive()) {
                             refreshSecurityLogCard();
                         }
                     });
@@ -23446,7 +24261,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             : '';
 
         $redirect_url = admin_url('admin.php?page=cbt-setup');
-        $redirect_suffix = '#security';
+        $redirect_suffix = '#security-log';
 
         if ($delete_scope === 'selected') {
             $selected_log_ids = isset($_POST['selected_log_ids']) && is_array($_POST['selected_log_ids'])
@@ -31297,6 +32112,124 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         exit;
     }
 
+    /**
+     * @return array{
+     *     page:string,
+     *     hash:string,
+     *     exam_id:int,
+     *     status:string,
+     *     kelas:string,
+     *     student_keyword:string,
+     *     paged:int
+     * }
+     */
+    private static function get_attempt_action_return_context_from_request(): array
+    {
+        $return_page = isset($_POST['return_page']) ? sanitize_key((string) wp_unslash($_POST['return_page'])) : 'cbt-results';
+        if (!in_array($return_page, ['cbt-results', 'cbt-setup'], true)) {
+            $return_page = 'cbt-results';
+        }
+
+        $return_hash = isset($_POST['return_hash']) ? sanitize_key((string) wp_unslash($_POST['return_hash'])) : '';
+        if (!in_array($return_hash, ['branding', 'security', 'security-log'], true)) {
+            $return_hash = '';
+        }
+
+        $return_exam_id = isset($_POST['cbt_exam_id']) ? absint($_POST['cbt_exam_id']) : 0;
+        $return_status = isset($_POST['cbt_attempt_status']) ? sanitize_key((string) wp_unslash($_POST['cbt_attempt_status'])) : '';
+        $return_kelas = isset($_POST['cbt_result_kelas']) ? sanitize_text_field(wp_unslash($_POST['cbt_result_kelas'])) : '';
+        $return_student_keyword = isset($_POST['cbt_student_q']) ? sanitize_text_field(wp_unslash($_POST['cbt_student_q'])) : '';
+        $return_paged = isset($_POST['cbt_results_paged']) ? max(1, absint(wp_unslash($_POST['cbt_results_paged']))) : 1;
+        $allowed_statuses = ['in_progress', 'completed'];
+        if (!in_array($return_status, $allowed_statuses, true)) {
+            $return_status = '';
+        }
+
+        return [
+            'page' => $return_page,
+            'hash' => $return_hash,
+            'exam_id' => $return_exam_id,
+            'status' => $return_status,
+            'kelas' => $return_kelas,
+            'student_keyword' => $return_student_keyword,
+            'paged' => $return_paged,
+        ];
+    }
+
+    /**
+     * @param array{
+     *     page:string,
+     *     hash:string,
+     *     exam_id:int,
+     *     status:string,
+     *     kelas:string,
+     *     student_keyword:string,
+     *     paged:int
+     * } $context
+     */
+    private static function redirect_with_attempt_action_return(array $context, ?string $message = null, ?string $error = null): void
+    {
+        $page = isset($context['page']) ? (string) $context['page'] : 'cbt-results';
+        if ($page === 'cbt-setup') {
+            $args = ['page' => 'cbt-setup'];
+            if ($message !== null && $message !== '') {
+                $args['cbt_msg'] = $message;
+            }
+            if ($error !== null && $error !== '') {
+                $args['cbt_err'] = $error;
+            }
+
+            $redirect_url = add_query_arg($args, admin_url('admin.php'));
+            $hash = self::setup_tab_hash_suffix((string) ($context['hash'] ?? ''));
+            if ($hash !== '') {
+                $redirect_url .= $hash;
+            }
+
+            wp_safe_redirect($redirect_url);
+            exit;
+        }
+
+        $args = ['page' => 'cbt-results'];
+        if (!empty($context['exam_id'])) {
+            $args['cbt_exam_id'] = (int) $context['exam_id'];
+        }
+        if (!empty($context['status'])) {
+            $args['cbt_attempt_status'] = (string) $context['status'];
+        }
+        if (!empty($context['kelas'])) {
+            $args['cbt_result_kelas'] = (string) $context['kelas'];
+        }
+        if (!empty($context['student_keyword'])) {
+            $args['cbt_student_q'] = (string) $context['student_keyword'];
+        }
+        if (!empty($context['paged']) && (int) $context['paged'] > 1) {
+            $args['cbt_results_paged'] = (int) $context['paged'];
+        }
+        if ($message !== null && $message !== '') {
+            $args['cbt_msg'] = $message;
+        }
+        if ($error !== null && $error !== '') {
+            $args['cbt_err'] = $error;
+        }
+
+        wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
+        exit;
+    }
+
+    private static function setup_tab_hash_suffix(string $tab_name): string
+    {
+        $tab_name = sanitize_key($tab_name);
+        if ($tab_name === 'security') {
+            return '#security';
+        }
+
+        if ($tab_name === 'security-log') {
+            return '#security-log';
+        }
+
+        return '';
+    }
+
     public static function handle_extend_attempt_time(): void
     {
         if (!current_user_can('cbt_view_results')) {
@@ -31586,42 +32519,10 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         }
 
         $attempt_id = isset($_POST['attempt_id']) ? absint($_POST['attempt_id']) : 0;
-        $return_exam_id = isset($_POST['cbt_exam_id']) ? absint($_POST['cbt_exam_id']) : 0;
-        $return_status = isset($_POST['cbt_attempt_status']) ? sanitize_key((string) wp_unslash($_POST['cbt_attempt_status'])) : '';
-        $return_kelas = isset($_POST['cbt_result_kelas']) ? sanitize_text_field(wp_unslash($_POST['cbt_result_kelas'])) : '';
-        $return_student_keyword = isset($_POST['cbt_student_q']) ? sanitize_text_field(wp_unslash($_POST['cbt_student_q'])) : '';
-        $return_paged = isset($_POST['cbt_results_paged']) ? max(1, absint(wp_unslash($_POST['cbt_results_paged']))) : 1;
-        $allowed_statuses = ['in_progress', 'completed'];
-        if (!in_array($return_status, $allowed_statuses, true)) {
-            $return_status = '';
-        }
+        $return_context = self::get_attempt_action_return_context_from_request();
 
-        $redirect_with = static function (?string $message = null, ?string $error = null) use ($return_exam_id, $return_status, $return_kelas, $return_student_keyword, $return_paged): void {
-            $args = ['page' => 'cbt-results'];
-            if ($return_exam_id > 0) {
-                $args['cbt_exam_id'] = $return_exam_id;
-            }
-            if ($return_status !== '') {
-                $args['cbt_attempt_status'] = $return_status;
-            }
-            if ($return_kelas !== '') {
-                $args['cbt_result_kelas'] = $return_kelas;
-            }
-            if ($return_student_keyword !== '') {
-                $args['cbt_student_q'] = $return_student_keyword;
-            }
-            if ($return_paged > 1) {
-                $args['cbt_results_paged'] = $return_paged;
-            }
-            if ($message !== null && $message !== '') {
-                $args['cbt_msg'] = $message;
-            }
-            if ($error !== null && $error !== '') {
-                $args['cbt_err'] = $error;
-            }
-
-            wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
-            exit;
+        $redirect_with = static function (?string $message = null, ?string $error = null) use ($return_context): void {
+            self::redirect_with_attempt_action_return($return_context, $message, $error);
         };
 
         if ($attempt_id <= 0) {
@@ -31675,12 +32576,84 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         }
 
         CBT_Cache::invalidate_user($student_id);
+        $action_source = (string) ($return_context['page'] ?? '') === 'cbt-setup' ? 'must_watch_panel' : 'admin_reset_user_login';
         CBT_Security_Log::record_attempt_event((int) ($attempt['id'] ?? 0), 'admin_reset_login', [
             'actor_user_id' => get_current_user_id(),
-            'source' => 'admin_reset_user_login',
+            'source' => $action_source,
         ]);
 
         $redirect_with('Login siswa berhasil di-reset. Browser lama akan diminta login ulang dan siswa bisa login kembali.');
+    }
+
+    public static function handle_force_complete_attempt(): void
+    {
+        if (!current_user_can('cbt_view_results')) {
+            wp_die('Unauthorized');
+        }
+
+        $attempt_id = isset($_POST['attempt_id']) ? absint($_POST['attempt_id']) : 0;
+        $return_context = self::get_attempt_action_return_context_from_request();
+
+        $redirect_with = static function (?string $message = null, ?string $error = null) use ($return_context): void {
+            self::redirect_with_attempt_action_return($return_context, $message, $error);
+        };
+
+        if ($attempt_id <= 0) {
+            $redirect_with(null, 'Attempt tidak valid.');
+        }
+
+        check_admin_referer('cbt_force_complete_attempt_' . $attempt_id);
+
+        global $wpdb;
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $is_admin_scope = self::is_admin_scope();
+
+        if ($is_admin_scope) {
+            $attempt = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT a.id, a.exam_id, a.student_id, a.status
+                     FROM {$attempt_table} a
+                     WHERE a.id = %d",
+                    $attempt_id
+                ),
+                ARRAY_A
+            );
+        } else {
+            $attempt = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT a.id, a.exam_id, a.student_id, a.status
+                     FROM {$attempt_table} a
+                     INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                     WHERE a.id = %d AND e.created_by = %d",
+                    $attempt_id,
+                    get_current_user_id()
+                ),
+                ARRAY_A
+            );
+        }
+
+        if (!$attempt) {
+            $redirect_with(null, 'Attempt tidak ditemukan atau tidak bisa diakses.');
+        }
+
+        if ((string) ($attempt['status'] ?? '') !== 'in_progress') {
+            $redirect_with(null, 'Hanya attempt dengan status in_progress yang bisa dipaksa selesai.');
+        }
+
+        $finished_at = current_time('mysql');
+        $completion_result = CBT_REST::finalize_attempt_completion($attempt_id, $finished_at);
+        if (is_wp_error($completion_result)) {
+            $redirect_with(null, 'Gagal memaksa attempt selesai. Coba ulang lagi.');
+        }
+
+        CBT_Security_Log::record_attempt_event($attempt_id, 'admin_force_complete', [
+            'actor_user_id' => get_current_user_id(),
+            'source' => 'must_watch_panel',
+        ]);
+
+        $redirect_with('Attempt berhasil dipaksa selesai dari panel Must Watch.');
     }
 
     public static function handle_bulk_reset_attempts(): void
