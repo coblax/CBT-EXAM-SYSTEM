@@ -73,6 +73,9 @@ class CBT_Admin
         add_action('admin_post_cbt_bulk_reset_attempts', [self::class, 'handle_bulk_reset_attempts']);
         add_action('admin_post_cbt_bulk_force_complete_attempts', [self::class, 'handle_bulk_force_complete_attempts']);
         add_action('admin_post_cbt_export_exam_report_pdf', [self::class, 'handle_export_exam_report_pdf']);
+        add_action('admin_post_cbt_save_exam_incident', [self::class, 'handle_save_exam_incident']);
+        add_action('admin_post_cbt_update_exam_incident', [self::class, 'handle_update_exam_incident']);
+        add_action('admin_post_cbt_delete_exam_incident', [self::class, 'handle_delete_exam_incident']);
         add_action('admin_post_cbt_print_exam_cards', [self::class, 'handle_print_exam_cards']);
 
         add_action('admin_post_cbt_import_users', [self::class, 'handle_import_users']);
@@ -5516,6 +5519,7 @@ class CBT_Admin
         $notice = isset($_GET['cbt_msg']) ? sanitize_text_field(wp_unslash($_GET['cbt_msg'])) : '';
         $error = isset($_GET['cbt_err']) ? sanitize_text_field(wp_unslash($_GET['cbt_err'])) : '';
         $branding = self::get_setup_branding_settings();
+        $exam_program_name = (string) ($branding['exam_program_name'] ?? '');
         $school_name = (string) ($branding['school_name'] ?? '');
         $school_motto = (string) ($branding['school_motto'] ?? '');
         $school_npsn = (string) ($branding['school_npsn'] ?? '');
@@ -6611,6 +6615,17 @@ class CBT_Admin
                                     </div>
                                 </div>
                                 <div class="cbt-setup-field-grid" id="cbt-setup-identity-fields">
+                                    <div class="cbt-setup-field cbt-setup-field--full">
+                                        <label for="cbt-setup-exam-program-name">Nama Program Ujian</label>
+                                        <input
+                                            type="text"
+                                            id="cbt-setup-exam-program-name"
+                                            name="exam_program_name"
+                                            value="<?php echo esc_attr($exam_program_name); ?>"
+                                            placeholder="Contoh: ANBK, UTS, UAS, USBK"
+                                        />
+                                        <p class="description">Opsional. Dipakai untuk identitas program ujian pada dokumen cetak dan area branding CBT yang relevan.</p>
+                                    </div>
                                     <div class="cbt-setup-field cbt-setup-field--full">
                                         <label for="cbt-setup-school-name">Nama Sekolah CBT</label>
                                         <input
@@ -19206,6 +19221,12 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         $current_user_id = get_current_user_id();
         $selected_exam_id = isset($_GET['cbt_exam_id']) ? absint($_GET['cbt_exam_id']) : 0;
         $selected_kelas = isset($_GET['cbt_result_kelas']) ? sanitize_text_field(wp_unslash($_GET['cbt_result_kelas'])) : '';
+        $incident_context = self::get_report_incident_context_from_request($_GET);
+        $selected_incident_exam_id = (int) ($incident_context['exam_id'] ?? 0);
+        $selected_incident_kelas = (string) ($incident_context['kelas'] ?? '');
+        $selected_incident_ruang = (string) ($incident_context['ruang'] ?? '');
+        $selected_incident_edit_id = (int) ($incident_context['edit_id'] ?? 0);
+        $active_report_tab = self::normalize_report_exam_tab(isset($_GET['cbt_report_tab']) ? (string) wp_unslash($_GET['cbt_report_tab']) : '');
 
         $role_options = self::report_supervisor_role_options();
         $supervisor_inputs = [];
@@ -19225,6 +19246,105 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
         $exam_filter_rows = self::get_accessible_exam_filter_rows($is_admin_scope, $current_user_id);
         $kelas_filter_rows = self::get_distinct_user_meta_values('kode_kelas');
+        $incident_exam = self::get_accessible_exam_row($selected_incident_exam_id, $is_admin_scope, $current_user_id);
+        if ($selected_incident_exam_id > 0 && empty($incident_exam)) {
+            $selected_incident_exam_id = 0;
+            $selected_incident_kelas = '';
+            $selected_incident_ruang = '';
+            $selected_incident_edit_id = 0;
+            $incident_context = [
+                'exam_id' => 0,
+                'kelas' => '',
+                'ruang' => '',
+                'edit_id' => 0,
+            ];
+        }
+
+        $incident_kelas_options = !empty($incident_exam)
+            ? self::get_report_incident_exam_kelas_options($incident_exam, $kelas_filter_rows)
+            : [];
+        if ($selected_incident_kelas !== '' && !in_array($selected_incident_kelas, $incident_kelas_options, true)) {
+            $selected_incident_kelas = '';
+            $incident_context['kelas'] = '';
+        }
+
+        $incident_base_student_rows = !empty($incident_exam)
+            ? self::get_report_incident_student_rows($incident_exam, $selected_incident_kelas)
+            : [];
+        $incident_ruang_options = self::get_report_incident_ruang_options($incident_base_student_rows);
+        if ($selected_incident_ruang !== '' && !in_array($selected_incident_ruang, $incident_ruang_options, true)) {
+            $selected_incident_ruang = '';
+            $incident_context['ruang'] = '';
+        }
+
+        $incident_student_rows = !empty($incident_exam)
+            ? self::get_report_incident_student_rows($incident_exam, $selected_incident_kelas, $selected_incident_ruang)
+            : [];
+        $incident_current_staff = self::get_report_incident_current_staff_row($current_user_id);
+        $incident_scope_filters = $is_admin_scope ? [] : ['teacher_id' => $current_user_id];
+        $incident_rows = $selected_incident_exam_id > 0
+            ? CBT_Incident_Report::get_rows($selected_incident_exam_id, $selected_incident_kelas, $selected_incident_ruang, $incident_scope_filters)
+            : [];
+
+        $editing_incident = [];
+        if ($selected_incident_edit_id > 0) {
+            $editing_incident = CBT_Incident_Report::get_row($selected_incident_edit_id, $incident_scope_filters);
+            $edit_exam_id = (int) ($editing_incident['exam_id'] ?? 0);
+            $edit_student_id = (int) ($editing_incident['student_id'] ?? 0);
+            if (
+                empty($editing_incident)
+                || $selected_incident_exam_id <= 0
+                || $edit_exam_id !== $selected_incident_exam_id
+                || empty(self::get_report_incident_student_row_by_id($edit_student_id, $incident_student_rows))
+            ) {
+                $editing_incident = [];
+                $selected_incident_edit_id = 0;
+                $incident_context['edit_id'] = 0;
+            }
+        }
+
+        $incident_form_staff_user_id = (int) ($incident_current_staff['id'] ?? 0);
+
+        $incident_form_student_id = !empty($editing_incident) ? (int) ($editing_incident['student_id'] ?? 0) : 0;
+        $incident_form_type = !empty($editing_incident) ? (string) ($editing_incident['incident_type'] ?? '') : '';
+        $incident_form_notes = !empty($editing_incident) ? trim((string) ($editing_incident['notes'] ?? '')) : '';
+        $incident_form_note_options = CBT_Incident_Report::incident_note_options_for_type($incident_form_type);
+        $incident_form_note_value = '';
+        $incident_form_note_custom = '';
+        if ($incident_form_notes !== '') {
+            if (in_array($incident_form_notes, $incident_form_note_options, true)) {
+                $incident_form_note_value = $incident_form_notes;
+            } else {
+                $incident_form_note_value = CBT_Incident_Report::custom_note_option_value();
+                $incident_form_note_custom = $incident_form_notes;
+            }
+        }
+        $incident_selected_student_row = self::get_report_incident_student_row_by_id($incident_form_student_id, $incident_student_rows);
+        $incident_student_placeholder_photo = self::resolve_student_default_photo('siswa_cbt', '');
+        $incident_student_picker_name = !empty($incident_selected_student_row['name'])
+            ? (string) $incident_selected_student_row['name']
+            : (!empty($incident_student_rows) ? 'Pilih peserta' : 'Tidak ada peserta sesuai filter');
+        $incident_student_picker_meta_parts = [];
+        if (!empty($incident_selected_student_row['kelas'])) {
+            $incident_student_picker_meta_parts[] = 'K: ' . (string) $incident_selected_student_row['kelas'];
+        }
+        if (!empty($incident_selected_student_row['ruang'])) {
+            $incident_student_picker_meta_parts[] = 'R: ' . (string) $incident_selected_student_row['ruang'];
+        }
+        $incident_student_picker_meta = !empty($incident_student_picker_meta_parts)
+            ? implode(' • ', $incident_student_picker_meta_parts)
+            : (!empty($incident_student_rows) ? 'Foto dan identitas peserta akan tampil di sini.' : 'Coba ubah filter exam, kelas, atau ruang untuk memuat peserta.');
+        $incident_student_picker_photo = !empty($incident_selected_student_row['foto'])
+            ? (string) $incident_selected_student_row['foto']
+            : $incident_student_placeholder_photo;
+        $is_editing_incident = !empty($editing_incident);
+        $incident_reset_url = add_query_arg(
+            [
+                'page' => 'cbt-report-exam',
+                'cbt_report_tab' => 'incident-report',
+            ],
+            admin_url('admin.php')
+        );
         $selected_exam_label = 'Belum dipilih';
         foreach ($exam_filter_rows as $exam_filter_row) {
             $exam_filter_id = (int) ($exam_filter_row['id'] ?? 0);
@@ -19236,6 +19356,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         $reset_url = add_query_arg(
             [
                 'page' => 'cbt-report-exam',
+                'cbt_report_tab' => 'filter-export-report',
             ],
             admin_url('admin.php')
         );
@@ -19306,6 +19427,53 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 color: #1e3a5f;
                 font-size: 13px;
                 font-weight: 600;
+            }
+            .cbt-report-admin-tabs {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+                padding: 6px;
+                border: 1px solid #d9e1ea;
+                border-radius: 18px;
+                background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
+                box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+            }
+            .cbt-report-admin-tab {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 42px;
+                padding: 0 18px;
+                border: 0;
+                border-radius: 14px;
+                background: transparent;
+                color: #4b5563;
+                font-size: 13px;
+                font-weight: 700;
+                cursor: pointer;
+                transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+            }
+            .cbt-report-admin-tab:hover,
+            .cbt-report-admin-tab:focus {
+                background: #eef4fb;
+                color: #153f67;
+                outline: none;
+            }
+            .cbt-report-admin-tab.is-active {
+                background: linear-gradient(180deg, #2f7ab9 0%, #1f68a6 100%);
+                color: #ffffff;
+                box-shadow: 0 10px 20px rgba(34, 113, 177, 0.18);
+            }
+            .cbt-report-admin-tab-panels {
+                display: grid;
+                gap: 18px;
+            }
+            .cbt-report-admin-tab-panel {
+                display: none;
+            }
+            .cbt-report-admin-tab-panel.is-active {
+                display: block;
             }
             .cbt-report-admin-panel {
                 padding: 24px;
@@ -19532,6 +19700,453 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 color: #64748b;
                 line-height: 1.6;
             }
+            .cbt-report-admin-empty {
+                padding: 24px;
+                border: 1px dashed #d6deea;
+                border-radius: 18px;
+                background: linear-gradient(180deg, #fbfdff 0%, #f6f9fc 100%);
+                color: #526072;
+                line-height: 1.7;
+            }
+            .cbt-report-admin-empty strong {
+                display: block;
+                margin-bottom: 8px;
+                color: #0f172a;
+                font-size: 15px;
+            }
+            .cbt-report-admin-notices {
+                display: grid;
+                gap: 10px;
+            }
+            .cbt-report-admin-incident-toolbar {
+                display: grid;
+                gap: 14px;
+                margin-bottom: 18px;
+            }
+            .cbt-report-admin-incident-toolbar form {
+                margin: 0;
+            }
+            .cbt-report-admin-incident-filter-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+                gap: 12px;
+                align-items: start;
+            }
+            .cbt-report-admin-incident-filter-grid .cbt-report-admin-field {
+                display: grid;
+                align-content: start;
+                gap: 8px;
+            }
+            .cbt-report-admin-incident-filter-grid .cbt-report-admin-field .description {
+                min-height: 42px;
+                padding-left: 0;
+            }
+            .cbt-report-admin-incident-filter-actions {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+                align-self: start;
+                padding-top: 26px;
+            }
+            .cbt-report-admin-incident-filter-actions.is-auto {
+                justify-content: flex-end;
+            }
+            .cbt-report-admin-incident-filter-actions .button {
+                min-height: 48px;
+                padding: 0 18px;
+                border-radius: 16px;
+                font-weight: 600;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .cbt-report-admin-incident-layout {
+                display: grid;
+                grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+                gap: 18px;
+                align-items: start;
+            }
+            .cbt-report-admin-incident-form-card,
+            .cbt-report-admin-incident-table-card {
+                padding: 20px;
+                border: 1px solid #dfe7ef;
+                border-radius: 18px;
+                background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+            }
+            .cbt-report-admin-incident-card-header {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 12px;
+                margin-bottom: 14px;
+            }
+            .cbt-report-admin-incident-card-header h3 {
+                margin: 0 0 4px;
+                font-size: 16px;
+                line-height: 1.25;
+            }
+            .cbt-report-admin-incident-card-header p {
+                margin: 0;
+                color: #64748b;
+                line-height: 1.55;
+            }
+            .cbt-report-admin-incident-form-grid {
+                display: grid;
+                gap: 12px;
+            }
+            .cbt-report-admin-student-picker {
+                position: relative;
+            }
+            .cbt-report-admin-student-picker-trigger {
+                width: 100%;
+                min-height: 64px;
+                padding: 10px 14px;
+                border: 1px solid #c9d7e6;
+                border-radius: 16px;
+                background: #f8fbff;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                cursor: pointer;
+                text-align: left;
+                transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+            }
+            .cbt-report-admin-student-picker-trigger:hover,
+            .cbt-report-admin-student-picker-trigger:focus-visible,
+            .cbt-report-admin-student-picker.is-open .cbt-report-admin-student-picker-trigger {
+                border-color: #2271b1;
+                background: #ffffff;
+                box-shadow: 0 0 0 3px rgba(34, 113, 177, 0.12);
+                outline: none;
+            }
+            .cbt-report-admin-student-picker-trigger[disabled] {
+                cursor: not-allowed;
+                opacity: 0.7;
+            }
+            .cbt-report-admin-student-picker-value {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                min-width: 0;
+                flex: 1 1 auto;
+            }
+            .cbt-report-admin-student-picker-avatar,
+            .cbt-report-admin-student-picker-option-avatar {
+                width: 42px;
+                height: 42px;
+                border-radius: 999px;
+                overflow: hidden;
+                flex: 0 0 42px;
+                border: 1px solid #d5e1ef;
+                background: linear-gradient(180deg, #f8fbff 0%, #edf4fb 100%);
+            }
+            .cbt-report-admin-student-picker-avatar img,
+            .cbt-report-admin-student-picker-option-avatar img {
+                display: block;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+            }
+            .cbt-report-admin-student-picker-copy,
+            .cbt-report-admin-student-picker-option-copy {
+                min-width: 0;
+                display: grid;
+                gap: 4px;
+            }
+            .cbt-report-admin-student-picker-copy strong,
+            .cbt-report-admin-student-picker-option-copy strong {
+                display: block;
+                color: #0f172a;
+                font-size: 14px;
+                line-height: 1.3;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .cbt-report-admin-student-picker-copy span,
+            .cbt-report-admin-student-picker-option-copy span {
+                display: block;
+                color: #64748b;
+                font-size: 12px;
+                line-height: 1.45;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .cbt-report-admin-student-picker-chevron {
+                color: #64748b;
+                font-size: 14px;
+                line-height: 1;
+                flex: 0 0 auto;
+            }
+            .cbt-report-admin-student-picker-menu {
+                position: absolute;
+                top: calc(100% + 8px);
+                left: 0;
+                right: 0;
+                z-index: 40;
+                display: none;
+                max-height: 320px;
+                overflow: auto;
+                padding: 8px;
+                border: 1px solid #d7e2ee;
+                border-radius: 18px;
+                background: #ffffff;
+                box-shadow: 0 18px 32px rgba(15, 23, 42, 0.14);
+            }
+            .cbt-report-admin-student-picker.is-open .cbt-report-admin-student-picker-menu {
+                display: grid;
+                gap: 6px;
+            }
+            .cbt-report-admin-student-picker-option {
+                width: 100%;
+                padding: 10px 12px;
+                border: 1px solid transparent;
+                border-radius: 14px;
+                background: transparent;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                cursor: pointer;
+                text-align: left;
+                transition: background-color 120ms ease, border-color 120ms ease;
+            }
+            .cbt-report-admin-student-picker-option:hover,
+            .cbt-report-admin-student-picker-option:focus-visible {
+                border-color: #cfe0f4;
+                background: #f8fbff;
+                outline: none;
+            }
+            .cbt-report-admin-student-picker-option.is-selected {
+                border-color: #bfd7f5;
+                background: #eef6ff;
+            }
+            .cbt-report-admin-field textarea {
+                width: 100%;
+                min-height: 120px;
+                max-width: none;
+                box-sizing: border-box;
+                padding: 14px 15px;
+                border: 1px solid #c9d7e6;
+                border-radius: 16px;
+                background: #f8fbff;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+                color: #0f172a;
+                resize: vertical;
+                transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+            }
+            .cbt-report-admin-field textarea:focus {
+                border-color: #2271b1;
+                background: #ffffff;
+                box-shadow: 0 0 0 3px rgba(34, 113, 177, 0.12);
+                outline: none;
+            }
+            .cbt-report-admin-incident-summary {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+                margin-bottom: 16px;
+            }
+            .cbt-report-admin-incident-summary-item {
+                display: inline-flex;
+                align-items: center;
+                min-height: 34px;
+                padding: 0 12px;
+                border-radius: 999px;
+                background: #f8fbff;
+                border: 1px solid #dbe7f3;
+                color: #1e3a5f;
+                font-size: 12px;
+                font-weight: 700;
+            }
+            .cbt-report-admin-incident-table-wrap {
+                overflow-x: auto;
+                border: 1px solid #e4edf6;
+                border-radius: 18px;
+                background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+            }
+            .cbt-report-admin-incident-table {
+                width: 100%;
+                min-width: 760px;
+                border-collapse: separate;
+                border-spacing: 0;
+            }
+            .cbt-report-admin-incident-table th,
+            .cbt-report-admin-incident-table td {
+                padding: 12px 12px;
+                border-bottom: 1px solid #e5edf6;
+                vertical-align: top;
+                text-align: left;
+            }
+            .cbt-report-admin-incident-table th {
+                color: #334155;
+                font-size: 11px;
+                font-weight: 800;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                background: #f8fbff;
+                white-space: nowrap;
+            }
+            .cbt-report-admin-incident-table tbody tr:hover td {
+                background: #fbfdff;
+            }
+            .cbt-report-admin-incident-type-pill,
+            .cbt-report-admin-incident-staff-pill,
+            .cbt-report-admin-incident-student-meta span {
+                display: inline-flex;
+                align-items: center;
+                min-height: 28px;
+                padding: 0 10px;
+                border-radius: 999px;
+                font-size: 12px;
+                font-weight: 700;
+                white-space: nowrap;
+            }
+            .cbt-report-admin-incident-type-pill {
+                background: #eef4fb;
+                color: #1d4f80;
+            }
+            .cbt-report-admin-incident-staff-pill {
+                background: #f4f7fb;
+                color: #334155;
+                border: 1px solid #dbe5f0;
+            }
+            .cbt-report-admin-incident-photo {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 42px;
+                height: 42px;
+                border-radius: 12px;
+                overflow: hidden;
+                background: linear-gradient(180deg, #f8fbff 0%, #edf4fb 100%);
+                border: 1px solid #d5e1ef;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+            }
+            .cbt-report-admin-incident-photo img {
+                display: block;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+            }
+            .cbt-report-admin-incident-student-copy {
+                display: grid;
+                gap: 6px;
+            }
+            .cbt-report-admin-incident-student-copy strong {
+                display: block;
+                color: #0f172a;
+                font-size: 14px;
+                line-height: 1.35;
+            }
+            .cbt-report-admin-incident-student-meta {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                flex-wrap: wrap;
+            }
+            .cbt-report-admin-incident-student-meta span {
+                min-height: 24px;
+                padding: 0 8px;
+                font-size: 11px;
+            }
+            .cbt-report-admin-incident-student-meta .is-kelas {
+                background: #eef4ff;
+                border: 1px solid #c9dafd;
+                color: #1d4ed8;
+            }
+            .cbt-report-admin-incident-student-meta .is-ruang {
+                background: #effcf6;
+                border: 1px solid #bbf7d0;
+                color: #047857;
+            }
+            .cbt-report-admin-incident-time {
+                display: grid;
+                gap: 4px;
+                color: #0f172a;
+                line-height: 1.4;
+            }
+            .cbt-report-admin-incident-time-date {
+                font-weight: 700;
+                font-size: 13px;
+            }
+            .cbt-report-admin-incident-time-clock {
+                color: #64748b;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .cbt-report-admin-incident-detail {
+                color: #334155;
+                line-height: 1.55;
+                word-break: break-word;
+            }
+            .cbt-report-admin-incident-actions {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                flex-wrap: nowrap;
+                white-space: nowrap;
+            }
+            .cbt-report-admin-incident-actions .button {
+                min-height: 34px;
+                padding: 0 10px;
+                border-radius: 999px;
+                line-height: 1;
+                font-size: 11px;
+                font-weight: 700;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 5px;
+                transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+                text-decoration: none;
+            }
+            .cbt-report-admin-incident-actions .button:hover,
+            .cbt-report-admin-incident-actions .button:focus-visible {
+                transform: translateY(-1px);
+                box-shadow: 0 10px 18px rgba(15, 23, 42, 0.10);
+                outline: none;
+            }
+            .cbt-report-admin-incident-actions .button .dashicons {
+                width: 12px;
+                height: 12px;
+                font-size: 12px;
+            }
+            .cbt-report-admin-incident-actions .button.is-edit {
+                border-color: #bfdbfe;
+                background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+                color: #1d4ed8;
+            }
+            .cbt-report-admin-incident-actions .button.is-edit:hover,
+            .cbt-report-admin-incident-actions .button.is-edit:focus-visible {
+                border-color: #93c5fd;
+                background: linear-gradient(180deg, #e0efff 0%, #cfe4ff 100%);
+                color: #1e40af;
+            }
+            .cbt-report-admin-incident-actions .button.is-delete {
+                border-color: #fecaca;
+                background: linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%);
+                color: #dc2626;
+            }
+            .cbt-report-admin-incident-actions .button.is-delete:hover,
+            .cbt-report-admin-incident-actions .button.is-delete:focus-visible {
+                border-color: #fca5a5;
+                background: linear-gradient(180deg, #fee7e7 0%, #fecfcf 100%);
+                color: #b91c1c;
+            }
+            .cbt-report-admin-incident-delete-form {
+                margin: 0;
+                display: inline-flex;
+            }
+            @media (max-width: 1380px) {
+                .cbt-report-admin-incident-layout {
+                    grid-template-columns: 1fr;
+                }
+            }
             @media (max-width: 960px) {
                 .cbt-report-admin-hero,
                 .cbt-report-admin-panel-header {
@@ -19541,9 +20156,15 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 .cbt-report-admin-overview {
                     min-width: 0;
                 }
+                .cbt-report-admin-incident-filter-grid,
                 .cbt-report-admin-supervisor-grid,
                 .cbt-report-admin-insights {
                     grid-template-columns: 1fr;
+                }
+                .cbt-report-admin-student-picker-menu {
+                    position: static;
+                    margin-top: 8px;
+                    box-shadow: none;
                 }
             }
             @media (max-width: 860px) {
@@ -19554,10 +20175,23 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 .cbt-report-admin-supervisor-row th {
                     padding-top: 0;
                 }
+                .cbt-report-admin-incident-filter-grid .cbt-report-admin-field .description {
+                    min-height: 0;
+                }
+                .cbt-report-admin-incident-filter-actions {
+                    padding-top: 0;
+                }
             }
             @media (max-width: 782px) {
                 .cbt-report-admin-page {
                     margin-right: 10px;
+                }
+                .cbt-report-admin-tabs {
+                    gap: 8px;
+                    padding: 5px;
+                }
+                .cbt-report-admin-tab {
+                    width: 100%;
                 }
                 .cbt-report-admin-hero,
                 .cbt-report-admin-panel {
@@ -19571,134 +20205,769 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     <div class="cbt-report-admin-hero-copy">
                         <span class="cbt-report-admin-kicker">Report</span>
                         <h1>CBT Report Exam</h1>
-                        <p>Cetak rekap nilai berdasarkan exam dan kelas dengan format siap print ke PDF. Data petugas bisa diisi langsung dari halaman ini agar dokumen final langsung lengkap.</p>
+                        <p>Kelola incident report manual per exam dan cetak rekap nilai dari satu halaman report yang tetap rapi untuk admin maupun pengawas.</p>
                     </div>
                     <div class="cbt-report-admin-overview" aria-hidden="true">
                         <span class="cbt-report-admin-pill"><?php echo esc_html(sprintf('%d exam tersedia', count($exam_filter_rows))); ?></span>
                         <span class="cbt-report-admin-pill"><?php echo esc_html(sprintf('%d kelas tersedia', count($kelas_filter_rows))); ?></span>
-                        <span class="cbt-report-admin-pill"><?php echo esc_html('Petugas: 1 wajib, 2 opsional'); ?></span>
+                        <span class="cbt-report-admin-pill"><?php echo esc_html('2 mode report aktif'); ?></span>
                     </div>
                 </section>
 
-                <section class="cbt-report-admin-panel">
-                    <div class="cbt-report-admin-panel-header">
-                        <div>
-                            <h2>Filter & Export Report</h2>
-                            <p>Pilih exam, tentukan kelas bila perlu, lalu lengkapi data petugas yang akan muncul pada bagian tanda tangan report.</p>
-                        </div>
-                        <span class="cbt-report-admin-chip">Print / Save as PDF</span>
+                <div class="cbt-report-admin-tabs" role="tablist" aria-label="CBT Report Exam Tabs">
+                    <button
+                        type="button"
+                        class="cbt-report-admin-tab<?php echo $active_report_tab === 'incident-report' ? ' is-active' : ''; ?>"
+                        id="cbt-report-admin-tab-incident-report"
+                        data-report-tab-button="incident-report"
+                        role="tab"
+                        aria-selected="<?php echo $active_report_tab === 'incident-report' ? 'true' : 'false'; ?>"
+                        aria-controls="cbt-report-admin-panel-incident-report"
+                    >
+                        Incident Report
+                    </button>
+                    <button
+                        type="button"
+                        class="cbt-report-admin-tab<?php echo $active_report_tab === 'filter-export-report' ? ' is-active' : ''; ?>"
+                        id="cbt-report-admin-tab-filter-export-report"
+                        data-report-tab-button="filter-export-report"
+                        role="tab"
+                        aria-selected="<?php echo $active_report_tab === 'filter-export-report' ? 'true' : 'false'; ?>"
+                        aria-controls="cbt-report-admin-panel-filter-export-report"
+                    >
+                        Export Report Exam
+                    </button>
+                </div>
+
+                <?php if ($notice || $error): ?>
+                    <div class="cbt-report-admin-notices">
+                        <?php if ($notice): ?>
+                            <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+                        <?php endif; ?>
+                        <?php if ($error): ?>
+                            <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+                        <?php endif; ?>
                     </div>
+                <?php endif; ?>
 
-            <?php if ($notice): ?>
-                    <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
-            <?php endif; ?>
-            <?php if ($error): ?>
-                    <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
-            <?php endif; ?>
+                <div class="cbt-report-admin-tab-panels">
+                    <section
+                        class="cbt-report-admin-tab-panel<?php echo $active_report_tab === 'incident-report' ? ' is-active' : ''; ?>"
+                        id="cbt-report-admin-panel-incident-report"
+                        data-report-tab-panel="incident-report"
+                        role="tabpanel"
+                        aria-labelledby="cbt-report-admin-tab-incident-report"
+                        <?php echo $active_report_tab === 'incident-report' ? '' : 'hidden'; ?>
+                    >
+                        <section class="cbt-report-admin-panel">
+                            <div class="cbt-report-admin-panel-header">
+                                <div>
+                                    <h2>Incident Report</h2>
+                                    <p>Catat kejadian penting, pelanggaran, atau kondisi khusus peserta secara manual per exam tanpa tercampur dengan Security Log otomatis.</p>
+                                </div>
+                                <span class="cbt-report-admin-chip">CRUD Manual</span>
+                            </div>
 
-                    <div class="cbt-report-admin-summary" aria-hidden="true">
-                        <span class="cbt-report-admin-summary-label">Ringkasan:</span>
-                        <span class="cbt-report-admin-summary-item"><?php echo esc_html('Exam: ' . $selected_exam_label); ?></span>
-                        <span class="cbt-report-admin-summary-item"><?php echo esc_html('Kelas: ' . ($selected_kelas !== '' ? $selected_kelas : 'Semua kelas')); ?></span>
-                        <span class="cbt-report-admin-summary-item"><?php echo esc_html('Scope: ' . ($is_admin_scope ? 'Admin penuh' : 'Guru terbatas')); ?></span>
-                    </div>
-
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                        <?php wp_nonce_field('cbt_export_exam_report_pdf'); ?>
-                        <input type="hidden" name="action" value="cbt_export_exam_report_pdf" />
-                        <table class="form-table" role="presentation">
-                            <tbody>
-                            <tr>
-                                <th><label for="cbt-report-exam-id">Exam</label></th>
-                                <td>
-                                    <select required id="cbt-report-exam-id" name="cbt_exam_id">
-                                        <option value="0">Pilih exam</option>
-                                        <?php foreach ($exam_filter_rows as $exam_filter_row): ?>
-                                            <?php $exam_id = (int) ($exam_filter_row['id'] ?? 0); ?>
-                                            <option value="<?php echo $exam_id; ?>" <?php selected($selected_exam_id, $exam_id); ?>>
-                                                <?php echo esc_html((string) ($exam_filter_row['title'] ?? '-')); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <p class="description">Pilih exam yang nilainya akan direkap ke dalam report PDF.</p>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th><label for="cbt-report-kelas">Kelas</label></th>
-                                <td>
-                                    <select id="cbt-report-kelas" name="cbt_result_kelas">
-                                        <option value="">Semua kelas</option>
-                                        <?php foreach ($kelas_filter_rows as $kelas_filter_row): ?>
-                                            <option value="<?php echo esc_attr($kelas_filter_row); ?>" <?php selected($selected_kelas, $kelas_filter_row); ?>>
-                                                <?php echo esc_html($kelas_filter_row); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <p class="description">Opsional. Jika kosong, report akan memuat seluruh kelas yang sesuai data hasil exam.</p>
-                                </td>
-                            </tr>
-                            <?php for ($idx = 1; $idx <= 3; $idx++): ?>
-                                <?php
-                                $is_required = ($idx === 1);
-                                $label_suffix = $is_required ? 'wajib' : 'opsional';
-                                $supervisor = (array) ($supervisor_inputs[$idx] ?? []);
-                                ?>
-                                <tr class="cbt-report-admin-supervisor-row">
-                                    <th><?php echo esc_html('Petugas ' . $idx); ?></th>
-                                    <td>
-                                        <div class="cbt-report-admin-supervisor-grid">
-                                            <div class="cbt-report-admin-field">
-                                                <label for="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-name'); ?>"><?php echo esc_html('Nama (' . $label_suffix . ')'); ?></label>
-                                                <input <?php echo $is_required ? 'required' : ''; ?> type="text" id="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-name'); ?>" name="<?php echo esc_attr('supervisor_' . $idx . '_name'); ?>" class="regular-text" value="<?php echo esc_attr((string) ($supervisor['name'] ?? '')); ?>" />
-                                            </div>
-                                            <div class="cbt-report-admin-field">
-                                                <label for="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-nip'); ?>"><?php echo esc_html('NIP (' . $label_suffix . ')'); ?></label>
-                                                <input <?php echo $is_required ? 'required' : ''; ?> type="text" id="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-nip'); ?>" name="<?php echo esc_attr('supervisor_' . $idx . '_nip'); ?>" class="regular-text" value="<?php echo esc_attr((string) ($supervisor['nip'] ?? '')); ?>" />
-                                            </div>
-                                            <div class="cbt-report-admin-field">
-                                                <label for="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-role'); ?>"><?php echo esc_html('Jabatan (' . $label_suffix . ')'); ?></label>
-                                                <select <?php echo $is_required ? 'required' : ''; ?> id="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-role'); ?>" name="<?php echo esc_attr('supervisor_' . $idx . '_role'); ?>" class="regular-text">
-                                                    <option value="">Pilih jabatan</option>
-                                                    <?php foreach ($role_options as $role_option): ?>
-                                                        <option value="<?php echo esc_attr($role_option); ?>" <?php selected((string) ($supervisor['role'] ?? ''), $role_option); ?>>
-                                                            <?php echo esc_html($role_option); ?>
-                                                        </option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            </div>
+                            <div class="cbt-report-admin-incident-toolbar">
+                                <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" data-incident-filter-form="true">
+                                    <input type="hidden" name="page" value="cbt-report-exam" />
+                                    <input type="hidden" name="cbt_report_tab" value="incident-report" />
+                                    <div class="cbt-report-admin-incident-filter-grid">
+                                        <div class="cbt-report-admin-field">
+                                            <label for="cbt-incident-exam-id">Exam</label>
+                                            <select required id="cbt-incident-exam-id" name="cbt_incident_exam_id" data-incident-filter-input="exam">
+                                                <option value="0">Pilih exam</option>
+                                                <?php foreach ($exam_filter_rows as $exam_filter_row): ?>
+                                                    <?php $incident_exam_id = (int) ($exam_filter_row['id'] ?? 0); ?>
+                                                    <option value="<?php echo esc_attr((string) $incident_exam_id); ?>" <?php selected($selected_incident_exam_id, $incident_exam_id); ?>>
+                                                        <?php echo esc_html((string) ($exam_filter_row['title'] ?? '-')); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <p class="description">Pilih exam dulu agar form incident hanya bekerja pada konteks exam yang tepat.</p>
                                         </div>
-                                        <?php if (!$is_required): ?>
-                                            <p class="description"><?php echo esc_html('Jika salah satu field Petugas ' . $idx . ' diisi, maka semua field Petugas ' . $idx . ' wajib diisi.'); ?></p>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
-                            <?php endfor; ?>
-                            </tbody>
-                        </table>
-                        <p class="cbt-report-admin-note">Export dilakukan melalui browser dengan mode print-ready. Pastikan minimal Petugas 1 diisi lengkap agar bagian tanda tangan pada report tidak kosong.</p>
-                        <div class="cbt-report-admin-form-actions">
-                            <button class="button button-primary" type="submit">Export PDF (Print-Ready)</button>
-                            <a href="<?php echo esc_url($reset_url); ?>" class="button button-secondary">Reset Form</a>
-                        </div>
-                    </form>
-                </section>
+                                        <div class="cbt-report-admin-field">
+                                            <label for="cbt-incident-kelas">Kelas</label>
+                                            <select id="cbt-incident-kelas" name="cbt_incident_kelas" data-incident-filter-input="kelas" <?php echo $selected_incident_exam_id > 0 ? '' : 'disabled'; ?>>
+                                                <option value="">Semua kelas</option>
+                                                <?php foreach ($incident_kelas_options as $incident_kelas_option): ?>
+                                                    <option value="<?php echo esc_attr($incident_kelas_option); ?>" <?php selected($selected_incident_kelas, $incident_kelas_option); ?>>
+                                                        <?php echo esc_html($incident_kelas_option); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <p class="description">Opsional. Filter kelas akan mempersempit daftar peserta dan row incident pada exam ini.</p>
+                                        </div>
+                                        <div class="cbt-report-admin-field">
+                                            <label for="cbt-incident-ruang">Ruang</label>
+                                            <select id="cbt-incident-ruang" name="cbt_incident_ruang" data-incident-filter-input="ruang" <?php echo $selected_incident_exam_id > 0 ? '' : 'disabled'; ?>>
+                                                <option value="">Semua ruang</option>
+                                                <?php foreach ($incident_ruang_options as $incident_ruang_option): ?>
+                                                    <option value="<?php echo esc_attr($incident_ruang_option); ?>" <?php selected($selected_incident_ruang, $incident_ruang_option); ?>>
+                                                        <?php echo esc_html($incident_ruang_option); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <p class="description">Opsional. Filter ruang ikut membatasi daftar peserta dan incident pada konteks exam ini.</p>
+                                        </div>
+                                        <div class="cbt-report-admin-incident-filter-actions is-auto">
+                                            <a href="<?php echo esc_url($incident_reset_url); ?>" class="button button-secondary">Reset</a>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+
+                            <?php if ($selected_incident_exam_id <= 0 || empty($incident_exam)): ?>
+                                <div class="cbt-report-admin-empty">
+                                    <strong>Pilih exam untuk mulai mencatat incident.</strong>
+                                    Setelah exam dipilih, form tambah/edit dan tabel incident akan langsung tampil di sini.
+                                </div>
+                            <?php else: ?>
+                                <div class="cbt-report-admin-incident-summary" aria-hidden="true">
+                                    <span class="cbt-report-admin-incident-summary-item"><?php echo esc_html('Exam: ' . (string) ($incident_exam['title'] ?? '-')); ?></span>
+                                    <span class="cbt-report-admin-incident-summary-item"><?php echo esc_html('Kelas: ' . ($selected_incident_kelas !== '' ? $selected_incident_kelas : 'Semua kelas')); ?></span>
+                                    <span class="cbt-report-admin-incident-summary-item"><?php echo esc_html('Ruang: ' . ($selected_incident_ruang !== '' ? $selected_incident_ruang : 'Semua ruang')); ?></span>
+                                    <span class="cbt-report-admin-incident-summary-item"><?php echo esc_html(sprintf('Total incident: %d', count($incident_rows))); ?></span>
+                                </div>
+
+                                <div class="cbt-report-admin-incident-layout">
+                                    <section class="cbt-report-admin-incident-form-card">
+                                        <div class="cbt-report-admin-incident-card-header">
+                                            <div>
+                                                <h3><?php echo $is_editing_incident ? 'Update Incident' : 'Tambah Incident'; ?></h3>
+                                                <p><?php echo $is_editing_incident ? 'Perbarui detail insiden pada peserta yang dipilih.' : 'Isi form berikut untuk mencatat insiden manual pada peserta exam ini.'; ?></p>
+                                            </div>
+                                            <span class="cbt-report-admin-chip"><?php echo $is_editing_incident ? 'Edit Mode' : 'Create Mode'; ?></span>
+                                        </div>
+
+                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                            <?php if ($is_editing_incident): ?>
+                                                <?php wp_nonce_field('cbt_update_exam_incident_' . (int) ($editing_incident['id'] ?? 0)); ?>
+                                                <input type="hidden" name="action" value="cbt_update_exam_incident" />
+                                                <input type="hidden" name="incident_id" value="<?php echo esc_attr((string) ((int) ($editing_incident['id'] ?? 0))); ?>" />
+                                            <?php else: ?>
+                                                <?php wp_nonce_field('cbt_save_exam_incident'); ?>
+                                                <input type="hidden" name="action" value="cbt_save_exam_incident" />
+                                            <?php endif; ?>
+                                            <input type="hidden" name="cbt_report_tab" value="incident-report" />
+                                            <input type="hidden" name="cbt_incident_exam_id" value="<?php echo esc_attr((string) $selected_incident_exam_id); ?>" />
+                                            <input type="hidden" name="cbt_incident_kelas" value="<?php echo esc_attr($selected_incident_kelas); ?>" />
+                                            <input type="hidden" name="cbt_incident_ruang" value="<?php echo esc_attr($selected_incident_ruang); ?>" />
+
+                                            <div class="cbt-report-admin-incident-form-grid">
+                                                <div class="cbt-report-admin-field">
+                                                    <label for="cbt-incident-student-picker-trigger">Peserta</label>
+                                                    <div
+                                                        class="cbt-report-admin-student-picker"
+                                                        data-incident-student-picker="true"
+                                                        data-placeholder-name="<?php echo esc_attr(!empty($incident_student_rows) ? 'Pilih peserta' : 'Tidak ada peserta sesuai filter'); ?>"
+                                                        data-placeholder-meta="<?php echo esc_attr(!empty($incident_student_rows) ? 'Foto dan identitas peserta akan tampil di sini.' : 'Coba ubah filter exam, kelas, atau ruang untuk memuat peserta.'); ?>"
+                                                        data-placeholder-foto="<?php echo esc_attr($incident_student_placeholder_photo); ?>"
+                                                    >
+                                                        <input type="hidden" id="cbt-incident-student-id" name="student_id" value="<?php echo esc_attr((string) $incident_form_student_id); ?>" data-incident-student-input="true" />
+                                                        <button
+                                                            type="button"
+                                                            id="cbt-incident-student-picker-trigger"
+                                                            class="cbt-report-admin-student-picker-trigger"
+                                                            data-incident-student-trigger="true"
+                                                            aria-haspopup="listbox"
+                                                            aria-expanded="false"
+                                                            aria-controls="cbt-incident-student-options"
+                                                            <?php echo !empty($incident_student_rows) ? '' : 'disabled'; ?>
+                                                        >
+                                                            <span class="cbt-report-admin-student-picker-value">
+                                                                <span class="cbt-report-admin-student-picker-avatar">
+                                                                    <img src="<?php echo esc_url($incident_student_picker_photo); ?>" alt="" data-incident-student-photo="true" />
+                                                                </span>
+                                                                <span class="cbt-report-admin-student-picker-copy">
+                                                                    <strong data-incident-student-name="true"><?php echo esc_html($incident_student_picker_name); ?></strong>
+                                                                    <span data-incident-student-meta="true"><?php echo esc_html($incident_student_picker_meta); ?></span>
+                                                                </span>
+                                                            </span>
+                                                            <span class="cbt-report-admin-student-picker-chevron" aria-hidden="true">▼</span>
+                                                        </button>
+                                                        <?php if (!empty($incident_student_rows)): ?>
+                                                            <div class="cbt-report-admin-student-picker-menu" id="cbt-incident-student-options" data-incident-student-menu="true" role="listbox" tabindex="-1">
+                                                                <?php foreach ($incident_student_rows as $incident_student_row): ?>
+                                                                    <?php
+                                                                    $incident_student_id = (int) ($incident_student_row['id'] ?? 0);
+                                                                    $incident_student_name = (string) ($incident_student_row['name'] ?? '-');
+                                                                    $incident_student_kelas_label = !empty($incident_student_row['kelas']) ? 'K: ' . (string) $incident_student_row['kelas'] : '';
+                                                                    $incident_student_ruang_label = !empty($incident_student_row['ruang']) ? 'R: ' . (string) $incident_student_row['ruang'] : '';
+                                                                    $incident_student_meta = array_filter([$incident_student_kelas_label, $incident_student_ruang_label]);
+                                                                    ?>
+                                                                    <button
+                                                                        type="button"
+                                                                        class="cbt-report-admin-student-picker-option<?php echo $incident_form_student_id === $incident_student_id ? ' is-selected' : ''; ?>"
+                                                                        data-incident-student-option="true"
+                                                                        data-student-id="<?php echo esc_attr((string) $incident_student_id); ?>"
+                                                                        data-student-name="<?php echo esc_attr($incident_student_name); ?>"
+                                                                        data-student-kelas="<?php echo esc_attr((string) ($incident_student_row['kelas'] ?? '')); ?>"
+                                                                        data-student-ruang="<?php echo esc_attr((string) ($incident_student_row['ruang'] ?? '')); ?>"
+                                                                        data-student-foto="<?php echo esc_attr((string) ($incident_student_row['foto'] ?? $incident_student_placeholder_photo)); ?>"
+                                                                        role="option"
+                                                                        aria-selected="<?php echo $incident_form_student_id === $incident_student_id ? 'true' : 'false'; ?>"
+                                                                    >
+                                                                        <span class="cbt-report-admin-student-picker-option-avatar">
+                                                                            <img src="<?php echo esc_url((string) ($incident_student_row['foto'] ?? $incident_student_placeholder_photo)); ?>" alt="" />
+                                                                        </span>
+                                                                        <span class="cbt-report-admin-student-picker-option-copy">
+                                                                            <strong><?php echo esc_html($incident_student_name); ?></strong>
+                                                                            <span><?php echo esc_html(!empty($incident_student_meta) ? implode(' • ', $incident_student_meta) : ((string) ($incident_student_row['username'] ?? ''))); ?></span>
+                                                                        </span>
+                                                                    </button>
+                                                                <?php endforeach; ?>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                    <p class="description">Daftar peserta mengikuti target kelas exam dan filter ruang aktif, jadi kasus tidak hadir tetap bisa dicatat walau belum punya attempt.</p>
+                                                </div>
+
+                                                <div class="cbt-report-admin-field">
+                                                    <label for="cbt-incident-type">Jenis Insiden</label>
+                                                    <select required id="cbt-incident-type" name="incident_type" data-incident-type-field="true">
+                                                        <option value="">Pilih jenis insiden</option>
+                                                        <?php foreach (CBT_Incident_Report::incident_type_definitions() as $incident_type_key => $incident_type_label): ?>
+                                                            <option value="<?php echo esc_attr($incident_type_key); ?>" <?php selected($incident_form_type, $incident_type_key); ?>>
+                                                                <?php echo esc_html($incident_type_label); ?>
+                                                            </option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                </div>
+
+                                                <div class="cbt-report-admin-field">
+                                                    <label for="cbt-incident-notes">Keterangan</label>
+                                                    <select id="cbt-incident-notes" name="notes" data-incident-notes-field="true" data-incident-notes-current="<?php echo esc_attr($incident_form_note_value); ?>" <?php echo $incident_form_type !== '' ? '' : 'disabled'; ?>>
+                                                        <option value=""><?php echo $incident_form_type !== '' ? 'Pilih keterangan' : 'Pilih jenis insiden dulu'; ?></option>
+                                                        <?php foreach ($incident_form_note_options as $incident_note_option): ?>
+                                                            <option value="<?php echo esc_attr($incident_note_option); ?>" <?php selected($incident_form_note_value, $incident_note_option); ?>>
+                                                                <?php echo esc_html($incident_note_option); ?>
+                                                            </option>
+                                                        <?php endforeach; ?>
+                                                        <option value="<?php echo esc_attr(CBT_Incident_Report::custom_note_option_value()); ?>" <?php selected($incident_form_note_value, CBT_Incident_Report::custom_note_option_value()); ?>>
+                                                            <?php echo esc_html(CBT_Incident_Report::custom_note_option_label()); ?>
+                                                        </option>
+                                                    </select>
+                                                    <div class="cbt-report-admin-field" data-incident-notes-custom-wrap="true" <?php echo $incident_form_note_value === CBT_Incident_Report::custom_note_option_value() ? '' : 'hidden'; ?>>
+                                                        <label for="cbt-incident-notes-custom">Keterangan manual</label>
+                                                        <input type="text" id="cbt-incident-notes-custom" name="notes_custom" value="<?php echo esc_attr($incident_form_note_custom); ?>" data-incident-notes-custom-field="true" placeholder="Tulis keterangan lain jika belum ada di daftar." />
+                                                    </div>
+                                                    <p class="description">Keterangan utama dipilih dari daftar preset agar pencatatan incident tetap konsisten.</p>
+                                                </div>
+
+                                                <div class="cbt-report-admin-field">
+                                                    <label for="cbt-incident-staff-user-id">Petugas</label>
+                                                    <input type="hidden" name="staff_user_id" value="<?php echo esc_attr((string) $incident_form_staff_user_id); ?>" />
+                                                    <select required id="cbt-incident-staff-user-id" disabled>
+                                                        <option value="<?php echo esc_attr((string) $incident_form_staff_user_id); ?>">
+                                                            <?php echo esc_html(!empty($incident_current_staff['label']) ? (string) $incident_current_staff['label'] : 'User login saat ini tidak valid'); ?>
+                                                        </option>
+                                                    </select>
+                                                    <p class="description">Field ini dikunci otomatis berdasarkan akun yang sedang login.</p>
+                                                </div>
+                                            </div>
+
+                                            <div class="cbt-report-admin-form-actions">
+                                                <button class="button button-primary" type="submit" <?php echo (!empty($incident_student_rows) && !empty($incident_current_staff)) ? '' : 'disabled'; ?>>
+                                                    <?php echo $is_editing_incident ? 'Update Incident' : 'Simpan Incident'; ?>
+                                                </button>
+                                                <?php if ($is_editing_incident): ?>
+                                                    <a href="<?php echo esc_url(add_query_arg(['page' => 'cbt-report-exam', 'cbt_report_tab' => 'incident-report', 'cbt_incident_exam_id' => $selected_incident_exam_id, 'cbt_incident_kelas' => $selected_incident_kelas, 'cbt_incident_ruang' => $selected_incident_ruang], admin_url('admin.php'))); ?>" class="button button-secondary">Batal Edit</a>
+                                                <?php endif; ?>
+                                            </div>
+                                        </form>
+                                    </section>
+
+                                    <section class="cbt-report-admin-incident-table-card">
+                                        <div class="cbt-report-admin-incident-card-header">
+                                            <div>
+                                                <h3>Daftar Incident</h3>
+                                                <p>Semua row diurutkan dari waktu insiden terbaru agar kejadian paling baru langsung mudah dipantau.</p>
+                                            </div>
+                                            <span class="cbt-report-admin-chip"><?php echo esc_html(sprintf('%d row', count($incident_rows))); ?></span>
+                                        </div>
+
+                                        <div class="cbt-report-admin-incident-table-wrap">
+                                            <table class="cbt-report-admin-incident-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th style="width:64px;">Foto</th>
+                                                        <th>Peserta</th>
+                                                        <th style="width:158px;">Jenis Insiden</th>
+                                                        <th style="width:104px;">Waktu</th>
+                                                        <th>Keterangan</th>
+                                                        <th style="width:110px;">Petugas</th>
+                                                        <th style="width:152px;">Aksi</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php if (empty($incident_rows)): ?>
+                                                        <tr>
+                                                            <td colspan="7" class="report-empty">Belum ada incident yang dicatat untuk exam dan filter ini.</td>
+                                                        </tr>
+                                                    <?php else: ?>
+                                                        <?php foreach ($incident_rows as $incident_row): ?>
+                                                            <?php
+                                                            $incident_id = (int) ($incident_row['id'] ?? 0);
+                                                            $incident_student_id = (int) ($incident_row['student_id'] ?? 0);
+                                                            $incident_student_photo = self::resolve_student_default_photo('siswa_cbt', (string) get_user_meta($incident_student_id, 'foto', true));
+                                                            $incident_datetime = self::format_report_incident_datetime((string) ($incident_row['incident_at'] ?? ''));
+                                                            $incident_datetime_parts = $incident_datetime !== '-' ? explode(' ', $incident_datetime, 2) : ['-', ''];
+                                                            $incident_date = (string) ($incident_datetime_parts[0] ?? '-');
+                                                            $incident_time = (string) ($incident_datetime_parts[1] ?? '');
+                                                            $incident_notes_text = (string) (($incident_row['notes'] ?? '') !== '' ? $incident_row['notes'] : '-');
+                                                            $incident_edit_url = add_query_arg(
+                                                                [
+                                                                    'page' => 'cbt-report-exam',
+                                                                    'cbt_report_tab' => 'incident-report',
+                                                                    'cbt_incident_exam_id' => $selected_incident_exam_id,
+                                                                    'cbt_incident_kelas' => $selected_incident_kelas,
+                                                                    'cbt_incident_ruang' => $selected_incident_ruang,
+                                                                    'cbt_incident_edit_id' => $incident_id,
+                                                                ],
+                                                                admin_url('admin.php')
+                                                            );
+                                                            ?>
+                                                            <tr>
+                                                                <td>
+                                                                    <span class="cbt-report-admin-incident-photo">
+                                                                        <img src="<?php echo esc_url($incident_student_photo); ?>" alt="" />
+                                                                    </span>
+                                                                </td>
+                                                                <td>
+                                                                    <div class="cbt-report-admin-incident-student-copy">
+                                                                        <strong><?php echo esc_html((string) ($incident_row['student_name_snapshot'] ?? '-')); ?></strong>
+                                                                        <?php if (!empty($incident_row['student_kelas_snapshot']) || !empty($incident_row['student_ruang_snapshot'])): ?>
+                                                                            <div class="cbt-report-admin-incident-student-meta">
+                                                                                <?php if (!empty($incident_row['student_kelas_snapshot'])): ?>
+                                                                                    <span class="is-kelas"><strong>K:</strong>&nbsp;<?php echo esc_html((string) $incident_row['student_kelas_snapshot']); ?></span>
+                                                                                <?php endif; ?>
+                                                                                <?php if (!empty($incident_row['student_ruang_snapshot'])): ?>
+                                                                                    <span class="is-ruang"><strong>R:</strong>&nbsp;<?php echo esc_html((string) $incident_row['student_ruang_snapshot']); ?></span>
+                                                                                <?php endif; ?>
+                                                                            </div>
+                                                                        <?php endif; ?>
+                                                                    </div>
+                                                                </td>
+                                                                <td><span class="cbt-report-admin-incident-type-pill"><?php echo esc_html((string) ($incident_row['incident_type_label'] ?? '-')); ?></span></td>
+                                                                <td>
+                                                                    <div class="cbt-report-admin-incident-time">
+                                                                        <span class="cbt-report-admin-incident-time-date"><?php echo esc_html($incident_date); ?></span>
+                                                                        <?php if ($incident_time !== ''): ?>
+                                                                            <span class="cbt-report-admin-incident-time-clock"><?php echo esc_html($incident_time); ?></span>
+                                                                        <?php endif; ?>
+                                                                    </div>
+                                                                </td>
+                                                                <td><div class="cbt-report-admin-incident-detail"><?php echo esc_html($incident_notes_text); ?></div></td>
+                                                                <td><span class="cbt-report-admin-incident-staff-pill"><?php echo esc_html((string) ($incident_row['staff_name_snapshot'] ?? '-')); ?></span></td>
+                                                                <td>
+                                                                    <div class="cbt-report-admin-incident-actions">
+                                                                        <a href="<?php echo esc_url($incident_edit_url); ?>" class="button button-secondary is-edit">
+                                                                            <span class="dashicons dashicons-edit" aria-hidden="true"></span>
+                                                                            <span>Edit</span>
+                                                                        </a>
+                                                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-report-admin-incident-delete-form">
+                                                                            <?php wp_nonce_field('cbt_delete_exam_incident_' . $incident_id); ?>
+                                                                            <input type="hidden" name="action" value="cbt_delete_exam_incident" />
+                                                                            <input type="hidden" name="incident_id" value="<?php echo esc_attr((string) $incident_id); ?>" />
+                                                                            <input type="hidden" name="cbt_report_tab" value="incident-report" />
+                                                                            <input type="hidden" name="cbt_incident_exam_id" value="<?php echo esc_attr((string) $selected_incident_exam_id); ?>" />
+                                                                            <input type="hidden" name="cbt_incident_kelas" value="<?php echo esc_attr($selected_incident_kelas); ?>" />
+                                                                            <input type="hidden" name="cbt_incident_ruang" value="<?php echo esc_attr($selected_incident_ruang); ?>" />
+                                                                            <button type="submit" class="button button-secondary is-delete" onclick="return window.confirm('Hapus incident ini?')">
+                                                                                <span class="dashicons dashicons-trash" aria-hidden="true"></span>
+                                                                                <span>Hapus</span>
+                                                                            </button>
+                                                                        </form>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        <?php endforeach; ?>
+                                                    <?php endif; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </section>
+                                </div>
+                            <?php endif; ?>
+                        </section>
+                    </section>
+
+                    <section
+                        class="cbt-report-admin-tab-panel<?php echo $active_report_tab === 'filter-export-report' ? ' is-active' : ''; ?>"
+                        id="cbt-report-admin-panel-filter-export-report"
+                        data-report-tab-panel="filter-export-report"
+                        role="tabpanel"
+                        aria-labelledby="cbt-report-admin-tab-filter-export-report"
+                        <?php echo $active_report_tab === 'filter-export-report' ? '' : 'hidden'; ?>
+                    >
+                        <section class="cbt-report-admin-panel">
+                            <div class="cbt-report-admin-panel-header">
+                                <div>
+                                    <h2>Export Report Exam</h2>
+                                    <p>Pilih exam, tentukan kelas bila perlu, lalu lengkapi data petugas yang akan muncul pada bagian tanda tangan report.</p>
+                                </div>
+                                <span class="cbt-report-admin-chip">Print / Save as PDF</span>
+                            </div>
+
+                            <div class="cbt-report-admin-summary" aria-hidden="true">
+                                <span class="cbt-report-admin-summary-label">Ringkasan:</span>
+                                <span class="cbt-report-admin-summary-item"><?php echo esc_html('Exam: ' . $selected_exam_label); ?></span>
+                                <span class="cbt-report-admin-summary-item"><?php echo esc_html('Kelas: ' . ($selected_kelas !== '' ? $selected_kelas : 'Semua kelas')); ?></span>
+                                <span class="cbt-report-admin-summary-item"><?php echo esc_html('Scope: ' . ($is_admin_scope ? 'Admin penuh' : 'Guru terbatas')); ?></span>
+                            </div>
+
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                <?php wp_nonce_field('cbt_export_exam_report_pdf'); ?>
+                                <input type="hidden" name="action" value="cbt_export_exam_report_pdf" />
+                                <input type="hidden" name="cbt_report_tab" value="filter-export-report" />
+                                <table class="form-table" role="presentation">
+                                    <tbody>
+                                    <tr>
+                                        <th><label for="cbt-report-exam-id">Exam</label></th>
+                                        <td>
+                                            <select required id="cbt-report-exam-id" name="cbt_exam_id">
+                                                <option value="0">Pilih exam</option>
+                                                <?php foreach ($exam_filter_rows as $exam_filter_row): ?>
+                                                    <?php $exam_id = (int) ($exam_filter_row['id'] ?? 0); ?>
+                                                    <option value="<?php echo $exam_id; ?>" <?php selected($selected_exam_id, $exam_id); ?>>
+                                                        <?php echo esc_html((string) ($exam_filter_row['title'] ?? '-')); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <p class="description">Pilih exam yang nilainya akan direkap ke dalam report PDF.</p>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th><label for="cbt-report-kelas">Kelas</label></th>
+                                        <td>
+                                            <select id="cbt-report-kelas" name="cbt_result_kelas">
+                                                <option value="">Semua kelas</option>
+                                                <?php foreach ($kelas_filter_rows as $kelas_filter_row): ?>
+                                                    <option value="<?php echo esc_attr($kelas_filter_row); ?>" <?php selected($selected_kelas, $kelas_filter_row); ?>>
+                                                        <?php echo esc_html($kelas_filter_row); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <p class="description">Opsional. Jika kosong, report akan memuat seluruh kelas yang sesuai data hasil exam.</p>
+                                        </td>
+                                    </tr>
+                                    <?php for ($idx = 1; $idx <= 3; $idx++): ?>
+                                        <?php
+                                        $is_required = ($idx === 1);
+                                        $label_suffix = $is_required ? 'wajib' : 'opsional';
+                                        $supervisor = (array) ($supervisor_inputs[$idx] ?? []);
+                                        ?>
+                                        <tr class="cbt-report-admin-supervisor-row">
+                                            <th><?php echo esc_html('Petugas ' . $idx); ?></th>
+                                            <td>
+                                                <div class="cbt-report-admin-supervisor-grid">
+                                                    <div class="cbt-report-admin-field">
+                                                        <label for="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-name'); ?>"><?php echo esc_html('Nama (' . $label_suffix . ')'); ?></label>
+                                                        <input <?php echo $is_required ? 'required' : ''; ?> type="text" id="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-name'); ?>" name="<?php echo esc_attr('supervisor_' . $idx . '_name'); ?>" class="regular-text" value="<?php echo esc_attr((string) ($supervisor['name'] ?? '')); ?>" />
+                                                    </div>
+                                                    <div class="cbt-report-admin-field">
+                                                        <label for="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-nip'); ?>"><?php echo esc_html('NIP (' . $label_suffix . ')'); ?></label>
+                                                        <input <?php echo $is_required ? 'required' : ''; ?> type="text" id="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-nip'); ?>" name="<?php echo esc_attr('supervisor_' . $idx . '_nip'); ?>" class="regular-text" value="<?php echo esc_attr((string) ($supervisor['nip'] ?? '')); ?>" />
+                                                    </div>
+                                                    <div class="cbt-report-admin-field">
+                                                        <label for="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-role'); ?>"><?php echo esc_html('Jabatan (' . $label_suffix . ')'); ?></label>
+                                                        <select <?php echo $is_required ? 'required' : ''; ?> id="<?php echo esc_attr('cbt-report-supervisor-' . $idx . '-role'); ?>" name="<?php echo esc_attr('supervisor_' . $idx . '_role'); ?>" class="regular-text">
+                                                            <option value="">Pilih jabatan</option>
+                                                            <?php foreach ($role_options as $role_option): ?>
+                                                                <option value="<?php echo esc_attr($role_option); ?>" <?php selected((string) ($supervisor['role'] ?? ''), $role_option); ?>>
+                                                                    <?php echo esc_html($role_option); ?>
+                                                                </option>
+                                                            <?php endforeach; ?>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <?php if (!$is_required): ?>
+                                                    <p class="description"><?php echo esc_html('Jika salah satu field Petugas ' . $idx . ' diisi, maka semua field Petugas ' . $idx . ' wajib diisi.'); ?></p>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php endfor; ?>
+                                    </tbody>
+                                </table>
+                                <p class="cbt-report-admin-note">Export dilakukan melalui browser dengan mode print-ready. Pastikan minimal Petugas 1 diisi lengkap agar bagian tanda tangan pada report tidak kosong.</p>
+                                <div class="cbt-report-admin-form-actions">
+                                    <button class="button button-primary" type="submit">Export PDF (Print-Ready)</button>
+                                    <a href="<?php echo esc_url($reset_url); ?>" class="button button-secondary">Reset Form</a>
+                                </div>
+                            </form>
+                        </section>
+                    </section>
+                </div>
 
                 <section class="cbt-report-admin-insights" aria-hidden="true">
                     <div class="cbt-report-admin-insight">
-                        <strong>Output formal</strong>
-                        <p>Report dirancang untuk langsung dicetak atau disimpan ke PDF tanpa perlu export tambahan dari aplikasi lain.</p>
+                        <strong>Incident manual</strong>
+                        <p>Pengawas bisa mencatat pelanggaran, keterlambatan, sakit, atau gangguan teknis langsung per peserta dan per exam.</p>
                     </div>
                     <div class="cbt-report-admin-insight">
                         <strong>Filter fleksibel</strong>
-                        <p>Anda bisa fokus ke satu kelas tertentu atau biarkan kosong untuk menampilkan seluruh data peserta pada exam terpilih.</p>
+                        <p>Incident report dan export report sama-sama bisa difokuskan ke exam tertentu, lalu dipersempit lagi ke kelas atau ruang bila diperlukan.</p>
                     </div>
                     <div class="cbt-report-admin-insight">
-                        <strong>Tanda tangan siap pakai</strong>
-                        <p>Nama, NIP, dan jabatan petugas akan langsung masuk ke area sign-off report agar dokumen final lebih rapi.</p>
+                        <strong>Export tetap aman</strong>
+                        <p>Tab Export Report Exam tetap mempertahankan alur print-ready dan area tanda tangan petugas seperti sebelumnya.</p>
                     </div>
                 </section>
             </div>
         </div>
+        <script>
+            (function () {
+                var tabButtons = document.querySelectorAll('[data-report-tab-button]');
+                var tabPanels = document.querySelectorAll('[data-report-tab-panel]');
+                var validTabs = ['incident-report', 'filter-export-report'];
+                var incidentTypeField = document.querySelector('[data-incident-type-field]');
+                var incidentNotesField = document.querySelector('[data-incident-notes-field]');
+                var incidentNotesCustomWrap = document.querySelector('[data-incident-notes-custom-wrap]');
+                var incidentNotesCustomField = document.querySelector('[data-incident-notes-custom-field]');
+                var incidentNoteOptionsByType = <?php echo wp_json_encode(CBT_Incident_Report::incident_note_definitions()); ?>;
+                var incidentCustomNoteValue = <?php echo wp_json_encode(CBT_Incident_Report::custom_note_option_value()); ?>;
+                var incidentCustomNoteLabel = <?php echo wp_json_encode(CBT_Incident_Report::custom_note_option_label()); ?>;
+                var incidentFilterForm = document.querySelector('[data-incident-filter-form]');
+                var incidentFilterExam = incidentFilterForm ? incidentFilterForm.querySelector('[data-incident-filter-input=\"exam\"]') : null;
+                var incidentFilterKelas = incidentFilterForm ? incidentFilterForm.querySelector('[data-incident-filter-input=\"kelas\"]') : null;
+                var incidentFilterRuang = incidentFilterForm ? incidentFilterForm.querySelector('[data-incident-filter-input=\"ruang\"]') : null;
+                var incidentStudentPicker = document.querySelector('[data-incident-student-picker]');
+                var incidentStudentInput = incidentStudentPicker ? incidentStudentPicker.querySelector('[data-incident-student-input]') : null;
+                var incidentStudentTrigger = incidentStudentPicker ? incidentStudentPicker.querySelector('[data-incident-student-trigger]') : null;
+                var incidentStudentMenu = incidentStudentPicker ? incidentStudentPicker.querySelector('[data-incident-student-menu]') : null;
+                var incidentStudentName = incidentStudentPicker ? incidentStudentPicker.querySelector('[data-incident-student-name]') : null;
+                var incidentStudentMeta = incidentStudentPicker ? incidentStudentPicker.querySelector('[data-incident-student-meta]') : null;
+                var incidentStudentPhoto = incidentStudentPicker ? incidentStudentPicker.querySelector('[data-incident-student-photo]') : null;
+                var isIncidentFilterSubmitting = false;
+
+                function normalizeReportTab(tab) {
+                    var normalized = String(tab || '').trim().toLowerCase();
+                    return validTabs.indexOf(normalized) >= 0 ? normalized : 'incident-report';
+                }
+
+                function buildOption(value, label, selectedValue) {
+                    var option = document.createElement('option');
+                    option.value = String(value || '');
+                    option.textContent = String(label || '');
+                    option.selected = String(selectedValue || '') === String(value || '');
+                    return option;
+                }
+
+                function syncIncidentNotesField(selectedNoteValue) {
+                    if (!incidentTypeField || !incidentNotesField) {
+                        return;
+                    }
+
+                    var typeValue = String(incidentTypeField.value || '');
+                    var normalizedSelected = String(selectedNoteValue || '');
+                    var options = Object.prototype.hasOwnProperty.call(incidentNoteOptionsByType, typeValue)
+                        ? incidentNoteOptionsByType[typeValue]
+                        : [];
+
+                    incidentNotesField.innerHTML = '';
+                    incidentNotesField.appendChild(buildOption('', typeValue !== '' ? 'Pilih keterangan' : 'Pilih jenis insiden dulu', normalizedSelected));
+
+                    if (typeValue === '') {
+                        incidentNotesField.disabled = true;
+                    } else {
+                        incidentNotesField.disabled = false;
+                        for (var idx = 0; idx < options.length; idx += 1) {
+                            incidentNotesField.appendChild(buildOption(options[idx], options[idx], normalizedSelected));
+                        }
+                        incidentNotesField.appendChild(buildOption(incidentCustomNoteValue, incidentCustomNoteLabel, normalizedSelected));
+                    }
+
+                    syncIncidentNotesCustomState();
+                }
+
+                function syncIncidentNotesCustomState() {
+                    if (!incidentNotesField || !incidentNotesCustomWrap || !incidentNotesCustomField) {
+                        return;
+                    }
+
+                    var isCustom = String(incidentNotesField.value || '') === String(incidentCustomNoteValue || '');
+                    incidentNotesCustomWrap.hidden = !isCustom;
+                    incidentNotesCustomField.required = isCustom;
+                    if (!isCustom) {
+                        incidentNotesCustomField.value = '';
+                    }
+                }
+
+                function closeIncidentStudentPicker() {
+                    if (!incidentStudentPicker || !incidentStudentTrigger) {
+                        return;
+                    }
+
+                    incidentStudentPicker.classList.remove('is-open');
+                    incidentStudentTrigger.setAttribute('aria-expanded', 'false');
+                }
+
+                function syncIncidentStudentSelection(option) {
+                    if (!incidentStudentPicker || !incidentStudentInput || !incidentStudentName || !incidentStudentMeta || !incidentStudentPhoto) {
+                        return;
+                    }
+
+                    var selectedOption = option || null;
+                    var optionButtons = incidentStudentPicker.querySelectorAll('[data-incident-student-option]');
+                    var placeholderName = incidentStudentPicker.getAttribute('data-placeholder-name') || 'Pilih peserta';
+                    var placeholderMeta = incidentStudentPicker.getAttribute('data-placeholder-meta') || '';
+                    var placeholderPhoto = incidentStudentPicker.getAttribute('data-placeholder-foto') || '';
+
+                    if (!selectedOption && incidentStudentInput.value) {
+                        for (var idx = 0; idx < optionButtons.length; idx += 1) {
+                            if (String(optionButtons[idx].getAttribute('data-student-id') || '') === String(incidentStudentInput.value || '')) {
+                                selectedOption = optionButtons[idx];
+                                break;
+                            }
+                        }
+                    }
+
+                    if (selectedOption) {
+                        var selectedName = selectedOption.getAttribute('data-student-name') || placeholderName;
+                        var selectedKelas = selectedOption.getAttribute('data-student-kelas') || '';
+                        var selectedRuang = selectedOption.getAttribute('data-student-ruang') || '';
+                        var selectedMetaParts = [];
+
+                        if (selectedKelas) {
+                            selectedMetaParts.push('K: ' + selectedKelas);
+                        }
+                        if (selectedRuang) {
+                            selectedMetaParts.push('R: ' + selectedRuang);
+                        }
+
+                        incidentStudentInput.value = selectedOption.getAttribute('data-student-id') || '0';
+                        incidentStudentName.textContent = selectedName;
+                        incidentStudentMeta.textContent = selectedMetaParts.length ? selectedMetaParts.join(' • ') : placeholderMeta;
+                        incidentStudentPhoto.src = selectedOption.getAttribute('data-student-foto') || placeholderPhoto;
+                    } else {
+                        incidentStudentInput.value = '0';
+                        incidentStudentName.textContent = placeholderName;
+                        incidentStudentMeta.textContent = placeholderMeta;
+                        incidentStudentPhoto.src = placeholderPhoto;
+                    }
+
+                    for (var optionIndex = 0; optionIndex < optionButtons.length; optionIndex += 1) {
+                        var isSelected = !!selectedOption && optionButtons[optionIndex] === selectedOption;
+                        optionButtons[optionIndex].classList.toggle('is-selected', isSelected);
+                        optionButtons[optionIndex].setAttribute('aria-selected', isSelected ? 'true' : 'false');
+                    }
+                }
+
+                function setActiveReportTab(tabName, updateUrl) {
+                    var activeTab = normalizeReportTab(tabName);
+                    var index = 0;
+
+                    for (index = 0; index < tabButtons.length; index += 1) {
+                        var button = tabButtons[index];
+                        var isActive = String(button.getAttribute('data-report-tab-button') || '') === activeTab;
+                        button.classList.toggle('is-active', isActive);
+                        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                    }
+
+                    for (index = 0; index < tabPanels.length; index += 1) {
+                        var panel = tabPanels[index];
+                        var isPanelActive = String(panel.getAttribute('data-report-tab-panel') || '') === activeTab;
+                        panel.classList.toggle('is-active', isPanelActive);
+                        panel.hidden = !isPanelActive;
+                    }
+
+                    if (updateUrl && typeof window.history.replaceState === 'function') {
+                        var nextUrl = new URL(window.location.href);
+                        nextUrl.searchParams.set('cbt_report_tab', activeTab);
+                        window.history.replaceState({}, '', nextUrl.toString());
+                    }
+                }
+
+                for (var i = 0; i < tabButtons.length; i += 1) {
+                    tabButtons[i].addEventListener('click', function () {
+                        setActiveReportTab(this.getAttribute('data-report-tab-button') || 'incident-report', true);
+                    });
+                }
+
+                if (incidentTypeField && incidentNotesField) {
+                    incidentTypeField.addEventListener('change', function () {
+                        syncIncidentNotesField('');
+                    });
+                    incidentNotesField.addEventListener('change', syncIncidentNotesCustomState);
+                    syncIncidentNotesField(String(incidentNotesField.getAttribute('data-incident-notes-current') || ''));
+                }
+
+                if (incidentFilterForm && incidentFilterExam) {
+                    incidentFilterExam.addEventListener('change', function () {
+                        if (incidentFilterKelas) {
+                            incidentFilterKelas.value = '';
+                        }
+                        if (incidentFilterRuang) {
+                            incidentFilterRuang.value = '';
+                        }
+                        if (!isIncidentFilterSubmitting) {
+                            isIncidentFilterSubmitting = true;
+                            incidentFilterForm.submit();
+                        }
+                    });
+                }
+
+                if (incidentFilterForm && incidentFilterKelas) {
+                    incidentFilterKelas.addEventListener('change', function () {
+                        if (incidentFilterRuang) {
+                            incidentFilterRuang.value = '';
+                        }
+                        if (!isIncidentFilterSubmitting) {
+                            isIncidentFilterSubmitting = true;
+                            incidentFilterForm.submit();
+                        }
+                    });
+                }
+
+                if (incidentFilterForm && incidentFilterRuang) {
+                    incidentFilterRuang.addEventListener('change', function () {
+                        if (!isIncidentFilterSubmitting) {
+                            isIncidentFilterSubmitting = true;
+                            incidentFilterForm.submit();
+                        }
+                    });
+                }
+
+                if (incidentStudentPicker && incidentStudentTrigger && incidentStudentMenu) {
+                    incidentStudentTrigger.addEventListener('click', function () {
+                        var shouldOpen = !incidentStudentPicker.classList.contains('is-open');
+                        closeIncidentStudentPicker();
+                        if (shouldOpen) {
+                            incidentStudentPicker.classList.add('is-open');
+                            incidentStudentTrigger.setAttribute('aria-expanded', 'true');
+                        }
+                    });
+
+                    incidentStudentMenu.addEventListener('click', function (event) {
+                        var target = event.target;
+                        var option = target && target.closest ? target.closest('[data-incident-student-option]') : null;
+                        if (!option) {
+                            return;
+                        }
+
+                        syncIncidentStudentSelection(option);
+                        closeIncidentStudentPicker();
+                    });
+
+                    document.addEventListener('click', function (event) {
+                        if (!incidentStudentPicker.contains(event.target)) {
+                            closeIncidentStudentPicker();
+                        }
+                    });
+
+                    document.addEventListener('keydown', function (event) {
+                        if (event.key === 'Escape') {
+                            closeIncidentStudentPicker();
+                        }
+                    });
+
+                    syncIncidentStudentSelection(null);
+                }
+
+                setActiveReportTab('<?php echo esc_js($active_report_tab); ?>', false);
+            })();
+        </script>
         <?php
     }
 
@@ -19723,6 +20992,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         $supervisor_1 = $supervisor_inputs[1];
 
         $redirect_args = [
+            'cbt_report_tab' => self::normalize_report_exam_tab(isset($_POST['cbt_report_tab']) ? (string) wp_unslash($_POST['cbt_report_tab']) : 'filter-export-report'),
             'cbt_exam_id' => $exam_id,
             'cbt_result_kelas' => $selected_kelas,
             'supervisor_1_name' => $supervisor_1['name'],
@@ -19763,33 +21033,77 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         }
 
         $report_rows = self::get_exam_report_rows($exam_id, $selected_kelas, $is_admin_scope, $current_user_id);
+        $incident_report_rows = self::get_exam_report_incident_rows(
+            $exam_id,
+            $selected_kelas,
+            self::get_report_incident_scope_filters($is_admin_scope, $current_user_id)
+        );
+        $registered_student_total = count($report_rows);
+        $present_student_total = count(array_filter($report_rows, static function (array $row): bool {
+            return !empty($row['is_present']);
+        }));
+        $absent_student_total = max(0, $registered_student_total - $present_student_total);
         $branding = self::get_setup_branding_print_context();
+        $exam_program_name = trim((string) ($branding['exam_program_name'] ?? ''));
         $site_name = trim((string) ($branding['school_name'] ?? ''));
         $site_motto = trim((string) ($branding['school_motto'] ?? ''));
+        $site_npsn = trim((string) ($branding['school_npsn'] ?? ''));
+        $site_address = trim((string) ($branding['school_address'] ?? ''));
+        $site_village = trim((string) ($branding['school_village'] ?? ''));
+        $site_district_city_ln = trim((string) ($branding['school_district_city_ln'] ?? ''));
+        $site_regency_country_ln = trim((string) ($branding['school_regency_country_ln'] ?? ''));
+        $site_province_abroad_ln = trim((string) ($branding['school_province_abroad_ln'] ?? ''));
         if ($site_name === '') {
             $site_name = trim((string) get_bloginfo('name'));
         }
         if ($site_name === '') {
             $site_name = 'CBT Exam';
         }
+        $report_program_title = $exam_program_name !== '' ? $exam_program_name : 'Ujian CBT';
         $report_logo_1_url = (string) ($branding['logo_1_url'] ?? '');
         $report_logo_2_url = (string) ($branding['logo_2_url'] ?? '');
+        $report_header_address_line = 'Alamat: -';
+        if ($site_address !== '') {
+            $raw_address_lines = preg_split('/\r\n|\r|\n/', $site_address);
+            if (is_array($raw_address_lines)) {
+                $normalized_address_lines = [];
+                foreach ($raw_address_lines as $raw_address_line) {
+                    $normalized_address_line = trim((string) $raw_address_line);
+                    if ($normalized_address_line !== '') {
+                        $normalized_address_lines[] = $normalized_address_line;
+                    }
+                }
+                if (!empty($normalized_address_lines)) {
+                    $report_header_address_line = 'Alamat: ' . implode(', ', $normalized_address_lines);
+                }
+            }
+        }
+        $report_header_region_line = sprintf(
+            'Desa: %s, Kecamatan: %s, Kabupaten: %s, Provinsi: %s',
+            $site_village !== '' ? $site_village : '-',
+            $site_district_city_ln !== '' ? $site_district_city_ln : '-',
+            $site_regency_country_ln !== '' ? $site_regency_country_ln : '-',
+            $site_province_abroad_ln !== '' ? $site_province_abroad_ln : '-'
+        );
         $subject_label = trim((string) ($exam['subject_name'] ?? ''));
         $exam_start_raw = trim((string) ($exam['starts_at'] ?? ''));
         $exam_day_label = '';
         $exam_date_label = '';
+        $exam_start_time_label = '';
         if ($exam_start_raw !== '' && $exam_start_raw !== '0000-00-00 00:00:00') {
             $exam_timestamp = strtotime($exam_start_raw);
             if ($exam_timestamp !== false) {
                 $timezone = wp_timezone();
                 $exam_day_label = self::translate_exam_card_weekday((string) wp_date('l', $exam_timestamp, $timezone));
                 $exam_date_label = self::format_exam_card_indonesian_date((int) $exam_timestamp);
+                $exam_start_time_label = wp_date('H:i', $exam_timestamp, $timezone);
             }
         }
         $signature_role_labels = self::build_report_supervisor_role_labels($supervisors);
 
         $back_args = [
             'page' => 'cbt-report-exam',
+            'cbt_report_tab' => 'filter-export-report',
             'cbt_exam_id' => $exam_id,
         ];
         if ($selected_kelas !== '') {
@@ -19805,7 +21119,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         <head>
             <meta charset="<?php bloginfo('charset'); ?>" />
             <meta name="viewport" content="width=device-width, initial-scale=1" />
-            <title><?php echo esc_html('CBT Report Exam - ' . (string) ($exam['title'] ?? '-')); ?></title>
+            <title><?php echo esc_html('Laporan Hasil ' . $report_program_title . ' - ' . (string) ($exam['title'] ?? '-')); ?></title>
             <style>
                 @page {
                     size: A4 portrait;
@@ -19849,33 +21163,48 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 .report-wrap {
                     padding: 18px 18px 14px;
                 }
-                .report-title {
-                    margin: 0;
-                    font-size: 18px;
-                    line-height: 1.2;
-                }
                 .report-header {
                     display: grid;
-                    grid-template-columns: 28mm minmax(0, 1fr) 28mm;
-                    gap: 10px;
-                    align-items: center;
-                    margin-bottom: 10px;
+                    grid-template-columns: 26mm minmax(0, 1fr) 26mm;
+                    gap: 12px;
+                    align-items: start;
+                    margin-bottom: 12px;
+                    padding-bottom: 10px;
+                    border-bottom: 3px solid #0f172a;
+                    position: relative;
+                }
+                .report-header::after {
+                    content: "";
+                    position: absolute;
+                    left: 0;
+                    right: 0;
+                    bottom: 4px;
+                    border-bottom: 1px solid #94a3b8;
                 }
                 .report-header-main {
+                    display: grid;
+                    gap: 2px;
                     text-align: center;
                 }
                 .report-logo {
-                    width: 28mm;
-                    height: 28mm;
+                    width: 24mm;
+                    height: 24mm;
+                    padding: 1mm 2mm;
+                    background: #fff;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     overflow: hidden;
+                    align-self: start;
                 }
                 .report-logo img {
-                    width: 100%;
-                    height: 100%;
+                    width: auto;
+                    height: auto;
+                    max-width: 100%;
+                    max-height: 100%;
+                    display: block;
                     object-fit: contain;
+                    object-position: center;
                 }
                 .report-logo.is-right {
                     justify-self: end;
@@ -19886,33 +21215,69 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     color: #64748b;
                 }
                 .report-school-name {
-                    margin: 0 0 2px;
-                    font-size: 16px;
+                    margin: 0;
+                    font-size: 20px;
                     font-weight: 700;
                     text-transform: uppercase;
-                    line-height: 1.2;
+                    letter-spacing: 0.04em;
+                    line-height: 1.1;
+                }
+                .report-school-npsn {
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.05em;
+                    text-transform: uppercase;
+                }
+                .report-school-address {
+                    font-size: 10.5px;
+                    line-height: 1.3;
                 }
                 .report-school-motto {
-                    margin: 0 0 4px;
-                    font-size: 11px;
+                    margin: 1px 0 0;
+                    font-size: 10.5px;
                     line-height: 1.35;
+                    color: #334155;
+                    font-style: italic;
+                }
+                .report-document-head {
+                    margin-top: 6px;
+                    padding-top: 6px;
+                    border-top: 1px solid #cbd5e1;
+                }
+                .report-document-title {
+                    margin: 0;
+                    font-size: 17px;
+                    font-weight: 700;
+                    line-height: 1.2;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                }
+                .report-document-subtitle {
+                    margin: 2px 0 0;
+                    font-size: 10px;
+                    font-weight: 700;
+                    line-height: 1.3;
+                    letter-spacing: 0.1em;
+                    text-transform: uppercase;
                     color: #475569;
                 }
                 .report-meta {
                     display: grid;
-                    grid-template-columns: repeat(2, minmax(0, 1fr));
-                    gap: 4px 44px;
+                    grid-template-columns: minmax(0, 1fr) 76mm;
+                    gap: 10px 18px;
                     font-size: 12px;
+                    align-items: start;
+                    margin-top: 10px;
                 }
                 .report-meta-col {
                     display: grid;
-                    gap: 4px;
+                    gap: 5px;
                 }
                 .report-meta-row {
                     display: grid;
-                    grid-template-columns: 138px 10px minmax(0, 1fr);
-                    align-items: end;
-                    gap: 4px;
+                    grid-template-columns: 34mm 6px minmax(0, 1fr);
+                    align-items: start;
+                    gap: 3px;
                 }
                 .report-meta-label {
                     font-weight: 700;
@@ -19928,6 +21293,54 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 .report-meta-value.is-line {
                     min-width: 110px;
                     border-bottom: 1px solid #111827;
+                }
+                .report-meta-col--identity {
+                    align-self: stretch;
+                    padding: 7px 10px;
+                    border: 1px solid #64748b;
+                }
+                .report-meta-col--identity .report-meta-row {
+                    grid-template-columns: 40mm 6px minmax(0, 1fr);
+                    gap: 4px;
+                    padding: 2px 0;
+                    min-height: 20px;
+                    border-bottom: 1px solid #e2e8f0;
+                }
+                .report-meta-col--identity .report-meta-row:last-child {
+                    border-bottom: 0;
+                }
+                .report-meta-col--identity .report-meta-label {
+                    letter-spacing: 0.01em;
+                }
+                .report-meta-col--identity .report-meta-value {
+                    font-weight: 600;
+                }
+                .report-meta-col--summary {
+                    align-self: stretch;
+                    padding: 7px 9px;
+                    border: 1px solid #64748b;
+                }
+                .report-meta-summary-title {
+                    margin: 0 0 5px;
+                    padding-bottom: 4px;
+                    border-bottom: 1px solid #cbd5e1;
+                    font-size: 11px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.04em;
+                    text-align: center;
+                }
+                .report-meta-col--summary .report-meta-row {
+                    grid-template-columns: minmax(0, 1fr) 6px 18px;
+                    gap: 4px;
+                }
+                .report-meta-col--summary .report-meta-label {
+                    font-weight: 600;
+                }
+                .report-meta-col--summary .report-meta-value {
+                    text-align: right;
+                    font-weight: 700;
+                    white-space: nowrap;
                 }
                 .report-table {
                     width: 100%;
@@ -19953,6 +21366,24 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     text-align: center;
                     color: #64748b;
                     padding: 14px 8px;
+                }
+                .report-section {
+                    margin-top: 18px;
+                }
+                .report-section-title {
+                    margin: 0 0 8px;
+                    font-size: 14px;
+                    line-height: 1.25;
+                }
+                .report-table--incident td:nth-child(1) {
+                    text-align: center;
+                    white-space: nowrap;
+                }
+                .report-table--incident td:nth-child(2) {
+                    white-space: nowrap;
+                }
+                .report-table--incident td:nth-child(4) {
+                    white-space: pre-line;
                 }
                 .signature-wrap {
                     margin-top: 40px;
@@ -19999,36 +21430,41 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             <main class="report-wrap">
                 <div class="report-header">
                     <div class="report-logo">
-                        <?php if ($report_logo_2_url !== ''): ?>
-                            <img src="<?php echo esc_url($report_logo_2_url); ?>" alt="<?php echo esc_attr($site_name . ' Logo 2'); ?>" loading="lazy" decoding="async" />
-                        <?php else: ?>
-                            <div class="report-logo-fallback">Logo 2</div>
+                        <?php if ($report_logo_1_url !== ''): ?>
+                            <img src="<?php echo esc_url($report_logo_1_url); ?>" alt="<?php echo esc_attr($site_name . ' Logo Sekolah'); ?>" loading="lazy" decoding="async" />
                         <?php endif; ?>
                     </div>
                     <div class="report-header-main">
                         <div class="report-school-name"><?php echo esc_html($site_name); ?></div>
+                        <?php if ($site_npsn !== ''): ?>
+                            <div class="report-school-npsn">NPSN: <?php echo esc_html($site_npsn); ?></div>
+                        <?php endif; ?>
+                        <div class="report-school-address"><?php echo esc_html($report_header_address_line); ?></div>
+                        <div class="report-school-address"><?php echo esc_html($report_header_region_line); ?></div>
                         <?php if ($site_motto !== ''): ?>
                             <div class="report-school-motto"><?php echo esc_html($site_motto); ?></div>
                         <?php endif; ?>
-                        <h1 class="report-title">CBT Report Exam</h1>
+                        <div class="report-document-head">
+                            <h1 class="report-document-title"><?php echo esc_html('Laporan Hasil ' . $report_program_title); ?></h1>
+                            <div class="report-document-subtitle">Rekap Nilai dan Kehadiran Peserta</div>
+                        </div>
                     </div>
                     <div class="report-logo is-right">
-                        <?php if ($report_logo_1_url !== ''): ?>
-                            <img src="<?php echo esc_url($report_logo_1_url); ?>" alt="<?php echo esc_attr($site_name . ' Logo 1'); ?>" loading="lazy" decoding="async" />
-                        <?php else: ?>
-                            <div class="report-logo-fallback">Logo 1</div>
+                        <?php if ($report_logo_2_url !== ''): ?>
+                            <img src="<?php echo esc_url($report_logo_2_url); ?>" alt="<?php echo esc_attr($site_name . ' Logo Instansi'); ?>" loading="lazy" decoding="async" />
                         <?php endif; ?>
                     </div>
                 </div>
                 <div class="report-meta">
-                    <div class="report-meta-col">
+                    <div class="report-meta-col report-meta-col--identity">
+                        <div class="report-meta-summary-title">Identitas Ujian</div>
                         <div class="report-meta-row">
                             <div class="report-meta-label">Sekolah / Madrasah</div>
                             <div class="report-meta-separator">:</div>
                             <div class="report-meta-value"><?php echo esc_html($site_name !== '' ? $site_name : '-'); ?></div>
                         </div>
                         <div class="report-meta-row">
-                            <div class="report-meta-label">Exam</div>
+                            <div class="report-meta-label">Ujian</div>
                             <div class="report-meta-separator">:</div>
                             <div class="report-meta-value"><?php echo esc_html((string) ($exam['title'] ?? '-')); ?></div>
                         </div>
@@ -20040,12 +21476,35 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                         <div class="report-meta-row">
                             <div class="report-meta-label">Hari / Tanggal</div>
                             <div class="report-meta-separator">:</div>
-                            <div class="report-meta-value<?php echo ($exam_day_label === '' && $exam_date_label === '') ? ' is-line' : ''; ?>">
-                                <?php echo esc_html(trim($exam_day_label . ($exam_day_label !== '' && $exam_date_label !== '' ? ', ' : '') . $exam_date_label)); ?>
+                            <div class="report-meta-value<?php echo ($exam_day_label === '' && $exam_date_label === '' && $exam_start_time_label === '') ? ' is-line' : ''; ?>">
+                                <?php
+                                $exam_schedule_label = trim($exam_day_label . ($exam_day_label !== '' && $exam_date_label !== '' ? ', ' : '') . $exam_date_label);
+                                if ($exam_start_time_label !== '') {
+                                    $exam_schedule_label .= ($exam_schedule_label !== '' ? ' · ' : '') . $exam_start_time_label;
+                                }
+                                echo esc_html($exam_schedule_label);
+                                ?>
                             </div>
                         </div>
                     </div>
-                    <div class="report-meta-col"></div>
+                    <div class="report-meta-col report-meta-col--summary">
+                        <div class="report-meta-summary-title">Rekap Kehadiran Peserta</div>
+                        <div class="report-meta-row">
+                            <div class="report-meta-label">Jumlah peserta terdaftar</div>
+                            <div class="report-meta-separator">:</div>
+                            <div class="report-meta-value"><?php echo esc_html((string) $registered_student_total); ?></div>
+                        </div>
+                        <div class="report-meta-row">
+                            <div class="report-meta-label">Jumlah hadir</div>
+                            <div class="report-meta-separator">:</div>
+                            <div class="report-meta-value"><?php echo esc_html((string) $present_student_total); ?></div>
+                        </div>
+                        <div class="report-meta-row">
+                            <div class="report-meta-label">Jumlah tidak hadir</div>
+                            <div class="report-meta-separator">:</div>
+                            <div class="report-meta-value"><?php echo esc_html((string) $absent_student_total); ?></div>
+                        </div>
+                    </div>
                 </div>
 
                 <table class="report-table">
@@ -20070,12 +21529,42 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                                     <td><?php echo esc_html((string) ($report_row['nisn'] ?? '-')); ?></td>
                                     <td><?php echo esc_html((string) ($report_row['nama'] ?? '-')); ?></td>
                                     <td><?php echo esc_html((string) ($report_row['kelas'] ?? '-')); ?></td>
-                                    <td><?php echo esc_html(number_format((float) ($report_row['nilai'] ?? 0), 2)); ?></td>
+                                    <td><?php echo esc_html((string) ($report_row['nilai_display'] ?? '-')); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
                     </tbody>
                 </table>
+
+                <section class="report-section">
+                    <h2 class="report-section-title">Laporan Kejadian / Pelanggaran Selama Ujian</h2>
+                    <table class="report-table report-table--incident">
+                        <thead>
+                            <tr>
+                                <th style="width:52px;">NO</th>
+                                <th style="width:160px;">NISN</th>
+                                <th>NAMA</th>
+                                <th style="width:420px;">KETERANGAN</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($incident_report_rows)): ?>
+                                <tr>
+                                    <td class="report-empty" colspan="4">Tidak ada incident sesuai filter.</td>
+                                </tr>
+                            <?php else: ?>
+                                <?php foreach ($incident_report_rows as $incident_report_row): ?>
+                                    <tr>
+                                        <td><?php echo esc_html((string) ($incident_report_row['no'] ?? '')); ?></td>
+                                        <td><?php echo esc_html((string) ($incident_report_row['nisn'] ?? '-')); ?></td>
+                                        <td><?php echo esc_html((string) ($incident_report_row['nama'] ?? '-')); ?></td>
+                                        <td><?php echo esc_html((string) ($incident_report_row['keterangan'] ?? '-')); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </section>
 
                 <section class="signature-wrap">
                     <?php foreach ($supervisors as $idx => $supervisor): ?>
@@ -20099,6 +21588,143 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         </html>
         <?php
         exit;
+    }
+
+    public static function handle_save_exam_incident(): void
+    {
+        if (!current_user_can('cbt_view_results')) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_save_exam_incident');
+
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        $submission = self::resolve_report_incident_submission($_POST, $is_admin_scope, $current_user_id);
+        if (is_wp_error($submission)) {
+            $context = self::get_report_incident_context_from_request($_POST);
+            self::redirect_report_incident($context, null, $submission->get_error_message());
+        }
+
+        $context = (array) ($submission['context'] ?? []);
+        $student = (array) ($submission['student'] ?? []);
+        $staff = (array) ($submission['staff'] ?? []);
+        $now = current_time('mysql');
+
+        $incident_id = CBT_Incident_Report::insert([
+            'exam_id' => (int) ($context['exam_id'] ?? 0),
+            'student_id' => (int) ($student['id'] ?? 0),
+            'incident_type' => (string) ($submission['incident_type'] ?? ''),
+            'incident_at' => $now,
+            'notes' => (string) ($submission['notes'] ?? ''),
+            'staff_user_id' => (int) ($staff['id'] ?? 0),
+            'student_name_snapshot' => (string) ($student['name'] ?? ''),
+            'student_kelas_snapshot' => (string) ($student['kelas'] ?? ''),
+            'student_ruang_snapshot' => (string) ($student['ruang'] ?? ''),
+            'staff_name_snapshot' => (string) ($staff['name'] ?? ''),
+            'created_by' => $current_user_id,
+            'updated_by' => $current_user_id,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        if ($incident_id === false || $incident_id <= 0) {
+            self::redirect_report_incident($context, null, 'Gagal menyimpan incident report.');
+        }
+
+        $context['edit_id'] = 0;
+        self::redirect_report_incident($context, 'Incident berhasil disimpan.');
+    }
+
+    public static function handle_update_exam_incident(): void
+    {
+        if (!current_user_can('cbt_view_results')) {
+            wp_die('Unauthorized');
+        }
+
+        $incident_id = isset($_POST['incident_id']) ? absint($_POST['incident_id']) : 0;
+        $context = self::get_report_incident_context_from_request($_POST);
+        if ($incident_id <= 0) {
+            self::redirect_report_incident($context, null, 'Incident tidak valid.');
+        }
+
+        check_admin_referer('cbt_update_exam_incident_' . $incident_id);
+
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        $scope_filters = self::get_report_incident_scope_filters($is_admin_scope, $current_user_id);
+        $existing_incident = CBT_Incident_Report::get_row($incident_id, $scope_filters);
+        if (empty($existing_incident)) {
+            self::redirect_report_incident($context, null, 'Incident tidak ditemukan atau tidak bisa diakses.');
+        }
+
+        $submission = self::resolve_report_incident_submission($_POST, $is_admin_scope, $current_user_id);
+        if (is_wp_error($submission)) {
+            $context['edit_id'] = $incident_id;
+            self::redirect_report_incident($context, null, $submission->get_error_message());
+        }
+
+        $submission_context = (array) ($submission['context'] ?? []);
+        if ((int) ($existing_incident['exam_id'] ?? 0) !== (int) ($submission_context['exam_id'] ?? 0)) {
+            $context['edit_id'] = 0;
+            self::redirect_report_incident($context, null, 'Incident tidak bisa dipindahkan ke exam lain dari mode edit ini.');
+        }
+
+        $student = (array) ($submission['student'] ?? []);
+        $staff = (array) ($submission['staff'] ?? []);
+        $updated = CBT_Incident_Report::update($incident_id, [
+            'student_id' => (int) ($student['id'] ?? 0),
+            'incident_type' => (string) ($submission['incident_type'] ?? ''),
+            'incident_at' => (string) ($existing_incident['incident_at'] ?? current_time('mysql')),
+            'notes' => (string) ($submission['notes'] ?? ''),
+            'staff_user_id' => (int) ($staff['id'] ?? 0),
+            'student_name_snapshot' => (string) ($student['name'] ?? ''),
+            'student_kelas_snapshot' => (string) ($student['kelas'] ?? ''),
+            'student_ruang_snapshot' => (string) ($student['ruang'] ?? ''),
+            'staff_name_snapshot' => (string) ($staff['name'] ?? ''),
+            'updated_by' => $current_user_id,
+            'updated_at' => current_time('mysql'),
+        ]);
+
+        if (!$updated) {
+            $context['edit_id'] = $incident_id;
+            self::redirect_report_incident($context, null, 'Gagal memperbarui incident report.');
+        }
+
+        $context = $submission_context;
+        $context['edit_id'] = 0;
+        self::redirect_report_incident($context, 'Incident berhasil diperbarui.');
+    }
+
+    public static function handle_delete_exam_incident(): void
+    {
+        if (!current_user_can('cbt_view_results')) {
+            wp_die('Unauthorized');
+        }
+
+        $incident_id = isset($_POST['incident_id']) ? absint($_POST['incident_id']) : 0;
+        $context = self::get_report_incident_context_from_request($_POST);
+        if ($incident_id <= 0) {
+            self::redirect_report_incident($context, null, 'Incident tidak valid.');
+        }
+
+        check_admin_referer('cbt_delete_exam_incident_' . $incident_id);
+
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        $scope_filters = self::get_report_incident_scope_filters($is_admin_scope, $current_user_id);
+        $existing_incident = CBT_Incident_Report::get_row($incident_id, $scope_filters);
+        if (empty($existing_incident)) {
+            self::redirect_report_incident($context, null, 'Incident tidak ditemukan atau tidak bisa dihapus.');
+        }
+
+        $deleted = CBT_Incident_Report::delete($incident_id);
+        if (!$deleted) {
+            self::redirect_report_incident($context, null, 'Gagal menghapus incident report.');
+        }
+
+        $context['edit_id'] = 0;
+        self::redirect_report_incident($context, 'Incident berhasil dihapus.');
     }
 
     public static function render_exam_cards_page(): void
@@ -20577,14 +22203,17 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         }
 
         $branding = self::get_setup_branding_print_context();
+        $exam_program_name = trim((string) ($branding['exam_program_name'] ?? ''));
         $school_name = trim((string) ($branding['school_name'] ?? ''));
         $school_motto = trim((string) ($branding['school_motto'] ?? ''));
+        $school_npsn = trim((string) ($branding['school_npsn'] ?? ''));
         if ($school_name === '') {
             $school_name = trim((string) get_bloginfo('name'));
         }
         if ($school_name === '') {
             $school_name = 'CBT Exam';
         }
+        $card_program_title = $exam_program_name !== '' ? $exam_program_name : 'Ujian CBT';
         $school_logo_1_url = (string) ($branding['logo_1_url'] ?? '');
         $school_logo_2_url = (string) ($branding['logo_2_url'] ?? '');
 
@@ -20613,7 +22242,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         <head>
             <meta charset="<?php bloginfo('charset'); ?>" />
             <meta name="viewport" content="width=device-width, initial-scale=1" />
-            <title><?php echo esc_html('CBT Exam Cards - ' . $kelas_label); ?></title>
+            <title><?php echo esc_html('Kartu Peserta ' . $card_program_title . ' - ' . $kelas_label); ?></title>
             <style>
                 @page {
                     size: A4 portrait;
@@ -20685,35 +22314,27 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 }
                 .exam-card-head {
                     display: grid;
-                    grid-template-columns: 18mm minmax(0, 1fr) 18mm;
-                    gap: 2.5mm;
-                    align-items: center;
-                    padding-bottom: 2mm;
+                    grid-template-columns: 16mm minmax(0, 1fr) 16mm;
+                    gap: 2mm;
+                    align-items: start;
+                    padding-bottom: 1.8mm;
                     border-bottom: 1px solid #64748b;
                 }
                 .exam-card-school-logo {
-                    width: 18mm;
-                    height: 18mm;
+                    width: 16mm;
+                    min-height: 18mm;
                     display: flex;
-                    align-items: center;
+                    align-items: flex-start;
                     justify-content: center;
                     overflow: hidden;
+                    align-self: start;
                 }
                 .exam-card-school-logo img {
-                    width: auto;
-                    height: auto;
-                    max-width: 100%;
-                    max-height: 100%;
+                    width: 100%;
+                    height: 100%;
                     display: block;
                     object-fit: contain;
-                }
-                .exam-card-school-logo.is-left img {
-                    transform: scale(1.08);
-                    transform-origin: center;
-                }
-                .exam-card-school-logo.is-right img {
-                    transform: scale(0.94);
-                    transform-origin: center;
+                    object-position: center top;
                 }
                 .exam-card-school-logo-fallback {
                     font-weight: 700;
@@ -20721,25 +22342,36 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     font-size: 10px;
                 }
                 .exam-card-head-main {
+                    display: grid;
+                    gap: 0.35mm;
                     text-align: center;
                 }
                 .exam-card-school-name {
-                    font-size: 10px;
+                    font-size: 9.8px;
                     font-weight: 700;
                     text-transform: uppercase;
-                    line-height: 1.2;
+                    line-height: 1.1;
+                }
+                .exam-card-school-npsn {
+                    font-size: 7.4px;
+                    font-weight: 700;
+                    line-height: 1.1;
+                    letter-spacing: 0.03em;
                 }
                 .exam-card-school-motto {
-                    margin-top: 0.5mm;
-                    font-size: 8.5px;
-                    line-height: 1.2;
+                    margin-top: 0;
+                    font-size: 7.6px;
+                    line-height: 1.15;
                     color: #475569;
                 }
                 .exam-card-title {
-                    margin-top: 1px;
+                    margin-top: 0.3mm;
+                    padding-top: 0.55mm;
+                    border-top: 1px solid #cbd5e1;
                     font-weight: 700;
-                    font-size: 11px;
-                    line-height: 1.2;
+                    font-size: 10px;
+                    line-height: 1.15;
+                    text-transform: uppercase;
                 }
                 .exam-card-content {
                     margin-top: 2.4mm;
@@ -20864,22 +22496,21 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                                 <div class="exam-card-school-logo is-left">
                                     <?php if ($school_logo_1_url !== ''): ?>
                                         <img src="<?php echo esc_url($school_logo_1_url); ?>" alt="<?php echo esc_attr($school_name . ' Logo 1'); ?>" loading="lazy" decoding="async" />
-                                    <?php else: ?>
-                                        <div class="exam-card-school-logo-fallback">CBT</div>
                                     <?php endif; ?>
                                 </div>
                                 <div class="exam-card-head-main">
                                     <div class="exam-card-school-name"><?php echo esc_html($school_name); ?></div>
+                                    <?php if ($school_npsn !== ''): ?>
+                                        <div class="exam-card-school-npsn">NPSN: <?php echo esc_html($school_npsn); ?></div>
+                                    <?php endif; ?>
                                     <?php if ($school_motto !== ''): ?>
                                         <div class="exam-card-school-motto"><?php echo esc_html($school_motto); ?></div>
                                     <?php endif; ?>
-                                    <div class="exam-card-title">KARTU PESERTA UJIAN CBT</div>
+                                    <div class="exam-card-title"><?php echo esc_html('Kartu Peserta ' . $card_program_title); ?></div>
                                 </div>
                                 <div class="exam-card-school-logo is-right">
                                     <?php if ($school_logo_2_url !== ''): ?>
                                         <img src="<?php echo esc_url($school_logo_2_url); ?>" alt="<?php echo esc_attr($school_name . ' Logo 2'); ?>" loading="lazy" decoding="async" />
-                                    <?php else: ?>
-                                        <div class="exam-card-school-logo-fallback">CBT</div>
                                     <?php endif; ?>
                                 </div>
                             </header>
@@ -20930,10 +22561,10 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                                     <table class="exam-card-schedule-table">
                                         <thead>
                                             <tr>
-                                                <th style="width:24%;">Mapel</th>
-                                                <th style="width:34%;">Hari</th>
-                                                <th style="width:24%;">Jadwal</th>
-                                                <th style="width:18%;">Durasi</th>
+                                                <th style="width:36%;">Mapel</th>
+                                                <th style="width:30%;">Hari</th>
+                                                <th style="width:20%;">Jadwal</th>
+                                                <th style="width:14%;">Durasi</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -20978,6 +22609,416 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         $redirect_args = array_merge(['page' => 'cbt-report-exam'], $args);
         wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
         exit;
+    }
+
+    private static function normalize_report_exam_tab(string $raw): string
+    {
+        $tab = sanitize_key($raw);
+        if (!in_array($tab, ['incident-report', 'filter-export-report'], true)) {
+            return 'incident-report';
+        }
+
+        return $tab;
+    }
+
+    /**
+     * @param array<string,mixed> $source
+     * @return array{exam_id:int,kelas:string,ruang:string,edit_id:int}
+     */
+    private static function get_report_incident_context_from_request(array $source): array
+    {
+        $exam_id = isset($source['cbt_incident_exam_id']) ? absint(wp_unslash((string) $source['cbt_incident_exam_id'])) : 0;
+        $kelas = isset($source['cbt_incident_kelas']) ? strtoupper(sanitize_text_field(wp_unslash((string) $source['cbt_incident_kelas']))) : '';
+        $ruang = isset($source['cbt_incident_ruang']) ? strtoupper(sanitize_text_field(wp_unslash((string) $source['cbt_incident_ruang']))) : '';
+        $edit_id = isset($source['cbt_incident_edit_id']) ? absint(wp_unslash((string) $source['cbt_incident_edit_id'])) : 0;
+
+        return [
+            'exam_id' => $exam_id,
+            'kelas' => $kelas,
+            'ruang' => $ruang,
+            'edit_id' => $edit_id,
+        ];
+    }
+
+    /**
+     * @param array{exam_id:int,kelas:string,ruang:string,edit_id:int} $context
+     */
+    private static function redirect_report_incident(array $context, ?string $message = null, ?string $error = null): void
+    {
+        $args = [
+            'page' => 'cbt-report-exam',
+            'cbt_report_tab' => 'incident-report',
+        ];
+
+        if (!empty($context['exam_id'])) {
+            $args['cbt_incident_exam_id'] = (int) $context['exam_id'];
+        }
+        if (!empty($context['kelas'])) {
+            $args['cbt_incident_kelas'] = (string) $context['kelas'];
+        }
+        if (!empty($context['ruang'])) {
+            $args['cbt_incident_ruang'] = (string) $context['ruang'];
+        }
+        if (!empty($context['edit_id'])) {
+            $args['cbt_incident_edit_id'] = (int) $context['edit_id'];
+        }
+        if ($message !== null && $message !== '') {
+            $args['cbt_msg'] = $message;
+        }
+        if ($error !== null && $error !== '') {
+            $args['cbt_err'] = $error;
+        }
+
+        self::redirect_report_exam_page($args);
+    }
+
+    /**
+     * @return array{id:int,name:string,role_label:string,label:string}
+     */
+    private static function get_report_incident_current_staff_row(int $current_user_id): array
+    {
+        if ($current_user_id <= 0) {
+            return [];
+        }
+
+        $user = get_userdata($current_user_id);
+        if (!($user instanceof WP_User)) {
+            return [];
+        }
+
+        $role_label = self::get_report_incident_staff_role_label((array) $user->roles);
+        if ($role_label === '' && !current_user_can('cbt_view_results')) {
+            return [];
+        }
+
+        $display_name = trim((string) $user->display_name);
+        if ($display_name === '') {
+            $display_name = (string) $user->user_login;
+        }
+
+        return [
+            'id' => $current_user_id,
+            'name' => $display_name,
+            'role_label' => $role_label,
+            'label' => $display_name . ($role_label !== '' ? ' • ' . $role_label : ''),
+        ];
+    }
+
+    /**
+     * @param string[] $roles
+     */
+    private static function get_report_incident_staff_role_label(array $roles): string
+    {
+        $normalized_roles = array_map(static function ($role): string {
+            return strtolower(trim((string) $role));
+        }, $roles);
+
+        foreach ($normalized_roles as $role) {
+            if (in_array($role, ['administrator', 'admin_cbt'], true)) {
+                return 'Admin';
+            }
+            if (in_array($role, ['guru_cbt', 'editor'], true)) {
+                return 'Guru';
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string,mixed> $exam
+     * @param string[] $global_kelas_options
+     * @return string[]
+     */
+    private static function get_report_incident_exam_kelas_options(array $exam, array $global_kelas_options): array
+    {
+        $target_kelas = self::split_target_kelas_csv((string) ($exam['target_kelas'] ?? ''));
+        if (!empty($target_kelas)) {
+            return $target_kelas;
+        }
+
+        $kelas_options = [];
+        foreach ($global_kelas_options as $kelas_option) {
+            $normalized = strtoupper(sanitize_text_field((string) $kelas_option));
+            if ($normalized === '') {
+                continue;
+            }
+            $kelas_options[$normalized] = $normalized;
+        }
+
+        $kelas_options = array_values($kelas_options);
+        sort($kelas_options, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $kelas_options;
+    }
+
+    /**
+     * @param array<string,mixed> $exam
+     * @return array<int,array{id:int,name:string,username:string,kelas:string,ruang:string,label:string,foto:string}>
+     */
+    private static function get_report_incident_student_rows(array $exam, string $selected_kelas = '', string $selected_ruang = ''): array
+    {
+        if (empty($exam) || empty($exam['id'])) {
+            return [];
+        }
+
+        $selected_kelas = strtoupper(trim(sanitize_text_field($selected_kelas)));
+        $selected_ruang = strtoupper(trim(sanitize_text_field($selected_ruang)));
+        $target_kelas = self::split_target_kelas_csv((string) ($exam['target_kelas'] ?? ''));
+        if ($selected_kelas !== '' && !empty($target_kelas) && !in_array($selected_kelas, $target_kelas, true)) {
+            return [];
+        }
+
+        $args = [
+            'role__in' => ['siswa_cbt', 'subscriber'],
+            'orderby' => 'display_name',
+            'order' => 'ASC',
+            'fields' => 'all',
+        ];
+
+        $meta_query = [];
+        if ($selected_kelas !== '') {
+            $meta_query[] = [
+                'key' => 'kode_kelas',
+                'value' => $selected_kelas,
+                'compare' => '=',
+            ];
+        } elseif (count($target_kelas) === 1) {
+            $meta_query[] = [
+                'key' => 'kode_kelas',
+                'value' => (string) $target_kelas[0],
+                'compare' => '=',
+            ];
+        } elseif (count($target_kelas) > 1) {
+            $or_meta_query = ['relation' => 'OR'];
+            foreach ($target_kelas as $kelas_code) {
+                $or_meta_query[] = [
+                    'key' => 'kode_kelas',
+                    'value' => (string) $kelas_code,
+                    'compare' => '=',
+                ];
+            }
+            $meta_query[] = $or_meta_query;
+        }
+
+        if ($selected_ruang !== '') {
+            $meta_query[] = [
+                'key' => 'kode_ruang',
+                'value' => $selected_ruang,
+                'compare' => '=',
+            ];
+        }
+
+        if (!empty($meta_query)) {
+            if (count($meta_query) === 1) {
+                $single_meta_query = $meta_query[0];
+                $args['meta_query'] = isset($single_meta_query['key']) ? [$single_meta_query] : $single_meta_query;
+            } else {
+                $args['meta_query'] = array_merge(['relation' => 'AND'], $meta_query);
+            }
+        }
+
+        $users = get_users($args);
+        if (!is_array($users)) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($users as $user) {
+            if (!($user instanceof WP_User)) {
+                continue;
+            }
+
+            $user_id = (int) $user->ID;
+            if ($user_id <= 0) {
+                continue;
+            }
+
+            $display_name = trim((string) $user->display_name);
+            if ($display_name === '') {
+                $display_name = (string) $user->user_login;
+            }
+
+            $kelas = strtoupper(trim((string) get_user_meta($user_id, 'kode_kelas', true)));
+            if ($selected_kelas !== '' && $kelas !== $selected_kelas) {
+                continue;
+            }
+            if (!empty($target_kelas) && $kelas !== '' && !in_array($kelas, $target_kelas, true)) {
+                continue;
+            }
+
+            $ruang = strtoupper(trim((string) get_user_meta($user_id, 'kode_ruang', true)));
+            if ($selected_ruang !== '' && $ruang !== $selected_ruang) {
+                continue;
+            }
+            $role = isset($user->roles[0]) ? (string) $user->roles[0] : '';
+            $foto = self::resolve_student_default_photo($role, (string) get_user_meta($user_id, 'foto', true));
+            $label_parts = [$display_name];
+            if ($kelas !== '') {
+                $label_parts[] = 'K: ' . $kelas;
+            }
+            if ($ruang !== '') {
+                $label_parts[] = 'R: ' . $ruang;
+            }
+
+            $rows[] = [
+                'id' => $user_id,
+                'name' => $display_name,
+                'username' => (string) $user->user_login,
+                'kelas' => $kelas,
+                'ruang' => $ruang,
+                'label' => implode(' • ', $label_parts),
+                'foto' => $foto,
+            ];
+        }
+
+        usort($rows, static function (array $left, array $right): int {
+            $kelas_compare = strnatcasecmp((string) ($left['kelas'] ?? ''), (string) ($right['kelas'] ?? ''));
+            if ($kelas_compare !== 0) {
+                return $kelas_compare;
+            }
+
+            return strnatcasecmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+        });
+
+        return $rows;
+    }
+
+    /**
+     * @param array<int,array{id:int,name:string,username:string,kelas:string,ruang:string,label:string,foto:string}> $student_rows
+     * @return array<int,string>
+     */
+    private static function get_report_incident_ruang_options(array $student_rows): array
+    {
+        $ruang_options = [];
+        foreach ($student_rows as $student_row) {
+            $ruang = strtoupper(trim((string) ($student_row['ruang'] ?? '')));
+            if ($ruang === '') {
+                continue;
+            }
+
+            $ruang_options[$ruang] = $ruang;
+        }
+
+        $ruang_options = array_values($ruang_options);
+        sort($ruang_options, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $ruang_options;
+    }
+
+    /**
+     * @param array<int,array{id:int,name:string,username:string,kelas:string,ruang:string,label:string,foto:string}> $student_rows
+     * @return array{id:int,name:string,username:string,kelas:string,ruang:string,label:string,foto:string}
+     */
+    private static function get_report_incident_student_row_by_id(int $student_id, array $student_rows): array
+    {
+        foreach ($student_rows as $student_row) {
+            if ((int) ($student_row['id'] ?? 0) === $student_id) {
+                return $student_row;
+            }
+        }
+
+        return [];
+    }
+
+    private static function format_report_incident_datetime(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '' || $value === '0000-00-00 00:00:00') {
+            return '-';
+        }
+
+        $timezone = wp_timezone();
+        $datetime = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value, $timezone);
+        if (!$datetime) {
+            $timestamp = strtotime($value);
+            if ($timestamp === false) {
+                return $value;
+            }
+            $datetime = (new DateTimeImmutable('@' . $timestamp))->setTimezone($timezone);
+        }
+
+        return $datetime->format('Y-m-d H:i');
+    }
+
+    /**
+     * @return array{teacher_id?:int}
+     */
+    private static function get_report_incident_scope_filters(bool $is_admin_scope, int $current_user_id): array
+    {
+        return $is_admin_scope ? [] : ['teacher_id' => $current_user_id];
+    }
+
+    /**
+     * @param array<string,mixed> $source
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function resolve_report_incident_submission(array $source, bool $is_admin_scope, int $current_user_id)
+    {
+        $context = self::get_report_incident_context_from_request($source);
+        $exam_id = (int) ($context['exam_id'] ?? 0);
+        if ($exam_id <= 0) {
+            return new WP_Error('incident_exam_required', 'Exam wajib dipilih.');
+        }
+
+        $exam = self::get_accessible_exam_row($exam_id, $is_admin_scope, $current_user_id);
+        if (empty($exam)) {
+            return new WP_Error('incident_exam_invalid', 'Exam tidak ditemukan atau tidak bisa diakses.');
+        }
+
+        $selected_kelas = (string) ($context['kelas'] ?? '');
+        $incident_kelas_options = self::get_report_incident_exam_kelas_options($exam, self::get_distinct_user_meta_values('kode_kelas'));
+        if ($selected_kelas !== '' && !in_array($selected_kelas, $incident_kelas_options, true)) {
+            return new WP_Error('incident_kelas_invalid', 'Filter kelas incident tidak valid untuk exam ini.');
+        }
+
+        $selected_ruang = (string) ($context['ruang'] ?? '');
+        $incident_ruang_options = self::get_report_incident_ruang_options(self::get_report_incident_student_rows($exam, $selected_kelas));
+        if ($selected_ruang !== '' && !in_array($selected_ruang, $incident_ruang_options, true)) {
+            return new WP_Error('incident_ruang_invalid', 'Filter ruang incident tidak valid untuk exam ini.');
+        }
+
+        $student_rows = self::get_report_incident_student_rows($exam, $selected_kelas, $selected_ruang);
+        $staff_row = self::get_report_incident_current_staff_row($current_user_id);
+        if (empty($staff_row)) {
+            return new WP_Error('incident_staff_invalid', 'Akun yang sedang login tidak valid sebagai petugas incident report.');
+        }
+
+        $student_id = isset($source['student_id']) ? absint(wp_unslash((string) $source['student_id'])) : 0;
+        $student_row = self::get_report_incident_student_row_by_id($student_id, $student_rows);
+        if ($student_id <= 0 || empty($student_row)) {
+            return new WP_Error('incident_student_invalid', 'Peserta tidak valid atau tidak termasuk target exam saat ini.');
+        }
+
+        $incident_type = CBT_Incident_Report::normalize_incident_type(isset($source['incident_type']) ? (string) wp_unslash($source['incident_type']) : '');
+        if ($incident_type === '') {
+            return new WP_Error('incident_type_required', 'Jenis insiden wajib dipilih.');
+        }
+
+        $notes_selection = isset($source['notes']) ? trim(sanitize_text_field(wp_unslash((string) $source['notes']))) : '';
+        $notes_custom = isset($source['notes_custom']) ? trim(sanitize_textarea_field(wp_unslash((string) $source['notes_custom']))) : '';
+        if ($notes_selection === '') {
+            return new WP_Error('incident_notes_required', 'Keterangan wajib dipilih.');
+        }
+
+        $notes = $notes_selection;
+        if ($notes_selection === CBT_Incident_Report::custom_note_option_value()) {
+            if ($notes_custom === '') {
+                return new WP_Error('incident_notes_custom_required', 'Keterangan manual wajib diisi saat memilih opsi lainnya.');
+            }
+            $notes = $notes_custom;
+        } elseif (!CBT_Incident_Report::is_valid_incident_note($incident_type, $notes_selection)) {
+            return new WP_Error('incident_notes_invalid', 'Keterangan tidak valid untuk jenis insiden yang dipilih.');
+        }
+
+        return [
+            'context' => $context,
+            'exam' => $exam,
+            'student' => $student_row,
+            'staff' => $staff_row,
+            'incident_type' => $incident_type,
+            'notes' => $notes,
+        ];
     }
 
     /**
@@ -21101,7 +23142,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         if ($is_admin_scope) {
             $exam = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT e.id, e.title, e.starts_at, s.name AS subject_name
+                    "SELECT e.id, e.title, e.starts_at, e.target_kelas, s.name AS subject_name
                      FROM {$exam_table} e
                      LEFT JOIN {$subject_table} s ON s.id = e.subject_id
                      WHERE e.id = %d",
@@ -21112,7 +23153,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         } else {
             $exam = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT e.id, e.title, e.starts_at, s.name AS subject_name
+                    "SELECT e.id, e.title, e.starts_at, e.target_kelas, s.name AS subject_name
                      FROM {$exam_table} e
                      LEFT JOIN {$subject_table} s ON s.id = e.subject_id
                      WHERE e.id = %d AND e.created_by = %d",
@@ -21138,6 +23179,13 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         if ($exam_id <= 0) {
             return [];
         }
+
+        $exam = self::get_accessible_exam_row($exam_id, $is_admin_scope, $current_user_id);
+        if (empty($exam)) {
+            return [];
+        }
+
+        $target_student_rows = self::get_report_incident_student_rows($exam, $selected_kelas);
 
         global $wpdb;
 
@@ -21167,6 +23215,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
         $where_sql = ' WHERE ' . implode(' AND ', $where_parts);
         $sql = "SELECT a.id,
+                       a.student_id,
                        a.status,
                        a.score,
                        a.max_score,
@@ -21211,10 +23260,14 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             return [];
         }
 
-        $rows = [];
-        $no = 1;
+        $attempt_rows_by_student = [];
         foreach ($raw_rows as $raw_row) {
             $row = (array) $raw_row;
+            $student_id = (int) ($row['student_id'] ?? 0);
+            if ($student_id <= 0) {
+                continue;
+            }
+
             $status = (string) ($row['status'] ?? '');
 
             $attempt_score = (float) ($row['score'] ?? 0);
@@ -21232,12 +23285,161 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
             $nilai = $total_points > 0 ? round(($earned_points / $total_points) * 100, 2) : 0.0;
 
-            $rows[] = [
-                'no' => $no++,
+            $attempt_rows_by_student[$student_id] = [
+                'student_id' => $student_id,
                 'nisn' => (string) ($row['student_nisn'] ?? ''),
                 'nama' => (string) ($row['student_name'] ?? ''),
                 'kelas' => (string) ($row['student_kelas'] ?? ''),
-                'nilai' => $nilai,
+                'nilai_display' => number_format($nilai, 2),
+            ];
+        }
+
+        $rows = [];
+        $seen_student_ids = [];
+        foreach ($target_student_rows as $student_row) {
+            $student_id = (int) ($student_row['id'] ?? 0);
+            if ($student_id <= 0) {
+                continue;
+            }
+
+            $attempt_row = $attempt_rows_by_student[$student_id] ?? null;
+            $student_name = trim((string) ($student_row['name'] ?? ''));
+            if ($student_name === '' && is_array($attempt_row)) {
+                $student_name = trim((string) ($attempt_row['nama'] ?? ''));
+            }
+
+            $student_kelas = trim((string) ($student_row['kelas'] ?? ''));
+            if ($student_kelas === '' && is_array($attempt_row)) {
+                $student_kelas = trim((string) ($attempt_row['kelas'] ?? ''));
+            }
+
+            $student_nisn = trim((string) get_user_meta($student_id, 'nisn', true));
+            if ($student_nisn === '' && is_array($attempt_row)) {
+                $student_nisn = trim((string) ($attempt_row['nisn'] ?? ''));
+            }
+
+            $rows[] = [
+                'student_id' => $student_id,
+                'nisn' => $student_nisn,
+                'nama' => $student_name,
+                'kelas' => $student_kelas,
+                'is_present' => is_array($attempt_row),
+                'nilai_display' => is_array($attempt_row) ? (string) ($attempt_row['nilai_display'] ?? '0.00') : 'Belum ujian',
+            ];
+            $seen_student_ids[$student_id] = true;
+        }
+
+        foreach ($attempt_rows_by_student as $student_id => $attempt_row) {
+            if (isset($seen_student_ids[$student_id])) {
+                continue;
+            }
+
+            $rows[] = [
+                'student_id' => $student_id,
+                'nisn' => trim((string) ($attempt_row['nisn'] ?? '')),
+                'nama' => trim((string) ($attempt_row['nama'] ?? '')),
+                'kelas' => trim((string) ($attempt_row['kelas'] ?? '')),
+                'is_present' => true,
+                'nilai_display' => (string) ($attempt_row['nilai_display'] ?? '0.00'),
+            ];
+        }
+
+        usort($rows, static function (array $left, array $right): int {
+            $kelas_compare = strnatcasecmp((string) ($left['kelas'] ?? ''), (string) ($right['kelas'] ?? ''));
+            if ($kelas_compare !== 0) {
+                return $kelas_compare;
+            }
+
+            return strnatcasecmp((string) ($left['nama'] ?? ''), (string) ($right['nama'] ?? ''));
+        });
+
+        $normalized_rows = [];
+        $no = 1;
+        foreach ($rows as $row) {
+            $normalized_rows[] = [
+                'no' => $no++,
+                'nisn' => (string) (($row['nisn'] ?? '') !== '' ? $row['nisn'] : '-'),
+                'nama' => (string) (($row['nama'] ?? '') !== '' ? $row['nama'] : '-'),
+                'kelas' => (string) (($row['kelas'] ?? '') !== '' ? $row['kelas'] : '-'),
+                'is_present' => !empty($row['is_present']),
+                'nilai_display' => (string) (($row['nilai_display'] ?? '') !== '' ? $row['nilai_display'] : '-'),
+            ];
+        }
+
+        return $normalized_rows;
+    }
+
+    /**
+     * @param array{teacher_id?:int} $scope_filters
+     * @return array<int,array{no:int,nisn:string,nama:string,keterangan:string}>
+     */
+    private static function get_exam_report_incident_rows(
+        int $exam_id,
+        string $selected_kelas,
+        array $scope_filters = []
+    ): array {
+        if ($exam_id <= 0) {
+            return [];
+        }
+
+        $incident_rows = CBT_Incident_Report::get_rows($exam_id, $selected_kelas, '', $scope_filters);
+        if (empty($incident_rows)) {
+            return [];
+        }
+
+        $grouped_rows = [];
+        foreach ($incident_rows as $incident_row) {
+            $student_id = (int) ($incident_row['student_id'] ?? 0);
+            $incident_id = (int) ($incident_row['id'] ?? 0);
+            $group_key = $student_id > 0 ? 'student_' . $student_id : 'incident_' . $incident_id;
+
+            if (!isset($grouped_rows[$group_key])) {
+                $student_nisn = $student_id > 0 ? trim((string) get_user_meta($student_id, 'nisn', true)) : '';
+                $student_name = trim((string) ($incident_row['student_name_snapshot'] ?? ''));
+                if ($student_name === '') {
+                    $student_name = '-';
+                }
+
+                $grouped_rows[$group_key] = [
+                    'nisn' => $student_nisn !== '' ? $student_nisn : '-',
+                    'nama' => $student_name,
+                    'keterangan_lines' => [],
+                ];
+            }
+
+            $incident_type_label = trim((string) ($incident_row['incident_type_label'] ?? ''));
+            $incident_notes = trim((string) ($incident_row['notes'] ?? ''));
+            if ($incident_type_label !== '' && $incident_notes !== '') {
+                $description = $incident_type_label . ' - ' . $incident_notes;
+            } elseif ($incident_type_label !== '') {
+                $description = $incident_type_label;
+            } elseif ($incident_notes !== '') {
+                $description = $incident_notes;
+            } else {
+                $description = '-';
+            }
+
+            $grouped_rows[$group_key]['keterangan_lines'][] = $description;
+        }
+
+        $grouped_rows = array_values($grouped_rows);
+        usort($grouped_rows, static function (array $left, array $right): int {
+            return strnatcasecmp((string) ($left['nama'] ?? ''), (string) ($right['nama'] ?? ''));
+        });
+
+        $rows = [];
+        $no = 1;
+        foreach ($grouped_rows as $grouped_row) {
+            $keterangan_lines = array_values(array_filter(array_map(
+                static fn($line): string => trim((string) $line),
+                (array) ($grouped_row['keterangan_lines'] ?? [])
+            ), static fn(string $line): bool => $line !== ''));
+
+            $rows[] = [
+                'no' => $no++,
+                'nisn' => (string) ($grouped_row['nisn'] ?? '-'),
+                'nama' => (string) ($grouped_row['nama'] ?? '-'),
+                'keterangan' => !empty($keterangan_lines) ? implode("\n", $keterangan_lines) : '-',
             ];
         }
 
@@ -24162,6 +26364,9 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
         check_admin_referer('cbt_save_setup_branding');
 
+        $exam_program_name = isset($_POST['exam_program_name'])
+            ? trim(sanitize_text_field(wp_unslash((string) $_POST['exam_program_name'])))
+            : '';
         $school_name = isset($_POST['school_name'])
             ? trim(sanitize_text_field(wp_unslash((string) $_POST['school_name'])))
             : '';
@@ -24200,6 +26405,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         update_option(
             self::SETUP_BRANDING_OPTION,
             [
+                'exam_program_name' => $exam_program_name,
                 'school_name' => $school_name,
                 'school_motto' => $school_motto,
                 'school_npsn' => $school_npsn,
@@ -34278,13 +36484,33 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
     }
 
     /**
-     * @return array{school_name:string,school_motto:string,logo_url:string,logo_1_url:string,logo_2_url:string}
+     * @return array{
+     *     exam_program_name:string,
+     *     school_name:string,
+     *     school_motto:string,
+     *     school_npsn:string,
+     *     school_address:string,
+     *     school_village:string,
+     *     school_district_city_ln:string,
+     *     school_regency_country_ln:string,
+     *     school_province_abroad_ln:string,
+     *     logo_url:string,
+     *     logo_1_url:string,
+     *     logo_2_url:string
+     * }
      */
     private static function get_setup_branding_print_context(): array
     {
         $branding = self::get_setup_branding_settings();
+        $exam_program_name = trim((string) ($branding['exam_program_name'] ?? ''));
         $school_name = trim((string) ($branding['school_name'] ?? ''));
         $school_motto = trim((string) ($branding['school_motto'] ?? ''));
+        $school_npsn = trim((string) ($branding['school_npsn'] ?? ''));
+        $school_address = trim((string) ($branding['school_address'] ?? ''));
+        $school_village = trim((string) ($branding['school_village'] ?? ''));
+        $school_district_city_ln = trim((string) ($branding['school_district_city_ln'] ?? ''));
+        $school_regency_country_ln = trim((string) ($branding['school_regency_country_ln'] ?? ''));
+        $school_province_abroad_ln = trim((string) ($branding['school_province_abroad_ln'] ?? ''));
 
         $logo_1_url = '';
         $logo_1_attachment_id = (int) ($branding['logo_1_attachment_id'] ?? 0);
@@ -34305,8 +36531,15 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         }
 
         return [
+            'exam_program_name' => $exam_program_name,
             'school_name' => $school_name,
             'school_motto' => $school_motto,
+            'school_npsn' => $school_npsn,
+            'school_address' => $school_address,
+            'school_village' => $school_village,
+            'school_district_city_ln' => $school_district_city_ln,
+            'school_regency_country_ln' => $school_regency_country_ln,
+            'school_province_abroad_ln' => $school_province_abroad_ln,
             'logo_url' => $logo_1_url,
             'logo_1_url' => $logo_1_url,
             'logo_2_url' => $logo_2_url,
@@ -34598,6 +36831,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 
     /**
      * @return array{
+     *     exam_program_name:string,
      *     school_name:string,
      *     school_motto:string,
      *     school_npsn:string,
@@ -34618,6 +36852,9 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
             $raw = [];
         }
 
+        $exam_program_name = isset($raw['exam_program_name'])
+            ? trim(sanitize_text_field((string) $raw['exam_program_name']))
+            : '';
         $school_name = isset($raw['school_name'])
             ? trim(sanitize_text_field((string) $raw['school_name']))
             : '';
@@ -34658,6 +36895,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
         }
 
         return [
+            'exam_program_name' => $exam_program_name,
             'school_name' => $school_name,
             'school_motto' => $school_motto,
             'school_npsn' => $school_npsn,

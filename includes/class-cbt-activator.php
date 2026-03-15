@@ -8,7 +8,7 @@ class CBT_Activator
 {
     private const OPTION_DB_VERSION = 'cbt_exam_system_db_version';
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
-    private const DB_VERSION = '1.6.4';
+    private const DB_VERSION = '1.6.5';
 
     public static function activate(): void
     {
@@ -189,6 +189,7 @@ class CBT_Activator
         ) $charset;";
 
         $tables[] = CBT_Security_Log::get_create_table_sql($wpdb);
+        $tables[] = CBT_Incident_Report::get_create_table_sql($wpdb);
 
         foreach ($tables as $sql) {
             dbDelta($sql);
@@ -221,7 +222,8 @@ class CBT_Activator
             "ALTER TABLE {$prefix}cbt_question_essay ADD CONSTRAINT fk_cbt_qes_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE",
             "ALTER TABLE {$prefix}cbt_attempts ADD CONSTRAINT fk_cbt_attempts_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE",
             "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_attempt FOREIGN KEY (attempt_id) REFERENCES {$prefix}cbt_attempts(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"
+            "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE",
+            "ALTER TABLE {$prefix}cbt_exam_incidents ADD CONSTRAINT fk_cbt_incidents_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE"
         ];
 
         foreach ($constraints as $sql) {
