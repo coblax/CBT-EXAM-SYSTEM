@@ -1,0 +1,153 @@
+<?php
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+final class CBT_Admin_Menu
+{
+    public static function register_menu(): void
+    {
+        add_menu_page(
+            'CBT Exams',
+            'CBT Exams',
+            'cbt_manage_exams',
+            'cbt-exams',
+            [CBT_Admin::class, 'render_exams_page'],
+            'dashicons-welcome-learn-more',
+            26
+        );
+
+        remove_submenu_page('cbt-exams', 'cbt-exams');
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Exams',
+            'CBT Exams',
+            'cbt_manage_exams',
+            'cbt-exams',
+            [CBT_Admin::class, 'render_exams_page']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Tokens',
+            'CBT Tokens',
+            'cbt_manage_exams',
+            'cbt-tokens',
+            [CBT_Admin_Tokens_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Setup',
+            'CBT Setup',
+            'cbt_manage_exams',
+            'cbt-setup',
+            [CBT_Admin_Setup_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Maintenance',
+            'CBT Maintenance',
+            'manage_options',
+            'cbt-maintenance',
+            [CBT_Admin::class, 'render_maintenance_page']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Cache',
+            'CBT Cache',
+            'manage_options',
+            'cbt-cache',
+            [CBT_Admin_Cache_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Subjects',
+            'CBT Subjects',
+            'manage_options',
+            'cbt-subjects',
+            [CBT_Admin_Subjects_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Users',
+            'CBT Users',
+            'manage_options',
+            'cbt-user-import',
+            [CBT_Admin_Users_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Exam Cards',
+            'CBT Exam Cards',
+            'cbt_manage_users',
+            'cbt-exam-cards',
+            [CBT_Admin_Exam_Cards_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Questions',
+            'CBT Questions',
+            'cbt_manage_questions',
+            'cbt-question-bank',
+            [CBT_Admin::class, 'render_question_bank_page']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Results',
+            'CBT Results',
+            'cbt_view_results',
+            'cbt-results',
+            [CBT_Admin::class, 'render_results_page']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Report Exam',
+            'CBT Report Exam',
+            'cbt_view_results',
+            'cbt-report-exam',
+            [CBT_Admin_Report_Exam_Page::class, 'render']
+        );
+    }
+
+    public static function redirect_removed_admin_pages(): void
+    {
+        if (!is_admin()) {
+            return;
+        }
+
+        $page = isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : '';
+        if ($page === '') {
+            return;
+        }
+
+        $removed_pages = [
+            'cbt-questions-mc',
+            'cbt-questions-ma',
+            'cbt-questions-tf',
+            'cbt-questions-sa',
+            'cbt-questions-essay',
+        ];
+
+        if (!in_array($page, $removed_pages, true)) {
+            return;
+        }
+
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        wp_safe_redirect(admin_url('admin.php?page=cbt-subjects'));
+        exit;
+    }
+}
