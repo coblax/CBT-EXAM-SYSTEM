@@ -4274,7 +4274,24 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     display: none;
     align-items: center;
     justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
     line-height: 1;
+}
+
+.cbt-logout-icon svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.cbt-logout-icon path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .cbt-logout-label {
@@ -7119,6 +7136,11 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
         order: 3;
     }
 
+    .cbt-topbar-right .cbt-theme-toggle,
+    .cbt-topbar-right .cbt-logout-button {
+        flex: 0 0 auto;
+    }
+
     .cbt-theme-toggle {
         width: 32px;
         min-width: 32px;
@@ -7174,8 +7196,9 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
 
     .cbt-logout-icon {
         display: inline-flex;
-        font-size: 15px;
-        font-weight: 800;
+        width: 15px;
+        height: 15px;
+        flex-basis: 15px;
     }
 }
 
@@ -7411,10 +7434,6 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     .cbt-topbar-right .cbt-user-chip {
         gap: 3px;
         padding: 0 5px 0 3px;
-    }
-
-    .cbt-user-chip-name-button {
-        max-width: 60px;
     }
 
     .cbt-exam-item {
@@ -10995,9 +11014,9 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     --cbt-flow-glow: rgba(255, 255, 255, 0.22);
     position: relative;
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-columns: 48px minmax(0, 1fr);
     gap: 10px;
-    align-items: start;
+    align-items: stretch;
     overflow: hidden;
     padding: 16px 18px 16px 16px;
     border-radius: 18px;
@@ -11038,8 +11057,10 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
+    width: 48px;
+    height: 48px;
+    align-self: center;
+    justify-self: center;
     border-radius: 12px;
     border: 1px solid var(--cbt-flow-icon-border);
     background: var(--cbt-flow-icon-bg);
@@ -11051,8 +11072,8 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
 
 .cbt-login-flow-icon svg {
     display: block;
-    width: 16px;
-    height: 16px;
+    width: 26px;
+    height: 26px;
 }
 
 .cbt-login-flow-content {
@@ -11198,16 +11219,16 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
 
 @media (max-width: 640px) {
     .cbt-login-flow-card {
-        grid-template-columns: 38px minmax(0, 1fr);
+        grid-template-columns: 44px minmax(0, 1fr);
         gap: 12px;
         padding: 14px 14px 13px;
         border-radius: 16px;
     }
 
     .cbt-login-flow-icon {
-        width: 38px;
-        height: 38px;
-        border-radius: 12px;
+        width: 44px;
+        height: 44px;
+        border-radius: 11px;
     }
 
     .cbt-login-flow-title {
@@ -11225,20 +11246,20 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
 
 @media (max-width: 420px) {
     .cbt-login-flow-card {
-        grid-template-columns: 34px minmax(0, 1fr);
+        grid-template-columns: 40px minmax(0, 1fr);
         gap: 10px;
         padding: 12px 12px 11px;
     }
 
     .cbt-login-flow-icon {
-        width: 34px;
-        height: 34px;
+        width: 40px;
+        height: 40px;
         border-radius: 11px;
     }
 
     .cbt-login-flow-icon svg {
-        width: 16px;
-        height: 16px;
+        width: 22px;
+        height: 22px;
     }
 
     .cbt-login-flow-number {
@@ -11324,6 +11345,14 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     gap: 1px;
 }
 
+.cbt-question-exam-footer-side {
+    display: inline-grid;
+    grid-template-columns: repeat(2, minmax(74px, auto));
+    align-items: stretch;
+    justify-content: end;
+    gap: 6px;
+}
+
 .cbt-question-exam-footer-label {
     display: inline-flex;
     align-items: center;
@@ -11367,6 +11396,74 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
         inset 0 1px 0 rgba(255, 255, 255, 0.9),
         0 4px 10px rgba(15, 76, 129, 0.04);
     text-align: right;
+}
+
+.cbt-question-exam-footer-meta-sync.is-online {
+    border-color: rgba(16, 185, 129, 0.24);
+    background: rgba(236, 253, 245, 0.92);
+}
+
+.cbt-question-exam-footer-meta-sync.is-online .cbt-question-exam-footer-meta-label {
+    color: #0f766e;
+}
+
+.cbt-question-exam-footer-meta-sync.is-online .cbt-question-exam-footer-meta-value {
+    color: #047857;
+}
+
+.cbt-question-exam-footer-meta-sync.is-online .cbt-question-exam-footer-meta-note {
+    color: #0f766e;
+}
+
+.cbt-question-exam-footer-meta-sync.is-pending {
+    border-color: rgba(245, 158, 11, 0.28);
+    background: rgba(255, 251, 235, 0.96);
+}
+
+.cbt-question-exam-footer-meta-sync.is-pending .cbt-question-exam-footer-meta-label {
+    color: #b45309;
+}
+
+.cbt-question-exam-footer-meta-sync.is-pending .cbt-question-exam-footer-meta-value {
+    color: #c2410c;
+}
+
+.cbt-question-exam-footer-meta-sync.is-pending .cbt-question-exam-footer-meta-note {
+    color: #9a3412;
+}
+
+.cbt-question-exam-footer-meta-sync.is-offline {
+    border-color: rgba(239, 68, 68, 0.26);
+    background: rgba(254, 242, 242, 0.96);
+}
+
+.cbt-question-exam-footer-meta-sync.is-offline .cbt-question-exam-footer-meta-label {
+    color: #b91c1c;
+}
+
+.cbt-question-exam-footer-meta-sync.is-offline .cbt-question-exam-footer-meta-value {
+    color: #dc2626;
+}
+
+.cbt-question-exam-footer-meta-sync.is-offline .cbt-question-exam-footer-meta-note {
+    color: #b45309;
+}
+
+.cbt-question-exam-footer-meta-sync.is-finalizing {
+    border-color: rgba(59, 130, 246, 0.24);
+    background: rgba(239, 246, 255, 0.96);
+}
+
+.cbt-question-exam-footer-meta-sync.is-finalizing .cbt-question-exam-footer-meta-label {
+    color: #1d4ed8;
+}
+
+.cbt-question-exam-footer-meta-sync.is-finalizing .cbt-question-exam-footer-meta-value {
+    color: #2563eb;
+}
+
+.cbt-question-exam-footer-meta-sync.is-finalizing .cbt-question-exam-footer-meta-note {
+    color: #1e40af;
 }
 
 .cbt-question-exam-footer-meta-label {
@@ -11426,12 +11523,72 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     color: #f8fbff;
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-side {
+    gap: 6px;
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta {
     border-color: rgba(148, 163, 184, 0.18);
     background: rgba(15, 23, 42, 0.52);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.04),
         0 8px 16px rgba(2, 6, 23, 0.18);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-online {
+    border-color: rgba(52, 211, 153, 0.2);
+    background: rgba(6, 78, 59, 0.34);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-online .cbt-question-exam-footer-meta-label,
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-online .cbt-question-exam-footer-meta-note {
+    color: #a7f3d0;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-online .cbt-question-exam-footer-meta-value {
+    color: #6ee7b7;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-pending {
+    border-color: rgba(251, 191, 36, 0.2);
+    background: rgba(120, 53, 15, 0.38);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-pending .cbt-question-exam-footer-meta-label,
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-pending .cbt-question-exam-footer-meta-note {
+    color: #fde68a;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-pending .cbt-question-exam-footer-meta-value {
+    color: #fbbf24;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-offline {
+    border-color: rgba(248, 113, 113, 0.22);
+    background: rgba(127, 29, 29, 0.36);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-offline .cbt-question-exam-footer-meta-label,
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-offline .cbt-question-exam-footer-meta-note {
+    color: #fecaca;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-offline .cbt-question-exam-footer-meta-value {
+    color: #fca5a5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-finalizing {
+    border-color: rgba(96, 165, 250, 0.24);
+    background: rgba(30, 64, 175, 0.28);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-finalizing .cbt-question-exam-footer-meta-label,
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-finalizing .cbt-question-exam-footer-meta-note {
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-sync.is-finalizing .cbt-question-exam-footer-meta-value {
+    color: #93c5fd;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-question-exam-footer-meta-label {
@@ -11472,11 +11629,17 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
     }
 
     .cbt-question-exam-footer-meta {
-        grid-column: 1 / -1;
-        width: 100%;
         min-width: 0;
+        width: 100%;
         justify-content: start;
         text-align: left;
+    }
+
+    .cbt-question-exam-footer-side {
+        grid-column: 1 / -1;
+        width: 100%;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        justify-content: stretch;
     }
 
     .cbt-question-exam-footer-meta-value {

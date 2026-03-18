@@ -72,6 +72,47 @@ Expected:
 - soal baru default belum dijawab
 - jawaban lama tidak hilang
 
+### 3A. Offline Autosave dan Retry Jawaban
+
+Langkah:
+1. Buka attempt aktif sampai beberapa soal awal sudah termuat.
+2. Jawab 2-3 soal berbeda.
+3. Putuskan koneksi internet.
+4. Ubah jawaban lagi pada soal aktif lalu pindah ke soal lain yang sudah pernah dimuat.
+5. Pastikan muncul status offline non-fatal, bukan error fatal `Failed to Fetch`.
+6. Nyalakan koneksi lagi tanpa reload paksa.
+
+Expected:
+- jawaban terbaru tetap tersimpan lokal saat offline
+- pindah soal yang sudah tercache tetap bisa
+- status menunjukkan jawaban menunggu sinkronisasi
+- setelah koneksi kembali, semua jawaban pending terkirim otomatis
+- status pending kembali nol tanpa perlu klik ulang setiap soal
+
+### 3B. Offline ke Soal Yang Belum Pernah Dimuat
+
+Langkah:
+1. Putuskan koneksi internet saat attempt masih aktif.
+2. Coba lompat ke nomor soal yang belum pernah dibuka / belum tercache di perangkat.
+
+Expected:
+- soal saat ini tetap aman dan tidak blank
+- muncul pesan bahwa soal tujuan belum tersimpan di perangkat
+- tidak ada error fatal yang memutus attempt
+
+### 3C. Reload Saat Masih Ada Pending Sync
+
+Langkah:
+1. Putuskan koneksi.
+2. Ubah beberapa jawaban sampai status pending muncul.
+3. Reload halaman atau tutup lalu buka lagi tab saat koneksi sudah kembali.
+
+Expected:
+- jawaban lokal tetap pulih
+- antrean retry tetap ada
+- sinkronisasi otomatis berjalan lagi setelah halaman aktif
+- jawaban tidak perlu dipilih ulang manual
+
 ### 4. Edit Soal Dari Preview Exam
 
 Langkah:
@@ -154,6 +195,9 @@ Expected:
 Sebelum anggap perubahan aman, semua poin berikut harus lolos:
 - resume attempt tanpa hard refresh
 - badge jawaban muncul untuk soal `1-10`, `11-20`, dan `21+`
+- offline autosave tidak memunculkan error fatal `Failed to Fetch`
+- jawaban pending pulih lagi setelah reload dan tersinkron otomatis saat online
+- timer habis saat offline mengunci jawaban lalu final submit berjalan saat koneksi kembali
 - tambah soal tidak menghapus jawaban lama
 - edit soal tidak mengurangi jumlah soal exam
 - CBT Result dan admin result tetap konsisten
@@ -164,6 +208,8 @@ Sebelum anggap perubahan aman, semua poin berikut harus lolos:
 Kalau sedang buru-buru, minimal jalankan:
 1. Resume attempt aktif tanpa refresh paksa.
 2. Cek badge jawaban di nomor `1`, `12`, `24`, `30`.
-3. Tambah 1 soal ke exam.
-4. Cek lagi frontend siswa tanpa hard refresh.
-5. Cek CBT Result.
+3. Putuskan koneksi, ubah 1 jawaban, lalu pastikan pindah ke soal cached tetap jalan.
+4. Sambungkan lagi koneksi dan cek pending sync habis otomatis.
+5. Tambah 1 soal ke exam.
+6. Cek lagi frontend siswa tanpa hard refresh.
+7. Cek CBT Result.

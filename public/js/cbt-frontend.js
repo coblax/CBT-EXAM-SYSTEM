@@ -83,7 +83,13 @@
         calculatorExpression: '',
         calculatorResult: '',
         calculatorError: '',
-        isFullscreenActive: false
+        isFullscreenActive: false,
+        connectionStatus: (window && window.navigator && window.navigator.onLine === false) ? 'offline' : 'online',
+        pendingSyncCount: 0,
+        syncBlockingReason: '',
+        examLockedForPendingFinish: false,
+        lastSyncError: '',
+        pendingFinishAutoSubmit: false
     };
     var AUTO_SAVE_CHOICE_DELAY_MS = 2000;
     var AUTO_SAVE_TEXT_DELAY_MS = 3500;
@@ -91,6 +97,8 @@
     var AUTO_SAVE_TEXT_DELAY_CONGESTED_MS = 4600;
     var AUTO_SAVE_CONGESTED_WINDOW_MS = 15000;
     var AUTO_SAVE_BATCH_MAX_ITEMS = 20;
+    var ANSWER_SYNC_RETRY_BASE_DELAY_MS = 2500;
+    var ANSWER_SYNC_RETRY_MAX_DELAY_MS = 20000;
     var ATTEMPT_UI_STATE_SYNC_DELAY_MS = 1200;
     var ATTEMPT_UI_STATE_NAVIGATION_SYNC_DELAY_MS = 1600;
     var SESSION_HEARTBEAT_INTERVAL_MS = 20000;
@@ -103,6 +111,8 @@
     var answerBatchFlushTimer = 0;
     var answerBatchFlushDueAt = 0;
     var answerBatchFlushInFlight = null;
+    var answerBatchInFlightItems = [];
+    var answerSyncRetryCount = 0;
     var navGridLayoutFrameId = 0;
     var compactViewportState = false;
     var lastRenderedStage = '';
@@ -1290,6 +1300,116 @@
         }, {});
     }
 
+    function normalizeStoredStringLookup(rawLookup) {
+        if (!rawLookup || typeof rawLookup !== 'object') {
+            return {};
+        }
+
+        return Object.keys(rawLookup).reduce(function (accumulator, key) {
+            var numericKey = Number(key) || 0;
+            if (numericKey > 0 && typeof rawLookup[key] === 'string') {
+                accumulator[numericKey] = rawLookup[key];
+            }
+            return accumulator;
+        }, {});
+    }
+
+    function normalizeStoredPendingAnswerBatchMap(rawMap) {
+        if (!rawMap || typeof rawMap !== 'object') {
+            return {};
+        }
+
+        return Object.keys(rawMap).reduce(function (accumulator, key) {
+            var item = rawMap[key];
+            var questionId = Number(item && item.question_id !== undefined ? item.question_id : key) || 0;
+            if (questionId <= 0 || !item || typeof item !== 'object') {
+                return accumulator;
+            }
+
+            accumulator[questionId] = {
+                question_id: questionId,
+                answer: Object.prototype.hasOwnProperty.call(item, 'answer') ? item.answer : null,
+                signature: String(item.signature || '')
+            };
+            return accumulator;
+        }, {});
+    }
+
+    function normalizeStoredPendingAnswerBatchOrder(rawOrder, pendingMap) {
+        var normalizedPendingMap = pendingMap && typeof pendingMap === 'object' ? pendingMap : {};
+        if (!Array.isArray(rawOrder)) {
+            rawOrder = [];
+        }
+
+        var seen = {};
+        var order = rawOrder.reduce(function (accumulator, item) {
+            var questionId = Number(item) || 0;
+            if (questionId <= 0 || seen[questionId] || !Object.prototype.hasOwnProperty.call(normalizedPendingMap, questionId)) {
+                return accumulator;
+            }
+            seen[questionId] = true;
+            accumulator.push(questionId);
+            return accumulator;
+        }, []);
+
+        Object.keys(normalizedPendingMap).forEach(function (key) {
+            var questionId = Number(key) || 0;
+            if (questionId > 0 && !seen[questionId]) {
+                seen[questionId] = true;
+                order.push(questionId);
+            }
+        });
+
+        return order;
+    }
+
+    function normalizeStoredAutoSaveState(snapshot) {
+        var safeSnapshot = snapshot && typeof snapshot === 'object' ? snapshot : {};
+        var pendingBatchMap = normalizeStoredPendingAnswerBatchMap(
+            safeSnapshot.pending_answer_batch_by_question !== undefined
+                ? safeSnapshot.pending_answer_batch_by_question
+                : safeSnapshot.pendingAnswerBatchByQuestion
+        );
+
+        return {
+            autoSaveCongestedUntil: Math.max(
+                0,
+                Number(
+                    safeSnapshot.auto_save_congested_until !== undefined
+                        ? safeSnapshot.auto_save_congested_until
+                        : safeSnapshot.autoSaveCongestedUntil
+                ) || 0
+            ),
+            lastSubmittedPayloadByQuestion: normalizeStoredStringLookup(
+                safeSnapshot.last_submitted_payload_by_question !== undefined
+                    ? safeSnapshot.last_submitted_payload_by_question
+                    : safeSnapshot.lastSubmittedPayloadByQuestion
+            ),
+            pendingAnswerBatchByQuestion: pendingBatchMap,
+            pendingAnswerBatchOrder: normalizeStoredPendingAnswerBatchOrder(
+                safeSnapshot.pending_answer_batch_order !== undefined
+                    ? safeSnapshot.pending_answer_batch_order
+                    : safeSnapshot.pendingAnswerBatchOrder,
+                pendingBatchMap
+            ),
+            lastSyncError: String(
+                safeSnapshot.last_sync_error !== undefined
+                    ? safeSnapshot.last_sync_error
+                    : (safeSnapshot.lastSyncError || '')
+            ),
+            syncBlockingReason: String(
+                safeSnapshot.sync_blocking_reason !== undefined
+                    ? safeSnapshot.sync_blocking_reason
+                    : (safeSnapshot.syncBlockingReason || '')
+            ),
+            examLockedForPendingFinish: Number(
+                safeSnapshot.exam_locked_for_pending_finish !== undefined
+                    ? safeSnapshot.exam_locked_for_pending_finish
+                    : (safeSnapshot.examLockedForPendingFinish ? 1 : 0)
+            ) === 1
+        };
+    }
+
     function normalizeOrUseQuestionCacheSnapshot(snapshot, attemptId) {
         if (
             snapshot &&
@@ -1370,6 +1490,13 @@
             answers: normalizedBaseSnapshot ? normalizedBaseSnapshot.answers : (baseSnapshot && baseSnapshot.answers),
             existing_answer_raw_by_question_id: normalizedBaseSnapshot ? normalizedBaseSnapshot.existingAnswerRawByQuestionId : (baseSnapshot && baseSnapshot.existing_answer_raw_by_question_id),
             loaded_question_window_offsets: normalizedBaseSnapshot ? normalizedBaseSnapshot.loadedQuestionWindowOffsets : (baseSnapshot && baseSnapshot.loaded_question_window_offsets),
+            auto_save_congested_until: normalizedBaseSnapshot ? normalizedBaseSnapshot.autoSaveCongestedUntil : (baseSnapshot && baseSnapshot.auto_save_congested_until),
+            last_submitted_payload_by_question: normalizedBaseSnapshot ? normalizedBaseSnapshot.lastSubmittedPayloadByQuestion : (baseSnapshot && baseSnapshot.last_submitted_payload_by_question),
+            pending_answer_batch_by_question: normalizedBaseSnapshot ? normalizedBaseSnapshot.pendingAnswerBatchByQuestion : (baseSnapshot && baseSnapshot.pending_answer_batch_by_question),
+            pending_answer_batch_order: normalizedBaseSnapshot ? normalizedBaseSnapshot.pendingAnswerBatchOrder : (baseSnapshot && baseSnapshot.pending_answer_batch_order),
+            last_sync_error: normalizedBaseSnapshot ? normalizedBaseSnapshot.lastSyncError : (baseSnapshot && baseSnapshot.last_sync_error),
+            sync_blocking_reason: normalizedBaseSnapshot ? normalizedBaseSnapshot.syncBlockingReason : (baseSnapshot && baseSnapshot.sync_blocking_reason),
+            exam_locked_for_pending_finish: normalizedBaseSnapshot ? (normalizedBaseSnapshot.examLockedForPendingFinish ? 1 : 0) : (baseSnapshot && baseSnapshot.exam_locked_for_pending_finish),
             window_offset: normalizedBaseSnapshot ? normalizedBaseSnapshot.windowOffset : (baseSnapshot && baseSnapshot.window_offset),
             window_limit: normalizedBaseSnapshot ? normalizedBaseSnapshot.windowLimit : (baseSnapshot && baseSnapshot.window_limit),
             cached_at: Math.max(
@@ -1413,6 +1540,7 @@
         var changedQuestionLookup = normalizeStoredBooleanLookup(snapshot.changed_question_lookup);
         var answers = normalizeStoredAnswers(snapshot.answers);
         var existingAnswerRawByQuestionId = normalizeStoredExistingAnswerRawMap(snapshot.existing_answer_raw_by_question_id);
+        var autoSaveState = normalizeStoredAutoSaveState(snapshot);
         if (payloadQuestions.length && (!Object.keys(answeredQuestionLookup).length || !Object.keys(answers).length)) {
             payloadQuestions.forEach(function (question) {
                 var questionId = Number(question && question.id) || 0;
@@ -1452,9 +1580,59 @@
             answers: answers,
             existingAnswerRawByQuestionId: existingAnswerRawByQuestionId,
             loadedQuestionWindowOffsets: normalizeStoredBooleanLookup(snapshot.loaded_question_window_offsets),
+            autoSaveCongestedUntil: autoSaveState.autoSaveCongestedUntil,
+            lastSubmittedPayloadByQuestion: autoSaveState.lastSubmittedPayloadByQuestion,
+            pendingAnswerBatchByQuestion: autoSaveState.pendingAnswerBatchByQuestion,
+            pendingAnswerBatchOrder: autoSaveState.pendingAnswerBatchOrder,
+            lastSyncError: autoSaveState.lastSyncError,
+            syncBlockingReason: autoSaveState.syncBlockingReason,
+            examLockedForPendingFinish: autoSaveState.examLockedForPendingFinish,
             windowOffset: Math.max(0, Number(snapshot.window_offset) || 0),
             windowLimit: Math.max(0, Number(snapshot.window_limit) || 0),
             cachedAt: Math.max(0, Number(snapshot.cached_at) || 0)
+        };
+    }
+
+    function buildAutoSaveStateSnapshot() {
+        var pendingSnapshotByQuestion = Object.keys(pendingAnswerBatchByQuestion || {}).reduce(function (accumulator, key) {
+            var questionId = Number(key) || 0;
+            if (questionId <= 0 || !pendingAnswerBatchByQuestion[questionId]) {
+                return accumulator;
+            }
+
+            accumulator[questionId] = {
+                question_id: questionId,
+                answer: Object.prototype.hasOwnProperty.call(pendingAnswerBatchByQuestion[questionId], 'answer')
+                    ? pendingAnswerBatchByQuestion[questionId].answer
+                    : null,
+                signature: String(pendingAnswerBatchByQuestion[questionId].signature || '')
+            };
+            return accumulator;
+        }, {});
+        var pendingSnapshotOrder = Array.isArray(pendingAnswerBatchOrder) ? pendingAnswerBatchOrder.slice() : [];
+
+        (Array.isArray(answerBatchInFlightItems) ? answerBatchInFlightItems : []).forEach(function (item) {
+            var questionId = Number(item && item.question_id) || 0;
+            if (questionId <= 0 || Object.prototype.hasOwnProperty.call(pendingSnapshotByQuestion, questionId)) {
+                return;
+            }
+
+            pendingSnapshotByQuestion[questionId] = {
+                question_id: questionId,
+                answer: Object.prototype.hasOwnProperty.call(item, 'answer') ? item.answer : null,
+                signature: String(item.signature || '')
+            };
+            pendingSnapshotOrder.push(questionId);
+        });
+
+        return {
+            auto_save_congested_until: autoSaveCongestedUntil,
+            last_submitted_payload_by_question: Object.assign({}, lastSubmittedPayloadByQuestion),
+            pending_answer_batch_by_question: pendingSnapshotByQuestion,
+            pending_answer_batch_order: pendingSnapshotOrder,
+            last_sync_error: String(state.lastSyncError || ''),
+            sync_blocking_reason: String(state.syncBlockingReason || ''),
+            exam_locked_for_pending_finish: state.examLockedForPendingFinish ? 1 : 0
         };
     }
 
@@ -1484,6 +1662,7 @@
             : buildQuestionManifestFromQuestions(Object.keys(questionPayloadById).map(function (key) {
                 return questionPayloadById[key];
             }));
+        var autoSaveState = buildAutoSaveStateSnapshot();
 
         return {
             attempt_id: safeAttemptId,
@@ -1528,6 +1707,13 @@
                 }
                 return accumulator;
             }, {}),
+            auto_save_congested_until: autoSaveState.auto_save_congested_until,
+            last_submitted_payload_by_question: autoSaveState.last_submitted_payload_by_question,
+            pending_answer_batch_by_question: autoSaveState.pending_answer_batch_by_question,
+            pending_answer_batch_order: autoSaveState.pending_answer_batch_order,
+            last_sync_error: autoSaveState.last_sync_error,
+            sync_blocking_reason: autoSaveState.sync_blocking_reason,
+            exam_locked_for_pending_finish: autoSaveState.exam_locked_for_pending_finish,
             window_offset: Math.max(0, Number(state.windowOffset) || 0),
             window_limit: Math.max(0, Number(state.windowLimit) || 0),
             cached_at: Date.now()
@@ -1552,6 +1738,13 @@
             answers: normalizedSnapshot.answers,
             existing_answer_raw_by_question_id: normalizedSnapshot.existingAnswerRawByQuestionId,
             loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
+            auto_save_congested_until: normalizedSnapshot.autoSaveCongestedUntil,
+            last_submitted_payload_by_question: normalizedSnapshot.lastSubmittedPayloadByQuestion,
+            pending_answer_batch_by_question: normalizedSnapshot.pendingAnswerBatchByQuestion,
+            pending_answer_batch_order: normalizedSnapshot.pendingAnswerBatchOrder,
+            last_sync_error: normalizedSnapshot.lastSyncError,
+            sync_blocking_reason: normalizedSnapshot.syncBlockingReason,
+            exam_locked_for_pending_finish: normalizedSnapshot.examLockedForPendingFinish ? 1 : 0,
             window_offset: normalizedSnapshot.windowOffset,
             window_limit: normalizedSnapshot.windowLimit,
             cached_at: Date.now()
@@ -1588,6 +1781,13 @@
             answers: normalizedSnapshot.answers,
             existing_answer_raw_by_question_id: normalizedSnapshot.existingAnswerRawByQuestionId,
             loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
+            auto_save_congested_until: normalizedSnapshot.autoSaveCongestedUntil,
+            last_submitted_payload_by_question: normalizedSnapshot.lastSubmittedPayloadByQuestion,
+            pending_answer_batch_by_question: normalizedSnapshot.pendingAnswerBatchByQuestion,
+            pending_answer_batch_order: normalizedSnapshot.pendingAnswerBatchOrder,
+            last_sync_error: normalizedSnapshot.lastSyncError,
+            sync_blocking_reason: normalizedSnapshot.syncBlockingReason,
+            exam_locked_for_pending_finish: normalizedSnapshot.examLockedForPendingFinish ? 1 : 0,
             window_offset: normalizedSnapshot.windowOffset,
             window_limit: normalizedSnapshot.windowLimit,
             stored_question_ids: normalizeQuestionIdList(storedQuestionIds),
@@ -1609,6 +1809,13 @@
             answers: metaSnapshot && metaSnapshot.answers,
             existing_answer_raw_by_question_id: metaSnapshot && metaSnapshot.existing_answer_raw_by_question_id,
             loaded_question_window_offsets: metaSnapshot && metaSnapshot.loaded_question_window_offsets,
+            auto_save_congested_until: metaSnapshot && metaSnapshot.auto_save_congested_until,
+            last_submitted_payload_by_question: metaSnapshot && metaSnapshot.last_submitted_payload_by_question,
+            pending_answer_batch_by_question: metaSnapshot && metaSnapshot.pending_answer_batch_by_question,
+            pending_answer_batch_order: metaSnapshot && metaSnapshot.pending_answer_batch_order,
+            last_sync_error: metaSnapshot && metaSnapshot.last_sync_error,
+            sync_blocking_reason: metaSnapshot && metaSnapshot.sync_blocking_reason,
+            exam_locked_for_pending_finish: metaSnapshot && metaSnapshot.exam_locked_for_pending_finish,
             window_offset: metaSnapshot && metaSnapshot.window_offset,
             window_limit: metaSnapshot && metaSnapshot.window_limit,
             cached_at: metaSnapshot && metaSnapshot.cached_at
@@ -2400,6 +2607,7 @@
         state.answers = normalizedSnapshot.answers;
         state.existingAnswerRawByQuestionId = normalizedSnapshot.existingAnswerRawByQuestionId;
         state.loadedQuestionWindowOffsets = normalizedSnapshot.loadedQuestionWindowOffsets;
+        restoreQuestionAutoSaveState(normalizedSnapshot);
         if (normalizedSnapshot.questionRevision) {
             setQuestionRevision(normalizedSnapshot.questionRevision, expectedExamId || normalizedSnapshot.examId || 0);
         }
@@ -3088,7 +3296,9 @@
         var restoredDeferredQuestionIds = applyPendingRevisionSafeAnswersForLoadedQuestions(responseItems);
         if (restoredDeferredQuestionIds.length && !isQuestionRevisionRefreshActive()) {
             if (queueQuestionAnswersByIds(restoredDeferredQuestionIds) > 0) {
-                scheduleAnswerBatchFlush(300);
+                schedulePendingAnswerRetry('restore-deferred-answers', {
+                    delayMs: 300
+                });
             }
         }
         scheduleQuestionCachePersist(0);
@@ -3737,12 +3947,36 @@
             headers.Authorization = 'Bearer ' + authToken;
         }
 
-        var response = await fetch(buildUrl(path, query), {
-            method: method,
-            headers: headers,
-            body: body !== null ? JSON.stringify(body) : null,
-            keepalive: keepalive
-        });
+        var response;
+        try {
+            response = await fetch(buildUrl(path, query), {
+                method: method,
+                headers: headers,
+                body: body !== null ? JSON.stringify(body) : null,
+                keepalive: keepalive
+            });
+            setConnectionStatus('online', {
+                persist: false,
+                render: false,
+                triggerRetry: false
+            });
+        } catch (fetchError) {
+            var networkError = new Error(
+                getNavigatorConnectionStatus() === 'offline'
+                    ? 'Koneksi terputus.'
+                    : 'Gagal terhubung ke server.'
+            );
+            networkError.status = 0;
+            networkError.code = 'network_error';
+            networkError.isNetworkError = true;
+            networkError.cause = fetchError;
+            setConnectionStatus('offline', {
+                persist: false,
+                render: false,
+                triggerRetry: false
+            });
+            throw networkError;
+        }
 
         var payload = {};
         try {
@@ -3761,6 +3995,14 @@
             }
 
             throw error;
+        }
+
+        if (!isAnswerSubmitPath(path)) {
+            schedulePendingAnswerRetry('api-success:' + String(path || ''), {
+                immediate: true,
+                resetBackoff: true,
+                persist: false
+            });
         }
 
         return payload;
@@ -3879,17 +4121,19 @@
     }
 
     function restoreQuestionAutoSaveState(snapshot) {
-        var safeSnapshot = snapshot && typeof snapshot === 'object' ? snapshot : {};
-        lastSubmittedPayloadByQuestion = safeSnapshot.lastSubmittedPayloadByQuestion && typeof safeSnapshot.lastSubmittedPayloadByQuestion === 'object'
-            ? Object.assign({}, safeSnapshot.lastSubmittedPayloadByQuestion)
-            : {};
-        pendingAnswerBatchByQuestion = safeSnapshot.pendingAnswerBatchByQuestion && typeof safeSnapshot.pendingAnswerBatchByQuestion === 'object'
-            ? Object.assign({}, safeSnapshot.pendingAnswerBatchByQuestion)
-            : {};
-        pendingAnswerBatchOrder = Array.isArray(safeSnapshot.pendingAnswerBatchOrder)
-            ? safeSnapshot.pendingAnswerBatchOrder.slice()
-            : [];
-        autoSaveCongestedUntil = Math.max(0, Number(safeSnapshot.autoSaveCongestedUntil) || 0);
+        var normalizedState = normalizeStoredAutoSaveState(snapshot);
+        lastSubmittedPayloadByQuestion = Object.assign({}, normalizedState.lastSubmittedPayloadByQuestion);
+        pendingAnswerBatchByQuestion = Object.assign({}, normalizedState.pendingAnswerBatchByQuestion);
+        pendingAnswerBatchOrder = normalizedState.pendingAnswerBatchOrder.slice();
+        autoSaveCongestedUntil = Math.max(0, Number(normalizedState.autoSaveCongestedUntil) || 0);
+        state.lastSyncError = normalizedState.lastSyncError;
+        state.examLockedForPendingFinish = normalizedState.examLockedForPendingFinish;
+        state.syncBlockingReason = normalizedState.syncBlockingReason;
+        answerSyncRetryCount = 0;
+        syncPendingAnswerRuntimeState({
+            persist: false,
+            clearLastSyncError: false
+        });
     }
 
     async function refreshAttemptQuestionRevision(nextRevision, options) {
@@ -3933,12 +4177,7 @@
         var preservedNavQuestionFilter = normalizeNavigationQuestionFilter(state.navQuestionFilter);
         var preservedChangedQuestionLookup = Object.assign({}, state.changedQuestionLookup || {});
         var preservedAnswers = captureRevisionSafeLocalAnswers();
-        var preservedAutoSaveState = {
-            autoSaveCongestedUntil: autoSaveCongestedUntil,
-            lastSubmittedPayloadByQuestion: Object.assign({}, lastSubmittedPayloadByQuestion),
-            pendingAnswerBatchByQuestion: Object.assign({}, pendingAnswerBatchByQuestion),
-            pendingAnswerBatchOrder: pendingAnswerBatchOrder.slice()
-        };
+        var preservedAutoSaveState = buildAutoSaveStateSnapshot();
 
         questionRevisionRefreshInFlight = (async function () {
             var refreshGeneration = bumpQuestionDataGeneration();
@@ -4027,14 +4266,20 @@
                 syncAttemptUiStateSignatureToCurrentState();
                 scheduleAttemptUiStateSync(ATTEMPT_UI_STATE_SYNC_DELAY_MS);
                 if (queuedRestoredAnswerCount > 0) {
-                    scheduleAnswerBatchFlush(700);
+                    schedulePendingAnswerRetry('revision-restore', {
+                        delayMs: 700
+                    });
                 }
 
                 state.busy = false;
                 state.notice = getChangedQuestionCount() > 0
                     ? 'Perubahan soal terdeteksi. Nomor merah menandakan soal yang berubah.'
                     : '';
-                if (typeof state.error === 'string' && state.error.indexOf('Autosave') !== 0) {
+                if (
+                    typeof state.error === 'string' &&
+                    state.error.indexOf('Autosave') !== 0 &&
+                    state.error.indexOf('Sinkronisasi jawaban gagal') !== 0
+                ) {
                     state.error = '';
                 }
                 render();
@@ -4052,7 +4297,9 @@
                     state.notice = 'Perubahan soal terdeteksi. Sinkronisasi akan dicoba lagi.';
                     render();
                     if (pendingAnswerBatchOrder.length > 0) {
-                        scheduleAnswerBatchFlush(300);
+                        schedulePendingAnswerRetry('revision-refresh-retry', {
+                            delayMs: 300
+                        });
                     }
                     resetQuestionPrefetchIdleTimer();
                 }
@@ -4320,6 +4567,10 @@
         return state.stage === 'exam' && isExamCopyPasteBlocked();
     }
 
+    function isExamAnswerEditingLocked() {
+        return state.stage === 'exam' && (state.examLockedForPendingFinish || state.isFinishing);
+    }
+
     function handleBlockedClipboardAction(action, sourceEvent) {
         var safeAction = String(action || '').trim().toLowerCase();
         var safeSource = sourceEvent && sourceEvent.type ? String(sourceEvent.type) : '';
@@ -4495,8 +4746,8 @@
             return branding;
         }
 
-        branding.tag = normalizeLoginHeroSchoolTag(match[1], match[2]);
-        branding.title = String(match[3] || normalized).trim() || normalized;
+        branding.tag = '';
+        branding.title = normalized;
 
         return branding;
     }
@@ -4639,6 +4890,10 @@
         if (state.notice) {
             return '<div class="cbt-alert cbt-alert-warning">' + escapeHtml(state.notice) + '</div>';
         }
+        var syncAlertMeta = getSyncStatusAlertMeta();
+        if (syncAlertMeta) {
+            return '<div class="cbt-alert cbt-alert-' + escapeHtml(syncAlertMeta.tone || 'warning') + '">' + escapeHtml(syncAlertMeta.message || '') + '</div>';
+        }
         if (state.success) {
             return '<div class="cbt-alert cbt-alert-success">' + escapeHtml(state.success) + '</div>';
         }
@@ -4649,6 +4904,306 @@
         state.error = '';
         state.notice = '';
         state.success = '';
+    }
+
+    function getNavigatorConnectionStatus() {
+        return (window && window.navigator && window.navigator.onLine === false) ? 'offline' : 'online';
+    }
+
+    function isConnectionOffline() {
+        return state.connectionStatus === 'offline' || getNavigatorConnectionStatus() === 'offline';
+    }
+
+    function isAnswerSubmitPath(path) {
+        var normalizedPath = String(path || '').replace(/^\/+/, '');
+        return normalizedPath === 'submit_answer' || normalizedPath === 'submit_answers_batch';
+    }
+
+    function isNetworkConnectivityError(error) {
+        if (!error) {
+            return false;
+        }
+
+        if (error.isNetworkError === true) {
+            return true;
+        }
+
+        var status = Number(error.status) || 0;
+        if (status === 0) {
+            return true;
+        }
+
+        var code = String(error.code || '').toLowerCase();
+        if (code === 'network_error' || code === 'failed_to_fetch') {
+            return true;
+        }
+
+        var message = String(error.message || '').toLowerCase();
+        return (
+            message.indexOf('failed to fetch') >= 0 ||
+            message.indexOf('networkerror') >= 0 ||
+            message.indexOf('load failed') >= 0 ||
+            message.indexOf('network request failed') >= 0 ||
+            message.indexOf('koneksi') >= 0
+        );
+    }
+
+    function isRetryableAnswerSyncError(error) {
+        return isNetworkConnectivityError(error);
+    }
+
+    function shouldFallbackToLegacyBatch(error) {
+        if (!error || isRetryableAnswerSyncError(error)) {
+            return false;
+        }
+
+        var status = Number(error.status) || 0;
+        var code = String(error.code || '');
+        return (
+            status >= 500 ||
+            status === 503 ||
+            status === 429 ||
+            code === 'runtime_buffer_unavailable'
+        );
+    }
+
+    function getPendingAnswerBatchCount() {
+        var pendingLookup = Object.keys(pendingAnswerBatchByQuestion || {}).reduce(function (lookup, key) {
+            var questionId = Number(key) || 0;
+            if (questionId > 0) {
+                lookup[questionId] = true;
+            }
+            return lookup;
+        }, {});
+
+        (Array.isArray(answerBatchInFlightItems) ? answerBatchInFlightItems : []).forEach(function (item) {
+            var questionId = Number(item && item.question_id) || 0;
+            if (questionId > 0) {
+                pendingLookup[questionId] = true;
+            }
+        });
+
+        return Object.keys(pendingLookup).length;
+    }
+
+    function resolveSyncBlockingReason() {
+        if (state.stage !== 'exam' || state.attemptId <= 0) {
+            return '';
+        }
+
+        if (state.examLockedForPendingFinish) {
+            if (state.isFinishing) {
+                return 'finish_finalizing';
+            }
+            if (isConnectionOffline()) {
+                return 'finish_wait_online';
+            }
+            if (state.pendingSyncCount > 0) {
+                return 'finish_pending_sync';
+            }
+            return 'finish_ready';
+        }
+
+        if (state.pendingSyncCount > 0) {
+            return isConnectionOffline() ? 'offline_pending_sync' : 'pending_sync';
+        }
+
+        if (isConnectionOffline()) {
+            return 'offline';
+        }
+
+        return '';
+    }
+
+    function syncPendingAnswerRuntimeState(options) {
+        options = options || {};
+
+        state.pendingSyncCount = getPendingAnswerBatchCount();
+        state.syncBlockingReason = resolveSyncBlockingReason();
+
+        if (
+            state.pendingSyncCount <= 0 &&
+            !state.examLockedForPendingFinish &&
+            state.connectionStatus === 'online' &&
+            options.clearLastSyncError !== false
+        ) {
+            state.lastSyncError = '';
+        }
+
+        if (options.persist !== false) {
+            scheduleQuestionCachePersist(options.delayMs);
+        }
+
+        if (options.render && state.stage === 'exam') {
+            render();
+        }
+    }
+
+    function setConnectionStatus(nextStatus, options) {
+        options = options || {};
+
+        var normalizedStatus = String(nextStatus || '').toLowerCase() === 'offline' ? 'offline' : 'online';
+        var hasChanged = state.connectionStatus !== normalizedStatus;
+        state.connectionStatus = normalizedStatus;
+        syncPendingAnswerRuntimeState({
+            persist: options.persist,
+            clearLastSyncError: normalizedStatus !== 'offline',
+            render: false
+        });
+
+        if (normalizedStatus === 'online' && options.triggerRetry !== false) {
+            schedulePendingAnswerRetry(options.reason || 'connection-online', {
+                immediate: options.immediate !== false,
+                resetBackoff: true
+            });
+        }
+
+        if ((hasChanged || options.forceRender) && options.render !== false && state.stage === 'exam') {
+            render();
+        }
+
+        return hasChanged;
+    }
+
+    function getSyncStatusAlertMeta() {
+        if (state.stage !== 'exam' || state.attemptId <= 0) {
+            return null;
+        }
+
+        var pendingCount = Math.max(0, Number(state.pendingSyncCount) || 0);
+        var lastSyncError = String(state.lastSyncError || '').trim();
+        var message = '';
+
+        if (state.examLockedForPendingFinish) {
+            if (state.isFinishing) {
+                message = 'Finalisasi ujian sedang diproses.';
+            } else if (state.connectionStatus === 'offline' && pendingCount > 0) {
+                message = 'Waktu habis. Jawaban dikunci di perangkat ini dan ' + String(pendingCount) + ' jawaban akan dikirim lagi saat koneksi kembali.';
+            } else if (state.connectionStatus === 'offline') {
+                message = 'Waktu habis. Jawaban dikunci dan ujian akan difinalkan saat koneksi kembali.';
+            } else if (pendingCount > 0) {
+                message = 'Waktu habis. Jawaban dikunci dan ' + String(pendingCount) + ' jawaban menunggu sinkronisasi sebelum ujian dikumpulkan.';
+            } else {
+                message = 'Jawaban sudah sinkron. Ujian akan segera difinalkan.';
+            }
+        } else if (state.connectionStatus === 'offline' && pendingCount > 0) {
+            message = 'Offline, jawaban tersimpan di perangkat ini. ' + String(pendingCount) + ' jawaban menunggu koneksi.';
+        } else if (state.connectionStatus === 'offline') {
+            message = 'Koneksi terputus. Anda masih bisa mengerjakan soal yang sudah tersimpan di perangkat ini.';
+        } else if (pendingCount > 0) {
+            message = 'Sinkronisasi berjalan. ' + String(pendingCount) + ' jawaban menunggu dikirim ke server.';
+        }
+
+        if (message === '') {
+            return null;
+        }
+
+        if (lastSyncError !== '' && pendingCount > 0 && message.indexOf(lastSyncError) < 0) {
+            message += ' Terakhir: ' + lastSyncError;
+        }
+
+        return {
+            tone: 'warning',
+            message: message
+        };
+    }
+
+    function getExamFooterSyncMeta() {
+        var pendingCount = Math.max(0, Number(state.pendingSyncCount) || 0);
+        var offline = isConnectionOffline();
+        var syncAlertMeta = getSyncStatusAlertMeta();
+        var defaultTitle = 'Semua jawaban sudah sinkron dengan server.';
+        var title = syncAlertMeta && syncAlertMeta.message
+            ? String(syncAlertMeta.message)
+            : defaultTitle;
+
+        if (state.examLockedForPendingFinish) {
+            if (state.isFinishing) {
+                return {
+                    label: 'Final',
+                    value: 'Proses',
+                    note: 'Sedang kirim',
+                    tone: 'is-finalizing',
+                    title: title
+                };
+            }
+
+            if (offline && pendingCount > 0) {
+                return {
+                    label: 'Final',
+                    value: 'Tertahan',
+                    note: String(pendingCount) + ' pending',
+                    tone: 'is-offline',
+                    title: title
+                };
+            }
+
+            if (offline) {
+                return {
+                    label: 'Final',
+                    value: 'Offline',
+                    note: 'Tunggu koneksi',
+                    tone: 'is-offline',
+                    title: title
+                };
+            }
+
+            if (pendingCount > 0) {
+                return {
+                    label: 'Final',
+                    value: String(pendingCount) + ' pending',
+                    note: 'Menunggu final',
+                    tone: 'is-finalizing',
+                    title: title
+                };
+            }
+
+            return {
+                label: 'Final',
+                value: 'Siap',
+                note: 'Finalisasi',
+                tone: 'is-finalizing',
+                title: title
+            };
+        }
+
+        if (offline && pendingCount > 0) {
+            return {
+                label: 'Sinkron',
+                value: String(pendingCount) + ' pending',
+                note: 'Offline lokal',
+                tone: 'is-offline',
+                title: title
+            };
+        }
+
+        if (offline) {
+            return {
+                label: 'Sinkron',
+                value: 'Offline',
+                note: 'Lokal aman',
+                tone: 'is-offline',
+                title: title
+            };
+        }
+
+        if (pendingCount > 0) {
+            return {
+                label: 'Sinkron',
+                value: String(pendingCount) + ' pending',
+                note: 'Menunggu server',
+                tone: 'is-pending',
+                title: title
+            };
+        }
+
+        return {
+            label: 'Sinkron',
+            value: 'Online',
+            note: 'Semua aman',
+            tone: 'is-online',
+            title: title
+        };
     }
 
     function getSelectedExam() {
@@ -4929,6 +5484,7 @@
         var inputId = 'cbt_short_' + safeQuestionId + '_' + safeKey + '_' + safeInstance;
         var wrapperClass = 'cbt-short-inline-field' + (isFallback ? ' is-fallback' : '');
         var keyChip = isFallback ? ('<span class="cbt-short-inline-key">' + escapeHtml(safeKey) + '</span>') : '';
+        var disabledAttr = isExamAnswerEditingLocked() ? ' disabled' : '';
 
         return [
             '<span class="' + wrapperClass + '">',
@@ -4942,6 +5498,7 @@
             ' value="' + escapeHtml(String(value || '')) + '"',
             ' aria-label="Input ' + escapeHtml(safeKey) + '"',
             ' placeholder="' + escapeHtml(safeKey) + '"',
+            disabledAttr,
             ' />',
             '</span>'
         ].join('');
@@ -5403,7 +5960,7 @@
     }
 
     function openFinishConfirmModal() {
-        if (state.stage !== 'exam' || state.isFinishing) {
+        if (state.stage !== 'exam' || state.isFinishing || state.examLockedForPendingFinish) {
             return;
         }
         state.finishConfirmSummary = getExamProgressSummary();
@@ -5653,6 +6210,14 @@
         pendingAnswerBatchByQuestion = {};
         pendingAnswerBatchOrder = [];
         answerBatchFlushInFlight = null;
+        answerBatchInFlightItems = [];
+        answerSyncRetryCount = 0;
+        state.lastSyncError = '';
+        state.examLockedForPendingFinish = false;
+        state.pendingFinishAutoSubmit = false;
+        syncPendingAnswerRuntimeState({
+            persist: false
+        });
     }
 
     function initializeSubmittedPayloadCache() {
@@ -5665,6 +6230,9 @@
             }
             return accumulator;
         }, []));
+        syncPendingAnswerRuntimeState({
+            persist: false
+        });
     }
 
     function queueLoadedQuestionAnswersForFlush() {
@@ -5727,6 +6295,93 @@
         return Math.max(waitMs, AUTO_SAVE_TEXT_DELAY_CONGESTED_MS);
     }
 
+    function getPendingAnswerRetryDelay() {
+        var retryStep = Math.max(0, Number(answerSyncRetryCount) || 0);
+        if (retryStep <= 0) {
+            return ANSWER_SYNC_RETRY_BASE_DELAY_MS;
+        }
+        return Math.min(
+            ANSWER_SYNC_RETRY_MAX_DELAY_MS,
+            ANSWER_SYNC_RETRY_BASE_DELAY_MS * Math.pow(2, retryStep - 1)
+        );
+    }
+
+    function schedulePendingAnswerRetry(reason, options) {
+        options = options || {};
+
+        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || isQuestionRevisionRefreshActive()) {
+            return;
+        }
+
+        syncPendingAnswerRuntimeState({
+            persist: options.persist,
+            clearLastSyncError: false
+        });
+
+        if (state.pendingSyncCount <= 0) {
+            maybeFinalizeLockedExam(reason || 'sync-empty');
+            return;
+        }
+
+        if (getNavigatorConnectionStatus() === 'offline') {
+            return;
+        }
+
+        if (options.resetBackoff) {
+            answerSyncRetryCount = 0;
+        } else if (!options.immediate) {
+            answerSyncRetryCount = Math.min(8, answerSyncRetryCount + 1);
+        }
+
+        var delayMs = options.delayMs !== undefined
+            ? Math.max(0, Number(options.delayMs) || 0)
+            : (options.immediate ? 200 : getPendingAnswerRetryDelay());
+        scheduleAnswerBatchFlush(delayMs);
+    }
+
+    function handleRecoverableAnswerSyncFailure(error, options) {
+        options = options || {};
+
+        state.lastSyncError = error instanceof Error && error.message
+            ? error.message
+            : 'Koneksi terputus. Jawaban disimpan lokal.';
+        markAutoSaveCongested();
+        setConnectionStatus('offline', {
+            persist: false,
+            render: false,
+            triggerRetry: false
+        });
+        syncPendingAnswerRuntimeState({
+            persist: options.persist !== false,
+            clearLastSyncError: false
+        });
+        schedulePendingAnswerRetry(options.reason || 'sync-failure', {
+            immediate: false
+        });
+
+        if (options.render !== false && state.stage === 'exam') {
+            render();
+        }
+    }
+
+    function noteSuccessfulAnswerSync(options) {
+        options = options || {};
+        answerSyncRetryCount = 0;
+        state.lastSyncError = '';
+        if (typeof state.error === 'string' && state.error.indexOf('Sinkronisasi jawaban gagal') === 0) {
+            state.error = '';
+        }
+        setConnectionStatus('online', {
+            persist: false,
+            render: false,
+            triggerRetry: false
+        });
+        syncPendingAnswerRuntimeState({
+            persist: options.persist !== false
+        });
+        maybeFinalizeLockedExam(options.reason || 'answer-sync-success');
+    }
+
     function scheduleAnswerBatchFlush(delayMs) {
         if (isQuestionRevisionRefreshActive()) {
             return;
@@ -5776,6 +6431,10 @@
             pendingAnswerBatchOrder.push(questionId);
         }
 
+        syncPendingAnswerRuntimeState({
+            persist: true,
+            clearLastSyncError: false
+        });
         return true;
     }
 
@@ -5815,6 +6474,11 @@
                 pendingAnswerBatchOrder.unshift(questionId);
             }
         }
+
+        syncPendingAnswerRuntimeState({
+            persist: true,
+            clearLastSyncError: false
+        });
     }
 
     function applySubmittedBatchItems(items, responseItems, options) {
@@ -5849,6 +6513,11 @@
             if (responseByQuestion[questionId] && Number(responseByQuestion[questionId].deferred) === 1) {
                 markAutoSaveCongested();
             }
+        });
+
+        noteSuccessfulAnswerSync({
+            persist: true,
+            reason: 'batch-submitted'
         });
     }
 
@@ -5908,30 +6577,34 @@
                 }
             });
 
+            answerBatchInFlightItems = [];
             applySubmittedBatchItems(items, batchResponse && Array.isArray(batchResponse.items) ? batchResponse.items : [], {
                 questionDataGeneration: requestGeneration
             });
-            if (
-                requestGeneration === questionDataGeneration &&
-                typeof state.error === 'string' &&
-                state.error.indexOf('Autosave') === 0
-            ) {
-                state.error = '';
-            }
             return batchResponse;
         } catch (batchError) {
+            if (isRetryableAnswerSyncError(batchError) || !shouldFallbackToLegacyBatch(batchError)) {
+                answerBatchInFlightItems = [];
+                if (requestGeneration === questionDataGeneration) {
+                    requeuePendingAnswerBatchItems(items);
+                }
+                throw batchError;
+            }
+
             markAutoSaveCongested();
 
             try {
                 var legacyResponse = await submitLegacyAnswerBatch(items, options);
+                answerBatchInFlightItems = [];
                 applySubmittedBatchItems(items, legacyResponse.items || [], {
                     questionDataGeneration: requestGeneration
                 });
                 if (requestGeneration === questionDataGeneration) {
-                    state.error = 'Autosave batch melambat. Sistem memakai mode aman sementara.';
+                    state.lastSyncError = '';
                 }
                 return legacyResponse;
             } catch (legacyError) {
+                answerBatchInFlightItems = [];
                 if (requestGeneration === questionDataGeneration) {
                     requeuePendingAnswerBatchItems(items);
                 }
@@ -5992,24 +6665,41 @@
                 keepalive: keepalive,
                 questionDataGeneration: requestGeneration
             });
+            answerBatchInFlightItems = items.slice();
 
             var result;
             try {
                 result = await answerBatchFlushInFlight;
             } catch (error) {
                 if (requestGeneration === questionDataGeneration) {
-                    state.error = error instanceof Error ? ('Autosave gagal: ' + error.message) : 'Autosave gagal. Coba cek jaringan.';
-                    render();
+                    if (isRetryableAnswerSyncError(error)) {
+                        handleRecoverableAnswerSyncFailure(error, {
+                            reason: 'flush-failed',
+                            render: true
+                        });
+                    } else {
+                        state.lastSyncError = error instanceof Error && error.message ? error.message : 'Sinkronisasi jawaban gagal.';
+                        state.error = error instanceof Error ? ('Sinkronisasi jawaban gagal: ' + error.message) : 'Sinkronisasi jawaban gagal.';
+                        syncPendingAnswerRuntimeState({
+                            persist: true,
+                            clearLastSyncError: false
+                        });
+                        render();
+                    }
                 }
                 throw error;
             } finally {
                 answerBatchFlushInFlight = null;
+                answerBatchInFlightItems = [];
             }
 
             if (!flushAll || pendingAnswerBatchOrder.length <= 0) {
                 if (pendingAnswerBatchOrder.length > 0) {
-                    scheduleAnswerBatchFlush(300);
+                    schedulePendingAnswerRetry('flush-remaining', {
+                        delayMs: 300
+                    });
                 }
+                maybeFinalizeLockedExam('flush-complete');
                 return result;
             }
         }
@@ -6017,7 +6707,7 @@
 
     function scheduleAutoSave(questionId, delayMs) {
         var qid = Number(questionId) || 0;
-        if (qid <= 0 || state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || isQuestionRevisionRefreshActive()) {
+        if (qid <= 0 || state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || state.examLockedForPendingFinish || isQuestionRevisionRefreshActive()) {
             return;
         }
 
@@ -6044,6 +6734,7 @@
             || state.stage !== 'exam'
             || state.attemptId <= 0
             || state.isFinishing
+            || state.examLockedForPendingFinish
             || isQuestionRevisionRefreshActive()
             || requestGeneration !== questionDataGeneration
         ) {
@@ -6070,25 +6761,34 @@
                     questionDataGeneration: requestGeneration
                 });
             } else if (queued) {
-                scheduleAnswerBatchFlush(150);
-            }
-
-            if (
-                requestGeneration === questionDataGeneration &&
-                typeof state.error === 'string' &&
-                state.error.indexOf('Autosave gagal') === 0
-            ) {
-                state.error = '';
+                schedulePendingAnswerRetry('autosave-queued', {
+                    delayMs: 150
+                });
             }
         } catch (error) {
             if (requestGeneration !== questionDataGeneration) {
                 return;
             }
-            state.error = error instanceof Error ? ('Autosave gagal: ' + error.message) : 'Autosave gagal. Coba cek jaringan.';
+
+            if (isRetryableAnswerSyncError(error)) {
+                handleRecoverableAnswerSyncFailure(error, {
+                    reason: 'autosave',
+                    render: true
+                });
+                if (!options.immediate) {
+                    scheduleAutoSave(qid, 2600);
+                }
+                return;
+            }
+
+            state.lastSyncError = error instanceof Error && error.message ? error.message : 'Sinkronisasi jawaban gagal.';
+            state.error = error instanceof Error ? ('Sinkronisasi jawaban gagal: ' + error.message) : 'Sinkronisasi jawaban gagal.';
             markAutoSaveCongested();
-            if (!options.immediate) {
-                scheduleAutoSave(qid, 2600);
-            } else {
+            syncPendingAnswerRuntimeState({
+                persist: true,
+                clearLastSyncError: false
+            });
+            if (options.immediate) {
                 throw error;
             }
         }
@@ -6109,6 +6809,9 @@
         if (state.remainingSeconds <= 0) {
             state.remainingSeconds = 0;
             updateTimerLabel();
+            if (!state.isFinishing && !state.examLockedForPendingFinish && state.stage === 'exam') {
+                handleFinish(true);
+            }
             return;
         }
 
@@ -6122,7 +6825,7 @@
                 state.remainingSeconds = 0;
                 updateTimerLabel();
                 stopTimer();
-                if (!state.isFinishing) {
+                if (!state.isFinishing && !state.examLockedForPendingFinish) {
                     handleFinish(true);
                 }
                 return;
@@ -6191,6 +6894,7 @@
         state.calculatorResult = '';
         state.calculatorError = '';
         state.isFullscreenActive = false;
+        state.pendingFinishAutoSubmit = false;
         if (previousAttemptId > 0 && state.stage !== 'exam') {
             clearPersistedAttemptUiState(previousAttemptId);
             clearPersistedQuestionCache(previousAttemptId);
@@ -6242,6 +6946,7 @@
         state.calculatorResult = '';
         state.calculatorError = '';
         state.isFullscreenActive = false;
+        state.pendingFinishAutoSubmit = false;
         if (previousAttemptId > 0) {
             clearPersistedAttemptUiState(previousAttemptId);
             clearPersistedQuestionCache(previousAttemptId);
@@ -6264,6 +6969,12 @@
 
     async function fullLogout() {
         var activeToken = String(state.token || '');
+
+        if (state.stage === 'exam' && state.examLockedForPendingFinish) {
+            state.error = 'Logout diblokir sementara jawaban terakhir masih menunggu sinkronisasi/finalisasi.';
+            render();
+            return;
+        }
 
         if (state.stage === 'exam' && state.attemptId > 0 && !state.isFinishing) {
             state.busy = true;
@@ -6566,23 +7277,39 @@
             includeExisting: includeExisting,
             limit: QUESTION_WINDOW_SIZE
         });
-        initializeSubmittedPayloadCache();
+        if (!restoredQuestionCache) {
+            initializeSubmittedPayloadCache();
+        }
         var queuedCachedAnswerCount = restoredQuestionCache ? queueLoadedQuestionAnswersForFlush() : 0;
 
         state.stage = 'exam';
+        state.isFinishing = false;
         state.error = '';
         state.notice = '';
         state.success = '';
+        setConnectionStatus(getNavigatorConnectionStatus(), {
+            persist: false,
+            render: false,
+            triggerRetry: false
+        });
+        syncPendingAnswerRuntimeState({
+            persist: false,
+            clearLastSyncError: false
+        });
         persistAuthSession();
         persistCurrentAttemptUiStateLocally();
         persistCurrentQuestionCacheLocally();
         scheduleAttemptUiStateSync(ATTEMPT_UI_STATE_SYNC_DELAY_MS);
-        if (queuedCachedAnswerCount > 0) {
-            scheduleAnswerBatchFlush(700);
+        if (queuedCachedAnswerCount > 0 || state.pendingSyncCount > 0 || state.examLockedForPendingFinish) {
+            schedulePendingAnswerRetry('open-attempt', {
+                delayMs: 700,
+                resetBackoff: true
+            });
         }
         startSessionHeartbeat();
         startTimer();
         resetQuestionPrefetchIdleTimer();
+        maybeFinalizeLockedExam('open-attempt');
     }
 
     async function tryResumeExamCandidate(exam) {
@@ -6820,21 +7547,23 @@
         var currentQuestion = getQuestionAtIndex(state.currentIndex);
         if (currentQuestion) {
             var currentQuestionId = Number(currentQuestion.id) || 0;
-            if (currentQuestionId > 0) {
-                try {
-                    await runAutoSave(currentQuestionId, {
-                        force: true,
-                        immediate: true
-                    });
-                } catch (error) {
-                    render();
-                    return;
-                }
+            if (currentQuestionId > 0 && queueQuestionAnswer(currentQuestion, { force: true })) {
+                scheduleQuestionCachePersist(0);
+                schedulePendingAnswerRetry('question-navigation', {
+                    delayMs: 150
+                });
             }
         }
 
         var targetQuestionId = getQuestionIdAtIndex(safeIndex);
         var requiresWindowLoad = !isQuestionPayloadLoaded(targetQuestionId);
+        if (requiresWindowLoad && getNavigatorConnectionStatus() === 'offline') {
+            state.error = '';
+            state.notice = 'Koneksi terputus. Soal tujuan belum tersimpan di perangkat ini.';
+            render();
+            return;
+        }
+
         if (requiresWindowLoad) {
             state.busy = true;
             render();
@@ -6846,7 +7575,12 @@
                 });
             } catch (error) {
                 state.busy = false;
-                state.error = error instanceof Error ? error.message : 'Gagal memuat soal.';
+                if (isNetworkConnectivityError(error)) {
+                    state.error = '';
+                    state.notice = 'Koneksi terputus. Soal tujuan belum tersimpan di perangkat ini.';
+                } else {
+                    state.error = error instanceof Error ? error.message : 'Gagal memuat soal.';
+                }
                 render();
                 return;
             }
@@ -6856,7 +7590,9 @@
 
         state.currentIndex = safeIndex;
         setActiveQuestionWindowForIndex(safeIndex, QUESTION_WINDOW_SIZE);
-        state.error = '';
+        if (state.notice === 'Koneksi terputus. Soal tujuan belum tersimpan di perangkat ini.') {
+            state.notice = '';
+        }
         persistCurrentAttemptUiStateLocally();
         scheduleAttemptUiStateSync(ATTEMPT_UI_STATE_NAVIGATION_SYNC_DELAY_MS);
         render();
@@ -6864,23 +7600,104 @@
         resetQuestionPrefetchIdleTimer();
     }
 
-    async function handleFinish(autoSubmit, options) {
-        options = options || {};
-        var skipConfirmation = !!options.skipConfirmation;
+    function queueAnsweredQuestionsForFinalSync() {
+        for (var index = 0; index < getQuestionCount(); index++) {
+            var question = getQuestionAtIndex(index);
+            if (!isQuestionAnswered(question)) {
+                continue;
+            }
+            queueQuestionAnswer(question, { force: true });
+        }
 
-        if (state.isFinishing) {
+        syncPendingAnswerRuntimeState({
+            persist: true,
+            clearLastSyncError: false
+        });
+    }
+
+    async function buildFinishedResultPayload(finishPayload) {
+        var resolvedAttemptId = Number(finishPayload && finishPayload.attempt_id) || Number(state.attemptId) || 0;
+        var resultPayload = {
+            attempt_id: resolvedAttemptId,
+            status: String(finishPayload && finishPayload.status ? finishPayload.status : 'completed'),
+            score: Number(finishPayload && finishPayload.score !== undefined ? finishPayload.score : 0),
+            max_score: Number(finishPayload && finishPayload.max_score !== undefined ? finishPayload.max_score : 0),
+            percentage: Number(finishPayload && finishPayload.percentage !== undefined ? finishPayload.percentage : 0),
+            finished_at: String(finishPayload && finishPayload.finished_at ? finishPayload.finished_at : ''),
+            review_items: [],
+            review_summary: null
+        };
+
+        if (resolvedAttemptId > 0) {
+            clearPersistedAttemptUiState(resolvedAttemptId);
+            clearPersistedQuestionCache(resolvedAttemptId);
+            try {
+                var reviewPayload = await api('result', {
+                    query: {
+                        attempt_id: resolvedAttemptId
+                    }
+                });
+
+                if (reviewPayload && typeof reviewPayload === 'object') {
+                    resultPayload.attempt = reviewPayload.attempt || null;
+                    resultPayload.exam = reviewPayload.exam || null;
+                    resultPayload.answers = Array.isArray(reviewPayload.answers) ? reviewPayload.answers : [];
+                    resultPayload.review_items = Array.isArray(reviewPayload.review_items) ? reviewPayload.review_items : [];
+                    resultPayload.review_summary = reviewPayload.review_summary && typeof reviewPayload.review_summary === 'object'
+                        ? reviewPayload.review_summary
+                        : null;
+
+                    if (
+                        resultPayload.attempt &&
+                        typeof resultPayload.attempt === 'object' &&
+                        Number.isFinite(Number(resultPayload.attempt.score)) &&
+                        Number.isFinite(Number(resultPayload.attempt.max_score))
+                    ) {
+                        resultPayload.score = Number(resultPayload.attempt.score);
+                        resultPayload.max_score = Number(resultPayload.attempt.max_score);
+                    }
+                }
+            } catch (reviewError) {
+                resultPayload.review_items = [];
+                resultPayload.review_summary = null;
+            }
+        }
+
+        return resultPayload;
+    }
+
+    function completeExamWithResult(resultPayload) {
+        var autoSubmit = !!state.pendingFinishAutoSubmit;
+        state.result = resultPayload;
+        state.stage = 'result';
+        state.isFinishing = false;
+        clearAutoSaveRuntimeState();
+        state.pendingFinishAutoSubmit = false;
+        exitFullscreenSilently();
+        syncFullscreenState(false);
+        state.success = autoSubmit ? 'Waktu habis. Ujian otomatis diselesaikan.' : 'Ujian selesai.';
+        state.error = '';
+    }
+
+    function shouldUnlockExamAfterFinishFailure() {
+        return !state.pendingFinishAutoSubmit && state.remainingSeconds > 0;
+    }
+
+    async function finalizeExamAfterSync() {
+        if (
+            state.stage !== 'exam'
+            || state.attemptId <= 0
+            || state.isFinishing
+            || !state.examLockedForPendingFinish
+            || state.pendingSyncCount > 0
+            || !!answerBatchFlushInFlight
+            || getNavigatorConnectionStatus() === 'offline'
+        ) {
             return;
         }
 
-        if (!autoSubmit && !skipConfirmation) {
-            openFinishConfirmModal();
-            return;
-        }
-
-        state.finishConfirmOpen = false;
-        state.finishConfirmSummary = null;
+        var autoSubmit = !!state.pendingFinishAutoSubmit;
         state.isFinishing = true;
-        clearAllAutoSaveTimers();
         clearQuestionPrefetchRuntimeState();
         clearAttemptUiStateSyncTimer();
         clearQuestionCachePersistTimer();
@@ -6895,17 +7712,8 @@
                     allowWhileFinishing: true
                 });
             } catch (error) {
-                // Finishing the exam is higher priority; local fallback remains available.
+                // Local fallback tetap tersedia.
             }
-
-            for (var i = 0; i < getQuestionCount(); i++) {
-                var question = getQuestionAtIndex(i);
-                if (!isQuestionAnswered(question)) {
-                    continue;
-                }
-                queueQuestionAnswer(question, { force: true });
-            }
-            await flushPendingAnswerBatch({ flushAll: true });
 
             var finishPayload = await api('finish_exam', {
                 method: 'POST',
@@ -6913,64 +7721,156 @@
                     attempt_id: state.attemptId
                 }
             });
+            var resultPayload = await buildFinishedResultPayload(finishPayload);
+            completeExamWithResult(resultPayload);
+            state.success = autoSubmit ? 'Waktu habis. Ujian otomatis diselesaikan.' : 'Ujian selesai.';
+        } catch (error) {
+            state.isFinishing = false;
 
-            var resolvedAttemptId = Number(finishPayload && finishPayload.attempt_id) || Number(state.attemptId) || 0;
-            var resultPayload = {
-                attempt_id: resolvedAttemptId,
-                status: String(finishPayload && finishPayload.status ? finishPayload.status : 'completed'),
-                score: Number(finishPayload && finishPayload.score !== undefined ? finishPayload.score : 0),
-                max_score: Number(finishPayload && finishPayload.max_score !== undefined ? finishPayload.max_score : 0),
-                percentage: Number(finishPayload && finishPayload.percentage !== undefined ? finishPayload.percentage : 0),
-                finished_at: String(finishPayload && finishPayload.finished_at ? finishPayload.finished_at : ''),
-                review_items: [],
-                review_summary: null
-            };
-
-            if (resolvedAttemptId > 0) {
-                clearPersistedAttemptUiState(resolvedAttemptId);
-                clearPersistedQuestionCache(resolvedAttemptId);
+            if (isNetworkConnectivityError(error)) {
+                state.lastSyncError = error instanceof Error && error.message ? error.message : 'Koneksi terputus.';
+                setConnectionStatus('offline', {
+                    persist: false,
+                    render: false,
+                    triggerRetry: false
+                });
+                syncPendingAnswerRuntimeState({
+                    persist: true,
+                    clearLastSyncError: false
+                });
+                schedulePendingAnswerRetry('finish-request-retry', {
+                    immediate: false
+                });
+            } else if (error && error.code === 'attempt_closed') {
                 try {
-                    var reviewPayload = await api('result', {
-                        query: {
-                            attempt_id: resolvedAttemptId
-                        }
+                    var recoveredResultPayload = await buildFinishedResultPayload({
+                        attempt_id: state.attemptId,
+                        status: 'completed'
                     });
-
-                    if (reviewPayload && typeof reviewPayload === 'object') {
-                        resultPayload.attempt = reviewPayload.attempt || null;
-                        resultPayload.exam = reviewPayload.exam || null;
-                        resultPayload.answers = Array.isArray(reviewPayload.answers) ? reviewPayload.answers : [];
-                        resultPayload.review_items = Array.isArray(reviewPayload.review_items) ? reviewPayload.review_items : [];
-                        resultPayload.review_summary = reviewPayload.review_summary && typeof reviewPayload.review_summary === 'object'
-                            ? reviewPayload.review_summary
-                            : null;
-
-                        if (
-                            resultPayload.attempt &&
-                            typeof resultPayload.attempt === 'object' &&
-                            Number.isFinite(Number(resultPayload.attempt.score)) &&
-                            Number.isFinite(Number(resultPayload.attempt.max_score))
-                        ) {
-                            resultPayload.score = Number(resultPayload.attempt.score);
-                            resultPayload.max_score = Number(resultPayload.attempt.max_score);
-                        }
+                    completeExamWithResult(recoveredResultPayload);
+                    state.success = autoSubmit ? 'Waktu habis. Ujian otomatis diselesaikan.' : 'Ujian selesai.';
+                } catch (resultError) {
+                    state.error = resultError instanceof Error ? resultError.message : 'Ujian sudah selesai, tetapi hasil tidak bisa dimuat.';
+                }
+            } else {
+                state.lastSyncError = error instanceof Error && error.message ? error.message : 'Gagal menyelesaikan ujian.';
+                state.error = error instanceof Error ? error.message : 'Gagal menyelesaikan ujian.';
+                if (shouldUnlockExamAfterFinishFailure()) {
+                    state.examLockedForPendingFinish = false;
+                    state.pendingFinishAutoSubmit = false;
+                    if (state.stage === 'exam') {
+                        startTimer();
                     }
-                } catch (reviewError) {
-                    resultPayload.review_items = [];
-                    resultPayload.review_summary = null;
+                }
+                syncPendingAnswerRuntimeState({
+                    persist: true,
+                    clearLastSyncError: false
+                });
+            }
+        } finally {
+            render();
+        }
+    }
+
+    function maybeFinalizeLockedExam(reason) {
+        if (
+            state.stage !== 'exam'
+            || state.attemptId <= 0
+            || !state.examLockedForPendingFinish
+            || state.isFinishing
+            || state.pendingSyncCount > 0
+            || !!answerBatchFlushInFlight
+            || getNavigatorConnectionStatus() === 'offline'
+        ) {
+            return;
+        }
+
+        finalizeExamAfterSync().catch(function () {
+            // Error ditangani di finalizeExamAfterSync.
+        });
+    }
+
+    async function handleFinish(autoSubmit, options) {
+        options = options || {};
+        var skipConfirmation = !!options.skipConfirmation;
+
+        if (state.isFinishing) {
+            return;
+        }
+
+        if (!autoSubmit && !skipConfirmation && !state.examLockedForPendingFinish) {
+            openFinishConfirmModal();
+            return;
+        }
+
+        state.finishConfirmOpen = false;
+        state.finishConfirmSummary = null;
+        state.examLockedForPendingFinish = true;
+        state.pendingFinishAutoSubmit = !!autoSubmit;
+        clearAllAutoSaveTimers();
+        clearQuestionPrefetchRuntimeState();
+        clearAttemptUiStateSyncTimer();
+        clearQuestionCachePersistTimer();
+        clearMessages();
+        stopTimer();
+        queueAnsweredQuestionsForFinalSync();
+        persistCurrentQuestionCacheLocally();
+        render();
+
+        try {
+            try {
+                await flushAttemptUiState({
+                    force: true,
+                    allowWhileFinishing: true
+                });
+            } catch (error) {
+                // Local fallback tetap tersedia.
+            }
+
+            if (getNavigatorConnectionStatus() === 'offline') {
+                syncPendingAnswerRuntimeState({
+                    persist: true,
+                    clearLastSyncError: false
+                });
+                render();
+                return;
+            }
+
+            if (state.pendingSyncCount > 0) {
+                try {
+                    await flushPendingAnswerBatch({ flushAll: true });
+                } catch (error) {
+                    if (isRetryableAnswerSyncError(error)) {
+                        handleRecoverableAnswerSyncFailure(error, {
+                            reason: 'finish-flush-retry',
+                            render: true
+                        });
+                    } else {
+                        state.lastSyncError = error instanceof Error && error.message ? error.message : 'Sinkronisasi jawaban gagal.';
+                        state.error = error instanceof Error ? error.message : 'Sinkronisasi jawaban gagal.';
+                        if (shouldUnlockExamAfterFinishFailure()) {
+                            state.examLockedForPendingFinish = false;
+                            state.pendingFinishAutoSubmit = false;
+                            if (state.stage === 'exam') {
+                                startTimer();
+                            }
+                        }
+                        syncPendingAnswerRuntimeState({
+                            persist: true,
+                            clearLastSyncError: false
+                        });
+                        render();
+                    }
+                    return;
                 }
             }
 
-            state.result = resultPayload;
-            state.stage = 'result';
-            exitFullscreenSilently();
-            syncFullscreenState(false);
-            state.success = autoSubmit ? 'Waktu habis. Ujian otomatis diselesaikan.' : 'Ujian selesai.';
-            state.error = '';
+            maybeFinalizeLockedExam('finish-request');
         } catch (error) {
             state.error = error instanceof Error ? error.message : 'Gagal menyelesaikan ujian.';
-            state.isFinishing = false;
-            if (state.stage === 'exam') {
+            if (shouldUnlockExamAfterFinishFailure() && state.stage === 'exam') {
+                state.examLockedForPendingFinish = false;
+                state.pendingFinishAutoSubmit = false;
                 startTimer();
             }
         } finally {
@@ -7167,7 +8067,6 @@
 
     function renderTopbar() {
         var userName = getCurrentUserName();
-        var userRole = getCurrentUserRole();
         var userPhoto = getCurrentUserPhoto();
         var userInitial = getUserInitial(userName);
         var schoolName = getConfiguredSchoolName();
@@ -7180,7 +8079,7 @@
             userPhoto !== ''
                 ? '<button class="cbt-user-chip-photo-button" data-action="open-user-photo" type="button" aria-label="Lihat foto profil ukuran besar"><img class="cbt-user-chip-photo" src="' + escapeHtml(userPhoto) + '" alt="' + escapeHtml(userName) + '" loading="lazy" decoding="async" /></button>'
                 : '<span class="cbt-user-chip-fallback" aria-hidden="true">' + escapeHtml(userInitial) + '</span>',
-            '<button class="cbt-user-chip-name-button" data-action="open-user-photo" type="button" aria-label="Lihat informasi peserta">' + escapeHtml(userName) + ' (' + escapeHtml(userRole) + ')</button>',
+            '<button class="cbt-user-chip-name-button" data-action="open-user-photo" type="button" aria-label="Lihat informasi peserta">' + escapeHtml(userName) + '</button>',
             '</span>'
         ].join('');
 
@@ -7214,7 +8113,7 @@
             userChip,
             timerChip,
             state.user
-                ? '<button class="cbt-button cbt-button-secondary cbt-logout-button" data-action="logout" type="button" aria-label="Logout" title="Logout"><span class="cbt-logout-icon" aria-hidden="true">\u23fb</span><span class="cbt-logout-label">LOGOUT</span></button>'
+                ? '<button class="cbt-button cbt-button-secondary cbt-logout-button" data-action="logout" type="button" aria-label="Logout" title="Logout"><span class="cbt-logout-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 3v8"></path><path d="M7.05 5.05A9 9 0 1 0 16.95 5.05"></path></svg></span><span class="cbt-logout-label">LOGOUT</span></button>'
                 : '',
             '</div>',
             '</header>'
@@ -7225,8 +8124,8 @@
         var schoolNameRaw = getConfiguredSchoolName();
         var schoolName = escapeHtml(schoolNameRaw);
         var schoolBranding = getLoginHeroSchoolBranding(schoolNameRaw);
-        var schoolBrandTag = escapeHtml(schoolBranding.tag || 'Portal CBT');
-        var schoolBrandTitle = escapeHtml(schoolBranding.title || schoolNameRaw);
+        var schoolBrandTag = schoolBranding.tag ? escapeHtml(schoolBranding.tag) : '';
+        var schoolBrandTitle = escapeHtml(schoolNameRaw || schoolBranding.title || 'CBT Exam');
         var schoolMottoRaw = getConfiguredSchoolMotto();
         var schoolMotto = schoolMottoRaw !== '' ? escapeHtml(schoolMottoRaw) : '';
         var heroMottoBlock = schoolMotto !== ''
@@ -7238,7 +8137,7 @@
         var schoolLogoUrl = getConfiguredSchoolLogoUrl();
         var heroLogoBlock = schoolLogoUrl !== ''
             ? '<div class="cbt-login-hero-logo-wrap"><img class="cbt-login-hero-logo" src="' + escapeHtml(schoolLogoUrl) + '" alt="' + schoolName + '" loading="lazy" decoding="async" /></div>'
-            : '<div class="cbt-login-hero-logo-wrap is-fallback" aria-hidden="true"><span class="cbt-login-hero-logo-fallback"><svg viewBox="0 0 64 64" focusable="false"><path d="M32 8 47 14v15c0 11-6.8 21.1-15 26-8.2-4.9-15-15-15-26V14L32 8Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"></path><path d="M32 20v18" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path><path d="M23 29h18" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path></svg></span></div>';
+            : '<div class="cbt-login-hero-logo-wrap is-fallback" aria-hidden="true"><span class="cbt-login-hero-logo-fallback"><svg viewBox="0 0 64 64" focusable="false"><path d="M12 26 32 14l20 12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path><path d="M18 26v22h28V26" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"></path><path d="M26 48V36h12v12" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"></path><path d="M24 32h16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path></svg></span></div>';
         var mobilePanelLogoBlock = schoolLogoUrl !== ''
             ? '<div class="cbt-login-panel-brand-mobile"><img class="cbt-login-panel-brand-mobile-logo" src="' + escapeHtml(schoolLogoUrl) + '" alt="' + schoolName + '" loading="lazy" decoding="async" /></div>'
             : '';
@@ -7267,7 +8166,7 @@
             '<div class="cbt-login-hero-heading">',
             heroLogoBlock,
             '<div class="cbt-login-hero-title">',
-            '<span class="cbt-login-hero-school-tag">' + schoolBrandTag + '</span>',
+            schoolBrandTag !== '' ? '<span class="cbt-login-hero-school-tag">' + schoolBrandTag + '</span>' : '',
             '<h1>' + schoolBrandTitle + '</h1>',
             heroMottoBlock,
             '</div>',
@@ -7808,6 +8707,7 @@
 
     function renderQuestionInput(question) {
         var answer = resolveStoredAnswerValueForQuestion(question);
+        var disabledAttr = isExamAnswerEditingLocked() ? ' disabled' : '';
 
         if (question.question_type === 'multiple_choice' || question.question_type === 'true_false') {
             var selectedId = Number(answer) || 0;
@@ -7819,7 +8719,7 @@
                     return [
                         '<label class="cbt-option' + (checked ? ' is-selected' : '') + '">',
                         '<span class="cbt-option-row">',
-                        '<input type="radio" name="cbt_q_' + escapeHtml(question.id) + '" value="' + escapeHtml(optionId) + '" data-action="answer-single" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '"' + (checked ? ' checked' : '') + ' />',
+                        '<input type="radio" name="cbt_q_' + escapeHtml(question.id) + '" value="' + escapeHtml(optionId) + '" data-action="answer-single" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '"' + (checked ? ' checked' : '') + disabledAttr + ' />',
                         '<span class="cbt-option-key">' + escapeHtml(questionOptionKey(option, index)) + '</span>',
                         '<span class="cbt-option-label">' + safeRichHtml(option.option_text || '') + '</span>',
                         '</span>',
@@ -7840,7 +8740,7 @@
                     return [
                         '<label class="cbt-option' + (checked ? ' is-selected' : '') + '">',
                         '<span class="cbt-option-row">',
-                        '<input type="checkbox" value="' + escapeHtml(optionId) + '" data-action="answer-multi" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '"' + (checked ? ' checked' : '') + ' />',
+                        '<input type="checkbox" value="' + escapeHtml(optionId) + '" data-action="answer-multi" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '"' + (checked ? ' checked' : '') + disabledAttr + ' />',
                         '<span class="cbt-option-key">' + escapeHtml(questionOptionKey(option, index)) + '</span>',
                         '<span class="cbt-option-label">' + safeRichHtml(option.option_text || '') + '</span>',
                         '</span>',
@@ -7874,13 +8774,13 @@
                         '<td class="cbt-tf-matrix-statement"><span class="cbt-option-key">' + escapeHtml(index + 1) + '.</span> <span>' + safeRichHtml(item.text || '') + '</span></td>',
                         '<td class="cbt-tf-matrix-choice">',
                         '<label>',
-                        '<input type="radio" name="' + escapeHtml(rowName) + '" data-action="answer-tf-matrix" data-qid="' + escapeHtml(question.id) + '" data-key="' + escapeHtml(item.key) + '" data-value="true"' + (trueChecked ? ' checked' : '') + ' />',
+                        '<input type="radio" name="' + escapeHtml(rowName) + '" data-action="answer-tf-matrix" data-qid="' + escapeHtml(question.id) + '" data-key="' + escapeHtml(item.key) + '" data-value="true"' + (trueChecked ? ' checked' : '') + disabledAttr + ' />',
                         '<span>Benar</span>',
                         '</label>',
                         '</td>',
                         '<td class="cbt-tf-matrix-choice">',
                         '<label>',
-                        '<input type="radio" name="' + escapeHtml(rowName) + '" data-action="answer-tf-matrix" data-qid="' + escapeHtml(question.id) + '" data-key="' + escapeHtml(item.key) + '" data-value="false"' + (falseChecked ? ' checked' : '') + ' />',
+                        '<input type="radio" name="' + escapeHtml(rowName) + '" data-action="answer-tf-matrix" data-qid="' + escapeHtml(question.id) + '" data-key="' + escapeHtml(item.key) + '" data-value="false"' + (falseChecked ? ' checked' : '') + disabledAttr + ' />',
                         '<span>Salah</span>',
                         '</label>',
                         '</td>',
@@ -7898,7 +8798,7 @@
         }
 
         var essayValue = String(answer || '');
-        return '<textarea class="cbt-textarea" rows="8" data-action="answer-text" data-qid="' + escapeHtml(question.id) + '">' + escapeHtml(essayValue) + '</textarea>';
+        return '<textarea class="cbt-textarea" rows="8" data-action="answer-text" data-qid="' + escapeHtml(question.id) + '"' + disabledAttr + '>' + escapeHtml(essayValue) + '</textarea>';
     }
 
     function renderExamStage() {
@@ -7937,6 +8837,7 @@
         var examFooterProgressNote = totalQuestions > 0
             ? (String(answeredCount) + '/' + String(totalQuestions) + ' soal')
             : 'Belum ada soal';
+        var examFooterSyncMeta = getExamFooterSyncMeta();
         var doubtfulCount = progressSummary.doubtfulQuestions;
         var unansweredCount = Math.max(0, totalQuestions - answeredCount);
         var changedQuestionCount = getChangedQuestionCount();
@@ -7956,9 +8857,10 @@
         var currentQuestionMetaCompact = currentQuestionTypeCode + '\u00b7' + currentQuestionPoints;
         var doubtfulActionLabel = currentQuestionIsDoubtful ? 'Batalkan ragu-ragu' : 'Tandai ragu-ragu';
         var doubtfulActionClass = 'cbt-action-icon cbt-action-icon-doubtful' + (currentQuestionIsDoubtful ? ' is-active' : '');
+        var answerEditingLocked = isExamAnswerEditingLocked();
         var quickNavigationMarkup = [
             '<button class="cbt-action-icon cbt-action-icon-prev" data-action="prev" type="button" aria-label="Sebelumnya" title="Sebelumnya"' + (state.currentIndex <= 0 || state.busy ? ' disabled' : '') + '><span class="cbt-visually-hidden">Sebelumnya</span></button>',
-            '<button class="' + doubtfulActionClass + '" data-action="toggle-doubtful" data-qid="' + escapeHtml(currentQuestion.id) + '" type="button" aria-label="' + escapeHtml(doubtfulActionLabel) + '" title="' + escapeHtml(doubtfulActionLabel) + '"' + (state.busy ? ' disabled' : '') + '><span class="cbt-visually-hidden">' + escapeHtml(doubtfulActionLabel) + '</span></button>',
+            '<button class="' + doubtfulActionClass + '" data-action="toggle-doubtful" data-qid="' + escapeHtml(currentQuestion.id) + '" type="button" aria-label="' + escapeHtml(doubtfulActionLabel) + '" title="' + escapeHtml(doubtfulActionLabel) + '"' + (state.busy || answerEditingLocked ? ' disabled' : '') + '><span class="cbt-visually-hidden">' + escapeHtml(doubtfulActionLabel) + '</span></button>',
             '<button class="cbt-action-icon cbt-action-icon-next" data-action="next" type="button" aria-label="Selanjutnya" title="Selanjutnya"' + (state.currentIndex >= totalQuestions - 1 || state.busy ? ' disabled' : '') + '><span class="cbt-visually-hidden">Selanjutnya</span></button>'
         ].join('');
         var navPanelPosition = getEffectiveNavPanelPosition();
@@ -8043,7 +8945,7 @@
             '<div class="cbt-legend"><span class="cbt-legend-item cbt-legend-item-current"><i class="cbt-dot cbt-dot-current"></i> Aktif</span><span class="cbt-legend-item cbt-legend-item-answered"><i class="cbt-dot cbt-dot-answered"></i> Terjawab</span><span class="cbt-legend-item cbt-legend-item-doubtful"><i class="cbt-dot cbt-dot-doubtful"></i> Ragu-ragu</span>' + (changedQuestionCount > 0 ? '<span class="cbt-legend-item cbt-legend-item-changed"><i class="cbt-dot cbt-dot-changed"></i> Berubah</span>' : '') + '</div>',
             renderArchivedReviewHistorySection(),
             (isLastQuestion
-                ? ('<div class="cbt-actions cbt-side-actions-compact"><button class="cbt-button cbt-button-primary" data-action="collect" type="button"' + (state.busy || state.isFinishing ? ' disabled' : '') + '>Kumpulkan Jawaban</button></div>')
+                ? ('<div class="cbt-actions cbt-side-actions-compact"><button class="cbt-button cbt-button-primary" data-action="collect" type="button"' + (state.busy || state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>Kumpulkan Jawaban</button></div>')
                 : ''),
             '</aside>'
         ].join('');
@@ -8083,10 +8985,17 @@
             '<span class="cbt-question-exam-footer-label">Ujian Aktif</span>',
             '<strong class="cbt-question-exam-footer-value">' + escapeHtml(activeExamTitle) + '</strong>',
             '</div>',
+            '<div class="cbt-question-exam-footer-side">',
             '<div class="cbt-question-exam-footer-meta" aria-label="Progress ' + escapeHtml(examFooterProgressValue) + ', ' + escapeHtml(examFooterProgressNote) + ' terjawab">',
             '<span class="cbt-question-exam-footer-meta-label">Progress</span>',
             '<strong class="cbt-question-exam-footer-meta-value">' + escapeHtml(examFooterProgressValue) + '</strong>',
             '<small class="cbt-question-exam-footer-meta-note">' + escapeHtml(examFooterProgressNote) + '</small>',
+            '</div>',
+            '<div class="cbt-question-exam-footer-meta cbt-question-exam-footer-meta-sync ' + escapeHtml(examFooterSyncMeta.tone || '') + '" title="' + escapeHtml(examFooterSyncMeta.title || '') + '" aria-label="' + escapeHtml(examFooterSyncMeta.title || '') + '">',
+            '<span class="cbt-question-exam-footer-meta-label">' + escapeHtml(examFooterSyncMeta.label || 'Sinkron') + '</span>',
+            '<strong class="cbt-question-exam-footer-meta-value">' + escapeHtml(examFooterSyncMeta.value || '-') + '</strong>',
+            '<small class="cbt-question-exam-footer-meta-note">' + escapeHtml(examFooterSyncMeta.note || '') + '</small>',
+            '</div>',
             '</div>',
             '</div>',
             '</div>',
@@ -8634,8 +9543,8 @@
             '<p class="cbt-muted">Progress jawaban: ' + escapeHtml(progressLabel) + '%</p>',
             warningMarkup,
             '<div class="cbt-actions cbt-finish-modal-actions">',
-            '<button class="cbt-button cbt-button-secondary" data-action="finish-confirm-cancel" type="button"' + (state.isFinishing ? ' disabled' : '') + '>Kembali Kerjakan</button>',
-            '<button class="cbt-button cbt-button-primary" data-action="finish-confirm-submit" type="button"' + (state.isFinishing ? ' disabled' : '') + '>' + (state.isFinishing ? 'Mengirim...' : 'Tetap Kumpulkan') + '</button>',
+            '<button class="cbt-button cbt-button-secondary" data-action="finish-confirm-cancel" type="button"' + (state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>Kembali Kerjakan</button>',
+            '<button class="cbt-button cbt-button-primary" data-action="finish-confirm-submit" type="button"' + (state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>' + (state.isFinishing ? 'Mengirim...' : 'Tetap Kumpulkan') + '</button>',
             '</div>',
             '</section>',
             '</div>'
@@ -9231,6 +10140,9 @@
         }
 
         if (action === 'toggle-doubtful') {
+            if (isExamAnswerEditingLocked()) {
+                return;
+            }
             var doubtfulQid = Number(actionNode.getAttribute('data-qid')) || 0;
             if (doubtfulQid > 0) {
                 state.doubtful[doubtfulQid] = !state.doubtful[doubtfulQid];
@@ -9274,6 +10186,10 @@
         }
 
         if (isQuestionRevisionRefreshActive() && targetAction.indexOf('answer-') === 0) {
+            return;
+        }
+
+        if (isExamAnswerEditingLocked() && targetAction.indexOf('answer-') === 0) {
             return;
         }
 
@@ -9383,6 +10299,10 @@
         }
 
         if (isQuestionRevisionRefreshActive() && action.indexOf('answer-') === 0) {
+            return;
+        }
+
+        if (isExamAnswerEditingLocked() && action.indexOf('answer-') === 0) {
             return;
         }
 
@@ -9689,10 +10609,33 @@
         });
     }
 
+    function triggerPendingSyncLifecycleRetry(reason, options) {
+        options = options || {};
+
+        setConnectionStatus(getNavigatorConnectionStatus(), {
+            persist: false,
+            render: false,
+            triggerRetry: false
+        });
+        schedulePendingAnswerRetry(reason || 'lifecycle', {
+            immediate: true,
+            resetBackoff: true,
+            delayMs: options.delayMs,
+            persist: false
+        });
+        maybeFinalizeLockedExam(reason || 'lifecycle');
+    }
+
     document.addEventListener('visibilitychange', function () {
         if (document.visibilityState === 'visible') {
             cancelScheduledTabHiddenSecurityLog();
             cancelScheduledWindowBlurSecurityLog();
+            triggerPendingSyncLifecycleRetry('visible', {
+                delayMs: 180
+            });
+            flushAttemptUiStateSilently({
+                force: true
+            });
         }
 
         if (document.visibilityState === 'hidden') {
@@ -9732,6 +10675,30 @@
 
     window.addEventListener('focus', function () {
         cancelScheduledWindowBlurSecurityLog();
+        triggerPendingSyncLifecycleRetry('focus', {
+            delayMs: 180
+        });
+        flushAttemptUiStateSilently({
+            force: true
+        });
+    });
+
+    window.addEventListener('online', function () {
+        setConnectionStatus('online', {
+            render: true,
+            immediate: true,
+            resetBackoff: true
+        });
+        flushAttemptUiStateSilently({
+            force: true
+        });
+    });
+
+    window.addEventListener('offline', function () {
+        setConnectionStatus('offline', {
+            render: true,
+            triggerRetry: false
+        });
     });
 
     window.addEventListener('pagehide', function () {
@@ -9784,6 +10751,9 @@
                 persistAuthSession();
                 startSessionHeartbeat();
                 state.busy = false;
+                triggerPendingSyncLifecycleRetry('bootstrap-resume', {
+                    delayMs: 220
+                });
                 render();
                 return;
             }
@@ -9794,6 +10764,9 @@
             persistAuthSession();
             startSessionHeartbeat();
             state.busy = false;
+            triggerPendingSyncLifecycleRetry('bootstrap-session', {
+                delayMs: 220
+            });
             render();
         } catch (error) {
             if (!state.token) {
