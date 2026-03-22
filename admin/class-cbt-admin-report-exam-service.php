@@ -811,8 +811,8 @@ final class CBT_Admin_Report_Exam_Service
         global $wpdb;
 
         $exam_table = $wpdb->prefix . 'cbt_exams';
-        $sql = "SELECT id, title FROM {$exam_table} WHERE 1=1";
-        $params = [];
+        $sql = "SELECT id, title FROM {$exam_table} WHERE 1=1 AND title NOT LIKE %s";
+        $params = ['Bank Soal - %'];
         if (!$is_admin_scope) {
             $sql .= ' AND created_by = %d';
             $params[] = $current_user_id;
@@ -844,8 +844,10 @@ final class CBT_Admin_Report_Exam_Service
                     "SELECT e.id, e.title, e.starts_at, e.target_kelas, s.name AS subject_name
                      FROM {$exam_table} e
                      LEFT JOIN {$subject_table} s ON s.id = e.subject_id
-                     WHERE e.id = %d",
-                    $exam_id
+                     WHERE e.id = %d
+                       AND e.title NOT LIKE %s",
+                    $exam_id,
+                    'Bank Soal - %'
                 ),
                 ARRAY_A
             );
@@ -855,8 +857,11 @@ final class CBT_Admin_Report_Exam_Service
                     "SELECT e.id, e.title, e.starts_at, e.target_kelas, s.name AS subject_name
                      FROM {$exam_table} e
                      LEFT JOIN {$subject_table} s ON s.id = e.subject_id
-                     WHERE e.id = %d AND e.created_by = %d",
+                     WHERE e.id = %d
+                       AND e.title NOT LIKE %s
+                       AND e.created_by = %d",
                     $exam_id,
+                    'Bank Soal - %',
                     $current_user_id
                 ),
                 ARRAY_A

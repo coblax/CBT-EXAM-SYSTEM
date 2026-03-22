@@ -1,0 +1,1 @@
+export { bootstrapFrontendApp } from './runtime';

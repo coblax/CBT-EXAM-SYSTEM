@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMP_DIR="${TMPDIR:-/tmp}"
+LOG_FILE="${TMP_DIR}/cbt-vite-build-watch.log"
+PID_FILE="${TMP_DIR}/cbt-vite-build-watch.pid"
+HOME_DIR="${TMP_DIR}/cbt-vite-build-watch-home"
+NPM_CACHE_DIR="${TMP_DIR}/cbt-vite-build-watch-npm-cache"
+NODE_BIN="${CBT_VITE_NODE_BIN:-/usr/bin/node}"
+NPM_BIN="${CBT_VITE_NPM_BIN:-/usr/bin/npm}"
+
+mkdir -p "${HOME_DIR}" "${NPM_CACHE_DIR}"
+
+export HOME="${HOME_DIR}"
+export NPM_CONFIG_CACHE="${NPM_CACHE_DIR}"
+export npm_config_cache="${NPM_CACHE_DIR}"
+export npm_config_update_notifier=false
+export CI=1
+
+read_pid() {
+    if [[ ! -f "${PID_FILE}" ]]; then
+        return 1
+    fi
+
+    local pid
+    pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+    if [[ ! "${pid}" =~ ^[0-9]+$ ]]; then
+        rm -f "${PID_FILE}"
+        return 1
+    fi
+
+    printf '%s' "${pid}"
+    return 0
+}
+
+is_running() {
+    local pid
+    if ! pid="$(read_pid)"; then
+        return 1
+    fi
+
+    if kill -0 "${pid}" 2>/dev/null; then
+        printf '%s' "${pid}"
+        return 0
+    fi
+
+    rm -f "${PID_FILE}"
+    return 1
+}
+
+ensure_prerequisites() {
+    if [[ ! -x "${NODE_BIN}" ]]; then
+        printf 'ERROR:Node binary tidak ditemukan di %s\n' "${NODE_BIN}"
+        exit 1
+    fi
+
+    if [[ ! -e "${NPM_BIN}" ]]; then
+        printf 'ERROR:NPM binary tidak ditemukan di %s\n' "${NPM_BIN}"
+        exit 1
+    fi
+
+    if [[ ! -f "${ROOT_DIR}/package.json" ]]; then
+        printf 'ERROR:package.json tidak ditemukan di %s\n' "${ROOT_DIR}"
+        exit 1
+    fi
+}
+
+start_server() {
+    ensure_prerequisites
+
+    local pid
+    if pid="$(is_running)"; then
+        printf 'ALREADY_RUNNING:%s\n' "${pid}"
+        exit 0
+    fi
+
+    cd "${ROOT_DIR}"
+    : > "${LOG_FILE}"
+    setsid /bin/bash -lc "cd ${ROOT_DIR@Q} && export HOME=${HOME_DIR@Q} NPM_CONFIG_CACHE=${NPM_CACHE_DIR@Q} npm_config_cache=${NPM_CACHE_DIR@Q} npm_config_update_notifier=false CI=1 && exec ${NPM_BIN@Q} run build:watch" >>"${LOG_FILE}" 2>&1 < /dev/null &
+    pid="$!"
+    echo "${pid}" > "${PID_FILE}"
+    printf 'STARTED:%s\n' "${pid}"
+}
+
+status_server() {
+    local pid
+    if pid="$(is_running)"; then
+        printf 'RUNNING:%s\n' "${pid}"
+        exit 0
+    fi
+
+    printf 'STOPPED\n'
+}
+
+stop_server() {
+    local pid
+    if ! pid="$(is_running)"; then
+        printf 'STOPPED\n'
+        exit 0
+    fi
+
+    kill "${pid}" 2>/dev/null || true
+    rm -f "${PID_FILE}"
+    printf 'STOPPED:%s\n' "${pid}"
+}
+
+case "${1:-start}" in
+    start)
+        start_server
+        ;;
+    status)
+        status_server
+        ;;
+    stop)
+        stop_server
+        ;;
+    meta)
+        printf 'WRAPPER:%s\n' "$0"
+        printf 'ROOT:%s\n' "${ROOT_DIR}"
+        printf 'LOG:%s\n' "${LOG_FILE}"
+        printf 'PID:%s\n' "${PID_FILE}"
+        ;;
+    *)
+        printf 'Usage: %s {start|status|stop|meta}\n' "$0"
+        exit 1
+        ;;
+esac

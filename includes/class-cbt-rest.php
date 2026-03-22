@@ -250,13 +250,73 @@ class CBT_REST
             $exam_id = (int) ($attempt['exam_id'] ?? 0);
             if ($exam_id > 0) {
                 $question_revision = CBT_Cache::get_exam_revision_meta($exam_id);
-                $attempt_timer = ((string) ($attempt['status'] ?? '') === 'in_progress')
+                $attempt_status = (string) ($attempt['status'] ?? '');
+                $attempt_timer = ($attempt_status === 'in_progress')
                     ? self::build_attempt_timer_payload(
                         $attempt,
                         (int) ($attempt['exam_duration_minutes'] ?? 0)
                     )
                     : null;
-                if ((string) ($attempt['status'] ?? '') === 'in_progress') {
+                $attempt_question_order_ids = self::normalize_question_order_ids((string) ($attempt['question_order'] ?? ''));
+                if ($attempt_status === 'in_progress') {
+                    $attempt_table = $wpdb->prefix . 'cbt_attempts';
+                    $exam_table = $wpdb->prefix . 'cbt_exams';
+                    $exam = $wpdb->get_row(
+                        $wpdb->prepare(
+                            "SELECT id, duration_minutes, randomize_questions, randomize_options, status, starts_at, ends_at, target_kelas
+                             FROM {$exam_table}
+                             WHERE id = %d",
+                            $exam_id
+                        ),
+                        ARRAY_A
+                    );
+
+                    if (is_array($exam)) {
+                        $questions = self::get_cached_exam_question_payload($exam_id);
+                        $questions = self::append_missing_attempt_questions(
+                            $questions,
+                            $exam_id,
+                            (string) ($attempt['question_order'] ?? '')
+                        );
+                        $resolved_attempt_payload = self::resolve_attempt_question_payload(
+                            $questions,
+                            $attempt,
+                            $exam,
+                            $attempt_table
+                        );
+                        $resolved_question_order_ids = isset($resolved_attempt_payload['question_order_ids']) && is_array($resolved_attempt_payload['question_order_ids'])
+                            ? array_values(array_filter(array_map('intval', $resolved_attempt_payload['question_order_ids']), static function ($question_id): bool {
+                                return $question_id > 0;
+                            }))
+                            : [];
+
+                        if (!empty($resolved_question_order_ids)) {
+                            $question_count = count($resolved_question_order_ids);
+                        } elseif (!empty($attempt_question_order_ids)) {
+                            $question_count = count($attempt_question_order_ids);
+                        } else {
+                            $resolved_questions = isset($resolved_attempt_payload['questions']) && is_array($resolved_attempt_payload['questions'])
+                                ? $resolved_attempt_payload['questions']
+                                : [];
+                            $question_count = count($resolved_questions);
+                        }
+                    } elseif (!empty($attempt_question_order_ids)) {
+                        $question_count = count($attempt_question_order_ids);
+                    } else {
+                        $question_table = $wpdb->prefix . 'cbt_questions';
+                        $question_count = (int) $wpdb->get_var(
+                            $wpdb->prepare(
+                                "SELECT COUNT(*)
+                                 FROM {$question_table}
+                                 WHERE exam_id = %d
+                                   AND COALESCE(is_active, 1) = 1",
+                                $exam_id
+                            )
+                        );
+                    }
+                } elseif (!empty($attempt_question_order_ids)) {
+                    $question_count = count($attempt_question_order_ids);
+                } else {
                     $question_table = $wpdb->prefix . 'cbt_questions';
                     $question_count = (int) $wpdb->get_var(
                         $wpdb->prepare(
@@ -267,8 +327,6 @@ class CBT_REST
                             $exam_id
                         )
                     );
-                } else {
-                    $question_count = count(self::normalize_question_order_ids($attempt['question_order'] ?? ''));
                 }
             }
         }
@@ -1617,11 +1675,12 @@ class CBT_REST
             $where .= " AND status = 'published'";
         }
 
-        $sql = "SELECT
+                $sql = "SELECT
                     e.id,
                     e.subject_id,
                     e.title,
                     e.duration_minutes,
+                    e.kkm_percentage,
                     e.total_questions,
                     e.randomize_questions,
                     e.status,
@@ -1643,7 +1702,11 @@ class CBT_REST
             $sql = $wpdb->prepare($sql, $params);
         }
 
-        $rows = $wpdb->get_results($sql, ARRAY_A);
+        $rows = array_map(static function ($row): array {
+            $item = (array) $row;
+            $item['kkm_percentage'] = self::normalize_exam_kkm_percentage((float) ($item['kkm_percentage'] ?? 75.0));
+            return $item;
+        }, (array) $wpdb->get_results($sql, ARRAY_A));
 
         if ($role === 'siswa' || $role === 'student') {
             $attempt_table = $wpdb->prefix . 'cbt_attempts';
@@ -1673,7 +1736,6 @@ class CBT_REST
 
             $rows = array_map(static function ($row) use ($student_kelas, $student_now, $latest_attempt_by_exam): array {
                 $item = (array) $row;
-
                 $now_ts = strtotime($student_now);
                 $start_ts = !empty($item['starts_at']) ? strtotime((string) $item['starts_at']) : false;
                 $end_ts = !empty($item['ends_at']) ? strtotime((string) $item['ends_at']) : false;
@@ -1715,11 +1777,16 @@ class CBT_REST
                     $attempt_percentage = $attempt_max_score > 0
                         ? round(($attempt_score / $attempt_max_score) * 100, 2)
                         : 0.0;
+                    $attempt_pass_meta = self::build_result_pass_meta($attempt_score, $attempt_max_score, (float) ($item['kkm_percentage'] ?? 75.0));
                     $item['latest_attempt_id'] = (int) ($latest_attempt['id'] ?? 0);
                     $item['latest_attempt_status'] = (string) ($latest_attempt['status'] ?? '');
                     $item['latest_attempt_score'] = $attempt_score;
                     $item['latest_attempt_max_score'] = $attempt_max_score;
                     $item['latest_attempt_percentage'] = $attempt_percentage;
+                    $item['latest_attempt_passing_score'] = $attempt_pass_meta['passing_score'];
+                    $item['latest_attempt_is_passed'] = $attempt_pass_meta['is_passed'];
+                    $item['latest_attempt_pass_label'] = $attempt_pass_meta['pass_label'];
+                    $item['latest_attempt_result_tone'] = $attempt_pass_meta['result_tone'];
                     $item['latest_attempt_started_at'] = (string) ($latest_attempt['started_at'] ?? '');
                     $item['latest_attempt_finished_at'] = (string) ($latest_attempt['finished_at'] ?? '');
                 } else {
@@ -1728,6 +1795,10 @@ class CBT_REST
                     $item['latest_attempt_score'] = 0.0;
                     $item['latest_attempt_max_score'] = 0.0;
                     $item['latest_attempt_percentage'] = 0.0;
+                    $item['latest_attempt_passing_score'] = self::calculate_result_passing_score(0.0, (float) ($item['kkm_percentage'] ?? 75.0));
+                    $item['latest_attempt_is_passed'] = 0;
+                    $item['latest_attempt_pass_label'] = 'TIDAK LULUS';
+                    $item['latest_attempt_result_tone'] = 'fail';
                     $item['latest_attempt_started_at'] = '';
                     $item['latest_attempt_finished_at'] = '';
                 }
@@ -1802,7 +1873,7 @@ class CBT_REST
                 $short_answer_table = $wpdb->prefix . 'cbt_question_short_answer';
                 $question_rows = (array) $wpdb->get_results(
                     $wpdb->prepare(
-                        "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text, q.updated_at,
+                        "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text, q.created_at, q.updated_at,
                                 COALESCE(q.is_active, 1) AS is_active,
                                 qsa.correct_text AS short_answer_correct_text
                          FROM {$question_table} q
@@ -1873,7 +1944,7 @@ class CBT_REST
         $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
         $question_rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text, q.updated_at,
+                "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text, q.created_at, q.updated_at,
                         COALESCE(q.is_active, 1) AS is_active,
                         qsa.correct_text AS short_answer_correct_text
                  FROM {$question_table} q
@@ -2030,7 +2101,12 @@ class CBT_REST
         $preserve_removed_question_history = false;
         if (!empty($question_order_ids)) {
             if ($is_in_progress_attempt) {
-                $question_order_ids = self::reconcile_in_progress_question_order($questions, $question_order_ids);
+                $question_order_ids = self::reconcile_in_progress_question_order(
+                    $questions,
+                    $question_order_ids,
+                    (string) ($attempt['started_at'] ?? ''),
+                    $should_shuffle
+                );
                 $canonical_question_order_ids = self::merge_attempt_question_order_ids(
                     $original_question_order_ids,
                     $question_order_ids
@@ -2156,7 +2232,12 @@ class CBT_REST
      * @param array<int,int> $existing_question_order_ids
      * @return array<int,int>
      */
-    private static function reconcile_in_progress_question_order(array $questions, array $existing_question_order_ids): array
+    private static function reconcile_in_progress_question_order(
+        array $questions,
+        array $existing_question_order_ids,
+        string $attempt_started_at = '',
+        bool $append_recent_questions_last = false
+    ): array
     {
         $active_questions = array_values(array_filter($questions, static function ($question_row): bool {
             $question = (array) $question_row;
@@ -2171,18 +2252,70 @@ class CBT_REST
         }
 
         $active_lookup = array_fill_keys($active_question_ids, true);
+        $recent_question_created_at = [];
+        if ($append_recent_questions_last) {
+            $attempt_started_ts = self::local_datetime_to_timestamp($attempt_started_at);
+            if ($attempt_started_ts !== null) {
+                foreach ($active_questions as $question_row) {
+                    $question = (array) $question_row;
+                    $question_id = (int) ($question['id'] ?? 0);
+                    if ($question_id <= 0) {
+                        continue;
+                    }
+
+                    $question_created_ts = self::local_datetime_to_timestamp((string) ($question['created_at'] ?? ''));
+                    if ($question_created_ts === null || $question_created_ts <= $attempt_started_ts) {
+                        continue;
+                    }
+
+                    $recent_question_created_at[$question_id] = $question_created_ts;
+                }
+            }
+        }
+
+        $recent_question_lookup = array_fill_keys(array_keys($recent_question_created_at), true);
         $reconciled = [];
+        $reconciled_lookup = [];
         foreach ($existing_question_order_ids as $question_id) {
             $question_id = (int) $question_id;
-            if ($question_id <= 0 || !isset($active_lookup[$question_id]) || in_array($question_id, $reconciled, true)) {
+            if (
+                $question_id <= 0
+                || !isset($active_lookup[$question_id])
+                || isset($reconciled_lookup[$question_id])
+                || isset($recent_question_lookup[$question_id])
+            ) {
                 continue;
             }
             $reconciled[] = $question_id;
+            $reconciled_lookup[$question_id] = true;
         }
 
         foreach ($active_question_ids as $question_id) {
-            if (!in_array($question_id, $reconciled, true)) {
+            if (isset($reconciled_lookup[$question_id]) || isset($recent_question_lookup[$question_id])) {
+                continue;
+            }
+
+            $reconciled[] = $question_id;
+            $reconciled_lookup[$question_id] = true;
+        }
+
+        if (!empty($recent_question_created_at)) {
+            uasort($recent_question_created_at, static function (int $left, int $right): int {
+                if ($left === $right) {
+                    return 0;
+                }
+
+                return ($left < $right) ? -1 : 1;
+            });
+
+            foreach (array_keys($recent_question_created_at) as $question_id) {
+                $question_id = (int) $question_id;
+                if ($question_id <= 0 || isset($reconciled_lookup[$question_id])) {
+                    continue;
+                }
+
                 $reconciled[] = $question_id;
+                $reconciled_lookup[$question_id] = true;
             }
         }
 
@@ -3395,6 +3528,8 @@ class CBT_REST
         $score = (float) ($score_snapshot['score'] ?? 0.0);
         $max_score = (float) ($score_snapshot['max_score'] ?? 0.0);
         $percentage = (float) ($score_snapshot['percentage'] ?? 0.0);
+        $kkm_percentage = self::get_exam_kkm_percentage((int) ($attempt['exam_id'] ?? 0));
+        $pass_meta = self::build_result_pass_meta($score, $max_score, $kkm_percentage);
         $finished_at = is_string($finished_at) && $finished_at !== '' ? $finished_at : current_time('mysql');
 
         $started_ts = self::local_datetime_to_timestamp((string) ($attempt['started_at'] ?? ''));
@@ -3421,6 +3556,8 @@ class CBT_REST
         $student_id = (int) ($attempt['student_id'] ?? 0);
         CBT_Runtime::clear_attempt_runtime($attempt_id);
         CBT_Cache::invalidate_attempt($attempt_id);
+        CBT_Cache::invalidate_analytics();
+        CBT_Cache::invalidate_analytics_exam((int) ($attempt['exam_id'] ?? 0));
         if ($student_id > 0) {
             CBT_Cache::invalidate_user($student_id);
             CBT_UI_State::clear_attempt_state($student_id, $attempt_id);
@@ -3433,6 +3570,11 @@ class CBT_REST
             'max_score' => $max_score,
             'percentage' => $percentage,
             'finished_at' => $finished_at,
+            'kkm_percentage' => $pass_meta['kkm_percentage'],
+            'passing_score' => $pass_meta['passing_score'],
+            'is_passed' => $pass_meta['is_passed'],
+            'pass_label' => $pass_meta['pass_label'],
+            'result_tone' => $pass_meta['result_tone'],
         ];
     }
 
@@ -3451,7 +3593,7 @@ class CBT_REST
 
         $exam = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT e.id, e.title, e.duration_minutes, e.subject_id, s.name AS subject_name, s.code AS subject_code
+                "SELECT e.id, e.title, e.duration_minutes, e.kkm_percentage, e.subject_id, s.name AS subject_name, s.code AS subject_code
                  FROM {$exam_table} e
                  LEFT JOIN {$subject_table} s ON s.id = e.subject_id
                  WHERE e.id = %d",
@@ -3498,14 +3640,83 @@ class CBT_REST
         $percentage = ($review_max_score > 0)
             ? round(($review_score / $review_max_score) * 100, 2)
             : 0;
+        $kkm_percentage = self::normalize_exam_kkm_percentage((float) ($exam['kkm_percentage'] ?? 75.0));
+        if (is_array($exam)) {
+            $exam['kkm_percentage'] = $kkm_percentage;
+        }
+        $pass_meta = self::build_result_pass_meta($review_score, $review_max_score, $kkm_percentage);
 
         return [
             'attempt' => $attempt,
             'exam' => $exam,
             'percentage' => $percentage,
+            'kkm_percentage' => $pass_meta['kkm_percentage'],
+            'passing_score' => $pass_meta['passing_score'],
+            'is_passed' => $pass_meta['is_passed'],
+            'pass_label' => $pass_meta['pass_label'],
+            'result_tone' => $pass_meta['result_tone'],
             'answers' => $answers ?: [],
             'review_items' => $review_items,
             'review_summary' => $review_summary,
+        ];
+    }
+
+    private static function get_exam_kkm_percentage(int $exam_id): float
+    {
+        global $wpdb;
+
+        if ($exam_id <= 0) {
+            return 75.0;
+        }
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $value = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT kkm_percentage FROM {$exam_table} WHERE id = %d LIMIT 1",
+                $exam_id
+            )
+        );
+
+        return self::normalize_exam_kkm_percentage((float) $value);
+    }
+
+    private static function normalize_exam_kkm_percentage(float $value): float
+    {
+        if (!is_finite($value)) {
+            return 75.0;
+        }
+
+        return round(min(100.0, max(0.0, $value)), 2);
+    }
+
+    private static function calculate_result_passing_score(float $max_score, float $kkm_percentage): float
+    {
+        if (!is_finite($max_score) || $max_score <= 0) {
+            return 0.0;
+        }
+
+        return round(max(0.0, $max_score) * (self::normalize_exam_kkm_percentage($kkm_percentage) / 100), 2);
+    }
+
+    /**
+     * @return array{kkm_percentage:float,passing_score:float,is_passed:int,pass_label:string,result_tone:string}
+     */
+    private static function build_result_pass_meta(float $score, float $max_score, float $kkm_percentage): array
+    {
+        $normalized_kkm = self::normalize_exam_kkm_percentage($kkm_percentage);
+        $safe_score = is_finite($score) ? round($score, 2) : 0.0;
+        $safe_max_score = is_finite($max_score) ? round(max(0.0, $max_score), 2) : 0.0;
+        $passing_score = self::calculate_result_passing_score($safe_max_score, $normalized_kkm);
+        $is_passed = $safe_max_score > 0
+            ? (($safe_score + 0.0001) >= $passing_score)
+            : ($normalized_kkm <= 0.0);
+
+        return [
+            'kkm_percentage' => $normalized_kkm,
+            'passing_score' => $passing_score,
+            'is_passed' => $is_passed ? 1 : 0,
+            'pass_label' => $is_passed ? 'LULUS' : 'TIDAK LULUS',
+            'result_tone' => $is_passed ? 'pass' : 'fail',
         ];
     }
 
@@ -3787,7 +3998,6 @@ class CBT_REST
 
             if (
                 $is_answered &&
-                $is_correct === null &&
                 in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix'], true)
             ) {
                 $answer_input_for_eval = null;
@@ -3801,7 +4011,12 @@ class CBT_REST
                     $answer_input_for_eval = $answer_text;
                 }
 
-                $deferred_eval = self::evaluate_answer($question, $options, $answer_input_for_eval, $question_detail);
+                $deferred_eval = self::evaluate_answer_against_current_question(
+                    $question,
+                    $options,
+                    $answer_input_for_eval,
+                    $question_detail
+                );
                 $evaluated_is_correct = $deferred_eval['is_correct'] ?? null;
                 $is_correct = ($evaluated_is_correct === null || $evaluated_is_correct === '')
                     ? null
@@ -3829,7 +4044,7 @@ class CBT_REST
                 }
                 $question_max_points *= $input_count;
                 if ($is_answered) {
-                    $short_answer_eval = self::evaluate_answer(
+                    $short_answer_eval = self::evaluate_answer_against_current_question(
                         $question,
                         [],
                         $answer_text,
@@ -3926,7 +4141,7 @@ class CBT_REST
 
         return array_values(array_filter($review_items, static function ($item_row): bool {
             $item = (array) $item_row;
-            return ((int) ($item['is_active'] ?? 1) !== 1) && ((int) ($item['is_answered'] ?? 0) === 1);
+            return ((int) ($item['is_active'] ?? 1) !== 1);
         }));
     }
 
@@ -4520,6 +4735,23 @@ class CBT_REST
             'is_correct' => $is_correct,
             'score_awarded' => $score,
         ];
+    }
+
+    public static function evaluate_answer_against_current_question(
+        array $question,
+        array $options,
+        $answer_input,
+        array $question_detail = []
+    ): array {
+        if (empty($question_detail)) {
+            $question_id = (int) ($question['id'] ?? 0);
+            $question_type = (string) ($question['question_type'] ?? '');
+            if ($question_id > 0 && $question_type !== '') {
+                $question_detail = self::get_question_type_detail($question_id, $question_type);
+            }
+        }
+
+        return self::evaluate_answer($question, $options, $answer_input, $question_detail);
     }
 
     private static function get_question_type_detail(int $question_id, string $question_type): array

@@ -1,0 +1,355 @@
+.cbt-web-shell,
+.cbt-web-shell * {
+    box-sizing: border-box;
+}
+
+body.cbt-exam-page #masthead,
+body.cbt-exam-page .site-header,
+body.cbt-exam-page .wp-site-blocks > header.wp-block-template-part {
+    display: none !important;
+}
+
+body.cbt-exam-page #colophon,
+body.cbt-exam-page .site-footer,
+body.cbt-exam-page .wp-site-blocks > footer,
+body.cbt-exam-page .wp-site-blocks > footer.wp-block-template-part {
+    display: none !important;
+}
+
+body.cbt-exam-page .wp-block-post-title,
+body.cbt-exam-page .entry-title,
+body.cbt-exam-page .page-title,
+body.cbt-exam-page h1.wp-block-post-title {
+    display: none !important;
+}
+
+body.cbt-exam-page .wp-site-blocks,
+body.cbt-exam-page .site-main {
+    padding-top: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    margin-top: 0 !important;
+}
+
+body.cbt-exam-page,
+body.cbt-exam-page #page,
+body.cbt-exam-page .site,
+body.cbt-exam-page .wp-site-blocks,
+body.cbt-exam-page .site-main {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+    overflow: hidden !important;
+}
+
+body.cbt-exam-page .wp-block-post-content,
+body.cbt-exam-page .entry-content {
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+body.cbt-exam-page .is-layout-constrained > :where(:not(.alignleft):not(.alignright):not(.alignfull)) {
+    max-width: 100% !important;
+}
+
+body.cbt-exam-page.cbt-stage-login {
+    overflow: hidden;
+}
+
+body.cbt-exam-page.cbt-stage-login .wp-site-blocks,
+body.cbt-exam-page.cbt-stage-login .site-main,
+body.cbt-exam-page.cbt-stage-login .wp-block-post-content,
+body.cbt-exam-page.cbt-stage-login .entry-content {
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    overflow: hidden !important;
+}
+
+body.cbt-exam-page .cbt-web-shell {
+    width: 100%;
+}
+
+body.cbt-exam-page #cbt-exam-app.cbt-web-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    width: 100vw !important;
+    height: 100dvh;
+    max-width: 100vw !important;
+    max-height: 100dvh;
+    margin: 0 !important;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+}
+
+body.cbt-exam-page #cbt-exam-app.cbt-web-shell::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}
+
+body.cbt-exam-page.cbt-stage-login .cbt-web-shell {
+    display: flex;
+    align-items: stretch;
+    height: 100dvh;
+    min-height: 100dvh;
+    padding: 0;
+    overflow-y: hidden;
+    overflow-x: hidden;
+}
+
+.cbt-web-shell {
+    --cbt-bg-1: #f7fbff;
+    --cbt-bg-2: #eaf4ff;
+    --cbt-font-scale: 1;
+    --cbt-primary: #0f4c81;
+    --cbt-primary-2: #1b7aa5;
+    --cbt-accent: #f59e0b;
+    --cbt-danger: #c53030;
+    --cbt-success: #0e9f6e;
+    --cbt-text: #0f172a;
+    --cbt-muted: #5f6b7a;
+    --cbt-border: #d9e4f2;
+    --cbt-white: #ffffff;
+    --cbt-radius: 16px;
+    --cbt-shadow: 0 16px 40px rgba(15, 76, 129, 0.12);
+    min-height: 100dvh;
+    padding: clamp(12px, 2.2vw, 28px);
+    background:
+        radial-gradient(circle at 0 0, rgba(27, 122, 165, 0.12), transparent 46%),
+        radial-gradient(circle at 100% 100%, rgba(245, 158, 11, 0.09), transparent 42%),
+        linear-gradient(145deg, var(--cbt-bg-1), var(--cbt-bg-2));
+    border: 0;
+    border-radius: 0;
+    font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
+    color: var(--cbt-text);
+}
+
+.cbt-web-noscript {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid #f3b7b7;
+    background: #fff1f1;
+    color: #b42318;
+    font-size: 14px;
+}
+
+.cbt-app {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+}
+
+body.cbt-exam-page.cbt-stage-login .cbt-app {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 100%;
+}
+
+body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login {
+    margin: 0;
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+    padding: clamp(12px, 2.2vw, 28px);
+}
+
+body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}
+
+.cbt-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 18px;
+    border: 1px solid var(--cbt-border);
+    border-radius: var(--cbt-radius);
+    background: linear-gradient(120deg, rgba(15, 76, 129, 0.94), rgba(27, 122, 165, 0.94));
+    color: var(--cbt-white);
+    box-shadow: 0 10px 26px rgba(15, 76, 129, 0.2);
+}
+
+.cbt-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.cbt-brand-badge {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    font-size: 14px;
+}
+
+.cbt-brand h2 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.cbt-brand small {
+    display: block;
+    margin-top: 2px;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 12px;
+}
+
+.cbt-topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.cbt-access-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.cbt-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+    min-height: 30px;
+    padding: 0 10px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+
+.cbt-icon-button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.24);
+    border-color: rgba(255, 255, 255, 0.46);
+}
+
+.cbt-icon-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.cbt-icon-button-value {
+    min-width: 58px;
+    justify-content: center;
+}
+
+.cbt-theme-toggle {
+    min-width: 32px;
+}
+
+.cbt-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.32);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.cbt-web-shell .cbt-brand h2 {
+    font-size: calc(17px * var(--cbt-font-scale));
+}
+
+.cbt-web-shell .cbt-chip,
+.cbt-web-shell .cbt-icon-button,
+.cbt-web-shell .cbt-field label,
+.cbt-web-shell .cbt-short-item label,
+.cbt-web-shell .cbt-finish-stat span,
+.cbt-web-shell .cbt-exam-meta,
+.cbt-web-shell .cbt-review-item-head .cbt-muted,
+.cbt-web-shell .cbt-review-pair strong,
+.cbt-web-shell .cbt-review-chip,
+.cbt-web-shell .cbt-login-help {
+    font-size: calc(12px * var(--cbt-font-scale));
+}
+
+.cbt-web-shell .cbt-subtitle,
+.cbt-web-shell .cbt-alert,
+.cbt-web-shell .cbt-review-empty,
+.cbt-web-shell .cbt-review-explanation,
+.cbt-web-shell .cbt-nav-btn,
+.cbt-web-shell .cbt-legend {
+    font-size: calc(13px * var(--cbt-font-scale));
+}
+
+.cbt-web-shell .cbt-button,
+.cbt-web-shell .cbt-input,
+.cbt-web-shell .cbt-select,
+.cbt-web-shell .cbt-textarea,
+.cbt-web-shell .cbt-option-label,
+.cbt-web-shell .cbt-review-text,
+.cbt-web-shell .cbt-loading,
+.cbt-web-shell .cbt-exam-title,
+.cbt-web-shell .cbt-side-card h4 {
+    font-size: calc(14px * var(--cbt-font-scale));
+}
+
+.cbt-web-shell .cbt-question-stem,
+.cbt-web-shell .cbt-review-question,
+.cbt-web-shell .cbt-review-item-head h4 {
+    font-size: calc(16px * var(--cbt-font-scale));
+}
+
+.cbt-web-shell .cbt-side-summary-kicker {
+    font-size: calc(10px * var(--cbt-font-scale));
+}
+
+.cbt-web-shell .cbt-side-stat span {
+    font-size: calc(9px * var(--cbt-font-scale));
+}
+
+.cbt-web-shell .cbt-side-stat strong {
+    font-size: calc(11px * var(--cbt-font-scale));
+}
+
+.cbt-web-shell .cbt-side-summary-value {
+    font-size: calc(19px * var(--cbt-font-scale));
+}
+
+.cbt-web-shell .cbt-login-panel h3 {
+    font-size: calc(24px * var(--cbt-font-scale));
+}
+
+.cbt-web-shell .cbt-score {
+    font-size: calc(54px * var(--cbt-font-scale));
+}
+

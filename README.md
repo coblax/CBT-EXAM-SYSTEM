@@ -13,6 +13,80 @@ Plugin ini sudah mencakup alur inti CBT dari hulu ke hilir:
 - 6 tipe soal dengan auto grading untuk tipe objektif dan koreksi manual untuk essay
 - kontrol operasional untuk reset attempt, tambah waktu, force complete, cache invalidation, Redis bootstrap, generate dataset uji, sampai load test `k6`
 
+## Pengembangan Frontend Dengan Vite
+
+Frontend shortcode `[cbt_exam_frontend]` sekarang memakai source baru di `src/frontend/` dan hasil build produksi di `public/build/`.
+
+Cara paling aman menjalankan build:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+npm install
+npm run build
+```
+
+Catatan penting:
+
+- `npm run build` harus dijalankan dari folder plugin ini karena `package.json` ada di root plugin.
+- Source yang diedit ada di `src/frontend/`.
+- Hasil build produksi ada di `public/build/`.
+- File manifest yang dibaca WordPress ada di `public/build/manifest.json`.
+
+Perintah yang dipakai:
+
+- `npm install`
+- `npm run dev`
+- `npm run build`
+- `npm run build:watch`
+
+Ringkasan fungsi perintah:
+
+- `npm install` untuk memasang dependency Vite dan font lokal.
+- `npm run build` untuk membuat asset production yang dipakai WordPress.
+- `npm run dev` untuk development dengan Vite dev server.
+- `npm run build:watch` untuk rebuild otomatis tanpa dev server.
+
+Catatan workflow:
+
+- Production WordPress membaca `public/build/manifest.json`, jadi server produksi tidak perlu menjalankan Node.
+- Hasil `public/build/` perlu ikut di-commit bersama perubahan source frontend.
+- Untuk development dengan Vite dev server, definisikan constant `CBT_EXAM_FRONTEND_DEV_SERVER` ke origin Vite, misalnya `http://127.0.0.1:5173`.
+- Alternatif yang lebih praktis, aktifkan mode dev dari menu admin `CBT Exams -> CBT Developer`.
+
+Contoh aktivasi di `wp-config.php`:
+
+```php
+define('CBT_EXAM_FRONTEND_DEV_SERVER', 'http://127.0.0.1:5173');
+```
+
+Mode pemakaian:
+
+- Tanpa `CBT_EXAM_FRONTEND_DEV_SERVER`: WordPress memakai hasil build dari `public/build/`.
+- Dengan `CBT_EXAM_FRONTEND_DEV_SERVER`: WordPress memakai file langsung dari Vite dev server.
+- Page resmi frontend `cbt-ujian` memakai minimal template plugin sendiri agar shell CBT tampil lebih dulu; shortcode `[cbt_exam_frontend]` di halaman lain tetap didukung sebagai fallback mode.
+
+## CBT Developer Mode
+
+Frontend CBT sekarang punya panel admin `CBT Developer` untuk switch global antara:
+
+- `Production Build`
+- `Vite Dev Server`
+
+Yang bisa dilakukan dari panel ini:
+
+- set mode build/dev tanpa edit `wp-config.php`
+- isi URL dev server Vite
+- cek health dev server
+- lihat asset JS/CSS aktif dari manifest build
+- buka halaman frontend CBT langsung
+- clear browser state frontend CBT untuk browser admin saat ini
+
+Catatan penting:
+
+- Mode dev bersifat global untuk site ini.
+- Jika mode dev aktif tetapi Vite dev server mati, frontend CBT akan hard-fail dan menampilkan error developer. Tidak ada fallback otomatis ke build production.
+- Jika constant `CBT_EXAM_FRONTEND_DEV_SERVER` aktif, panel admin hanya bersifat informasional karena source frontend sedang di-override dari config.
+
 ## Highlight Fitur Saat Ini
 
 ### Admin dan Operasional
@@ -106,6 +180,9 @@ Plugin ini sudah mencakup alur inti CBT dari hulu ke hilir:
   - tambahan waktu (`extra_time_minutes`)
   - review hasil setelah selesai
 - Runtime berusaha menjaga urutan soal dan urutan opsi yang sudah tersimpan tetap stabil walaupun struktur soal exam berubah di tengah jalan.
+- Untuk attempt `in_progress`, nomor soal frontend mengikuti snapshot urutan attempt, bukan sekadar `index + 1` dari daftar aktif saat ini.
+- Jika admin menambahkan soal ke exam yang sedang berjalan dan mode acak soal aktif, soal baru akan di-append ke bagian akhir navigasi attempt yang aktif.
+- Jika soal lama dinonaktifkan atau dikeluarkan dari exam aktif, histori attempt dan review arsip tetap dipertahankan agar jawaban lama tidak hilang.
 
 ### 2. Tipe Soal
 

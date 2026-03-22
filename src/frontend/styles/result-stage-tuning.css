@@ -1,0 +1,526 @@
+.cbt-result-card {
+    position: relative;
+}
+
+.cbt-result-card--pass::before,
+.cbt-result-card--fail::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at top right, rgba(255, 255, 255, 0.8), transparent 30%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 35%);
+}
+
+.cbt-result-card--pass::before {
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.04);
+}
+
+.cbt-result-card--fail::before {
+    box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.04);
+}
+
+.cbt-result-hero,
+.cbt-result-body {
+    position: relative;
+    z-index: 1;
+}
+
+.cbt-result-hero {
+    display: grid;
+    justify-items: center;
+    gap: 18px;
+    padding: clamp(26px, 4vw, 34px) clamp(18px, 3vw, 30px) clamp(24px, 4vw, 32px);
+    text-align: center;
+    background:
+        radial-gradient(circle at top center, rgba(59, 130, 246, 0.1), transparent 50%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.94) 100%);
+}
+
+.cbt-result-card--fail .cbt-result-hero {
+    background:
+        radial-gradient(circle at top center, rgba(248, 113, 113, 0.12), transparent 50%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(254, 249, 249, 0.95) 100%);
+}
+
+.cbt-result-card--pass .cbt-result-score-panel {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(239, 246, 255, 0.88) 100%);
+}
+
+.cbt-result-card--fail .cbt-result-score-panel {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(254, 242, 242, 0.9) 100%);
+    border-color: rgba(254, 202, 202, 0.9);
+}
+
+.cbt-result-kicker {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.cbt-result-hero h3 {
+    max-width: min(100%, 860px);
+    margin: 0;
+    font-size: clamp(24px, 4vw, 38px);
+    font-weight: 900;
+    line-height: 1.14;
+    color: #0f172a;
+    text-align: center;
+    text-wrap: balance;
+    word-break: break-word;
+}
+
+.cbt-result-card--pass .cbt-result-hero h3 {
+    color: #173783;
+}
+
+.cbt-result-card--fail .cbt-result-hero h3 {
+    color: #8a1c1c;
+}
+
+.cbt-result-hero .cbt-score {
+    text-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+}
+
+.cbt-result-card--pass .cbt-score {
+    color: #173783;
+}
+
+.cbt-result-card--fail .cbt-score {
+    color: #8a1c1c;
+}
+
+.cbt-result-body {
+    padding: 18px 20px 24px;
+    background: transparent;
+}
+
+.cbt-result-body .cbt-alert {
+    margin-bottom: 14px;
+}
+
+.cbt-result-pending-card {
+    box-shadow: 0 14px 28px rgba(37, 99, 235, 0.08);
+}
+
+.cbt-result-actions {
+    justify-content: center;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.cbt-review-card {
+    border-radius: 22px;
+}
+
+.cbt-review-item {
+    border-radius: 16px;
+}
+
+.cbt-review-text {
+    border-color: #dbe5f2;
+    background: #f8fbff;
+}
+
+.cbt-review-explanation {
+    border-left-color: #93c5fd;
+    background: #eff6ff;
+    color: #1e3a8a;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-card {
+    border-color: #2a3d58;
+    background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(17, 24, 39, 0.98) 100%);
+    box-shadow: 0 24px 54px rgba(2, 6, 23, 0.42);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-status-strip {
+    border-bottom-color: rgba(71, 85, 105, 0.45);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-status-strip--pass {
+    background: linear-gradient(180deg, rgba(30, 64, 175, 0.24), rgba(15, 23, 42, 0.18));
+    color: #93c5fd;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-status-strip--fail {
+    background: linear-gradient(180deg, rgba(127, 29, 29, 0.3), rgba(15, 23, 42, 0.18));
+    color: #fca5a5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-hero {
+    background:
+        radial-gradient(circle at top center, rgba(59, 130, 246, 0.18), transparent 52%),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(17, 24, 39, 0.92) 100%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-card--fail .cbt-result-hero {
+    background:
+        radial-gradient(circle at top center, rgba(239, 68, 68, 0.18), transparent 52%),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(28, 25, 23, 0.92) 100%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-kicker {
+    color: #93a6c6;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-score-panel {
+    border-color: #334155;
+    background: rgba(15, 23, 42, 0.72);
+    box-shadow: 0 20px 38px rgba(2, 6, 23, 0.35);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-score-note {
+    color: #9fb1cb;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-pending-card {
+    border-color: rgba(96, 165, 250, 0.35);
+    background: rgba(30, 41, 59, 0.88);
+    box-shadow: 0 20px 38px rgba(2, 6, 23, 0.32);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-pending-kicker {
+    background: rgba(30, 64, 175, 0.32);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-pending-head strong {
+    color: #eff6ff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-pending-card p {
+    color: #b8c7dc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-hero h3,
+.cbt-web-shell.cbt-theme-dark .cbt-result-card--pass .cbt-score,
+.cbt-web-shell.cbt-theme-dark .cbt-result-card--pass .cbt-result-detail-row strong {
+    color: #eff6ff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-card--fail .cbt-result-hero h3,
+.cbt-web-shell.cbt-theme-dark .cbt-result-card--fail .cbt-score {
+    color: #fee2e2;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-track {
+    background: #233247;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-segment.is-correct {
+    background: linear-gradient(90deg, #22c55e 0%, #4ade80 100%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-segment.is-wrong {
+    background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-segment.is-unanswered {
+    background: linear-gradient(90deg, #475569 0%, #64748b 100%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-segment.is-pending {
+    background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-segment.is-empty {
+    background: linear-gradient(90deg, #334155 0%, #475569 100%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-pill {
+    background: rgba(120, 53, 15, 0.28);
+    border-color: rgba(251, 191, 36, 0.35);
+    color: #fcd34d;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-legend.is-correct {
+    color: #86efac;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-legend.is-wrong {
+    color: #fda4af;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-legend.is-unanswered,
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-legend.is-empty {
+    color: #cbd5e1;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-progress-legend.is-pending {
+    color: #fcd34d;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-stat,
+.cbt-web-shell.cbt-theme-dark .cbt-result-detail-card {
+    background: #111827;
+    border-color: #2a3d58;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-stat.is-correct {
+    background: rgba(20, 83, 45, 0.24);
+    border-color: rgba(74, 222, 128, 0.28);
+    color: #86efac;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-stat.is-wrong {
+    background: rgba(127, 29, 29, 0.24);
+    border-color: rgba(248, 113, 113, 0.28);
+    color: #fda4af;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-stat.is-unanswered {
+    background: rgba(30, 41, 59, 0.72);
+    border-color: rgba(100, 116, 139, 0.28);
+    color: #cbd5e1;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-detail-row {
+    border-bottom-color: #243246;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-detail-row span {
+    color: #8ea0ba;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-detail-row strong {
+    color: #e5edf8;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-review-text {
+    background: #0f172a;
+    border-color: #2a3d58;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-review-explanation {
+    background: rgba(30, 64, 175, 0.18);
+    border-left-color: #60a5fa;
+    color: #dbeafe;
+}
+
+@media (max-width: 860px) {
+    .cbt-result-status-strip {
+        padding: 14px 16px;
+    }
+
+    .cbt-result-hero {
+        gap: 16px;
+        padding: 24px 16px 22px;
+    }
+
+    .cbt-result-body {
+        padding: 16px 16px 20px;
+    }
+
+    .cbt-result-detail-row {
+        grid-template-columns: minmax(0, 150px) minmax(0, 1fr);
+        padding: 16px;
+    }
+}
+
+@media (max-width: 680px) {
+    .cbt-result-status-strip {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .cbt-result-status-label {
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.72);
+    }
+
+    .cbt-result-status-subject {
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        text-align: left;
+    }
+
+    .cbt-result-progress-card {
+        width: 100%;
+    }
+
+    .cbt-result-progress-legend-group {
+        width: 100%;
+    }
+
+    .cbt-result-stat-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .cbt-result-stat.is-unanswered {
+        grid-column: auto;
+    }
+
+    .cbt-result-stat {
+        min-height: 104px;
+        padding: 16px 10px;
+        border-radius: 18px;
+    }
+
+    .cbt-result-stat strong {
+        font-size: clamp(28px, 8vw, 40px);
+    }
+
+    .cbt-result-stat span {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+    }
+
+    .cbt-result-detail-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .cbt-result-detail-row strong {
+        font-size: 18px;
+    }
+
+    .cbt-result-pending-card {
+        padding: 14px 16px;
+        border-radius: 16px;
+    }
+
+    .cbt-result-pending-head strong {
+        font-size: 16px;
+    }
+
+    .cbt-result-pending-card p {
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 520px) {
+    .cbt-result-card {
+        border-radius: 20px;
+    }
+
+    .cbt-result-hero {
+        gap: 12px;
+        padding: 18px 12px 16px;
+    }
+
+    .cbt-result-kicker {
+        font-size: 11px;
+        letter-spacing: 0.18em;
+    }
+
+    .cbt-result-hero h3 {
+        font-size: clamp(19px, 6.6vw, 26px);
+        line-height: 1.18;
+    }
+
+    .cbt-result-score-panel {
+        gap: 12px;
+        padding: 16px 14px 14px;
+        border-radius: 18px;
+    }
+
+    .cbt-score {
+        font-size: clamp(48px, 18vw, 72px);
+    }
+
+    .cbt-result-score-note {
+        margin-top: -2px;
+        font-size: 12px;
+    }
+
+    .cbt-result-progress-track {
+        height: 14px;
+    }
+
+    .cbt-result-progress-threshold {
+        height: 24px;
+    }
+
+    .cbt-result-progress-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+        gap: 8px 10px;
+    }
+
+    .cbt-result-progress-legend-group {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 10px;
+    }
+
+    .cbt-result-progress-pill {
+        justify-self: end;
+    }
+
+    .cbt-result-body {
+        padding: 14px 12px 16px;
+    }
+
+    .cbt-result-pending-card {
+        gap: 8px;
+        margin-top: 14px;
+        padding: 12px 12px 11px;
+        border-radius: 14px;
+    }
+
+    .cbt-result-pending-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .cbt-result-pending-kicker {
+        min-height: 24px;
+        padding: 0 10px;
+        font-size: 10px;
+    }
+
+    .cbt-result-pending-head strong {
+        font-size: 15px;
+    }
+
+    .cbt-result-pending-card p {
+        font-size: 12px;
+        line-height: 1.45;
+    }
+
+    .cbt-result-stat-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .cbt-result-stat.is-unanswered {
+        grid-column: auto;
+    }
+
+    .cbt-result-stat {
+        min-height: 92px;
+        padding: 12px 8px;
+        border-radius: 16px;
+    }
+
+    .cbt-result-stat strong {
+        font-size: clamp(24px, 9vw, 34px);
+    }
+
+    .cbt-result-stat span {
+        font-size: 9px;
+        letter-spacing: 0.07em;
+    }
+
+    .cbt-result-detail-row {
+        padding: 14px 16px;
+    }
+
+    .cbt-result-actions {
+        flex-direction: column;
+    }
+
+    .cbt-result-actions .cbt-button {
+        width: 100%;
+    }
+}

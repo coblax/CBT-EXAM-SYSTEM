@@ -8,7 +8,7 @@ class CBT_Activator
 {
     private const OPTION_DB_VERSION = 'cbt_exam_system_db_version';
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
-    private const DB_VERSION = '1.6.5';
+    private const DB_VERSION = '1.6.6';
 
     public static function activate(): void
     {
@@ -60,6 +60,7 @@ class CBT_Activator
             exam_token VARCHAR(40) NULL,
             target_kelas TEXT NULL,
             duration_minutes INT UNSIGNED NOT NULL DEFAULT 60,
+            kkm_percentage DECIMAL(5,2) NOT NULL DEFAULT 75.00,
             total_questions INT UNSIGNED NOT NULL DEFAULT 0,
             randomize_questions TINYINT(1) NOT NULL DEFAULT 0,
             randomize_options TINYINT(1) NOT NULL DEFAULT 0,
@@ -200,6 +201,7 @@ class CBT_Activator
         self::ensure_question_source_linkage_schema($wpdb);
         self::ensure_question_activity_schema($wpdb);
         self::ensure_attempt_extra_time_schema($wpdb);
+        self::ensure_exam_kkm_schema($wpdb);
         self::migrate_question_type_details($wpdb);
         self::seed_default_subjects($wpdb);
         self::register_roles();
@@ -303,6 +305,21 @@ class CBT_Activator
         if (!in_array('extra_time_minutes', $columns, true)) {
             $wpdb->query(
                 "ALTER TABLE {$attempt_table} ADD COLUMN extra_time_minutes INT UNSIGNED NOT NULL DEFAULT 0 AFTER duration_seconds"
+            );
+        }
+    }
+
+    private static function ensure_exam_kkm_schema(wpdb $wpdb): void
+    {
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$exam_table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (!in_array('kkm_percentage', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$exam_table} ADD COLUMN kkm_percentage DECIMAL(5,2) NOT NULL DEFAULT 75.00 AFTER duration_minutes"
             );
         }
     }

@@ -13,7 +13,7 @@ final class CBT_Admin_Menu
             'CBT Exams',
             'cbt_manage_exams',
             'cbt-exams',
-            [CBT_Admin::class, 'render_exams_page'],
+            [CBT_Admin_Exams_Page::class, 'render'],
             'dashicons-welcome-learn-more',
             26
         );
@@ -26,7 +26,7 @@ final class CBT_Admin_Menu
             'CBT Exams',
             'cbt_manage_exams',
             'cbt-exams',
-            [CBT_Admin::class, 'render_exams_page']
+            [CBT_Admin_Exams_Page::class, 'render']
         );
 
         add_submenu_page(
@@ -49,11 +49,20 @@ final class CBT_Admin_Menu
 
         add_submenu_page(
             'cbt-exams',
+            'CBT Developer',
+            'CBT Developer',
+            'manage_options',
+            'cbt-developer',
+            [CBT_Admin_Developer_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
             'CBT Maintenance',
             'CBT Maintenance',
             'manage_options',
             'cbt-maintenance',
-            [CBT_Admin::class, 'render_maintenance_page']
+            [CBT_Admin_Maintenance_Page::class, 'render']
         );
 
         add_submenu_page(
@@ -98,7 +107,7 @@ final class CBT_Admin_Menu
             'CBT Questions',
             'cbt_manage_questions',
             'cbt-question-bank',
-            [CBT_Admin::class, 'render_question_bank_page']
+            [CBT_Admin_Questions_Page::class, 'render']
         );
 
         add_submenu_page(
@@ -107,7 +116,16 @@ final class CBT_Admin_Menu
             'CBT Results',
             'cbt_view_results',
             'cbt-results',
-            [CBT_Admin::class, 'render_results_page']
+            [CBT_Admin_Results_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Analytics',
+            'CBT Analytics',
+            'cbt_view_results',
+            'cbt-analytics',
+            [CBT_Admin_Analytics_Page::class, 'render']
         );
 
         add_submenu_page(

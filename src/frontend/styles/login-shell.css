@@ -1,0 +1,822 @@
+.cbt-login-shell {
+    display: grid;
+    grid-template-columns: minmax(300px, 1.15fr) minmax(300px, 1fr);
+    gap: clamp(12px, 2vw, 24px);
+    align-items: stretch;
+}
+
+body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
+    width: min(1360px, 100%);
+    margin: 0 auto;
+}
+
+.cbt-login-hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: 28px;
+    padding: 34px 32px 30px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background:
+        linear-gradient(122deg, rgba(255, 255, 255, 0.14) 0 18%, transparent 18% 100%),
+        linear-gradient(145deg, #2647b9 0%, #3569ea 56%, #548bff 100%);
+    color: #fff;
+    box-shadow: 0 24px 46px rgba(38, 71, 185, 0.24);
+}
+
+.cbt-login-hero::before,
+.cbt-login-hero::after {
+    content: '';
+    position: absolute;
+    border-radius: 999px;
+    pointer-events: none;
+}
+
+.cbt-login-hero::before {
+    width: 260px;
+    height: 260px;
+    top: -150px;
+    left: -110px;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.cbt-login-hero::after {
+    width: calc(100% + 80px);
+    height: 12px;
+    bottom: -5px;
+    left: -40px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(193, 211, 255, 0.96) 32%, rgba(146, 170, 255, 0.42) 100%);
+}
+
+.cbt-login-hero > * {
+    position: relative;
+    z-index: 1;
+}
+
+.cbt-login-kicker {
+    margin: 0 0 10px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.86);
+}
+
+.cbt-login-hero h1 {
+    margin: 0;
+    font-size: clamp(36px, 4.6vw, 58px);
+    line-height: 0.96;
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
+    text-wrap: balance;
+}
+
+.cbt-login-description {
+    margin: 18px 0 0 122px;
+    max-width: 520px;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.92);
+    line-height: 1.6;
+}
+
+.cbt-login-flow-label {
+    margin: 18px 0 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.cbt-login-steps {
+    margin-top: 12px;
+    display: grid;
+    gap: 12px;
+    max-width: 580px;
+}
+
+.cbt-login-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+    padding: 16px 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08)),
+        rgba(255, 255, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 16px 28px rgba(10, 55, 96, 0.16);
+    backdrop-filter: blur(12px);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.cbt-login-step::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    pointer-events: none;
+}
+
+.cbt-login-step:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.26);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 20px 34px rgba(10, 55, 96, 0.22);
+}
+
+.cbt-login-step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    flex: 0 0 52px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(232, 243, 255, 0.94));
+    color: #0f4c81;
+    font-size: 19px;
+    font-weight: 800;
+    box-shadow:
+        0 10px 18px rgba(7, 37, 66, 0.16),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.cbt-login-step-copy {
+    min-width: 0;
+}
+
+.cbt-login-step-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.cbt-login-step strong {
+    display: inline-block;
+    font-size: 16px;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+}
+
+.cbt-login-step-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(6, 24, 43, 0.18);
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.cbt-login-step p {
+    margin: 9px 0 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.94);
+}
+
+.cbt-login-step-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.cbt-login-step-meta small {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.88);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.cbt-login-step > * {
+    position: relative;
+    z-index: 1;
+}
+
+.cbt-login-step small {
+    display: block;
+    font-size: 12px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.cbt-login-panel {
+    border: 0;
+    border-radius: var(--cbt-radius);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: var(--cbt-shadow);
+    padding: 24px 22px;
+}
+
+.cbt-login-panel h3 {
+    margin: 0 0 6px;
+    font-size: 24px;
+    font-weight: 800;
+    color: #0d2744;
+}
+
+.cbt-login-panel .cbt-subtitle {
+    margin-bottom: 16px;
+}
+
+.cbt-login-panel .cbt-form-grid {
+    margin-top: 0;
+    gap: 13px;
+}
+
+.cbt-login-panel .cbt-field label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.cbt-login-panel .cbt-input::placeholder {
+    color: #8b96a7;
+}
+
+.cbt-login-panel .cbt-actions {
+    margin-top: 8px;
+}
+
+.cbt-login-panel .cbt-button-primary {
+    width: 100%;
+    min-height: 46px;
+    font-size: 15px;
+    letter-spacing: 0.01em;
+}
+
+.cbt-login-help {
+    margin: 12px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--cbt-muted);
+}
+
+.cbt-login-panel-brand-mobile {
+    display: none;
+}
+
+.cbt-grid-2 {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 16px;
+}
+
+.cbt-exam-list {
+    margin-top: 16px;
+    display: grid;
+    gap: 12px;
+}
+
+.cbt-exam-item {
+    border: 1px solid var(--cbt-border);
+    border-radius: 12px;
+    padding: 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease;
+    background: #fff;
+}
+
+.cbt-exam-item:hover {
+    border-color: #9cc2e6;
+}
+
+.cbt-exam-item.is-active {
+    border-color: var(--cbt-primary-2);
+    box-shadow: 0 0 0 4px rgba(27, 122, 165, 0.12);
+    background: #f7fcff;
+}
+
+.cbt-exam-item.is-completed {
+    border-color: #6fc6a3;
+    background: #eefaf4;
+}
+
+.cbt-exam-item.is-in-progress {
+    border-color: #7eb4eb;
+    background: #f2f8ff;
+}
+
+.cbt-exam-item.is-not-started {
+    border-color: #c8d7ea;
+    background: #ffffff;
+}
+
+.cbt-exam-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 800;
+    color: #0d2744;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbt-exam-meta {
+    margin-top: 5px;
+    color: var(--cbt-muted);
+    font-size: 12px;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbt-exam-meta-attempt {
+    font-weight: 700;
+    color: #2f4d6a;
+}
+
+.cbt-exam-meta-summary {
+    font-weight: 600;
+    color: #35506b;
+    margin-top: 8px;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+.cbt-exam-meta-summary .cbt-exam-meta-full {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+}
+
+.cbt-exam-meta-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid #dbe7f5;
+    background: #f8fbff;
+    color: #35506b;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.cbt-exam-meta-chip.is-accent {
+    border-color: #bfd8f4;
+    background: #eef6ff;
+    color: #1d4ed8;
+}
+
+.cbt-exam-meta-full {
+    display: inline;
+}
+
+.cbt-exam-meta-compact {
+    display: none;
+}
+
+.cbt-exam-picker-mobile {
+    display: none;
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid #dbe7f5;
+    background: linear-gradient(180deg, #fafdff 0%, #f4f9ff 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.cbt-exam-picker-mobile-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.cbt-exam-picker-mobile-kicker {
+    margin: 0;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #1d4ed8;
+}
+
+.cbt-exam-picker-mobile-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid #bfd8f4;
+    background: #eef6ff;
+    color: #1d4ed8;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.cbt-exam-picker-mobile .cbt-field label {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #35506b;
+}
+
+.cbt-exam-picker-dropdown {
+    position: relative;
+}
+
+.cbt-exam-picker-trigger {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 62px;
+    padding: 13px 14px 13px 16px;
+    border: 1px solid #bfd8f4;
+    border-radius: 20px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 248, 255, 0.94)),
+        #fff;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.94),
+        0 14px 28px rgba(37, 99, 235, 0.08);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.cbt-exam-picker-trigger:hover:not(:disabled),
+.cbt-exam-picker-dropdown.is-open .cbt-exam-picker-trigger {
+    border-color: #60a5fa;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.98),
+        0 18px 30px rgba(37, 99, 235, 0.14);
+}
+
+.cbt-exam-picker-trigger:focus-visible {
+    outline: 0;
+    border-color: #3b82f6;
+    box-shadow:
+        0 0 0 4px rgba(59, 130, 246, 0.16),
+        0 18px 30px rgba(37, 99, 235, 0.14);
+}
+
+.cbt-exam-picker-trigger:disabled {
+    cursor: not-allowed;
+    opacity: 0.72;
+}
+
+.cbt-exam-picker-trigger-copy {
+    display: block;
+    min-width: 0;
+}
+
+.cbt-exam-picker-trigger-label {
+    display: block;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #1d4ed8;
+}
+
+.cbt-exam-picker-trigger-value {
+    display: block;
+    margin-top: 5px;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    color: #102a43;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.cbt-exam-picker-trigger-note {
+    display: block;
+    margin-top: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #5d748d;
+}
+
+.cbt-exam-picker-trigger-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    background: #eef6ff;
+    color: #1d4ed8;
+    pointer-events: none;
+    transition: transform 0.18s ease, background-color 0.18s ease;
+}
+
+.cbt-exam-picker-dropdown.is-open .cbt-exam-picker-trigger-icon {
+    transform: rotate(180deg);
+}
+
+.cbt-exam-picker-trigger-icon svg,
+.cbt-exam-picker-option-indicator svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.cbt-exam-picker-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    display: grid;
+    gap: 6px;
+    max-height: min(320px, 56vh);
+    padding: 8px;
+    overflow-y: auto;
+    border: 1px solid #cfe0f2;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+    backdrop-filter: blur(18px);
+}
+
+.cbt-exam-picker-option {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 12px 12px 14px;
+    border: 0;
+    border-radius: 16px;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.cbt-exam-picker-option:hover:not(:disabled),
+.cbt-exam-picker-option:focus-visible {
+    outline: 0;
+    background: rgba(239, 246, 255, 0.9);
+    box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.92);
+}
+
+.cbt-exam-picker-option:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.cbt-exam-picker-option.is-active {
+    background:
+        linear-gradient(135deg, rgba(219, 234, 254, 0.96), rgba(239, 246, 255, 0.94)),
+        #eff6ff;
+    box-shadow:
+        inset 0 0 0 1px rgba(96, 165, 250, 0.68),
+        0 12px 22px rgba(37, 99, 235, 0.1);
+}
+
+.cbt-exam-picker-option-main {
+    min-width: 0;
+}
+
+.cbt-exam-picker-option-title {
+    display: block;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    color: #102a43;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbt-exam-picker-option-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 7px;
+}
+
+.cbt-exam-picker-option-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    border: 1px solid #dbe7f5;
+    background: #f8fbff;
+    color: #58708a;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.cbt-exam-picker-option-chip.is-ready {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.cbt-exam-picker-option-chip.is-progress {
+    border-color: #bfdbfe;
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.cbt-exam-picker-option-chip.is-completed {
+    border-color: #bbf7d0;
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.cbt-exam-picker-option-chip.is-warn {
+    border-color: #fde68a;
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.cbt-exam-picker-option-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: rgba(219, 234, 254, 0.9);
+    color: #2563eb;
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.88);
+    transition: opacity 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
+}
+
+.cbt-exam-picker-option.is-active .cbt-exam-picker-option-indicator {
+    opacity: 1;
+    transform: scale(1);
+    background: #2563eb;
+    color: #fff;
+}
+
+.cbt-exam-picker-mobile-help {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid #e4edf8;
+    background: rgba(255, 255, 255, 0.78);
+    font-size: 12px;
+    line-height: 1.6;
+    color: #5b6e82;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-mobile {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: none;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-mobile-kicker {
+    color: #7dd3fc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-mobile-count {
+    border-color: rgba(96, 165, 250, 0.22);
+    background: rgba(37, 99, 235, 0.16);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-mobile .cbt-field label {
+    color: #bfd7ff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-trigger {
+    border-color: rgba(96, 165, 250, 0.18);
+    background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.84)),
+        rgba(15, 23, 42, 0.9);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 16px 28px rgba(2, 6, 23, 0.28);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-trigger-label {
+    color: #7dd3fc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-trigger-value {
+    color: #f8fafc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-trigger-note {
+    color: #9bb7d3;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-trigger-icon {
+    background: rgba(37, 99, 235, 0.16);
+    color: #93c5fd;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-menu {
+    border-color: rgba(148, 163, 184, 0.16);
+    background: rgba(15, 23, 42, 0.96);
+    box-shadow: 0 24px 50px rgba(2, 6, 23, 0.36);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option:focus-visible {
+    background: rgba(30, 41, 59, 0.88);
+    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.2);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option.is-active {
+    background:
+        linear-gradient(135deg, rgba(30, 64, 175, 0.28), rgba(15, 23, 42, 0.9)),
+        rgba(15, 23, 42, 0.92);
+    box-shadow:
+        inset 0 0 0 1px rgba(96, 165, 250, 0.34),
+        0 12px 24px rgba(2, 6, 23, 0.28);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-title {
+    color: #f8fafc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-chip {
+    border-color: rgba(148, 163, 184, 0.14);
+    background: rgba(30, 41, 59, 0.86);
+    color: #aab6c5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-chip.is-ready,
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-chip.is-progress {
+    border-color: rgba(96, 165, 250, 0.24);
+    background: rgba(30, 64, 175, 0.22);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-chip.is-completed {
+    border-color: rgba(74, 222, 128, 0.26);
+    background: rgba(20, 83, 45, 0.34);
+    color: #bbf7d0;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-chip.is-warn {
+    border-color: rgba(251, 191, 36, 0.24);
+    background: rgba(120, 53, 15, 0.34);
+    color: #fde68a;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option-indicator {
+    background: rgba(30, 64, 175, 0.3);
+    color: #93c5fd;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-option.is-active .cbt-exam-picker-option-indicator {
+    background: #3b82f6;
+    color: #eff6ff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-mobile-help {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #aab6c5;
+}
+

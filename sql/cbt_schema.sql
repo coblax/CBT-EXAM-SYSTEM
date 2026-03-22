@@ -13,6 +13,7 @@ CREATE TABLE exams (
   title VARCHAR(255) NOT NULL,
   description LONGTEXT NULL,
   duration_minutes INT UNSIGNED NOT NULL DEFAULT 60,
+  kkm_percentage DECIMAL(5,2) NOT NULL DEFAULT 75.00,
   total_questions INT UNSIGNED NOT NULL DEFAULT 0,
   randomize_questions TINYINT(1) NOT NULL DEFAULT 0,
   status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',

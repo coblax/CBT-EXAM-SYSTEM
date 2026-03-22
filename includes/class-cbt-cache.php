@@ -143,15 +143,27 @@ class CBT_Cache
         return 'ui_state';
     }
 
+    public static function namespace_analytics(): string
+    {
+        return 'analytics';
+    }
+
+    public static function namespace_analytics_exam(int $exam_id): string
+    {
+        return 'analytics_exam:' . max(0, $exam_id);
+    }
+
     public static function invalidate_catalog(): void
     {
         self::invalidate_namespace(self::namespace_catalog());
+        self::invalidate_analytics();
     }
 
     public static function invalidate_exam(int $exam_id): void
     {
         if ($exam_id > 0) {
             self::invalidate_namespace(self::namespace_exam($exam_id));
+            self::invalidate_analytics_exam($exam_id);
         }
     }
 
@@ -202,6 +214,28 @@ class CBT_Cache
     public static function invalidate_ui_state(): void
     {
         self::invalidate_namespace(self::namespace_ui_state());
+    }
+
+    public static function invalidate_analytics(): void
+    {
+        self::invalidate_namespace(self::namespace_analytics());
+    }
+
+    public static function invalidate_analytics_exam(int $exam_id): void
+    {
+        if ($exam_id > 0) {
+            self::invalidate_namespace(self::namespace_analytics_exam($exam_id));
+        }
+    }
+
+    /**
+     * @param array<int,int> $exam_ids
+     */
+    public static function invalidate_analytics_exams(array $exam_ids): void
+    {
+        foreach ($exam_ids as $exam_id) {
+            self::invalidate_analytics_exam((int) $exam_id);
+        }
     }
 
     public static function invalidate_namespace(string $namespace): int

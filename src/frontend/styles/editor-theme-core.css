@@ -1,0 +1,1119 @@
+/* Editor-like dark theme override */
+.cbt-web-shell.cbt-theme-dark {
+    color-scheme: dark;
+    --cbt-bg-1: #111315;
+    --cbt-bg-2: #17191d;
+    --cbt-primary: #0e639c;
+    --cbt-primary-2: #1177bb;
+    --cbt-accent: #d7ba7d;
+    --cbt-danger: #f48771;
+    --cbt-success: #89d185;
+    --cbt-text: #d4d4d4;
+    --cbt-muted: #9da5b4;
+    --cbt-border: #2d2d30;
+    --cbt-white: #1e1e1e;
+    --cbt-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+    --cbt-dark-surface-1: #1e1e1e;
+    --cbt-dark-surface-2: #252526;
+    --cbt-dark-surface-3: #2d2d30;
+    --cbt-dark-surface-4: #3c3c3c;
+    --cbt-dark-accent-soft: rgba(14, 99, 156, 0.18);
+    --cbt-dark-success-soft: rgba(137, 209, 133, 0.14);
+    --cbt-dark-warning-soft: rgba(215, 186, 125, 0.14);
+    --cbt-dark-danger-soft: rgba(244, 135, 113, 0.16);
+    background:
+        radial-gradient(circle at 100% 0, rgba(14, 99, 156, 0.16), transparent 26%),
+        radial-gradient(circle at 0 100%, rgba(215, 186, 125, 0.08), transparent 20%),
+        linear-gradient(180deg, var(--cbt-bg-1) 0%, var(--cbt-bg-2) 100%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-topbar {
+    border-color: var(--cbt-dark-surface-3);
+    background: linear-gradient(180deg, #181818 0%, #1e1e1e 100%);
+    color: #f3f3f3;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.28);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-brand-badge {
+    background: linear-gradient(180deg, #0e639c 0%, #1177bb 100%);
+    border-color: rgba(88, 166, 255, 0.34);
+    color: #fff;
+    box-shadow: 0 10px 22px rgba(14, 99, 156, 0.24);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-brand h2,
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero h1,
+.cbt-web-shell.cbt-theme-dark .cbt-login-panel h3,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-head-title,
+.cbt-web-shell.cbt-theme-dark .cbt-side-card .cbt-side-card-title,
+.cbt-web-shell.cbt-theme-dark .cbt-result-hero h3 {
+    color: #f3f3f3;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-brand small,
+.cbt-web-shell.cbt-theme-dark .cbt-subtitle,
+.cbt-web-shell.cbt-theme-dark .cbt-muted,
+.cbt-web-shell.cbt-theme-dark .cbt-exam-meta,
+.cbt-web-shell.cbt-theme-dark .cbt-login-help,
+.cbt-web-shell.cbt-theme-dark .cbt-side-card-subtitle,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-head-subtitle,
+.cbt-web-shell.cbt-theme-dark .cbt-review-empty,
+.cbt-web-shell.cbt-theme-dark .cbt-loading {
+    color: var(--cbt-muted);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-card,
+.cbt-web-shell.cbt-theme-dark .cbt-question-card,
+.cbt-web-shell.cbt-theme-dark .cbt-side-card,
+.cbt-web-shell.cbt-theme-dark .cbt-review-item,
+.cbt-web-shell.cbt-theme-dark .cbt-review-option,
+.cbt-web-shell.cbt-theme-dark .cbt-option,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-modal,
+.cbt-web-shell.cbt-theme-dark .cbt-login-panel,
+.cbt-web-shell.cbt-theme-dark .cbt-exam-item,
+.cbt-web-shell.cbt-theme-dark .cbt-loading,
+.cbt-web-shell.cbt-theme-dark .cbt-result-body,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-panel {
+    background: var(--cbt-dark-surface-1);
+    border-color: var(--cbt-border);
+    color: var(--cbt-text);
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero {
+    border-color: rgba(148, 163, 184, 0.16);
+    background:
+        linear-gradient(120deg, rgba(255, 255, 255, 0.06) 0 16%, transparent 16% 100%),
+        linear-gradient(145deg, #13255f 0%, #2040a4 58%, #3f67df 100%);
+    color: #f8fbff;
+    box-shadow: 0 24px 44px rgba(2, 6, 23, 0.32);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero::before {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero::after {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(165, 180, 252, 0.86) 34%, rgba(129, 140, 248, 0.34) 100%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-kicker {
+    color: #8ab4f8;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero-school-tag {
+    border-color: rgba(191, 219, 254, 0.18);
+    background: rgba(255, 255, 255, 0.08);
+    color: #dbeafe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero-motto-line {
+    background: rgba(191, 219, 254, 0.28);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero-motto {
+    color: rgba(219, 234, 254, 0.8);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-hero-logo-wrap {
+    background: transparent;
+    box-shadow: none;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-description {
+    color: #b8c0cc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step {
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step span {
+    background: linear-gradient(180deg, #0e639c 0%, #1177bb 100%);
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(14, 99, 156, 0.2);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step small {
+    color: #aab3bf;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head {
+    border-color: var(--cbt-dark-surface-3);
+    background: var(--cbt-dark-surface-2);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-side-card-head {
+    border-color: transparent;
+    background: transparent;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head.is-answered {
+    border-color: rgba(137, 209, 133, 0.28);
+    background: var(--cbt-dark-success-soft);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head.is-doubtful {
+    border-color: rgba(215, 186, 125, 0.38);
+    background: var(--cbt-dark-warning-soft);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-chip,
+.cbt-web-shell.cbt-theme-dark .cbt-access-group,
+.cbt-web-shell.cbt-theme-dark .cbt-icon-button,
+.cbt-web-shell.cbt-theme-dark .cbt-input,
+.cbt-web-shell.cbt-theme-dark .cbt-select,
+.cbt-web-shell.cbt-theme-dark .cbt-textarea,
+.cbt-web-shell.cbt-theme-dark .cbt-question-quick-nav,
+.cbt-web-shell.cbt-theme-dark .cbt-side-summary,
+.cbt-web-shell.cbt-theme-dark .cbt-side-stat,
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn,
+.cbt-web-shell.cbt-theme-dark .cbt-review-text,
+.cbt-web-shell.cbt-theme-dark .cbt-user-chip,
+.cbt-web-shell.cbt-theme-dark .cbt-nav-position-group,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-position-group,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-status,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-modal-progress,
+.cbt-web-shell.cbt-theme-dark .cbt-exam-progress {
+    background: var(--cbt-dark-surface-2);
+    border-color: var(--cbt-dark-surface-3);
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip,
+.cbt-web-shell.cbt-theme-dark .cbt-question-font-controls,
+.cbt-web-shell.cbt-theme-dark .cbt-nav-position-group,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-position-group {
+    background: var(--cbt-dark-surface-3);
+    border-color: var(--cbt-dark-surface-4);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip-label,
+.cbt-web-shell.cbt-theme-dark .cbt-side-summary-kicker,
+.cbt-web-shell.cbt-theme-dark .cbt-side-stat span,
+.cbt-web-shell.cbt-theme-dark .cbt-review-chip-value-empty,
+.cbt-web-shell.cbt-theme-dark .cbt-user-photo-modal-row dt {
+    color: var(--cbt-muted);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip-value,
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip-type,
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip-points,
+.cbt-web-shell.cbt-theme-dark .cbt-side-summary-value,
+.cbt-web-shell.cbt-theme-dark .cbt-side-stat strong,
+.cbt-web-shell.cbt-theme-dark .cbt-review-chip-key,
+.cbt-web-shell.cbt-theme-dark .cbt-review-question,
+.cbt-web-shell.cbt-theme-dark .cbt-question-stem,
+.cbt-web-shell.cbt-theme-dark .cbt-option-label,
+.cbt-web-shell.cbt-theme-dark .cbt-field label,
+.cbt-web-shell.cbt-theme-dark .cbt-exam-title {
+    color: #f3f3f3;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip-separator {
+    background: #6b7280;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-warning,
+.cbt-web-shell.cbt-theme-dark .cbt-action-icon-doubtful.is-active,
+.cbt-web-shell.cbt-theme-dark .cbt-side-stat.is-doubtful,
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-doubtful:not(.is-current),
+.cbt-web-shell.cbt-theme-dark .cbt-button-warning,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-modal-warning {
+    background: var(--cbt-dark-warning-soft);
+    border-color: rgba(215, 186, 125, 0.38);
+    color: #e5c07b;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-prefetch {
+    color: #dbeafe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-prefetch .cbt-chip-prefetch-status {
+    color: #93add1;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-prefetch.is-loading {
+    background: rgba(37, 99, 235, 0.18);
+    border-color: rgba(96, 165, 250, 0.36);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-prefetch.is-loading .cbt-chip-prefetch-status,
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-prefetch.is-loading .cbt-chip-label,
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-prefetch.is-loading .cbt-chip-value {
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-prefetch.is-complete {
+    background: rgba(22, 163, 74, 0.2);
+    border-color: rgba(74, 222, 128, 0.34);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-prefetch.is-complete .cbt-chip-prefetch-status,
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-prefetch.is-complete .cbt-chip-label,
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip.cbt-chip-prefetch.is-complete .cbt-chip-value {
+    color: #dcfce7;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-nav-toggle,
+.cbt-web-shell.cbt-theme-dark .cbt-side-card-head .cbt-nav-toggle,
+.cbt-web-shell.cbt-theme-dark .cbt-calculator-toggle,
+.cbt-web-shell.cbt-theme-dark .cbt-nav-position-btn,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-position-btn,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-close,
+.cbt-web-shell.cbt-theme-dark .cbt-question-font-controls .cbt-icon-button,
+.cbt-web-shell.cbt-theme-dark .cbt-action-icon,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-key,
+.cbt-web-shell.cbt-theme-dark .cbt-password-toggle,
+.cbt-web-shell.cbt-theme-dark .cbt-user-photo-modal-close {
+    background: var(--cbt-dark-surface-2);
+    border-color: var(--cbt-dark-surface-4);
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-icon-button:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-nav-toggle:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-side-card-head .cbt-nav-toggle:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-calculator-toggle:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-nav-position-btn:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-calc-position-btn:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-calc-close:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-question-font-controls .cbt-icon-button:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-action-icon:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-calc-key:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-password-toggle:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-user-photo-modal-close:hover {
+    background: var(--cbt-dark-surface-3);
+    border-color: #4b4f58;
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-input::placeholder,
+.cbt-web-shell.cbt-theme-dark .cbt-textarea::placeholder {
+    color: #7f8793;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-input:focus,
+.cbt-web-shell.cbt-theme-dark .cbt-select:focus,
+.cbt-web-shell.cbt-theme-dark .cbt-textarea:focus {
+    border-color: #1177bb;
+    box-shadow: 0 0 0 3px rgba(17, 119, 187, 0.24);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-button-primary,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-key-eval {
+    background: linear-gradient(180deg, #0e639c 0%, #1177bb 100%);
+    border-color: #1177bb;
+    color: #fff;
+    box-shadow: 0 12px 22px rgba(14, 99, 156, 0.2);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-button-primary:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-calc-key-eval:hover:not(:disabled) {
+    background: linear-gradient(180deg, #1177bb 0%, #1682c7 100%);
+    border-color: #1682c7;
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-button-secondary {
+    background: var(--cbt-dark-surface-2);
+    border-color: var(--cbt-dark-surface-4);
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-button-danger,
+.cbt-web-shell.cbt-theme-dark .cbt-alert-error,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-status.is-error,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-stat.is-unanswered {
+    background: var(--cbt-dark-danger-soft);
+    border-color: rgba(244, 135, 113, 0.38);
+    color: #f48771;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-stat.is-unanswered strong {
+    color: #ffab9f;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-item:hover {
+    border-color: #3c82bf;
+    background: #202226;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-item.is-active,
+.cbt-web-shell.cbt-theme-dark .cbt-option.is-selected,
+.cbt-web-shell.cbt-theme-dark .cbt-review-option.is-selected {
+    border-color: #3794ff;
+    background: linear-gradient(180deg, rgba(14, 99, 156, 0.22), rgba(14, 99, 156, 0.1));
+    box-shadow: 0 0 0 1px rgba(55, 148, 255, 0.16);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-item.is-completed,
+.cbt-web-shell.cbt-theme-dark .cbt-review-option.is-correct,
+.cbt-web-shell.cbt-theme-dark .cbt-side-stat.is-answered,
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-answered:not(.is-current),
+.cbt-web-shell.cbt-theme-dark .cbt-alert-success,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-modal-ok,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-stat.is-answered {
+    background: var(--cbt-dark-success-soft);
+    border-color: rgba(137, 209, 133, 0.34);
+    color: #9ad59b;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-side-stat.is-answered strong,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-stat.is-answered strong {
+    color: #b4e3b6;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-item.is-in-progress,
+.cbt-web-shell.cbt-theme-dark .cbt-side-stat.is-unanswered {
+    background: rgba(14, 99, 156, 0.12);
+    border-color: rgba(55, 148, 255, 0.28);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-empty {
+    border-color: rgba(95, 117, 141, 0.34);
+    background: rgba(17, 28, 47, 0.45);
+    color: #b9c4d1;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-current,
+.cbt-web-shell.cbt-theme-dark .cbt-nav-position-btn.is-active,
+.cbt-web-shell.cbt-theme-dark .cbt-calc-position-btn.is-active,
+.cbt-web-shell.cbt-theme-dark .cbt-calculator-toggle.is-open {
+    background: #0e639c;
+    border-color: #3794ff;
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-current.is-doubtful {
+    background: #0e639c;
+    border-color: #3794ff;
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-changed:not(.is-current) {
+    background: rgba(185, 28, 28, 0.24) !important;
+    border-color: rgba(248, 113, 113, 0.58) !important;
+    color: #fecaca !important;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-answered.is-changed:not(.is-current),
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-doubtful.is-changed:not(.is-current),
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-answered.is-doubtful.is-changed:not(.is-current) {
+    background: rgba(185, 28, 28, 0.24) !important;
+    border-color: rgba(248, 113, 113, 0.58) !important;
+    color: #fecaca !important;
+    box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.14), inset 0 0 0 1px rgba(248, 113, 113, 0.18) !important;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-current.is-changed {
+    background: #b91c1c;
+    border-color: #f87171;
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-revision-marker {
+    border-color: #0f172a;
+    box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-revision-notice.is-info {
+    background: rgba(14, 99, 156, 0.18);
+    border-color: rgba(55, 148, 255, 0.28);
+    color: #b9dbff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-revision-notice.is-warning {
+    background: rgba(191, 132, 27, 0.18);
+    border-color: rgba(243, 191, 76, 0.28);
+    color: #f6d98a;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-meta-attempt,
+.cbt-web-shell.cbt-theme-dark .cbt-result-body .cbt-subtitle {
+    color: #b9c4d1;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-meta-chip {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #c9d6e5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-meta-chip.is-accent {
+    border-color: rgba(96, 165, 250, 0.24);
+    background: rgba(37, 99, 235, 0.16);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-option-key,
+.cbt-web-shell.cbt-theme-dark .cbt-short-inline-key,
+.cbt-web-shell.cbt-theme-dark .cbt-review-chip {
+    background: var(--cbt-dark-surface-2);
+    border-color: var(--cbt-dark-surface-4);
+    color: #e5e7eb;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-review-text,
+.cbt-web-shell.cbt-theme-dark .cbt-review-explanation {
+    border-color: var(--cbt-dark-surface-4);
+    background: #202226;
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-review-explanation {
+    border-left-color: #1177bb;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-tf-matrix-table,
+.cbt-web-shell.cbt-theme-dark .cbt-tf-matrix-table th,
+.cbt-web-shell.cbt-theme-dark .cbt-tf-matrix-table td {
+    border-color: var(--cbt-dark-surface-4);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-tf-matrix-table {
+    background: var(--cbt-dark-surface-1);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-tf-matrix-table th {
+    background: var(--cbt-dark-surface-2);
+    color: #f3f3f3;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-tf-matrix-statement,
+.cbt-web-shell.cbt-theme-dark .cbt-tf-matrix-choice label {
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-grid::-webkit-scrollbar-track {
+    background: var(--cbt-dark-surface-2);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-grid::-webkit-scrollbar-thumb {
+    background: #4b4f58;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-grid::-webkit-scrollbar-thumb:hover {
+    background: #5a5f69;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-answer-badge,
+.cbt-web-shell.cbt-theme-dark .cbt-nav-type-badge {
+    border-color: var(--cbt-dark-surface-1);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.42);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-user-chip-photo,
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-avatar,
+.cbt-web-shell.cbt-theme-dark .cbt-user-photo-modal-image {
+    border-color: var(--cbt-dark-surface-4);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-avatar,
+.cbt-web-shell.cbt-theme-dark .cbt-user-photo-modal-image {
+    background: #181a1d;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-user-chip-fallback {
+    background: linear-gradient(180deg, #0e639c 0%, #1177bb 100%);
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-user-chip-name-button:hover {
+    color: #4fc1ff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-user-photo-modal-overlay {
+    background:
+        radial-gradient(circle at 50% 0, rgba(14, 99, 156, 0.18), transparent 42%),
+        rgba(0, 0, 0, 0.78);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-user-photo-modal {
+    border-color: var(--cbt-dark-surface-4);
+    background: linear-gradient(180deg, var(--cbt-dark-surface-1) 0%, var(--cbt-dark-surface-2) 100%);
+    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.42);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-user-photo-modal h3,
+.cbt-web-shell.cbt-theme-dark .cbt-user-photo-modal-row dd {
+    color: #f3f3f3;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-user-photo-modal-info {
+    border-color: var(--cbt-dark-surface-4);
+    background: #202226;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-user-photo-modal-row {
+    border-color: var(--cbt-dark-surface-4);
+    background: var(--cbt-dark-surface-2);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-hero {
+    background: linear-gradient(135deg, #0b3657 0%, #0e639c 58%, #1177bb 100%);
+}
+
+/* Application-style light theme override */
+.cbt-web-shell.cbt-theme-light {
+    --cbt-bg-1: #eef1f5;
+    --cbt-bg-2: #dde5ee;
+    --cbt-primary: #1583e6;
+    --cbt-primary-2: #2c67b8;
+    --cbt-accent: #f59e0b;
+    --cbt-danger: #e67373;
+    --cbt-success: #1aa98b;
+    --cbt-text: #233247;
+    --cbt-muted: #6d7887;
+    --cbt-border: #d6dbe3;
+    --cbt-white: #ffffff;
+    --cbt-shadow: 0 18px 34px rgba(70, 98, 128, 0.16);
+    --cbt-light-surface-1: #ffffff;
+    --cbt-light-surface-2: #f7f8fa;
+    --cbt-light-surface-3: #eef2f6;
+    --cbt-light-surface-4: #d7dee7;
+    --cbt-light-success-surface: #d9f6e7;
+    --cbt-light-success-surface-strong: #c7efd8;
+    --cbt-light-success-border: #4fb889;
+    --cbt-light-success-border-strong: #36a970;
+    --cbt-light-success-text: #0f6b52;
+    --cbt-light-warning-surface: #ffe1b8;
+    --cbt-light-warning-surface-strong: #ffd39c;
+    --cbt-light-warning-border: #dd9220;
+    --cbt-light-warning-border-strong: #d07e0d;
+    --cbt-light-warning-text: #8b4c00;
+    background:
+        radial-gradient(circle at 50% 100%, rgba(44, 103, 184, 0.08), transparent 36%),
+        linear-gradient(180deg, var(--cbt-bg-1) 0%, var(--cbt-bg-2) 100%);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-topbar {
+    border-color: #2f6fbf;
+    background:
+        linear-gradient(122deg, rgba(255, 255, 255, 0.09) 0 10%, transparent 10% 100%),
+        linear-gradient(148deg, rgba(255, 255, 255, 0.08) 0 18%, transparent 18% 72%, rgba(255, 255, 255, 0.05) 72% 100%),
+        linear-gradient(90deg, #0f7fdc 0%, #2e68b4 100%);
+    color: #fff;
+    box-shadow: 0 14px 28px rgba(44, 103, 184, 0.22);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-brand-badge {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.22);
+    color: #fff;
+    box-shadow: none;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-brand h2,
+.cbt-web-shell.cbt-theme-light .cbt-login-hero h1,
+.cbt-web-shell.cbt-theme-light .cbt-login-panel h3,
+.cbt-web-shell.cbt-theme-light .cbt-result-hero h3 {
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-brand small,
+.cbt-web-shell.cbt-theme-light .cbt-login-kicker,
+.cbt-web-shell.cbt-theme-light .cbt-login-description,
+.cbt-web-shell.cbt-theme-light .cbt-login-step small {
+    color: rgba(255, 255, 255, 0.84);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-access-group,
+.cbt-web-shell.cbt-theme-light .cbt-icon-button {
+    border-color: rgba(255, 255, 255, 0.26);
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-icon-button:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.38);
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-timer-chip {
+    border-color: #ef9aa8;
+    background: rgba(255, 255, 255, 0.98);
+    color: #2d3c51;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-user-chip {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-user-chip-name-button:hover {
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-logout-button {
+    background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+    border-color: #dc2626;
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-logout-button:hover:not(:disabled) {
+    background: linear-gradient(180deg, #f05252 0%, #e03131 100%);
+    border-color: #e03131;
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-card,
+.cbt-web-shell.cbt-theme-light .cbt-question-card,
+.cbt-web-shell.cbt-theme-light .cbt-side-card,
+.cbt-web-shell.cbt-theme-light .cbt-review-item,
+.cbt-web-shell.cbt-theme-light .cbt-review-option,
+.cbt-web-shell.cbt-theme-light .cbt-option,
+.cbt-web-shell.cbt-theme-light .cbt-finish-modal,
+.cbt-web-shell.cbt-theme-light .cbt-login-panel,
+.cbt-web-shell.cbt-theme-light .cbt-exam-item,
+.cbt-web-shell.cbt-theme-light .cbt-loading,
+.cbt-web-shell.cbt-theme-light .cbt-result-body,
+.cbt-web-shell.cbt-theme-light .cbt-calc-panel {
+    background: var(--cbt-light-surface-1);
+    border-color: var(--cbt-border);
+    color: var(--cbt-text);
+    box-shadow: 0 14px 28px rgba(92, 115, 145, 0.12);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-card h3,
+.cbt-web-shell.cbt-theme-light .cbt-card h4,
+.cbt-web-shell.cbt-theme-light .cbt-option-label,
+.cbt-web-shell.cbt-theme-light .cbt-question-stem,
+.cbt-web-shell.cbt-theme-light .cbt-review-question,
+.cbt-web-shell.cbt-theme-light .cbt-field label,
+.cbt-web-shell.cbt-theme-light .cbt-exam-title,
+.cbt-web-shell.cbt-theme-light .cbt-side-card .cbt-side-card-title,
+.cbt-web-shell.cbt-theme-light .cbt-calc-head-title,
+.cbt-web-shell.cbt-theme-light .cbt-finish-modal h3 {
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-subtitle,
+.cbt-web-shell.cbt-theme-light .cbt-muted,
+.cbt-web-shell.cbt-theme-light .cbt-exam-meta,
+.cbt-web-shell.cbt-theme-light .cbt-login-help,
+.cbt-web-shell.cbt-theme-light .cbt-side-card-subtitle,
+.cbt-web-shell.cbt-theme-light .cbt-calc-head-subtitle,
+.cbt-web-shell.cbt-theme-light .cbt-review-empty,
+.cbt-web-shell.cbt-theme-light .cbt-loading,
+.cbt-web-shell.cbt-theme-light .cbt-finish-stat span,
+.cbt-web-shell.cbt-theme-light .cbt-side-summary-kicker,
+.cbt-web-shell.cbt-theme-light .cbt-side-stat span {
+    color: var(--cbt-muted);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-hero {
+    border-color: rgba(164, 185, 255, 0.38);
+    background:
+        linear-gradient(122deg, rgba(255, 255, 255, 0.14) 0 18%, transparent 18% 100%),
+        linear-gradient(145deg, #2647b9 0%, #3569ea 56%, #548bff 100%);
+    box-shadow: 0 24px 46px rgba(44, 103, 184, 0.22);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-hero::before {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-hero::after {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step span {
+    background: #fff;
+    color: #2e68b4;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-question-head {
+    border-color: var(--cbt-light-surface-4);
+    background: var(--cbt-light-surface-2);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-side-card-head {
+    border-color: transparent;
+    background: transparent;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-question-head.is-answered {
+    border-color: var(--cbt-light-success-border);
+    background: var(--cbt-light-success-surface);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-question-head.is-doubtful {
+    border-color: var(--cbt-light-warning-border);
+    background: var(--cbt-light-warning-surface);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-chip,
+.cbt-web-shell.cbt-theme-light .cbt-question-quick-nav,
+.cbt-web-shell.cbt-theme-light .cbt-side-summary,
+.cbt-web-shell.cbt-theme-light .cbt-side-stat,
+.cbt-web-shell.cbt-theme-light .cbt-nav-position-group,
+.cbt-web-shell.cbt-theme-light .cbt-calc-position-group,
+.cbt-web-shell.cbt-theme-light .cbt-exam-progress,
+.cbt-web-shell.cbt-theme-light .cbt-finish-modal-progress,
+.cbt-web-shell.cbt-theme-light .cbt-calc-status {
+    background: var(--cbt-light-surface-2);
+    border-color: var(--cbt-light-surface-4);
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-question-head .cbt-chip,
+.cbt-web-shell.cbt-theme-light .cbt-question-font-controls {
+    background: #f8fbff;
+    border-color: #cdd8e6;
+    color: #27518d;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-question-head .cbt-chip.cbt-chip-prefetch.is-loading {
+    background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+    border-color: #93c5fd;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-question-head .cbt-chip.cbt-chip-prefetch.is-complete {
+    background: linear-gradient(180deg, #ecfdf5 0%, #dcfce7 100%);
+    border-color: #86efac;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-question-head .cbt-chip.cbt-chip-warning,
+.cbt-web-shell.cbt-theme-light .cbt-action-icon-doubtful.is-active,
+.cbt-web-shell.cbt-theme-light .cbt-side-stat.is-doubtful,
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-doubtful:not(.is-current),
+.cbt-web-shell.cbt-theme-light .cbt-button-warning,
+.cbt-web-shell.cbt-theme-light .cbt-finish-modal-warning {
+    background: var(--cbt-light-warning-surface);
+    border-color: var(--cbt-light-warning-border);
+    color: var(--cbt-light-warning-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-side-stat.is-doubtful strong,
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-doubtful:not(.is-current),
+.cbt-web-shell.cbt-theme-light .cbt-action-icon-doubtful.is-active {
+    color: var(--cbt-light-warning-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-legend-item-doubtful {
+    background: var(--cbt-light-warning-surface);
+    border-color: var(--cbt-light-warning-border);
+    color: var(--cbt-light-warning-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-dot-doubtful {
+    background: var(--cbt-light-warning-border);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-legend-item-changed {
+    background: #fee2e2;
+    border-color: #f3b0b0;
+    color: #b91c1c;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-dot-changed {
+    background: #dc2626;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-legend-item-answered {
+    background: var(--cbt-light-success-surface);
+    border-color: var(--cbt-light-success-border);
+    color: var(--cbt-light-success-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-dot-answered {
+    background: var(--cbt-light-success-border);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-question-head .cbt-nav-toggle,
+.cbt-web-shell.cbt-theme-light .cbt-side-card-head .cbt-nav-toggle,
+.cbt-web-shell.cbt-theme-light .cbt-calculator-toggle,
+.cbt-web-shell.cbt-theme-light .cbt-nav-position-btn,
+.cbt-web-shell.cbt-theme-light .cbt-calc-position-btn,
+.cbt-web-shell.cbt-theme-light .cbt-calc-close,
+.cbt-web-shell.cbt-theme-light .cbt-question-font-controls .cbt-icon-button,
+.cbt-web-shell.cbt-theme-light .cbt-action-icon,
+.cbt-web-shell.cbt-theme-light .cbt-calc-key,
+.cbt-web-shell.cbt-theme-light .cbt-password-toggle,
+.cbt-web-shell.cbt-theme-light .cbt-user-photo-modal-close,
+.cbt-web-shell.cbt-theme-light .cbt-input,
+.cbt-web-shell.cbt-theme-light .cbt-select,
+.cbt-web-shell.cbt-theme-light .cbt-textarea {
+    background: #fff;
+    border-color: #cfd8e4;
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-question-head .cbt-nav-toggle:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-light .cbt-side-card-head .cbt-nav-toggle:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-light .cbt-calculator-toggle:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-light .cbt-nav-position-btn:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-light .cbt-calc-position-btn:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-light .cbt-calc-close:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-light .cbt-question-font-controls .cbt-icon-button:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-light .cbt-action-icon:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-light .cbt-calc-key:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-light .cbt-password-toggle:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-light .cbt-user-photo-modal-close:hover {
+    background: #f5f9ff;
+    border-color: #8fbdea;
+    color: #185cae;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-input::placeholder,
+.cbt-web-shell.cbt-theme-light .cbt-textarea::placeholder {
+    color: #98a3b2;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-input:focus,
+.cbt-web-shell.cbt-theme-light .cbt-select:focus,
+.cbt-web-shell.cbt-theme-light .cbt-textarea:focus {
+    border-color: #4aa0eb;
+    box-shadow: 0 0 0 3px rgba(21, 131, 230, 0.14);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-button-primary,
+.cbt-web-shell.cbt-theme-light .cbt-calc-key-eval,
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-current,
+.cbt-web-shell.cbt-theme-light .cbt-nav-position-btn.is-active,
+.cbt-web-shell.cbt-theme-light .cbt-calc-position-btn.is-active,
+.cbt-web-shell.cbt-theme-light .cbt-calculator-toggle.is-open {
+    background: linear-gradient(180deg, #1c8ef1 0%, #1577d7 100%);
+    border-color: #1577d7;
+    color: #fff;
+    box-shadow: 0 10px 20px rgba(21, 131, 230, 0.18);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-current.is-doubtful {
+    background: linear-gradient(180deg, #1c8ef1 0%, #1577d7 100%);
+    border-color: #1577d7;
+    color: #fff;
+    box-shadow: 0 10px 20px rgba(21, 131, 230, 0.18);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-changed:not(.is-current) {
+    background: #fee2e2 !important;
+    border-color: #ef4444 !important;
+    color: #b91c1c !important;
+    box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.14), inset 0 0 0 1px rgba(185, 28, 28, 0.08) !important;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-answered.is-changed:not(.is-current),
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-doubtful.is-changed:not(.is-current),
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-answered.is-doubtful.is-changed:not(.is-current) {
+    background: #fee2e2 !important;
+    border-color: #ef4444 !important;
+    color: #b91c1c !important;
+    box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.16), inset 0 0 0 1px rgba(185, 28, 28, 0.12) !important;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-current.is-changed {
+    background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%);
+    border-color: #f87171;
+    color: #fff;
+    box-shadow: 0 8px 16px rgba(220, 38, 38, 0.24);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-answered:not(.is-current) {
+    background: var(--cbt-light-success-surface-strong);
+    border-color: var(--cbt-light-success-border-strong);
+    color: var(--cbt-light-success-text);
+    box-shadow: inset 0 0 0 1px rgba(15, 107, 82, 0.08);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-doubtful:not(.is-current) {
+    background: var(--cbt-light-warning-surface-strong);
+    border-color: var(--cbt-light-warning-border-strong);
+    color: #7a4200;
+    box-shadow: inset 0 0 0 1px rgba(122, 66, 0, 0.08);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-button-primary:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-light .cbt-calc-key-eval:hover:not(:disabled) {
+    background: linear-gradient(180deg, #2798f8 0%, #1c83e1 100%);
+    border-color: #1c83e1;
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-button-secondary {
+    background: #fff;
+    color: #2e68b4;
+    border-color: #bfd0e4;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-button-secondary:hover:not(:disabled) {
+    background: #f5f9ff;
+    border-color: #8fbdea;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-button-danger,
+.cbt-web-shell.cbt-theme-light .cbt-alert-error,
+.cbt-web-shell.cbt-theme-light .cbt-calc-status.is-error,
+.cbt-web-shell.cbt-theme-light .cbt-finish-stat.is-unanswered {
+    background: #fff1f0;
+    border-color: #f0c3bf;
+    color: #cb5d58;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-finish-stat.is-unanswered strong {
+    color: #cb5d58;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-exam-item:hover {
+    border-color: #9cc7ed;
+    background: #fbfdff;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-exam-item.is-active,
+.cbt-web-shell.cbt-theme-light .cbt-option.is-selected,
+.cbt-web-shell.cbt-theme-light .cbt-review-option.is-selected {
+    border-color: #63abeb;
+    background: linear-gradient(180deg, #fafdff 0%, #eef7ff 100%);
+    box-shadow: 0 0 0 3px rgba(21, 131, 230, 0.08);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-exam-item.is-completed,
+.cbt-web-shell.cbt-theme-light .cbt-review-option.is-correct,
+.cbt-web-shell.cbt-theme-light .cbt-side-stat.is-answered,
+.cbt-web-shell.cbt-theme-light .cbt-alert-success,
+.cbt-web-shell.cbt-theme-light .cbt-finish-modal-ok,
+.cbt-web-shell.cbt-theme-light .cbt-finish-stat.is-answered {
+    background: var(--cbt-light-success-surface);
+    border-color: var(--cbt-light-success-border);
+    color: var(--cbt-light-success-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-alert-warning {
+    background: #fff9eb;
+    border-color: #e7d09d;
+    color: #99691c;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-exam-revision-notice.is-info {
+    background: #eef6ff;
+    border-color: #c8ddf4;
+    color: #145187;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-exam-revision-notice.is-warning {
+    background: #fff7e8;
+    border-color: #f0d2a1;
+    color: #9a5f12;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-side-stat.is-answered strong,
+.cbt-web-shell.cbt-theme-light .cbt-finish-stat.is-answered strong {
+    color: var(--cbt-light-success-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-exam-item.is-in-progress,
+.cbt-web-shell.cbt-theme-light .cbt-side-stat.is-unanswered {
+    background: #f3f9ff;
+    border-color: #c6def5;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-empty {
+    border-color: #c7d6e6;
+    background: #f8fbff;
+    color: #60748d;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-exam-progress-fill,
+.cbt-web-shell.cbt-theme-light .cbt-finish-modal-progress-fill {
+    background: linear-gradient(90deg, #1c8ef1 0%, #2e68b4 100%);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-option-key,
+.cbt-web-shell.cbt-theme-light .cbt-short-inline-key,
+.cbt-web-shell.cbt-theme-light .cbt-review-chip {
+    background: #f7faff;
+    border-color: #cfdae8;
+    color: #2e68b4;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-review-text,
+.cbt-web-shell.cbt-theme-light .cbt-review-explanation {
+    border-color: #d8dde5;
+    background: #fbfcfd;
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-review-explanation {
+    border-left-color: #1c8ef1;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-tf-matrix-table,
+.cbt-web-shell.cbt-theme-light .cbt-tf-matrix-table th,
+.cbt-web-shell.cbt-theme-light .cbt-tf-matrix-table td {
+    border-color: #d8dee7;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-tf-matrix-table {
+    background: #fff;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-tf-matrix-table th {
+    background: #f3f5f8;
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-grid::-webkit-scrollbar-track {
+    background: #edf2f7;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-grid::-webkit-scrollbar-thumb {
+    background: #c0c9d5;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-grid::-webkit-scrollbar-thumb:hover {
+    background: #a9b5c3;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-answer-badge,
+.cbt-web-shell.cbt-theme-light .cbt-nav-type-badge {
+    border-color: #fff;
+    box-shadow: 0 2px 4px rgba(73, 91, 116, 0.14);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-user-photo-modal-overlay {
+    background:
+        radial-gradient(circle at 50% 0, rgba(21, 131, 230, 0.14), transparent 42%),
+        rgba(56, 70, 92, 0.42);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-user-photo-modal {
+    border-color: #d6dde7;
+    background: linear-gradient(180deg, #fff 0%, #f7f8fa 100%);
+    box-shadow: 0 28px 64px rgba(70, 98, 128, 0.24);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-user-photo-modal h3,
+.cbt-web-shell.cbt-theme-light .cbt-user-photo-modal-row dd {
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-user-photo-modal-image,
+.cbt-web-shell.cbt-theme-light .cbt-confirm-profile-avatar,
+.cbt-web-shell.cbt-theme-light .cbt-user-chip-photo {
+    border-color: #d2dbe6;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-user-photo-modal-info {
+    border-color: #d8dfe8;
+    background: #f6f8fa;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-user-photo-modal-row {
+    border-color: #e1e6ed;
+    background: #fff;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-result-hero {
+    background:
+        linear-gradient(122deg, rgba(255, 255, 255, 0.1) 0 14%, transparent 14% 100%),
+        linear-gradient(135deg, #0f7fdc 0%, #2e68b4 100%);
+}

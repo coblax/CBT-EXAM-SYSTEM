@@ -1,0 +1,3244 @@
+<?php
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+final class CBT_Admin_Exams_Service
+{
+    public static function can_manage_exams(): bool
+    {
+        return self::is_admin_scope() || current_user_can('cbt_manage_exams');
+    }
+
+    public static function is_admin_scope(): bool
+    {
+        return current_user_can('manage_options') || current_user_can('cbt_manage_system');
+    }
+
+    private static function is_bank_exam_title(string $exam_title): bool
+    {
+        return stripos($exam_title, 'Bank Soal - ') === 0;
+    }
+
+    /**
+     * @return array{slug:string,label:string,class:string,is_mixed:bool}
+     */
+    private static function build_exam_topology_descriptor(int $bank_backed_count, int $legacy_count): array
+    {
+        if ($bank_backed_count > 0 && $legacy_count > 0) {
+            return [
+                'slug' => 'mixed',
+                'label' => 'Mixed',
+                'class' => 'mixed',
+                'is_mixed' => true,
+            ];
+        }
+
+        if ($bank_backed_count > 0) {
+            return [
+                'slug' => 'bank',
+                'label' => 'Bank-backed',
+                'class' => 'bank',
+                'is_mixed' => false,
+            ];
+        }
+
+        if ($legacy_count > 0) {
+            return [
+                'slug' => 'legacy',
+                'label' => 'Legacy',
+                'class' => 'legacy',
+                'is_mixed' => false,
+            ];
+        }
+
+        return [
+            'slug' => 'empty',
+            'label' => 'Belum Ada Soal',
+            'class' => 'empty',
+            'is_mixed' => false,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $summary
+     * @return string[]
+     */
+    private static function build_exam_sync_notice_parts(array $summary): array
+    {
+        $parts = [];
+
+        $synced_question_count = max(0, (int) ($summary['synced_question_count'] ?? 0));
+        if ($synced_question_count > 0) {
+            $parts[] = $synced_question_count . ' soal tersinkron';
+        }
+
+        $updated_existing_count = max(0, (int) ($summary['updated_existing_count'] ?? 0));
+        $created_new_count = max(0, (int) ($summary['created_new_count'] ?? 0));
+        $linked_legacy_match_count = max(0, (int) ($summary['linked_legacy_match_count'] ?? 0));
+        $archived_question_count = max(0, (int) ($summary['archived_question_count'] ?? 0));
+        $deleted_question_count = max(0, (int) ($summary['deleted_question_count'] ?? 0));
+        $preserved_attempt_history_count = max(0, (int) ($summary['preserved_attempt_history_count'] ?? 0));
+        $legacy_active_count = max(0, (int) ($summary['legacy_active_count'] ?? 0));
+
+        if ($updated_existing_count > 0) {
+            $parts[] = 'Update ' . $updated_existing_count;
+        }
+        if ($created_new_count > 0) {
+            $parts[] = 'Baru ' . $created_new_count;
+        }
+        if ($linked_legacy_match_count > 0) {
+            $parts[] = 'Relink legacy ' . $linked_legacy_match_count;
+        }
+        if ($archived_question_count > 0) {
+            $parts[] = 'Arsip ' . $archived_question_count;
+        }
+        if ($deleted_question_count > 0) {
+            $parts[] = 'Hapus ' . $deleted_question_count;
+        }
+        if ($preserved_attempt_history_count > 0) {
+            $parts[] = 'Preserve history ' . $preserved_attempt_history_count;
+        }
+        if ($legacy_active_count > 0) {
+            $parts[] = 'Masih legacy ' . $legacy_active_count;
+        }
+
+        return $parts;
+    }
+
+    /**
+     * @param array<string,mixed> $summary
+     */
+    private static function build_exam_sync_notice_message(bool $is_update, array $summary): string
+    {
+        $base_message = $is_update ? 'Exam updated' : 'Exam created';
+        $parts = self::build_exam_sync_notice_parts($summary);
+        if (empty($parts)) {
+            return $base_message;
+        }
+
+        return $base_message . ' - ' . implode(' | ', $parts);
+    }
+
+    /**
+     * @param array<int,int> $exam_ids
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_exam_topology_map(array $exam_ids): array
+    {
+        global $wpdb;
+
+        $exam_ids = array_values(array_unique(array_filter(array_map('absint', $exam_ids))));
+        if (empty($exam_ids)) {
+            return [];
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $placeholders = implode(',', array_fill(0, count($exam_ids), '%d'));
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT q.exam_id AS target_exam_id,
+                        q.id AS target_question_id,
+                        q.source_question_id,
+                        COALESCE(source_exam.title, '') AS source_exam_title
+                 FROM {$question_table} q
+                 LEFT JOIN {$question_table} source_question ON source_question.id = q.source_question_id
+                 LEFT JOIN {$exam_table} source_exam ON source_exam.id = source_question.exam_id
+                 WHERE q.exam_id IN ({$placeholders})
+                   AND COALESCE(q.is_active, 1) = 1",
+                ...$exam_ids
+            ),
+            ARRAY_A
+        );
+
+        $map = [];
+        foreach ($exam_ids as $exam_id) {
+            $map[$exam_id] = [
+                'topology_slug' => 'empty',
+                'topology_label' => 'Belum Ada Soal',
+                'topology_class' => 'empty',
+                'topology_is_mixed' => false,
+                'total_active_questions' => 0,
+                'bank_backed_question_count' => 0,
+                'legacy_question_count' => 0,
+                'topology_summary_text' => 'Belum ada soal aktif',
+            ];
+        }
+
+        foreach ((array) $rows as $row) {
+            $target_exam_id = (int) ($row['target_exam_id'] ?? 0);
+            if ($target_exam_id <= 0 || !isset($map[$target_exam_id])) {
+                continue;
+            }
+
+            $map[$target_exam_id]['total_active_questions']++;
+            $source_question_id = (int) ($row['source_question_id'] ?? 0);
+            $source_exam_title = (string) ($row['source_exam_title'] ?? '');
+            if ($source_question_id > 0 && self::is_bank_exam_title($source_exam_title)) {
+                $map[$target_exam_id]['bank_backed_question_count']++;
+            } else {
+                $map[$target_exam_id]['legacy_question_count']++;
+            }
+        }
+
+        foreach ($map as $exam_id => $summary) {
+            $descriptor = self::build_exam_topology_descriptor(
+                (int) ($summary['bank_backed_question_count'] ?? 0),
+                (int) ($summary['legacy_question_count'] ?? 0)
+            );
+            $map[$exam_id]['topology_slug'] = $descriptor['slug'];
+            $map[$exam_id]['topology_label'] = $descriptor['label'];
+            $map[$exam_id]['topology_class'] = $descriptor['class'];
+            $map[$exam_id]['topology_is_mixed'] = $descriptor['is_mixed'];
+
+            $summary_parts = [];
+            if ((int) ($summary['bank_backed_question_count'] ?? 0) > 0) {
+                $summary_parts[] = 'Bank ' . (int) $summary['bank_backed_question_count'];
+            }
+            if ((int) ($summary['legacy_question_count'] ?? 0) > 0) {
+                $summary_parts[] = 'Legacy ' . (int) $summary['legacy_question_count'];
+            }
+            $map[$exam_id]['topology_summary_text'] = !empty($summary_parts)
+                ? implode(' | ', $summary_parts)
+                : 'Belum ada soal aktif';
+        }
+
+        return $map;
+    }
+
+    private static function question_sync_signature(array $snapshot): string
+    {
+        $options_signature = [];
+        foreach ((array) ($snapshot['options'] ?? []) as $index => $option_row) {
+            $option = (array) $option_row;
+            $option_key = trim((string) ($option['option_key'] ?? ''));
+            $options_signature[] = [
+                'match_key' => $option_key !== '' ? $option_key : '__idx_' . $index,
+                'option_text' => (string) ($option['option_text'] ?? ''),
+                'is_correct' => ((int) ($option['is_correct'] ?? 0) === 1) ? 1 : 0,
+            ];
+        }
+
+        return md5((string) wp_json_encode([
+            'question_text' => (string) ($snapshot['question_text'] ?? ''),
+            'question_type' => (string) ($snapshot['question_type'] ?? ''),
+            'points' => round((float) ($snapshot['points'] ?? 0), 2),
+            'correct_text' => (string) ($snapshot['correct_text'] ?? ''),
+            'explanation' => (string) ($snapshot['explanation'] ?? ''),
+            'normalized_detail_text' => (string) ($snapshot['normalized_detail_text'] ?? ''),
+            'options' => $options_signature,
+        ]));
+    }
+
+    private static function question_snapshots_are_sync_equivalent(array $left, array $right): bool
+    {
+        return self::question_sync_signature($left) === self::question_sync_signature($right);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $question_rows
+     * @param array<int,array<string,mixed>> $selected_source_meta_map
+     * @return array<int,array<string,mixed>>
+     */
+    private static function enrich_source_question_rows(array $question_rows, array $selected_source_meta_map = []): array
+    {
+        foreach ($question_rows as &$question_row) {
+            $source_question_id = (int) ($question_row['id'] ?? 0);
+            $source_exam_title = (string) ($question_row['exam_title'] ?? '');
+            $default_lineage_kind = self::is_bank_exam_title($source_exam_title) ? 'bank' : 'legacy';
+            $default_lineage_label = $default_lineage_kind === 'bank' ? 'Bank Soal' : 'Legacy Source';
+            $default_lineage_class = $default_lineage_kind === 'bank' ? 'bank' : 'legacy';
+            $default_lineage_hint = $default_lineage_kind === 'bank'
+                ? 'Root source berada di Bank Soal.'
+                : 'Source masih berasal dari exam induk lama.';
+            $default_source_context_label = $default_lineage_kind === 'bank' ? 'Bank Soal' : 'Exam Sumber';
+            $selected_meta = $selected_source_meta_map[$source_question_id] ?? null;
+
+            $question_row['lineage_kind'] = is_array($selected_meta)
+                ? (string) ($selected_meta['lineage_kind'] ?? $default_lineage_kind)
+                : $default_lineage_kind;
+            $question_row['lineage_label'] = is_array($selected_meta)
+                ? (string) ($selected_meta['lineage_label'] ?? $default_lineage_label)
+                : $default_lineage_label;
+            $question_row['lineage_class'] = is_array($selected_meta)
+                ? (string) ($selected_meta['lineage_class'] ?? $default_lineage_class)
+                : $default_lineage_class;
+            $question_row['lineage_hint'] = is_array($selected_meta)
+                ? (string) ($selected_meta['lineage_hint'] ?? $default_lineage_hint)
+                : $default_lineage_hint;
+            $question_row['source_context_label'] = is_array($selected_meta)
+                ? (string) ($selected_meta['source_context_label'] ?? $default_source_context_label)
+                : $default_source_context_label;
+            $question_row['source_context_display'] = $question_row['source_context_label'] . ' · ' . $source_exam_title;
+        }
+        unset($question_row);
+
+        return $question_rows;
+    }
+
+    /**
+     * @param int[] $source_question_ids
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_selected_source_question_rows(array $source_question_ids): array
+    {
+        global $wpdb;
+
+        $source_question_ids = array_values(array_unique(array_filter(array_map('absint', $source_question_ids))));
+        if (empty($source_question_ids)) {
+            return [];
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $subject_table = $wpdb->prefix . 'cbt_subjects';
+        $placeholders = implode(',', array_fill(0, count($source_question_ids), '%d'));
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT q.id,
+                        q.exam_id,
+                        q.question_text,
+                        q.question_type,
+                        q.points,
+                        e.title AS exam_title,
+                        e.subject_id,
+                        s.name AS subject_name
+                 FROM {$question_table} q
+                 INNER JOIN {$exam_table} e ON e.id = q.exam_id
+                 LEFT JOIN {$subject_table} s ON s.id = e.subject_id
+                 WHERE q.id IN ({$placeholders})",
+                ...$source_question_ids
+            ),
+            ARRAY_A
+        );
+
+        if (empty($rows)) {
+            return [];
+        }
+
+        $rows_by_id = [];
+        foreach ((array) $rows as $row) {
+            $question_id = (int) ($row['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+            $rows_by_id[$question_id] = $row;
+        }
+
+        $ordered_rows = [];
+        foreach ($source_question_ids as $question_id) {
+            if (isset($rows_by_id[$question_id])) {
+                $ordered_rows[] = $rows_by_id[$question_id];
+            }
+        }
+
+        return $ordered_rows;
+    }
+
+    /**
+     * @param int[] $question_ids
+     * @return array<int,array<int,array<string,mixed>>>
+     */
+    private static function build_question_options_map(array $question_ids): array
+    {
+        global $wpdb;
+
+        $question_ids = array_values(array_unique(array_filter(array_map('absint', $question_ids))));
+        if (empty($question_ids)) {
+            return [];
+        }
+
+        $option_table = $wpdb->prefix . 'cbt_options';
+        $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+        $option_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT question_id, option_key, option_text, is_correct
+                 FROM {$option_table}
+                 WHERE question_id IN ({$placeholders})
+                 ORDER BY id ASC",
+                ...$question_ids
+            ),
+            ARRAY_A
+        );
+
+        $options_map = [];
+        foreach ((array) $option_rows as $option_row) {
+            $question_id = (int) ($option_row['question_id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+            if (!isset($options_map[$question_id])) {
+                $options_map[$question_id] = [];
+            }
+            $options_map[$question_id][] = $option_row;
+        }
+
+        return $options_map;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $question_rows
+     * @param array<int,array<int,array<string,mixed>>> $options_map
+     * @return array<int,string>
+     */
+    private static function build_question_preview_html_map(array $question_rows, array $options_map = []): array
+    {
+        $preview_map = [];
+
+        foreach ($question_rows as $question_row) {
+            $question_id = (int) ($question_row['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+
+            $question_type = (string) ($question_row['question_type'] ?? '');
+            $question_type_label = (string) ($question_row['question_type_label'] ?? $question_type);
+            $question_options = $options_map[$question_id] ?? [];
+            $correct_keys = [];
+            foreach ($question_options as $question_option) {
+                if ((int) ($question_option['is_correct'] ?? 0) === 1) {
+                    $correct_keys[] = strtoupper((string) ($question_option['option_key'] ?? ''));
+                }
+            }
+
+            ob_start();
+            ?>
+            <p><strong>Subject:</strong> <?php echo esc_html((string) ($question_row['subject_name'] ?? '-')); ?></p>
+            <p><strong>Sumber:</strong> <?php echo esc_html((string) ($question_row['source_context_display'] ?? ($question_row['exam_title'] ?? '-'))); ?></p>
+            <p><strong>Lineage:</strong> <?php echo esc_html((string) ($question_row['lineage_label'] ?? 'Source')); ?><?php echo !empty($question_row['lineage_hint']) ? ' - ' . esc_html((string) $question_row['lineage_hint']) : ''; ?></p>
+            <p><strong>Tipe:</strong> <?php echo esc_html($question_type_label); ?></p>
+            <p><strong>Poin:</strong> <?php echo esc_html((string) ($question_row['points'] ?? '1')); ?></p>
+            <hr />
+            <div><?php echo wp_kses_post((string) ($question_row['question_text'] ?? '')); ?></div>
+            <?php if (!empty($question_options)): ?>
+                <hr />
+                <p><strong>Opsi:</strong></p>
+                <ol style="margin-left:18px;">
+                    <?php foreach ($question_options as $question_option): ?>
+                        <?php $option_key = strtoupper((string) ($question_option['option_key'] ?? '')); ?>
+                        <li>
+                            <strong><?php echo esc_html($option_key); ?>.</strong>
+                            <?php echo wp_kses_post((string) ($question_option['option_text'] ?? '')); ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ol>
+                <?php if (!empty($correct_keys)): ?>
+                    <p><strong>Kunci:</strong> <?php echo esc_html(implode(', ', $correct_keys)); ?></p>
+                <?php endif; ?>
+            <?php endif; ?>
+            <?php
+            $preview_map[$question_id] = trim((string) ob_get_clean());
+        }
+
+        return $preview_map;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function build_exam_lineage_context(int $exam_id): array
+    {
+        global $wpdb;
+
+        $default = [
+            'topology_slug' => 'empty',
+            'topology_label' => 'Belum Ada Soal',
+            'topology_class' => 'empty',
+            'topology_is_mixed' => false,
+            'total_active_questions' => 0,
+            'bank_backed_question_count' => 0,
+            'legacy_question_count' => 0,
+            'linked_legacy_count' => 0,
+            'source_meta_map' => [],
+        ];
+
+        if ($exam_id <= 0) {
+            return $default;
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT q.id,
+                        q.source_question_id,
+                        COALESCE(source_exam.title, '') AS source_exam_title
+                 FROM {$question_table} q
+                 LEFT JOIN {$question_table} source_question ON source_question.id = q.source_question_id
+                 LEFT JOIN {$exam_table} source_exam ON source_exam.id = source_question.exam_id
+                 WHERE q.exam_id = %d
+                   AND COALESCE(q.is_active, 1) = 1
+                 ORDER BY q.id ASC",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+
+        if (empty($rows)) {
+            return $default;
+        }
+
+        $summary = $default;
+        $source_snapshot_cache = [];
+        $target_snapshot_cache = [];
+
+        foreach ((array) $rows as $row) {
+            $target_question_id = (int) ($row['id'] ?? 0);
+            if ($target_question_id <= 0) {
+                continue;
+            }
+
+            $summary['total_active_questions']++;
+            $source_question_id = (int) ($row['source_question_id'] ?? 0);
+            $source_exam_title = (string) ($row['source_exam_title'] ?? '');
+            $source_key = $source_question_id > 0 ? $source_question_id : $target_question_id;
+
+            if ($source_question_id > 0 && self::is_bank_exam_title($source_exam_title)) {
+                $summary['bank_backed_question_count']++;
+                if (!isset($source_snapshot_cache[$source_question_id])) {
+                    $source_snapshot_cache[$source_question_id] = CBT_Admin_Questions_Sync_Helper::get_question_sync_snapshot($source_question_id);
+                }
+                if (!isset($target_snapshot_cache[$target_question_id])) {
+                    $target_snapshot_cache[$target_question_id] = CBT_Admin_Questions_Sync_Helper::get_question_sync_snapshot($target_question_id);
+                }
+
+                $source_snapshot = (array) ($source_snapshot_cache[$source_question_id] ?? []);
+                $target_snapshot = (array) ($target_snapshot_cache[$target_question_id] ?? []);
+                $is_linked_legacy = !empty($source_snapshot)
+                    && !empty($target_snapshot)
+                    && !self::question_snapshots_are_sync_equivalent($target_snapshot, $source_snapshot)
+                    && CBT_Admin_Questions_Sync_Helper::question_snapshots_are_legacy_descendant_match($target_snapshot, $source_snapshot);
+
+                if ($is_linked_legacy) {
+                    $summary['linked_legacy_count']++;
+                }
+
+                if (!isset($summary['source_meta_map'][$source_key])) {
+                    $summary['source_meta_map'][$source_key] = [
+                        'lineage_kind' => $is_linked_legacy ? 'linked' : 'bank',
+                        'lineage_label' => $is_linked_legacy ? 'Legacy Descendant Linked' : 'Bank Soal',
+                        'lineage_class' => $is_linked_legacy ? 'linked' : 'bank',
+                        'lineage_hint' => $is_linked_legacy
+                            ? 'Soal exam lama sudah dipautkan ke source bank ini.'
+                            : 'Root source berada di Bank Soal.',
+                        'source_context_label' => 'Bank Soal',
+                    ];
+                } elseif ($is_linked_legacy) {
+                    $summary['source_meta_map'][$source_key]['lineage_kind'] = 'linked';
+                    $summary['source_meta_map'][$source_key]['lineage_label'] = 'Legacy Descendant Linked';
+                    $summary['source_meta_map'][$source_key]['lineage_class'] = 'linked';
+                    $summary['source_meta_map'][$source_key]['lineage_hint'] = 'Soal exam lama sudah dipautkan ke source bank ini.';
+                }
+
+                continue;
+            }
+
+            $summary['legacy_question_count']++;
+            if (!isset($summary['source_meta_map'][$source_key])) {
+                $summary['source_meta_map'][$source_key] = [
+                    'lineage_kind' => 'legacy',
+                    'lineage_label' => 'Legacy Source',
+                    'lineage_class' => 'legacy',
+                    'lineage_hint' => 'Source masih berasal dari exam induk lama.',
+                    'source_context_label' => 'Exam Sumber',
+                ];
+            }
+        }
+
+        $descriptor = self::build_exam_topology_descriptor(
+            (int) $summary['bank_backed_question_count'],
+            (int) $summary['legacy_question_count']
+        );
+        $summary['topology_slug'] = $descriptor['slug'];
+        $summary['topology_label'] = $descriptor['label'];
+        $summary['topology_class'] = $descriptor['class'];
+        $summary['topology_is_mixed'] = $descriptor['is_mixed'];
+
+        return $summary;
+    }
+
+    /**
+     * @param array<string,mixed> $query
+     * @return array<string,mixed>
+     */
+    public static function build_page_context(array $query): array
+    {
+        global $wpdb;
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $subject_table = $wpdb->prefix . 'cbt_subjects';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $option_table = $wpdb->prefix . 'cbt_options';
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+
+        $subjects = $wpdb->get_results(
+            "SELECT id, name, code
+             FROM {$subject_table}
+             ORDER BY name ASC",
+            ARRAY_A
+        );
+        $exam_status_labels = [
+            'draft' => 'Draft',
+            'published' => 'Published',
+            'closed' => 'Closed',
+        ];
+        $exam_list_state = self::get_exam_list_state_from_request($query);
+        $valid_subject_ids = array_map('intval', wp_list_pluck((array) $subjects, 'id'));
+        if ($exam_list_state['subject_id'] > 0 && !in_array($exam_list_state['subject_id'], $valid_subject_ids, true)) {
+            $exam_list_state['subject_id'] = 0;
+        }
+
+        $editing_id = isset($query['edit']) ? absint(wp_unslash((string) $query['edit'])) : 0;
+        $editing_exam = null;
+        $blocked_bank_exam_error = '';
+        $blocked_bank_exam_context = [
+            'is_blocked' => false,
+            'exam_id' => 0,
+            'title' => '',
+            'questions_url' => add_query_arg(['page' => 'cbt-question-bank'], admin_url('admin.php')),
+            'list_url' => add_query_arg(['page' => 'cbt-exams', 'cbt_exam_panel' => 'list'], admin_url('admin.php')),
+        ];
+        if ($editing_id > 0) {
+            if ($is_admin_scope) {
+                $editing_exam = $wpdb->get_row(
+                    $wpdb->prepare("SELECT * FROM {$exam_table} WHERE id = %d", $editing_id),
+                    ARRAY_A
+                );
+            } else {
+                $editing_exam = $wpdb->get_row(
+                    $wpdb->prepare(
+                        "SELECT * FROM {$exam_table} WHERE id = %d AND created_by = %d",
+                        $editing_id,
+                        $current_user_id
+                    ),
+                    ARRAY_A
+                );
+            }
+
+            if ($editing_exam && self::is_bank_exam_title((string) ($editing_exam['title'] ?? ''))) {
+                $blocked_bank_exam_context = [
+                    'is_blocked' => true,
+                    'exam_id' => (int) ($editing_exam['id'] ?? 0),
+                    'title' => (string) ($editing_exam['title'] ?? ''),
+                    'questions_url' => add_query_arg(
+                        [
+                            'page' => 'cbt-question-bank',
+                            'subject_id' => (int) ($editing_exam['subject_id'] ?? 0),
+                        ],
+                        admin_url('admin.php')
+                    ),
+                    'list_url' => add_query_arg(['page' => 'cbt-exams', 'cbt_exam_panel' => 'list'], admin_url('admin.php')),
+                ];
+                $editing_exam = null;
+                $editing_id = 0;
+                $blocked_bank_exam_error = 'Bank Soal dikelola dari menu CBT Questions, bukan dari CBT Exams.';
+                $requested_exam_page_panel = 'list';
+            }
+        }
+
+        $selected_subject_id = isset($query['subject_id']) ? absint(wp_unslash((string) $query['subject_id'])) : 0;
+        if ($editing_exam && isset($editing_exam['subject_id'])) {
+            $selected_subject_id = (int) $editing_exam['subject_id'];
+        }
+        if ($selected_subject_id <= 0 && !empty($subjects)) {
+            $selected_subject_id = (int) $subjects[0]['id'];
+        }
+
+        $notice = isset($query['cbt_msg']) ? sanitize_text_field(wp_unslash((string) $query['cbt_msg'])) : '';
+        $error = isset($query['cbt_err']) ? sanitize_text_field(wp_unslash((string) $query['cbt_err'])) : '';
+        $requested_exam_page_panel = isset($query['cbt_exam_panel'])
+            ? sanitize_key((string) wp_unslash((string) $query['cbt_exam_panel']))
+            : '';
+        if (!in_array($requested_exam_page_panel, ['builder', 'list'], true)) {
+            $requested_exam_page_panel = '';
+        }
+        if ($blocked_bank_exam_error !== '') {
+            $error = $blocked_bank_exam_error;
+            $requested_exam_page_panel = 'list';
+        }
+        if ($editing_id > 0 && !$editing_exam) {
+            $error = $error !== '' ? $error : 'Exam tidak ditemukan atau tidak bisa diakses.';
+        }
+
+        $question_type_labels = [
+            'multiple_choice' => 'Multiple Choice',
+            'multiple_answer' => 'Multiple Answer',
+            'true_false' => 'True/False',
+            'true_false_matrix' => 'True/False Matrix',
+            'short_answer' => 'Short Answer',
+            'essay' => 'Essay',
+        ];
+        $builder_question_search = isset($query['cbt_exam_question_search'])
+            ? sanitize_text_field(wp_unslash((string) $query['cbt_exam_question_search']))
+            : '';
+        $builder_question_type = isset($query['cbt_exam_question_type'])
+            ? sanitize_key((string) wp_unslash((string) $query['cbt_exam_question_type']))
+            : '';
+        if ($builder_question_type !== '' && !isset($question_type_labels[$builder_question_type])) {
+            $builder_question_type = '';
+        }
+        $builder_question_source = isset($query['cbt_exam_question_source']) ? absint(wp_unslash((string) $query['cbt_exam_question_source'])) : 0;
+        $builder_question_per_page = isset($query['cbt_exam_question_per_page'])
+            ? self::normalize_exam_builder_question_per_page(absint(wp_unslash((string) $query['cbt_exam_question_per_page'])))
+            : 150;
+        $builder_question_current_page = isset($query['cbt_exam_question_paged'])
+            ? max(1, absint(wp_unslash((string) $query['cbt_exam_question_paged'])))
+            : 1;
+        $builder_question_panel_requested = isset($query['cbt_exam_question_panel']);
+        $builder_question_mode = isset($query['cbt_exam_question_mode'])
+            ? sanitize_key((string) wp_unslash((string) $query['cbt_exam_question_mode']))
+            : ($editing_exam ? 'selected' : 'catalog');
+        $saved_exam_id = isset($query['cbt_saved_exam_id']) ? absint(wp_unslash((string) $query['cbt_saved_exam_id'])) : 0;
+        $builder_state_key = 'cbt_exam_builder_' . ($editing_id > 0 ? 'edit_' . $editing_id : 'new');
+        $builder_state_reset_keys = [];
+        if ($saved_exam_id > 0) {
+            $builder_state_reset_keys[] = 'cbt_exam_builder_new';
+            $builder_state_reset_keys[] = 'cbt_exam_builder_edit_' . $saved_exam_id;
+        }
+        $builder_question_mode = 'catalog';
+        $should_load_question_catalog = (
+            $builder_question_panel_requested
+            || $builder_question_current_page > 1
+            || $builder_question_search !== ''
+            || $builder_question_type !== ''
+            || $builder_question_source > 0
+            || $builder_question_per_page !== 150
+            || ($error !== '' && preg_match('/soal/i', $error))
+        );
+
+        $initial_selected_question_ids = [];
+        if ($editing_exam) {
+            $initial_selected_question_ids = array_map(
+                'intval',
+                (array) $wpdb->get_col(
+                    $wpdb->prepare(
+                        "SELECT COALESCE(source_question_id, id) FROM {$question_table} WHERE exam_id = %d AND COALESCE(is_active, 1) = 1 ORDER BY id ASC",
+                        (int) $editing_exam['id']
+                    )
+                )
+            );
+        }
+        $selected_question_ids = self::get_exam_builder_selected_question_ids($builder_state_key, $current_user_id, $initial_selected_question_ids);
+        $catalog_excluded_question_ids = array_values(array_unique(array_filter(array_map('absint', $selected_question_ids))));
+        $catalog_excluded_where_sql = '';
+        $catalog_excluded_where_params = [];
+        if (!empty($catalog_excluded_question_ids)) {
+            $catalog_excluded_where_sql = 'q.id NOT IN (' . implode(',', array_fill(0, count($catalog_excluded_question_ids), '%d')) . ')';
+            $catalog_excluded_where_params = $catalog_excluded_question_ids;
+        }
+
+        $source_exam_options = [];
+        $source_options_map = [];
+        $source_total_questions = 0;
+        $source_question_total_pages = 1;
+        $source_questions = [];
+        $source_catalog_scope = 'bank';
+        $source_filter_label = 'Bank Soal';
+        $source_filter_all_label = 'Semua bank soal';
+        $source_filter_help_text = 'Filter berdasarkan bank soal per mapel.';
+        if ($should_load_question_catalog) {
+            $source_active_clause = 'COALESCE(q.is_active, 1) = 1';
+            $bank_source_where_parts = [
+                $source_active_clause,
+                $wpdb->prepare('e.title LIKE %s', 'Bank Soal - %'),
+            ];
+            $selected_source_where_parts = [
+                $source_active_clause,
+                '(q.source_question_id IS NULL OR q.source_question_id = 0)',
+            ];
+            if (!$is_admin_scope) {
+                $created_by_clause = $wpdb->prepare('e.created_by = %d', $current_user_id);
+                $bank_source_where_parts[] = $created_by_clause;
+                $selected_source_where_parts[] = $created_by_clause;
+            }
+            $bank_source_where = implode(' AND ', $bank_source_where_parts);
+            $selected_source_where = !empty($selected_source_where_parts) ? implode(' AND ', $selected_source_where_parts) : '1=1';
+            $source_catalog_from_sql = "FROM {$question_table} q
+                 INNER JOIN {$exam_table} e ON e.id = q.exam_id
+                 LEFT JOIN {$subject_table} s ON s.id = e.subject_id";
+            $bank_source_total = (int) $wpdb->get_var(
+                "SELECT COUNT(*) {$source_catalog_from_sql} WHERE {$bank_source_where}"
+            );
+            $catalog_source_where = $bank_source_total > 0 ? $bank_source_where : $selected_source_where;
+            if ($bank_source_total <= 0) {
+                $source_catalog_scope = 'legacy';
+                $source_filter_label = 'Exam Sumber';
+                $source_filter_all_label = 'Semua exam sumber';
+                $source_filter_help_text = 'Belum ada bank soal terpisah. Sumber saat ini memakai exam induk yang menyimpan soal asli.';
+            }
+            $catalog_query_where_parts = [$catalog_source_where];
+            $catalog_query_params = [];
+            if ($catalog_excluded_where_sql !== '') {
+                $catalog_query_where_parts[] = $catalog_excluded_where_sql;
+                $catalog_query_params = array_merge($catalog_query_params, $catalog_excluded_where_params);
+            }
+            $catalog_query_where = implode(' AND ', $catalog_query_where_parts);
+            $source_exam_rows_sql = "SELECT DISTINCT e.id AS exam_id, e.title AS exam_title
+                 {$source_catalog_from_sql}
+                 WHERE {$catalog_query_where}
+                 ORDER BY e.title ASC";
+            $source_exam_rows = !empty($catalog_query_params)
+                ? $wpdb->get_results($wpdb->prepare($source_exam_rows_sql, ...$catalog_query_params), ARRAY_A)
+                : $wpdb->get_results($source_exam_rows_sql, ARRAY_A);
+            foreach ((array) $source_exam_rows as $source_exam_row) {
+                $source_exam_id = (int) ($source_exam_row['exam_id'] ?? 0);
+                $source_exam_title = (string) ($source_exam_row['exam_title'] ?? '');
+                if ($source_exam_id <= 0 || $source_exam_title === '') {
+                    continue;
+                }
+                $source_exam_options[$source_exam_id] = $source_exam_title;
+            }
+            if ($builder_question_source > 0 && !isset($source_exam_options[$builder_question_source])) {
+                $builder_question_source = 0;
+            }
+
+            $catalog_base_where = $catalog_query_where;
+            $source_query_where_parts = [$catalog_base_where];
+            $source_query_params = $catalog_query_params;
+            if ($builder_question_search !== '') {
+                $source_query_where_parts[] = 'q.question_text LIKE %s';
+                $source_query_params[] = '%' . $wpdb->esc_like($builder_question_search) . '%';
+            }
+            if ($builder_question_type !== '') {
+                $source_query_where_parts[] = 'q.question_type = %s';
+                $source_query_params[] = $builder_question_type;
+            }
+            if ($builder_question_source > 0) {
+                $source_query_where_parts[] = 'q.exam_id = %d';
+                $source_query_params[] = $builder_question_source;
+            }
+            $source_query_where = implode(' AND ', $source_query_where_parts);
+            $source_total_sql = "SELECT COUNT(*) {$source_catalog_from_sql} WHERE {$source_query_where}";
+            $source_total_questions = !empty($source_query_params)
+                ? (int) $wpdb->get_var($wpdb->prepare($source_total_sql, ...$source_query_params))
+                : (int) $wpdb->get_var($source_total_sql);
+            $source_question_total_pages = max(1, (int) ceil($source_total_questions / $builder_question_per_page));
+            if ($source_total_questions > 0 && $builder_question_current_page > $source_question_total_pages) {
+                $builder_question_current_page = $source_question_total_pages;
+            }
+            $source_question_offset = ($builder_question_current_page - 1) * $builder_question_per_page;
+            $source_question_limit = (int) $builder_question_per_page;
+            $source_question_offset = (int) $source_question_offset;
+            $source_question_sql = "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, e.title AS exam_title, e.subject_id, s.name AS subject_name
+                 {$source_catalog_from_sql}
+                 WHERE {$source_query_where}
+                 ORDER BY s.name ASC, q.id DESC
+                 LIMIT {$source_question_limit} OFFSET {$source_question_offset}";
+            $source_questions = !empty($source_query_params)
+                ? $wpdb->get_results($wpdb->prepare($source_question_sql, ...$source_query_params), ARRAY_A)
+                : $wpdb->get_results($source_question_sql, ARRAY_A);
+            $source_question_ids = array_values(array_unique(array_map('intval', wp_list_pluck($source_questions, 'id'))));
+            if (!empty($source_question_ids)) {
+                $placeholders = implode(',', array_fill(0, count($source_question_ids), '%d'));
+                $source_option_rows = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT question_id, option_key, option_text, is_correct
+                         FROM {$option_table}
+                         WHERE question_id IN ({$placeholders})
+                         ORDER BY id ASC",
+                        ...$source_question_ids
+                    ),
+                    ARRAY_A
+                );
+                foreach ((array) $source_option_rows as $source_option_row) {
+                    $question_id = (int) ($source_option_row['question_id'] ?? 0);
+                    if ($question_id <= 0) {
+                        continue;
+                    }
+                    if (!isset($source_options_map[$question_id])) {
+                        $source_options_map[$question_id] = [];
+                    }
+                    $source_options_map[$question_id][] = $source_option_row;
+                }
+            }
+        }
+
+        $exam_list_base_where_parts = [
+            $wpdb->prepare('e.title NOT LIKE %s', 'Bank Soal - %'),
+        ];
+        if (!$is_admin_scope) {
+            $exam_list_base_where_parts[] = $wpdb->prepare('e.created_by = %d', $current_user_id);
+        }
+        $exam_list_base_where = ' WHERE ' . implode(' AND ', $exam_list_base_where_parts);
+        $exam_target_kelas_rows = $wpdb->get_col("SELECT e.target_kelas FROM {$exam_table} e {$exam_list_base_where}");
+        $exam_list_kelas_options = [];
+        foreach ((array) $exam_target_kelas_rows as $exam_target_kelas_raw) {
+            foreach (self::split_target_kelas_csv((string) $exam_target_kelas_raw) as $exam_target_kelas_value) {
+                $exam_list_kelas_options[$exam_target_kelas_value] = $exam_target_kelas_value;
+            }
+        }
+        if ($exam_list_state['kelas'] !== '') {
+            $exam_list_kelas_options[$exam_list_state['kelas']] = $exam_list_state['kelas'];
+        }
+        $exam_list_kelas_options = array_values($exam_list_kelas_options);
+        sort($exam_list_kelas_options, SORT_NATURAL | SORT_FLAG_CASE);
+
+        $exam_list_where_parts = $exam_list_base_where_parts;
+        $exam_list_where_params = [];
+        if ($exam_list_state['search'] !== '') {
+            $exam_search_like = '%' . $wpdb->esc_like($exam_list_state['search']) . '%';
+            $exam_list_where_parts[] = '(e.title LIKE %s OR COALESCE(e.description, \'\') LIKE %s)';
+            $exam_list_where_params[] = $exam_search_like;
+            $exam_list_where_params[] = $exam_search_like;
+        }
+        if ($exam_list_state['status'] !== '') {
+            $exam_list_where_parts[] = 'e.status = %s';
+            $exam_list_where_params[] = $exam_list_state['status'];
+        }
+        if ($exam_list_state['subject_id'] > 0) {
+            $exam_list_where_parts[] = 'e.subject_id = %d';
+            $exam_list_where_params[] = $exam_list_state['subject_id'];
+        }
+        if ($exam_list_state['kelas'] !== '') {
+            $exam_list_where_parts[] = "(COALESCE(NULLIF(TRIM(e.target_kelas), ''), '') = '' OR FIND_IN_SET(%s, REPLACE(REPLACE(REPLACE(UPPER(COALESCE(e.target_kelas, '')), ', ', ','), ';', ','), '|', ',')) > 0)";
+            $exam_list_where_params[] = $exam_list_state['kelas'];
+        }
+        $exam_list_where = ' WHERE ' . implode(' AND ', $exam_list_where_parts);
+        $exam_per_page = $exam_list_state['per_page'];
+        $exam_current_page = $exam_list_state['paged'];
+        $total_exams_sql = "SELECT COUNT(*) FROM {$exam_table} e {$exam_list_where}";
+        $total_exams = !empty($exam_list_where_params)
+            ? (int) $wpdb->get_var($wpdb->prepare($total_exams_sql, ...$exam_list_where_params))
+            : (int) $wpdb->get_var($total_exams_sql);
+        $exam_total_pages = max(1, (int) ceil($total_exams / $exam_per_page));
+        if ($total_exams > 0 && $exam_current_page > $exam_total_pages) {
+            $exam_current_page = $exam_total_pages;
+        }
+        $exam_list_state['paged'] = $exam_current_page;
+        $exam_offset = ($exam_current_page - 1) * $exam_per_page;
+
+        $exam_limit = (int) $exam_per_page;
+        $exam_offset = (int) $exam_offset;
+        $question_count_subquery = "SELECT exam_id, COUNT(*) AS question_count
+             FROM {$question_table}
+             WHERE COALESCE(is_active, 1) = 1
+             GROUP BY exam_id";
+        $attempt_count_subquery = "SELECT exam_id,
+                    COUNT(*) AS attempt_total,
+                    SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) AS attempt_in_progress,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS attempt_completed
+             FROM {$attempt_table}
+             GROUP BY exam_id";
+        $exam_query_sql = "SELECT e.*,
+                    s.name AS subject_name,
+                    COALESCE(qc.question_count, 0) AS question_count,
+                    COALESCE(ac.attempt_total, 0) AS attempt_total,
+                    COALESCE(ac.attempt_in_progress, 0) AS attempt_in_progress,
+                    COALESCE(ac.attempt_completed, 0) AS attempt_completed
+             FROM {$exam_table} e
+             LEFT JOIN {$subject_table} s ON s.id = e.subject_id
+             LEFT JOIN ({$question_count_subquery}) qc ON qc.exam_id = e.id
+             LEFT JOIN ({$attempt_count_subquery}) ac ON ac.exam_id = e.id
+             {$exam_list_where}
+             ORDER BY e.id DESC
+             LIMIT {$exam_limit} OFFSET {$exam_offset}";
+        $exams = !empty($exam_list_where_params)
+            ? $wpdb->get_results($wpdb->prepare($exam_query_sql, ...$exam_list_where_params), ARRAY_A)
+            : $wpdb->get_results($exam_query_sql, ARRAY_A);
+        $exam_status_totals = [
+            'draft' => 0,
+            'published' => 0,
+            'closed' => 0,
+        ];
+        $exam_status_rows_sql = "SELECT e.status, COUNT(*) AS total
+             FROM {$exam_table} e
+             {$exam_list_where}
+             GROUP BY e.status";
+        $exam_status_rows = !empty($exam_list_where_params)
+            ? $wpdb->get_results($wpdb->prepare($exam_status_rows_sql, ...$exam_list_where_params), ARRAY_A)
+            : $wpdb->get_results($exam_status_rows_sql, ARRAY_A);
+        foreach ((array) $exam_status_rows as $exam_status_row) {
+            $status_key = sanitize_key((string) ($exam_status_row['status'] ?? ''));
+            if (!array_key_exists($status_key, $exam_status_totals)) {
+                continue;
+            }
+            $exam_status_totals[$status_key] = (int) ($exam_status_row['total'] ?? 0);
+        }
+        $exam_list_base_args = self::add_exam_list_state_args(
+            [
+                'page' => 'cbt-exams',
+                'cbt_exam_panel' => 'list',
+            ],
+            $exam_list_state,
+            false
+        );
+        $exam_list_state_args = self::add_exam_list_state_args(
+            [
+                'page' => 'cbt-exams',
+                'cbt_exam_panel' => 'list',
+            ],
+            $exam_list_state
+        );
+
+        $kelas_options = self::get_distinct_user_meta_values('kode_kelas');
+        $editing_target_kelas_values = [];
+        if ($editing_exam && isset($editing_exam['target_kelas'])) {
+            $editing_target_kelas_values = self::split_target_kelas_csv((string) $editing_exam['target_kelas']);
+        }
+        foreach ($editing_target_kelas_values as $kelas_value) {
+            if (!in_array($kelas_value, $kelas_options, true)) {
+                $kelas_options[] = $kelas_value;
+            }
+        }
+        sort($kelas_options, SORT_NATURAL | SORT_FLAG_CASE);
+        $selected_subject_label = 'Belum dipilih';
+        foreach ((array) $subjects as $subject) {
+            $subject_id = (int) ($subject['id'] ?? 0);
+            if ($subject_id !== $selected_subject_id) {
+                continue;
+            }
+            $subject_name = (string) ($subject['name'] ?? '');
+            $subject_code = trim((string) ($subject['code'] ?? ''));
+            $selected_subject_label = $subject_name !== ''
+                ? $subject_name . ($subject_code !== '' ? ' (' . $subject_code . ')' : '')
+                : 'Belum dipilih';
+            break;
+        }
+        $exam_filter_subject_label = '';
+        if ($exam_list_state['subject_id'] > 0) {
+            foreach ((array) $subjects as $subject) {
+                $subject_id = (int) ($subject['id'] ?? 0);
+                if ($subject_id !== $exam_list_state['subject_id']) {
+                    continue;
+                }
+                $subject_name = (string) ($subject['name'] ?? '');
+                $subject_code = trim((string) ($subject['code'] ?? ''));
+                $exam_filter_subject_label = $subject_name !== ''
+                    ? $subject_name . ($subject_code !== '' ? ' (' . $subject_code . ')' : '')
+                    : '';
+                break;
+            }
+        }
+        $exam_active_filters = [];
+        if ($exam_list_state['search'] !== '') {
+            $exam_active_filters[] = [
+                'label' => 'Cari',
+                'value' => $exam_list_state['search'],
+            ];
+        }
+        if ($exam_filter_subject_label !== '') {
+            $exam_active_filters[] = [
+                'label' => 'Mapel',
+                'value' => $exam_filter_subject_label,
+            ];
+        }
+        if ($exam_list_state['status'] !== '' && isset($exam_status_labels[$exam_list_state['status']])) {
+            $exam_active_filters[] = [
+                'label' => 'Status',
+                'value' => $exam_status_labels[$exam_list_state['status']],
+            ];
+        }
+        if ($exam_list_state['kelas'] !== '') {
+            $exam_active_filters[] = [
+                'label' => 'Kelas',
+                'value' => $exam_list_state['kelas'],
+            ];
+        }
+        $exam_list_reset_url = add_query_arg(
+            [
+                'page' => 'cbt-exams',
+                'cbt_exam_panel' => 'list',
+                'cbt_exam_per_page' => $exam_per_page,
+            ],
+            admin_url('admin.php')
+        );
+        $selected_question_total = count($selected_question_ids);
+        $editing_exam_lineage_context = $editing_exam
+            ? self::build_exam_lineage_context((int) ($editing_exam['id'] ?? 0))
+            : [
+                'topology_slug' => 'empty',
+                'topology_label' => 'Belum Ada Soal',
+                'topology_class' => 'empty',
+                'topology_is_mixed' => false,
+                'total_active_questions' => 0,
+                'bank_backed_question_count' => 0,
+                'legacy_question_count' => 0,
+                'linked_legacy_count' => 0,
+                'source_meta_map' => [],
+            ];
+        $selected_lineage_bank_backed_count = (int) ($editing_exam_lineage_context['bank_backed_question_count'] ?? 0);
+        $selected_lineage_legacy_count = (int) ($editing_exam_lineage_context['legacy_question_count'] ?? 0);
+        $selected_lineage_linked_legacy_count = (int) ($editing_exam_lineage_context['linked_legacy_count'] ?? 0);
+        $selected_lineage_total_active = (int) ($editing_exam_lineage_context['total_active_questions'] ?? 0);
+        $selected_lineage_topology_label = (string) ($editing_exam_lineage_context['topology_label'] ?? 'Belum Ada Soal');
+        $selected_lineage_topology_class = (string) ($editing_exam_lineage_context['topology_class'] ?? 'empty');
+        $selected_lineage_is_mixed = !empty($editing_exam_lineage_context['topology_is_mixed']);
+        $builder_source_context_label = $source_catalog_scope === 'bank' ? 'Bank Soal Aktif' : 'Fallback Legacy';
+        $builder_source_context_value = $source_catalog_scope === 'bank'
+            ? 'Katalog soal saat ini mengambil root question dari Bank Soal.'
+            : 'Katalog saat ini memakai exam sumber lama karena Bank Soal terpisah belum tersedia.';
+        $selected_lineage_summary_items = [];
+        if ($editing_exam) {
+            $selected_lineage_summary_items[] = [
+                'label' => 'Topology',
+                'value' => $selected_lineage_topology_label,
+                'class' => 'topology-' . sanitize_html_class($selected_lineage_topology_class),
+            ];
+            $selected_lineage_summary_items[] = [
+                'label' => 'Bank-backed',
+                'value' => (string) $selected_lineage_bank_backed_count,
+                'class' => 'bank',
+            ];
+            $selected_lineage_summary_items[] = [
+                'label' => 'Legacy',
+                'value' => (string) $selected_lineage_legacy_count,
+                'class' => 'legacy',
+            ];
+            if ($selected_lineage_linked_legacy_count > 0) {
+                $selected_lineage_summary_items[] = [
+                    'label' => 'Linked Legacy',
+                    'value' => (string) $selected_lineage_linked_legacy_count,
+                    'class' => 'linked',
+                ];
+            }
+        }
+        $initial_target_kelas_count = count($editing_target_kelas_values);
+        $initial_schedule_summary = 'Belum diatur';
+        $summary_starts_at = trim((string) ($editing_exam['starts_at'] ?? ''));
+        $summary_ends_at = trim((string) ($editing_exam['ends_at'] ?? ''));
+        $summary_starts_at_ts = $summary_starts_at !== '' ? strtotime($summary_starts_at) : false;
+        $summary_ends_at_ts = $summary_ends_at !== '' ? strtotime($summary_ends_at) : false;
+        if ($summary_starts_at_ts !== false && $summary_ends_at_ts !== false) {
+            $initial_schedule_summary = wp_date('d M H:i', $summary_starts_at_ts) . ' -> ' . wp_date('d M H:i', $summary_ends_at_ts);
+        } elseif ($summary_starts_at_ts !== false) {
+            $initial_schedule_summary = 'Mulai ' . wp_date('d M H:i', $summary_starts_at_ts);
+        } elseif ($summary_ends_at_ts !== false) {
+            $initial_schedule_summary = 'Selesai ' . wp_date('d M H:i', $summary_ends_at_ts);
+        }
+        $has_builder_question_navigation = $builder_question_panel_requested
+            || $builder_question_current_page > 1
+            || $builder_question_search !== ''
+            || $builder_question_type !== ''
+            || $builder_question_source > 0
+            || $builder_question_per_page !== 150;
+        $active_exam_page_panel = $requested_exam_page_panel === 'list'
+            ? 'cbt-exam-list-panel'
+            : 'cbt-exam-builder-panel';
+        if (
+            $requested_exam_page_panel === ''
+            && $notice !== ''
+            && !$editing_exam
+            && $error === ''
+            && !empty($exams)
+            && !$has_builder_question_navigation
+        ) {
+            $active_exam_page_panel = 'cbt-exam-list-panel';
+        }
+        $active_exam_builder_panel = $has_builder_question_navigation ? 'cbt-exam-questions-panel' : 'cbt-exam-details-panel';
+        if ($error !== '' && preg_match('/soal/i', $error)) {
+            $active_exam_builder_panel = 'cbt-exam-questions-panel';
+        }
+        $builder_question_query_args = [
+            'page' => 'cbt-exams',
+            'cbt_exam_per_page' => $exam_per_page,
+            'cbt_exam_paged' => $exam_current_page,
+            'cbt_exam_question_panel' => 1,
+            'cbt_exam_question_per_page' => $builder_question_per_page,
+        ];
+        if ($editing_id > 0) {
+            $builder_question_query_args['edit'] = $editing_id;
+        } elseif ($selected_subject_id > 0) {
+            $builder_question_query_args['subject_id'] = $selected_subject_id;
+        }
+        if ($builder_question_search !== '') {
+            $builder_question_query_args['cbt_exam_question_search'] = $builder_question_search;
+        }
+        if ($builder_question_type !== '') {
+            $builder_question_query_args['cbt_exam_question_type'] = $builder_question_type;
+        }
+        if ($builder_question_source > 0) {
+            $builder_question_query_args['cbt_exam_question_source'] = $builder_question_source;
+        }
+        $source_question_pagination_links = [];
+        if ($should_load_question_catalog && $source_question_total_pages > 1) {
+            $source_question_pagination_links = paginate_links([
+                'base' => add_query_arg(
+                    array_merge($builder_question_query_args, ['cbt_exam_question_paged' => '%#%']),
+                    admin_url('admin.php')
+                ),
+                'format' => '',
+                'current' => $builder_question_current_page,
+                'total' => $source_question_total_pages,
+                'prev_text' => '&laquo;',
+                'next_text' => '&raquo;',
+                'type' => 'array',
+                'end_size' => 1,
+                'mid_size' => 1,
+            ]);
+        }
+        $load_question_catalog_url = add_query_arg(
+            array_merge(
+                $builder_question_query_args,
+                [
+                    'cbt_exam_question_panel' => 1,
+                    'cbt_exam_question_paged' => 1,
+                ]
+            ),
+            admin_url('admin.php')
+        );
+        $reset_question_catalog_args = $builder_question_query_args;
+        unset(
+            $reset_question_catalog_args['cbt_exam_question_search'],
+            $reset_question_catalog_args['cbt_exam_question_type'],
+            $reset_question_catalog_args['cbt_exam_question_source'],
+            $reset_question_catalog_args['cbt_exam_question_paged'],
+            $reset_question_catalog_args['cbt_exam_question_per_page']
+        );
+        $reset_question_catalog_url = add_query_arg($reset_question_catalog_args, admin_url('admin.php'));
+
+        $selected_source_meta_map = isset($editing_exam_lineage_context['source_meta_map']) && is_array($editing_exam_lineage_context['source_meta_map'])
+            ? (array) $editing_exam_lineage_context['source_meta_map']
+            : [];
+        if (!empty($source_questions)) {
+            $source_questions = self::enrich_source_question_rows($source_questions, $selected_source_meta_map);
+        }
+
+        $selected_sidebar_question_ids = array_values(array_unique(array_merge($initial_selected_question_ids, $selected_question_ids)));
+        $selected_sidebar_questions = self::build_selected_source_question_rows($selected_sidebar_question_ids);
+        if (!empty($selected_sidebar_questions)) {
+            $selected_sidebar_questions = self::enrich_source_question_rows($selected_sidebar_questions, $selected_source_meta_map);
+            foreach ($selected_sidebar_questions as &$selected_sidebar_question) {
+                $sidebar_question_type = (string) ($selected_sidebar_question['question_type'] ?? '');
+                $selected_sidebar_question['question_type_label'] = (string) ($question_type_labels[$sidebar_question_type] ?? $sidebar_question_type);
+                $selected_sidebar_question['question_preview'] = wp_trim_words(
+                    (string) wp_strip_all_tags((string) ($selected_sidebar_question['question_text'] ?? '')),
+                    16
+                );
+            }
+            unset($selected_sidebar_question);
+        }
+        $selected_sidebar_question_map = [];
+        foreach ((array) $selected_sidebar_questions as $selected_sidebar_question) {
+            $sidebar_question_id = (int) ($selected_sidebar_question['id'] ?? 0);
+            if ($sidebar_question_id <= 0) {
+                continue;
+            }
+            $selected_sidebar_question_map[$sidebar_question_id] = [
+                'id' => $sidebar_question_id,
+                'exam_id' => (int) ($selected_sidebar_question['exam_id'] ?? 0),
+                'exam_title' => (string) ($selected_sidebar_question['exam_title'] ?? ''),
+                'edit_url' => add_query_arg(
+                    [
+                        'page' => 'cbt-question-bank',
+                        'edit' => $sidebar_question_id,
+                    ],
+                    admin_url('admin.php')
+                ),
+                'subject_name' => (string) ($selected_sidebar_question['subject_name'] ?? ''),
+                'question_type' => (string) ($selected_sidebar_question['question_type'] ?? ''),
+                'question_type_label' => (string) ($selected_sidebar_question['question_type_label'] ?? ''),
+                'question_preview' => (string) ($selected_sidebar_question['question_preview'] ?? ''),
+                'points' => (string) ($selected_sidebar_question['points'] ?? '1'),
+                'lineage_label' => (string) ($selected_sidebar_question['lineage_label'] ?? 'Source'),
+                'lineage_class' => (string) ($selected_sidebar_question['lineage_class'] ?? 'default'),
+                'source_context_label' => (string) ($selected_sidebar_question['source_context_label'] ?? ''),
+                'source_context_display' => (string) ($selected_sidebar_question['source_context_display'] ?? ''),
+                'lineage_hint' => (string) ($selected_sidebar_question['lineage_hint'] ?? ''),
+            ];
+        }
+        $selected_sidebar_preview_map = [];
+        if (!empty($selected_sidebar_questions)) {
+            $selected_sidebar_options_map = self::build_question_options_map(array_keys($selected_sidebar_question_map));
+            $selected_sidebar_preview_map = self::build_question_preview_html_map($selected_sidebar_questions, $selected_sidebar_options_map);
+        }
+
+        if (!empty($exams)) {
+            $exam_topology_map = self::build_exam_topology_map(array_map('intval', wp_list_pluck((array) $exams, 'id')));
+            foreach ($exams as &$exam) {
+                $exam_id = (int) ($exam['id'] ?? 0);
+                $topology = $exam_topology_map[$exam_id] ?? [];
+                if (!empty($topology)) {
+                    $exam = array_merge($exam, $topology);
+                }
+            }
+            unset($exam);
+        }
+
+        return get_defined_vars();
+    }
+
+    /**
+     * @param array<string,mixed> $query
+     * @return array<string,mixed>
+     */
+    public static function build_preview_context(array $query): array
+    {
+        global $wpdb;
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $subject_table = $wpdb->prefix . 'cbt_subjects';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $option_table = $wpdb->prefix . 'cbt_options';
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        $exam_id = isset($query['preview_exam_id']) ? absint(wp_unslash((string) $query['preview_exam_id'])) : 0;
+        $exam_list_state = self::get_exam_list_state_from_request($query);
+        $back_url = add_query_arg(
+            self::add_exam_list_state_args(
+                [
+                    'page' => 'cbt-exams',
+                    'cbt_exam_panel' => 'list',
+                ],
+                $exam_list_state
+            ),
+            admin_url('admin.php')
+        );
+
+        $exam = null;
+        $questions = [];
+        $options_map = [];
+        $question_type_labels = [
+            'multiple_choice' => 'Multiple Choice',
+            'multiple_answer' => 'Multiple Answer',
+            'true_false' => 'True/False',
+            'true_false_matrix' => 'True/False Matrix',
+            'short_answer' => 'Short Answer',
+            'essay' => 'Essay',
+        ];
+        $can_manage_questions = current_user_can('cbt_manage_questions');
+        $question_type_counts = [];
+        $total_points = 0.0;
+        $question_count = 0;
+        $schedule_text = '-';
+        $error_message = '';
+
+        if ($exam_id <= 0) {
+            $error_message = 'Exam tidak ditemukan atau tidak bisa diakses.';
+            return get_defined_vars();
+        }
+
+        if ($is_admin_scope) {
+            $exam = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT e.*, s.name AS subject_name
+                     FROM {$exam_table} e
+                     LEFT JOIN {$subject_table} s ON s.id = e.subject_id
+                     WHERE e.id = %d
+                     LIMIT 1",
+                    $exam_id
+                ),
+                ARRAY_A
+            );
+        } else {
+            $exam = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT e.*, s.name AS subject_name
+                     FROM {$exam_table} e
+                     LEFT JOIN {$subject_table} s ON s.id = e.subject_id
+                     WHERE e.id = %d AND e.created_by = %d
+                     LIMIT 1",
+                    $exam_id,
+                    $current_user_id
+                ),
+                ARRAY_A
+            );
+        }
+
+        if (!$exam) {
+            $error_message = 'Exam tidak ditemukan atau tidak bisa diakses.';
+            return get_defined_vars();
+        }
+
+        $questions = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT q.id,
+                        q.question_text,
+                        q.question_type,
+                        q.points,
+                        q.explanation,
+                        q.correct_text,
+                        q.source_question_id,
+                        COALESCE(source_exam.title, '') AS source_exam_title
+                 FROM {$question_table} q
+                 LEFT JOIN {$question_table} source_question ON source_question.id = q.source_question_id
+                 LEFT JOIN {$exam_table} source_exam ON source_exam.id = source_question.exam_id
+                 WHERE q.exam_id = %d
+                   AND COALESCE(q.is_active, 1) = 1
+                 ORDER BY q.id ASC",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+
+        $question_ids = array_values(array_filter(array_map('intval', wp_list_pluck((array) $questions, 'id')), static function ($id): bool {
+            return $id > 0;
+        }));
+        if (!empty($question_ids)) {
+            $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+            $option_rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT id, question_id, option_key, option_text, is_correct
+                     FROM {$option_table}
+                     WHERE question_id IN ({$placeholders})
+                     ORDER BY question_id ASC, id ASC",
+                    ...$question_ids
+                ),
+                ARRAY_A
+            );
+
+            foreach ((array) $option_rows as $option_row) {
+                $question_id = (int) ($option_row['question_id'] ?? 0);
+                if ($question_id <= 0) {
+                    continue;
+                }
+                if (!isset($options_map[$question_id])) {
+                    $options_map[$question_id] = [];
+                }
+                $options_map[$question_id][] = $option_row;
+            }
+        }
+
+        foreach ((array) $questions as $question_row) {
+            $type = (string) ($question_row['question_type'] ?? '');
+            if (!isset($question_type_counts[$type])) {
+                $question_type_counts[$type] = 0;
+            }
+            $question_type_counts[$type] += 1;
+            $total_points += (float) ($question_row['points'] ?? 0);
+        }
+
+        $question_count = count((array) $questions);
+        $schedule_parts = [];
+        if (!empty($exam['starts_at'])) {
+            $schedule_parts[] = 'Mulai: ' . (string) $exam['starts_at'];
+        }
+        if (!empty($exam['ends_at'])) {
+            $schedule_parts[] = 'Selesai: ' . (string) $exam['ends_at'];
+        }
+        $schedule_text = !empty($schedule_parts) ? implode(' | ', $schedule_parts) : '-';
+
+        return get_defined_vars();
+    }
+
+    public static function handle_save_exam(): void
+    {
+        if (!self::can_manage_exams()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_save_exam');
+
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        $payload = self::normalize_exam_save_payload($_POST);
+        if (is_wp_error($payload)) {
+            self::redirect_exam_with_error($payload->get_error_message(), (int) ($payload->get_error_data() ?? 0));
+        }
+
+        $save_result = self::upsert_exam_record_from_payload($payload, $is_admin_scope, $current_user_id);
+        if (is_wp_error($save_result)) {
+            self::redirect_exam_with_error($save_result->get_error_message(), (int) ($payload['id'] ?? 0));
+        }
+
+        $saved_exam_id = (int) ($save_result['exam_id'] ?? 0);
+        $source_question_ids = array_values(array_unique(array_filter(array_map('absint', (array) ($payload['source_question_ids'] ?? [])))));
+        $synced_questions = null;
+        $sync_summary = [];
+        if (!empty($source_question_ids)) {
+            $sync_result = self::sync_exam_questions_from_sources(
+                $saved_exam_id,
+                $source_question_ids,
+                $is_admin_scope,
+                $current_user_id
+            );
+            if (is_wp_error($sync_result)) {
+                self::redirect_exam_with_error($sync_result->get_error_message(), $saved_exam_id);
+            }
+
+            $sync_summary = is_array($sync_result) ? $sync_result : [];
+            $synced_questions = max(0, (int) ($sync_summary['synced_question_count'] ?? 0));
+        }
+
+        $finalize_result = self::finalize_exam_save_operation(
+            $saved_exam_id,
+            (int) ($payload['id'] ?? 0),
+            $synced_questions,
+            $current_user_id,
+            $_POST,
+            $sync_summary
+        );
+
+        wp_safe_redirect((string) ($finalize_result['redirect_url'] ?? admin_url('admin.php?page=cbt-exams')));
+        exit;
+    }
+
+    public static function handle_delete_exam(): void
+    {
+        if (!self::can_manage_exams()) {
+            wp_die('Unauthorized');
+        }
+
+        $id = isset($_GET['id']) ? absint(wp_unslash((string) $_GET['id'])) : 0;
+        check_admin_referer('cbt_delete_exam_' . $id);
+        $exam_list_state = self::get_exam_list_state_from_request($_GET);
+
+        if ($id > 0) {
+            global $wpdb;
+
+            $exam_title = (string) $wpdb->get_var(
+                $wpdb->prepare("SELECT title FROM {$wpdb->prefix}cbt_exams WHERE id = %d", $id)
+            );
+            if (self::is_bank_exam_title($exam_title)) {
+                wp_safe_redirect(add_query_arg(
+                    self::add_exam_list_state_args(
+                        [
+                            'page' => 'cbt-exams',
+                            'cbt_exam_panel' => 'list',
+                            'cbt_err' => 'Exam bank soal tidak boleh dihapus dari menu ini.',
+                        ],
+                        $exam_list_state
+                    ),
+                    admin_url('admin.php')
+                ));
+                exit;
+            }
+
+            if (!self::is_admin_scope()) {
+                $owned_exam = (int) $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->prefix}cbt_exams WHERE id = %d AND created_by = %d",
+                    $id,
+                    get_current_user_id()
+                ));
+                if ($owned_exam === 0) {
+                    wp_die('Unauthorized exam delete.');
+                }
+            }
+
+            $wpdb->delete($wpdb->prefix . 'cbt_exams', ['id' => $id], ['%d']);
+        }
+
+        if ($id > 0) {
+            CBT_Cache::invalidate_catalog();
+            CBT_Cache::invalidate_exam($id);
+        }
+
+        wp_safe_redirect(add_query_arg(
+            self::add_exam_list_state_args(
+                [
+                    'page' => 'cbt-exams',
+                    'cbt_exam_panel' => 'list',
+                    'cbt_msg' => 'Exam deleted',
+                ],
+                $exam_list_state
+            ),
+            admin_url('admin.php')
+        ));
+        exit;
+    }
+
+    /**
+     * @param int[] $source_question_ids
+     * @return int|WP_Error
+     */
+    public static function sync_exam_questions_from_sources_for_internal_use(
+        int $exam_id,
+        array $source_question_ids,
+        int $current_user_id = 0
+    ) {
+        $current_user_id = $current_user_id > 0 ? $current_user_id : get_current_user_id();
+
+        $sync_result = self::sync_exam_questions_from_sources(
+            $exam_id,
+            $source_question_ids,
+            true,
+            $current_user_id
+        );
+        if (is_wp_error($sync_result)) {
+            return $sync_result;
+        }
+
+        return max(0, (int) ($sync_result['synced_question_count'] ?? 0));
+    }
+
+    public static function handle_sync_exam_builder_selection(): void
+    {
+        if (!self::can_manage_exams()) {
+            wp_send_json_error(['message' => 'Unauthorized'], 403);
+        }
+
+        check_ajax_referer('cbt_exam_builder_state', 'nonce');
+
+        $builder_state_key = isset($_POST['builder_state_key'])
+            ? sanitize_key((string) wp_unslash($_POST['builder_state_key']))
+            : '';
+        if ($builder_state_key === '') {
+            wp_send_json_error(['message' => 'Builder state key tidak valid.'], 400);
+        }
+
+        $selected_question_ids = isset($_POST['selected_question_ids']) && is_array($_POST['selected_question_ids'])
+            ? array_map('absint', (array) wp_unslash($_POST['selected_question_ids']))
+            : [];
+        $selected_question_ids = array_values(array_unique(array_filter($selected_question_ids)));
+
+        self::save_exam_builder_selected_question_ids($builder_state_key, get_current_user_id(), $selected_question_ids);
+
+        wp_send_json_success([
+            'selected_question_ids' => $selected_question_ids,
+        ]);
+    }
+
+    public static function handle_clear_exam_builder_selection(): void
+    {
+        if (!self::can_manage_exams()) {
+            wp_send_json_error(['message' => 'Unauthorized'], 403);
+        }
+
+        check_ajax_referer('cbt_exam_builder_state', 'nonce');
+
+        $builder_state_key = isset($_POST['builder_state_key'])
+            ? sanitize_key((string) wp_unslash($_POST['builder_state_key']))
+            : '';
+        if ($builder_state_key === '') {
+            wp_send_json_error(['message' => 'Builder state key tidak valid.'], 400);
+        }
+
+        self::clear_exam_builder_selection_state($builder_state_key, get_current_user_id());
+
+        wp_send_json_success([
+            'cleared' => true,
+            'builder_state_key' => $builder_state_key,
+        ]);
+    }
+
+    public static function handle_start_exam_save_progress(): void
+    {
+        if (!self::can_manage_exams()) {
+            wp_send_json_error(['message' => 'Unauthorized'], 403);
+        }
+
+        check_admin_referer('cbt_save_exam');
+        check_ajax_referer('cbt_exam_builder_state', 'nonce');
+
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        $payload = self::normalize_exam_save_payload($_POST);
+        if (is_wp_error($payload)) {
+            wp_send_json_error(['message' => $payload->get_error_message()], 400);
+        }
+
+        $save_result = self::upsert_exam_record_from_payload($payload, $is_admin_scope, $current_user_id);
+        if (is_wp_error($save_result)) {
+            wp_send_json_error(['message' => $save_result->get_error_message()], 400);
+        }
+
+        global $wpdb;
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $saved_exam_id = (int) ($save_result['exam_id'] ?? 0);
+        $token = strtolower((string) wp_generate_password(24, false, false));
+        $selected_source_question_ids = array_values(array_unique(array_filter(array_map('absint', (array) ($payload['source_question_ids'] ?? [])))));
+        $existing_exam_question_ids = array_values(array_unique(array_filter(array_map(
+            'absint',
+            (array) $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT id FROM {$question_table} WHERE exam_id = %d ORDER BY id ASC",
+                    $saved_exam_id
+                )
+            )
+        ))));
+
+        $state = [
+            'user_id' => $current_user_id,
+            'exam_id' => $saved_exam_id,
+            'original_exam_id' => (int) ($payload['id'] ?? 0),
+            'selected_source_question_ids' => $selected_source_question_ids,
+            'total_sources' => count($selected_source_question_ids),
+            'processed_sources' => 0,
+            'updated_existing_count' => 0,
+            'created_new_count' => 0,
+            'linked_legacy_match_count' => 0,
+            'preserved_attempt_history_count' => 0,
+            'removed_question_count' => 0,
+            'archived_question_count' => 0,
+            'deleted_question_count' => 0,
+            'legacy_active_count' => 0,
+            'matched_existing_question_ids' => [],
+            'existing_exam_question_ids' => $existing_exam_question_ids,
+            'is_admin_scope' => $is_admin_scope ? 1 : 0,
+            'current_user_id' => $current_user_id,
+            'phase' => !empty($selected_source_question_ids) ? 'sync' : 'finalize',
+            'message' => !empty($selected_source_question_ids)
+                ? 'Menyiapkan sinkronisasi soal exam.'
+                : 'Merapikan data exam.',
+            'started_at' => time(),
+        ];
+
+        $state = self::continue_exam_save_progress_state($state);
+        if (is_wp_error($state)) {
+            wp_send_json_error(['message' => $state->get_error_message()], 500);
+        }
+
+        $response = self::build_exam_save_progress_payload($state);
+        $response['token'] = $token;
+        if (!empty($response['complete'])) {
+            wp_send_json_success($response);
+        }
+
+        $saved = set_transient(self::get_exam_save_progress_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+        if (!$saved) {
+            wp_send_json_error(['message' => 'Gagal menyimpan state progress update exam.'], 500);
+        }
+
+        wp_send_json_success($response);
+    }
+
+    public static function handle_continue_exam_save_progress(): void
+    {
+        if (!self::can_manage_exams()) {
+            wp_send_json_error(['message' => 'Unauthorized'], 403);
+        }
+
+        check_ajax_referer('cbt_exam_builder_state', 'nonce');
+
+        $token = isset($_POST['token']) ? sanitize_key((string) wp_unslash($_POST['token'])) : '';
+        $state = self::get_exam_save_progress_state_for_current_user($token);
+        if (!is_array($state)) {
+            wp_send_json_error(['message' => 'Sesi progress update exam tidak ditemukan atau sudah berakhir.'], 404);
+        }
+
+        $state = self::continue_exam_save_progress_state($state);
+        if (is_wp_error($state)) {
+            self::clear_exam_save_progress_state($token);
+            wp_send_json_error(['message' => $state->get_error_message()], 500);
+        }
+
+        $response = self::build_exam_save_progress_payload($state);
+        $response['token'] = $token;
+
+        if (!empty($response['complete'])) {
+            self::clear_exam_save_progress_state($token);
+            wp_send_json_success($response);
+        }
+
+        $saved = set_transient(self::get_exam_save_progress_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+        if (!$saved) {
+            self::clear_exam_save_progress_state($token);
+            wp_send_json_error(['message' => 'Gagal menyimpan lanjutan progress update exam.'], 500);
+        }
+
+        wp_send_json_success($response);
+    }
+
+    /**
+     * @param array<string,mixed> $request
+     * @return array{per_page:int,paged:int,search:string,status:string,subject_id:int,kelas:string}
+     */
+    public static function get_exam_list_state_from_request(array $request): array
+    {
+        $status = isset($request['cbt_exam_status'])
+            ? sanitize_key((string) wp_unslash((string) $request['cbt_exam_status']))
+            : '';
+        if (!in_array($status, ['draft', 'published', 'closed'], true)) {
+            $status = '';
+        }
+
+        return [
+            'per_page' => self::normalize_standard_list_per_page(
+                isset($request['cbt_exam_per_page']) ? absint(wp_unslash((string) $request['cbt_exam_per_page'])) : 20
+            ),
+            'paged' => isset($request['cbt_exam_paged']) ? max(1, absint(wp_unslash((string) $request['cbt_exam_paged']))) : 1,
+            'search' => isset($request['cbt_exam_search'])
+                ? sanitize_text_field((string) wp_unslash((string) $request['cbt_exam_search']))
+                : '',
+            'status' => $status,
+            'subject_id' => isset($request['cbt_exam_subject']) ? absint(wp_unslash((string) $request['cbt_exam_subject'])) : 0,
+            'kelas' => isset($request['cbt_exam_kelas'])
+                ? strtoupper(sanitize_text_field((string) wp_unslash((string) $request['cbt_exam_kelas'])))
+                : '',
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $args
+     * @param array{per_page:int,paged:int,search:string,status:string,subject_id:int,kelas:string} $state
+     * @return array<string,mixed>
+     */
+    public static function add_exam_list_state_args(array $args, array $state, bool $include_paged = true): array
+    {
+        $args['cbt_exam_per_page'] = self::normalize_standard_list_per_page((int) ($state['per_page'] ?? 20));
+        if ($include_paged) {
+            $args['cbt_exam_paged'] = max(1, (int) ($state['paged'] ?? 1));
+        }
+        if (($state['search'] ?? '') !== '') {
+            $args['cbt_exam_search'] = (string) $state['search'];
+        }
+        if (($state['status'] ?? '') !== '') {
+            $args['cbt_exam_status'] = (string) $state['status'];
+        }
+        if (!empty($state['subject_id'])) {
+            $args['cbt_exam_subject'] = (int) $state['subject_id'];
+        }
+        if (($state['kelas'] ?? '') !== '') {
+            $args['cbt_exam_kelas'] = (string) $state['kelas'];
+        }
+
+        return $args;
+    }
+
+    public static function normalize_standard_list_per_page(int $requested): int
+    {
+        $allowed = [20, 40, 60, 80, 100];
+        if (in_array($requested, $allowed, true)) {
+            return $requested;
+        }
+
+        return 20;
+    }
+
+    public static function normalize_exam_builder_question_per_page(int $requested): int
+    {
+        $allowed = [50, 100, 150, 300];
+        if (in_array($requested, $allowed, true)) {
+            return $requested;
+        }
+
+        return 150;
+    }
+
+    /**
+     * @return string[]
+     */
+    public static function get_distinct_user_meta_values(string $meta_key): array
+    {
+        global $wpdb;
+
+        $query = $wpdb->prepare(
+            "SELECT DISTINCT meta_value
+             FROM {$wpdb->usermeta}
+             WHERE meta_key = %s
+               AND meta_value IS NOT NULL
+               AND TRIM(meta_value) <> ''
+             ORDER BY meta_value ASC",
+            $meta_key
+        );
+
+        $rows = $wpdb->get_col($query);
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('sanitize_text_field', $rows), static function ($value) {
+            return $value !== '';
+        }));
+    }
+
+    public static function get_exam_builder_selection_transient_key(string $builder_state_key, int $user_id): string
+    {
+        return 'cbt_exam_sel_' . md5($user_id . '|' . $builder_state_key);
+    }
+
+    /**
+     * @param int[] $fallback_selected_ids
+     * @return int[]
+     */
+    public static function get_exam_builder_selected_question_ids(string $builder_state_key, int $user_id, array $fallback_selected_ids = []): array
+    {
+        if ($builder_state_key === '' || $user_id <= 0) {
+            return array_values(array_unique(array_filter(array_map('absint', $fallback_selected_ids))));
+        }
+
+        $saved_selected_ids = get_transient(self::get_exam_builder_selection_transient_key($builder_state_key, $user_id));
+        if (!is_array($saved_selected_ids)) {
+            return array_values(array_unique(array_filter(array_map('absint', $fallback_selected_ids))));
+        }
+
+        return array_values(array_unique(array_filter(array_map('absint', $saved_selected_ids))));
+    }
+
+    /**
+     * @param int[] $selected_question_ids
+     */
+    public static function save_exam_builder_selected_question_ids(string $builder_state_key, int $user_id, array $selected_question_ids): void
+    {
+        if ($builder_state_key === '' || $user_id <= 0) {
+            return;
+        }
+
+        set_transient(
+            self::get_exam_builder_selection_transient_key($builder_state_key, $user_id),
+            array_values(array_unique(array_filter(array_map('absint', $selected_question_ids)))),
+            12 * HOUR_IN_SECONDS
+        );
+    }
+
+    public static function clear_exam_builder_selection_state(string $builder_state_key, int $user_id): void
+    {
+        if ($builder_state_key === '' || $user_id <= 0) {
+            return;
+        }
+
+        delete_transient(self::get_exam_builder_selection_transient_key($builder_state_key, $user_id));
+    }
+
+    /**
+     * @return string[]
+     */
+    public static function split_target_kelas_csv($raw): array
+    {
+        $parts = [];
+        if (is_array($raw)) {
+            foreach ($raw as $item) {
+                if (!is_scalar($item)) {
+                    continue;
+                }
+                $parts[] = trim((string) $item);
+            }
+        } else {
+            $raw = str_replace(["\r\n", "\r", "\n", ';', '|'], ',', (string) $raw);
+            $parts = array_map('trim', explode(',', $raw));
+        }
+        $items = [];
+
+        foreach ($parts as $part) {
+            if ($part === '') {
+                continue;
+            }
+            $normalized = strtoupper(sanitize_text_field($part));
+            if ($normalized === '') {
+                continue;
+            }
+            $items[$normalized] = $normalized;
+        }
+
+        return array_values($items);
+    }
+
+    public static function normalize_target_kelas_csv($raw): string
+    {
+        return implode(',', self::split_target_kelas_csv($raw));
+    }
+
+    private static function get_exam_save_progress_state_key(string $token): string
+    {
+        return 'cbt_exam_save_progress_' . $token;
+    }
+
+    private static function clear_exam_save_progress_state(string $token): void
+    {
+        if ($token === '') {
+            return;
+        }
+
+        delete_transient(self::get_exam_save_progress_state_key($token));
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_exam_save_progress_state_for_current_user(string $token): ?array
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        $state = get_transient(self::get_exam_save_progress_state_key($token));
+        if (!is_array($state)) {
+            return null;
+        }
+
+        $state_user_id = isset($state['user_id']) ? (int) $state['user_id'] : 0;
+        if ($state_user_id <= 0 || $state_user_id !== get_current_user_id()) {
+            return null;
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function continue_exam_save_progress_state(array $state)
+    {
+        $phase = sanitize_key((string) ($state['phase'] ?? 'sync'));
+        if ($phase === 'sync') {
+            return self::run_exam_save_sync_batch($state);
+        }
+
+        if ($phase === 'cleanup') {
+            $exam_id = (int) ($state['exam_id'] ?? 0);
+            $existing_exam_question_ids = array_values(array_unique(array_filter(array_map(
+                'absint',
+                (array) ($state['existing_exam_question_ids'] ?? [])
+            ))));
+            $matched_existing_question_ids = array_values(array_unique(array_filter(array_map(
+                'absint',
+                (array) ($state['matched_existing_question_ids'] ?? [])
+            ))));
+            $stale_question_ids = array_values(array_diff($existing_exam_question_ids, $matched_existing_question_ids));
+            if (!empty($stale_question_ids)) {
+                $cleanup_result = self::archive_or_delete_exam_questions($exam_id, $stale_question_ids);
+                if (is_wp_error($cleanup_result)) {
+                    return $cleanup_result;
+                }
+                $state['removed_question_count'] = (int) ($cleanup_result['removed_question_count'] ?? count($stale_question_ids));
+                $state['archived_question_count'] = (int) ($cleanup_result['archived_question_count'] ?? 0);
+                $state['deleted_question_count'] = (int) ($cleanup_result['deleted_question_count'] ?? 0);
+            }
+
+            $state['phase'] = 'finalize';
+            $state['message'] = 'Merapikan cache exam, attempt, dan data builder.';
+            return $state;
+        }
+
+        if ($phase === 'finalize') {
+            $saved_exam_id = (int) ($state['exam_id'] ?? 0);
+            $original_exam_id = (int) ($state['original_exam_id'] ?? 0);
+            $current_user_id = (int) ($state['current_user_id'] ?? 0);
+            $total_sources = max(0, (int) ($state['total_sources'] ?? 0));
+            $sync_summary = [
+                'synced_question_count' => $saved_exam_id > 0 ? self::count_active_exam_questions($saved_exam_id) : 0,
+                'updated_existing_count' => max(0, (int) ($state['updated_existing_count'] ?? 0)),
+                'created_new_count' => max(0, (int) ($state['created_new_count'] ?? 0)),
+                'linked_legacy_match_count' => max(0, (int) ($state['linked_legacy_match_count'] ?? 0)),
+                'removed_question_count' => max(0, (int) ($state['removed_question_count'] ?? 0)),
+                'archived_question_count' => max(0, (int) ($state['archived_question_count'] ?? 0)),
+                'deleted_question_count' => max(0, (int) ($state['deleted_question_count'] ?? 0)),
+                'preserved_attempt_history_count' => max(0, (int) ($state['preserved_attempt_history_count'] ?? 0)),
+            ];
+            $synced_questions = $total_sources > 0 ? (int) $sync_summary['synced_question_count'] : null;
+            $finalize_result = self::finalize_exam_save_operation(
+                $saved_exam_id,
+                $original_exam_id,
+                $synced_questions,
+                $current_user_id,
+                $_POST,
+                $sync_summary
+            );
+
+            $state['legacy_active_count'] = max(0, (int) ($finalize_result['legacy_active_count'] ?? 0));
+
+            $state['phase'] = 'complete';
+            $state['message'] = (string) ($finalize_result['message'] ?? 'Exam berhasil disimpan.');
+            $state['redirect_url'] = (string) ($finalize_result['redirect_url'] ?? '');
+
+            return $state;
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function run_exam_save_sync_batch(array $state)
+    {
+        global $wpdb;
+
+        $exam_id = (int) ($state['exam_id'] ?? 0);
+        $current_user_id = (int) ($state['current_user_id'] ?? 0);
+        $is_admin_scope = !empty($state['is_admin_scope']);
+        $source_question_ids = array_values(array_unique(array_filter(array_map(
+            'absint',
+            (array) ($state['selected_source_question_ids'] ?? [])
+        ))));
+        $total_sources = count($source_question_ids);
+        $processed_sources = max(0, min($total_sources, (int) ($state['processed_sources'] ?? 0)));
+
+        if ($exam_id <= 0) {
+            return new WP_Error('invalid_exam', 'Exam tidak valid untuk diproses.');
+        }
+        if ($total_sources <= 0 || $processed_sources >= $total_sources) {
+            $state['phase'] = 'cleanup';
+            $state['message'] = 'Meninjau soal lama yang tidak lagi dipakai.';
+            return $state;
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $option_table = $wpdb->prefix . 'cbt_options';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $batch_size = self::get_exam_save_progress_chunk_size();
+        $max_batch_seconds = self::get_exam_save_progress_max_batch_seconds();
+        $preserve_attempt_history = self::exam_has_attempt_records($exam_id);
+        $batch_source_ids = array_slice($source_question_ids, $processed_sources, $batch_size);
+        if (empty($batch_source_ids)) {
+            $state['phase'] = 'cleanup';
+            $state['message'] = 'Meninjau soal lama yang tidak lagi dipakai.';
+            return $state;
+        }
+
+        $source_placeholders = implode(',', array_fill(0, count($batch_source_ids), '%d'));
+        $source_query_params = $batch_source_ids;
+        $source_sql = "SELECT q.*
+                       FROM {$question_table} q
+                       INNER JOIN {$exam_table} e ON e.id = q.exam_id
+                       WHERE q.id IN ({$source_placeholders})";
+        if (!$is_admin_scope) {
+            $source_sql .= ' AND e.created_by = %d';
+            $source_query_params[] = $current_user_id;
+        }
+        $source_rows = $wpdb->get_results($wpdb->prepare($source_sql, ...$source_query_params), ARRAY_A);
+        $source_by_id = [];
+        foreach ((array) $source_rows as $source_row) {
+            $source_by_id[(int) ($source_row['id'] ?? 0)] = $source_row;
+        }
+
+        $ordered_sources = [];
+        foreach ($batch_source_ids as $source_question_id) {
+            if (isset($source_by_id[$source_question_id])) {
+                $ordered_sources[] = $source_by_id[$source_question_id];
+            }
+        }
+        if (empty($ordered_sources) || count($ordered_sources) !== count($batch_source_ids)) {
+            return new WP_Error('invalid_questions', 'Soal sumber tidak ditemukan saat proses update exam.');
+        }
+
+        $ordered_source_ids = array_map(static function ($row): int {
+            return (int) ($row['id'] ?? 0);
+        }, $ordered_sources);
+        $option_placeholders = implode(',', array_fill(0, count($ordered_source_ids), '%d'));
+        $option_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM {$option_table} WHERE question_id IN ({$option_placeholders}) ORDER BY id ASC",
+                ...$ordered_source_ids
+            ),
+            ARRAY_A
+        );
+        $options_by_question = [];
+        foreach ((array) $option_rows as $option_row) {
+            $question_id = (int) ($option_row['question_id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+            if (!isset($options_by_question[$question_id])) {
+                $options_by_question[$question_id] = [];
+            }
+            $options_by_question[$question_id][] = $option_row;
+        }
+
+        $detail_by_question = [];
+        foreach ($ordered_sources as $source_row) {
+            $source_question_id = (int) ($source_row['id'] ?? 0);
+            $source_question_type = (string) ($source_row['question_type'] ?? '');
+            $detail_by_question[$source_question_id] = CBT_Admin_Questions_Helper::get_question_type_detail($source_question_id, $source_question_type);
+        }
+
+        $existing_exam_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, source_question_id, COALESCE(is_active, 1) AS is_active
+                 FROM {$question_table}
+                 WHERE exam_id = %d
+                 ORDER BY COALESCE(is_active, 1) DESC, id ASC",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+        $matched_existing_lookup = array_fill_keys(
+            array_values(array_unique(array_filter(array_map('absint', (array) ($state['matched_existing_question_ids'] ?? []))))),
+            true
+        );
+        $existing_by_source = [];
+        $candidate_question_ids = [];
+        foreach ((array) $existing_exam_rows as $existing_exam_row) {
+            $existing_question_id = (int) ($existing_exam_row['id'] ?? 0);
+            if ($existing_question_id <= 0 || isset($matched_existing_lookup[$existing_question_id])) {
+                continue;
+            }
+
+            $is_active_existing = (int) ($existing_exam_row['is_active'] ?? 1) === 1;
+            if ($preserve_attempt_history && !$is_active_existing) {
+                continue;
+            }
+
+            $existing_source_question_id = (int) ($existing_exam_row['source_question_id'] ?? 0);
+            if ($existing_source_question_id > 0) {
+                if (!isset($existing_by_source[$existing_source_question_id])) {
+                    $existing_by_source[$existing_source_question_id] = [];
+                }
+                $existing_by_source[$existing_source_question_id][] = $existing_question_id;
+            }
+
+            $candidate_question_ids[] = $existing_question_id;
+        }
+
+        $existing_snapshots = [];
+        $processed_this_batch = 0;
+        $batch_started_at = microtime(true);
+        $now = current_time('mysql');
+        foreach ($ordered_sources as $source_row) {
+            $source_question_id = (int) ($source_row['id'] ?? 0);
+            $source_snapshot = self::build_exam_sync_source_snapshot(
+                $source_row,
+                $options_by_question[$source_question_id] ?? [],
+                $detail_by_question[$source_question_id] ?? []
+            );
+
+            $matched_question_id = 0;
+            $matched_via_legacy_descendant = false;
+            if (isset($existing_by_source[$source_question_id])) {
+                while (!empty($existing_by_source[$source_question_id])) {
+                    $candidate_question_id = (int) array_shift($existing_by_source[$source_question_id]);
+                    if ($candidate_question_id > 0 && !isset($matched_existing_lookup[$candidate_question_id])) {
+                        $matched_question_id = $candidate_question_id;
+                        break;
+                    }
+                }
+            }
+
+            if ($matched_question_id <= 0) {
+                foreach ($candidate_question_ids as $candidate_question_id) {
+                    $candidate_question_id = (int) $candidate_question_id;
+                    if ($candidate_question_id <= 0 || isset($matched_existing_lookup[$candidate_question_id])) {
+                        continue;
+                    }
+                    if (!isset($existing_snapshots[$candidate_question_id])) {
+                        $existing_snapshots[$candidate_question_id] = CBT_Admin_Questions_Sync_Helper::get_question_sync_snapshot($candidate_question_id);
+                    }
+                    $candidate_snapshot = (array) ($existing_snapshots[$candidate_question_id] ?? []);
+                    if (empty($candidate_snapshot)) {
+                        continue;
+                    }
+
+                    if (CBT_Admin_Questions_Sync_Helper::question_snapshots_are_legacy_descendant_match($candidate_snapshot, $source_snapshot)) {
+                        $matched_question_id = $candidate_question_id;
+                        $matched_via_legacy_descendant = true;
+                        break;
+                    }
+                }
+            }
+
+            if ($matched_question_id > 0) {
+                $target_snapshot = (array) ($existing_snapshots[$matched_question_id] ?? []);
+                $updated_exam_id = $preserve_attempt_history
+                    ? self::link_existing_exam_question_to_source(
+                        $matched_question_id,
+                        $source_question_id,
+                        $target_snapshot
+                    )
+                    : CBT_Admin_Questions_Sync_Helper::apply_source_snapshot_to_question(
+                        $matched_question_id,
+                        $source_question_id,
+                        $source_snapshot,
+                        $target_snapshot
+                    );
+                if ($updated_exam_id <= 0) {
+                    return new WP_Error('update_failed', 'Gagal menyinkronkan salah satu soal exam yang sudah ada.');
+                }
+
+                $matched_existing_lookup[$matched_question_id] = true;
+                $state['matched_existing_question_ids'][$matched_question_id] = $matched_question_id;
+                $state['updated_existing_count'] = ((int) ($state['updated_existing_count'] ?? 0)) + 1;
+                if ($matched_via_legacy_descendant) {
+                    $state['linked_legacy_match_count'] = ((int) ($state['linked_legacy_match_count'] ?? 0)) + 1;
+                }
+                if ($preserve_attempt_history) {
+                    $state['preserved_attempt_history_count'] = ((int) ($state['preserved_attempt_history_count'] ?? 0)) + 1;
+                }
+            } else {
+                $question_type = (string) ($source_snapshot['question_type'] ?? 'multiple_choice');
+                $inserted_question = $wpdb->insert(
+                    $question_table,
+                    [
+                        'exam_id' => $exam_id,
+                        'source_question_id' => $source_question_id,
+                        'is_active' => 1,
+                        'question_text' => (string) ($source_snapshot['question_text'] ?? ''),
+                        'question_type' => $question_type,
+                        'points' => (float) ($source_snapshot['points'] ?? 1),
+                        'correct_text' => (string) ($source_snapshot['correct_text'] ?? ''),
+                        'explanation' => (string) ($source_snapshot['explanation'] ?? ''),
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    ['%d', '%d', '%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s']
+                );
+                if (!$inserted_question) {
+                    return new WP_Error('insert_failed', 'Gagal menyalin salah satu soal ke exam.');
+                }
+
+                $new_question_id = (int) $wpdb->insert_id;
+                foreach ((array) ($source_snapshot['options'] ?? []) as $source_option) {
+                    $wpdb->insert(
+                        $option_table,
+                        [
+                            'question_id' => $new_question_id,
+                            'option_key' => (string) ($source_option['option_key'] ?? ''),
+                            'option_text' => (string) ($source_option['option_text'] ?? ''),
+                            'is_correct' => (int) ($source_option['is_correct'] ?? 0),
+                            'created_at' => $now,
+                        ],
+                        ['%d', '%s', '%s', '%d', '%s']
+                    );
+                }
+
+                CBT_Admin_Questions_Helper::save_question_type_detail(
+                    $new_question_id,
+                    $question_type,
+                    (string) ($source_snapshot['normalized_detail_text'] ?? '')
+                );
+                $matched_existing_lookup[$new_question_id] = true;
+                $state['matched_existing_question_ids'][$new_question_id] = $new_question_id;
+                $state['created_new_count'] = ((int) ($state['created_new_count'] ?? 0)) + 1;
+            }
+
+            $processed_this_batch++;
+            if ($processed_this_batch >= 1 && (microtime(true) - $batch_started_at) >= $max_batch_seconds) {
+                break;
+            }
+        }
+
+        $state['processed_sources'] = min($total_sources, $processed_sources + $processed_this_batch);
+        if ((int) $state['processed_sources'] >= $total_sources) {
+            $state['phase'] = 'cleanup';
+            $state['message'] = 'Meninjau soal lama yang tidak lagi dipakai.';
+        } else {
+            $state['phase'] = 'sync';
+            $state['message'] = sprintf(
+                'Menyinkronkan soal %d dari %d.',
+                (int) $state['processed_sources'],
+                $total_sources
+            );
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param array<string,mixed> $source_row
+     * @param array<int,array<string,mixed>> $source_options
+     * @param array<string,mixed> $source_detail
+     * @return array<string,mixed>
+     */
+    private static function build_exam_sync_source_snapshot(array $source_row, array $source_options, array $source_detail): array
+    {
+        $question_type = (string) ($source_row['question_type'] ?? 'multiple_choice');
+        $detail_text = '';
+        if ($question_type === 'true_false') {
+            $detail_value = isset($source_detail['correct_value'])
+                ? (int) $source_detail['correct_value']
+                : CBT_Admin_Questions_Helper::normalize_true_false_value((string) ($source_row['correct_text'] ?? ''));
+            $detail_text = ($detail_value === 0) ? 'false' : 'true';
+        } elseif ($question_type === 'short_answer') {
+            $detail_text = (string) ($source_detail['correct_text'] ?? ($source_row['correct_text'] ?? ''));
+        } elseif ($question_type === 'essay') {
+            $detail_text = (string) ($source_detail['rubric_text'] ?? ($source_row['correct_text'] ?? ''));
+        }
+
+        return [
+            'question_text' => (string) ($source_row['question_text'] ?? ''),
+            'question_type' => $question_type,
+            'points' => (float) ($source_row['points'] ?? 1),
+            'correct_text' => (string) ($source_row['correct_text'] ?? ''),
+            'explanation' => (string) ($source_row['explanation'] ?? ''),
+            'normalized_detail_text' => $detail_text,
+            'options' => $source_options,
+        ];
+    }
+
+    /**
+     * @param int[] $source_question_ids
+     * @return array<string,int>|WP_Error
+     */
+    private static function sync_exam_questions_from_sources(
+        int $exam_id,
+        array $source_question_ids,
+        bool $is_admin_scope,
+        int $current_user_id
+    ) {
+        global $wpdb;
+
+        if ($exam_id <= 0) {
+            return new WP_Error('invalid_exam', 'Exam tidak valid.');
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $option_table = $wpdb->prefix . 'cbt_options';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $preserve_attempt_history = self::exam_has_attempt_records($exam_id);
+        $source_question_ids = array_values(array_unique(array_filter(array_map('absint', $source_question_ids))));
+
+        if (empty($source_question_ids)) {
+            return new WP_Error('empty_questions', 'Pilih minimal 1 soal.');
+        }
+
+        $source_placeholders = implode(',', array_fill(0, count($source_question_ids), '%d'));
+        $query_params = $source_question_ids;
+
+        $source_sql = "SELECT q.*
+                       FROM {$question_table} q
+                       INNER JOIN {$exam_table} e ON e.id = q.exam_id
+                       WHERE q.id IN ({$source_placeholders})";
+
+        if (!$is_admin_scope) {
+            $source_sql .= ' AND e.created_by = %d';
+            $query_params[] = $current_user_id;
+        }
+
+        $source_rows = $wpdb->get_results($wpdb->prepare($source_sql, ...$query_params), ARRAY_A);
+        $source_by_id = [];
+        foreach ((array) $source_rows as $source_row) {
+            $source_by_id[(int) ($source_row['id'] ?? 0)] = $source_row;
+        }
+
+        $ordered_sources = [];
+        foreach ($source_question_ids as $source_question_id) {
+            if (isset($source_by_id[$source_question_id])) {
+                $ordered_sources[] = $source_by_id[$source_question_id];
+            }
+        }
+
+        if (empty($ordered_sources)) {
+            return new WP_Error('invalid_questions', 'Soal sumber tidak ditemukan.');
+        }
+
+        $ordered_source_ids = array_map(static function ($row): int {
+            return (int) ($row['id'] ?? 0);
+        }, $ordered_sources);
+
+        $option_placeholders = implode(',', array_fill(0, count($ordered_source_ids), '%d'));
+        $option_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM {$option_table} WHERE question_id IN ({$option_placeholders}) ORDER BY id ASC",
+                ...$ordered_source_ids
+            ),
+            ARRAY_A
+        );
+
+        $options_by_question = [];
+        foreach ((array) $option_rows as $option_row) {
+            $question_id = (int) ($option_row['question_id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+            if (!isset($options_by_question[$question_id])) {
+                $options_by_question[$question_id] = [];
+            }
+            $options_by_question[$question_id][] = $option_row;
+        }
+
+        $detail_by_question = [];
+        foreach ($ordered_sources as $source_row) {
+            $source_question_id = (int) ($source_row['id'] ?? 0);
+            $source_question_type = (string) ($source_row['question_type'] ?? '');
+            $detail_by_question[$source_question_id] = CBT_Admin_Questions_Helper::get_question_type_detail($source_question_id, $source_question_type);
+        }
+
+        $existing_exam_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, source_question_id, COALESCE(is_active, 1) AS is_active
+                 FROM {$question_table}
+                 WHERE exam_id = %d
+                 ORDER BY COALESCE(is_active, 1) DESC, id ASC",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+
+        $existing_by_source = [];
+        $existing_snapshots = [];
+        $unmatched_existing_ids = [];
+        foreach ((array) $existing_exam_rows as $existing_exam_row) {
+            $existing_question_id = (int) ($existing_exam_row['id'] ?? 0);
+            if ($existing_question_id <= 0) {
+                continue;
+            }
+
+            $is_active_existing = (int) ($existing_exam_row['is_active'] ?? 1) === 1;
+            if ($preserve_attempt_history && !$is_active_existing) {
+                continue;
+            }
+
+            $existing_source_question_id = (int) ($existing_exam_row['source_question_id'] ?? 0);
+            if ($existing_source_question_id > 0) {
+                if (!isset($existing_by_source[$existing_source_question_id])) {
+                    $existing_by_source[$existing_source_question_id] = [];
+                }
+                $existing_by_source[$existing_source_question_id][] = $existing_question_id;
+            }
+
+            $existing_snapshots[$existing_question_id] = CBT_Admin_Questions_Sync_Helper::get_question_sync_snapshot($existing_question_id);
+            $unmatched_existing_ids[$existing_question_id] = $existing_question_id;
+        }
+
+        $sync_summary = [
+            'synced_question_count' => count($ordered_sources),
+            'updated_existing_count' => 0,
+            'created_new_count' => 0,
+            'linked_legacy_match_count' => 0,
+            'removed_question_count' => 0,
+            'archived_question_count' => 0,
+            'deleted_question_count' => 0,
+            'preserved_attempt_history_count' => 0,
+        ];
+        $now = current_time('mysql');
+
+        foreach ($ordered_sources as $source_row) {
+            $source_question_id = (int) ($source_row['id'] ?? 0);
+            $question_type = (string) ($source_row['question_type'] ?? 'multiple_choice');
+            $source_options = $options_by_question[$source_question_id] ?? [];
+            $source_detail = $detail_by_question[$source_question_id] ?? [];
+            $detail_text = '';
+            if ($question_type === 'true_false') {
+                $detail_value = isset($source_detail['correct_value'])
+                    ? (int) $source_detail['correct_value']
+                    : CBT_Admin_Questions_Helper::normalize_true_false_value((string) ($source_row['correct_text'] ?? ''));
+                $detail_text = ($detail_value === 0) ? 'false' : 'true';
+            } elseif ($question_type === 'short_answer') {
+                $detail_text = (string) ($source_detail['correct_text'] ?? ($source_row['correct_text'] ?? ''));
+            } elseif ($question_type === 'essay') {
+                $detail_text = (string) ($source_detail['rubric_text'] ?? ($source_row['correct_text'] ?? ''));
+            }
+
+            $source_snapshot = [
+                'question_text' => (string) ($source_row['question_text'] ?? ''),
+                'question_type' => $question_type,
+                'points' => (float) ($source_row['points'] ?? 1),
+                'correct_text' => (string) ($source_row['correct_text'] ?? ''),
+                'explanation' => (string) ($source_row['explanation'] ?? ''),
+                'normalized_detail_text' => $detail_text,
+                'options' => $source_options,
+            ];
+
+            $matched_question_id = 0;
+            $matched_via_legacy_descendant = false;
+            if (isset($existing_by_source[$source_question_id]) && !empty($existing_by_source[$source_question_id])) {
+                $matched_question_id = (int) array_shift($existing_by_source[$source_question_id]);
+            }
+
+            if ($matched_question_id <= 0 && !empty($unmatched_existing_ids)) {
+                foreach ($unmatched_existing_ids as $candidate_question_id) {
+                    $candidate_snapshot = (array) ($existing_snapshots[$candidate_question_id] ?? []);
+                    if (empty($candidate_snapshot)) {
+                        continue;
+                    }
+
+                    if (CBT_Admin_Questions_Sync_Helper::question_snapshots_are_legacy_descendant_match($candidate_snapshot, $source_snapshot)) {
+                        $matched_question_id = (int) $candidate_question_id;
+                        $matched_via_legacy_descendant = true;
+                        break;
+                    }
+                }
+            }
+
+            if ($matched_question_id > 0) {
+                $target_snapshot = (array) ($existing_snapshots[$matched_question_id] ?? []);
+                $updated_exam_id = $preserve_attempt_history
+                    ? self::link_existing_exam_question_to_source(
+                        $matched_question_id,
+                        $source_question_id,
+                        $target_snapshot
+                    )
+                    : CBT_Admin_Questions_Sync_Helper::apply_source_snapshot_to_question(
+                        $matched_question_id,
+                        $source_question_id,
+                        $source_snapshot,
+                        $target_snapshot
+                    );
+                if ($updated_exam_id <= 0) {
+                    return new WP_Error('update_failed', 'Gagal menyinkronkan salah satu soal exam yang sudah ada.');
+                }
+
+                unset($unmatched_existing_ids[$matched_question_id]);
+                $sync_summary['updated_existing_count']++;
+                if ($matched_via_legacy_descendant) {
+                    $sync_summary['linked_legacy_match_count']++;
+                }
+                if ($preserve_attempt_history) {
+                    $sync_summary['preserved_attempt_history_count']++;
+                }
+                continue;
+            }
+
+            $inserted_question = $wpdb->insert(
+                $question_table,
+                [
+                    'exam_id' => $exam_id,
+                    'source_question_id' => $source_question_id,
+                    'is_active' => 1,
+                    'question_text' => (string) ($source_row['question_text'] ?? ''),
+                    'question_type' => $question_type,
+                    'points' => (float) ($source_row['points'] ?? 1),
+                    'correct_text' => (string) ($source_row['correct_text'] ?? ''),
+                    'explanation' => (string) ($source_row['explanation'] ?? ''),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ],
+                ['%d', '%d', '%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s']
+            );
+
+            if (!$inserted_question) {
+                return new WP_Error('insert_failed', 'Gagal menyalin salah satu soal ke exam.');
+            }
+
+            $new_question_id = (int) $wpdb->insert_id;
+            foreach ($source_options as $source_option) {
+                $wpdb->insert(
+                    $option_table,
+                    [
+                        'question_id' => $new_question_id,
+                        'option_key' => (string) ($source_option['option_key'] ?? ''),
+                        'option_text' => (string) ($source_option['option_text'] ?? ''),
+                        'is_correct' => (int) ($source_option['is_correct'] ?? 0),
+                        'created_at' => $now,
+                    ],
+                    ['%d', '%s', '%s', '%d', '%s']
+                );
+            }
+
+            CBT_Admin_Questions_Helper::save_question_type_detail($new_question_id, $question_type, $detail_text);
+            $sync_summary['created_new_count']++;
+        }
+
+        if (!empty($unmatched_existing_ids)) {
+            $stale_question_ids = array_values(array_filter(array_map('absint', array_values($unmatched_existing_ids))));
+            if (!empty($stale_question_ids)) {
+                $cleanup_result = self::archive_or_delete_exam_questions($exam_id, $stale_question_ids);
+                if (is_wp_error($cleanup_result)) {
+                    return $cleanup_result;
+                }
+                $sync_summary['removed_question_count'] = (int) ($cleanup_result['removed_question_count'] ?? 0);
+                $sync_summary['archived_question_count'] = (int) ($cleanup_result['archived_question_count'] ?? 0);
+                $sync_summary['deleted_question_count'] = (int) ($cleanup_result['deleted_question_count'] ?? 0);
+            }
+        }
+
+        $sync_summary['synced_question_count'] = self::count_active_exam_questions($exam_id);
+
+        return $sync_summary;
+    }
+
+    private static function count_active_exam_questions(int $exam_id): int
+    {
+        global $wpdb;
+
+        if ($exam_id <= 0) {
+            return 0;
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*)
+                 FROM {$question_table}
+                 WHERE exam_id = %d
+                   AND COALESCE(is_active, 1) = 1",
+                $exam_id
+            )
+        );
+    }
+
+    private static function clear_exam_attempt_states(int $exam_id): void
+    {
+        global $wpdb;
+
+        if ($exam_id <= 0) {
+            return;
+        }
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $attempt_ids = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT id
+                 FROM {$attempt_table}
+                 WHERE exam_id = %d",
+                $exam_id
+            )
+        );
+
+        $attempt_ids = array_values(array_unique(array_filter(array_map('absint', (array) $attempt_ids))));
+        if (empty($attempt_ids)) {
+            return;
+        }
+
+        CBT_Cache::invalidate_attempts($attempt_ids);
+        CBT_UI_State::clear_attempt_states_by_attempt_ids($attempt_ids);
+        if (class_exists('CBT_Runtime')) {
+            foreach ($attempt_ids as $attempt_id) {
+                CBT_Runtime::clear_attempt_runtime((int) $attempt_id);
+            }
+        }
+    }
+
+    private static function exam_has_attempt_records(int $exam_id): bool
+    {
+        global $wpdb;
+
+        if ($exam_id <= 0) {
+            return false;
+        }
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $attempt_count = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*)
+                 FROM {$attempt_table}
+                 WHERE exam_id = %d",
+                $exam_id
+            )
+        );
+
+        return $attempt_count > 0;
+    }
+
+    private static function link_existing_exam_question_to_source(
+        int $target_question_id,
+        int $source_question_id,
+        array $target_snapshot = []
+    ): int {
+        global $wpdb;
+
+        if ($target_question_id <= 0 || $source_question_id <= 0) {
+            return 0;
+        }
+
+        if (empty($target_snapshot)) {
+            $target_snapshot = CBT_Admin_Questions_Sync_Helper::get_question_sync_snapshot($target_question_id);
+        }
+        if (empty($target_snapshot)) {
+            return 0;
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $updated = $wpdb->update(
+            $question_table,
+            [
+                'source_question_id' => $source_question_id,
+                'is_active' => 1,
+                'updated_at' => current_time('mysql'),
+            ],
+            ['id' => $target_question_id],
+            ['%d', '%d', '%s'],
+            ['%d']
+        );
+        if ($updated === false) {
+            return 0;
+        }
+
+        return (int) ($target_snapshot['exam_id'] ?? 0);
+    }
+
+    /**
+     * @param array<int,int> $question_ids
+     * @return array<string,int>|WP_Error
+     */
+    private static function archive_or_delete_exam_questions(int $exam_id, array $question_ids)
+    {
+        global $wpdb;
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $question_ids = array_values(array_unique(array_filter(array_map('absint', $question_ids))));
+        if ($exam_id <= 0 || empty($question_ids)) {
+            return [
+                'removed_question_count' => 0,
+                'archived_question_count' => 0,
+                'deleted_question_count' => 0,
+            ];
+        }
+
+        $protected_ids = self::find_historical_question_ids($exam_id, $question_ids);
+        $archive_ids = array_values(array_intersect($question_ids, $protected_ids));
+        $delete_ids = array_values(array_diff($question_ids, $archive_ids));
+        $now = current_time('mysql');
+
+        if (!empty($archive_ids)) {
+            $archive_placeholders = implode(',', array_fill(0, count($archive_ids), '%d'));
+            $archive_result = $wpdb->query(
+                $wpdb->prepare(
+                    "UPDATE {$question_table}
+                     SET is_active = 0,
+                         updated_at = %s
+                     WHERE exam_id = %d
+                       AND id IN ({$archive_placeholders})",
+                    $now,
+                    $exam_id,
+                    ...$archive_ids
+                )
+            );
+            if ($archive_result === false) {
+                return new WP_Error('archive_removed_failed', 'Gagal mengarsipkan soal exam yang sudah dipakai attempt.');
+            }
+        }
+
+        if (!empty($delete_ids)) {
+            $delete_placeholders = implode(',', array_fill(0, count($delete_ids), '%d'));
+            $deleted_removed = $wpdb->query(
+                $wpdb->prepare(
+                    "DELETE FROM {$question_table}
+                     WHERE exam_id = %d
+                       AND id IN ({$delete_placeholders})",
+                    $exam_id,
+                    ...$delete_ids
+                )
+            );
+            if ($deleted_removed === false) {
+                return new WP_Error('delete_removed_failed', 'Gagal menghapus soal exam yang sudah tidak dipakai.');
+            }
+        }
+
+        return [
+            'removed_question_count' => count($question_ids),
+            'archived_question_count' => count($archive_ids),
+            'deleted_question_count' => count($delete_ids),
+        ];
+    }
+
+    /**
+     * @param array<int,int> $question_ids
+     * @return int[]
+     */
+    private static function find_historical_question_ids(int $exam_id, array $question_ids): array
+    {
+        global $wpdb;
+
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $question_ids = array_values(array_unique(array_filter(array_map('absint', $question_ids))));
+        if ($exam_id <= 0 || empty($question_ids)) {
+            return [];
+        }
+
+        $protected = [];
+        $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+        $answered_question_ids = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT DISTINCT question_id
+                 FROM {$answer_table}
+                 WHERE question_id IN ({$placeholders})",
+                ...$question_ids
+            )
+        );
+        foreach ((array) $answered_question_ids as $answered_question_id) {
+            $answered_question_id = (int) $answered_question_id;
+            if ($answered_question_id > 0) {
+                $protected[$answered_question_id] = $answered_question_id;
+            }
+        }
+
+        $attempt_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT question_order
+                 FROM {$attempt_table}
+                 WHERE exam_id = %d
+                   AND question_order IS NOT NULL
+                   AND question_order <> ''",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+        $candidate_lookup = array_fill_keys($question_ids, true);
+        foreach ((array) $attempt_rows as $attempt_row) {
+            $decoded = json_decode((string) ($attempt_row['question_order'] ?? ''), true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+
+            foreach ($decoded as $candidate_question_id) {
+                $candidate_question_id = (int) $candidate_question_id;
+                if ($candidate_question_id > 0 && isset($candidate_lookup[$candidate_question_id])) {
+                    $protected[$candidate_question_id] = $candidate_question_id;
+                }
+            }
+        }
+
+        return array_values($protected);
+    }
+
+    private static function get_exam_save_progress_chunk_size(): int
+    {
+        $batch_size = (int) apply_filters('cbt_exam_save_progress_chunk_size', 25);
+        if ($batch_size < 5) {
+            return 5;
+        }
+        if ($batch_size > 100) {
+            return 100;
+        }
+
+        return $batch_size;
+    }
+
+    private static function get_exam_save_progress_max_batch_seconds(): float
+    {
+        $seconds = (float) apply_filters('cbt_exam_save_progress_max_batch_seconds', 2.5);
+        if ($seconds < 1.0) {
+            return 1.0;
+        }
+        if ($seconds > 8.0) {
+            return 8.0;
+        }
+
+        return $seconds;
+    }
+
+    /**
+     * @param array<string,mixed> $request
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function normalize_exam_save_payload(array $request)
+    {
+        $id = isset($request['id']) ? absint(wp_unslash((string) $request['id'])) : 0;
+        $subject_id = isset($request['subject_id']) ? absint(wp_unslash((string) $request['subject_id'])) : 0;
+        $title = isset($request['title']) ? sanitize_text_field(wp_unslash((string) $request['title'])) : '';
+        $description = isset($request['description']) ? wp_kses_post(wp_unslash((string) $request['description'])) : '';
+        $duration = max(1, isset($request['duration_minutes']) ? absint(wp_unslash((string) $request['duration_minutes'])) : 60);
+        $kkm_raw = isset($request['kkm_percentage']) ? trim((string) wp_unslash((string) $request['kkm_percentage'])) : '75';
+        if ($kkm_raw === '') {
+            $kkm_raw = '75';
+        }
+        if (!is_numeric($kkm_raw)) {
+            return new WP_Error('invalid_kkm', 'KKM harus berupa angka persentase.', $id);
+        }
+        $kkm_percentage = round((float) $kkm_raw, 2);
+        $randomize = isset($request['randomize_questions']) ? 1 : 0;
+        $randomize_options = isset($request['randomize_options']) ? 1 : 0;
+        $status = isset($request['status']) ? sanitize_text_field(wp_unslash((string) $request['status'])) : 'draft';
+        $allowed_statuses = ['draft', 'published', 'closed'];
+        if (!in_array($status, $allowed_statuses, true)) {
+            $status = 'draft';
+        }
+        $starts_at = isset($request['starts_at']) ? self::from_datetime_local((string) wp_unslash((string) $request['starts_at'])) : null;
+        $ends_at = isset($request['ends_at']) ? self::from_datetime_local((string) wp_unslash((string) $request['ends_at'])) : null;
+        $target_kelas_raw = isset($request['target_kelas']) ? wp_unslash($request['target_kelas']) : '';
+        $target_kelas = self::normalize_target_kelas_csv($target_kelas_raw);
+        $raw_source_question_ids = isset($request['source_question_ids']) && is_array($request['source_question_ids'])
+            ? wp_unslash($request['source_question_ids'])
+            : [];
+        $source_question_ids = array_values(array_unique(array_filter(array_map('absint', $raw_source_question_ids))));
+
+        if ($subject_id <= 0) {
+            return new WP_Error('invalid_subject', 'Mapel wajib dipilih.', $id);
+        }
+        if ($title === '') {
+            return new WP_Error('invalid_title', 'Judul exam wajib diisi.', $id);
+        }
+        if ($kkm_percentage < 0 || $kkm_percentage > 100) {
+            return new WP_Error('invalid_kkm', 'KKM harus berada pada rentang 0 sampai 100.', $id);
+        }
+        if ($starts_at !== null && $ends_at !== null && strtotime($ends_at) < strtotime($starts_at)) {
+            return new WP_Error('invalid_schedule', 'Waktu selesai tidak boleh lebih awal dari waktu mulai.', $id);
+        }
+        if ($id <= 0 && empty($source_question_ids)) {
+            return new WP_Error('invalid_questions', 'Pilih minimal 1 soal untuk exam baru.', $id);
+        }
+
+        return [
+            'id' => $id,
+            'subject_id' => $subject_id,
+            'title' => $title,
+            'description' => $description,
+            'duration' => $duration,
+            'kkm_percentage' => $kkm_percentage,
+            'randomize' => $randomize,
+            'randomize_options' => $randomize_options,
+            'status' => $status,
+            'starts_at' => $starts_at,
+            'ends_at' => $ends_at,
+            'target_kelas' => $target_kelas,
+            'source_question_ids' => $source_question_ids,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function upsert_exam_record_from_payload(array $payload, bool $is_admin_scope, int $current_user_id)
+    {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cbt_exams';
+        $id = (int) ($payload['id'] ?? 0);
+        $source_question_ids = array_values(array_unique(array_filter(array_map('absint', (array) ($payload['source_question_ids'] ?? [])))));
+        $existing_question_count = 0;
+        if ($id > 0 && empty($source_question_ids)) {
+            $existing_question_count = (int) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->prefix}cbt_questions WHERE exam_id = %d AND COALESCE(is_active, 1) = 1",
+                    $id
+                )
+            );
+        }
+
+        $data = [
+            'subject_id' => (int) ($payload['subject_id'] ?? 0),
+            'title' => (string) ($payload['title'] ?? ''),
+            'description' => (string) ($payload['description'] ?? ''),
+            'duration_minutes' => (int) ($payload['duration'] ?? 60),
+            'kkm_percentage' => (float) ($payload['kkm_percentage'] ?? 75.0),
+            'total_questions' => $existing_question_count,
+            'randomize_questions' => (int) ($payload['randomize'] ?? 0),
+            'randomize_options' => (int) ($payload['randomize_options'] ?? 0),
+            'status' => (string) ($payload['status'] ?? 'draft'),
+            'starts_at' => $payload['starts_at'] ?? null,
+            'ends_at' => $payload['ends_at'] ?? null,
+            'target_kelas' => (string) ($payload['target_kelas'] ?? ''),
+            'updated_at' => current_time('mysql'),
+        ];
+
+        $saved_exam_id = $id;
+        if ($id > 0) {
+            $existing_exam_title = (string) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT title FROM {$table} WHERE id = %d LIMIT 1",
+                    $id
+                )
+            );
+            if (self::is_bank_exam_title($existing_exam_title)) {
+                return new WP_Error('bank_exam_locked', 'Bank Soal dikelola dari CBT Questions, bukan dari CBT Exams.');
+            }
+
+            if (!$is_admin_scope) {
+                $owned_exam = (int) $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$table} WHERE id = %d AND created_by = %d",
+                    $id,
+                    $current_user_id
+                ));
+                if ($owned_exam === 0) {
+                    return new WP_Error('unauthorized_exam', 'Unauthorized exam update.');
+                }
+            }
+
+            $updated = $wpdb->update(
+                $table,
+                $data,
+                ['id' => $id],
+                ['%d', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s'],
+                ['%d']
+            );
+            if ($updated === false) {
+                return new WP_Error('update_failed', 'Gagal mengupdate exam.');
+            }
+        } else {
+            $data['created_by'] = $current_user_id;
+            $data['created_at'] = current_time('mysql');
+
+            $inserted = $wpdb->insert(
+                $table,
+                $data,
+                ['%d', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s']
+            );
+            if (!$inserted) {
+                return new WP_Error('insert_failed', 'Gagal membuat exam.');
+            }
+
+            $saved_exam_id = (int) $wpdb->insert_id;
+        }
+
+        return [
+            'exam_id' => $saved_exam_id,
+            'existing_question_count' => $existing_question_count,
+            'is_update' => $id > 0,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $request
+     * @return array<string,string>
+     */
+    private static function finalize_exam_save_operation(
+        int $saved_exam_id,
+        int $original_exam_id,
+        ?int $synced_questions,
+        int $current_user_id,
+        array $request,
+        array $sync_summary = []
+    ): array {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cbt_exams';
+        if ($saved_exam_id > 0 && $synced_questions !== null) {
+            $wpdb->update(
+                $table,
+                [
+                    'total_questions' => $synced_questions,
+                    'updated_at' => current_time('mysql'),
+                ],
+                ['id' => $saved_exam_id],
+                ['%d', '%s'],
+                ['%d']
+            );
+            self::clear_exam_attempt_states($saved_exam_id);
+        }
+
+        $legacy_active_count = 0;
+        if ($saved_exam_id > 0) {
+            $lineage_context = self::build_exam_lineage_context($saved_exam_id);
+            $legacy_active_count = max(0, (int) ($lineage_context['legacy_question_count'] ?? 0));
+        }
+        if (!empty($sync_summary) || $legacy_active_count > 0) {
+            $sync_summary['legacy_active_count'] = $legacy_active_count;
+        }
+
+        $message = self::build_exam_sync_notice_message($original_exam_id > 0, $sync_summary);
+        $exam_list_state = self::get_exam_list_state_from_request($request);
+
+        CBT_Cache::invalidate_catalog();
+        CBT_Cache::invalidate_exam($saved_exam_id);
+        self::clear_exam_builder_selection_state('cbt_exam_builder_new', $current_user_id);
+        self::clear_exam_builder_selection_state('cbt_exam_builder_edit_' . $saved_exam_id, $current_user_id);
+
+        return [
+            'message' => $message,
+            'redirect_url' => add_query_arg(
+                self::add_exam_list_state_args(
+                    [
+                        'page' => 'cbt-exams',
+                        'cbt_exam_panel' => 'list',
+                        'cbt_msg' => $message,
+                        'cbt_saved_exam_id' => (int) $saved_exam_id,
+                    ],
+                    $exam_list_state
+                ),
+                admin_url('admin.php')
+            ),
+            'legacy_active_count' => $legacy_active_count,
+        ];
+    }
+
+    private static function redirect_exam_with_error(string $message, int $edit_id = 0): void
+    {
+        $args = self::add_exam_list_state_args(
+            [
+                'page' => 'cbt-exams',
+                'cbt_err' => $message,
+            ],
+            self::get_exam_list_state_from_request($_POST)
+        );
+        if ($edit_id > 0) {
+            $args['edit'] = $edit_id;
+        }
+
+        wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
+        exit;
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private static function build_exam_save_progress_payload(array $state): array
+    {
+        $phase = sanitize_key((string) ($state['phase'] ?? 'sync'));
+        $phase_labels = [
+            'sync' => 'Sinkron Soal',
+            'cleanup' => 'Bersihkan Soal Lama',
+            'finalize' => 'Finalize Exam',
+            'complete' => 'Selesai',
+        ];
+        $total_sources = max(0, (int) ($state['total_sources'] ?? 0));
+        $processed_sources = max(0, min($total_sources, (int) ($state['processed_sources'] ?? 0)));
+        if ($total_sources > 0) {
+            if ($phase === 'sync') {
+                $percent = 8 + (((float) $processed_sources / (float) $total_sources) * 84);
+            } elseif ($phase === 'cleanup') {
+                $percent = 94.0;
+            } elseif ($phase === 'finalize') {
+                $percent = 98.0;
+            } else {
+                $percent = 100.0;
+            }
+        } else {
+            $percent = ($phase === 'complete') ? 100.0 : 92.0;
+        }
+
+        $stats = [];
+        if ($total_sources > 0) {
+            $stats[] = sprintf('%d/%d soal', $processed_sources, $total_sources);
+        }
+        $updated_existing_count = max(0, (int) ($state['updated_existing_count'] ?? 0));
+        $created_new_count = max(0, (int) ($state['created_new_count'] ?? 0));
+        $linked_legacy_match_count = max(0, (int) ($state['linked_legacy_match_count'] ?? 0));
+        $removed_question_count = max(0, (int) ($state['removed_question_count'] ?? 0));
+        $archived_question_count = max(0, (int) ($state['archived_question_count'] ?? 0));
+        $deleted_question_count = max(0, (int) ($state['deleted_question_count'] ?? 0));
+        $preserved_attempt_history_count = max(0, (int) ($state['preserved_attempt_history_count'] ?? 0));
+        $legacy_active_count = max(0, (int) ($state['legacy_active_count'] ?? 0));
+        if ($updated_existing_count > 0) {
+            $stats[] = 'Update: ' . $updated_existing_count;
+        }
+        if ($created_new_count > 0) {
+            $stats[] = 'Tambah baru: ' . $created_new_count;
+        }
+        if ($linked_legacy_match_count > 0) {
+            $stats[] = 'Relink legacy: ' . $linked_legacy_match_count;
+        }
+        if ($removed_question_count > 0) {
+            $stats[] = 'Dibersihkan: ' . $removed_question_count;
+        }
+        if ($archived_question_count > 0) {
+            $stats[] = 'Arsip: ' . $archived_question_count;
+        }
+        if ($deleted_question_count > 0) {
+            $stats[] = 'Hapus: ' . $deleted_question_count;
+        }
+        if ($preserved_attempt_history_count > 0) {
+            $stats[] = 'Preserve: ' . $preserved_attempt_history_count;
+        }
+        if ($legacy_active_count > 0) {
+            $stats[] = 'Masih legacy: ' . $legacy_active_count;
+        }
+
+        return [
+            'phase' => $phase,
+            'phase_label' => $phase_labels[$phase] ?? 'Memproses Exam',
+            'message' => (string) ($state['message'] ?? 'Memproses exam.'),
+            'processed_questions' => $processed_sources,
+            'total_questions' => $total_sources,
+            'updated_existing_count' => $updated_existing_count,
+            'created_new_count' => $created_new_count,
+            'linked_legacy_match_count' => $linked_legacy_match_count,
+            'removed_question_count' => $removed_question_count,
+            'archived_question_count' => $archived_question_count,
+            'deleted_question_count' => $deleted_question_count,
+            'preserved_attempt_history_count' => $preserved_attempt_history_count,
+            'legacy_active_count' => $legacy_active_count,
+            'percent' => round(min(100.0, max(0.0, $percent)), 2),
+            'complete' => ($phase === 'complete'),
+            'redirect_url' => (string) ($state['redirect_url'] ?? ''),
+            'stats' => implode(' | ', $stats),
+        ];
+    }
+
+    public static function to_datetime_local(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        $timezone = wp_timezone();
+        $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value, $timezone);
+        if (!$dt) {
+            $timestamp = strtotime($value);
+            if (!$timestamp) {
+                return '';
+            }
+            $dt = (new DateTimeImmutable('@' . $timestamp))->setTimezone($timezone);
+        }
+
+        if (!$dt) {
+            return '';
+        }
+
+        return $dt->format('Y-m-d\TH:i');
+    }
+
+    public static function from_datetime_local(string $value): ?string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        $timezone = wp_timezone();
+        $dt = DateTimeImmutable::createFromFormat('Y-m-d\TH:i', $value, $timezone);
+        if (!$dt) {
+            $timestamp = strtotime($value);
+            if (!$timestamp) {
+                return null;
+            }
+            $dt = (new DateTimeImmutable('@' . $timestamp))->setTimezone($timezone);
+        }
+
+        if (!$dt) {
+            return null;
+        }
+
+        return $dt->format('Y-m-d H:i:s');
+    }
+}

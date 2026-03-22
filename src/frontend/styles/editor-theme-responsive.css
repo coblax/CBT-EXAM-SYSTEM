@@ -1,0 +1,815 @@
+@media (max-width: 620px) {
+    .cbt-confirm-card {
+        display: grid;
+        grid-template-columns: 88px minmax(0, 1fr);
+        grid-template-areas:
+            "title title"
+            "subtitle subtitle"
+            "photo form"
+            "actions actions";
+        column-gap: 10px;
+        row-gap: 8px;
+        align-items: start;
+    }
+
+    .cbt-confirm-card > h3 {
+        grid-area: title;
+        margin-bottom: 0;
+    }
+
+    .cbt-confirm-card > .cbt-subtitle {
+        grid-area: subtitle;
+        margin-bottom: 0;
+        font-size: 10px;
+        line-height: 1.3;
+    }
+
+    .cbt-confirm-card .cbt-confirm-profile {
+        grid-area: photo;
+        margin-top: 0;
+        padding: 0;
+        align-items: flex-start;
+    }
+
+    .cbt-confirm-card .cbt-confirm-profile-avatar {
+        width: 88px;
+        height: 112px;
+        flex-basis: 88px;
+        border-radius: 12px;
+    }
+
+    .cbt-confirm-card .cbt-confirm-profile-avatar-button:focus-visible {
+        border-radius: 14px;
+        outline-offset: 3px;
+    }
+
+    .cbt-confirm-card .cbt-confirm-form-grid {
+        grid-area: form;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+        margin-top: 0;
+        min-width: 0;
+    }
+
+    .cbt-confirm-card .cbt-confirm-field {
+        min-width: 0;
+    }
+
+    .cbt-confirm-card .cbt-confirm-field label {
+        margin-bottom: 3px;
+        font-size: 10px;
+        letter-spacing: 0.01em;
+    }
+
+    .cbt-confirm-card .cbt-input {
+        min-height: 34px;
+        padding: 6px 9px;
+        border-radius: 9px;
+        font-size: 12px;
+    }
+
+    .cbt-confirm-card .cbt-input-token {
+        min-height: 40px;
+        font-size: 18px;
+        letter-spacing: 0.14em;
+    }
+
+    .cbt-confirm-card .cbt-confirm-actions {
+        grid-area: actions;
+        margin-top: 2px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        width: 100%;
+    }
+
+    .cbt-confirm-card .cbt-confirm-actions .cbt-button {
+        width: 100%;
+        min-height: 34px;
+        padding: 0 10px;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 420px) {
+    .cbt-confirm-card {
+        grid-template-columns: 74px minmax(0, 1fr);
+        column-gap: 8px;
+        row-gap: 6px;
+    }
+
+    .cbt-confirm-card > .cbt-subtitle {
+        font-size: 9px;
+        line-height: 1.25;
+    }
+
+    .cbt-confirm-card .cbt-confirm-profile-avatar {
+        width: 74px;
+        height: 96px;
+        flex-basis: 74px;
+        border-radius: 11px;
+    }
+
+    .cbt-confirm-card .cbt-confirm-form-grid {
+        gap: 6px;
+    }
+
+    .cbt-confirm-card .cbt-confirm-field label {
+        font-size: 9px;
+        margin-bottom: 2px;
+    }
+
+    .cbt-confirm-card .cbt-input {
+        min-height: 32px;
+        padding: 5px 8px;
+        font-size: 11px;
+    }
+
+    .cbt-confirm-card .cbt-input-token {
+        min-height: 36px;
+        font-size: 16px;
+        letter-spacing: 0.12em;
+    }
+
+    .cbt-confirm-card .cbt-confirm-actions {
+        gap: 5px;
+    }
+
+    .cbt-confirm-card .cbt-confirm-actions .cbt-button {
+        min-height: 32px;
+        padding: 0 8px;
+        font-size: 11px;
+    }
+}
+
+.cbt-web-shell .cbt-topbar-right .cbt-logout-button {
+    background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+    border-color: #dc2626;
+    color: #fff;
+}
+
+.cbt-web-shell .cbt-topbar-right .cbt-logout-button:hover:not(:disabled) {
+    background: linear-gradient(180deg, #f05252 0%, #e03131 100%);
+    border-color: #e03131;
+    color: #fff;
+}
+
+.cbt-nav-btn.is-answered.is-doubtful:not(.is-current) {
+    border-color: #fdba74;
+    background: #ffedd5;
+    color: #c2410c;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-answered.is-doubtful:not(.is-current) {
+    background: var(--cbt-dark-warning-soft);
+    border-color: rgba(215, 186, 125, 0.38);
+    color: #e5c07b;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-answered.is-doubtful:not(.is-current) {
+    background: var(--cbt-light-warning-surface-strong);
+    border-color: var(--cbt-light-warning-border-strong);
+    color: #7a4200;
+    box-shadow: inset 0 0 0 1px rgba(122, 66, 0, 0.08);
+}
+
+@media (max-width: 360px) {
+    .cbt-question-head {
+        padding: 4px 5px;
+        gap: 2px;
+    }
+
+    .cbt-question-head-main {
+        gap: 1px;
+    }
+
+    .cbt-question-head-tools {
+        gap: 2px;
+    }
+
+    .cbt-chip-mobile-icon {
+        display: none;
+    }
+
+    .cbt-question-head .cbt-chip.cbt-chip-question-index {
+        min-height: 17px;
+        padding: 0 4px;
+        gap: 1px;
+    }
+
+    .cbt-question-head .cbt-chip.cbt-chip-question-index .cbt-chip-value {
+        font-size: 8px;
+    }
+
+    .cbt-question-head .cbt-chip.cbt-chip-question-meta {
+        min-width: 30px;
+        min-height: 17px;
+        height: 17px;
+        padding: 0 3px;
+    }
+
+    .cbt-question-head .cbt-chip.cbt-chip-question-meta .cbt-chip-mobile-meta {
+        font-size: 7px;
+        letter-spacing: 0;
+    }
+
+    .cbt-question-head .cbt-chip.cbt-chip-prefetch {
+        min-height: 17px;
+        padding: 0 3px;
+        gap: 2px;
+    }
+
+    .cbt-question-head .cbt-chip.cbt-chip-prefetch .cbt-chip-value {
+        font-size: 7px;
+    }
+
+    .cbt-chip-prefetch-dot {
+        width: 3px;
+        height: 3px;
+        flex-basis: 3px;
+    }
+
+    .cbt-question-font-controls {
+        padding: 1px;
+        gap: 1px;
+    }
+
+    .cbt-question-font-controls .cbt-icon-button {
+        width: 18px;
+        min-width: 18px;
+        min-height: 18px;
+        height: 18px;
+        border-radius: 4px;
+    }
+
+    .cbt-font-btn-icon {
+        font-size: 10px;
+    }
+
+    .cbt-question-head .cbt-nav-toggle,
+    .cbt-question-head .cbt-calculator-toggle {
+        width: 18px;
+        min-width: 18px;
+        min-height: 18px;
+        height: 18px;
+        border-radius: 4px;
+    }
+
+    .cbt-question-head .cbt-nav-toggle-icon {
+        width: 8px;
+        height: 6px;
+    }
+
+    .cbt-question-head .cbt-nav-toggle-icon span {
+        height: 1.2px;
+    }
+
+    .cbt-question-head .cbt-calculator-toggle-icon {
+        width: 9px;
+        height: 9px;
+    }
+
+    .cbt-legend {
+        margin-top: 4px;
+        gap: 2px;
+        line-height: 1;
+    }
+
+    .cbt-legend span {
+        gap: 3px;
+        padding: 2px 5px;
+        min-height: 16px;
+        font-size: 0;
+    }
+
+    .cbt-legend-item::after {
+        font-size: 7px;
+        font-weight: 700;
+        letter-spacing: 0;
+    }
+
+    .cbt-legend-item-current::after {
+        content: "Aktif";
+    }
+
+    .cbt-legend-item-answered::after {
+        content: "Jawab";
+    }
+
+    .cbt-legend-item-doubtful::after {
+        content: "Ragu";
+    }
+
+    .cbt-legend-item-changed::after {
+        content: "Ubah";
+    }
+
+    .cbt-dot {
+        width: 5px;
+        height: 5px;
+    }
+}
+
+.cbt-brand-badge {
+    overflow: hidden;
+}
+
+.cbt-brand-badge-logo {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+}
+
+.cbt-login-hero-heading {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 20px;
+    max-width: 100%;
+}
+
+.cbt-login-hero-title {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+}
+
+.cbt-login-hero-heading h1 {
+    min-width: 0;
+    max-width: none;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.cbt-login-hero-school-tag {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.84);
+}
+
+.cbt-login-hero-motto-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    max-width: 520px;
+    margin-top: 14px;
+}
+
+.cbt-login-hero-motto-line {
+    display: inline-block;
+    flex: 0 0 72px;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.34);
+}
+
+.cbt-login-hero-motto {
+    margin: 0;
+    min-width: 0;
+    max-width: none;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font-size: clamp(11px, 1vw, 14px);
+    font-weight: 700;
+    line-height: 1.45;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.cbt-login-hero-logo-wrap {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 132px;
+    height: 132px;
+    max-width: none;
+    min-height: 132px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    position: relative;
+    overflow: visible;
+}
+
+.cbt-login-hero-logo-wrap::before {
+    content: none;
+}
+
+.cbt-login-hero-logo {
+    display: block;
+    max-width: none;
+    max-height: none;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    border-radius: 0;
+    filter: drop-shadow(0 12px 24px rgba(14, 26, 88, 0.22));
+    position: relative;
+    z-index: 1;
+}
+
+.cbt-login-hero-logo-wrap.is-fallback {
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.cbt-login-hero-logo-fallback {
+    width: 100%;
+    height: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+}
+
+.cbt-login-hero-logo-fallback svg {
+    width: 100%;
+    height: 100%;
+}
+
+@media (max-width: 640px) {
+    .cbt-login-hero-heading {
+        flex-direction: column;
+        align-items: flex-start;
+        display: flex;
+        gap: 12px;
+    }
+
+    .cbt-login-hero-title {
+        width: 100%;
+    }
+
+    .cbt-login-description {
+        margin-left: 0;
+        max-width: none;
+    }
+
+    .cbt-login-hero-school-tag {
+        min-height: 24px;
+        padding: 0 10px;
+        font-size: 9px;
+        letter-spacing: 0.16em;
+    }
+
+    .cbt-login-hero-motto-row {
+        gap: 10px;
+        margin-top: 12px;
+    }
+
+    .cbt-login-hero-motto-line {
+        flex-basis: 42px;
+    }
+
+    .cbt-login-hero-motto {
+        font-size: 11px;
+        letter-spacing: 0.18em;
+    }
+
+    .cbt-login-hero-logo-wrap {
+        width: 114px;
+        height: 114px;
+        min-height: 114px;
+        padding: 0;
+    }
+
+    .cbt-login-hero-logo {
+        max-width: none;
+        max-height: none;
+    }
+}
+
+/* Keep this login flow block at the end so it overrides legacy step styles. */
+.cbt-login-flow-label {
+    margin: 22px 0 0 124px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.74);
+}
+
+.cbt-login-steps {
+    margin: 14px 0 0 124px;
+    display: grid;
+    gap: 14px;
+    width: min(580px, calc(100% - 124px));
+    max-width: 100%;
+}
+
+.cbt-login-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: 54px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+    padding: 18px 18px 17px;
+    overflow: hidden;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08)),
+        linear-gradient(135deg, rgba(59, 130, 246, 0.22), rgba(30, 64, 175, 0.14));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 18px 30px rgba(12, 41, 74, 0.18);
+    backdrop-filter: blur(14px);
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cbt-login-step::before {
+    content: "";
+    position: absolute;
+    inset: 12px auto 12px 0;
+    width: 4px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(191, 219, 254, 0.3));
+    opacity: 0.9;
+}
+
+.cbt-login-step::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    pointer-events: none;
+}
+
+.cbt-login-step > * {
+    position: relative;
+    z-index: 1;
+}
+
+.cbt-login-step:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.28);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 22px 36px rgba(12, 41, 74, 0.24);
+}
+
+.cbt-login-step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    flex: 0 0 54px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.68);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(229, 239, 255, 0.94));
+    color: #0f4c81;
+    font-size: 19px;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow:
+        0 12px 22px rgba(9, 37, 66, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.cbt-login-step-copy {
+    min-width: 0;
+}
+
+.cbt-login-step-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.cbt-login-step strong {
+    display: inline-block;
+    flex: 1 1 220px;
+    margin: 0;
+    font-size: 17px;
+    font-weight: 800;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    color: #f8fbff;
+}
+
+.cbt-login-step-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto;
+    flex: 0 0 auto;
+    min-height: 26px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(8, 31, 58, 0.2);
+    color: rgba(255, 255, 255, 0.94);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    box-shadow: none;
+}
+
+.cbt-login-step p {
+    margin: 10px 0 0;
+    max-width: 48ch;
+    font-size: 13px;
+    line-height: 1.65;
+    color: rgba(239, 246, 255, 0.94);
+}
+
+.cbt-login-step-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.cbt-login-step-meta small {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto;
+    flex: 0 0 auto;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.88);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: none;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-flow-label {
+    color: #92a0b2;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step {
+    border-color: rgba(255, 255, 255, 0.08);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+        linear-gradient(135deg, rgba(13, 27, 42, 0.94), rgba(8, 15, 25, 0.98));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 18px 34px rgba(0, 0, 0, 0.26);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step::before {
+    background: linear-gradient(180deg, rgba(66, 153, 225, 0.94), rgba(35, 94, 168, 0.34));
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step::after {
+    border-color: rgba(255, 255, 255, 0.04);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step strong {
+    color: #f5f7fa;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step p {
+    color: #c4cfdb;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step-number {
+    border-color: rgba(93, 184, 255, 0.34);
+    background: linear-gradient(180deg, #1690dd 0%, #146aa3 100%);
+    color: #ffffff;
+    box-shadow:
+        0 14px 24px rgba(8, 38, 59, 0.36),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step-chip {
+    border-color: rgba(93, 184, 255, 0.2);
+    background: rgba(22, 144, 221, 0.14);
+    color: #e6f4ff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-login-step-meta small {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #aeb9c8;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step {
+    border-color: rgba(255, 255, 255, 0.2);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.08)),
+        linear-gradient(135deg, rgba(59, 130, 246, 0.26), rgba(37, 99, 235, 0.16));
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step::before {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(191, 219, 254, 0.34));
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step-number {
+    border-color: rgba(255, 255, 255, 0.72);
+    background: linear-gradient(180deg, #ffffff 0%, #e6f0ff 100%);
+    color: #1f4f91;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step-chip {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(8, 31, 58, 0.18);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-login-step-meta small {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.11);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+@media (max-width: 640px) {
+    .cbt-login-steps {
+        gap: 12px;
+    }
+
+    .cbt-login-step {
+        grid-template-columns: 46px minmax(0, 1fr);
+        gap: 12px;
+        padding: 14px 14px 13px;
+        border-radius: 18px;
+    }
+
+    .cbt-login-step-number {
+        width: 46px;
+        height: 46px;
+        flex-basis: 46px;
+        border-radius: 15px;
+        font-size: 17px;
+    }
+
+    .cbt-login-step strong {
+        flex-basis: 100%;
+        font-size: 15px;
+    }
+
+    .cbt-login-step p {
+        margin-top: 8px;
+        font-size: 12px;
+    }
+
+    .cbt-login-step-meta {
+        gap: 6px;
+        margin-top: 10px;
+    }
+
+    .cbt-login-step-meta small {
+        min-height: 24px;
+        padding: 0 8px;
+        font-size: 10px;
+    }
+}
+
+@media (max-width: 420px) {
+    .cbt-login-step {
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 10px;
+        padding: 12px 12px 11px;
+    }
+
+    .cbt-login-step::before {
+        inset: 10px auto 10px 0;
+    }
+
+    .cbt-login-step-number {
+        width: 40px;
+        height: 40px;
+        flex-basis: 40px;
+        border-radius: 13px;
+        font-size: 15px;
+    }
+
+    .cbt-login-step-chip {
+        min-height: 23px;
+        padding: 0 9px;
+        font-size: 10px;
+    }
+}
+

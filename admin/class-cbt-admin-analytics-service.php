@@ -1,0 +1,2782 @@
+<?php
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+final class CBT_Admin_Analytics_Service
+{
+    private const CACHE_TTL = 300;
+    private const CACHE_VERSION = 'v3';
+    private const DISTRIBUTION_BUCKETS = [
+        ['label' => '0-19%', 'min' => 0.0, 'max' => 19.99],
+        ['label' => '20-39%', 'min' => 20.0, 'max' => 39.99],
+        ['label' => '40-59%', 'min' => 40.0, 'max' => 59.99],
+        ['label' => '60-79%', 'min' => 60.0, 'max' => 79.99],
+        ['label' => '80-100%', 'min' => 80.0, 'max' => 100.0],
+    ];
+
+    public static function can_view(): bool
+    {
+        return current_user_can('cbt_view_results');
+    }
+
+    public static function is_admin_scope(): bool
+    {
+        return current_user_can('manage_options') || current_user_can('cbt_manage_system');
+    }
+
+    /**
+     * @param array<string,mixed> $query
+     * @return array<string,mixed>
+     */
+    public static function build_page_context(array $query): array
+    {
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        $notice = isset($query['cbt_msg']) ? sanitize_text_field(wp_unslash((string) $query['cbt_msg'])) : '';
+        $error = isset($query['cbt_err']) ? sanitize_text_field(wp_unslash((string) $query['cbt_err'])) : '';
+
+        $accessible_exam_rows = self::get_accessible_exam_rows($is_admin_scope, $current_user_id);
+        $subject_filter_rows = self::build_subject_filter_rows($accessible_exam_rows);
+        $kelas_filter_rows = CBT_Admin_Report_Exam_Service::get_distinct_user_meta_values('kode_kelas');
+
+        $selected_subject_id = isset($query['cbt_subject_id']) ? absint(wp_unslash((string) $query['cbt_subject_id'])) : 0;
+        if ($selected_subject_id > 0 && !isset($subject_filter_rows[$selected_subject_id])) {
+            $selected_subject_id = 0;
+        }
+
+        $selected_exam_id = isset($query['cbt_exam_id']) ? absint(wp_unslash((string) $query['cbt_exam_id'])) : 0;
+        $selected_exam = self::find_exam_row($selected_exam_id, $accessible_exam_rows);
+        if (empty($selected_exam)) {
+            $selected_exam_id = 0;
+        } elseif ($selected_subject_id <= 0) {
+            $selected_subject_id = (int) ($selected_exam['subject_id'] ?? 0);
+        } elseif ((int) ($selected_exam['subject_id'] ?? 0) !== $selected_subject_id) {
+            $selected_subject_id = (int) ($selected_exam['subject_id'] ?? 0);
+        }
+
+        $selected_kelas = isset($query['cbt_result_kelas']) ? sanitize_text_field(wp_unslash((string) $query['cbt_result_kelas'])) : '';
+        if ($selected_kelas !== '' && !in_array($selected_kelas, $kelas_filter_rows, true)) {
+            $selected_kelas = '';
+        }
+
+        $active_tab = self::normalize_tab(isset($query['cbt_analytics_tab']) ? (string) wp_unslash($query['cbt_analytics_tab']) : '');
+        $exam_filter_rows = self::filter_exam_rows_by_subject($accessible_exam_rows, $selected_subject_id);
+        if ($selected_exam_id > 0 && empty(self::find_exam_row($selected_exam_id, $exam_filter_rows))) {
+            $exam_filter_rows = $accessible_exam_rows;
+        }
+
+        $overview_data = self::get_overview_analytics(
+            $selected_subject_id,
+            $selected_exam_id,
+            $selected_kelas,
+            $is_admin_scope,
+            $current_user_id
+        );
+
+        $exam_analytics = null;
+        $item_analysis_rows = [];
+        $item_analysis_summary = [];
+        $student_rows = [];
+        if ($selected_exam_id > 0 && !empty($selected_exam)) {
+            $statistical_payload = self::get_exam_statistical_payload(
+                $selected_exam,
+                $selected_kelas,
+                $is_admin_scope,
+                $current_user_id
+            );
+            $exam_analytics = self::get_exam_analytics(
+                $selected_exam,
+                $selected_kelas,
+                $is_admin_scope,
+                $current_user_id,
+                $statistical_payload
+            );
+            $item_analysis_rows = array_values((array) ($statistical_payload['item_rows'] ?? []));
+            $item_analysis_summary = (array) ($statistical_payload['item_summary'] ?? []);
+            $student_rows = self::get_student_drilldown_rows(
+                $selected_exam,
+                $selected_kelas,
+                $is_admin_scope,
+                $current_user_id,
+                $statistical_payload
+            );
+        }
+
+        $active_filters = self::build_active_filters(
+            $selected_subject_id,
+            $selected_exam,
+            $selected_kelas,
+            $subject_filter_rows
+        );
+
+        $analytics_entry_counts = [
+            'accessible_exam_count' => count($accessible_exam_rows),
+            'completed_attempt_count' => (int) ($overview_data['summary']['completed_attempts'] ?? 0),
+            'subject_count' => count($subject_filter_rows),
+            'kelas_count' => count($kelas_filter_rows),
+        ];
+
+        return compact(
+            'accessible_exam_rows',
+            'active_filters',
+            'active_tab',
+            'analytics_entry_counts',
+            'error',
+            'exam_analytics',
+            'exam_filter_rows',
+            'item_analysis_rows',
+            'item_analysis_summary',
+            'kelas_filter_rows',
+            'notice',
+            'overview_data',
+            'selected_exam',
+            'selected_exam_id',
+            'selected_kelas',
+            'selected_subject_id',
+            'student_rows',
+            'subject_filter_rows'
+        );
+    }
+
+    public static function build_results_url(int $exam_id, string $studentQuery = ''): string
+    {
+        $args = [
+            'page' => 'cbt-results',
+        ];
+        if ($exam_id > 0) {
+            $args['cbt_exam_id'] = $exam_id;
+        }
+        if ($studentQuery !== '') {
+            $args['cbt_student_q'] = $studentQuery;
+        }
+
+        return add_query_arg($args, admin_url('admin.php'));
+    }
+
+    public static function normalize_tab(string $raw): string
+    {
+        $tab = sanitize_key($raw);
+        if (!in_array($tab, ['overview', 'exam', 'items', 'students'], true)) {
+            return 'overview';
+        }
+
+        return $tab;
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_accessible_exam_rows(bool $is_admin_scope, int $current_user_id): array
+    {
+        global $wpdb;
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $subject_table = $wpdb->prefix . 'cbt_subjects';
+        $sql = "SELECT e.id,
+                       e.title,
+                       e.subject_id,
+                       e.kkm_percentage,
+                       e.total_questions,
+                       e.status,
+                       COALESCE(s.name, '') AS subject_name
+                FROM {$exam_table} e
+                LEFT JOIN {$subject_table} s ON s.id = e.subject_id
+                WHERE 1=1
+                  AND e.title NOT LIKE %s";
+        $params = ['Bank Soal - %'];
+        if (!$is_admin_scope) {
+            $sql .= ' AND e.created_by = %d';
+            $params[] = $current_user_id;
+        }
+        $sql .= ' ORDER BY e.id DESC';
+        if (!empty($params)) {
+            $sql = $wpdb->prepare($sql, $params);
+        }
+
+        $rows = $wpdb->get_results($sql, ARRAY_A);
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        foreach ($rows as &$row) {
+            $row['id'] = (int) ($row['id'] ?? 0);
+            $row['subject_id'] = (int) ($row['subject_id'] ?? 0);
+            $row['kkm_percentage'] = self::normalize_kkm_percentage((float) ($row['kkm_percentage'] ?? 75.0));
+            $row['title'] = (string) ($row['title'] ?? '');
+            $row['subject_name'] = (string) ($row['subject_name'] ?? '');
+            $row['filter_label'] = self::build_exam_filter_label($row);
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $exam_rows
+     * @return array<int,array{id:int,name:string}>
+     */
+    private static function build_subject_filter_rows(array $exam_rows): array
+    {
+        $subjects = [];
+        foreach ($exam_rows as $exam_row) {
+            $subject_id = (int) ($exam_row['subject_id'] ?? 0);
+            if ($subject_id <= 0 || isset($subjects[$subject_id])) {
+                continue;
+            }
+
+            $subjects[$subject_id] = [
+                'id' => $subject_id,
+                'name' => (string) ($exam_row['subject_name'] ?? ('Subject #' . $subject_id)),
+            ];
+        }
+
+        uasort($subjects, static function (array $left, array $right): int {
+            return strnatcasecmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+        });
+
+        return $subjects;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $exam_rows
+     * @return array<int,array<string,mixed>>
+     */
+    private static function filter_exam_rows_by_subject(array $exam_rows, int $subject_id): array
+    {
+        if ($subject_id <= 0) {
+            return $exam_rows;
+        }
+
+        return array_values(array_filter($exam_rows, static function (array $exam_row) use ($subject_id): bool {
+            return (int) ($exam_row['subject_id'] ?? 0) === $subject_id;
+        }));
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $exam_rows
+     * @return array<string,mixed>
+     */
+    private static function find_exam_row(int $exam_id, array $exam_rows): array
+    {
+        if ($exam_id <= 0) {
+            return [];
+        }
+
+        foreach ($exam_rows as $exam_row) {
+            if ((int) ($exam_row['id'] ?? 0) === $exam_id) {
+                return $exam_row;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $subject_filter_rows
+     * @param array<string,mixed> $selected_exam
+     * @return array<int,array{label:string,value:string}>
+     */
+    private static function build_active_filters(
+        int $selected_subject_id,
+        array $selected_exam,
+        string $selected_kelas,
+        array $subject_filter_rows
+    ): array {
+        $filters = [];
+        if ($selected_subject_id > 0 && isset($subject_filter_rows[$selected_subject_id])) {
+            $filters[] = [
+                'label' => 'Subject',
+                'value' => (string) ($subject_filter_rows[$selected_subject_id]['name'] ?? '-'),
+            ];
+        }
+        if (!empty($selected_exam)) {
+            $filters[] = [
+                'label' => 'Exam',
+                'value' => (string) ($selected_exam['title'] ?? '-'),
+            ];
+        }
+        if ($selected_kelas !== '') {
+            $filters[] = [
+                'label' => 'Kelas',
+                'value' => $selected_kelas,
+            ];
+        }
+        if (empty($filters)) {
+            $filters[] = [
+                'label' => 'Mode',
+                'value' => 'Semua hasil yang bisa diakses',
+            ];
+        }
+
+        return $filters;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function get_overview_analytics(
+        int $selected_subject_id,
+        int $selected_exam_id,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id
+    ): array {
+        $cache_key = 'admin_analytics_overview_' . self::CACHE_VERSION . '_' . md5((string) wp_json_encode([
+            'subject_id' => $selected_subject_id,
+            'exam_id' => $selected_exam_id,
+            'kelas' => $selected_kelas,
+            'scope' => $is_admin_scope ? 'admin' : 'teacher',
+            'user_id' => $is_admin_scope ? 0 : $current_user_id,
+        ]));
+
+        return CBT_Cache::remember(
+            $cache_key,
+            self::CACHE_TTL,
+            [CBT_Cache::namespace_analytics(), CBT_Cache::namespace_catalog()],
+            static function () use ($selected_subject_id, $selected_exam_id, $selected_kelas, $is_admin_scope, $current_user_id): array {
+                $rows = self::get_completed_attempt_metric_rows(
+                    $selected_subject_id,
+                    $selected_exam_id,
+                    $selected_kelas,
+                    $is_admin_scope,
+                    $current_user_id
+                );
+                $manual_counts = self::get_manual_review_counts(
+                    $selected_subject_id,
+                    $selected_exam_id,
+                    $selected_kelas,
+                    $is_admin_scope,
+                    $current_user_id
+                );
+
+                $summary = self::build_summary_metrics($rows, (int) ($manual_counts['total'] ?? 0));
+                $top_exams = [];
+                $lowest_pass_rate_exams = [];
+                $problem_exams = [];
+                $per_kelas_summary = [];
+
+                $exam_groups = [];
+                $kelas_groups = [];
+                foreach ($rows as $row) {
+                    $exam_id = (int) ($row['exam_id'] ?? 0);
+                    $kelas = (string) ($row['student_kelas'] ?? '');
+                    $kelas_key = $kelas !== '' ? $kelas : '-';
+
+                    if (!isset($exam_groups[$exam_id])) {
+                        $exam_groups[$exam_id] = [
+                            'exam_id' => $exam_id,
+                            'exam_title' => (string) ($row['exam_title'] ?? '-'),
+                            'subject_name' => (string) ($row['subject_name'] ?? ''),
+                            'kkm_percentage' => (float) ($row['kkm_percentage'] ?? 75.0),
+                            'completed_attempts' => 0,
+                            'pass_count' => 0,
+                            'percentage_total' => 0.0,
+                            'manual_review_count' => (int) (($manual_counts['by_exam'][$exam_id] ?? 0)),
+                        ];
+                    }
+
+                    $exam_groups[$exam_id]['completed_attempts']++;
+                    $exam_groups[$exam_id]['percentage_total'] += (float) ($row['percentage'] ?? 0.0);
+                    $exam_groups[$exam_id]['pass_count'] += (int) ($row['is_passed'] ?? 0);
+
+                    if (!isset($kelas_groups[$kelas_key])) {
+                        $kelas_groups[$kelas_key] = [
+                            'kelas' => $kelas_key,
+                            'completed_attempts' => 0,
+                            'pass_count' => 0,
+                            'percentage_total' => 0.0,
+                            'manual_review_count' => (int) (($manual_counts['by_class'][$kelas_key] ?? 0)),
+                        ];
+                    }
+
+                    $kelas_groups[$kelas_key]['completed_attempts']++;
+                    $kelas_groups[$kelas_key]['percentage_total'] += (float) ($row['percentage'] ?? 0.0);
+                    $kelas_groups[$kelas_key]['pass_count'] += (int) ($row['is_passed'] ?? 0);
+                }
+
+                foreach ($exam_groups as $group) {
+                    $completed_attempts = max(0, (int) ($group['completed_attempts'] ?? 0));
+                    $average_percentage = $completed_attempts > 0
+                        ? round(((float) ($group['percentage_total'] ?? 0.0)) / $completed_attempts, 2)
+                        : 0.0;
+                    $pass_rate = $completed_attempts > 0
+                        ? round((((int) ($group['pass_count'] ?? 0)) / $completed_attempts) * 100, 2)
+                        : 0.0;
+                    $exam_scope = [
+                        'id' => (int) ($group['exam_id'] ?? 0),
+                        'title' => (string) ($group['exam_title'] ?? '-'),
+                        'subject_name' => (string) ($group['subject_name'] ?? ''),
+                        'kkm_percentage' => (float) ($group['kkm_percentage'] ?? 75.0),
+                    ];
+                    $statistical_payload = self::get_exam_statistical_payload($exam_scope, $selected_kelas, $is_admin_scope, $current_user_id);
+                    $quality = (array) ($statistical_payload['exam_quality'] ?? []);
+                    $item_summary = (array) ($statistical_payload['item_summary'] ?? []);
+
+                    $top_exams[] = [
+                        'exam_id' => (int) ($group['exam_id'] ?? 0),
+                        'title' => (string) ($group['exam_title'] ?? '-'),
+                        'subject_name' => (string) ($group['subject_name'] ?? ''),
+                        'completed_attempts' => $completed_attempts,
+                        'average_percentage' => $average_percentage,
+                        'average_percentage_display' => self::format_percent($average_percentage),
+                        'pass_rate' => $pass_rate,
+                        'pass_rate_display' => self::format_percent($pass_rate),
+                        'manual_review_count' => (int) ($group['manual_review_count'] ?? 0),
+                        'reliability' => isset($quality['reliability']) && is_numeric((string) $quality['reliability']) ? (float) $quality['reliability'] : null,
+                        'reliability_display' => (string) ($quality['reliability_display'] ?? 'Insufficient Data'),
+                        'reliability_label' => (string) ($quality['reliability_label'] ?? 'Insufficient Data'),
+                        'reliability_tone' => (string) ($quality['reliability_tone'] ?? 'neutral'),
+                        'problem_item_count' => (int) ($item_summary['problem_item_count'] ?? 0),
+                        'exam_url' => add_query_arg(
+                            array_filter([
+                                'page' => 'cbt-analytics',
+                                'cbt_analytics_tab' => 'exam',
+                                'cbt_exam_id' => (int) ($group['exam_id'] ?? 0),
+                                'cbt_subject_id' => $selected_subject_id > 0 ? $selected_subject_id : null,
+                                'cbt_result_kelas' => $selected_kelas !== '' ? $selected_kelas : null,
+                            ], static function ($value): bool {
+                                return $value !== null && $value !== '';
+                            }),
+                            admin_url('admin.php')
+                        ),
+                    ];
+
+                    $problem_exams[] = [
+                        'exam_id' => (int) ($group['exam_id'] ?? 0),
+                        'title' => (string) ($group['exam_title'] ?? '-'),
+                        'subject_name' => (string) ($group['subject_name'] ?? ''),
+                        'problem_item_count' => (int) ($item_summary['problem_item_count'] ?? 0),
+                        'weak_discrimination_count' => (int) ($item_summary['weak_discrimination_count'] ?? 0),
+                        'high_omission_count' => (int) ($item_summary['high_omission_count'] ?? 0),
+                        'reliability_display' => (string) ($quality['reliability_display'] ?? 'Insufficient Data'),
+                        'reliability_label' => (string) ($quality['reliability_label'] ?? 'Insufficient Data'),
+                        'reliability_tone' => (string) ($quality['reliability_tone'] ?? 'neutral'),
+                        'exam_url' => add_query_arg(
+                            array_filter([
+                                'page' => 'cbt-analytics',
+                                'cbt_analytics_tab' => 'items',
+                                'cbt_exam_id' => (int) ($group['exam_id'] ?? 0),
+                                'cbt_subject_id' => $selected_subject_id > 0 ? $selected_subject_id : null,
+                                'cbt_result_kelas' => $selected_kelas !== '' ? $selected_kelas : null,
+                            ], static function ($value): bool {
+                                return $value !== null && $value !== '';
+                            }),
+                            admin_url('admin.php')
+                        ),
+                    ];
+                }
+
+                $lowest_pass_rate_exams = $top_exams;
+                usort($top_exams, static function (array $left, array $right): int {
+                    $completed_compare = (int) ($right['completed_attempts'] ?? 0) <=> (int) ($left['completed_attempts'] ?? 0);
+                    if ($completed_compare !== 0) {
+                        return $completed_compare;
+                    }
+
+                    return strnatcasecmp((string) ($left['title'] ?? ''), (string) ($right['title'] ?? ''));
+                });
+                usort($lowest_pass_rate_exams, static function (array $left, array $right): int {
+                    $rate_compare = (float) ($left['pass_rate'] ?? 0.0) <=> (float) ($right['pass_rate'] ?? 0.0);
+                    if ($rate_compare !== 0) {
+                        return $rate_compare;
+                    }
+
+                    $completed_compare = (int) ($right['completed_attempts'] ?? 0) <=> (int) ($left['completed_attempts'] ?? 0);
+                    if ($completed_compare !== 0) {
+                        return $completed_compare;
+                    }
+
+                    return strnatcasecmp((string) ($left['title'] ?? ''), (string) ($right['title'] ?? ''));
+                });
+
+                foreach ($kelas_groups as $group) {
+                    $completed_attempts = max(0, (int) ($group['completed_attempts'] ?? 0));
+                    $average_percentage = $completed_attempts > 0
+                        ? round(((float) ($group['percentage_total'] ?? 0.0)) / $completed_attempts, 2)
+                        : 0.0;
+                    $pass_rate = $completed_attempts > 0
+                        ? round((((int) ($group['pass_count'] ?? 0)) / $completed_attempts) * 100, 2)
+                        : 0.0;
+                    $per_kelas_summary[] = [
+                        'kelas' => (string) ($group['kelas'] ?? '-'),
+                        'completed_attempts' => $completed_attempts,
+                        'average_percentage' => $average_percentage,
+                        'average_percentage_display' => self::format_percent($average_percentage),
+                        'pass_rate' => $pass_rate,
+                        'pass_rate_display' => self::format_percent($pass_rate),
+                        'manual_review_count' => (int) ($group['manual_review_count'] ?? 0),
+                    ];
+                }
+
+                usort($per_kelas_summary, static function (array $left, array $right): int {
+                    return strnatcasecmp((string) ($left['kelas'] ?? ''), (string) ($right['kelas'] ?? ''));
+                });
+
+                $reliability_values = array_values(array_filter(array_map(static function (array $row): ?float {
+                    $value = isset($row['reliability']) && is_numeric((string) $row['reliability'])
+                        ? (float) $row['reliability']
+                        : null;
+                    return $value;
+                }, $top_exams), static function ($value): bool {
+                    return $value !== null;
+                }));
+                $average_reliability = !empty($reliability_values)
+                    ? round(array_sum($reliability_values) / count($reliability_values), 4)
+                    : null;
+                $weak_exam_count = count(array_filter($problem_exams, static function (array $row): bool {
+                    return (string) ($row['reliability_label'] ?? '') === 'Weak';
+                }));
+
+                usort($problem_exams, static function (array $left, array $right): int {
+                    $problemCompare = (int) ($right['problem_item_count'] ?? 0) <=> (int) ($left['problem_item_count'] ?? 0);
+                    if ($problemCompare !== 0) {
+                        return $problemCompare;
+                    }
+
+                    return strnatcasecmp((string) ($left['title'] ?? ''), (string) ($right['title'] ?? ''));
+                });
+
+                return [
+                    'summary' => array_merge($summary, [
+                        'average_reliability' => $average_reliability,
+                        'average_reliability_display' => $average_reliability === null ? 'Insufficient Data' : self::format_number($average_reliability),
+                        'weak_exam_count' => $weak_exam_count,
+                    ]),
+                    'top_exams' => array_slice($top_exams, 0, 6),
+                    'lowest_pass_rate_exams' => array_slice($lowest_pass_rate_exams, 0, 6),
+                    'problem_exams' => array_slice($problem_exams, 0, 6),
+                    'per_kelas_summary' => $per_kelas_summary,
+                ];
+            }
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $selected_exam
+     * @return array<string,mixed>
+     */
+    private static function get_exam_analytics(
+        array $selected_exam,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id,
+        array $statistical_payload = []
+    ): array {
+        $exam_id = (int) ($selected_exam['id'] ?? 0);
+        if ($exam_id <= 0) {
+            return [];
+        }
+
+        $cache_key = 'admin_analytics_exam_' . self::CACHE_VERSION . '_' . md5((string) wp_json_encode([
+            'exam_id' => $exam_id,
+            'kelas' => $selected_kelas,
+            'scope' => $is_admin_scope ? 'admin' : 'teacher',
+            'user_id' => $is_admin_scope ? 0 : $current_user_id,
+        ]));
+
+        return CBT_Cache::remember(
+            $cache_key,
+            self::CACHE_TTL,
+            [
+                CBT_Cache::namespace_analytics(),
+                CBT_Cache::namespace_analytics_exam($exam_id),
+                CBT_Cache::namespace_exam($exam_id),
+            ],
+            static function () use ($exam_id, $selected_exam, $selected_kelas, $is_admin_scope, $current_user_id, $statistical_payload): array {
+                $rows = self::get_completed_attempt_metric_rows(0, $exam_id, $selected_kelas, $is_admin_scope, $current_user_id);
+                $manual_counts = self::get_manual_review_counts(0, $exam_id, $selected_kelas, $is_admin_scope, $current_user_id);
+                $question_stats = self::get_exam_question_stats($exam_id);
+                $payload = !empty($statistical_payload)
+                    ? $statistical_payload
+                    : self::get_exam_statistical_payload($selected_exam, $selected_kelas, $is_admin_scope, $current_user_id);
+
+                $percentages = array_map(static function (array $row): float {
+                    return (float) ($row['percentage'] ?? 0.0);
+                }, $rows);
+                $percentages = array_values($percentages);
+                sort($percentages);
+
+                $score_values = array_map(static function (array $row): float {
+                    return (float) ($row['score'] ?? 0.0);
+                }, $rows);
+
+                $completed_attempts = count($rows);
+                $pass_count = 0;
+                $score_total = 0.0;
+                foreach ($rows as $row) {
+                    $pass_count += (int) ($row['is_passed'] ?? 0);
+                    $score_total += (float) ($row['score'] ?? 0.0);
+                }
+
+                $average_percentage = $completed_attempts > 0 ? round(array_sum($percentages) / $completed_attempts, 2) : 0.0;
+                $median_percentage = self::calculate_median($percentages);
+                $highest_percentage = !empty($percentages) ? max($percentages) : 0.0;
+                $lowest_percentage = !empty($percentages) ? min($percentages) : 0.0;
+                $average_score = $completed_attempts > 0 ? round($score_total / $completed_attempts, 2) : 0.0;
+                $fail_count = max(0, $completed_attempts - $pass_count);
+                $pass_rate = $completed_attempts > 0 ? round(($pass_count / $completed_attempts) * 100, 2) : 0.0;
+                $pending_manual_reviews = (int) ($manual_counts['total'] ?? 0);
+                $distribution = self::build_distribution_buckets($percentages);
+                $per_kelas_summary = self::build_exam_kelas_summary($rows, (array) ($manual_counts['by_class'] ?? []));
+                $quality = (array) ($payload['exam_quality'] ?? []);
+                $item_summary = (array) ($payload['item_summary'] ?? []);
+
+                $current_max_score = (float) ($question_stats['total_points'] ?? 0.0);
+                $kkm_percentage = self::normalize_kkm_percentage((float) ($selected_exam['kkm_percentage'] ?? 75.0));
+                $passing_score = self::calculate_passing_score($current_max_score, $kkm_percentage);
+
+                return [
+                    'exam' => [
+                        'id' => $exam_id,
+                        'title' => (string) ($selected_exam['title'] ?? '-'),
+                        'subject_name' => (string) ($selected_exam['subject_name'] ?? ''),
+                        'kkm_percentage' => $kkm_percentage,
+                        'kkm_percentage_display' => self::format_number($kkm_percentage),
+                        'current_max_score' => $current_max_score,
+                        'current_max_score_display' => self::format_number($current_max_score),
+                        'passing_score' => $passing_score,
+                        'passing_score_display' => self::format_number($passing_score),
+                        'total_questions' => (int) ($question_stats['total_questions'] ?? 0),
+                        'archived_question_count' => (int) ($question_stats['archived_question_count'] ?? 0),
+                    ],
+                    'summary' => [
+                        'completed_attempts' => $completed_attempts,
+                        'average_percentage' => $average_percentage,
+                        'average_percentage_display' => self::format_percent($average_percentage),
+                        'median_percentage' => $median_percentage,
+                        'median_percentage_display' => self::format_percent($median_percentage),
+                        'highest_percentage' => $highest_percentage,
+                        'highest_percentage_display' => self::format_percent($highest_percentage),
+                        'lowest_percentage' => $lowest_percentage,
+                        'lowest_percentage_display' => self::format_percent($lowest_percentage),
+                        'average_score' => $average_score,
+                        'average_score_display' => self::format_number($average_score),
+                        'pass_count' => $pass_count,
+                        'fail_count' => $fail_count,
+                        'pass_rate' => $pass_rate,
+                        'pass_rate_display' => self::format_percent($pass_rate),
+                        'manual_review_count' => $pending_manual_reviews,
+                        'has_temporary_status' => $pending_manual_reviews > 0 ? 1 : 0,
+                    ],
+                    'quality' => $quality,
+                    'item_flags' => [
+                        'weak_discrimination_count' => (int) ($item_summary['weak_discrimination_count'] ?? 0),
+                        'high_omission_count' => (int) ($item_summary['high_omission_count'] ?? 0),
+                        'pending_manual_count' => (int) ($item_summary['pending_manual_count'] ?? 0),
+                    ],
+                    'distribution' => $distribution,
+                    'per_kelas_summary' => $per_kelas_summary,
+                ];
+            }
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $selected_exam
+     * @return array<string,mixed>
+     */
+    private static function get_exam_statistical_payload(
+        array $selected_exam,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id
+    ): array {
+        $exam_id = (int) ($selected_exam['id'] ?? 0);
+        if ($exam_id <= 0) {
+            return [
+                'attempt_rows' => [],
+                'progress_map' => [],
+                'question_meta' => [],
+                'objective_attempt_metrics' => [],
+                'item_rows' => [],
+                'item_summary' => [],
+                'exam_quality' => [],
+            ];
+        }
+
+        $cache_key = 'admin_analytics_stats_' . self::CACHE_VERSION . '_' . md5((string) wp_json_encode([
+            'exam_id' => $exam_id,
+            'kelas' => $selected_kelas,
+            'scope' => $is_admin_scope ? 'admin' : 'teacher',
+            'user_id' => $is_admin_scope ? 0 : $current_user_id,
+        ]));
+
+        return CBT_Cache::remember(
+            $cache_key,
+            self::CACHE_TTL,
+            [
+                CBT_Cache::namespace_analytics(),
+                CBT_Cache::namespace_analytics_exam($exam_id),
+                CBT_Cache::namespace_exam($exam_id),
+            ],
+            static function () use ($selected_exam, $selected_kelas, $is_admin_scope, $current_user_id): array {
+                $dataset = self::get_exam_progress_dataset($selected_exam, $selected_kelas, $is_admin_scope, $current_user_id);
+                $attempt_rows = (array) ($dataset['attempt_rows'] ?? []);
+                $progress_map = (array) ($dataset['progress_map'] ?? []);
+                $question_meta = (array) ($dataset['question_meta'] ?? []);
+                $objective_attempt_metrics = self::build_objective_attempt_metrics($attempt_rows, $progress_map, $question_meta);
+                $item_rows = self::build_advanced_item_analysis_rows($attempt_rows, $progress_map, $question_meta, $objective_attempt_metrics);
+                $item_summary = self::build_item_analysis_summary($item_rows);
+                $exam_quality = self::build_exam_quality_metrics($objective_attempt_metrics, $item_rows);
+
+                return [
+                    'attempt_rows' => $attempt_rows,
+                    'progress_map' => $progress_map,
+                    'question_meta' => $question_meta,
+                    'objective_attempt_metrics' => $objective_attempt_metrics,
+                    'item_rows' => $item_rows,
+                    'item_summary' => $item_summary,
+                    'exam_quality' => $exam_quality,
+                ];
+            }
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $selected_exam
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_item_analysis_rows(
+        array $selected_exam,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id,
+        array $statistical_payload = []
+    ): array {
+        if (empty($statistical_payload)) {
+            $statistical_payload = self::get_exam_statistical_payload($selected_exam, $selected_kelas, $is_admin_scope, $current_user_id);
+        }
+
+        return array_values((array) ($statistical_payload['item_rows'] ?? []));
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $attempt_rows
+     * @param array<int,array<string,mixed>> $progress_map
+     * @param array<int,array<string,mixed>> $question_meta
+     * @return array<string,mixed>
+     */
+    private static function build_objective_attempt_metrics(
+        array $attempt_rows,
+        array $progress_map,
+        array $question_meta
+    ): array {
+        $attempt_metrics = [];
+        $question_ratios = [];
+
+        foreach ($attempt_rows as $attempt_row) {
+            $attempt_id = (int) ($attempt_row['id'] ?? 0);
+            if ($attempt_id <= 0) {
+                continue;
+            }
+
+            $attempt_metrics[$attempt_id] = [
+                'attempt_id' => $attempt_id,
+                'objective_score_total' => 0.0,
+                'objective_max_total' => 0.0,
+                'objective_percentage' => 0.0,
+                'objective_percentage_display' => '0.00%',
+                'objective_item_count' => 0,
+                'group_band' => 'middle',
+            ];
+
+            $progress_sections = (array) ($progress_map[$attempt_id] ?? []);
+            $progress_items = array_merge(
+                (array) ($progress_sections['active_items'] ?? []),
+                (array) ($progress_sections['archived_items'] ?? [])
+            );
+
+            foreach ($progress_items as $progress_item_row) {
+                $progress_item = (array) $progress_item_row;
+                $question_id = (int) ($progress_item['question_id'] ?? 0);
+                $meta = (array) ($question_meta[$question_id] ?? []);
+                if ($question_id <= 0 || empty($meta) || empty($meta['is_objective'])) {
+                    continue;
+                }
+
+                $status = (string) ($progress_item['status'] ?? 'unanswered');
+                if ($status === 'manual') {
+                    continue;
+                }
+
+                $effective_max_score = max(0.0, (float) ($meta['effective_max_score'] ?? ($meta['points'] ?? 0.0)));
+                if ($effective_max_score <= 0.0) {
+                    continue;
+                }
+
+                $score_awarded = max(0.0, (float) ($progress_item['score_awarded'] ?? 0.0));
+                $clamped_score = min($effective_max_score, $score_awarded);
+                $ratio = self::calculate_item_score_ratio($clamped_score, $effective_max_score);
+
+                $attempt_metrics[$attempt_id]['objective_score_total'] += $clamped_score;
+                $attempt_metrics[$attempt_id]['objective_max_total'] += $effective_max_score;
+                $attempt_metrics[$attempt_id]['objective_item_count']++;
+
+                if (!isset($question_ratios[$question_id])) {
+                    $question_ratios[$question_id] = [];
+                }
+                $question_ratios[$question_id][$attempt_id] = $ratio;
+            }
+        }
+
+        foreach ($attempt_metrics as &$metric) {
+            $objective_max_total = max(0.0, (float) ($metric['objective_max_total'] ?? 0.0));
+            $objective_score_total = max(0.0, (float) ($metric['objective_score_total'] ?? 0.0));
+            $objective_percentage = $objective_max_total > 0
+                ? round(($objective_score_total / $objective_max_total) * 100, 2)
+                : 0.0;
+
+            $metric['objective_percentage'] = $objective_percentage;
+            $metric['objective_percentage_display'] = self::format_percent($objective_percentage);
+        }
+        unset($metric);
+
+        $ranked_attempt_ids = array_keys($attempt_metrics);
+        usort($ranked_attempt_ids, static function (int $leftId, int $rightId) use ($attempt_metrics): int {
+            $left = (array) ($attempt_metrics[$leftId] ?? []);
+            $right = (array) ($attempt_metrics[$rightId] ?? []);
+            $percentageCompare = (float) ($right['objective_percentage'] ?? 0.0) <=> (float) ($left['objective_percentage'] ?? 0.0);
+            if ($percentageCompare !== 0) {
+                return $percentageCompare;
+            }
+
+            return $leftId <=> $rightId;
+        });
+
+        $completed_attempt_count = count($ranked_attempt_ids);
+        $group_size = $completed_attempt_count > 0 ? max(1, (int) ceil($completed_attempt_count * 0.27)) : 0;
+        $upper_ids = array_slice($ranked_attempt_ids, 0, $group_size);
+        $lower_ids = $group_size > 0 ? array_slice($ranked_attempt_ids, -$group_size) : [];
+
+        foreach ($upper_ids as $attempt_id) {
+            if (isset($attempt_metrics[$attempt_id])) {
+                $attempt_metrics[$attempt_id]['group_band'] = 'upper';
+            }
+        }
+        foreach ($lower_ids as $attempt_id) {
+            if (isset($attempt_metrics[$attempt_id]) && !in_array($attempt_id, $upper_ids, true)) {
+                $attempt_metrics[$attempt_id]['group_band'] = 'lower';
+            }
+        }
+
+        return [
+            'attempts' => $attempt_metrics,
+            'question_ratios' => $question_ratios,
+            'completed_attempt_count' => $completed_attempt_count,
+            'upper_group_size' => count($upper_ids),
+            'lower_group_size' => count($lower_ids),
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $attempt_rows
+     * @param array<int,array<string,mixed>> $progress_map
+     * @param array<int,array<string,mixed>> $question_meta
+     * @param array<string,mixed> $objective_context
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_advanced_item_analysis_rows(
+        array $attempt_rows,
+        array $progress_map,
+        array $question_meta,
+        array $objective_context
+    ): array {
+        $total_attempts = count($attempt_rows);
+        if (empty($question_meta)) {
+            return [];
+        }
+
+        $attempt_metrics = (array) ($objective_context['attempts'] ?? []);
+        $question_ratios = (array) ($objective_context['question_ratios'] ?? []);
+        $upper_group_size = max(0, (int) ($objective_context['upper_group_size'] ?? 0));
+        $lower_group_size = max(0, (int) ($objective_context['lower_group_size'] ?? 0));
+        $eligible_completed_attempts = max(0, (int) ($objective_context['completed_attempt_count'] ?? 0));
+
+        $analytics_rows = [];
+        foreach ($question_meta as $question_id => $meta) {
+            $question_id = (int) $question_id;
+            $options = array_values((array) ($meta['options'] ?? []));
+            $detail = (array) ($meta['detail'] ?? []);
+            $question_type = (string) ($meta['question_type'] ?? '');
+
+            $option_analysis = [];
+            foreach ($options as $option_row) {
+                $option = (array) $option_row;
+                $option_id = (int) ($option['id'] ?? 0);
+                if ($option_id <= 0) {
+                    continue;
+                }
+                $option_analysis[$option_id] = [
+                    'option_id' => $option_id,
+                    'label' => self::format_option_label((string) ($option['option_key'] ?? ''), (string) ($option['option_text'] ?? '')),
+                    'is_correct' => (int) ($option['is_correct'] ?? 0) === 1 ? 1 : 0,
+                    'count' => 0,
+                    'upper_count' => 0,
+                    'lower_count' => 0,
+                ];
+            }
+
+            $matrix_analysis = [];
+            if ($question_type === 'true_false_matrix') {
+                $matrix_items = array_values((array) ($detail['matrix_items'] ?? []));
+                foreach ($matrix_items as $index => $matrix_row) {
+                    $matrix = (array) $matrix_row;
+                    $matrix_analysis[] = [
+                        'statement_number' => $index + 1,
+                        'statement_text' => (string) ($matrix['text'] ?? ''),
+                        'correct_answer' => ((string) ($matrix['answer'] ?? 'true') === 'false') ? 'Salah' : 'Benar',
+                        'correct_count' => 0,
+                        'wrong_count' => 0,
+                        'unanswered_count' => 0,
+                    ];
+                }
+            }
+
+            $analytics_rows[$question_id] = [
+                'question_id' => $question_id,
+                'question_number' => (int) ($meta['question_number'] ?? 0),
+                'question_text' => (string) ($meta['question_text'] ?? ''),
+                'question_preview' => (string) ($meta['question_preview'] ?? ''),
+                'question_type' => $question_type,
+                'question_type_label' => (string) ($meta['question_type_label'] ?? ''),
+                'points' => (float) ($meta['points'] ?? 0.0),
+                'points_display' => self::format_number((float) ($meta['points'] ?? 0.0)),
+                'effective_max_score' => (float) ($meta['effective_max_score'] ?? ($meta['points'] ?? 0.0)),
+                'effective_max_score_display' => self::format_number((float) ($meta['effective_max_score'] ?? ($meta['points'] ?? 0.0))),
+                'is_archived' => (int) ($meta['is_archived'] ?? 0),
+                'is_objective' => !empty($meta['is_objective']) ? 1 : 0,
+                'is_partial_credit' => !empty($meta['is_partial_credit']) ? 1 : 0,
+                'seen_count' => $total_attempts,
+                'answered_count' => 0,
+                'correct_count' => 0,
+                'wrong_count' => 0,
+                'unanswered_count' => 0,
+                'manual_count' => 0,
+                'total_score_awarded' => 0.0,
+                'distribution_counts' => [],
+                'archived_attempt_count' => 0,
+                'correct_answer_summary' => (string) ($meta['correct_answer_summary'] ?? '-'),
+                'option_analysis_map' => $option_analysis,
+                'matrix_analysis' => $matrix_analysis,
+                'short_answer_expected_inputs' => max(1, count((array) ($detail['correct_answers'] ?? []))),
+                'short_answer_total_inputs' => 0,
+                'short_answer_matched_inputs' => 0,
+                'short_answer_wrong_clusters' => [],
+                'essay_score_values' => [],
+                'upper_ratio_sum' => 0.0,
+                'upper_ratio_count' => 0,
+                'lower_ratio_sum' => 0.0,
+                'lower_ratio_count' => 0,
+            ];
+        }
+
+        foreach ($attempt_rows as $attempt_row) {
+            $attempt_id = (int) ($attempt_row['id'] ?? 0);
+            $progress_sections = (array) ($progress_map[$attempt_id] ?? []);
+            $progress_items = array_merge(
+                (array) ($progress_sections['active_items'] ?? []),
+                (array) ($progress_sections['archived_items'] ?? [])
+            );
+            $attempt_metric = (array) ($attempt_metrics[$attempt_id] ?? []);
+            $group_band = (string) ($attempt_metric['group_band'] ?? 'middle');
+
+            foreach ($progress_items as $progress_item_row) {
+                $progress_item = (array) $progress_item_row;
+                $question_id = (int) ($progress_item['question_id'] ?? 0);
+                if ($question_id <= 0 || !isset($analytics_rows[$question_id])) {
+                    continue;
+                }
+
+                $row = &$analytics_rows[$question_id];
+                $meta = (array) ($question_meta[$question_id] ?? []);
+                $status = (string) ($progress_item['status'] ?? 'unanswered');
+                $preview = trim((string) ($progress_item['answer_preview'] ?? ''));
+                if ($preview === '') {
+                    $preview = 'Belum dijawab';
+                }
+
+                if ($status !== 'unanswered') {
+                    $row['answered_count']++;
+                }
+                if ($status === 'correct') {
+                    $row['correct_count']++;
+                } elseif ($status === 'wrong') {
+                    $row['wrong_count']++;
+                } elseif ($status === 'manual') {
+                    $row['manual_count']++;
+                } else {
+                    $row['unanswered_count']++;
+                }
+
+                $row['total_score_awarded'] += max(0.0, (float) ($progress_item['score_awarded'] ?? 0.0));
+                if (!isset($row['distribution_counts'][$preview])) {
+                    $row['distribution_counts'][$preview] = 0;
+                }
+                $row['distribution_counts'][$preview]++;
+
+                if (!empty($progress_item['is_archived'])) {
+                    $row['archived_attempt_count']++;
+                }
+
+                $question_number = (int) ($progress_item['question_number'] ?? 0);
+                if ($question_number > 0) {
+                    $current_number = (int) ($row['question_number'] ?? 0);
+                    if ($current_number <= 0 || $question_number < $current_number) {
+                        $row['question_number'] = $question_number;
+                    }
+                }
+
+                $score_ratio = isset($question_ratios[$question_id][$attempt_id])
+                    ? (float) $question_ratios[$question_id][$attempt_id]
+                    : self::calculate_item_score_ratio(
+                        (float) ($progress_item['score_awarded'] ?? 0.0),
+                        (float) ($row['effective_max_score'] ?? 0.0)
+                    );
+
+                if (!empty($row['is_objective']) && $status !== 'manual' && $eligible_completed_attempts >= 5) {
+                    if ($group_band === 'upper') {
+                        $row['upper_ratio_sum'] += $score_ratio;
+                        $row['upper_ratio_count']++;
+                    } elseif ($group_band === 'lower') {
+                        $row['lower_ratio_sum'] += $score_ratio;
+                        $row['lower_ratio_count']++;
+                    }
+                }
+
+                $question_type = (string) ($row['question_type'] ?? '');
+                if (in_array($question_type, ['multiple_choice', 'true_false'], true)) {
+                    $selected_option_ids = array_values(array_filter(array_map('intval', (array) ($progress_item['selected_option_ids'] ?? []))));
+                    foreach ($selected_option_ids as $option_id) {
+                        if (!isset($row['option_analysis_map'][$option_id])) {
+                            continue;
+                        }
+                        $row['option_analysis_map'][$option_id]['count']++;
+                        if ($group_band === 'upper') {
+                            $row['option_analysis_map'][$option_id]['upper_count']++;
+                        } elseif ($group_band === 'lower') {
+                            $row['option_analysis_map'][$option_id]['lower_count']++;
+                        }
+                    }
+                } elseif ($question_type === 'multiple_answer') {
+                    $selected_option_ids = array_values(array_filter(array_map('intval', (array) ($progress_item['selected_option_ids'] ?? []))));
+                    foreach ($selected_option_ids as $option_id) {
+                        if (!isset($row['option_analysis_map'][$option_id])) {
+                            continue;
+                        }
+                        $row['option_analysis_map'][$option_id]['count']++;
+                        if ($group_band === 'upper') {
+                            $row['option_analysis_map'][$option_id]['upper_count']++;
+                        } elseif ($group_band === 'lower') {
+                            $row['option_analysis_map'][$option_id]['lower_count']++;
+                        }
+                    }
+                } elseif ($question_type === 'true_false_matrix') {
+                    $matrix_submission = (array) ($progress_item['true_false_matrix_submission'] ?? []);
+                    foreach ($row['matrix_analysis'] as $index => $matrix_row) {
+                        $statement_key = (string) ($index + 1);
+                        $submitted = (string) ($matrix_submission[$statement_key] ?? '');
+                        $expected = ((string) (($meta['detail']['matrix_items'][$index]['answer'] ?? 'true')) === 'false') ? 'false' : 'true';
+                        if ($submitted === '') {
+                            $row['matrix_analysis'][$index]['unanswered_count']++;
+                        } elseif ($submitted === $expected) {
+                            $row['matrix_analysis'][$index]['correct_count']++;
+                        } else {
+                            $row['matrix_analysis'][$index]['wrong_count']++;
+                        }
+                    }
+                } elseif ($question_type === 'short_answer') {
+                    $slots = array_values((array) ($progress_item['short_answer_slots'] ?? []));
+                    $expected_inputs = max(1, count((array) ($meta['detail']['correct_answers'] ?? [])));
+                    $row['short_answer_total_inputs'] += $expected_inputs;
+                    foreach ($slots as $slot_row) {
+                        $slot = (array) $slot_row;
+                        $slot_status = (string) ($slot['status'] ?? 'empty');
+                        $submitted_value = trim((string) ($slot['value'] ?? ''));
+                        if ($slot_status === 'correct') {
+                            $row['short_answer_matched_inputs']++;
+                        } elseif ($slot_status === 'wrong' && $submitted_value !== '') {
+                            $normalized_value = CBT_Admin_Questions_Helper::normalize_short_answer_compare_value($submitted_value);
+                            if ($normalized_value !== '') {
+                                if (!isset($row['short_answer_wrong_clusters'][$normalized_value])) {
+                                    $row['short_answer_wrong_clusters'][$normalized_value] = [
+                                        'label' => $submitted_value,
+                                        'count' => 0,
+                                    ];
+                                }
+                                $row['short_answer_wrong_clusters'][$normalized_value]['count']++;
+                            }
+                        }
+                    }
+                } elseif ($question_type === 'essay') {
+                    if ($status !== 'unanswered') {
+                        $row['essay_score_values'][] = max(0.0, (float) ($progress_item['score_awarded'] ?? 0.0));
+                    }
+                }
+                unset($row);
+            }
+        }
+
+        $rows = [];
+        foreach ($analytics_rows as $row) {
+            $seen_count = max(0, (int) ($row['seen_count'] ?? 0));
+            $correct_count = max(0, (int) ($row['correct_count'] ?? 0));
+            $manual_count = max(0, (int) ($row['manual_count'] ?? 0));
+            $correct_rate = $seen_count > 0 ? round(($correct_count / $seen_count) * 100, 2) : 0.0;
+            $omission_rate = $seen_count > 0 ? round((((int) ($row['unanswered_count'] ?? 0)) / $seen_count) * 100, 2) : 0.0;
+            $average_awarded_score = $seen_count > 0
+                ? round(((float) ($row['total_score_awarded'] ?? 0.0)) / $seen_count, 2)
+                : 0.0;
+
+            $difficulty = self::build_difficulty_meta(
+                (string) ($row['question_type'] ?? ''),
+                $correct_rate,
+                $manual_count
+            );
+            $distribution_counts = (array) ($row['distribution_counts'] ?? []);
+            arsort($distribution_counts);
+            $distribution = [];
+            foreach ($distribution_counts as $label => $count) {
+                $distribution[] = [
+                    'label' => (string) $label,
+                    'count' => (int) $count,
+                ];
+            }
+
+            $discrimination_value = null;
+            if (
+                !empty($row['is_objective']) &&
+                (string) ($row['question_type'] ?? '') !== 'essay' &&
+                $eligible_completed_attempts >= 5 &&
+                (int) ($row['upper_ratio_count'] ?? 0) > 0 &&
+                (int) ($row['lower_ratio_count'] ?? 0) > 0 &&
+                $manual_count <= 0
+            ) {
+                $upper_average = ((float) ($row['upper_ratio_sum'] ?? 0.0)) / max(1, (int) ($row['upper_ratio_count'] ?? 1));
+                $lower_average = ((float) ($row['lower_ratio_sum'] ?? 0.0)) / max(1, (int) ($row['lower_ratio_count'] ?? 1));
+                $discrimination_value = round($upper_average - $lower_average, 4);
+            }
+            $discrimination = self::build_discrimination_meta($discrimination_value, $eligible_completed_attempts, $manual_count);
+            $omission = self::build_omission_meta($omission_rate);
+
+            $option_analysis = [];
+            if (in_array((string) ($row['question_type'] ?? ''), ['multiple_choice', 'true_false'], true)) {
+                $option_analysis = self::build_distractor_analysis_rows((array) ($row['option_analysis_map'] ?? []), $seen_count, $upper_group_size, $lower_group_size);
+            } elseif ((string) ($row['question_type'] ?? '') === 'multiple_answer') {
+                $option_analysis = self::build_multiple_answer_option_analysis_rows((array) ($row['option_analysis_map'] ?? []), $seen_count, $upper_group_size, $lower_group_size);
+            }
+
+            $matrix_analysis = [];
+            if ((string) ($row['question_type'] ?? '') === 'true_false_matrix') {
+                $matrix_analysis = self::build_matrix_analysis_rows((array) ($row['matrix_analysis'] ?? []), $seen_count);
+            }
+
+            $short_answer_analysis = [];
+            if ((string) ($row['question_type'] ?? '') === 'short_answer') {
+                $short_answer_analysis = self::build_short_answer_analysis(
+                    (int) ($row['short_answer_total_inputs'] ?? 0),
+                    (int) ($row['short_answer_matched_inputs'] ?? 0),
+                    (array) ($row['short_answer_wrong_clusters'] ?? [])
+                );
+            }
+
+            $essay_analysis = [];
+            if ((string) ($row['question_type'] ?? '') === 'essay') {
+                $essay_analysis = self::build_essay_analysis(
+                    (int) ($row['answered_count'] ?? 0),
+                    (int) ($row['manual_count'] ?? 0),
+                    (array) ($row['essay_score_values'] ?? []),
+                    $seen_count
+                );
+            }
+
+            $note_parts = [];
+            if (!empty($row['is_archived'])) {
+                $note_parts[] = 'Soal ini saat ini inactive/archived pada bank exam.';
+            }
+            if ((int) ($row['archived_attempt_count'] ?? 0) > 0) {
+                $note_parts[] = sprintf(
+                    'Muncul pada %d attempt historis sebagai soal archived.',
+                    (int) ($row['archived_attempt_count'] ?? 0)
+                );
+            }
+            if ((string) ($difficulty['tone'] ?? '') === 'manual') {
+                $note_parts[] = 'Difficulty tier ditahan karena masih ada jawaban manual/essay.';
+            }
+
+            $insight = self::build_item_insight_meta(
+                (string) ($row['question_type'] ?? ''),
+                $seen_count,
+                $manual_count,
+                $discrimination,
+                $omission,
+                $option_analysis
+            );
+
+            $row['correct_rate'] = $correct_rate;
+            $row['correct_rate_display'] = self::format_percent($correct_rate);
+            $row['omission_rate'] = $omission_rate;
+            $row['omission_rate_display'] = self::format_percent($omission_rate);
+            $row['omission_label'] = (string) ($omission['label'] ?? '-');
+            $row['omission_tone'] = (string) ($omission['tone'] ?? 'neutral');
+            $row['average_awarded_score'] = $average_awarded_score;
+            $row['average_awarded_score_display'] = self::format_number($average_awarded_score);
+            $row['difficulty_label'] = (string) ($difficulty['label'] ?? '-');
+            $row['difficulty_tone'] = (string) ($difficulty['tone'] ?? 'neutral');
+            $row['discrimination_index'] = $discrimination['value'];
+            $row['discrimination_display'] = (string) ($discrimination['display'] ?? 'Insufficient Data');
+            $row['discrimination_label'] = (string) ($discrimination['label'] ?? 'Insufficient Data');
+            $row['discrimination_tone'] = (string) ($discrimination['tone'] ?? 'neutral');
+            $row['distribution'] = $distribution;
+            $row['option_analysis'] = $option_analysis;
+            $row['matrix_analysis_rows'] = $matrix_analysis;
+            $row['short_answer_analysis'] = $short_answer_analysis;
+            $row['essay_analysis'] = $essay_analysis;
+            $row['insight_label'] = (string) ($insight['label'] ?? '-');
+            $row['insight_tone'] = (string) ($insight['tone'] ?? 'neutral');
+            $row['note'] = trim(implode(' ', $note_parts));
+            $row['search_text'] = strtolower(implode(' ', [
+                (string) ($row['question_number'] ?? ''),
+                (string) ($row['question_type_label'] ?? ''),
+                (string) ($row['question_preview'] ?? ''),
+                (string) ($row['difficulty_label'] ?? ''),
+                (string) ($row['discrimination_label'] ?? ''),
+                (string) ($row['insight_label'] ?? ''),
+                (string) ($row['omission_label'] ?? ''),
+            ]));
+
+            unset(
+                $row['option_analysis_map'],
+                $row['matrix_analysis'],
+                $row['short_answer_expected_inputs'],
+                $row['short_answer_total_inputs'],
+                $row['short_answer_matched_inputs'],
+                $row['short_answer_wrong_clusters'],
+                $row['essay_score_values'],
+                $row['upper_ratio_sum'],
+                $row['upper_ratio_count'],
+                $row['lower_ratio_sum'],
+                $row['lower_ratio_count']
+            );
+
+            $rows[] = $row;
+        }
+
+        usort($rows, static function (array $left, array $right): int {
+            $left_number = (int) ($left['question_number'] ?? 0);
+            $right_number = (int) ($right['question_number'] ?? 0);
+            if ($left_number !== $right_number) {
+                return $left_number <=> $right_number;
+            }
+
+            return strnatcasecmp((string) ($left['question_preview'] ?? ''), (string) ($right['question_preview'] ?? ''));
+        });
+
+        return array_values($rows);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<string,int>
+     */
+    private static function build_item_analysis_summary(array $rows): array
+    {
+        $summary = [
+            'objective_item_count' => 0,
+            'weak_discrimination_count' => 0,
+            'high_omission_count' => 0,
+            'pending_manual_count' => 0,
+            'problem_item_count' => 0,
+        ];
+
+        foreach ($rows as $row) {
+            if (!empty($row['is_objective'])) {
+                $summary['objective_item_count']++;
+            }
+
+            $has_problem = false;
+            if ((string) ($row['discrimination_label'] ?? '') === 'Weak' || (string) ($row['discrimination_label'] ?? '') === 'Inverse') {
+                $summary['weak_discrimination_count']++;
+                $has_problem = true;
+            }
+            if ((string) ($row['omission_label'] ?? '') === 'High') {
+                $summary['high_omission_count']++;
+                $has_problem = true;
+            }
+            if ((int) ($row['manual_count'] ?? 0) > 0) {
+                $summary['pending_manual_count']++;
+                $has_problem = true;
+            }
+            if ($has_problem) {
+                $summary['problem_item_count']++;
+            }
+        }
+
+        return $summary;
+    }
+
+    /**
+     * @param array<string,mixed> $objective_context
+     * @param array<int,array<string,mixed>> $item_rows
+     * @return array<string,mixed>
+     */
+    private static function build_exam_quality_metrics(array $objective_context, array $item_rows): array
+    {
+        $attempt_metrics = (array) ($objective_context['attempts'] ?? []);
+        $question_ratios = (array) ($objective_context['question_ratios'] ?? []);
+        $eligible_question_ids = array_values(array_filter(array_map(static function (array $row): int {
+            $isObjective = !empty($row['is_objective']);
+            $isEssay = (string) ($row['question_type'] ?? '') === 'essay';
+            $manualCount = (int) ($row['manual_count'] ?? 0);
+            return ($isObjective && !$isEssay && $manualCount <= 0) ? (int) ($row['question_id'] ?? 0) : 0;
+        }, $item_rows), static function (int $question_id): bool {
+            return $question_id > 0;
+        }));
+        if (!empty($eligible_question_ids)) {
+            $question_ratios = array_intersect_key($question_ratios, array_fill_keys($eligible_question_ids, true));
+        }
+
+        $objective_percentages = [];
+        foreach ($attempt_metrics as $metric_row) {
+            $metric = (array) $metric_row;
+            if ((float) ($metric['objective_max_total'] ?? 0.0) <= 0.0) {
+                continue;
+            }
+            $objective_percentages[] = (float) ($metric['objective_percentage'] ?? 0.0);
+        }
+
+        $stddev = self::calculate_standard_deviation($objective_percentages);
+        $variance = self::calculate_variance($objective_percentages);
+
+        $reliability = self::calculate_exam_reliability($question_ratios);
+        $reliability_value = $reliability['value'];
+        $sem = ($reliability_value !== null && $reliability_value >= 0.0 && $reliability_value <= 1.0)
+            ? round($stddev * sqrt(max(0.0, 1.0 - $reliability_value)), 4)
+            : null;
+
+        $quality_tone = 'neutral';
+        $quality_label = 'Insufficient Data';
+        if ($reliability_value !== null) {
+            if ($reliability_value >= 0.80) {
+                $quality_label = 'Reliable';
+                $quality_tone = 'pass';
+            } elseif ($reliability_value >= 0.70) {
+                $quality_label = 'Marginal';
+                $quality_tone = 'warning';
+            } else {
+                $quality_label = 'Weak';
+                $quality_tone = 'fail';
+            }
+        }
+
+        return [
+            'objective_attempt_count' => count($objective_percentages),
+            'average_objective_percentage' => !empty($objective_percentages) ? round(array_sum($objective_percentages) / count($objective_percentages), 2) : 0.0,
+            'average_objective_percentage_display' => self::format_percent(!empty($objective_percentages) ? round(array_sum($objective_percentages) / count($objective_percentages), 2) : 0.0),
+            'variance' => $variance,
+            'variance_display' => $variance === null ? 'Insufficient Data' : self::format_number($variance),
+            'standard_deviation' => $stddev,
+            'standard_deviation_display' => $stddev === null ? 'Insufficient Data' : self::format_number($stddev),
+            'sem' => $sem,
+            'sem_display' => $sem === null ? 'Insufficient Data' : self::format_number($sem),
+            'reliability' => $reliability_value,
+            'reliability_display' => $reliability_value === null ? 'Insufficient Data' : self::format_number($reliability_value),
+            'reliability_method' => (string) ($reliability['method'] ?? 'Insufficient Data'),
+            'reliability_label' => $quality_label,
+            'reliability_tone' => $quality_tone,
+            'insufficient_reason' => (string) ($reliability['reason'] ?? ''),
+            'low_discrimination_item_count' => count(array_filter($item_rows, static function (array $row): bool {
+                $label = (string) ($row['discrimination_label'] ?? '');
+                return $label === 'Weak' || $label === 'Inverse';
+            })),
+            'high_omission_item_count' => count(array_filter($item_rows, static function (array $row): bool {
+                return (string) ($row['omission_label'] ?? '') === 'High';
+            })),
+            'manual_component_count' => count(array_filter($item_rows, static function (array $row): bool {
+                return (string) ($row['question_type'] ?? '') === 'essay' || (int) ($row['manual_count'] ?? 0) > 0;
+            })),
+            'eligible_objective_item_count' => count($question_ratios),
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $option_analysis_map
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_distractor_analysis_rows(
+        array $option_analysis_map,
+        int $seen_count,
+        int $upper_group_size,
+        int $lower_group_size
+    ): array {
+        $rows = [];
+        foreach ($option_analysis_map as $option_row) {
+            $option = (array) $option_row;
+            $count = max(0, (int) ($option['count'] ?? 0));
+            $selection_rate = $seen_count > 0 ? round(($count / $seen_count) * 100, 2) : 0.0;
+            $upper_rate = $upper_group_size > 0 ? round((((int) ($option['upper_count'] ?? 0)) / $upper_group_size) * 100, 2) : 0.0;
+            $lower_rate = $lower_group_size > 0 ? round((((int) ($option['lower_count'] ?? 0)) / $lower_group_size) * 100, 2) : 0.0;
+
+            $flags = [];
+            $is_correct = !empty($option['is_correct']);
+            if ($seen_count > 0 && !$is_correct && $selection_rate < 5.0) {
+                $flags[] = 'Non-Functioning Distractor';
+            }
+            if ($seen_count > 0 && !$is_correct && (int) ($option['lower_count'] ?? 0) > (int) ($option['upper_count'] ?? 0)) {
+                $flags[] = 'Attractive Distractor';
+            }
+
+            $rows[] = [
+                'label' => (string) ($option['label'] ?? '-'),
+                'is_correct' => $is_correct ? 1 : 0,
+                'count' => $count,
+                'selection_rate' => $selection_rate,
+                'selection_rate_display' => self::format_percent($selection_rate),
+                'upper_rate' => $upper_rate,
+                'upper_rate_display' => self::format_percent($upper_rate),
+                'lower_rate' => $lower_rate,
+                'lower_rate_display' => self::format_percent($lower_rate),
+                'flags' => $flags,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $option_analysis_map
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_multiple_answer_option_analysis_rows(
+        array $option_analysis_map,
+        int $seen_count,
+        int $upper_group_size,
+        int $lower_group_size
+    ): array {
+        $rows = [];
+        foreach ($option_analysis_map as $option_row) {
+            $option = (array) $option_row;
+            $count = max(0, (int) ($option['count'] ?? 0));
+            $selection_rate = $seen_count > 0 ? round(($count / $seen_count) * 100, 2) : 0.0;
+            $upper_rate = $upper_group_size > 0 ? round((((int) ($option['upper_count'] ?? 0)) / $upper_group_size) * 100, 2) : 0.0;
+            $lower_rate = $lower_group_size > 0 ? round((((int) ($option['lower_count'] ?? 0)) / $lower_group_size) * 100, 2) : 0.0;
+            $is_correct = !empty($option['is_correct']);
+
+            $rows[] = [
+                'label' => (string) ($option['label'] ?? '-'),
+                'is_correct' => $is_correct ? 1 : 0,
+                'count' => $count,
+                'selection_rate' => $selection_rate,
+                'selection_rate_display' => self::format_percent($selection_rate),
+                'upper_rate' => $upper_rate,
+                'upper_rate_display' => self::format_percent($upper_rate),
+                'lower_rate' => $lower_rate,
+                'lower_rate_display' => self::format_percent($lower_rate),
+                'correct_option_selection_rate' => $is_correct ? $selection_rate : 0.0,
+                'wrong_option_selection_rate' => !$is_correct ? $selection_rate : 0.0,
+                'missed_correct_option_rate' => $is_correct ? round(max(0.0, 100.0 - $selection_rate), 2) : 0.0,
+                'false_selection_rate' => !$is_correct ? $selection_rate : 0.0,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $matrix_rows
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_matrix_analysis_rows(array $matrix_rows, int $seen_count): array
+    {
+        $rows = [];
+        foreach ($matrix_rows as $matrix_row) {
+            $row = (array) $matrix_row;
+            $correct_rate = $seen_count > 0 ? round((((int) ($row['correct_count'] ?? 0)) / $seen_count) * 100, 2) : 0.0;
+            $wrong_rate = $seen_count > 0 ? round((((int) ($row['wrong_count'] ?? 0)) / $seen_count) * 100, 2) : 0.0;
+            $omission_rate = $seen_count > 0 ? round((((int) ($row['unanswered_count'] ?? 0)) / $seen_count) * 100, 2) : 0.0;
+
+            $rows[] = [
+                'statement_number' => (int) ($row['statement_number'] ?? 0),
+                'statement_text' => (string) ($row['statement_text'] ?? ''),
+                'correct_answer' => (string) ($row['correct_answer'] ?? '-'),
+                'correct_count' => (int) ($row['correct_count'] ?? 0),
+                'wrong_count' => (int) ($row['wrong_count'] ?? 0),
+                'unanswered_count' => (int) ($row['unanswered_count'] ?? 0),
+                'correct_rate_display' => self::format_percent($correct_rate),
+                'wrong_rate_display' => self::format_percent($wrong_rate),
+                'omission_rate_display' => self::format_percent($omission_rate),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string,array{label:string,count:int}> $wrong_clusters
+     * @return array<string,mixed>
+     */
+    private static function build_short_answer_analysis(
+        int $total_inputs,
+        int $matched_inputs,
+        array $wrong_clusters
+    ): array {
+        $accepted_match_rate = $total_inputs > 0 ? round(($matched_inputs / $total_inputs) * 100, 2) : 0.0;
+        uasort($wrong_clusters, static function (array $left, array $right): int {
+            $countCompare = (int) ($right['count'] ?? 0) <=> (int) ($left['count'] ?? 0);
+            if ($countCompare !== 0) {
+                return $countCompare;
+            }
+
+            return strnatcasecmp((string) ($left['label'] ?? ''), (string) ($right['label'] ?? ''));
+        });
+
+        $top_wrong = [];
+        foreach (array_slice($wrong_clusters, 0, 5, true) as $cluster) {
+            $cluster_row = (array) $cluster;
+            $top_wrong[] = [
+                'label' => (string) ($cluster_row['label'] ?? '-'),
+                'count' => (int) ($cluster_row['count'] ?? 0),
+            ];
+        }
+
+        return [
+            'accepted_match_rate' => $accepted_match_rate,
+            'accepted_match_rate_display' => self::format_percent($accepted_match_rate),
+            'top_wrong_responses' => $top_wrong,
+        ];
+    }
+
+    /**
+     * @param array<int,float> $score_values
+     * @return array<string,mixed>
+     */
+    private static function build_essay_analysis(
+        int $answered_count,
+        int $manual_count,
+        array $score_values,
+        int $seen_count
+    ): array {
+        $submission_rate = $seen_count > 0 ? round(($answered_count / $seen_count) * 100, 2) : 0.0;
+        $average_score = !empty($score_values) ? round(array_sum($score_values) / count($score_values), 2) : 0.0;
+        $min_score = !empty($score_values) ? min($score_values) : 0.0;
+        $max_score = !empty($score_values) ? max($score_values) : 0.0;
+
+        return [
+            'submission_rate' => $submission_rate,
+            'submission_rate_display' => self::format_percent($submission_rate),
+            'pending_manual_review' => $manual_count,
+            'average_awarded_score' => $average_score,
+            'average_awarded_score_display' => self::format_number($average_score),
+            'score_spread_display' => self::format_number((float) $min_score) . ' - ' . self::format_number((float) $max_score),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $discrimination
+     * @param array<string,mixed> $omission
+     * @param array<int,array<string,mixed>> $option_analysis
+     * @return array{label:string,tone:string}
+     */
+    private static function build_item_insight_meta(
+        string $question_type,
+        int $seen_count,
+        int $manual_count,
+        array $discrimination,
+        array $omission,
+        array $option_analysis
+    ): array {
+        if ($seen_count <= 0 || (string) ($discrimination['label'] ?? '') === 'Insufficient Data') {
+            return [
+                'label' => 'Insufficient Data',
+                'tone' => 'neutral',
+            ];
+        }
+
+        if ($question_type === 'essay' || $manual_count > 0) {
+            return [
+                'label' => 'Pending Manual Review',
+                'tone' => 'warning',
+            ];
+        }
+
+        $discrimination_label = (string) ($discrimination['label'] ?? '');
+        if ($discrimination_label === 'Inverse') {
+            return [
+                'label' => 'Inverse Discrimination',
+                'tone' => 'fail',
+            ];
+        }
+        if ($discrimination_label === 'Weak') {
+            return [
+                'label' => 'Weak Discrimination',
+                'tone' => 'warning',
+            ];
+        }
+        if ((string) ($omission['label'] ?? '') === 'High') {
+            return [
+                'label' => 'High Omission',
+                'tone' => 'warning',
+            ];
+        }
+
+        foreach ($option_analysis as $option_row) {
+            $option = (array) $option_row;
+            $flags = array_values((array) ($option['flags'] ?? []));
+            if (in_array('Attractive Distractor', $flags, true)) {
+                return [
+                    'label' => 'Attractive Distractor',
+                    'tone' => 'warning',
+                ];
+            }
+            if (in_array('Non-Functioning Distractor', $flags, true)) {
+                return [
+                    'label' => 'Distractor Issue',
+                    'tone' => 'warning',
+                ];
+            }
+        }
+
+        return [
+            'label' => 'Stable',
+            'tone' => 'ok',
+        ];
+    }
+
+    /**
+     * @return array{value:?float,label:string,tone:string,display:string}
+     */
+    private static function build_discrimination_meta(?float $value, int $completed_attempts, int $manual_count): array
+    {
+        if ($manual_count > 0 || $value === null || $completed_attempts < 5) {
+            return [
+                'value' => null,
+                'label' => 'Insufficient Data',
+                'tone' => 'neutral',
+                'display' => 'Insufficient Data',
+            ];
+        }
+
+        $label = 'Weak';
+        $tone = 'warning';
+        if ($value >= 0.40) {
+            $label = 'Excellent';
+            $tone = 'pass';
+        } elseif ($value >= 0.30) {
+            $label = 'Good';
+            $tone = 'ok';
+        } elseif ($value >= 0.20) {
+            $label = 'Fair';
+            $tone = 'warning';
+        } elseif ($value < 0.0) {
+            $label = 'Inverse';
+            $tone = 'fail';
+        }
+
+        return [
+            'value' => round($value, 4),
+            'label' => $label,
+            'tone' => $tone,
+            'display' => self::format_number(round($value, 4)),
+        ];
+    }
+
+    /**
+     * @return array{label:string,tone:string}
+     */
+    private static function build_omission_meta(float $value): array
+    {
+        if ($value >= 20.0) {
+            return ['label' => 'High', 'tone' => 'fail'];
+        }
+        if ($value >= 10.0) {
+            return ['label' => 'Medium', 'tone' => 'warning'];
+        }
+
+        return ['label' => 'Low', 'tone' => 'ok'];
+    }
+
+    private static function calculate_item_score_ratio(float $scoreAwarded, float $itemPoints): float
+    {
+        if (!is_finite($itemPoints) || $itemPoints <= 0.0) {
+            return 0.0;
+        }
+
+        return round(min(1.0, max(0.0, $scoreAwarded / $itemPoints)), 4);
+    }
+
+    /**
+     * @param array<int,array<int,float>> $question_ratios
+     * @return array{value:?float,method:string,reason:string}
+     */
+    private static function calculate_exam_reliability(array $question_ratios): array
+    {
+        if (empty($question_ratios)) {
+            return [
+                'value' => null,
+                'method' => 'Insufficient Data',
+                'reason' => 'Belum ada item objektif yang cukup untuk menghitung reliability.',
+            ];
+        }
+
+        $question_ids = array_keys($question_ratios);
+        $question_ids = array_values(array_filter(array_map('intval', $question_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        }));
+        if (count($question_ids) < 2) {
+            return [
+                'value' => null,
+                'method' => 'Insufficient Data',
+                'reason' => 'Minimal dua item objektif finalized diperlukan untuk reliability.',
+            ];
+        }
+
+        $attempt_ids = [];
+        foreach ($question_ratios as $ratio_map) {
+            foreach ((array) $ratio_map as $attempt_id => $ratio) {
+                $attempt_id = (int) $attempt_id;
+                if ($attempt_id > 0) {
+                    $attempt_ids[$attempt_id] = $attempt_id;
+                }
+            }
+        }
+        $attempt_ids = array_values($attempt_ids);
+        sort($attempt_ids);
+        if (count($attempt_ids) < 5) {
+            return [
+                'value' => null,
+                'method' => 'Insufficient Data',
+                'reason' => 'Minimal lima peserta selesai diperlukan untuk reliability.',
+            ];
+        }
+
+        $item_variances = [];
+        $total_scores = [];
+        $all_dichotomous = true;
+
+        foreach ($attempt_ids as $attempt_id) {
+            $total_scores[$attempt_id] = 0.0;
+        }
+
+        foreach ($question_ids as $question_id) {
+            $values = [];
+            foreach ($attempt_ids as $attempt_id) {
+                $value = isset($question_ratios[$question_id][$attempt_id]) ? (float) $question_ratios[$question_id][$attempt_id] : 0.0;
+                $values[] = $value;
+                $total_scores[$attempt_id] += $value;
+                if ($value !== 0.0 && $value !== 1.0) {
+                    $all_dichotomous = false;
+                }
+            }
+            $item_variances[] = self::calculate_variance($values);
+        }
+
+        $total_score_values = array_values($total_scores);
+        $total_variance = self::calculate_variance($total_score_values);
+        if ($total_variance === null || $total_variance <= 0.0) {
+            return [
+                'value' => null,
+                'method' => $all_dichotomous ? 'KR-20' : 'Cronbach Alpha',
+                'reason' => 'Variance total skor objektif tidak cukup untuk menghitung reliability.',
+            ];
+        }
+
+        $item_count = count($question_ids);
+        if ($item_count < 2) {
+            return [
+                'value' => null,
+                'method' => 'Insufficient Data',
+                'reason' => 'Jumlah item objektif finalized belum cukup.',
+            ];
+        }
+
+        $sum_item_variance = 0.0;
+        foreach ($item_variances as $variance) {
+            $sum_item_variance += max(0.0, (float) $variance);
+        }
+
+        $alpha = ($item_count / ($item_count - 1)) * (1 - ($sum_item_variance / $total_variance));
+        $alpha = round(min(1.0, max(-1.0, $alpha)), 4);
+
+        return [
+            'value' => $alpha,
+            'method' => $all_dichotomous ? 'KR-20' : 'Cronbach Alpha',
+            'reason' => '',
+        ];
+    }
+
+    /**
+     * @param array<int|float> $values
+     */
+    private static function calculate_variance(array $values): ?float
+    {
+        $values = array_values(array_filter(array_map('floatval', $values), static function (float $value): bool {
+            return is_finite($value);
+        }));
+        $count = count($values);
+        if ($count < 2) {
+            return null;
+        }
+
+        $mean = array_sum($values) / $count;
+        $sum = 0.0;
+        foreach ($values as $value) {
+            $sum += (($value - $mean) ** 2);
+        }
+
+        return round($sum / ($count - 1), 4);
+    }
+
+    /**
+     * @param array<int|float> $values
+     */
+    private static function calculate_standard_deviation(array $values): ?float
+    {
+        $variance = self::calculate_variance($values);
+        if ($variance === null || $variance < 0.0) {
+            return null;
+        }
+
+        return round(sqrt($variance), 4);
+    }
+
+    /**
+     * @param array<string,mixed> $selected_exam
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_student_drilldown_rows(
+        array $selected_exam,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id,
+        array $statistical_payload = []
+    ): array {
+        if (empty($statistical_payload)) {
+            $statistical_payload = self::get_exam_statistical_payload($selected_exam, $selected_kelas, $is_admin_scope, $current_user_id);
+        }
+
+        $attempt_rows = (array) ($statistical_payload['attempt_rows'] ?? []);
+        $progress_map = (array) ($statistical_payload['progress_map'] ?? []);
+        $objective_attempt_metrics = (array) (($statistical_payload['objective_attempt_metrics']['attempts'] ?? []) ?: []);
+        $kkm_percentage = self::normalize_kkm_percentage((float) ($selected_exam['kkm_percentage'] ?? 75.0));
+
+        $rows = [];
+        foreach ($attempt_rows as $attempt_row) {
+            $attempt_id = (int) ($attempt_row['id'] ?? 0);
+            $progress_sections = (array) ($progress_map[$attempt_id] ?? []);
+            $active_items = (array) ($progress_sections['active_items'] ?? []);
+            $archived_items = (array) ($progress_sections['archived_items'] ?? []);
+            $progress_items = array_merge($active_items, $archived_items);
+
+            $review_summary = self::summarize_progress_items($progress_items);
+            $max_score = max(0.0, (float) ($attempt_row['max_score'] ?? 0.0));
+            $score = max(0.0, (float) ($attempt_row['score'] ?? 0.0));
+            $passing_score = self::calculate_passing_score($max_score, $kkm_percentage);
+            $is_passed = $max_score > 0 ? ($score + 0.0001 >= $passing_score) : ($kkm_percentage <= 0.0);
+            $objective_metric = (array) ($objective_attempt_metrics[$attempt_id] ?? []);
+
+            $student_query = trim((string) ($attempt_row['student_nisn'] ?? ''));
+            if ($student_query === '') {
+                $student_query = trim((string) ($attempt_row['student_username'] ?? ''));
+            }
+
+            $rows[] = [
+                'attempt_id' => $attempt_id,
+                'student_name' => (string) ($attempt_row['student_name'] ?? '-'),
+                'student_username' => (string) ($attempt_row['student_username'] ?? ''),
+                'student_nisn' => (string) ($attempt_row['student_nisn'] ?? ''),
+                'student_kelas' => (string) (($attempt_row['student_kelas'] ?? '') !== '' ? $attempt_row['student_kelas'] : '-'),
+                'score' => $score,
+                'score_display' => self::format_number($score),
+                'max_score' => $max_score,
+                'max_score_display' => self::format_number($max_score),
+                'percentage' => (float) ($attempt_row['percentage'] ?? 0.0),
+                'percentage_display' => self::format_percent((float) ($attempt_row['percentage'] ?? 0.0)),
+                'objective_percentage' => (float) ($objective_metric['objective_percentage'] ?? 0.0),
+                'objective_percentage_display' => (string) ($objective_metric['objective_percentage_display'] ?? '0.00%'),
+                'group_band' => (string) ($objective_metric['group_band'] ?? 'middle'),
+                'group_band_label' => self::format_group_band_label((string) ($objective_metric['group_band'] ?? 'middle')),
+                'is_passed' => $is_passed ? 1 : 0,
+                'pass_label' => $is_passed ? 'Lulus' : 'Tidak Lulus',
+                'pass_tone' => $is_passed ? 'pass' : 'fail',
+                'answered_summary' => sprintf(
+                    '%d / %d',
+                    (int) ($review_summary['answered_questions'] ?? 0),
+                    (int) ($review_summary['total_questions'] ?? 0)
+                ),
+                'duration_label' => self::format_duration((int) ($attempt_row['duration_seconds'] ?? 0)),
+                'finished_at_label' => self::format_datetime((string) ($attempt_row['finished_at'] ?? '')),
+                'detail' => [
+                    'kkm_percentage_display' => self::format_number($kkm_percentage),
+                    'passing_score_display' => self::format_number($passing_score),
+                    'review_summary' => $review_summary,
+                    'archived_count' => count($archived_items),
+                    'objective_percentage_display' => (string) ($objective_metric['objective_percentage_display'] ?? '0.00%'),
+                    'group_band_label' => self::format_group_band_label((string) ($objective_metric['group_band'] ?? 'middle')),
+                    'results_url' => self::build_results_url((int) ($selected_exam['id'] ?? 0), $student_query),
+                ],
+                'search_text' => strtolower(implode(' ', [
+                    (string) ($attempt_row['student_name'] ?? ''),
+                    (string) ($attempt_row['student_username'] ?? ''),
+                    (string) ($attempt_row['student_nisn'] ?? ''),
+                    (string) ($attempt_row['student_kelas'] ?? ''),
+                    (string) ($objective_metric['group_band'] ?? 'middle'),
+                    $is_passed ? 'lulus' : 'tidak lulus',
+                ])),
+            ];
+        }
+
+        usort($rows, static function (array $left, array $right): int {
+            $kelas_compare = strnatcasecmp((string) ($left['student_kelas'] ?? ''), (string) ($right['student_kelas'] ?? ''));
+            if ($kelas_compare !== 0) {
+                return $kelas_compare;
+            }
+
+            return strnatcasecmp((string) ($left['student_name'] ?? ''), (string) ($right['student_name'] ?? ''));
+        });
+
+        return array_values($rows);
+    }
+
+    /**
+     * @param array<string,mixed> $selected_exam
+     * @return array<string,mixed>
+     */
+    private static function get_exam_progress_dataset(
+        array $selected_exam,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id
+    ): array {
+        $exam_id = (int) ($selected_exam['id'] ?? 0);
+        if ($exam_id <= 0) {
+            return [
+                'attempt_rows' => [],
+                'progress_map' => [],
+                'question_meta' => [],
+            ];
+        }
+
+        $cache_key = 'admin_analytics_progress_' . self::CACHE_VERSION . '_' . md5((string) wp_json_encode([
+            'exam_id' => $exam_id,
+            'kelas' => $selected_kelas,
+            'scope' => $is_admin_scope ? 'admin' : 'teacher',
+            'user_id' => $is_admin_scope ? 0 : $current_user_id,
+        ]));
+
+        return CBT_Cache::remember(
+            $cache_key,
+            self::CACHE_TTL,
+            [
+                CBT_Cache::namespace_analytics(),
+                CBT_Cache::namespace_analytics_exam($exam_id),
+                CBT_Cache::namespace_exam($exam_id),
+            ],
+            static function () use ($exam_id, $selected_kelas, $is_admin_scope, $current_user_id): array {
+                global $wpdb;
+
+                $attempt_rows = self::get_completed_attempt_metric_rows(0, $exam_id, $selected_kelas, $is_admin_scope, $current_user_id);
+                if (empty($attempt_rows)) {
+                    return [
+                        'attempt_rows' => [],
+                        'progress_map' => [],
+                        'question_meta' => self::get_exam_question_metadata($exam_id),
+                    ];
+                }
+
+                $question_table = $wpdb->prefix . 'cbt_questions';
+                $answer_table = $wpdb->prefix . 'cbt_answers';
+                $option_table = $wpdb->prefix . 'cbt_options';
+
+                return [
+                    'attempt_rows' => $attempt_rows,
+                    'progress_map' => CBT_Admin_Results_Helper::build_attempt_answer_progress_map(
+                        $attempt_rows,
+                        $question_table,
+                        $answer_table,
+                        $option_table
+                    ),
+                    'question_meta' => self::get_exam_question_metadata($exam_id),
+                ];
+            }
+        );
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_completed_attempt_metric_rows(
+        int $selected_subject_id,
+        int $selected_exam_id,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id
+    ): array {
+        global $wpdb;
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $subject_table = $wpdb->prefix . 'cbt_subjects';
+
+        $where_parts = ["a.status = 'completed'"];
+        $params = [];
+        if (!$is_admin_scope) {
+            $where_parts[] = 'e.created_by = %d';
+            $params[] = $current_user_id;
+        }
+        if ($selected_subject_id > 0) {
+            $where_parts[] = 'e.subject_id = %d';
+            $params[] = $selected_subject_id;
+        }
+        if ($selected_exam_id > 0) {
+            $where_parts[] = 'a.exam_id = %d';
+            $params[] = $selected_exam_id;
+        }
+        if ($selected_kelas !== '') {
+            $where_parts[] = 'kelas_meta.meta_value = %s';
+            $params[] = $selected_kelas;
+        }
+
+        $where_sql = ' WHERE ' . implode(' AND ', $where_parts);
+        $sql = "SELECT a.id,
+                       a.exam_id,
+                       a.student_id,
+                       a.question_order,
+                       a.option_order,
+                       a.status,
+                       a.score,
+                       a.max_score,
+                       a.finished_at,
+                       a.duration_seconds,
+                       e.title AS exam_title,
+                       e.subject_id,
+                       e.kkm_percentage,
+                       COALESCE(s.name, '') AS subject_name,
+                       u.display_name AS student_name,
+                       u.user_login AS student_username,
+                       COALESCE(kelas_meta.meta_value, '') AS student_kelas,
+                       COALESCE(nisn_meta.meta_value, '') AS student_nisn,
+                       COALESCE(qtotal.total_points, 0) AS exam_total_points
+                FROM {$attempt_table} a
+                INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                LEFT JOIN {$subject_table} s ON s.id = e.subject_id
+                INNER JOIN {$wpdb->users} u ON u.ID = a.student_id
+                LEFT JOIN (
+                    SELECT user_id, MAX(meta_value) AS meta_value
+                    FROM {$wpdb->usermeta}
+                    WHERE meta_key = 'kode_kelas'
+                    GROUP BY user_id
+                ) kelas_meta ON kelas_meta.user_id = u.ID
+                LEFT JOIN (
+                    SELECT user_id, MAX(meta_value) AS meta_value
+                    FROM {$wpdb->usermeta}
+                    WHERE meta_key = 'nisn'
+                    GROUP BY user_id
+                ) nisn_meta ON nisn_meta.user_id = u.ID
+                LEFT JOIN (
+                    SELECT exam_id, COALESCE(SUM(points), 0) AS total_points
+                    FROM {$question_table}
+                    WHERE COALESCE(is_active, 1) = 1
+                    GROUP BY exam_id
+                ) qtotal ON qtotal.exam_id = a.exam_id
+                {$where_sql}
+                ORDER BY COALESCE(kelas_meta.meta_value, '') ASC, u.display_name ASC, a.id DESC";
+
+        if (!empty($params)) {
+            $sql = $wpdb->prepare($sql, $params);
+        }
+
+        $rows = $wpdb->get_results($sql, ARRAY_A);
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        foreach ($rows as &$row) {
+            $score = max(0.0, (float) ($row['score'] ?? 0.0));
+            $max_score = max(0.0, (float) ($row['max_score'] ?? 0.0));
+            if ($max_score <= 0) {
+                $max_score = max(0.0, (float) ($row['exam_total_points'] ?? 0.0));
+            }
+            $kkm_percentage = self::normalize_kkm_percentage((float) ($row['kkm_percentage'] ?? 75.0));
+            $percentage = $max_score > 0 ? round(($score / $max_score) * 100, 2) : 0.0;
+            $passing_score = self::calculate_passing_score($max_score, $kkm_percentage);
+            $is_passed = $max_score > 0 ? ($score + 0.0001 >= $passing_score) : ($kkm_percentage <= 0.0);
+
+            $student_name = trim((string) ($row['student_name'] ?? ''));
+            if ($student_name === '') {
+                $student_name = (string) ($row['student_username'] ?? '-');
+            }
+
+            $row['score'] = $score;
+            $row['max_score'] = $max_score;
+            $row['kkm_percentage'] = $kkm_percentage;
+            $row['percentage'] = $percentage;
+            $row['passing_score'] = $passing_score;
+            $row['is_passed'] = $is_passed ? 1 : 0;
+            $row['pass_label'] = $is_passed ? 'Lulus' : 'Tidak Lulus';
+            $row['student_name'] = $student_name;
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
+     * @return array{total:int,by_exam:array<int,int>,by_class:array<string,int>,by_exam_class:array<int,array<string,int>>}
+     */
+    private static function get_manual_review_counts(
+        int $selected_subject_id,
+        int $selected_exam_id,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id
+    ): array {
+        global $wpdb;
+
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+
+        $where_parts = ["att.status = 'completed'", "q.question_type = 'essay'", "TRIM(COALESCE(ans.answer_text, '')) <> ''"];
+        $params = [];
+        if (!$is_admin_scope) {
+            $where_parts[] = 'e.created_by = %d';
+            $params[] = $current_user_id;
+        }
+        if ($selected_subject_id > 0) {
+            $where_parts[] = 'e.subject_id = %d';
+            $params[] = $selected_subject_id;
+        }
+        if ($selected_exam_id > 0) {
+            $where_parts[] = 'att.exam_id = %d';
+            $params[] = $selected_exam_id;
+        }
+        if ($selected_kelas !== '') {
+            $where_parts[] = 'kelas_meta.meta_value = %s';
+            $params[] = $selected_kelas;
+        }
+
+        $where_sql = ' WHERE ' . implode(' AND ', $where_parts);
+        $sql = "SELECT att.exam_id,
+                       COALESCE(kelas_meta.meta_value, '') AS student_kelas,
+                       COUNT(*) AS manual_count
+                FROM {$answer_table} ans
+                INNER JOIN {$question_table} q ON q.id = ans.question_id
+                INNER JOIN {$attempt_table} att ON att.id = ans.attempt_id
+                INNER JOIN {$exam_table} e ON e.id = att.exam_id
+                INNER JOIN {$wpdb->users} u ON u.ID = att.student_id
+                LEFT JOIN (
+                    SELECT user_id, MAX(meta_value) AS meta_value
+                    FROM {$wpdb->usermeta}
+                    WHERE meta_key = 'kode_kelas'
+                    GROUP BY user_id
+                ) kelas_meta ON kelas_meta.user_id = u.ID
+                {$where_sql}
+                GROUP BY att.exam_id, student_kelas";
+        if (!empty($params)) {
+            $sql = $wpdb->prepare($sql, $params);
+        }
+
+        $rows = $wpdb->get_results($sql, ARRAY_A);
+        $result = [
+            'total' => 0,
+            'by_exam' => [],
+            'by_class' => [],
+            'by_exam_class' => [],
+        ];
+        if (!is_array($rows)) {
+            return $result;
+        }
+
+        foreach ($rows as $row) {
+            $exam_id = (int) ($row['exam_id'] ?? 0);
+            $kelas = (string) (($row['student_kelas'] ?? '') !== '' ? $row['student_kelas'] : '-');
+            $count = (int) ($row['manual_count'] ?? 0);
+            if ($count <= 0) {
+                continue;
+            }
+
+            $result['total'] += $count;
+            if (!isset($result['by_exam'][$exam_id])) {
+                $result['by_exam'][$exam_id] = 0;
+            }
+            if (!isset($result['by_class'][$kelas])) {
+                $result['by_class'][$kelas] = 0;
+            }
+            if (!isset($result['by_exam_class'][$exam_id])) {
+                $result['by_exam_class'][$exam_id] = [];
+            }
+            if (!isset($result['by_exam_class'][$exam_id][$kelas])) {
+                $result['by_exam_class'][$exam_id][$kelas] = 0;
+            }
+
+            $result['by_exam'][$exam_id] += $count;
+            $result['by_class'][$kelas] += $count;
+            $result['by_exam_class'][$exam_id][$kelas] += $count;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_exam_question_metadata(int $exam_id): array
+    {
+        global $wpdb;
+
+        if ($exam_id <= 0) {
+            return [];
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $option_table = $wpdb->prefix . 'cbt_options';
+        $question_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, question_text, question_type, points, correct_text, explanation, COALESCE(is_active, 1) AS is_active
+                 FROM {$question_table}
+                 WHERE exam_id = %d
+                 ORDER BY id ASC",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+        if (!is_array($question_rows)) {
+            return [];
+        }
+
+        $question_ids = array_values(array_filter(array_map('intval', array_column($question_rows, 'id')), static function ($question_id): bool {
+            return $question_id > 0;
+        }));
+        $options_by_question = [];
+        if (!empty($question_ids)) {
+            $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+            $option_rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT id, question_id, option_key, option_text, is_correct
+                     FROM {$option_table}
+                     WHERE question_id IN ({$placeholders})
+                     ORDER BY question_id ASC, id ASC",
+                    ...$question_ids
+                ),
+                ARRAY_A
+            );
+
+            foreach ((array) $option_rows as $option_row) {
+                $question_id = (int) ($option_row['question_id'] ?? 0);
+                if ($question_id <= 0) {
+                    continue;
+                }
+
+                if (!isset($options_by_question[$question_id])) {
+                    $options_by_question[$question_id] = [];
+                }
+
+                $options_by_question[$question_id][] = [
+                    'id' => (int) ($option_row['id'] ?? 0),
+                    'option_key' => (string) ($option_row['option_key'] ?? ''),
+                    'option_text' => (string) ($option_row['option_text'] ?? ''),
+                    'is_correct' => (int) ($option_row['is_correct'] ?? 0),
+                ];
+            }
+        }
+
+        $metadata = [];
+        foreach ($question_rows as $index => $question_row) {
+            $question = (array) $question_row;
+            $question_id = (int) ($question['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+
+            $question_type = (string) ($question['question_type'] ?? '');
+            $options = (array) ($options_by_question[$question_id] ?? []);
+            $detail = CBT_Admin_Questions_Helper::get_question_type_detail($question_id, $question_type);
+            $matrix_items = $question_type === 'true_false_matrix'
+                ? CBT_Admin_Questions_Helper::normalize_true_false_matrix_config((string) ($question['correct_text'] ?? ''))
+                : [];
+            if ($question_type === 'true_false_matrix') {
+                $detail['matrix_items'] = $matrix_items;
+            }
+            $short_answer_correct_answers = $question_type === 'short_answer'
+                ? array_values(array_filter(array_map('strval', (array) ($detail['correct_answers'] ?? CBT_Admin_Questions_Helper::normalize_short_answer_values((string) ($question['correct_text'] ?? ''))))))
+                : [];
+            if ($question_type === 'short_answer') {
+                $detail['correct_answers'] = $short_answer_correct_answers;
+            }
+
+            $effective_max_score = max(0.0, (float) ($question['points'] ?? 0.0));
+            $is_partial_credit = false;
+            if ($question_type === 'short_answer' && count($short_answer_correct_answers) > 1) {
+                $effective_max_score = max(0.0, (float) ($question['points'] ?? 0.0)) * count($short_answer_correct_answers);
+                $is_partial_credit = true;
+            } elseif ($question_type === 'true_false_matrix') {
+                $is_partial_credit = true;
+            }
+
+            $metadata[$question_id] = [
+                'question_id' => $question_id,
+                'question_number' => $index + 1,
+                'question_text' => (string) ($question['question_text'] ?? ''),
+                'question_preview' => self::build_question_preview((string) ($question['question_text'] ?? '')),
+                'question_type' => $question_type,
+                'question_type_label' => self::format_question_type_label($question_type),
+                'points' => max(0.0, (float) ($question['points'] ?? 0.0)),
+                'effective_max_score' => $effective_max_score,
+                'is_archived' => ((int) ($question['is_active'] ?? 1) === 1) ? 0 : 1,
+                'is_objective' => $question_type !== 'essay' ? 1 : 0,
+                'is_partial_credit' => $is_partial_credit ? 1 : 0,
+                'options' => $options,
+                'detail' => $detail,
+                'correct_answer_summary' => self::build_correct_answer_summary($question, $options),
+            ];
+        }
+
+        return $metadata;
+    }
+
+    /**
+     * @return array{total_questions:int,total_points:float,archived_question_count:int}
+     */
+    private static function get_exam_question_stats(int $exam_id): array
+    {
+        global $wpdb;
+
+        if ($exam_id <= 0) {
+            return [
+                'total_questions' => 0,
+                'total_points' => 0.0,
+                'archived_question_count' => 0,
+            ];
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT COUNT(CASE WHEN COALESCE(is_active, 1) = 1 THEN 1 END) AS total_questions,
+                        COALESCE(SUM(CASE WHEN COALESCE(is_active, 1) = 1 THEN points ELSE 0 END), 0) AS total_points,
+                        COUNT(CASE WHEN COALESCE(is_active, 1) <> 1 THEN 1 END) AS archived_question_count
+                 FROM {$question_table}
+                 WHERE exam_id = %d",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+
+        return [
+            'total_questions' => (int) ($row['total_questions'] ?? 0),
+            'total_points' => round((float) ($row['total_points'] ?? 0.0), 2),
+            'archived_question_count' => (int) ($row['archived_question_count'] ?? 0),
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<string,mixed>
+     */
+    private static function build_summary_metrics(array $rows, int $manual_review_count): array
+    {
+        $completed_attempts = count($rows);
+        $percentage_total = 0.0;
+        $pass_count = 0;
+        foreach ($rows as $row) {
+            $percentage_total += (float) ($row['percentage'] ?? 0.0);
+            $pass_count += (int) ($row['is_passed'] ?? 0);
+        }
+
+        $average_percentage = $completed_attempts > 0 ? round($percentage_total / $completed_attempts, 2) : 0.0;
+        $pass_rate = $completed_attempts > 0 ? round(($pass_count / $completed_attempts) * 100, 2) : 0.0;
+
+        return [
+            'completed_attempts' => $completed_attempts,
+            'average_percentage' => $average_percentage,
+            'average_percentage_display' => self::format_percent($average_percentage),
+            'pass_rate' => $pass_rate,
+            'pass_rate_display' => self::format_percent($pass_rate),
+            'manual_review_count' => max(0, $manual_review_count),
+        ];
+    }
+
+    /**
+     * @param array<int,float> $percentages
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_distribution_buckets(array $percentages): array
+    {
+        $total = count($percentages);
+        $buckets = [];
+        foreach (self::DISTRIBUTION_BUCKETS as $bucket) {
+            $count = 0;
+            foreach ($percentages as $percentage) {
+                $percentage = max(0.0, min(100.0, (float) $percentage));
+                if ($percentage >= (float) $bucket['min'] && $percentage <= (float) $bucket['max']) {
+                    $count++;
+                }
+            }
+
+            $buckets[] = [
+                'label' => (string) ($bucket['label'] ?? ''),
+                'count' => $count,
+                'bar_width' => $total > 0 ? round(($count / $total) * 100, 2) : 0.0,
+            ];
+        }
+
+        return $buckets;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @param array<string,int> $manualByClass
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_exam_kelas_summary(array $rows, array $manualByClass): array
+    {
+        $groups = [];
+        foreach ($rows as $row) {
+            $kelas = (string) (($row['student_kelas'] ?? '') !== '' ? $row['student_kelas'] : '-');
+            if (!isset($groups[$kelas])) {
+                $groups[$kelas] = [
+                    'kelas' => $kelas,
+                    'completed_attempts' => 0,
+                    'pass_count' => 0,
+                    'percentage_total' => 0.0,
+                    'manual_review_count' => (int) ($manualByClass[$kelas] ?? 0),
+                ];
+            }
+
+            $groups[$kelas]['completed_attempts']++;
+            $groups[$kelas]['pass_count'] += (int) ($row['is_passed'] ?? 0);
+            $groups[$kelas]['percentage_total'] += (float) ($row['percentage'] ?? 0.0);
+        }
+
+        $result = [];
+        foreach ($groups as $group) {
+            $completed_attempts = max(0, (int) ($group['completed_attempts'] ?? 0));
+            $average_percentage = $completed_attempts > 0
+                ? round(((float) ($group['percentage_total'] ?? 0.0)) / $completed_attempts, 2)
+                : 0.0;
+            $pass_rate = $completed_attempts > 0
+                ? round((((int) ($group['pass_count'] ?? 0)) / $completed_attempts) * 100, 2)
+                : 0.0;
+            $result[] = [
+                'kelas' => (string) ($group['kelas'] ?? '-'),
+                'completed_attempts' => $completed_attempts,
+                'average_percentage_display' => self::format_percent($average_percentage),
+                'pass_rate_display' => self::format_percent($pass_rate),
+                'manual_review_count' => (int) ($group['manual_review_count'] ?? 0),
+            ];
+        }
+
+        usort($result, static function (array $left, array $right): int {
+            return strnatcasecmp((string) ($left['kelas'] ?? ''), (string) ($right['kelas'] ?? ''));
+        });
+
+        return $result;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $progress_items
+     * @return array<string,int>
+     */
+    private static function summarize_progress_items(array $progress_items): array
+    {
+        $summary = [
+            'total_questions' => count($progress_items),
+            'answered_questions' => 0,
+            'correct_questions' => 0,
+            'wrong_questions' => 0,
+            'manual_questions' => 0,
+            'unanswered_questions' => 0,
+        ];
+
+        foreach ($progress_items as $progress_item_row) {
+            $progress_item = (array) $progress_item_row;
+            $status = (string) ($progress_item['status'] ?? 'unanswered');
+            if ($status !== 'unanswered') {
+                $summary['answered_questions']++;
+            }
+
+            if ($status === 'correct') {
+                $summary['correct_questions']++;
+            } elseif ($status === 'wrong') {
+                $summary['wrong_questions']++;
+            } elseif ($status === 'manual') {
+                $summary['manual_questions']++;
+            } else {
+                $summary['unanswered_questions']++;
+            }
+        }
+
+        return $summary;
+    }
+
+    /**
+     * @param array<string,mixed> $question
+     * @param array<int,array<string,mixed>> $options
+     */
+    private static function build_correct_answer_summary(array $question, array $options): string
+    {
+        $question_type = (string) ($question['question_type'] ?? '');
+        $question_id = (int) ($question['id'] ?? 0);
+        $detail = CBT_Admin_Questions_Helper::get_question_type_detail($question_id, $question_type);
+
+        if (in_array($question_type, ['multiple_choice', 'multiple_answer'], true)) {
+            $labels = [];
+            foreach ($options as $option_row) {
+                $option = (array) $option_row;
+                if ((int) ($option['is_correct'] ?? 0) !== 1) {
+                    continue;
+                }
+
+                $labels[] = self::format_option_label((string) ($option['option_key'] ?? ''), (string) ($option['option_text'] ?? ''));
+            }
+
+            return !empty($labels) ? implode(', ', $labels) : '-';
+        }
+
+        if ($question_type === 'true_false') {
+            foreach ($options as $option_row) {
+                $option = (array) $option_row;
+                if ((int) ($option['is_correct'] ?? 0) === 1) {
+                    return self::format_option_label((string) ($option['option_key'] ?? ''), (string) ($option['option_text'] ?? ''));
+                }
+            }
+
+            $correctValue = isset($detail['correct_value']) ? (int) $detail['correct_value'] : 1;
+            return $correctValue === 1 ? 'Benar' : 'Salah';
+        }
+
+        if ($question_type === 'short_answer') {
+            $answers = [];
+            if (!empty($detail['correct_answers']) && is_array($detail['correct_answers'])) {
+                $answers = array_values(array_filter(array_map('strval', $detail['correct_answers'])));
+            } else {
+                $answers = CBT_Admin_Questions_Helper::normalize_short_answer_values((string) ($question['correct_text'] ?? ''));
+            }
+
+            return !empty($answers) ? implode(' | ', $answers) : '-';
+        }
+
+        if ($question_type === 'true_false_matrix') {
+            $items = CBT_Admin_Questions_Helper::normalize_true_false_matrix_config((string) ($question['correct_text'] ?? ''));
+            if (empty($items)) {
+                return '-';
+            }
+
+            $parts = [];
+            foreach ($items as $index => $item_row) {
+                $item = (array) $item_row;
+                $parts[] = sprintf(
+                    '%d. %s',
+                    $index + 1,
+                    ((string) ($item['answer'] ?? 'true') === 'false') ? 'Salah' : 'Benar'
+                );
+                if (count($parts) >= 4) {
+                    break;
+                }
+            }
+
+            return !empty($parts) ? implode(' | ', $parts) : '-';
+        }
+
+        if ($question_type === 'essay') {
+            $rubric = trim((string) ($detail['rubric_text'] ?? ''));
+            if ($rubric === '') {
+                return 'Dinilai manual';
+            }
+
+            return wp_trim_words(wp_strip_all_tags($rubric), 18, '...');
+        }
+
+        return '-';
+    }
+
+    /**
+     * @return array{label:string,tone:string}
+     */
+    private static function build_difficulty_meta(string $question_type, float $correct_rate, int $manual_count): array
+    {
+        if ($question_type === 'essay' || $manual_count > 0) {
+            return [
+                'label' => 'Pending Manual Review',
+                'tone' => 'manual',
+            ];
+        }
+
+        if ($correct_rate >= 80.0) {
+            return [
+                'label' => 'Mudah',
+                'tone' => 'easy',
+            ];
+        }
+
+        if ($correct_rate >= 40.0) {
+            return [
+                'label' => 'Sedang',
+                'tone' => 'medium',
+            ];
+        }
+
+        return [
+            'label' => 'Sulit',
+            'tone' => 'hard',
+        ];
+    }
+
+    private static function calculate_median(array $values): float
+    {
+        $values = array_values(array_filter(array_map('floatval', $values), static function (float $value): bool {
+            return is_finite($value);
+        }));
+        if (empty($values)) {
+            return 0.0;
+        }
+
+        sort($values);
+        $count = count($values);
+        $middle = (int) floor($count / 2);
+        if ($count % 2 === 1) {
+            return round((float) $values[$middle], 2);
+        }
+
+        return round((((float) $values[$middle - 1]) + ((float) $values[$middle])) / 2, 2);
+    }
+
+    private static function calculate_passing_score(float $maxScore, float $kkmPercentage): float
+    {
+        if (!is_finite($maxScore) || $maxScore <= 0) {
+            return 0.0;
+        }
+
+        return round(max(0.0, $maxScore) * (self::normalize_kkm_percentage($kkmPercentage) / 100), 2);
+    }
+
+    private static function normalize_kkm_percentage(float $value): float
+    {
+        if (!is_finite($value)) {
+            return 75.0;
+        }
+
+        return round(min(100.0, max(0.0, $value)), 2);
+    }
+
+    /**
+     * @param array<string,mixed> $exam
+     */
+    private static function build_exam_filter_label(array $exam): string
+    {
+        $title = trim((string) ($exam['title'] ?? ''));
+        $subject_name = trim((string) ($exam['subject_name'] ?? ''));
+        if ($subject_name === '') {
+            return $title !== '' ? $title : 'Exam';
+        }
+
+        return ($title !== '' ? $title : 'Exam') . ' • ' . $subject_name;
+    }
+
+    private static function build_question_preview(string $rawQuestionText): string
+    {
+        $plain = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags($rawQuestionText)) ?? '');
+        if ($plain === '') {
+            return '(Tanpa teks soal)';
+        }
+
+        return (string) wp_trim_words($plain, 16, '...');
+    }
+
+    private static function format_question_type_label(string $questionType): string
+    {
+        switch ($questionType) {
+            case 'multiple_choice':
+                return 'Multiple Choice';
+            case 'multiple_answer':
+                return 'Multiple Answer';
+            case 'true_false':
+                return 'True / False';
+            case 'true_false_matrix':
+                return 'TF Matrix';
+            case 'short_answer':
+                return 'Short Answer';
+            case 'essay':
+                return 'Essay';
+            default:
+                return ucwords(str_replace('_', ' ', $questionType));
+        }
+    }
+
+    private static function format_group_band_label(string $band): string
+    {
+        switch ($band) {
+            case 'upper':
+                return 'Upper';
+            case 'lower':
+                return 'Lower';
+            default:
+                return 'Middle';
+        }
+    }
+
+    private static function format_option_label(string $optionKey, string $optionText): string
+    {
+        $key = strtoupper(trim($optionKey));
+        $text = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags($optionText)) ?? '');
+        $text = $text !== '' ? (string) wp_trim_words($text, 8, '...') : '';
+
+        if ($key !== '' && $text !== '') {
+            return $key . ' - ' . $text;
+        }
+        if ($key !== '') {
+            return $key;
+        }
+        if ($text !== '') {
+            return $text;
+        }
+
+        return '-';
+    }
+
+    private static function format_percent(float $value): string
+    {
+        return number_format_i18n($value, 2) . '%';
+    }
+
+    private static function format_number(float $value): string
+    {
+        return number_format_i18n($value, 2);
+    }
+
+    private static function format_duration(int $durationSeconds): string
+    {
+        $durationSeconds = max(0, $durationSeconds);
+        if ($durationSeconds <= 0) {
+            return '-';
+        }
+
+        $hours = (int) floor($durationSeconds / HOUR_IN_SECONDS);
+        $minutes = (int) floor(($durationSeconds % HOUR_IN_SECONDS) / MINUTE_IN_SECONDS);
+        $seconds = (int) ($durationSeconds % MINUTE_IN_SECONDS);
+
+        if ($hours > 0) {
+            return sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
+        }
+
+        return sprintf('%02d:%02d', $minutes, $seconds);
+    }
+
+    private static function format_datetime(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '' || $value === '0000-00-00 00:00:00') {
+            return '-';
+        }
+
+        $timestamp = strtotime($value);
+        if ($timestamp === false) {
+            return $value;
+        }
+
+        return wp_date('d M Y H:i', $timestamp, wp_timezone());
+    }
+}
