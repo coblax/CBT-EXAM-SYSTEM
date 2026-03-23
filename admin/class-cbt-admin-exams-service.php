@@ -684,7 +684,7 @@ final class CBT_Admin_Exams_Service
         $builder_question_source = isset($query['cbt_exam_question_source']) ? absint(wp_unslash((string) $query['cbt_exam_question_source'])) : 0;
         $builder_question_per_page = isset($query['cbt_exam_question_per_page'])
             ? self::normalize_exam_builder_question_per_page(absint(wp_unslash((string) $query['cbt_exam_question_per_page'])))
-            : 150;
+            : 50;
         $builder_question_current_page = isset($query['cbt_exam_question_paged'])
             ? max(1, absint(wp_unslash((string) $query['cbt_exam_question_paged'])))
             : 1;
@@ -706,7 +706,7 @@ final class CBT_Admin_Exams_Service
             || $builder_question_search !== ''
             || $builder_question_type !== ''
             || $builder_question_source > 0
-            || $builder_question_per_page !== 150
+            || $builder_question_per_page !== 50
             || ($error !== '' && preg_match('/soal/i', $error))
         );
 
@@ -1114,7 +1114,7 @@ final class CBT_Admin_Exams_Service
             || $builder_question_search !== ''
             || $builder_question_type !== ''
             || $builder_question_source > 0
-            || $builder_question_per_page !== 150;
+            || $builder_question_per_page !== 50;
         $active_exam_page_panel = $requested_exam_page_panel === 'list'
             ? 'cbt-exam-list-panel'
             : 'cbt-exam-builder-panel';
@@ -1796,7 +1796,7 @@ final class CBT_Admin_Exams_Service
             return $requested;
         }
 
-        return 150;
+        return 50;
     }
 
     /**
@@ -2886,6 +2886,8 @@ final class CBT_Admin_Exams_Service
         $kkm_percentage = round((float) $kkm_raw, 2);
         $randomize = isset($request['randomize_questions']) ? 1 : 0;
         $randomize_options = isset($request['randomize_options']) ? 1 : 0;
+        $show_student_result = isset($request['show_student_result']) ? 1 : 0;
+        $enable_calculator = isset($request['enable_calculator']) ? 1 : 0;
         $status = isset($request['status']) ? sanitize_text_field(wp_unslash((string) $request['status'])) : 'draft';
         $allowed_statuses = ['draft', 'published', 'closed'];
         if (!in_array($status, $allowed_statuses, true)) {
@@ -2925,6 +2927,8 @@ final class CBT_Admin_Exams_Service
             'kkm_percentage' => $kkm_percentage,
             'randomize' => $randomize,
             'randomize_options' => $randomize_options,
+            'show_student_result' => $show_student_result,
+            'enable_calculator' => $enable_calculator,
             'status' => $status,
             'starts_at' => $starts_at,
             'ends_at' => $ends_at,
@@ -2963,6 +2967,8 @@ final class CBT_Admin_Exams_Service
             'total_questions' => $existing_question_count,
             'randomize_questions' => (int) ($payload['randomize'] ?? 0),
             'randomize_options' => (int) ($payload['randomize_options'] ?? 0),
+            'show_student_result' => (int) ($payload['show_student_result'] ?? 1),
+            'enable_calculator' => (int) ($payload['enable_calculator'] ?? 1),
             'status' => (string) ($payload['status'] ?? 'draft'),
             'starts_at' => $payload['starts_at'] ?? null,
             'ends_at' => $payload['ends_at'] ?? null,
@@ -2997,7 +3003,7 @@ final class CBT_Admin_Exams_Service
                 $table,
                 $data,
                 ['id' => $id],
-                ['%d', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s'],
+                ['%d', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s'],
                 ['%d']
             );
             if ($updated === false) {
@@ -3010,7 +3016,7 @@ final class CBT_Admin_Exams_Service
             $inserted = $wpdb->insert(
                 $table,
                 $data,
-                ['%d', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s']
+                ['%d', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s']
             );
             if (!$inserted) {
                 return new WP_Error('insert_failed', 'Gagal membuat exam.');

@@ -109,6 +109,7 @@ export function createInitialState(win) {
         windowOffset: 0,
         windowLimit: 0,
         totalQuestions: 0,
+        questionOrderSignature: '',
         questionRevision: null,
         questionRevisionRefreshing: false,
         questionRegionRefreshing: false,

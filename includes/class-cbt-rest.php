@@ -240,7 +240,10 @@ class CBT_REST
 
         $question_revision = null;
         $question_count = 0;
+        $question_order_signature = '';
         $attempt_timer = null;
+        $show_student_result = null;
+        $enable_calculator = null;
         if ($attempt_id > 0) {
             $attempt = self::get_attempt_for_question_revision($attempt_id, $user_id, $role);
             if (is_wp_error($attempt)) {
@@ -257,13 +260,13 @@ class CBT_REST
                         (int) ($attempt['exam_duration_minutes'] ?? 0)
                     )
                     : null;
-                $attempt_question_order_ids = self::normalize_question_order_ids((string) ($attempt['question_order'] ?? ''));
+                $attempt_question_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
                 if ($attempt_status === 'in_progress') {
                     $attempt_table = $wpdb->prefix . 'cbt_attempts';
                     $exam_table = $wpdb->prefix . 'cbt_exams';
                     $exam = $wpdb->get_row(
                         $wpdb->prepare(
-                            "SELECT id, duration_minutes, randomize_questions, randomize_options, status, starts_at, ends_at, target_kelas
+                            "SELECT id, duration_minutes, randomize_questions, randomize_options, show_student_result, enable_calculator, status, starts_at, ends_at, target_kelas
                              FROM {$exam_table}
                              WHERE id = %d",
                             $exam_id
@@ -272,34 +275,15 @@ class CBT_REST
                     );
 
                     if (is_array($exam)) {
-                        $questions = self::get_cached_exam_question_payload($exam_id);
-                        $questions = self::append_missing_attempt_questions(
-                            $questions,
-                            $exam_id,
-                            (string) ($attempt['question_order'] ?? '')
-                        );
-                        $resolved_attempt_payload = self::resolve_attempt_question_payload(
-                            $questions,
+                        $show_student_result = self::normalize_show_student_result($exam['show_student_result'] ?? 1);
+                        $enable_calculator = self::normalize_enable_calculator($exam['enable_calculator'] ?? 1);
+                        $attempt_sync_meta = self::build_attempt_question_sync_meta(
                             $attempt,
                             $exam,
                             $attempt_table
                         );
-                        $resolved_question_order_ids = isset($resolved_attempt_payload['question_order_ids']) && is_array($resolved_attempt_payload['question_order_ids'])
-                            ? array_values(array_filter(array_map('intval', $resolved_attempt_payload['question_order_ids']), static function ($question_id): bool {
-                                return $question_id > 0;
-                            }))
-                            : [];
-
-                        if (!empty($resolved_question_order_ids)) {
-                            $question_count = count($resolved_question_order_ids);
-                        } elseif (!empty($attempt_question_order_ids)) {
-                            $question_count = count($attempt_question_order_ids);
-                        } else {
-                            $resolved_questions = isset($resolved_attempt_payload['questions']) && is_array($resolved_attempt_payload['questions'])
-                                ? $resolved_attempt_payload['questions']
-                                : [];
-                            $question_count = count($resolved_questions);
-                        }
+                        $question_count = (int) ($attempt_sync_meta['question_count'] ?? 0);
+                        $question_order_signature = (string) ($attempt_sync_meta['question_order_signature'] ?? '');
                     } elseif (!empty($attempt_question_order_ids)) {
                         $question_count = count($attempt_question_order_ids);
                     } else {
@@ -337,7 +321,10 @@ class CBT_REST
             'role' => $role,
             'question_revision' => $question_revision,
             'question_count' => $question_count,
+            'question_order_signature' => $question_order_signature,
             'attempt_timer' => $attempt_timer,
+            'show_student_result' => $show_student_result,
+            'enable_calculator' => $enable_calculator,
         ]);
     }
 
@@ -431,6 +418,7 @@ class CBT_REST
         $question_revision = CBT_Cache::get_exam_revision_meta($exam_id);
 
         $question_order_ids = [];
+        $question_order_signature = '';
         $attempt = null;
 
         if ($attempt_id > 0) {
@@ -480,22 +468,11 @@ class CBT_REST
         $window_mode = ($attempt_id > 0 && $limit > 0);
 
         if (is_array($attempt)) {
-            $persisted_attempt_order_ids = self::normalize_question_order_ids($attempt['question_order'] ?? '');
-            $runtime_attempt_order_ids = [];
-            if (CBT_Runtime::is_ready()) {
-                $runtime_attempt_order_ids = CBT_Runtime::get_attempt_question_order((int) ($attempt['id'] ?? 0), $runtime_attempt_order_found);
-                if (!$runtime_attempt_order_found) {
-                    $runtime_attempt_order_ids = [];
-                }
-            }
-            $merged_attempt_order_ids = self::merge_attempt_question_order_ids(
-                $persisted_attempt_order_ids,
-                $runtime_attempt_order_ids
-            );
-            if (!empty($merged_attempt_order_ids)) {
-                $merged_attempt_order_json = wp_json_encode($merged_attempt_order_ids);
-                if (is_string($merged_attempt_order_json)) {
-                    $attempt['question_order'] = $merged_attempt_order_json;
+            $attempt_snapshot_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
+            if (!empty($attempt_snapshot_order_ids)) {
+                $attempt_snapshot_order_json = wp_json_encode($attempt_snapshot_order_ids);
+                if (is_string($attempt_snapshot_order_json)) {
+                    $attempt['question_order'] = $attempt_snapshot_order_json;
                 }
             }
 
@@ -512,6 +489,7 @@ class CBT_REST
             );
             $questions = $resolved_attempt_payload['questions'];
             $question_order_ids = $resolved_attempt_payload['question_order_ids'];
+            $question_order_signature = (string) ($resolved_attempt_payload['question_order_signature'] ?? '');
             $attempt = $resolved_attempt_payload['attempt'];
         } else {
             $questions = self::shuffle_question_payload_if_needed($questions, (int) ($exam['randomize_questions'] ?? 0) === 1);
@@ -585,6 +563,7 @@ class CBT_REST
                 'existing_answers_map' => $existing_answers_map,
                 'archived_review_items' => $archived_review_items,
                 'question_revision' => $question_revision,
+                'question_order_signature' => $question_order_signature,
             ]);
         }
 
@@ -620,8 +599,63 @@ class CBT_REST
         }
 
         $response['question_revision'] = $question_revision;
+        $response['question_order_signature'] = $question_order_signature;
 
         return rest_ensure_response($response);
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $exam
+     * @return array{question_count:int,question_order_signature:string,attempt:array<string,mixed>}
+     */
+    private static function build_attempt_question_sync_meta(array $attempt, array $exam, string $attempt_table): array
+    {
+        $exam_id = (int) ($exam['id'] ?? 0);
+        if ($exam_id <= 0) {
+            return [
+                'question_count' => 0,
+                'question_order_signature' => '',
+                'attempt' => $attempt,
+            ];
+        }
+
+        $attempt_snapshot_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
+        if (!empty($attempt_snapshot_order_ids)) {
+            $attempt_snapshot_order_json = wp_json_encode($attempt_snapshot_order_ids);
+            if (is_string($attempt_snapshot_order_json)) {
+                $attempt['question_order'] = $attempt_snapshot_order_json;
+            }
+        }
+
+        $questions = self::get_cached_exam_question_payload($exam_id);
+        $questions = self::append_missing_attempt_questions(
+            $questions,
+            $exam_id,
+            (string) ($attempt['question_order'] ?? '')
+        );
+        $resolved_attempt_payload = self::resolve_attempt_question_payload(
+            $questions,
+            $attempt,
+            $exam,
+            $attempt_table
+        );
+        $resolved_question_order_ids = isset($resolved_attempt_payload['question_order_ids']) && is_array($resolved_attempt_payload['question_order_ids'])
+            ? array_values(array_filter(array_map('intval', $resolved_attempt_payload['question_order_ids']), static function ($question_id): bool {
+                return $question_id > 0;
+            }))
+            : [];
+        $resolved_questions = isset($resolved_attempt_payload['questions']) && is_array($resolved_attempt_payload['questions'])
+            ? $resolved_attempt_payload['questions']
+            : [];
+
+        return [
+            'question_count' => !empty($resolved_question_order_ids) ? count($resolved_question_order_ids) : count($resolved_questions),
+            'question_order_signature' => (string) ($resolved_attempt_payload['question_order_signature'] ?? ''),
+            'attempt' => isset($resolved_attempt_payload['attempt']) && is_array($resolved_attempt_payload['attempt'])
+                ? $resolved_attempt_payload['attempt']
+                : $attempt,
+        ];
     }
 
     public static function start_attempt(WP_REST_Request $request)
@@ -747,6 +781,16 @@ class CBT_REST
                     'started_at' => (string) ($latest_attempt['started_at'] ?? ''),
                     'extra_time_minutes' => (int) ($latest_attempt['extra_time_minutes'] ?? 0),
                 ], (int) ($exam['duration_minutes'] ?? 0));
+                $attempt_sync_meta = self::build_attempt_question_sync_meta([
+                    'id' => (int) ($latest_attempt['id'] ?? 0),
+                    'exam_id' => $exam_id,
+                    'student_id' => $user_id,
+                    'status' => (string) ($latest_attempt['status'] ?? 'in_progress'),
+                    'started_at' => (string) ($latest_attempt['started_at'] ?? ''),
+                    'question_order' => (string) ($latest_attempt['question_order'] ?? ''),
+                    'option_order' => (string) ($latest_attempt['option_order'] ?? ''),
+                    'extra_time_minutes' => (int) ($latest_attempt['extra_time_minutes'] ?? 0),
+                ], $exam, $attempt_table);
 
                 return rest_ensure_response([
                     'attempt_id' => (int) $latest_attempt['id'],
@@ -757,6 +801,7 @@ class CBT_REST
                     'remaining_seconds' => (int) ($attempt_timer['remaining_seconds'] ?? max(0, $resolved_duration_minutes * MINUTE_IN_SECONDS)),
                     'server_now' => (string) ($attempt_timer['server_now'] ?? current_time('mysql')),
                     'question_revision' => CBT_Cache::get_exam_revision_meta($exam_id),
+                    'question_order_signature' => (string) ($attempt_sync_meta['question_order_signature'] ?? ''),
                 ]);
             }
 
@@ -847,6 +892,10 @@ class CBT_REST
                 'started_at' => $now,
                 'extra_time_minutes' => 0,
             ], (int) ($exam['duration_minutes'] ?? 0));
+            $question_order_signature = self::build_attempt_question_order_signature(
+                $question_ids,
+                self::build_attempt_question_number_map($question_ids, $question_ids)
+            );
 
             return rest_ensure_response([
                 'attempt_id' => $created_attempt_id,
@@ -857,6 +906,7 @@ class CBT_REST
                 'remaining_seconds' => (int) ($attempt_timer['remaining_seconds'] ?? max(0, ((int) $exam['duration_minutes']) * MINUTE_IN_SECONDS)),
                 'server_now' => (string) ($attempt_timer['server_now'] ?? current_time('mysql')),
                 'question_revision' => CBT_Cache::get_exam_revision_meta($exam_id),
+                'question_order_signature' => $question_order_signature,
             ]);
         } finally {
             CBT_Cache::release_lock($lock_key);
@@ -1556,6 +1606,14 @@ class CBT_REST
             $result_payload = self::build_result_payload($attempt);
         }
 
+        if (
+            is_array($result_payload)
+            && ($role === 'siswa' || $role === 'student')
+            && self::normalize_show_student_result($result_payload['show_student_result'] ?? 1) !== 1
+        ) {
+            $result_payload = self::build_restricted_student_result_payload($result_payload);
+        }
+
         return rest_ensure_response(is_array($result_payload) ? $result_payload : []);
     }
 
@@ -1683,6 +1741,8 @@ class CBT_REST
                     e.kkm_percentage,
                     e.total_questions,
                     e.randomize_questions,
+                    e.show_student_result,
+                    e.enable_calculator,
                     e.status,
                     e.starts_at,
                     e.ends_at,
@@ -1703,10 +1763,12 @@ class CBT_REST
         }
 
         $rows = array_map(static function ($row): array {
-            $item = (array) $row;
-            $item['kkm_percentage'] = self::normalize_exam_kkm_percentage((float) ($item['kkm_percentage'] ?? 75.0));
-            return $item;
-        }, (array) $wpdb->get_results($sql, ARRAY_A));
+                $item = (array) $row;
+                $item['kkm_percentage'] = self::normalize_exam_kkm_percentage((float) ($item['kkm_percentage'] ?? 75.0));
+                $item['show_student_result'] = self::normalize_show_student_result($item['show_student_result'] ?? 1);
+                $item['enable_calculator'] = self::normalize_enable_calculator($item['enable_calculator'] ?? 1);
+                return $item;
+            }, (array) $wpdb->get_results($sql, ARRAY_A));
 
         if ($role === 'siswa' || $role === 'student') {
             $attempt_table = $wpdb->prefix . 'cbt_attempts';
@@ -1772,6 +1834,7 @@ class CBT_REST
                     ? (array) $latest_attempt_by_exam[$exam_id]
                     : null;
                 if ($latest_attempt) {
+                    $show_student_result = self::normalize_show_student_result($item['show_student_result'] ?? 1);
                     $attempt_score = (float) ($latest_attempt['score'] ?? 0);
                     $attempt_max_score = (float) ($latest_attempt['max_score'] ?? 0);
                     $attempt_percentage = $attempt_max_score > 0
@@ -1789,6 +1852,15 @@ class CBT_REST
                     $item['latest_attempt_result_tone'] = $attempt_pass_meta['result_tone'];
                     $item['latest_attempt_started_at'] = (string) ($latest_attempt['started_at'] ?? '');
                     $item['latest_attempt_finished_at'] = (string) ($latest_attempt['finished_at'] ?? '');
+                    if ($show_student_result !== 1 && (string) ($item['latest_attempt_status'] ?? '') === 'completed') {
+                        $item['latest_attempt_score'] = 0.0;
+                        $item['latest_attempt_max_score'] = 0.0;
+                        $item['latest_attempt_percentage'] = 0.0;
+                        $item['latest_attempt_passing_score'] = 0.0;
+                        $item['latest_attempt_is_passed'] = 0;
+                        $item['latest_attempt_pass_label'] = '';
+                        $item['latest_attempt_result_tone'] = '';
+                    }
                 } else {
                     $item['latest_attempt_id'] = 0;
                     $item['latest_attempt_status'] = '';
@@ -2065,119 +2137,60 @@ class CBT_REST
      * @param array<int,array<string,mixed>> $questions
      * @param array<string,mixed> $attempt
      * @param array<string,mixed> $exam
-     * @return array{questions: array<int,array<string,mixed>>, question_order_ids: array<int,int>, attempt: array<string,mixed>}
+     * @return array{questions: array<int,array<string,mixed>>, question_order_ids: array<int,int>, question_order_signature:string, attempt: array<string,mixed>}
      */
     private static function resolve_attempt_question_payload(array $questions, array $attempt, array $exam, string $attempt_table): array
     {
         global $wpdb;
 
         $attempt_id = (int) ($attempt['id'] ?? 0);
-        $should_shuffle = ((int) ($exam['randomize_questions'] ?? 0) === 1);
-        $attempt_status = (string) ($attempt['status'] ?? '');
-        $is_in_progress_attempt = ($attempt_status === 'in_progress');
         $attempt_duration_minutes = self::resolve_attempt_duration_minutes(
             $attempt,
             (int) ($exam['duration_minutes'] ?? 0)
         );
         $persisted_question_order_ids = self::normalize_question_order_ids($attempt['question_order'] ?? '');
-        $runtime_question_order_ids = [];
-        if ($attempt_id > 0 && CBT_Runtime::is_ready()) {
-            $runtime_question_order_ids = CBT_Runtime::get_attempt_question_order($attempt_id, $runtime_order_found);
-            if (!$runtime_order_found) {
-                $runtime_question_order_ids = [];
-            }
+        $question_contract = self::resolve_attempt_question_order_contract($questions, $attempt, $exam);
+        $questions = isset($question_contract['ordered_questions']) && is_array($question_contract['ordered_questions'])
+            ? $question_contract['ordered_questions']
+            : [];
+        $question_order_ids = isset($question_contract['active_question_order_ids']) && is_array($question_contract['active_question_order_ids'])
+            ? array_values(array_filter(array_map('intval', $question_contract['active_question_order_ids']), static function (int $question_id): bool {
+                return $question_id > 0;
+            }))
+            : [];
+        $canonical_question_order_ids = isset($question_contract['canonical_question_order_ids']) && is_array($question_contract['canonical_question_order_ids'])
+            ? array_values(array_filter(array_map('intval', $question_contract['canonical_question_order_ids']), static function (int $question_id): bool {
+                return $question_id > 0;
+            }))
+            : [];
+        $question_number_map = isset($question_contract['display_number_map']) && is_array($question_contract['display_number_map'])
+            ? $question_contract['display_number_map']
+            : [];
+        $question_order_signature = (string) ($question_contract['question_order_signature'] ?? '');
+        $stale_attempt_order = !empty($question_contract['stale_attempt_order']);
+        $preserve_removed_question_history = !empty($question_contract['preserve_removed_question_history']);
+
+        $stored_question_order_ids = $preserve_removed_question_history
+            ? $canonical_question_order_ids
+            : $question_order_ids;
+        $question_order_json = wp_json_encode($stored_question_order_ids);
+        if (!is_string($question_order_json)) {
+            $question_order_json = '[]';
         }
 
-        $question_order_ids = self::merge_attempt_question_order_ids(
-            $persisted_question_order_ids,
-            $runtime_question_order_ids
-        );
-
-        $original_question_order_ids = $question_order_ids;
-        $canonical_question_order_ids = $question_order_ids;
-        $ordered_questions = [];
-        $stale_attempt_order = empty($question_order_ids);
-        $removed_question_ids = [];
-        $preserve_removed_question_history = false;
-        if (!empty($question_order_ids)) {
-            if ($is_in_progress_attempt) {
-                $question_order_ids = self::reconcile_in_progress_question_order(
-                    $questions,
-                    $question_order_ids,
-                    (string) ($attempt['started_at'] ?? ''),
-                    $should_shuffle
-                );
-                $canonical_question_order_ids = self::merge_attempt_question_order_ids(
-                    $original_question_order_ids,
-                    $question_order_ids
-                );
-                $ordered_questions = self::order_question_payload_by_ids($questions, $question_order_ids);
-                $removed_question_ids = array_values(array_diff($canonical_question_order_ids, $question_order_ids));
-                $preserve_removed_question_history = !empty($removed_question_ids);
-                $stale_attempt_order = (
-                    count($ordered_questions) !== count($questions) ||
-                    self::question_id_lists_differ($question_order_ids, $original_question_order_ids) ||
-                    self::question_id_lists_differ($canonical_question_order_ids, $persisted_question_order_ids)
-                );
-            } else {
-                $ordered_questions = self::order_question_payload_by_ids($questions, $question_order_ids);
-                $stale_attempt_order = (count($ordered_questions) !== count($question_order_ids));
-            }
+        if ($stale_attempt_order && $attempt_id > 0 && self::question_id_lists_differ($stored_question_order_ids, $persisted_question_order_ids)) {
+            $wpdb->update(
+                $attempt_table,
+                [
+                    'question_order' => $question_order_json,
+                    'updated_at' => current_time('mysql'),
+                ],
+                ['id' => $attempt_id],
+                ['%s', '%s'],
+                ['%d']
+            );
         }
-
-        if ($stale_attempt_order) {
-            if ($is_in_progress_attempt && !empty($question_order_ids)) {
-                $questions = $ordered_questions;
-            } else {
-                $questions = self::shuffle_question_payload_if_needed($questions, $should_shuffle);
-                $question_order_ids = self::extract_question_ids_from_payload($questions);
-            }
-            $question_order_json = wp_json_encode($question_order_ids);
-            if (!is_string($question_order_json)) {
-                $question_order_json = '[]';
-            }
-
-            if ($preserve_removed_question_history) {
-                $canonical_question_order_json = wp_json_encode($canonical_question_order_ids);
-                if (!is_string($canonical_question_order_json)) {
-                    $canonical_question_order_json = '[]';
-                }
-                if ($attempt_id > 0 && self::question_id_lists_differ($canonical_question_order_ids, $persisted_question_order_ids)) {
-                    $wpdb->update(
-                        $attempt_table,
-                        [
-                            'question_order' => $canonical_question_order_json,
-                            'updated_at' => current_time('mysql'),
-                        ],
-                        ['id' => $attempt_id],
-                        ['%s', '%s'],
-                        ['%d']
-                    );
-                }
-                $attempt['question_order'] = $canonical_question_order_json;
-            } else {
-                if ($attempt_id > 0 && self::question_id_lists_differ($question_order_ids, $persisted_question_order_ids)) {
-                    $wpdb->update(
-                        $attempt_table,
-                        [
-                            'question_order' => $question_order_json,
-                            'updated_at' => current_time('mysql'),
-                        ],
-                        ['id' => $attempt_id],
-                        ['%s', '%s'],
-                        ['%d']
-                    );
-                }
-                $attempt['question_order'] = $question_order_json;
-            }
-        } else {
-            $questions = $ordered_questions;
-            $question_order_json = wp_json_encode($question_order_ids);
-            if (!is_string($question_order_json)) {
-                $question_order_json = '[]';
-            }
-            $attempt['question_order'] = $question_order_json;
-        }
+        $attempt['question_order'] = $question_order_json;
 
         $persisted_option_order_map = self::normalize_attempt_option_order_map($attempt['option_order'] ?? '');
         $runtime_option_order_map = [];
@@ -2214,16 +2227,115 @@ class CBT_REST
             self::ensure_runtime_attempt_state($attempt, $attempt_duration_minutes);
         }
 
-        $question_number_map = self::build_attempt_question_number_map(
-            !empty($canonical_question_order_ids) ? $canonical_question_order_ids : (!empty($original_question_order_ids) ? $original_question_order_ids : $question_order_ids),
-            $question_order_ids
-        );
         $questions = self::apply_question_numbers_to_payload($questions, $question_number_map);
 
         return [
             'questions' => $questions,
             'question_order_ids' => $question_order_ids,
+            'question_order_signature' => $question_order_signature,
             'attempt' => $attempt,
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $questions
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $exam
+     * @return array{
+     *   ordered_questions: array<int,array<string,mixed>>,
+     *   active_question_order_ids: array<int,int>,
+     *   canonical_question_order_ids: array<int,int>,
+     *   display_number_map: array<int,int>,
+     *   question_order_signature: string,
+     *   stale_attempt_order: bool,
+     *   preserve_removed_question_history: bool
+     * }
+     */
+    private static function resolve_attempt_question_order_contract(array $questions, array $attempt, array $exam): array
+    {
+        $should_shuffle = ((int) ($exam['randomize_questions'] ?? 0) === 1);
+        $attempt_status = (string) ($attempt['status'] ?? '');
+        $is_in_progress_attempt = ($attempt_status === 'in_progress');
+        $persisted_question_order_ids = self::normalize_question_order_ids($attempt['question_order'] ?? '');
+        $active_question_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
+        $original_question_order_ids = $active_question_order_ids;
+        $canonical_question_order_ids = $active_question_order_ids;
+        $ordered_questions = [];
+        $stale_attempt_order = empty($active_question_order_ids);
+        $removed_question_ids = [];
+        $preserve_removed_question_history = false;
+
+        if (!empty($active_question_order_ids)) {
+            if ($is_in_progress_attempt) {
+                $active_question_order_ids = self::reconcile_in_progress_question_order(
+                    $questions,
+                    $active_question_order_ids,
+                    (string) ($attempt['started_at'] ?? ''),
+                    $should_shuffle
+                );
+                $canonical_question_order_ids = self::merge_attempt_question_order_ids(
+                    $original_question_order_ids,
+                    $active_question_order_ids
+                );
+                $ordered_questions = self::order_question_payload_by_ids($questions, $active_question_order_ids);
+                $removed_question_ids = array_values(array_diff($canonical_question_order_ids, $active_question_order_ids));
+                $preserve_removed_question_history = !empty($removed_question_ids);
+                $stale_attempt_order = (
+                    count($ordered_questions) !== count($questions) ||
+                    self::question_id_lists_differ($active_question_order_ids, $original_question_order_ids) ||
+                    self::question_id_lists_differ($canonical_question_order_ids, $persisted_question_order_ids)
+                );
+            } else {
+                $ordered_questions = self::order_question_payload_by_ids($questions, $active_question_order_ids);
+                $stale_attempt_order = (count($ordered_questions) !== count($active_question_order_ids));
+            }
+        }
+
+        if ($stale_attempt_order) {
+            if ($is_in_progress_attempt && !empty($active_question_order_ids)) {
+                $questions = $ordered_questions;
+            } else {
+                $questions = self::shuffle_question_payload_if_needed($questions, $should_shuffle);
+                $active_question_order_ids = self::extract_question_ids_from_payload($questions);
+                $ordered_questions = $questions;
+            }
+        } else {
+            $questions = $ordered_questions;
+        }
+
+        if (empty($ordered_questions) && !empty($questions)) {
+            $ordered_questions = array_values($questions);
+        }
+
+        if (empty($active_question_order_ids)) {
+            $active_question_order_ids = self::extract_question_ids_from_payload($ordered_questions);
+        }
+
+        if (empty($canonical_question_order_ids)) {
+            $canonical_question_order_ids = $active_question_order_ids;
+        } elseif (!empty($active_question_order_ids)) {
+            $canonical_question_order_ids = self::merge_attempt_question_order_ids(
+                $canonical_question_order_ids,
+                $active_question_order_ids
+            );
+        }
+
+        $question_number_map = self::build_attempt_question_number_map(
+            $canonical_question_order_ids,
+            $active_question_order_ids
+        );
+
+        return [
+            'ordered_questions' => $ordered_questions,
+            'active_question_order_ids' => $active_question_order_ids,
+            'canonical_question_order_ids' => $canonical_question_order_ids,
+            'display_number_map' => $question_number_map,
+            'question_order_signature' => self::build_attempt_question_order_signature(
+                $active_question_order_ids,
+                $question_number_map
+            ),
+            'stale_attempt_order' => $stale_attempt_order,
+            'preserve_removed_question_history' => $preserve_removed_question_history,
         ];
     }
 
@@ -2252,28 +2364,22 @@ class CBT_REST
         }
 
         $active_lookup = array_fill_keys($active_question_ids, true);
-        $recent_question_created_at = [];
-        if ($append_recent_questions_last) {
-            $attempt_started_ts = self::local_datetime_to_timestamp($attempt_started_at);
-            if ($attempt_started_ts !== null) {
-                foreach ($active_questions as $question_row) {
-                    $question = (array) $question_row;
-                    $question_id = (int) ($question['id'] ?? 0);
-                    if ($question_id <= 0) {
-                        continue;
-                    }
+        $active_question_created_at = [];
+        foreach ($active_questions as $question_row) {
+            $question = (array) $question_row;
+            $question_id = (int) ($question['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
 
-                    $question_created_ts = self::local_datetime_to_timestamp((string) ($question['created_at'] ?? ''));
-                    if ($question_created_ts === null || $question_created_ts <= $attempt_started_ts) {
-                        continue;
-                    }
-
-                    $recent_question_created_at[$question_id] = $question_created_ts;
-                }
+            $question_created_ts = self::local_datetime_to_timestamp((string) ($question['created_at'] ?? ''));
+            if ($question_created_ts !== null) {
+                $active_question_created_at[$question_id] = $question_created_ts;
             }
         }
-
-        $recent_question_lookup = array_fill_keys(array_keys($recent_question_created_at), true);
+        $existing_lookup = array_fill_keys(array_values(array_filter(array_map('intval', $existing_question_order_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        })), true);
         $reconciled = [];
         $reconciled_lookup = [];
         foreach ($existing_question_order_ids as $question_id) {
@@ -2282,7 +2388,6 @@ class CBT_REST
                 $question_id <= 0
                 || !isset($active_lookup[$question_id])
                 || isset($reconciled_lookup[$question_id])
-                || isset($recent_question_lookup[$question_id])
             ) {
                 continue;
             }
@@ -2290,33 +2395,51 @@ class CBT_REST
             $reconciled_lookup[$question_id] = true;
         }
 
+        $missing_active_question_ids = [];
+        $missing_active_question_created_at = [];
         foreach ($active_question_ids as $question_id) {
-            if (isset($reconciled_lookup[$question_id]) || isset($recent_question_lookup[$question_id])) {
+            if (isset($reconciled_lookup[$question_id])) {
+                continue;
+            }
+
+            $missing_active_question_ids[] = $question_id;
+            if (!$append_recent_questions_last || isset($existing_lookup[$question_id])) {
+                continue;
+            }
+            if (isset($active_question_created_at[$question_id])) {
+                $missing_active_question_created_at[$question_id] = (int) $active_question_created_at[$question_id];
+            }
+        }
+
+        if ($append_recent_questions_last && count($missing_active_question_ids) > 1) {
+            usort($missing_active_question_ids, static function (int $left, int $right) use ($missing_active_question_created_at): int {
+                $left_created_at = isset($missing_active_question_created_at[$left])
+                    ? (int) $missing_active_question_created_at[$left]
+                    : PHP_INT_MAX;
+                $right_created_at = isset($missing_active_question_created_at[$right])
+                    ? (int) $missing_active_question_created_at[$right]
+                    : PHP_INT_MAX;
+
+                if ($left_created_at === $right_created_at) {
+                    if ($left === $right) {
+                        return 0;
+                    }
+
+                    return ($left < $right) ? -1 : 1;
+                }
+
+                return ($left_created_at < $right_created_at) ? -1 : 1;
+            });
+        }
+
+        foreach ($missing_active_question_ids as $question_id) {
+            $question_id = (int) $question_id;
+            if ($question_id <= 0 || isset($reconciled_lookup[$question_id])) {
                 continue;
             }
 
             $reconciled[] = $question_id;
             $reconciled_lookup[$question_id] = true;
-        }
-
-        if (!empty($recent_question_created_at)) {
-            uasort($recent_question_created_at, static function (int $left, int $right): int {
-                if ($left === $right) {
-                    return 0;
-                }
-
-                return ($left < $right) ? -1 : 1;
-            });
-
-            foreach (array_keys($recent_question_created_at) as $question_id) {
-                $question_id = (int) $question_id;
-                if ($question_id <= 0 || isset($reconciled_lookup[$question_id])) {
-                    continue;
-                }
-
-                $reconciled[] = $question_id;
-                $reconciled_lookup[$question_id] = true;
-            }
         }
 
         return $reconciled;
@@ -2410,6 +2533,32 @@ class CBT_REST
         return array_values(array_unique(array_filter(array_map('intval', $decoded), static function (int $question_id): bool {
             return $question_id > 0;
         })));
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @return array<int,int>
+     */
+    private static function resolve_attempt_snapshot_question_order_ids(array $attempt): array
+    {
+        $persisted_question_order_ids = self::normalize_question_order_ids($attempt['question_order'] ?? '');
+        if (!empty($persisted_question_order_ids)) {
+            return $persisted_question_order_ids;
+        }
+
+        $attempt_id = (int) ($attempt['id'] ?? 0);
+        if ($attempt_id <= 0 || !CBT_Runtime::is_ready()) {
+            return [];
+        }
+
+        $runtime_question_order_ids = CBT_Runtime::get_attempt_question_order($attempt_id, $runtime_order_found);
+        if (!$runtime_order_found) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('intval', $runtime_question_order_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        }));
     }
 
     /**
@@ -2628,7 +2777,7 @@ class CBT_REST
             return $questions;
         }
 
-        foreach ($questions as $index => $question_row) {
+        foreach ($questions as $question_row) {
             $question = (array) $question_row;
             $question_id = (int) ($question['id'] ?? 0);
             if ($question_id <= 0 || !isset($option_order_map[$question_id])) {
@@ -2890,6 +3039,30 @@ class CBT_REST
     }
 
     /**
+     * @param array<int,int> $question_order_ids
+     * @param array<int,int> $question_number_map
+     */
+    private static function build_attempt_question_order_signature(array $question_order_ids, array $question_number_map): string
+    {
+        $signature_parts = [];
+
+        foreach ($question_order_ids as $question_id) {
+            $question_id = (int) $question_id;
+            if ($question_id <= 0) {
+                continue;
+            }
+
+            $signature_parts[] = $question_id . ':' . (int) ($question_number_map[$question_id] ?? 0);
+        }
+
+        if (empty($signature_parts)) {
+            return '';
+        }
+
+        return sha1(implode('|', $signature_parts));
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $questions
      * @param array<int,int> $question_number_map
      * @return array<int,array<string,mixed>>
@@ -2903,7 +3076,12 @@ class CBT_REST
                 continue;
             }
 
-            $question['question_number'] = (int) ($question_number_map[$question_id] ?? ($index + 1));
+            $question_number = (int) ($question_number_map[$question_id] ?? 0);
+            if ($question_number > 0) {
+                $question['question_number'] = $question_number;
+            } else {
+                unset($question['question_number']);
+            }
             $questions[$index] = $question;
         }
 
@@ -3528,7 +3706,11 @@ class CBT_REST
         $score = (float) ($score_snapshot['score'] ?? 0.0);
         $max_score = (float) ($score_snapshot['max_score'] ?? 0.0);
         $percentage = (float) ($score_snapshot['percentage'] ?? 0.0);
+        $review_summary = isset($score_snapshot['review_summary']) && is_array($score_snapshot['review_summary'])
+            ? (array) $score_snapshot['review_summary']
+            : [];
         $kkm_percentage = self::get_exam_kkm_percentage((int) ($attempt['exam_id'] ?? 0));
+        $show_student_result = self::get_exam_show_student_result((int) ($attempt['exam_id'] ?? 0));
         $pass_meta = self::build_result_pass_meta($score, $max_score, $kkm_percentage);
         $finished_at = is_string($finished_at) && $finished_at !== '' ? $finished_at : current_time('mysql');
 
@@ -3563,9 +3745,12 @@ class CBT_REST
             CBT_UI_State::clear_attempt_state($student_id, $attempt_id);
         }
 
-        return [
+        $response = [
             'attempt_id' => $attempt_id,
             'status' => 'completed',
+            'show_student_result' => $show_student_result,
+            'result_view_mode' => ($show_student_result === 1 ? 'full' : 'restricted'),
+            'submission_summary' => self::build_result_submission_summary($review_summary),
             'score' => $score,
             'max_score' => $max_score,
             'percentage' => $percentage,
@@ -3576,6 +3761,21 @@ class CBT_REST
             'pass_label' => $pass_meta['pass_label'],
             'result_tone' => $pass_meta['result_tone'],
         ];
+
+        if ($show_student_result !== 1) {
+            unset(
+                $response['score'],
+                $response['max_score'],
+                $response['percentage'],
+                $response['kkm_percentage'],
+                $response['passing_score'],
+                $response['is_passed'],
+                $response['pass_label'],
+                $response['result_tone']
+            );
+        }
+
+        return $response;
     }
 
     /**
@@ -3593,7 +3793,7 @@ class CBT_REST
 
         $exam = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT e.id, e.title, e.duration_minutes, e.kkm_percentage, e.subject_id, s.name AS subject_name, s.code AS subject_code
+                "SELECT e.id, e.title, e.duration_minutes, e.kkm_percentage, e.show_student_result, e.subject_id, s.name AS subject_name, s.code AS subject_code
                  FROM {$exam_table} e
                  LEFT JOIN {$subject_table} s ON s.id = e.subject_id
                  WHERE e.id = %d",
@@ -3643,12 +3843,18 @@ class CBT_REST
         $kkm_percentage = self::normalize_exam_kkm_percentage((float) ($exam['kkm_percentage'] ?? 75.0));
         if (is_array($exam)) {
             $exam['kkm_percentage'] = $kkm_percentage;
+            $exam['show_student_result'] = self::normalize_show_student_result($exam['show_student_result'] ?? 1);
         }
         $pass_meta = self::build_result_pass_meta($review_score, $review_max_score, $kkm_percentage);
+        $show_student_result = self::normalize_show_student_result($exam['show_student_result'] ?? 1);
+        $submission_summary = self::build_result_submission_summary($review_summary);
 
         return [
             'attempt' => $attempt,
             'exam' => $exam,
+            'show_student_result' => $show_student_result,
+            'result_view_mode' => 'full',
+            'submission_summary' => $submission_summary,
             'percentage' => $percentage,
             'kkm_percentage' => $pass_meta['kkm_percentage'],
             'passing_score' => $pass_meta['passing_score'],
@@ -3659,6 +3865,90 @@ class CBT_REST
             'review_items' => $review_items,
             'review_summary' => $review_summary,
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     * @return array<string,mixed>
+     */
+    private static function build_restricted_student_result_payload(array $payload): array
+    {
+        $attempt = isset($payload['attempt']) && is_array($payload['attempt']) ? (array) $payload['attempt'] : [];
+        $exam = isset($payload['exam']) && is_array($payload['exam']) ? (array) $payload['exam'] : [];
+        $submission_summary = self::build_result_submission_summary(
+            isset($payload['submission_summary']) && is_array($payload['submission_summary'])
+                ? (array) $payload['submission_summary']
+                : (isset($payload['review_summary']) && is_array($payload['review_summary']) ? (array) $payload['review_summary'] : [])
+        );
+
+        return [
+            'attempt' => [
+                'id' => (int) ($attempt['id'] ?? 0),
+                'exam_id' => (int) ($attempt['exam_id'] ?? 0),
+                'student_id' => (int) ($attempt['student_id'] ?? 0),
+                'status' => (string) ($attempt['status'] ?? ''),
+                'started_at' => (string) ($attempt['started_at'] ?? ''),
+                'finished_at' => (string) ($attempt['finished_at'] ?? ''),
+            ],
+            'exam' => [
+                'id' => (int) ($exam['id'] ?? 0),
+                'title' => (string) ($exam['title'] ?? ''),
+                'duration_minutes' => (int) ($exam['duration_minutes'] ?? 0),
+                'show_student_result' => 0,
+            ],
+            'show_student_result' => 0,
+            'result_view_mode' => 'restricted',
+            'submission_summary' => $submission_summary,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $summary
+     * @return array{total_questions:int,answered_questions:int,pending_manual_questions:int}
+     */
+    private static function build_result_submission_summary(array $summary): array
+    {
+        $total_questions = max(0, (int) ($summary['total_questions'] ?? 0));
+        $explicit_answered_questions = array_key_exists('answered_questions', $summary)
+            ? max(0, (int) ($summary['answered_questions'] ?? 0))
+            : null;
+        $correct_questions = max(0, (int) ($summary['correct_questions'] ?? 0));
+        $wrong_questions = max(0, (int) ($summary['wrong_questions'] ?? 0));
+        $manual_questions = max(0, (int) ($summary['manual_questions'] ?? $summary['pending_manual_questions'] ?? 0));
+        $unanswered_questions = max(0, (int) ($summary['unanswered_questions'] ?? 0));
+
+        if ($total_questions <= 0) {
+            $total_questions = max(0, $correct_questions + $wrong_questions + $manual_questions + $unanswered_questions);
+        }
+
+        $answered_questions = $explicit_answered_questions !== null
+            ? max(0, min($total_questions, $explicit_answered_questions))
+            : max(0, min($total_questions, $correct_questions + $wrong_questions + $manual_questions));
+
+        return [
+            'total_questions' => $total_questions,
+            'answered_questions' => $answered_questions,
+            'pending_manual_questions' => $manual_questions,
+        ];
+    }
+
+    private static function get_exam_show_student_result(int $exam_id): int
+    {
+        global $wpdb;
+
+        if ($exam_id <= 0) {
+            return 1;
+        }
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $value = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT show_student_result FROM {$exam_table} WHERE id = %d LIMIT 1",
+                $exam_id
+            )
+        );
+
+        return self::normalize_show_student_result($value);
     }
 
     private static function get_exam_kkm_percentage(int $exam_id): float
@@ -3687,6 +3977,22 @@ class CBT_REST
         }
 
         return round(min(100.0, max(0.0, $value)), 2);
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private static function normalize_show_student_result($value): int
+    {
+        return ((int) $value === 0) ? 0 : 1;
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private static function normalize_enable_calculator($value): int
+    {
+        return ((int) $value === 0) ? 0 : 1;
     }
 
     private static function calculate_result_passing_score(float $max_score, float $kkm_percentage): float
@@ -3767,7 +4073,7 @@ class CBT_REST
         $exam_table = $wpdb->prefix . 'cbt_exams';
         $attempt = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT a.id, a.exam_id, a.student_id, a.status, a.started_at, a.extra_time_minutes, e.created_by, e.duration_minutes AS exam_duration_minutes
+                "SELECT a.id, a.exam_id, a.student_id, a.status, a.started_at, a.extra_time_minutes, a.question_order, a.option_order, e.created_by, e.duration_minutes AS exam_duration_minutes
                  FROM {$attempt_table} a
                  LEFT JOIN {$exam_table} e ON e.id = a.exam_id
                  WHERE a.id = %d",
@@ -3806,9 +4112,26 @@ class CBT_REST
             return [];
         }
 
+        $exam_table = $wpdb->prefix . 'cbt_exams';
         $question_table = $wpdb->prefix . 'cbt_questions';
         $option_table = $wpdb->prefix . 'cbt_options';
         $answer_table = $wpdb->prefix . 'cbt_answers';
+        $exam = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, randomize_questions
+                 FROM {$exam_table}
+                 WHERE id = %d
+                 LIMIT 1",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+        if (!is_array($exam)) {
+            $exam = [
+                'id' => $exam_id,
+                'randomize_questions' => 0,
+            ];
+        }
 
         $questions = $wpdb->get_results(
             $wpdb->prepare(
@@ -3821,23 +4144,27 @@ class CBT_REST
             ARRAY_A
         );
 
-        $attempt_question_order_ids = self::normalize_question_order_ids($attempt['question_order'] ?? '');
-        if (CBT_Runtime::is_ready() && (string) ($attempt['status'] ?? '') === 'in_progress') {
-            $runtime_attempt_question_order_ids = CBT_Runtime::get_attempt_question_order($attempt_id, $runtime_attempt_order_found);
-            if (!$runtime_attempt_order_found) {
-                $runtime_attempt_question_order_ids = [];
-            }
-            $attempt_question_order_ids = self::merge_attempt_question_order_ids(
-                $attempt_question_order_ids,
-                $runtime_attempt_question_order_ids
-            );
-        }
+        $attempt_question_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
 
         $attempt_question_order_json = wp_json_encode($attempt_question_order_ids);
         $attempt_question_order = is_string($attempt_question_order_json)
             ? $attempt_question_order_json
             : (string) ($attempt['question_order'] ?? '');
         $questions = self::append_missing_attempt_review_questions($questions, $exam_id, $attempt_question_order);
+        $review_question_contract = self::resolve_attempt_question_order_contract($questions, $attempt, $exam);
+        $canonical_question_order_ids = isset($review_question_contract['canonical_question_order_ids']) && is_array($review_question_contract['canonical_question_order_ids'])
+            ? array_values(array_filter(array_map('intval', $review_question_contract['canonical_question_order_ids']), static function (int $question_id): bool {
+                return $question_id > 0;
+            }))
+            : [];
+        $display_number_map = isset($review_question_contract['display_number_map']) && is_array($review_question_contract['display_number_map'])
+            ? $review_question_contract['display_number_map']
+            : [];
+        $canonical_question_order_json = wp_json_encode(!empty($canonical_question_order_ids) ? $canonical_question_order_ids : $attempt_question_order_ids);
+        $questions = self::order_questions_by_attempt_sequence(
+            $questions,
+            is_string($canonical_question_order_json) ? $canonical_question_order_json : $attempt_question_order
+        );
 
         $attempt_option_order_map = self::normalize_attempt_option_order_map($attempt['option_order'] ?? '');
         if (CBT_Runtime::is_ready() && (string) ($attempt['status'] ?? '') === 'in_progress') {
@@ -3854,8 +4181,6 @@ class CBT_REST
         if (!is_array($questions) || empty($questions)) {
             return [];
         }
-
-        $questions = self::order_questions_by_attempt_sequence($questions, $attempt_question_order);
         $question_ids = array_values(array_filter(array_map('intval', array_column($questions, 'id')), static function ($id): bool {
             return $id > 0;
         }));
@@ -4104,7 +4429,7 @@ class CBT_REST
 
             $review_items[] = [
                 'question_id' => $question_id,
-                'question_number' => $index + 1,
+                'question_number' => (int) ($display_number_map[$question_id] ?? 0),
                 'question_type' => $question_type,
                 'is_active' => (int) ($question['is_active'] ?? 1),
                 'question_text' => (string) ($question['question_text'] ?? ''),

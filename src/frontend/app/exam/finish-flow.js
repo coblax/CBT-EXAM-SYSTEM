@@ -112,6 +112,90 @@ export function createFinishFlowManager(deps) {
         return null;
     }
 
+    function syncCompletedExamIntoList(resultPayload) {
+        var exams = Array.isArray(state.exams) ? state.exams : [];
+        if (!exams.length || !resultPayload || typeof resultPayload !== 'object') {
+            return;
+        }
+
+        var attempt = resultPayload.attempt && typeof resultPayload.attempt === 'object'
+            ? resultPayload.attempt
+            : null;
+        var examPayload = resultPayload.exam && typeof resultPayload.exam === 'object'
+            ? resultPayload.exam
+            : null;
+        var examId = Number(
+            examPayload && examPayload.id !== undefined
+                ? examPayload.id
+                : (attempt && attempt.exam_id !== undefined ? attempt.exam_id : state.selectedExamId)
+        ) || 0;
+        if (examId <= 0) {
+            return;
+        }
+
+        var examIndex = -1;
+        for (var index = 0; index < exams.length; index++) {
+            if (Number(exams[index] && exams[index].id) === examId) {
+                examIndex = index;
+                break;
+            }
+        }
+        if (examIndex < 0) {
+            return;
+        }
+
+        var currentExam = exams[examIndex] && typeof exams[examIndex] === 'object' ? exams[examIndex] : {};
+        var showStudentResult = Number(
+            resultPayload.show_student_result !== undefined
+                ? resultPayload.show_student_result
+                : (currentExam.show_student_result !== undefined ? currentExam.show_student_result : 1)
+        ) === 1;
+        var safeScore = showStudentResult && Number.isFinite(Number(resultPayload.score))
+            ? Number(resultPayload.score)
+            : 0;
+        var safeMaxScore = showStudentResult && Number.isFinite(Number(resultPayload.max_score))
+            ? Number(resultPayload.max_score)
+            : 0;
+        var percentage = showStudentResult && safeMaxScore > 0
+            ? ((safeScore / safeMaxScore) * 100)
+            : 0;
+        var passMeta = showStudentResult
+            ? buildResultPassMeta(
+                safeScore,
+                safeMaxScore,
+                resultPayload.kkm_percentage !== undefined
+                    ? resultPayload.kkm_percentage
+                    : currentExam.kkm_percentage,
+                resultPayload.is_passed,
+                resultPayload.pass_label,
+                resultPayload.result_tone
+            )
+            : {
+                passing_score: 0,
+                is_passed: 0,
+                pass_label: '',
+                result_tone: ''
+            };
+
+        var updatedExam = Object.assign({}, currentExam, examPayload || {}, {
+            show_student_result: showStudentResult ? 1 : 0,
+            latest_attempt_id: Number(resultPayload.attempt_id || (attempt && attempt.id) || currentExam.latest_attempt_id || 0),
+            latest_attempt_status: String((attempt && attempt.status) || resultPayload.status || 'completed'),
+            latest_attempt_score: safeScore,
+            latest_attempt_max_score: safeMaxScore,
+            latest_attempt_percentage: Number.isFinite(percentage) ? percentage : 0,
+            latest_attempt_passing_score: showStudentResult ? passMeta.passing_score : 0,
+            latest_attempt_is_passed: showStudentResult ? passMeta.is_passed : 0,
+            latest_attempt_pass_label: showStudentResult ? passMeta.pass_label : '',
+            latest_attempt_result_tone: showStudentResult ? passMeta.result_tone : '',
+            latest_attempt_started_at: String((attempt && attempt.started_at) || currentExam.latest_attempt_started_at || ''),
+            latest_attempt_finished_at: String(resultPayload.finished_at || (attempt && attempt.finished_at) || currentExam.latest_attempt_finished_at || '')
+        });
+
+        state.exams = exams.slice();
+        state.exams[examIndex] = updatedExam;
+    }
+
     function openFinishConfirmModal() {
         if (state.stage !== 'exam' || state.isFinishing || state.examLockedForPendingFinish) {
             return;
@@ -155,6 +239,11 @@ export function createFinishFlowManager(deps) {
         var resultPayload = {
             attempt_id: resolvedAttemptId,
             status: String(finishPayload && finishPayload.status ? finishPayload.status : 'completed'),
+            show_student_result: Number(finishPayload && finishPayload.show_student_result !== undefined ? finishPayload.show_student_result : 1),
+            result_view_mode: String(finishPayload && finishPayload.result_view_mode ? finishPayload.result_view_mode : 'full'),
+            submission_summary: finishPayload && finishPayload.submission_summary && typeof finishPayload.submission_summary === 'object'
+                ? finishPayload.submission_summary
+                : null,
             score: Number(finishPayload && finishPayload.score !== undefined ? finishPayload.score : 0),
             max_score: Number(finishPayload && finishPayload.max_score !== undefined ? finishPayload.max_score : 0),
             percentage: Number(finishPayload && finishPayload.percentage !== undefined ? finishPayload.percentage : 0),
@@ -181,11 +270,17 @@ export function createFinishFlowManager(deps) {
                 if (reviewPayload && typeof reviewPayload === 'object') {
                     resultPayload.attempt = reviewPayload.attempt || null;
                     resultPayload.exam = reviewPayload.exam || null;
+                    resultPayload.show_student_result = Number(reviewPayload.show_student_result !== undefined ? reviewPayload.show_student_result : resultPayload.show_student_result);
+                    resultPayload.result_view_mode = String(reviewPayload.result_view_mode ? reviewPayload.result_view_mode : resultPayload.result_view_mode);
+                    resultPayload.submission_summary = reviewPayload.submission_summary && typeof reviewPayload.submission_summary === 'object'
+                        ? reviewPayload.submission_summary
+                        : resultPayload.submission_summary;
                     resultPayload.answers = Array.isArray(reviewPayload.answers) ? reviewPayload.answers : [];
                     resultPayload.review_items = Array.isArray(reviewPayload.review_items) ? reviewPayload.review_items : [];
                     resultPayload.review_summary = reviewPayload.review_summary && typeof reviewPayload.review_summary === 'object'
                         ? reviewPayload.review_summary
                         : null;
+                    resultPayload.percentage = Number(reviewPayload.percentage !== undefined ? reviewPayload.percentage : resultPayload.percentage);
                     resultPayload.kkm_percentage = Number(reviewPayload.kkm_percentage !== undefined ? reviewPayload.kkm_percentage : resultPayload.kkm_percentage);
                     resultPayload.passing_score = Number(reviewPayload.passing_score !== undefined ? reviewPayload.passing_score : resultPayload.passing_score);
                     resultPayload.is_passed = Number(reviewPayload.is_passed !== undefined ? reviewPayload.is_passed : resultPayload.is_passed);
@@ -208,6 +303,23 @@ export function createFinishFlowManager(deps) {
             }
         }
 
+        var isRestrictedResult = Number(resultPayload.show_student_result !== undefined ? resultPayload.show_student_result : 1) !== 1
+            || String(resultPayload.result_view_mode || '').toLowerCase() === 'restricted';
+        if (isRestrictedResult) {
+            resultPayload.score = 0;
+            resultPayload.max_score = 0;
+            resultPayload.percentage = 0;
+            resultPayload.kkm_percentage = 0;
+            resultPayload.passing_score = 0;
+            resultPayload.is_passed = 0;
+            resultPayload.pass_label = '';
+            resultPayload.result_tone = '';
+            resultPayload.answers = [];
+            resultPayload.review_items = [];
+            resultPayload.review_summary = null;
+            return resultPayload;
+        }
+
         var selectedExam = getSelectedExamFallback();
         var passMeta = buildResultPassMeta(
             resultPayload.score,
@@ -228,6 +340,7 @@ export function createFinishFlowManager(deps) {
 
     function completeExamWithResult(resultPayload) {
         var autoSubmit = !!state.pendingFinishAutoSubmit;
+        syncCompletedExamIntoList(resultPayload);
         state.result = resultPayload;
         state.stage = 'result';
         prefetchResultStageRenderer();

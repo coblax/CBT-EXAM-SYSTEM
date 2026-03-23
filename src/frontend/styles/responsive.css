@@ -360,13 +360,9 @@
         width: 100%;
     }
 
-    .cbt-review-item-head {
-        flex-direction: column;
-    }
-
-    .cbt-review-item-right {
-        width: 100%;
-        align-items: flex-start;
+    .cbt-review-item-status-group {
+        justify-items: end;
+        text-align: right;
     }
 
     .cbt-review-option {

@@ -5,10 +5,9 @@ if (!defined('ABSPATH')) {
 }
 
 $overview_summary = (array) ($overview_data['summary'] ?? []);
-$top_exams = (array) ($overview_data['top_exams'] ?? []);
-$lowest_pass_rate_exams = (array) ($overview_data['lowest_pass_rate_exams'] ?? []);
-$problem_exams = (array) ($overview_data['problem_exams'] ?? []);
-$overview_kelas_summary = (array) ($overview_data['per_kelas_summary'] ?? []);
+$overview_pagination = (array) ($overview_pagination ?? []);
+$overview_exam_rows = (array) ($overview_pagination['rows'] ?? []);
+$overview_page_links = (array) ($overview_pagination['page_links'] ?? []);
 $exam_summary = (array) (($exam_analytics['summary'] ?? []) ?: []);
 $exam_quality = (array) (($exam_analytics['quality'] ?? []) ?: []);
 $exam_item_flags = (array) (($exam_analytics['item_flags'] ?? []) ?: []);
@@ -18,10 +17,122 @@ $exam_kelas_summary = (array) (($exam_analytics['per_kelas_summary'] ?? []) ?: [
 $item_analysis_summary = (array) ($item_analysis_summary ?? []);
 
 $has_selected_exam = $selected_exam_id > 0 && !empty($selected_exam);
-$analytics_reset_url = add_query_arg(['page' => 'cbt-analytics'], admin_url('admin.php'));
+$analytics_reset_url = CBT_Admin_Analytics_Service::build_analytics_url();
+$overview_analytic_all_url = CBT_Admin_Analytics_Service::build_analytics_url([
+    'cbt_analytics_tab' => 'overview',
+    'cbt_exam_id' => $selected_exam_id > 0 ? $selected_exam_id : null,
+    'cbt_overview_page' => (int) ($overview_pagination['current_page'] ?? 1),
+    'cbt_run_analytics' => 'all',
+]);
 $current_tab = CBT_Admin_Analytics_Service::normalize_tab((string) ($active_tab ?? 'overview'));
 $item_rows_json = wp_json_encode(array_values((array) $item_analysis_rows));
 $student_rows_json = wp_json_encode(array_values((array) $student_rows));
+$quality_reliability_label = (string) ($exam_quality['reliability_label'] ?? 'Insufficient Data');
+$quality_reliability_display = (string) ($exam_quality['reliability_display'] ?? 'Insufficient Data');
+$quality_reliability_value = isset($exam_quality['reliability']) && is_numeric($exam_quality['reliability']) ? (float) $exam_quality['reliability'] : null;
+$quality_reliability_method = (string) ($exam_quality['reliability_method'] ?? 'Insufficient Data');
+$quality_stddev_display = (string) ($exam_quality['standard_deviation_display'] ?? 'Insufficient Data');
+$quality_sem_display = (string) ($exam_quality['sem_display'] ?? 'Insufficient Data');
+$quality_objective_avg_display = (string) ($exam_quality['average_objective_percentage_display'] ?? '0.00%');
+$quality_profile = (string) ($exam_quality['objective_profile'] ?? 'insufficient');
+$quality_profile_label = (string) ($exam_quality['objective_profile_label'] ?? 'Belum Layak Dinilai');
+$quality_diagnostics = (array) ($exam_quality['diagnostics'] ?? []);
+$quality_counts = (array) ($quality_diagnostics['counts'] ?? []);
+$quality_included_types = array_values((array) ($quality_diagnostics['included_types'] ?? []));
+$quality_excluded_types = array_values((array) ($quality_diagnostics['excluded_types'] ?? []));
+$quality_excluded_reasons = array_values((array) ($quality_diagnostics['excluded_reasons'] ?? []));
+$quality_composition_label = (string) ($quality_diagnostics['composition_profile_label'] ?? $quality_profile_label);
+$quality_profile_reason = (string) ($quality_diagnostics['profile_reason'] ?? '');
+$quality_method_reason = (string) ($quality_diagnostics['method_reason'] ?? '');
+$quality_fallback_reason = (string) ($quality_diagnostics['fallback_reason'] ?? '');
+$quality_why_reason = (string) ($quality_diagnostics['why_reason'] ?? '');
+$quality_eligible_item_count = (int) ($exam_quality['eligible_objective_item_count'] ?? 0);
+$quality_eligible_attempt_count = (int) ($exam_quality['eligible_attempt_count'] ?? ($exam_quality['objective_attempt_count'] ?? 0));
+$quality_note_text = 'Perhitungan ini hanya memakai soal objective yang sudah finalized. Essay/manual tidak ikut reliability.';
+$quality_summary_text = 'Belum ada cukup data objective finalized untuk menilai kualitas paket soal ini.';
+if ($quality_reliability_label === 'Reliable') {
+    $quality_summary_text = 'Kualitas soal objective pada exam ini sudah cukup stabil, jadi hasil peserta relatif aman untuk dibaca sebagai satu paket ujian.';
+} elseif ($quality_reliability_label === 'Marginal') {
+    $quality_summary_text = 'Kualitas soal objective pada exam ini berada di batas tengah. Hasilnya sudah mulai terbaca, tetapi beberapa butir masih perlu dipantau.';
+} elseif ($quality_reliability_label === 'Weak') {
+    $quality_summary_text = 'Kualitas soal objective pada exam ini masih lemah, sehingga hasilnya sebaiknya dibaca dengan lebih hati-hati.';
+    if ($quality_reliability_value !== null && $quality_reliability_value < 0.0) {
+        $quality_summary_text = 'Kualitas soal objective pada exam ini bermasalah. Pola jawaban antarsoal tidak stabil, jadi hasil exam belum kuat jika dibaca sebagai satu paket ujian.';
+    }
+} elseif ($quality_profile === 'mixed_objective') {
+    $quality_summary_text = 'Komposisi soal objective pada exam ini sudah terdeteksi campuran, tetapi data hasil peserta yang layak belum cukup untuk menilai konsistensinya.';
+} elseif ($quality_profile === 'dichotomous') {
+    $quality_summary_text = 'Komposisi soal objective pada exam ini masih bertipe benar/salah, tetapi data hasil peserta yang layak belum cukup untuk menilai konsistensinya.';
+}
+
+$quality_result_points = [];
+$quality_result_points[] = 'Rata-rata skor objective peserta yang eligible saat ini berada di ' . $quality_objective_avg_display . '.';
+$quality_result_points[] = $quality_profile_reason !== '' ? $quality_profile_reason : 'Belum ada komposisi soal objective finalized yang cukup untuk dibaca.';
+
+if ($quality_reliability_display === 'Insufficient Data') {
+    $quality_result_points[] = $quality_fallback_reason !== '' ? $quality_fallback_reason : 'Konsistensi antarsoal belum bisa dinilai karena data objective atau jumlah peserta yang layak belum cukup.';
+} elseif ($quality_reliability_value !== null && $quality_reliability_value < 0.0) {
+    $quality_result_points[] = 'Nilai reliability ' . $quality_reliability_display . ' dengan metode ' . $quality_reliability_method . ' menunjukkan antarsoal tidak bergerak searah, sehingga paket soal ini perlu ditinjau ulang.';
+} elseif ($quality_reliability_value !== null && $quality_reliability_value >= 0.80) {
+    $quality_result_points[] = 'Nilai reliability ' . $quality_reliability_display . ' dengan metode ' . $quality_reliability_method . ' menunjukkan konsistensi antarsoal sudah kuat.';
+} elseif ($quality_reliability_value !== null && $quality_reliability_value >= 0.70) {
+    $quality_result_points[] = 'Nilai reliability ' . $quality_reliability_display . ' dengan metode ' . $quality_reliability_method . ' menunjukkan konsistensi antarsoal cukup, tetapi belum terlalu kuat.';
+} else {
+    $quality_result_points[] = 'Nilai reliability ' . $quality_reliability_display . ' dengan metode ' . $quality_reliability_method . ' menunjukkan konsistensi antarsoal masih lemah.';
+}
+
+if ($quality_stddev_display !== 'Insufficient Data') {
+    $quality_result_points[] = 'Sebaran nilai objective peserta saat ini berada di angka ' . $quality_stddev_display . ', jadi jarak performa antar peserta sudah mulai terlihat.';
+}
+
+if ($quality_sem_display !== 'Insufficient Data') {
+    $quality_result_points[] = 'Margin error pengukuran saat ini berada di sekitar ' . $quality_sem_display . ', jadi pembacaan nilai individual tetap perlu ruang toleransi.';
+} else {
+    $quality_result_points[] = 'Margin error pengukuran belum bisa dipakai karena konsistensi exam ini belum valid.';
+}
+
+if ($quality_eligible_item_count > 0 || $quality_eligible_attempt_count > 0) {
+    $quality_result_points[] = sprintf(
+        'Reliability saat ini membaca %1$d butir objective finalized dari %2$d attempt yang layak.',
+        $quality_eligible_item_count,
+        $quality_eligible_attempt_count
+    );
+}
+
+if ((int) ($exam_item_flags['weak_discrimination_count'] ?? 0) > 0) {
+    $quality_result_points[] = sprintf(
+        'Ada %d butir dengan discrimination lemah atau terbalik, jadi beberapa soal belum membedakan siswa kuat dan lemah dengan baik.',
+        (int) ($exam_item_flags['weak_discrimination_count'] ?? 0)
+    );
+}
+if ((int) ($exam_item_flags['high_omission_count'] ?? 0) > 0) {
+    $quality_result_points[] = sprintf(
+        'Ada %d butir yang sering dikosongkan, menandakan soal bisa terlalu sulit, terlalu panjang, atau membingungkan.',
+        (int) ($exam_item_flags['high_omission_count'] ?? 0)
+    );
+}
+if ((int) ($exam_item_flags['pending_manual_count'] ?? 0) > 0) {
+    $quality_result_points[] = sprintf(
+        'Ada %d butir yang masih menunggu review manual, jadi sebagian hasil exam belum benar-benar final.',
+        (int) ($exam_item_flags['pending_manual_count'] ?? 0)
+    );
+}
+$quality_result_points = array_values(array_unique(array_filter($quality_result_points, static function ($text): bool {
+    return is_string($text) && trim($text) !== '';
+})));
+
+$quality_next_step_text = 'Prioritas berikutnya adalah meninjau ulang butir yang lemah, terlalu sering dikosongkan, atau masih menunggu review manual.';
+if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_discrimination_count'] ?? 0) === 0 && (int) ($exam_item_flags['high_omission_count'] ?? 0) === 0 && (int) ($exam_item_flags['pending_manual_count'] ?? 0) === 0) {
+    $quality_next_step_text = 'Secara umum paket soal objective sudah stabil dan tidak menunjukkan flag besar, jadi hasil exam bisa dipakai sebagai dasar evaluasi.';
+} elseif ($quality_reliability_label === 'Insufficient Data') {
+    $quality_next_step_text = $quality_fallback_reason !== ''
+        ? 'Lengkapi dulu syarat minimum pembacaan quality, lalu jalankan analytics lagi. ' . $quality_fallback_reason
+        : 'Pastikan tersedia minimal dua butir objective finalized dan minimal lima peserta selesai sebelum quality dibaca.';
+} elseif ($quality_reliability_value !== null && $quality_reliability_value < 0.0) {
+    $quality_next_step_text = 'Mulai dari review kunci jawaban, kejelasan stem, dan butir yang discrimination-nya terbalik. Pola jawaban antarsoal perlu distabilkan lebih dulu sebelum hasil exam dipakai terlalu jauh.';
+} elseif ($quality_reliability_label === 'Marginal') {
+    $quality_next_step_text = 'Fokus utamanya adalah merapikan butir yang masih lemah atau sering dikosongkan agar konsistensi paket naik dari batas tengah ke kondisi yang lebih stabil.';
+}
 ?>
 <div class="wrap cbt-analytics-page">
     <?php if (!empty($notice)): ?>
@@ -229,7 +340,7 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
         }
         .cbt-analytics-filter-form {
             display: grid;
-            grid-template-columns: repeat(3, minmax(180px, 1fr)) auto;
+            grid-template-columns: minmax(280px, 1fr) auto;
             gap: 14px;
             align-items: end;
         }
@@ -296,44 +407,44 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
         }
         .cbt-analytics-tab-panel.is-active {
             display: grid;
-            gap: 20px;
+            gap: 16px;
         }
         .cbt-analytics-metric-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 14px;
+            gap: 10px;
         }
         .cbt-analytics-metric-card {
             display: grid;
-            gap: 8px;
-            padding: 18px;
+            gap: 6px;
+            padding: 14px 16px;
             border: 1px solid #dbe4f0;
-            border-radius: 18px;
+            border-radius: 14px;
             background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
         }
         .cbt-analytics-metric-card span {
             color: #607287;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 700;
-            letter-spacing: .08em;
+            letter-spacing: .06em;
             text-transform: uppercase;
         }
         .cbt-analytics-metric-card strong {
             color: #0f172a;
-            font-size: 30px;
-            line-height: 1;
+            font-size: 24px;
+            line-height: 1.05;
             font-weight: 800;
         }
         .cbt-analytics-grid-2 {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 16px;
+            gap: 12px;
         }
         .cbt-analytics-grid-3 {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 16px;
+            gap: 12px;
         }
         .cbt-analytics-mini-glossary {
             display: grid;
@@ -520,6 +631,169 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
             margin: 0;
             color: #526174;
             line-height: 1.65;
+        }
+        .cbt-analytics-quality-card,
+        .cbt-analytics-quality-admin-card {
+            display: grid;
+            gap: 14px;
+        }
+        .cbt-analytics-quality-heading {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+        .cbt-analytics-quality-heading h3 {
+            margin: 0;
+            color: #0f172a;
+            font-size: 20px;
+            line-height: 1.2;
+        }
+        .cbt-analytics-quality-kicker {
+            display: inline-flex;
+            align-items: center;
+            min-height: 24px;
+            margin-bottom: 8px;
+            padding: 0 10px;
+            border-radius: 999px;
+            background: #e8f1ff;
+            color: #1f68a6;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+        .cbt-analytics-quality-lead {
+            margin: 0;
+            color: #4e6176;
+            line-height: 1.7;
+            text-align: justify;
+        }
+        .cbt-analytics-quality-summary-list {
+            margin: 0;
+            padding-left: 22px;
+            color: #526174;
+            list-style: disc;
+        }
+        .cbt-analytics-quality-summary-list li {
+            text-align: justify;
+        }
+        .cbt-analytics-quality-summary-list li + li {
+            margin-top: 8px;
+        }
+        .cbt-analytics-quality-summary-next {
+            padding: 12px 14px;
+            border: 1px solid #dbe4f0;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.88);
+        }
+        .cbt-analytics-quality-summary-next strong {
+            display: block;
+            margin-bottom: 6px;
+            color: #0f172a;
+            font-size: 12px;
+            letter-spacing: .05em;
+            text-transform: uppercase;
+        }
+        .cbt-analytics-quality-summary-next p {
+            margin: 0;
+            color: #526174;
+            font-size: 13px;
+            line-height: 1.6;
+            text-align: justify;
+        }
+        .cbt-analytics-quality-note {
+            margin: 0;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.65;
+            text-align: justify;
+        }
+        .cbt-analytics-quality-tech {
+            display: grid;
+            gap: 12px;
+            padding: 14px;
+            border: 1px dashed #c8d8eb;
+            border-radius: 14px;
+            background: linear-gradient(180deg, #fbfdff 0%, #f4f9ff 100%);
+        }
+        .cbt-analytics-quality-subtitle {
+            display: block;
+            margin: 0;
+            color: #0f172a;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+        .cbt-analytics-quality-diagnostics-grid {
+            display: grid;
+            gap: 12px;
+        }
+        .cbt-analytics-quality-diagnostic-card {
+            padding: 14px;
+            border: 1px solid #dbe4f0;
+            border-radius: 14px;
+            background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,251,255,.98) 100%);
+        }
+        .cbt-analytics-quality-diagnostic-label {
+            display: block;
+            margin-bottom: 8px;
+            color: #0f172a;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: .05em;
+            text-transform: uppercase;
+        }
+        .cbt-analytics-quality-diagnostic-card strong {
+            display: block;
+            margin-bottom: 6px;
+            color: #0f172a;
+            font-size: 15px;
+            line-height: 1.35;
+        }
+        .cbt-analytics-quality-diagnostic-card p {
+            margin: 0;
+            color: #526174;
+            font-size: 13px;
+            line-height: 1.65;
+            text-align: justify;
+        }
+        .cbt-analytics-quality-diagnostic-card p + p {
+            margin-top: 8px;
+        }
+        .cbt-analytics-quality-detail-list {
+            margin: 0;
+            padding: 0;
+            color: #526174;
+            list-style: none;
+            display: grid;
+            gap: 6px;
+        }
+        .cbt-analytics-quality-detail-list li {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 10px;
+            border: 1px solid #e5edf7;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.88);
+        }
+        .cbt-analytics-quality-detail-list li strong {
+            margin: 0;
+            font-size: 13px;
+            line-height: 1.35;
+        }
+        .cbt-analytics-quality-detail-meta {
+            display: block;
+            flex: 0 0 auto;
+            margin-top: 0;
+            color: #64748b;
+            font-size: 11px;
+            line-height: 1.4;
+            text-align: right;
         }
         .cbt-analytics-inline-glossary {
             display: grid;
@@ -850,7 +1124,7 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
             <div class="cbt-analytics-panel-header">
                 <div>
                     <h2>Filter Analytics</h2>
-                    <p>Pilih subject, exam, dan kelas untuk mempersempit analitik. Tab <em>Exam</em>, <em>Items</em>, dan <em>Students</em> membutuhkan exam terpilih agar bisa menampilkan drilldown.</p>
+                    <p>Pilih exam untuk menentukan scope tampilan. Filter akan langsung diterapkan saat pilihan berubah, sedangkan proses analytics dijalankan dari daftar exam di bawah.</p>
                 </div>
                 <div class="cbt-analytics-chip-row">
                     <?php foreach ($active_filters as $active_filter): ?>
@@ -864,20 +1138,8 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
                 <input type="hidden" name="cbt_analytics_tab" id="cbt-analytics-active-tab" value="<?php echo esc_attr($current_tab); ?>">
 
                 <div class="cbt-analytics-field">
-                    <label for="cbt-subject-id">Subject</label>
-                    <select id="cbt-subject-id" name="cbt_subject_id">
-                        <option value="0">Semua subject</option>
-                        <?php foreach ($subject_filter_rows as $subject_row): ?>
-                            <option value="<?php echo esc_attr((string) ($subject_row['id'] ?? 0)); ?>" <?php selected($selected_subject_id, (int) ($subject_row['id'] ?? 0)); ?>>
-                                <?php echo esc_html((string) ($subject_row['name'] ?? 'Subject')); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <div class="cbt-analytics-field">
                     <label for="cbt-exam-id">Exam</label>
-                    <select id="cbt-exam-id" name="cbt_exam_id">
+                    <select id="cbt-exam-id" name="cbt_exam_id" data-auto-submit="1">
                         <option value="0">Semua exam</option>
                         <?php foreach ($exam_filter_rows as $exam_row): ?>
                             <option value="<?php echo esc_attr((string) ($exam_row['id'] ?? 0)); ?>" <?php selected($selected_exam_id, (int) ($exam_row['id'] ?? 0)); ?>>
@@ -887,20 +1149,8 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
                     </select>
                 </div>
 
-                <div class="cbt-analytics-field">
-                    <label for="cbt-result-kelas">Kelas</label>
-                    <select id="cbt-result-kelas" name="cbt_result_kelas">
-                        <option value="">Semua kelas</option>
-                        <?php foreach ($kelas_filter_rows as $kelas_row): ?>
-                            <option value="<?php echo esc_attr((string) $kelas_row); ?>" <?php selected($selected_kelas, (string) $kelas_row); ?>>
-                                <?php echo esc_html((string) $kelas_row); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
                 <div class="cbt-analytics-filter-actions">
-                    <button type="submit" class="button button-primary">Terapkan Filter</button>
+                    <noscript><button type="submit" class="button" data-submit-tab="overview">Terapkan Filter</button></noscript>
                     <a href="<?php echo esc_url($analytics_reset_url); ?>" class="button">Reset</a>
                 </div>
             </form>
@@ -931,152 +1181,87 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
                     <span>Essay Pending</span>
                     <strong><?php echo esc_html(number_format_i18n((int) ($overview_summary['manual_review_count'] ?? 0))); ?></strong>
                 </article>
-                <article class="cbt-analytics-metric-card">
-                    <span>Average Reliability</span>
-                    <strong style="font-size:24px;"><?php echo esc_html((string) ($overview_summary['average_reliability_display'] ?? 'Insufficient Data')); ?></strong>
-                </article>
-                <article class="cbt-analytics-metric-card">
-                    <span>Weak Quality Exams</span>
-                    <strong><?php echo esc_html(number_format_i18n((int) ($overview_summary['weak_exam_count'] ?? 0))); ?></strong>
-                </article>
-            </div>
-
-            <div class="cbt-analytics-grid-2">
-                <section class="cbt-analytics-panel">
-                    <div class="cbt-analytics-panel-header">
-                        <div>
-                            <h2>Top Exams</h2>
-                            <p>Exam dengan attempt selesai terbanyak pada scope filter saat ini.</p>
-                        </div>
-                    </div>
-                    <?php if (!empty($top_exams)): ?>
-                        <div class="cbt-analytics-overview-list">
-                            <?php foreach ($top_exams as $row): ?>
-                                <article class="cbt-analytics-overview-row">
-                                    <div class="cbt-analytics-overview-row-head">
-                                        <div>
-                                            <h3><?php echo esc_html((string) ($row['title'] ?? '-')); ?></h3>
-                                            <p><?php echo esc_html((string) ($row['subject_name'] ?? 'Tanpa subject')); ?></p>
-                                        </div>
-                                        <a href="<?php echo esc_url((string) ($row['exam_url'] ?? $analytics_reset_url)); ?>" class="button">Buka Exam Analytics</a>
-                                    </div>
-                                    <div class="cbt-analytics-overview-row-meta">
-                                        <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n((int) ($row['completed_attempts'] ?? 0))); ?> peserta</span>
-                                        <span class="cbt-analytics-chip"><?php echo esc_html((string) ($row['average_percentage_display'] ?? '0.00%')); ?> rata-rata</span>
-                                        <span class="cbt-analytics-chip is-pass"><?php echo esc_html((string) ($row['pass_rate_display'] ?? '0.00%')); ?> pass rate</span>
-                                        <span class="cbt-analytics-chip"><?php echo esc_html((string) ($row['reliability_display'] ?? 'Insufficient Data')); ?> reliability</span>
-                                        <span class="cbt-analytics-chip is-warning"><?php echo esc_html(number_format_i18n((int) ($row['manual_review_count'] ?? 0))); ?> essay pending</span>
-                                    </div>
-                                </article>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else: ?>
-                        <div class="cbt-analytics-empty">Belum ada completed attempt yang cocok dengan filter saat ini.</div>
-                    <?php endif; ?>
-                </section>
-
-                <section class="cbt-analytics-panel">
-                    <div class="cbt-analytics-panel-header">
-                        <div>
-                            <h2>Lowest Pass Rate Exams</h2>
-                            <p>Exam yang paling banyak membutuhkan perhatian dari sisi ketuntasan.</p>
-                        </div>
-                    </div>
-                    <?php if (!empty($lowest_pass_rate_exams)): ?>
-                        <div class="cbt-analytics-overview-list">
-                            <?php foreach ($lowest_pass_rate_exams as $row): ?>
-                                <article class="cbt-analytics-overview-row">
-                                    <div class="cbt-analytics-overview-row-head">
-                                        <div>
-                                            <h3><?php echo esc_html((string) ($row['title'] ?? '-')); ?></h3>
-                                            <p><?php echo esc_html((string) ($row['subject_name'] ?? 'Tanpa subject')); ?></p>
-                                        </div>
-                                        <a href="<?php echo esc_url((string) ($row['exam_url'] ?? $analytics_reset_url)); ?>" class="button">Buka Exam Analytics</a>
-                                    </div>
-                                    <div class="cbt-analytics-overview-row-meta">
-                                        <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n((int) ($row['completed_attempts'] ?? 0))); ?> peserta</span>
-                                        <span class="cbt-analytics-chip"><?php echo esc_html((string) ($row['average_percentage_display'] ?? '0.00%')); ?> rata-rata</span>
-                                        <span class="cbt-analytics-chip is-fail"><?php echo esc_html((string) ($row['pass_rate_display'] ?? '0.00%')); ?> pass rate</span>
-                                        <span class="cbt-analytics-chip"><?php echo esc_html((string) ($row['reliability_display'] ?? 'Insufficient Data')); ?> reliability</span>
-                                        <span class="cbt-analytics-chip is-warning"><?php echo esc_html(number_format_i18n((int) ($row['manual_review_count'] ?? 0))); ?> essay pending</span>
-                                    </div>
-                                </article>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else: ?>
-                        <div class="cbt-analytics-empty">Belum ada completed attempt yang bisa dibandingkan untuk pass rate.</div>
-                    <?php endif; ?>
-                </section>
             </div>
 
             <section class="cbt-analytics-panel">
                 <div class="cbt-analytics-panel-header">
                     <div>
-                        <h2>Per Kelas Summary</h2>
-                        <p>Ringkasan per kelas untuk jumlah peserta selesai, rata-rata persentase, pass rate, dan essay pending.</p>
+                        <h2>Exam List</h2>
+                        <p>Daftar exam mengikuti filter aktif. Gunakan <em>ANALYTIC ALL</em> untuk memproses semua exam pada daftar ini, atau tombol <em>Analytic</em> di tiap row untuk satu exam tertentu.</p>
+                    </div>
+                    <div class="cbt-analytics-chip-row">
+                        <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n((int) ($overview_pagination['total_rows'] ?? 0))); ?> exam</span>
+                        <span class="cbt-analytics-chip">Halaman <?php echo esc_html(number_format_i18n((int) ($overview_pagination['current_page'] ?? 1))); ?> / <?php echo esc_html(number_format_i18n((int) ($overview_pagination['total_pages'] ?? 1))); ?></span>
+                        <?php if (!empty($overview_exam_rows)): ?>
+                            <a href="<?php echo esc_url($overview_analytic_all_url); ?>" class="button button-primary">ANALYTIC ALL</a>
+                        <?php endif; ?>
                     </div>
                 </div>
-                <?php if (!empty($overview_kelas_summary)): ?>
+                <?php if (!empty($overview_exam_rows)): ?>
                     <div class="cbt-analytics-table-wrap">
                         <table class="cbt-analytics-table">
                             <thead>
                                 <tr>
-                                    <th>Kelas</th>
+                                    <th>Exam</th>
+                                    <th>Subject</th>
                                     <th>Completed</th>
                                     <th>Average %</th>
                                     <th>Pass Rate</th>
                                     <th>Essay Pending</th>
+                                    <th>Action</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($overview_kelas_summary as $row): ?>
+                                <?php foreach ($overview_exam_rows as $row): ?>
                                     <tr>
-                                        <td><?php echo esc_html((string) ($row['kelas'] ?? '-')); ?></td>
+                                        <td>
+                                            <div class="cbt-analytics-table-cell-stack">
+                                                <strong><?php echo esc_html((string) ($row['title'] ?? '-')); ?></strong>
+                                                <span class="cbt-analytics-table-cell-meta">Exam ID #<?php echo esc_html(number_format_i18n((int) ($row['exam_id'] ?? 0))); ?></span>
+                                            </div>
+                                        </td>
+                                        <td><?php echo esc_html((string) ($row['subject_name'] ?? 'Tanpa subject')); ?></td>
                                         <td><?php echo esc_html(number_format_i18n((int) ($row['completed_attempts'] ?? 0))); ?></td>
                                         <td><?php echo esc_html((string) ($row['average_percentage_display'] ?? '0.00%')); ?></td>
                                         <td><?php echo esc_html((string) ($row['pass_rate_display'] ?? '0.00%')); ?></td>
                                         <td><?php echo esc_html(number_format_i18n((int) ($row['manual_review_count'] ?? 0))); ?></td>
+                                        <td><a href="<?php echo esc_url((string) ($row['analytic_url'] ?? $analytics_reset_url)); ?>" class="button button-small">Analytic</a></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
                     </div>
+                    <?php if (!empty($overview_pagination['has_multiple_pages'])): ?>
+                        <div class="cbt-analytics-pagination">
+                            <span class="cbt-analytics-pagination-meta">
+                                <?php
+                                echo esc_html(
+                                    sprintf(
+                                        'Menampilkan %1$s-%2$s dari %3$s exam.',
+                                        number_format_i18n((int) ($overview_pagination['start_row'] ?? 0)),
+                                        number_format_i18n((int) ($overview_pagination['end_row'] ?? 0)),
+                                        number_format_i18n((int) ($overview_pagination['total_rows'] ?? 0))
+                                    )
+                                );
+                                ?>
+                            </span>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                <?php if (!empty($overview_pagination['prev_url'])): ?>
+                                    <a href="<?php echo esc_url((string) $overview_pagination['prev_url']); ?>" class="button">Previous</a>
+                                <?php endif; ?>
+                                <?php foreach ($overview_page_links as $page_link): ?>
+                                    <a href="<?php echo esc_url((string) ($page_link['url'] ?? $analytics_reset_url)); ?>" class="button<?php echo !empty($page_link['is_current']) ? ' button-primary' : ''; ?>">
+                                        <?php echo esc_html(number_format_i18n((int) ($page_link['page'] ?? 1))); ?>
+                                    </a>
+                                <?php endforeach; ?>
+                                <?php if (!empty($overview_pagination['next_url'])): ?>
+                                    <a href="<?php echo esc_url((string) $overview_pagination['next_url']); ?>" class="button">Next</a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
                 <?php else: ?>
-                    <div class="cbt-analytics-empty">Belum ada data kelas untuk scope filter ini.</div>
-                <?php endif; ?>
-            </section>
-
-            <section class="cbt-analytics-panel">
-                <div class="cbt-analytics-panel-header">
-                    <div>
-                        <h2>Exam Quality Alerts</h2>
-                        <p>Exam dengan item bermasalah terbanyak berdasarkan weak/inverse discrimination, high omission, dan pending manual.</p>
-                    </div>
-                </div>
-                <?php if (!empty($problem_exams)): ?>
-                    <div class="cbt-analytics-overview-list">
-                        <?php foreach ($problem_exams as $row): ?>
-                            <article class="cbt-analytics-overview-row">
-                                <div class="cbt-analytics-overview-row-head">
-                                    <div>
-                                        <h3><?php echo esc_html((string) ($row['title'] ?? '-')); ?></h3>
-                                        <p><?php echo esc_html((string) ($row['subject_name'] ?? 'Tanpa subject')); ?></p>
-                                    </div>
-                                    <a href="<?php echo esc_url((string) ($row['exam_url'] ?? $analytics_reset_url)); ?>" class="button">Buka Item Analysis</a>
-                                </div>
-                                <div class="cbt-analytics-chip-row">
-                                    <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n((int) ($row['problem_item_count'] ?? 0))); ?> problem items</span>
-                                    <span class="cbt-analytics-chip is-warning"><?php echo esc_html(number_format_i18n((int) ($row['weak_discrimination_count'] ?? 0))); ?> weak discrimination</span>
-                                    <span class="cbt-analytics-chip is-warning"><?php echo esc_html(number_format_i18n((int) ($row['high_omission_count'] ?? 0))); ?> high omission</span>
-                                    <span class="cbt-analytics-chip <?php echo esc_attr((string) (($row['reliability_tone'] ?? 'neutral') === 'pass' ? 'is-pass' : (($row['reliability_tone'] ?? 'neutral') === 'fail' ? 'is-fail' : 'is-warning'))); ?>">
-                                        Reliability <?php echo esc_html((string) ($row['reliability_display'] ?? 'Insufficient Data')); ?>
-                                    </span>
-                                </div>
-                            </article>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else: ?>
-                    <div class="cbt-analytics-empty">Belum ada exam yang memenuhi syarat quality review pada scope filter ini.</div>
+                    <div class="cbt-analytics-empty">Belum ada exam yang bisa ditampilkan pada scope filter saat ini.</div>
                 <?php endif; ?>
             </section>
         </section>
@@ -1084,8 +1269,8 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
         <section class="cbt-analytics-tab-panel<?php echo $current_tab === 'exam' ? ' is-active' : ''; ?>" data-analytics-panel="exam">
             <?php if (!$has_selected_exam): ?>
                 <div class="cbt-analytics-empty">Pilih satu exam terlebih dahulu untuk melihat analitik detail per exam.</div>
-            <?php elseif (empty($exam_analytics)): ?>
-                <div class="cbt-analytics-empty">Belum ada completed attempt untuk exam ini pada scope filter saat ini.</div>
+            <?php elseif (empty($has_run_analytics)): ?>
+                <div class="cbt-analytics-empty">Pilih exam yang diinginkan lalu tekan tombol <strong>Analytic</strong> untuk memulai analytics detail.</div>
             <?php else: ?>
                 <section class="cbt-analytics-panel">
                     <div class="cbt-analytics-panel-header">
@@ -1139,47 +1324,143 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
                     </div>
 
                     <div class="cbt-analytics-grid-2" style="margin-top:16px;">
-                        <section class="cbt-analytics-inline-card">
-                            <strong>Test Quality</strong>
-                            <div class="cbt-analytics-chip-row" style="margin-bottom:12px;">
-                                <span class="cbt-analytics-chip <?php echo esc_attr((string) (($exam_quality['reliability_tone'] ?? 'neutral') === 'pass' ? 'is-pass' : (($exam_quality['reliability_tone'] ?? 'neutral') === 'fail' ? 'is-fail' : 'is-warning'))); ?>">
-                                    <?php echo esc_html((string) ($exam_quality['reliability_label'] ?? 'Insufficient Data')); ?>
-                                </span>
-                                <span class="cbt-analytics-chip"><?php echo esc_html((string) ($exam_quality['reliability_method'] ?? 'Insufficient Data')); ?></span>
-                                <span class="cbt-analytics-chip">Objective Avg <?php echo esc_html((string) ($exam_quality['average_objective_percentage_display'] ?? '0.00%')); ?></span>
+                        <section class="cbt-analytics-inline-card cbt-analytics-quality-card">
+                            <div class="cbt-analytics-quality-heading">
+                                <div>
+                                    <span class="cbt-analytics-quality-kicker">Kualitas Soal Objective</span>
+                                    <h3>Kualitas Soal Objective</h3>
+                                </div>
+                                <div class="cbt-analytics-chip-row">
+                                    <span class="cbt-analytics-chip <?php echo esc_attr((string) (($exam_quality['reliability_tone'] ?? 'neutral') === 'pass' ? 'is-pass' : (($exam_quality['reliability_tone'] ?? 'neutral') === 'fail' ? 'is-fail' : 'is-warning'))); ?>">
+                                        <?php echo esc_html((string) ($exam_quality['reliability_label'] ?? 'Insufficient Data')); ?>
+                                    </span>
+                                    <span class="cbt-analytics-chip"><?php echo esc_html($quality_reliability_method); ?></span>
+                                    <span class="cbt-analytics-chip"><?php echo esc_html($quality_profile_label); ?></span>
+                                </div>
                             </div>
-                            <div class="cbt-analytics-grid-3">
-                                <article class="cbt-analytics-metric-card">
-                                    <span>Reliability</span>
-                                    <strong style="font-size:24px;"><?php echo esc_html((string) ($exam_quality['reliability_display'] ?? 'Insufficient Data')); ?></strong>
-                                </article>
-                                <article class="cbt-analytics-metric-card">
-                                    <span>Std Dev</span>
-                                    <strong style="font-size:24px;"><?php echo esc_html((string) ($exam_quality['standard_deviation_display'] ?? 'Insufficient Data')); ?></strong>
-                                </article>
-                                <article class="cbt-analytics-metric-card">
-                                    <span>SEM</span>
-                                    <strong style="font-size:24px;"><?php echo esc_html((string) ($exam_quality['sem_display'] ?? 'Insufficient Data')); ?></strong>
-                                </article>
-                            </div>
-                            <div class="cbt-analytics-chip-row" style="margin-top:12px;">
+
+                            <p class="cbt-analytics-quality-note"><?php echo esc_html($quality_note_text); ?></p>
+
+                            <div class="cbt-analytics-chip-row">
                                 <span class="cbt-analytics-chip">Variance <?php echo esc_html((string) ($exam_quality['variance_display'] ?? 'Insufficient Data')); ?></span>
-                                <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n((int) ($exam_quality['eligible_objective_item_count'] ?? 0))); ?> objective items</span>
-                                <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n((int) ($exam_quality['objective_attempt_count'] ?? 0))); ?> eligible attempts</span>
+                                <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n($quality_eligible_item_count)); ?> objective items</span>
+                                <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n($quality_eligible_attempt_count)); ?> eligible attempts</span>
+                                <span class="cbt-analytics-chip">Objective Avg <?php echo esc_html($quality_objective_avg_display); ?></span>
                             </div>
-                            <?php if (!empty($exam_quality['insufficient_reason'])): ?>
-                                <p class="cbt-analytics-muted" style="margin-top:12px;"><?php echo esc_html((string) $exam_quality['insufficient_reason']); ?></p>
-                            <?php endif; ?>
+
+                            <div class="cbt-analytics-quality-tech">
+                                <span class="cbt-analytics-quality-subtitle">Metrik Teknis</span>
+                                <div class="cbt-analytics-grid-3">
+                                    <article class="cbt-analytics-metric-card">
+                                        <span>Reliability</span>
+                                        <strong style="font-size:24px;"><?php echo esc_html((string) ($exam_quality['reliability_display'] ?? 'Insufficient Data')); ?></strong>
+                                    </article>
+                                    <article class="cbt-analytics-metric-card">
+                                        <span>Std Dev</span>
+                                        <strong style="font-size:24px;"><?php echo esc_html((string) ($exam_quality['standard_deviation_display'] ?? 'Insufficient Data')); ?></strong>
+                                    </article>
+                                    <article class="cbt-analytics-metric-card">
+                                        <span>SEM</span>
+                                        <strong style="font-size:24px;"><?php echo esc_html((string) ($exam_quality['sem_display'] ?? 'Insufficient Data')); ?></strong>
+                                    </article>
+                                </div>
+                            </div>
+
+                            <p class="cbt-analytics-quality-lead"><?php echo esc_html($quality_summary_text); ?></p>
+
+                            <ul class="cbt-analytics-quality-summary-list">
+                                <?php foreach ($quality_result_points as $quality_result_point): ?>
+                                    <li><?php echo esc_html((string) $quality_result_point); ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+
+                            <div class="cbt-analytics-quality-summary-next">
+                                <strong>Arah Tindak Lanjut</strong>
+                                <p><?php echo esc_html($quality_next_step_text); ?></p>
+                            </div>
                         </section>
 
-                        <section class="cbt-analytics-inline-card">
-                            <strong>Exam Quality Flags</strong>
-                            <div class="cbt-analytics-chip-row" style="margin-bottom:12px;">
-                                <span class="cbt-analytics-chip is-warning"><?php echo esc_html(number_format_i18n((int) ($exam_item_flags['weak_discrimination_count'] ?? 0))); ?> weak/inverse discrimination</span>
-                                <span class="cbt-analytics-chip is-warning"><?php echo esc_html(number_format_i18n((int) ($exam_item_flags['high_omission_count'] ?? 0))); ?> high omission</span>
-                                <span class="cbt-analytics-chip is-warning"><?php echo esc_html(number_format_i18n((int) ($exam_item_flags['pending_manual_count'] ?? 0))); ?> pending manual</span>
+                        <section class="cbt-analytics-inline-card cbt-analytics-quality-admin-card">
+                            <div class="cbt-analytics-quality-heading">
+                                <div>
+                                    <span class="cbt-analytics-quality-kicker">Diagnostics Admin</span>
+                                    <h3>Diagnostics Admin</h3>
+                                </div>
+                                <div class="cbt-analytics-chip-row">
+                                    <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n((int) ($quality_counts['dichotomous_items'] ?? 0))); ?> dichotomous</span>
+                                    <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n((int) ($quality_counts['mixed_objective_items'] ?? 0))); ?> mixed</span>
+                                    <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n((int) ($quality_counts['excluded_items'] ?? 0))); ?> excluded</span>
+                                </div>
                             </div>
-                            <p class="cbt-analytics-muted">Reliability memakai item objektif finalized. Jika exam memiliki komponen esai/manual, komponen itu tetap ditampilkan sebagai manual component dan tidak ikut reliability utama v2.</p>
+
+                            <div class="cbt-analytics-quality-diagnostics-grid">
+                                <article class="cbt-analytics-quality-diagnostic-card">
+                                    <span class="cbt-analytics-quality-diagnostic-label">Komposisi Soal Objective</span>
+                                    <strong><?php echo esc_html($quality_composition_label); ?></strong>
+                                    <p><?php echo esc_html($quality_profile_reason !== '' ? $quality_profile_reason : 'Belum ada komposisi objective finalized yang layak dibaca.'); ?></p>
+                                </article>
+
+                                <article class="cbt-analytics-quality-diagnostic-card">
+                                    <span class="cbt-analytics-quality-diagnostic-label">Metode yang Dipakai</span>
+                                    <strong><?php echo esc_html($quality_reliability_method); ?></strong>
+                                    <p><?php echo esc_html($quality_method_reason !== '' ? $quality_method_reason : 'Metode reliability akan dipilih setelah komposisi objective finalized layak dihitung.'); ?></p>
+                                </article>
+
+                                <article class="cbt-analytics-quality-diagnostic-card">
+                                    <span class="cbt-analytics-quality-diagnostic-label">Yang Masuk ke Reliability</span>
+                                    <?php if (!empty($quality_included_types)): ?>
+                                        <ul class="cbt-analytics-quality-detail-list">
+                                            <?php foreach ($quality_included_types as $included_type): ?>
+                                                <li>
+                                                    <strong><?php echo esc_html((string) ($included_type['label'] ?? '-')); ?></strong>
+                                                    <span class="cbt-analytics-quality-detail-meta"><?php echo esc_html(number_format_i18n((int) ($included_type['count'] ?? 0))); ?> butir masuk reliability.</span>
+                                                </li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    <?php else: ?>
+                                        <p>Belum ada tipe soal objective finalized yang bisa masuk reliability saat ini.</p>
+                                    <?php endif; ?>
+                                </article>
+
+                                <article class="cbt-analytics-quality-diagnostic-card">
+                                    <span class="cbt-analytics-quality-diagnostic-label">Yang Dikeluarkan dari Reliability</span>
+                                    <?php if (!empty($quality_excluded_types)): ?>
+                                        <ul class="cbt-analytics-quality-detail-list">
+                                            <?php foreach ($quality_excluded_types as $excluded_type): ?>
+                                                <li>
+                                                    <strong><?php echo esc_html((string) ($excluded_type['label'] ?? '-')); ?></strong>
+                                                    <span class="cbt-analytics-quality-detail-meta">
+                                                        <?php echo esc_html(number_format_i18n((int) ($excluded_type['count'] ?? 0))); ?> butir dikeluarkan.
+                                                        <?php
+                                                        $excluded_notes = array_values((array) ($excluded_type['notes'] ?? []));
+                                                        if (!empty($excluded_notes)) {
+                                                            echo ' ' . esc_html(implode(' ', array_map('strval', $excluded_notes)));
+                                                        }
+                                                        ?>
+                                                    </span>
+                                                </li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    <?php elseif (!empty($quality_excluded_reasons)): ?>
+                                        <ul class="cbt-analytics-quality-detail-list">
+                                            <?php foreach ($quality_excluded_reasons as $excluded_reason): ?>
+                                                <li>
+                                                    <strong><?php echo esc_html((string) ($excluded_reason['reason'] ?? '-')); ?></strong>
+                                                    <span class="cbt-analytics-quality-detail-meta"><?php echo esc_html(number_format_i18n((int) ($excluded_reason['count'] ?? 0))); ?> butir.</span>
+                                                </li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    <?php else: ?>
+                                        <p>Tidak ada butir yang perlu dikeluarkan dari reliability pada scope ini.</p>
+                                    <?php endif; ?>
+                                </article>
+
+                                <article class="cbt-analytics-quality-diagnostic-card">
+                                    <span class="cbt-analytics-quality-diagnostic-label">Kenapa Metode/Fallback Ini Dipilih</span>
+                                    <p><?php echo esc_html($quality_why_reason !== '' ? $quality_why_reason : 'Metode dan fallback akan dijelaskan otomatis setelah komposisi objective terbaca.'); ?></p>
+                                    <p><?php echo esc_html(sprintf('Flag item saat ini: %1$d weak/inverse discrimination, %2$d high omission, %3$d pending manual.', (int) ($exam_item_flags['weak_discrimination_count'] ?? 0), (int) ($exam_item_flags['high_omission_count'] ?? 0), (int) ($exam_item_flags['pending_manual_count'] ?? 0))); ?></p>
+                                </article>
+                            </div>
                         </section>
                     </div>
                 </section>
@@ -1302,6 +1583,8 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
                 </div>
                 <?php if (!$has_selected_exam): ?>
                     <div class="cbt-analytics-empty">Pilih satu exam terlebih dahulu agar analisis butir soal bisa ditampilkan.</div>
+                <?php elseif (empty($has_run_analytics)): ?>
+                    <div class="cbt-analytics-empty">Tekan tombol <strong>Analytic</strong> untuk menghitung item analysis pada exam terpilih.</div>
                 <?php else: ?>
                     <div id="cbt-analytics-items-app"></div>
                 <?php endif; ?>
@@ -1324,6 +1607,8 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
                 </div>
                 <?php if (!$has_selected_exam): ?>
                     <div class="cbt-analytics-empty">Pilih satu exam terlebih dahulu agar drilldown siswa bisa ditampilkan.</div>
+                <?php elseif (empty($has_run_analytics)): ?>
+                    <div class="cbt-analytics-empty">Tekan tombol <strong>Analytic</strong> untuk menampilkan drilldown siswa pada exam terpilih.</div>
                 <?php else: ?>
                     <div id="cbt-analytics-students-app"></div>
                 <?php endif; ?>
@@ -1336,6 +1621,7 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
             const activeTabInput = document.getElementById('cbt-analytics-active-tab');
             const tabButtons = Array.from(document.querySelectorAll('.cbt-analytics-tab'));
             const tabPanels = Array.from(document.querySelectorAll('.cbt-analytics-tab-panel'));
+            const filterForm = document.getElementById('cbt-analytics-filter-form');
 
             function setActiveTab(tabName) {
                 const nextTab = String(tabName || 'overview');
@@ -1357,6 +1643,24 @@ $student_rows_json = wp_json_encode(array_values((array) $student_rows));
                     setActiveTab(button.getAttribute('data-analytics-tab') || 'overview');
                 });
             });
+            if (filterForm) {
+                Array.from(filterForm.querySelectorAll('[data-submit-tab]')).forEach((button) => {
+                    button.addEventListener('click', () => {
+                        setActiveTab(button.getAttribute('data-submit-tab') || 'overview');
+                    });
+                });
+
+                Array.from(filterForm.querySelectorAll('[data-auto-submit]')).forEach((field) => {
+                    field.addEventListener('change', () => {
+                        setActiveTab('overview');
+                        if (typeof filterForm.requestSubmit === 'function') {
+                            filterForm.requestSubmit();
+                            return;
+                        }
+                        filterForm.submit();
+                    });
+                });
+            }
 
             setActiveTab(<?php echo wp_json_encode($current_tab); ?>);
 

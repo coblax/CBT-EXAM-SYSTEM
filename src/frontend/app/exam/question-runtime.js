@@ -8,6 +8,7 @@ export function createQuestionRuntimeManager(deps) {
     var buildChangedQuestionLookup = deps.buildChangedQuestionLookup;
     var buildQuestionManifestById = deps.buildQuestionManifestById;
     var buildQuestionManifestFromQuestions = deps.buildQuestionManifestFromQuestions;
+    var buildQuestionOrderSignature = deps.buildQuestionOrderSignature;
     var clearAttemptUiStateSyncTimer = deps.clearAttemptUiStateSyncTimer;
     var clearAutoSaveRuntimeState = deps.clearAutoSaveRuntimeState;
     var clearPendingRevisionSafeAnswerRestoreState = deps.clearPendingRevisionSafeAnswerRestoreState;
@@ -37,6 +38,7 @@ export function createQuestionRuntimeManager(deps) {
     var primeSubmittedPayloadCacheFromQuestionItems = deps.primeSubmittedPayloadCacheFromQuestionItems;
     var pruneAnswerSyncState = deps.pruneAnswerSyncState;
     var prunePendingRevisionSafeAnswerRestoreState = deps.prunePendingRevisionSafeAnswerRestoreState;
+    var questionOrderSignatureEquals = deps.questionOrderSignatureEquals;
     var questionRevisionEquals = deps.questionRevisionEquals;
     var questionWindowSize = deps.questionWindowSize;
     var questionWindowOffsetForIndex = deps.questionWindowOffsetForIndex;
@@ -62,6 +64,7 @@ export function createQuestionRuntimeManager(deps) {
     var questionCachePersistTimer = 0;
     var questionDataGeneration = 0;
     var questionRevisionRefreshInFlight = null;
+    var blockedQuestionOrderSignature = '';
 
     function recordTimelineEntry(kind, summary, meta) {
         if (typeof recordTimeline === 'function') {
@@ -124,6 +127,7 @@ export function createQuestionRuntimeManager(deps) {
 
     function clearQuestionRevisionRefreshState() {
         questionRevisionRefreshInFlight = null;
+        clearBlockedQuestionOrderSignature();
     }
 
     function setQuestionRevision(revision, fallbackExamId) {
@@ -261,146 +265,255 @@ export function createQuestionRuntimeManager(deps) {
         return mergedLookup;
     }
 
-    function buildStableQuestionNumberMapFromSources(manifestById, payloadById, preferredMap) {
-        var stableMap = {};
-
-        [manifestById, payloadById, preferredMap].forEach(function (source) {
-            if (!source || typeof source !== 'object') {
-                return;
-            }
-
-            Object.keys(source).forEach(function (key) {
-                var questionId = Number(key) || 0;
-                if (questionId <= 0) {
-                    return;
-                }
-
-                var item = source[key];
-                var questionNumber = Number(item && item.question_number !== undefined ? item.question_number : item) || 0;
-                if (questionNumber > 0) {
-                    stableMap[questionId] = questionNumber;
-                }
-            });
-        });
-
-        return stableMap;
+    function clearBlockedQuestionOrderSignature() {
+        blockedQuestionOrderSignature = '';
     }
 
-    function buildResponseQuestionNumberMap(manifestItems, payloadItems) {
-        var responseMap = {};
-
-        [manifestItems, payloadItems].forEach(function (items) {
-            if (!Array.isArray(items)) {
-                return;
-            }
-
-            items.forEach(function (item) {
-                if (!item || typeof item !== 'object') {
-                    return;
-                }
-
-                var questionId = Number(item.id) || 0;
-                var questionNumber = Number(item.question_number) || 0;
-                if (questionId <= 0 || questionNumber <= 0) {
-                    return;
-                }
-
-                if (!Object.prototype.hasOwnProperty.call(responseMap, questionId)) {
-                    responseMap[questionId] = questionNumber;
-                }
-            });
-        });
-
-        return responseMap;
+    function setBlockedQuestionOrderSignature(signature) {
+        blockedQuestionOrderSignature = String(signature || '').trim();
     }
 
-    function buildResolvedQuestionNumberMap(orderIds, manifestItems, payloadItems, stableQuestionNumberMap) {
-        var resolvedMap = {};
-        var usedNumberLookup = {};
-        var safeStableQuestionNumberMap = stableQuestionNumberMap && typeof stableQuestionNumberMap === 'object'
-            ? stableQuestionNumberMap
-            : {};
-        var responseQuestionNumberMap = buildResponseQuestionNumberMap(manifestItems, payloadItems);
-        var candidateQuestionIds = normalizeQuestionIdList([].concat(
-            Array.isArray(orderIds) ? orderIds : [],
-            Object.keys(responseQuestionNumberMap || {}).map(function (key) {
-                return Number(key) || 0;
-            })
-        ));
-        var nextQuestionNumber = 0;
-
-        candidateQuestionIds.forEach(function (questionId) {
-            var responseQuestionNumber = Number(responseQuestionNumberMap[questionId]) || 0;
-            if (responseQuestionNumber <= 0 || usedNumberLookup[responseQuestionNumber]) {
-                return;
-            }
-
-            resolvedMap[questionId] = responseQuestionNumber;
-            usedNumberLookup[responseQuestionNumber] = true;
-            if (responseQuestionNumber > nextQuestionNumber) {
-                nextQuestionNumber = responseQuestionNumber;
-            }
-        });
-
-        candidateQuestionIds.forEach(function (questionId) {
-            if (resolvedMap[questionId]) {
-                return;
-            }
-
-            var stableQuestionNumber = Number(safeStableQuestionNumberMap[questionId]) || 0;
-            if (stableQuestionNumber > 0 && !usedNumberLookup[stableQuestionNumber]) {
-                resolvedMap[questionId] = stableQuestionNumber;
-                usedNumberLookup[stableQuestionNumber] = true;
-                if (stableQuestionNumber > nextQuestionNumber) {
-                    nextQuestionNumber = stableQuestionNumber;
-                }
-                return;
-            }
-        });
-
-        function allocateNextQuestionNumber() {
-            do {
-                nextQuestionNumber += 1;
-            } while (usedNumberLookup[nextQuestionNumber]);
-
-            usedNumberLookup[nextQuestionNumber] = true;
-            return nextQuestionNumber;
+    function buildQuestionPayloadById(items) {
+        if (!Array.isArray(items)) {
+            return {};
         }
 
-        candidateQuestionIds.forEach(function (questionId) {
-            if (resolvedMap[questionId]) {
-                return;
-            }
-
-            resolvedMap[questionId] = allocateNextQuestionNumber();
-        });
-
-        return resolvedMap;
-    }
-
-    function applyStableQuestionNumbersToItems(items, stableQuestionNumberMap) {
-        if (!Array.isArray(items) || !items.length || !stableQuestionNumberMap || typeof stableQuestionNumberMap !== 'object') {
-            return items;
-        }
-
-        return items.map(function (item) {
+        return items.reduce(function (accumulator, item) {
             if (!item || typeof item !== 'object') {
-                return item;
+                return accumulator;
             }
 
             var questionId = Number(item.id) || 0;
-            var stableQuestionNumber = questionId > 0
-                ? (Number(stableQuestionNumberMap[questionId]) || 0)
-                : 0;
+            if (questionId > 0) {
+                accumulator[questionId] = item;
+            }
+            return accumulator;
+        }, {});
+    }
 
-            if (stableQuestionNumber <= 0) {
-                return item;
+    function getQuestionNumberFromContract(questionId, manifestById, payloadById) {
+        var safeQuestionId = Number(questionId) || 0;
+        if (safeQuestionId <= 0) {
+            return 0;
+        }
+
+        var manifestItem = manifestById && typeof manifestById === 'object'
+            ? manifestById[safeQuestionId] || null
+            : null;
+        var payloadItem = payloadById && typeof payloadById === 'object'
+            ? payloadById[safeQuestionId] || null
+            : null;
+
+        return Number(
+            manifestItem && manifestItem.question_number !== undefined
+                ? manifestItem.question_number
+                : (payloadItem && payloadItem.question_number !== undefined ? payloadItem.question_number : 0)
+        ) || 0;
+    }
+
+    function buildQuestionOrderConflictError(message, code, signature, detail) {
+        var error = new Error(String(message || 'Urutan soal terbaru tidak valid.'));
+        error.code = String(code || 'question_order_contract_invalid');
+        error.detail = String(detail || '');
+        error.isQuestionOrderConflict = true;
+        error.questionOrderSignature = String(signature || '').trim();
+        return error;
+    }
+
+    function buildQuestionOrderContract(questionPayload) {
+        var responseItems = questionPayload && Array.isArray(questionPayload.items) ? questionPayload.items : [];
+        var hasExplicitQuestionOrderIds = !!(questionPayload && Array.isArray(questionPayload.question_order_ids));
+        var hasExplicitQuestionManifest = !!(questionPayload && Array.isArray(questionPayload.question_manifest));
+        var responseOrderIds = questionPayload && Array.isArray(questionPayload.question_order_ids)
+            ? questionPayload.question_order_ids
+            : responseItems.map(function (question) { return Number(question && question.id) || 0; });
+        var responseManifest = questionPayload && Array.isArray(questionPayload.question_manifest)
+            ? questionPayload.question_manifest
+            : buildQuestionManifestFromQuestions(responseItems);
+        var normalizedOrderIds = normalizeQuestionIdList(responseOrderIds);
+        var normalizedResponseOrderIds = Array.isArray(responseOrderIds)
+            ? responseOrderIds.reduce(function (accumulator, item) {
+                var questionId = Number(item) || 0;
+                if (questionId > 0) {
+                    accumulator.push(questionId);
+                }
+                return accumulator;
+            }, [])
+            : [];
+        var responseManifestById = buildQuestionManifestById(responseManifest);
+        var responsePayloadById = buildQuestionPayloadById(responseItems);
+        var computedQuestionOrderSignature = buildQuestionOrderSignature(
+            normalizedOrderIds,
+            responseManifest,
+            responseItems
+        );
+        var payloadQuestionOrderSignature = String(questionPayload && questionPayload.question_order_signature || '').trim();
+        var questionOrderLookup = normalizedOrderIds.reduce(function (accumulator, questionId) {
+            accumulator[questionId] = true;
+            return accumulator;
+        }, {});
+        var normalizedResponseItemIds = responseItems.reduce(function (accumulator, question) {
+            var questionId = Number(question && question.id) || 0;
+            if (questionId > 0) {
+                accumulator.push(questionId);
+            }
+            return accumulator;
+        }, []);
+        var usedQuestionNumbers = {};
+        var previousQuestionNumber = 0;
+        var invalidDetail = '';
+
+        if (!normalizedOrderIds.length) {
+            invalidDetail = 'empty-order';
+        }
+        if (
+            invalidDetail === ''
+            && hasExplicitQuestionOrderIds
+            && normalizedOrderIds.length !== normalizedResponseOrderIds.length
+        ) {
+            invalidDetail = 'duplicate-or-invalid-question-id';
+        }
+        if (
+            invalidDetail === ''
+            && Object.keys(responsePayloadById).length !== normalizedResponseItemIds.length
+        ) {
+            invalidDetail = 'duplicate-response-question-id';
+        }
+        if (invalidDetail === '') {
+            normalizedResponseItemIds.forEach(function (questionId) {
+                if (invalidDetail !== '' || questionOrderLookup[questionId]) {
+                    return;
+                }
+
+                invalidDetail = 'response-outside-order:' + String(questionId);
+            });
+        }
+        if (invalidDetail === '' && hasExplicitQuestionManifest) {
+            if (Object.keys(responseManifestById).length !== responseManifest.length) {
+                invalidDetail = 'duplicate-manifest-question-id';
+            } else if (Object.keys(responseManifestById).length !== normalizedOrderIds.length) {
+                invalidDetail = 'missing-manifest-entry';
+            } else {
+                Object.keys(responseManifestById).forEach(function (key) {
+                    var questionId = Number(key) || 0;
+                    if (invalidDetail !== '' || questionId <= 0 || questionOrderLookup[questionId]) {
+                        return;
+                    }
+
+                    invalidDetail = 'manifest-outside-order:' + String(questionId);
+                });
+            }
+        }
+
+        normalizedOrderIds.forEach(function (questionId) {
+            if (invalidDetail !== '') {
+                return;
             }
 
-            return Object.assign({}, item, {
-                question_number: stableQuestionNumber
-            });
+            if (!responseManifestById[questionId] && !responsePayloadById[questionId]) {
+                invalidDetail = 'missing-question:' + String(questionId);
+                return;
+            }
+
+            var questionNumber = getQuestionNumberFromContract(
+                questionId,
+                responseManifestById,
+                responsePayloadById
+            );
+            if (questionNumber <= 0) {
+                invalidDetail = 'missing-number:' + String(questionId);
+                return;
+            }
+            if (usedQuestionNumbers[questionNumber]) {
+                invalidDetail = 'duplicate-number:' + String(questionNumber);
+                return;
+            }
+            if (questionNumber <= previousQuestionNumber) {
+                invalidDetail = 'unordered-number:' + String(questionId);
+                return;
+            }
+
+            usedQuestionNumbers[questionNumber] = true;
+            previousQuestionNumber = questionNumber;
         });
+
+        if (
+            invalidDetail === ''
+            && payloadQuestionOrderSignature !== ''
+            && computedQuestionOrderSignature !== ''
+            && !questionOrderSignatureEquals(payloadQuestionOrderSignature, computedQuestionOrderSignature)
+        ) {
+            invalidDetail = 'signature-mismatch';
+        }
+
+        return {
+            isValid: invalidDetail === '',
+            invalidDetail: invalidDetail,
+            items: responseItems,
+            questionManifest: responseManifest,
+            questionManifestById: responseManifestById,
+            questionOrderIds: normalizedOrderIds,
+            questionOrderSignature: payloadQuestionOrderSignature || computedQuestionOrderSignature,
+            questionPayloadById: responsePayloadById
+        };
+    }
+
+    function buildActiveQuestionPayloadMap(questionOrderIds, existingPayloadById, responsePayloadById, manifestById) {
+        var normalizedOrderIds = normalizeQuestionIdList(questionOrderIds);
+        var safeExistingPayloadById = existingPayloadById && typeof existingPayloadById === 'object'
+            ? existingPayloadById
+            : {};
+        var safeResponsePayloadById = responsePayloadById && typeof responsePayloadById === 'object'
+            ? responsePayloadById
+            : {};
+        var safeManifestById = manifestById && typeof manifestById === 'object'
+            ? manifestById
+            : {};
+
+        return normalizedOrderIds.reduce(function (accumulator, questionId) {
+            var payloadQuestion = safeResponsePayloadById[questionId] || safeExistingPayloadById[questionId] || null;
+            if (!payloadQuestion) {
+                return accumulator;
+            }
+
+            var manifestQuestion = safeManifestById[questionId] || null;
+            if (manifestQuestion && Number(manifestQuestion.question_number) > 0) {
+                payloadQuestion = Object.assign({}, payloadQuestion, {
+                    question_number: Number(manifestQuestion.question_number) || 0
+                });
+            }
+
+            accumulator[questionId] = payloadQuestion;
+            return accumulator;
+        }, {});
+    }
+
+    function restorePersistedQuestionCacheAnswerState(snapshot, options) {
+        options = options || {};
+
+        var normalizedSnapshot = normalizeOrUseQuestionCacheSnapshot(snapshot, options.attemptId || state.attemptId);
+        if (!normalizedSnapshot) {
+            return false;
+        }
+
+        var expectedExamId = Number(options.examId) || 0;
+        if (expectedExamId > 0 && normalizedSnapshot.examId > 0 && normalizedSnapshot.examId !== expectedExamId) {
+            return false;
+        }
+
+        state.answers = Object.assign({}, normalizedSnapshot.answers || {}, state.answers || {});
+        state.existingAnswerRawByQuestionId = Object.assign(
+            {},
+            normalizedSnapshot.existingAnswerRawByQuestionId || {},
+            state.existingAnswerRawByQuestionId || {}
+        );
+        state.answeredQuestionLookup = Object.assign(
+            {},
+            normalizedSnapshot.answeredQuestionLookup || {},
+            state.answeredQuestionLookup || {}
+        );
+        restoreQuestionAutoSaveState(normalizedSnapshot);
+        return true;
     }
 
     function acknowledgeQuestionRevisionMarker(questionId, options) {
@@ -524,8 +637,25 @@ export function createQuestionRuntimeManager(deps) {
             return false;
         }
 
+        if (options.restoreAnswersOnly) {
+            return restorePersistedQuestionCacheAnswerState(normalizedSnapshot, options);
+        }
+
+        var expectedQuestionOrderSignature = String(options.expectedQuestionOrderSignature || '').trim();
+        if (
+            expectedQuestionOrderSignature !== ''
+            && !questionOrderSignatureEquals(normalizedSnapshot.questionOrderSignature, expectedQuestionOrderSignature)
+        ) {
+            if (options.restoreAnswersOnlyOnSignatureMismatch !== false) {
+                restorePersistedQuestionCacheAnswerState(normalizedSnapshot, options);
+            }
+            return false;
+        }
+
         state.questionOrderIds = normalizedSnapshot.questionOrderIds;
         state.totalQuestions = normalizedSnapshot.totalQuestions;
+        state.questionOrderSignature = String(normalizedSnapshot.questionOrderSignature || '').trim();
+        clearBlockedQuestionOrderSignature();
         state.questionManifestById = buildQuestionManifestById(normalizedSnapshot.questionManifest);
         state.questionManifest = (state.questionOrderIds.length ? state.questionOrderIds : Object.keys(state.questionManifestById)).reduce(function (accumulator, item) {
             var questionId = Number(item) || 0;
@@ -584,6 +714,7 @@ export function createQuestionRuntimeManager(deps) {
         state.windowOffset = 0;
         state.windowLimit = 0;
         state.totalQuestions = 0;
+        state.questionOrderSignature = '';
         state.answers = {};
         clearQuestionRevisionToastTimer();
         state.questionRevisionNotice = null;
@@ -602,44 +733,22 @@ export function createQuestionRuntimeManager(deps) {
         }
     }
 
-    function storeQuestionPayloads(questions) {
-        if (!Array.isArray(questions)) {
-            return;
-        }
-
-        questions.forEach(function (question) {
-            var questionId = Number(question && question.id) || 0;
-            if (questionId <= 0) {
-                return;
-            }
-            state.questionPayloadById[questionId] = question;
-        });
-    }
-
     function applyQuestionsResponse(questionPayload, options) {
         options = options || {};
-        var useExistingStableQuestionNumbers = options.useExistingStableQuestionNumbers !== false;
-        var stableQuestionNumberMap = buildStableQuestionNumberMapFromSources(
-            useExistingStableQuestionNumbers ? state.questionManifestById : null,
-            useExistingStableQuestionNumbers ? state.questionPayloadById : null,
-            options.stableQuestionNumberMap
-        );
-        var responseItems = questionPayload && Array.isArray(questionPayload.items) ? questionPayload.items : [];
-        var responseOrderIds = questionPayload && Array.isArray(questionPayload.question_order_ids)
-            ? questionPayload.question_order_ids
-            : responseItems.map(function (question) { return Number(question && question.id) || 0; });
-        var normalizedOrderIds = normalizeQuestionIdList(responseOrderIds);
-        var responseManifest = questionPayload && Array.isArray(questionPayload.question_manifest)
-            ? questionPayload.question_manifest
-            : buildQuestionManifestFromQuestions(responseItems);
-        var resolvedQuestionNumberMap = buildResolvedQuestionNumberMap(
-            normalizedOrderIds,
-            responseManifest,
-            responseItems,
-            stableQuestionNumberMap
-        );
-        responseItems = applyStableQuestionNumbersToItems(responseItems, resolvedQuestionNumberMap);
-        responseManifest = applyStableQuestionNumbersToItems(responseManifest, resolvedQuestionNumberMap);
+        var questionOrderContract = buildQuestionOrderContract(questionPayload);
+        if (!questionOrderContract.isValid) {
+            throw buildQuestionOrderConflictError(
+                'Urutan soal terbaru tidak valid. Muat ulang halaman untuk melanjutkan dengan aman.',
+                'question_order_contract_invalid',
+                questionOrderContract.questionOrderSignature,
+                questionOrderContract.invalidDetail
+            );
+        }
+
+        var responseItems = questionOrderContract.items;
+        var normalizedOrderIds = questionOrderContract.questionOrderIds;
+        var responseManifest = questionOrderContract.questionManifest;
+        var responseManifestById = questionOrderContract.questionManifestById;
         var responseAnsweredQuestionIds = questionPayload && Array.isArray(questionPayload.answered_question_ids)
             ? normalizeQuestionIdList(questionPayload.answered_question_ids)
             : [];
@@ -653,10 +762,39 @@ export function createQuestionRuntimeManager(deps) {
             questionPayload && questionPayload.question_revision,
             Number(state.selectedExamId) || 0
         );
+        var previousQuestionOrderSignature = String(state.questionOrderSignature || '').trim();
+        var didQuestionOrderChange = (
+            previousQuestionOrderSignature !== ''
+            && !questionOrderSignatureEquals(previousQuestionOrderSignature, questionOrderContract.questionOrderSignature)
+        );
+        var responseOffset = Math.max(0, Number(questionPayload && questionPayload.offset) || 0);
+        var responseLimit = Math.max(0, Number(questionPayload && questionPayload.limit) || 0);
 
-        if (normalizedOrderIds.length) {
-            state.questionOrderIds = normalizedOrderIds;
+        if (didQuestionOrderChange) {
+            state.loadedQuestionWindowOffsets = {};
         }
+
+        state.questionOrderIds = normalizedOrderIds;
+        state.totalQuestions = Math.max(
+            normalizedOrderIds.length,
+            Number(questionPayload && questionPayload.total_questions) || 0
+        );
+        state.questionOrderSignature = questionOrderContract.questionOrderSignature;
+        state.questionManifestById = responseManifestById;
+        state.questionManifest = normalizedOrderIds.reduce(function (accumulator, questionId) {
+            var manifestItem = responseManifestById[questionId] || null;
+            if (manifestItem) {
+                accumulator.push(manifestItem);
+            }
+            return accumulator;
+        }, []);
+        state.questionPayloadById = buildActiveQuestionPayloadMap(
+            normalizedOrderIds,
+            state.questionPayloadById,
+            questionOrderContract.questionPayloadById,
+            responseManifestById
+        );
+
         if (responseRevision) {
             setQuestionRevision(responseRevision, Number(state.selectedExamId) || 0);
         }
@@ -674,36 +812,14 @@ export function createQuestionRuntimeManager(deps) {
             });
         }
 
-        var responseOffset = Math.max(0, Number(questionPayload && questionPayload.offset) || 0);
-        var responseLimit = Math.max(0, Number(questionPayload && questionPayload.limit) || 0);
-
-        state.totalQuestions = Math.max(
-            normalizedOrderIds.length,
-            Number(questionPayload && questionPayload.total_questions) || 0,
-            Array.isArray(state.questionOrderIds) ? state.questionOrderIds.length : 0
-        );
         if (!options.preserveActiveWindow) {
             state.windowOffset = responseOffset;
             state.windowLimit = responseLimit;
             state.questions = responseItems;
+        } else if (state.windowLimit > 0) {
+            setQuestionWindowFromLoadedPayloads(state.windowOffset, state.windowLimit);
         }
         markQuestionWindowLoaded(responseOffset);
-
-        var manifestById = buildQuestionManifestById(responseManifest);
-        Object.keys(manifestById).forEach(function (key) {
-            state.questionManifestById[key] = manifestById[key];
-        });
-
-        state.questionManifest = (state.questionOrderIds.length ? state.questionOrderIds : Object.keys(state.questionManifestById)).reduce(function (accumulator, item) {
-            var questionId = Number(item) || 0;
-            var manifestItem = getQuestionManifestById(questionId);
-            if (manifestItem) {
-                accumulator.push(manifestItem);
-            }
-            return accumulator;
-        }, []);
-
-        storeQuestionPayloads(responseItems);
         mergeExistingAnswersMap(responseExistingAnswersMap, {
             overwriteExisting: !!options.overwriteExisting
         });
@@ -719,8 +835,11 @@ export function createQuestionRuntimeManager(deps) {
                 });
             }
         }
+        pruneQuestionScopedState(validAttemptQuestionIds());
+        clearBlockedQuestionOrderSignature();
         scheduleQuestionCachePersist(0);
         updateQuestionPrefetchIndicator();
+        return true;
     }
 
     function pruneQuestionScopedState(validQuestionIdLookup) {
@@ -868,6 +987,7 @@ export function createQuestionRuntimeManager(deps) {
             questionPayload && questionPayload.question_revision,
             examId
         );
+        var responseQuestionOrderSignature = String(questionPayload && questionPayload.question_order_signature || '').trim();
         if (questionPayload && typeof questionPayload === 'object') {
             questionPayload.question_revision = deps.serializeQuestionRevision(responseRevision, examId);
         }
@@ -888,25 +1008,64 @@ export function createQuestionRuntimeManager(deps) {
 
         if (
             !options.allowRevisionTransition
-            && responseRevision
-            && state.questionRevision
-            && !questionRevisionEquals(responseRevision, state.questionRevision, examId)
+            && (
+                (
+                    responseRevision
+                    && state.questionRevision
+                    && !questionRevisionEquals(responseRevision, state.questionRevision, examId)
+                )
+                || (
+                    responseQuestionOrderSignature !== ''
+                    && String(state.questionOrderSignature || '').trim() !== ''
+                    && !questionOrderSignatureEquals(responseQuestionOrderSignature, state.questionOrderSignature)
+                )
+            )
         ) {
-            refreshAttemptQuestionRevision(responseRevision, {
+            await refreshAttemptQuestionRevision(responseRevision, {
                 attemptId: attemptId,
                 examId: examId,
+                expectedQuestionOrderSignature: responseQuestionOrderSignature,
                 preferredIndex: state.currentIndex,
-                source: 'questions'
+                source: (
+                    responseQuestionOrderSignature !== ''
+                    && String(state.questionOrderSignature || '').trim() !== ''
+                    && !questionOrderSignatureEquals(responseQuestionOrderSignature, state.questionOrderSignature)
+                )
+                    ? 'questions-order'
+                    : 'questions'
             });
             return questionPayload;
         }
 
-        applyQuestionsResponse(questionPayload, {
-            overwriteExisting: !!options.overwriteExisting,
-            preserveActiveWindow: !!options.preserveActiveWindow,
-            replaceAnsweredState: !!options.replaceAnsweredState,
-            useExistingStableQuestionNumbers: options.useExistingStableQuestionNumbers
-        });
+        try {
+            applyQuestionsResponse(questionPayload, {
+                overwriteExisting: !!options.overwriteExisting,
+                preserveActiveWindow: !!options.preserveActiveWindow,
+                replaceAnsweredState: !!options.replaceAnsweredState,
+                useExistingStableQuestionNumbers: options.useExistingStableQuestionNumbers
+            });
+        } catch (error) {
+            if (error && error.isQuestionOrderConflict) {
+                setBlockedQuestionOrderSignature(
+                    String(error.questionOrderSignature || responseQuestionOrderSignature || '').trim()
+                );
+                setQuestionRevisionNotice({
+                    kind: 'warning',
+                    tone: 'warning',
+                    sticky: true,
+                    message: 'Perubahan soal terdeteksi tetapi urutan terbaru belum bisa disinkron otomatis. Muat ulang halaman untuk melanjutkan dengan aman.'
+                }, {
+                    render: true,
+                    reason: 'question-window:manual-reload-notice',
+                    meta: {
+                        code: error && error.code ? String(error.code) : '',
+                        detail: error && error.detail ? String(error.detail) : ''
+                    }
+                });
+                return questionPayload;
+            }
+            throw error;
+        }
 
         return questionPayload;
     }
@@ -960,12 +1119,32 @@ export function createQuestionRuntimeManager(deps) {
         var attemptId = Number(options.attemptId !== undefined ? options.attemptId : state.attemptId) || 0;
         var examId = Number(options.examId !== undefined ? options.examId : state.selectedExamId) || 0;
         var normalizedNextRevision = normalizeQuestionRevision(nextRevision, examId);
+        var expectedQuestionOrderSignature = String(options.expectedQuestionOrderSignature || '').trim();
+        var currentQuestionOrderSignature = String(state.questionOrderSignature || '').trim();
+        var hasRevisionTransition = (
+            normalizedNextRevision
+            && state.questionRevision
+            && !questionRevisionEquals(normalizedNextRevision, state.questionRevision, examId)
+        );
+        var hasQuestionOrderTransition = (
+            expectedQuestionOrderSignature !== ''
+            && !questionOrderSignatureEquals(expectedQuestionOrderSignature, currentQuestionOrderSignature)
+        );
 
         if (state.stage !== 'exam' || attemptId <= 0 || examId <= 0) {
             return Promise.resolve(null);
         }
 
-        if (!options.force && normalizedNextRevision && state.questionRevision && questionRevisionEquals(normalizedNextRevision, state.questionRevision, examId)) {
+        if (!options.force && !hasRevisionTransition && !hasQuestionOrderTransition) {
+            return Promise.resolve(null);
+        }
+
+        if (
+            !options.force
+            && expectedQuestionOrderSignature !== ''
+            && blockedQuestionOrderSignature !== ''
+            && questionOrderSignatureEquals(expectedQuestionOrderSignature, blockedQuestionOrderSignature)
+        ) {
             return Promise.resolve(null);
         }
 
@@ -981,10 +1160,14 @@ export function createQuestionRuntimeManager(deps) {
         var attemptUiSnapshot = buildAttemptUiStateSnapshot(attemptId) || {
             attempt_id: attemptId,
             current_index: Math.max(0, Math.floor(requestedIndex)),
+            current_question_id: 0,
             doubtful_question_ids: []
         };
         attemptUiSnapshot.current_index = Math.max(0, Math.floor(requestedIndex));
         var previousCurrentQuestionId = Number(getQuestionIdAtIndex(attemptUiSnapshot.current_index)) || 0;
+        if (previousCurrentQuestionId > 0) {
+            attemptUiSnapshot.current_question_id = previousCurrentQuestionId;
+        }
 
         var previousQuestionManifestById = Object.keys(state.questionManifestById || {}).reduce(function (accumulator, key) {
             var questionId = Number(key) || 0;
@@ -993,11 +1176,6 @@ export function createQuestionRuntimeManager(deps) {
             }
             return accumulator;
         }, {});
-        var previousStableQuestionNumberMap = buildStableQuestionNumberMapFromSources(
-            previousQuestionManifestById,
-            state.questionPayloadById,
-            null
-        );
         var preservedNavQuestionFilter = normalizeNavigationQuestionFilter(state.navQuestionFilter);
         var preservedAnswers = captureRevisionSafeLocalAnswers();
         var preservedAutoSaveState = buildAutoSaveStateSnapshot();
@@ -1049,15 +1227,11 @@ export function createQuestionRuntimeManager(deps) {
                     questionPayload.question_revision = deps.serializeQuestionRevision(appliedRevision, examId);
                 }
 
-                resetQuestionDataState();
-                clearPendingRevisionSafeAnswerRestoreState();
-                setQuestionRevision(appliedRevision, examId);
                 state.navQuestionFilter = preservedNavQuestionFilter;
                 applyQuestionsResponse(questionPayload, {
                     overwriteExisting: true,
                     preserveActiveWindow: false,
-                    replaceAnsweredState: true,
-                    stableQuestionNumberMap: previousStableQuestionNumberMap
+                    replaceAnsweredState: true
                 });
                 state.changedQuestionLookup = buildChangedQuestionLookup(
                     previousQuestionManifestById,
@@ -1088,8 +1262,16 @@ export function createQuestionRuntimeManager(deps) {
                     deferMissing: true
                 });
                 pruneQuestionScopedState(validAttemptQuestionIds());
-                state.currentIndex = clampQuestionIndex(attemptUiSnapshot.current_index);
+                state.currentIndex = clampQuestionIndex(state.currentIndex);
                 var nextCurrentQuestionId = Number(getQuestionIdAtIndex(state.currentIndex)) || 0;
+                if (getQuestionCount() > 0 && nextCurrentQuestionId <= 0) {
+                    throw buildQuestionOrderConflictError(
+                        'Posisi soal aktif tidak bisa dipulihkan setelah revisi.',
+                        'question_order_anchor_invalid',
+                        String(state.questionOrderSignature || '').trim(),
+                        'current-question-anchor-missing'
+                    );
+                }
                 var previousCurrentManifest = previousCurrentQuestionId > 0 ? previousQuestionManifestById[previousCurrentQuestionId] || null : null;
                 var nextCurrentManifest = nextCurrentQuestionId > 0 ? state.questionManifestById[nextCurrentQuestionId] || null : null;
                 var previousCurrentQuestionNumber = Number(previousCurrentManifest && previousCurrentManifest.question_number !== undefined ? previousCurrentManifest.question_number : 0) || 0;
@@ -1213,19 +1395,43 @@ export function createQuestionRuntimeManager(deps) {
                     state.questionRevisionRefreshing = false;
                     state.navigationRefreshing = false;
                     state.questionRegionRefreshing = false;
-                    setQuestionRevisionNotice({
-                        kind: 'warning',
-                        tone: 'warning',
-                        sticky: true,
-                        message: 'Perubahan soal terdeteksi. Sinkronisasi akan dicoba lagi.'
-                    });
+                    var isQuestionOrderConflict = !!(error && error.isQuestionOrderConflict);
+                    if (isQuestionOrderConflict) {
+                        setBlockedQuestionOrderSignature(
+                            String(error.questionOrderSignature || expectedQuestionOrderSignature || '').trim()
+                        );
+                        setQuestionRevisionNotice({
+                            kind: 'warning',
+                            tone: 'warning',
+                            sticky: true,
+                            message: 'Perubahan soal terdeteksi tetapi urutan terbaru belum bisa disinkron otomatis. Muat ulang halaman untuk melanjutkan dengan aman.'
+                        });
+                        recordTimelineEntry('question-revision:manual-reload', error instanceof Error ? error.message : 'Refresh manual diperlukan untuk sinkronisasi soal.', {
+                            attemptId: attemptId,
+                            selectedExamId: examId,
+                            detail: error && error.detail ? String(error.detail) : '',
+                            code: error && error.code ? String(error.code) : ''
+                        });
+                        recordActionTrailEntry('question-revision:manual-reload', error instanceof Error ? error.message : 'Refresh manual diperlukan untuk sinkronisasi soal.', {
+                            detail: error && error.detail ? String(error.detail) : '',
+                            code: error && error.code ? String(error.code) : ''
+                        });
+                    } else {
+                        setQuestionRevisionNotice({
+                            kind: 'warning',
+                            tone: 'warning',
+                            sticky: true,
+                            message: 'Perubahan soal terdeteksi. Sinkronisasi akan dicoba lagi.'
+                        });
+                    }
                     renderRevisionPatch({
                         notice: true,
+                        navigation: true,
                         question: true
-                    }, 'question-revision:retry-notice', {
+                    }, isQuestionOrderConflict ? 'question-revision:manual-reload-notice' : 'question-revision:retry-notice', {
                         currentIndex: Number(state.currentIndex) || 0
                     });
-                    if (hasPendingQueuedAnswerBatchItems()) {
+                    if (!isQuestionOrderConflict && hasPendingQueuedAnswerBatchItems()) {
                         schedulePendingAnswerRetry('revision-refresh-retry', {
                             delayMs: 300
                         });

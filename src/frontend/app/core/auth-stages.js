@@ -105,6 +105,10 @@ export function createAuthStageManager(deps) {
         return label;
     }
 
+    function canShowStudentResult(exam) {
+        return Number(exam && exam.show_student_result !== undefined ? exam.show_student_result : 1) === 1;
+    }
+
     function renderExamPickerMobileOption(exam) {
         var optionId = Number(exam && exam.id) || 0;
         var isActive = optionId === Number(state.selectedExamId);
@@ -279,6 +283,7 @@ export function createAuthStageManager(deps) {
         var hasSelectedExam = !!selectedExam;
         var selectedAttemptStatus = String(selectedExam && selectedExam.latest_attempt_status ? selectedExam.latest_attempt_status : '').toLowerCase();
         var selectedExamCompleted = selectedAttemptStatus === 'completed';
+        var selectedExamShowsResult = canShowStudentResult(selectedExam);
         var selectedExamAttemptId = Number(selectedExam && selectedExam.latest_attempt_id ? selectedExam.latest_attempt_id : 0);
         var selectedExamRequiresToken = Number(selectedExam && selectedExam.requires_token ? selectedExam.requires_token : 0) === 1;
         var selectedExamAutoToken = Number(selectedExam && selectedExam.token_frontend_auto_apply ? selectedExam.token_frontend_auto_apply : 0) === 1;
@@ -291,7 +296,9 @@ export function createAuthStageManager(deps) {
         var tokenRefreshMinutes = Number(selectedExam && selectedExam.token_refresh_minutes ? selectedExam.token_refresh_minutes : 0);
         var tokenInfoText = hasSelectedExam
             ? (selectedExamCompleted
-                ? 'Ujian ini sudah selesai. Anda bisa melihat hasil nilai dari attempt terakhir.'
+                ? (selectedExamShowsResult
+                    ? 'Ujian ini sudah selesai. Anda bisa melihat hasil nilai dari attempt terakhir.'
+                    : 'Ujian ini sudah selesai. Admin menyembunyikan nilai dan review, tetapi Anda masih bisa melihat status penyimpanan jawaban.')
                 : (selectedExamRequiresToken
                     ? (
                         tokenInputRequired
@@ -317,7 +324,7 @@ export function createAuthStageManager(deps) {
             selectedAccessLabel = 'Belum pilih ujian';
             selectedAccessTone = 'is-muted';
         } else if (selectedExamCompleted) {
-            selectedAccessLabel = 'Hasil tersedia';
+            selectedAccessLabel = selectedExamShowsResult ? 'Hasil tersedia' : 'Status tersedia';
             selectedAccessTone = 'is-done';
         } else if (selectedAttemptStatus === 'in_progress') {
             selectedAccessLabel = 'Lanjutkan ujian';
@@ -376,7 +383,9 @@ export function createAuthStageManager(deps) {
         var tokenFieldHelpText = !hasSelectedExam
             ? 'Pilih ujian dari daftar kiri untuk melihat kebutuhan token.'
             : (selectedExamCompleted
-                ? 'Attempt terakhir untuk ujian ini sudah selesai. Anda masih bisa membuka hasil nilainya.'
+                ? (selectedExamShowsResult
+                    ? 'Attempt terakhir untuk ujian ini sudah selesai. Anda masih bisa membuka hasil nilainya.'
+                    : 'Attempt terakhir untuk ujian ini sudah selesai. Admin menyembunyikan nilai dan review, tetapi status hasil tetap bisa dibuka.')
                 : (tokenInputRequired
                     ? 'Masukkan token 6 karakter sebelum memulai atau melanjutkan ujian.'
                     : ((selectedExamRequiresToken || selectedExamAutoToken)
@@ -393,7 +402,9 @@ export function createAuthStageManager(deps) {
                     ? 'Sesi sebelumnya masih aktif. Anda akan melanjutkan dari progres terakhir.'
                     : (
                         selectedExamCompleted
-                            ? 'Attempt terakhir sudah selesai. Gunakan tombol lihat nilai untuk membuka hasilnya.'
+                            ? (selectedExamShowsResult
+                                ? 'Attempt terakhir sudah selesai. Gunakan tombol lihat nilai untuk membuka hasilnya.'
+                                : 'Attempt terakhir sudah selesai. Gunakan tombol lihat status untuk membuka informasi penyimpanan jawaban.')
                             : 'Pastikan jadwal, token, dan data peserta sudah benar sebelum menekan mulai.'
                     )
             );
@@ -404,7 +415,7 @@ export function createAuthStageManager(deps) {
 
         var primaryActionLabel = state.busy
             ? (selectedExamCompleted ? 'Memuat...' : (selectedAttemptStatus === 'in_progress' ? 'Membuka...' : 'Memulai...'))
-            : (selectedExamCompleted ? 'Lihat Nilai' : (selectedAttemptStatus === 'in_progress' ? 'Lanjutkan Ujian' : 'Mulai Ujian'));
+            : (selectedExamCompleted ? (selectedExamShowsResult ? 'Lihat Nilai' : 'Lihat Status') : (selectedAttemptStatus === 'in_progress' ? 'Lanjutkan Ujian' : 'Mulai Ujian'));
         var examItems = state.exams.map(function (exam) {
             var isActive = Number(exam.id) === Number(state.selectedExamId);
             var status = String(exam.status || '-');
@@ -415,6 +426,7 @@ export function createAuthStageManager(deps) {
             var availabilityReason = String(exam.availability_reason || '');
             var latestAttemptStatus = String(exam.latest_attempt_status || '').toLowerCase();
             var latestAttemptPercentage = Number(exam.latest_attempt_percentage);
+            var showStudentResult = canShowStudentResult(exam);
             var examAttemptCompact = 'BELUM';
             var accessLabel = 'Akses: SIAP';
             var itemClasses = ['cbt-exam-item'];
@@ -425,7 +437,7 @@ export function createAuthStageManager(deps) {
             if (latestAttemptStatus === 'completed') {
                 itemClasses.push('is-completed');
                 examAttemptCompact = 'SELESAI';
-                if (Number.isFinite(latestAttemptPercentage)) {
+                if (showStudentResult && Number.isFinite(latestAttemptPercentage)) {
                     examAttemptCompact += ' | ' + formatScoreValue(latestAttemptPercentage);
                 }
             } else if (latestAttemptStatus === 'in_progress') {

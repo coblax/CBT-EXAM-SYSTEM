@@ -18,6 +18,15 @@ final class CBT_Admin_Menu
             26
         );
 
+        add_submenu_page(
+            'cbt-exams',
+            'Introduction',
+            'Introduction',
+            'cbt_manage_exams',
+            'cbt-introduction',
+            [CBT_Admin_Introduction_Page::class, 'render']
+        );
+
         remove_submenu_page('cbt-exams', 'cbt-exams');
 
         add_submenu_page(
@@ -31,47 +40,11 @@ final class CBT_Admin_Menu
 
         add_submenu_page(
             'cbt-exams',
-            'CBT Tokens',
-            'CBT Tokens',
-            'cbt_manage_exams',
-            'cbt-tokens',
-            [CBT_Admin_Tokens_Page::class, 'render']
-        );
-
-        add_submenu_page(
-            'cbt-exams',
             'CBT Setup',
             'CBT Setup',
             'cbt_manage_exams',
             'cbt-setup',
             [CBT_Admin_Setup_Page::class, 'render']
-        );
-
-        add_submenu_page(
-            'cbt-exams',
-            'CBT Developer',
-            'CBT Developer',
-            'manage_options',
-            'cbt-developer',
-            [CBT_Admin_Developer_Page::class, 'render']
-        );
-
-        add_submenu_page(
-            'cbt-exams',
-            'CBT Maintenance',
-            'CBT Maintenance',
-            'manage_options',
-            'cbt-maintenance',
-            [CBT_Admin_Maintenance_Page::class, 'render']
-        );
-
-        add_submenu_page(
-            'cbt-exams',
-            'CBT Cache',
-            'CBT Cache',
-            'manage_options',
-            'cbt-cache',
-            [CBT_Admin_Cache_Page::class, 'render']
         );
 
         add_submenu_page(
@@ -94,20 +67,29 @@ final class CBT_Admin_Menu
 
         add_submenu_page(
             'cbt-exams',
-            'CBT Exam Cards',
-            'CBT Exam Cards',
-            'cbt_manage_users',
-            'cbt-exam-cards',
-            [CBT_Admin_Exam_Cards_Page::class, 'render']
-        );
-
-        add_submenu_page(
-            'cbt-exams',
             'CBT Questions',
             'CBT Questions',
             'cbt_manage_questions',
             'cbt-question-bank',
             [CBT_Admin_Questions_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Tokens',
+            'CBT Tokens',
+            'cbt_manage_exams',
+            'cbt-tokens',
+            [CBT_Admin_Tokens_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Exam Cards',
+            'CBT Exam Cards',
+            'cbt_manage_users',
+            'cbt-exam-cards',
+            [CBT_Admin_Exam_Cards_Page::class, 'render']
         );
 
         add_submenu_page(
@@ -135,6 +117,33 @@ final class CBT_Admin_Menu
             'cbt_view_results',
             'cbt-report-exam',
             [CBT_Admin_Report_Exam_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Cache',
+            'CBT Cache',
+            'manage_options',
+            'cbt-cache',
+            [CBT_Admin_Cache_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Maintenance',
+            'CBT Maintenance',
+            'manage_options',
+            'cbt-maintenance',
+            [CBT_Admin_Maintenance_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Developer',
+            'CBT Developer',
+            'manage_options',
+            'cbt-developer',
+            [CBT_Admin_Developer_Page::class, 'render']
         );
     }
 

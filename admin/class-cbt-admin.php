@@ -766,7 +766,7 @@ class CBT_Admin
             return $requested;
         }
 
-        return 150;
+        return 50;
     }
 
     private static function get_distinct_user_meta_values(string $meta_key): array

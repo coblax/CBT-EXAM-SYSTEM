@@ -3,7 +3,8 @@
 }
 
 .cbt-result-card--pass::before,
-.cbt-result-card--fail::before {
+.cbt-result-card--fail::before,
+.cbt-result-card--restricted::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -19,6 +20,10 @@
 
 .cbt-result-card--fail::before {
     box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.04);
+}
+
+.cbt-result-card--restricted::before {
+    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.04);
 }
 
 .cbt-result-hero,
@@ -63,11 +68,19 @@
 }
 
 .cbt-result-hero h3 {
-    max-width: min(100%, 860px);
+    width: min(100%, 760px);
     margin: 0;
-    font-size: clamp(24px, 4vw, 38px);
-    font-weight: 900;
-    line-height: 1.14;
+    padding: 14px 22px 16px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 26px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.76) 0%, rgba(255, 255, 255, 0.46) 100%);
+    box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(10px);
+    font-size: clamp(22px, 3.6vw, 34px);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+    text-transform: uppercase;
     color: #0f172a;
     text-align: center;
     text-wrap: balance;
@@ -94,6 +107,14 @@
     color: #8a1c1c;
 }
 
+.cbt-result-card--pass .cbt-score-unit {
+    color: #5b728f;
+}
+
+.cbt-result-card--fail .cbt-score-unit {
+    color: #8b6b6b;
+}
+
 .cbt-result-body {
     padding: 18px 20px 24px;
     background: transparent;
@@ -115,6 +136,10 @@
 
 .cbt-review-card {
     border-radius: 22px;
+}
+
+.cbt-review-card-title {
+    margin-bottom: 2px;
 }
 
 .cbt-review-item {
@@ -153,6 +178,32 @@
     color: #fca5a5;
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-result-status-strip--neutral {
+    background: linear-gradient(180deg, rgba(30, 64, 175, 0.24), rgba(15, 23, 42, 0.18));
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-status-label {
+    border-color: rgba(148, 163, 184, 0.18);
+    background: rgba(15, 23, 42, 0.42);
+    box-shadow: 0 16px 32px rgba(2, 6, 23, 0.26);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-status-strip--pass .cbt-result-status-label {
+    border-color: rgba(96, 165, 250, 0.22);
+    background: rgba(30, 64, 175, 0.18);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-status-strip--fail .cbt-result-status-label {
+    border-color: rgba(248, 113, 113, 0.24);
+    background: rgba(127, 29, 29, 0.18);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-status-strip--neutral .cbt-result-status-label {
+    border-color: rgba(96, 165, 250, 0.24);
+    background: rgba(30, 64, 175, 0.18);
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-result-hero {
     background:
         radial-gradient(circle at top center, rgba(59, 130, 246, 0.18), transparent 52%),
@@ -163,6 +214,12 @@
     background:
         radial-gradient(circle at top center, rgba(239, 68, 68, 0.18), transparent 52%),
         linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(28, 25, 23, 0.92) 100%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-hero--restricted {
+    background:
+        radial-gradient(circle at top center, rgba(59, 130, 246, 0.2), transparent 52%),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(17, 24, 39, 0.92) 100%);
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-result-kicker {
@@ -177,6 +234,22 @@
 
 .cbt-web-shell.cbt-theme-dark .cbt-result-score-note {
     color: #9fb1cb;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-score-metric-label {
+    color: #9fb1cb;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-card--pass .cbt-result-score-metric-value {
+    color: #bbf7d0;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-card--fail .cbt-result-score-metric-value {
+    color: #fecaca;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-score-metric-colon {
+    color: #7f8ea6;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-result-pending-card {
@@ -194,8 +267,33 @@
     color: #eff6ff;
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-result-pending-meta {
+    color: #93c5fd;
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-result-pending-card p {
     color: #b8c7dc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-restricted-panel {
+    border-color: #334155;
+    background: rgba(15, 23, 42, 0.72);
+    box-shadow: 0 20px 38px rgba(2, 6, 23, 0.35);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-restricted-kicker {
+    background: rgba(30, 64, 175, 0.32);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-restricted-copy {
+    color: #cbd5e1;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-result-restricted-summary {
+    border-color: rgba(96, 165, 250, 0.24);
+    background: rgba(30, 64, 175, 0.18);
+    color: #dbeafe;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-result-hero h3,
@@ -204,9 +302,28 @@
     color: #eff6ff;
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-result-hero h3 {
+    border-color: rgba(148, 163, 184, 0.16);
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.48) 0%, rgba(30, 41, 59, 0.28) 100%);
+    box-shadow: 0 22px 36px rgba(2, 6, 23, 0.28);
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-result-card--fail .cbt-result-hero h3,
 .cbt-web-shell.cbt-theme-dark .cbt-result-card--fail .cbt-score {
     color: #fee2e2;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-review-card-title {
+    color: #dbeafe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-review-card-title::after {
+    background: linear-gradient(90deg, #38bdf8 0%, #60a5fa 100%);
+    box-shadow: 0 8px 20px rgba(56, 189, 248, 0.16);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-score-unit {
+    color: #9fb1cb;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-result-progress-track {
@@ -325,28 +442,42 @@
 
 @media (max-width: 680px) {
     .cbt-result-status-strip {
-        align-items: flex-start;
-        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        flex-direction: row;
     }
 
     .cbt-result-status-label {
-        padding: 8px 12px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.72);
-    }
-
-    .cbt-result-status-subject {
-        font-size: 12px;
-        letter-spacing: 0.06em;
-        text-align: left;
+        font-size: clamp(18px, 6vw, 24px);
+        padding: 9px 16px;
+        letter-spacing: 0.1em;
     }
 
     .cbt-result-progress-card {
         width: 100%;
     }
 
+    .cbt-result-progress-meta {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
     .cbt-result-progress-legend-group {
         width: 100%;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .cbt-result-progress-legend {
+        width: 100%;
+        gap: 8px;
+        font-size: 10px;
+    }
+
+    .cbt-result-progress-legend-value {
+        margin-left: auto;
+        text-align: right;
     }
 
     .cbt-result-stat-grid {
@@ -391,7 +522,26 @@
         font-size: 16px;
     }
 
+    .cbt-result-pending-meta {
+        font-size: 11px;
+    }
+
     .cbt-result-pending-card p {
+        font-size: 13px;
+    }
+
+    .cbt-result-restricted-panel {
+        width: 100%;
+        padding: 18px 18px;
+        border-radius: 20px;
+    }
+
+    .cbt-result-restricted-copy {
+        font-size: 14px;
+    }
+
+    .cbt-result-restricted-summary {
+        width: 100%;
         font-size: 13px;
     }
 }
@@ -412,8 +562,21 @@
     }
 
     .cbt-result-hero h3 {
-        font-size: clamp(19px, 6.6vw, 26px);
-        line-height: 1.18;
+        width: min(100%, 100%);
+        padding: 12px 14px 13px;
+        border-radius: 20px;
+        font-size: clamp(18px, 6.2vw, 24px);
+        line-height: 1.14;
+    }
+
+    .cbt-review-card-title {
+        gap: 8px;
+        font-size: clamp(18px, 6vw, 24px);
+        letter-spacing: 0.06em;
+    }
+
+    .cbt-review-card-title::after {
+        width: 56px;
     }
 
     .cbt-result-score-panel {
@@ -423,12 +586,25 @@
     }
 
     .cbt-score {
+        gap: 3px;
+    }
+
+    .cbt-score-value {
         font-size: clamp(48px, 18vw, 72px);
+    }
+
+    .cbt-score-unit {
+        font-size: clamp(48px, 18vw, 72px);
+        letter-spacing: 0;
+        line-height: 0.92;
+        transform: translateY(-2px);
     }
 
     .cbt-result-score-note {
         margin-top: -2px;
         font-size: 12px;
+        grid-template-columns: max-content max-content max-content;
+        gap: 6px;
     }
 
     .cbt-result-progress-track {
@@ -441,19 +617,19 @@
 
     .cbt-result-progress-meta {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr);
         align-items: start;
-        gap: 8px 10px;
+        gap: 10px;
     }
 
     .cbt-result-progress-legend-group {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px 10px;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
     }
 
     .cbt-result-progress-pill {
-        justify-self: end;
+        justify-self: start;
     }
 
     .cbt-result-body {
@@ -483,9 +659,38 @@
         font-size: 15px;
     }
 
+    .cbt-result-pending-meta {
+        font-size: 10px;
+        line-height: 1.35;
+    }
+
     .cbt-result-pending-card p {
         font-size: 12px;
         line-height: 1.45;
+    }
+
+    .cbt-result-restricted-panel {
+        gap: 12px;
+        padding: 14px 12px;
+        border-radius: 18px;
+    }
+
+    .cbt-result-restricted-kicker {
+        min-height: 28px;
+        padding: 0 12px;
+        font-size: 10px;
+    }
+
+    .cbt-result-restricted-copy {
+        font-size: 13px;
+        line-height: 1.55;
+    }
+
+    .cbt-result-restricted-summary {
+        padding: 12px 12px;
+        border-radius: 14px;
+        font-size: 12px;
+        letter-spacing: 0.04em;
     }
 
     .cbt-result-stat-grid {

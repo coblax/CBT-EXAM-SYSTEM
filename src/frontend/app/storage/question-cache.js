@@ -275,6 +275,160 @@ export function createQuestionCacheStorage(deps) {
         return 0;
     }
 
+    function buildQuestionNumberLookup(manifestItems, payloadItems) {
+        var questionNumberLookup = {};
+
+        [manifestItems, payloadItems].forEach(function (items) {
+            if (!Array.isArray(items)) {
+                return;
+            }
+
+            items.forEach(function (item) {
+                var questionId = Number(item && item.id) || 0;
+                var questionNumber = Number(item && item.question_number) || 0;
+                if (questionId <= 0 || questionNumber <= 0 || Object.prototype.hasOwnProperty.call(questionNumberLookup, questionId)) {
+                    return;
+                }
+
+                questionNumberLookup[questionId] = questionNumber;
+            });
+        });
+
+        return questionNumberLookup;
+    }
+
+    function sha1String(value) {
+        var message = unescape(encodeURIComponent(String(value || '')));
+        var messageLength = message.length;
+        var words = [];
+        var hash = [
+            0x67452301,
+            0xEFCDAB89,
+            0x98BADCFE,
+            0x10325476,
+            0xC3D2E1F0
+        ];
+
+        for (var index = 0; index < messageLength - 3; index += 4) {
+            words.push(
+                (message.charCodeAt(index) << 24)
+                | (message.charCodeAt(index + 1) << 16)
+                | (message.charCodeAt(index + 2) << 8)
+                | message.charCodeAt(index + 3)
+            );
+        }
+
+        var remainder = messageLength % 4;
+        var tailWord = 0;
+        if (remainder === 0) {
+            tailWord = 0x080000000;
+        } else if (remainder === 1) {
+            tailWord = (message.charCodeAt(messageLength - 1) << 24) | 0x0800000;
+        } else if (remainder === 2) {
+            tailWord = (
+                (message.charCodeAt(messageLength - 2) << 24)
+                | (message.charCodeAt(messageLength - 1) << 16)
+                | 0x08000
+            );
+        } else {
+            tailWord = (
+                (message.charCodeAt(messageLength - 3) << 24)
+                | (message.charCodeAt(messageLength - 2) << 16)
+                | (message.charCodeAt(messageLength - 1) << 8)
+                | 0x80
+            );
+        }
+        words.push(tailWord);
+
+        while ((words.length % 16) !== 14) {
+            words.push(0);
+        }
+
+        words.push((messageLength >>> 29) & 0x0ffffffff);
+        words.push((messageLength << 3) & 0x0ffffffff);
+
+        var schedule = new Array(80);
+        for (var blockIndex = 0; blockIndex < words.length; blockIndex += 16) {
+            for (var scheduleIndex = 0; scheduleIndex < 16; scheduleIndex++) {
+                schedule[scheduleIndex] = words[blockIndex + scheduleIndex];
+            }
+
+            for (scheduleIndex = 16; scheduleIndex < 80; scheduleIndex++) {
+                var word = schedule[scheduleIndex - 3] ^ schedule[scheduleIndex - 8] ^ schedule[scheduleIndex - 14] ^ schedule[scheduleIndex - 16];
+                schedule[scheduleIndex] = ((word << 1) | (word >>> 31)) & 0x0ffffffff;
+            }
+
+            var a = hash[0];
+            var b = hash[1];
+            var c = hash[2];
+            var d = hash[3];
+            var e = hash[4];
+
+            for (scheduleIndex = 0; scheduleIndex < 80; scheduleIndex++) {
+                var phase = Math.floor(scheduleIndex / 20);
+                var f = 0;
+                var k = 0;
+
+                if (phase === 0) {
+                    f = (b & c) | ((~b) & d);
+                    k = 0x5A827999;
+                } else if (phase === 1) {
+                    f = b ^ c ^ d;
+                    k = 0x6ED9EBA1;
+                } else if (phase === 2) {
+                    f = (b & c) | (b & d) | (c & d);
+                    k = 0x8F1BBCDC;
+                } else {
+                    f = b ^ c ^ d;
+                    k = 0xCA62C1D6;
+                }
+
+                var temp = ((((a << 5) | (a >>> 27)) & 0x0ffffffff) + f + e + k + schedule[scheduleIndex]) & 0x0ffffffff;
+                e = d;
+                d = c;
+                c = ((b << 30) | (b >>> 2)) & 0x0ffffffff;
+                b = a;
+                a = temp;
+            }
+
+            hash[0] = (hash[0] + a) & 0x0ffffffff;
+            hash[1] = (hash[1] + b) & 0x0ffffffff;
+            hash[2] = (hash[2] + c) & 0x0ffffffff;
+            hash[3] = (hash[3] + d) & 0x0ffffffff;
+            hash[4] = (hash[4] + e) & 0x0ffffffff;
+        }
+
+        return hash.map(function (part) {
+            return ('00000000' + (part >>> 0).toString(16)).slice(-8);
+        }).join('');
+    }
+
+    function buildQuestionOrderSignature(orderIds, manifestItems, payloadItems) {
+        var normalizedOrderIds = normalizeQuestionIdList(orderIds);
+        if (!normalizedOrderIds.length) {
+            return '';
+        }
+
+        var questionNumberLookup = buildQuestionNumberLookup(manifestItems, payloadItems);
+        var signatureParts = [];
+
+        for (var index = 0; index < normalizedOrderIds.length; index++) {
+            var questionId = normalizedOrderIds[index];
+            var questionNumber = Number(questionNumberLookup[questionId]) || 0;
+            if (questionNumber <= 0) {
+                return '';
+            }
+
+            signatureParts.push(String(questionId) + ':' + String(questionNumber));
+        }
+
+        return signatureParts.length ? sha1String(signatureParts.join('|')) : '';
+    }
+
+    function questionOrderSignatureEquals(leftSignature, rightSignature) {
+        return String(leftSignature || '') === String(rightSignature || '');
+    }
+
     function normalizeQuestionManifestItem(question) {
         var item = question && typeof question === 'object' ? question : {};
         var questionId = Number(item.id) || 0;
@@ -618,10 +772,28 @@ export function createQuestionCacheStorage(deps) {
         );
 
         if (primarySignature === '' && secondarySignature === '') {
-            return true;
+            return (
+                normalizedPrimary.questionOrderSignature !== ''
+                && normalizedSecondary.questionOrderSignature !== ''
+                && questionOrderSignatureEquals(
+                    normalizedPrimary.questionOrderSignature,
+                    normalizedSecondary.questionOrderSignature
+                )
+            );
         }
 
-        return primarySignature !== '' && primarySignature === secondarySignature;
+        if (primarySignature === '' || primarySignature !== secondarySignature) {
+            return false;
+        }
+
+        if (normalizedPrimary.questionOrderSignature === '' || normalizedSecondary.questionOrderSignature === '') {
+            return false;
+        }
+
+        return questionOrderSignatureEquals(
+            normalizedPrimary.questionOrderSignature,
+            normalizedSecondary.questionOrderSignature
+        );
     }
 
     function mergeQuestionCachePayloadMaps(primaryPayloadById, secondaryPayloadById) {
@@ -657,11 +829,14 @@ export function createQuestionCacheStorage(deps) {
             question_revision: normalizedBaseSnapshot
                 ? serializeQuestionRevision(normalizedBaseSnapshot.questionRevision, normalizedBaseSnapshot.examId)
                 : (baseSnapshot && baseSnapshot.question_revision),
+            question_order_signature: normalizedBaseSnapshot
+                ? normalizedBaseSnapshot.questionOrderSignature
+                : (baseSnapshot && baseSnapshot.question_order_signature),
             total_questions: normalizedBaseSnapshot ? normalizedBaseSnapshot.totalQuestions : Number(baseSnapshot && baseSnapshot.total_questions) || 0,
             question_order_ids: normalizedBaseSnapshot ? normalizedBaseSnapshot.questionOrderIds : (baseSnapshot && baseSnapshot.question_order_ids),
-            question_manifest: Object.keys(mergedPayloadById).length
-                ? []
-                : (normalizedBaseSnapshot ? normalizedBaseSnapshot.questionManifest : (baseSnapshot && baseSnapshot.question_manifest)),
+            question_manifest: normalizedBaseSnapshot
+                ? normalizedBaseSnapshot.questionManifest
+                : (baseSnapshot && baseSnapshot.question_manifest),
             question_payload_by_id: mergedPayloadById,
             answered_question_lookup: normalizedBaseSnapshot ? normalizedBaseSnapshot.answeredQuestionLookup : (baseSnapshot && baseSnapshot.answered_question_lookup),
             changed_question_lookup: normalizedBaseSnapshot ? normalizedBaseSnapshot.changedQuestionLookup : (baseSnapshot && baseSnapshot.changed_question_lookup),
@@ -715,6 +890,17 @@ export function createQuestionCacheStorage(deps) {
         if (!questionManifest.length && payloadQuestions.length) {
             questionManifest = buildQuestionManifestFromQuestions(payloadQuestions);
         }
+        var questionOrderSignature = String(snapshot.question_order_signature || '').trim();
+        if (questionOrderSignature !== '' && !/^[a-f0-9]{40}$/i.test(questionOrderSignature)) {
+            questionOrderSignature = '';
+        }
+        if (questionOrderSignature === '') {
+            questionOrderSignature = buildQuestionOrderSignature(
+                questionOrderIds,
+                questionManifest,
+                payloadQuestions
+            );
+        }
 
         var answeredQuestionLookup = normalizeStoredBooleanLookup(snapshot.answered_question_lookup);
         var changedQuestionLookup = normalizeStoredBooleanLookup(snapshot.changed_question_lookup);
@@ -756,6 +942,7 @@ export function createQuestionCacheStorage(deps) {
             attemptId: safeAttemptId,
             examId: Number(snapshot.exam_id) || 0,
             questionRevision: normalizeQuestionRevision(snapshot.question_revision, Number(snapshot.exam_id) || 0),
+            questionOrderSignature: questionOrderSignature,
             totalQuestions: Math.max(
                 Number(snapshot.total_questions) || 0,
                 questionOrderIds.length,
@@ -873,6 +1060,9 @@ export function createQuestionCacheStorage(deps) {
             attempt_id: safeAttemptId,
             exam_id: Number(state.selectedExamId) || 0,
             question_revision: serializeQuestionRevision(state.questionRevision, Number(state.selectedExamId) || 0),
+            question_order_signature: String(state.questionOrderSignature || '').trim() || buildQuestionOrderSignature(questionOrderIds, manifestItems, Object.keys(questionPayloadById).map(function (key) {
+                return questionPayloadById[key];
+            })),
             total_questions: Math.max(Number(state.totalQuestions) || 0, questionOrderIds.length, questionPayloadCount),
             question_order_ids: questionOrderIds,
             question_manifest: manifestItems,
@@ -948,6 +1138,7 @@ export function createQuestionCacheStorage(deps) {
             attempt_id: normalizedSnapshot.attemptId,
             exam_id: normalizedSnapshot.examId,
             question_revision: serializeQuestionRevision(normalizedSnapshot.questionRevision, normalizedSnapshot.examId),
+            question_order_signature: normalizedSnapshot.questionOrderSignature,
             total_questions: normalizedSnapshot.totalQuestions,
             question_order_ids: normalizedSnapshot.questionOrderIds,
             question_manifest: normalizedSnapshot.questionManifest,
@@ -995,8 +1186,10 @@ export function createQuestionCacheStorage(deps) {
             attempt_id: normalizedSnapshot.attemptId,
             exam_id: normalizedSnapshot.examId,
             question_revision: serializeQuestionRevision(normalizedSnapshot.questionRevision, normalizedSnapshot.examId),
+            question_order_signature: normalizedSnapshot.questionOrderSignature,
             total_questions: normalizedSnapshot.totalQuestions,
             question_order_ids: normalizedSnapshot.questionOrderIds,
+            question_manifest: normalizedSnapshot.questionManifest,
             answered_question_lookup: normalizedSnapshot.answeredQuestionLookup,
             changed_question_lookup: normalizedSnapshot.changedQuestionLookup,
             question_revision_marker_lookup: normalizedSnapshot.questionRevisionMarkerLookup,
@@ -1023,6 +1216,7 @@ export function createQuestionCacheStorage(deps) {
             attempt_id: attemptId,
             exam_id: metaSnapshot && metaSnapshot.exam_id,
             question_revision: metaSnapshot && metaSnapshot.question_revision,
+            question_order_signature: metaSnapshot && metaSnapshot.question_order_signature,
             total_questions: metaSnapshot && metaSnapshot.total_questions,
             question_order_ids: metaSnapshot && metaSnapshot.question_order_ids,
             question_manifest: metaSnapshot && metaSnapshot.question_manifest,
@@ -1785,6 +1979,7 @@ export function createQuestionCacheStorage(deps) {
     return {
         buildAutoSaveStateSnapshot: buildAutoSaveStateSnapshot,
         buildChangedQuestionLookup: buildChangedQuestionLookup,
+        buildQuestionOrderSignature: buildQuestionOrderSignature,
         buildQuestionCacheSessionStorageKey: buildQuestionCacheSessionStorageKey,
         buildQuestionCacheSnapshot: buildQuestionCacheSnapshot,
         buildQuestionManifestById: buildQuestionManifestById,
@@ -1801,6 +1996,7 @@ export function createQuestionCacheStorage(deps) {
         persistQuestionCacheLocally: persistQuestionCacheLocally,
         questionManifestContentSignature: questionManifestContentSignature,
         questionManifestUpdatedAt: questionManifestUpdatedAt,
+        questionOrderSignatureEquals: questionOrderSignatureEquals,
         questionRevisionEquals: questionRevisionEquals,
         questionRevisionSignature: questionRevisionSignature,
         readPersistedQuestionCache: readPersistedQuestionCache,

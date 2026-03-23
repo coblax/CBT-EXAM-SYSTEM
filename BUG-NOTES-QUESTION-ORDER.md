@@ -1,234 +1,122 @@
-# Bug Notes: Add/Remove Question with Active Attempt
+# Bug Notes: Random Attempt Question Order
 
-Tanggal catatan: 2026-03-14
+Dokumen ini mengunci aturan sinkronisasi urutan soal untuk exam dengan `randomize_questions = 1`, terutama ketika attempt sedang aktif lalu guru menambah atau menghapus soal.
 
-Dokumen ini dibuat sebagai pegangan saat bug terkait `tambah soal`, `kurangi soal`, `history soal nonaktif`, dan `sinkronisasi jawaban` muncul lagi.
+## Tujuan
 
-## Ruang Masalah
+Perubahan daftar soal pada exam aktif tidak boleh membuat urutan soal yang sudah berjalan menjadi acak ulang.
 
-Bug ini muncul saat:
-- exam sudah punya `attempt` aktif
-- admin menambah soal ke exam
-- admin mengurangi soal dari exam
-- frontend siswa masih terbuka atau resume ulang attempt yang sama
+Yang harus tetap benar:
 
-Area yang terdampak:
-- navigasi soal di frontend
-- badge jawaban `A/B/...`
-- pilihan jawaban yang tercentang
-- panel `History Soal Nonaktif`
-- `CBT Result`
-- admin result / review jawaban
+- urutan lama pada attempt aktif tetap dipertahankan
+- soal baru masuk di bagian akhir
+- soal yang dihapus keluar dari navigasi aktif, tetapi history numbering tetap konsisten
+- nomor soal di exam, review siswa, result siswa, dan admin result harus sama
 
-## Gejala yang Pernah Muncul
+## Invariant Utama
 
-- Jawaban lama hilang di frontend, tetapi masih terlihat di `CBT Result`.
-- Semua nomor soal menjadi merah setelah revisi soal.
-- Nomor soal hijau, tetapi pilihan jawaban belum muncul sampai user klik-klik soal atau `Ctrl + F5`.
-- Badge jawaban hanya muncul sampai nomor 20, sementara nomor 21 ke atas hanya hijau.
-- Setelah kurangi soal, nomor yang sudah nonaktif masih ikut tampil di navigasi utama.
-- Setelah nomor nonaktif disembunyikan, nomor aktif malah di-renumber ulang sehingga membingungkan peserta.
-- Setelah tambah soal, seluruh soal aktif bisa terlihat seperti gelombang baru, misalnya dari 20 soal menjadi tampil `21-45`.
-- `History Soal Nonaktif` sempat hilang lagi saat urutan soal attempt dibaca dari sumber yang berbeda.
+### 1. Snapshot DB adalah sumber canonical
 
-## Akar Masalah yang Ditemukan
+- `cbt_attempts.question_order` adalah snapshot historis utama.
+- Redis runtime hanya mirror atau fallback jika snapshot DB kosong.
+- Jangan merge urutan Redis ke atas urutan DB sebagai sumber kebenaran baru.
 
-### 1. `attempt.question_order` punya lebih dari satu sumber
+### 2. Attempt random aktif tidak boleh diacak ulang
 
-Sumber yang terlibat:
-- `cbt_attempts.question_order` di database
-- runtime Redis di `CBT_Runtime`
-- cache frontend browser
+- Untuk attempt `in_progress`, urutan aktif lama harus dipertahankan apa adanya.
+- Reconcile hanya boleh:
+  - membuang `question_id` lama yang sudah tidak aktif dari navigasi aktif
+  - menambahkan `question_id` baru yang belum pernah ada ke bagian akhir
+- Soal baru boleh diurutkan di antara sesama soal baru, tetapi soal lama tidak boleh digeser ulang.
 
-Kalau tiga sumber ini tidak sinkron, gejalanya bisa acak:
-- history nonaktif hilang
-- navigasi masih membawa soal yang sudah nonaktif
-- nomor soal melompat
-- jawaban lama tampak hilang padahal data jawaban masih ada
+### 3. Tambah soal
 
-### 2. Frontend memisahkan status answered dan detail jawaban
+- Soal aktif lama tetap pada urutan lama.
+- Soal baru di-append ke belakang active order.
+- Jika source soal pernah keluar lalu ditambahkan lagi, perlakukan sebagai item baru di ekor, bukan mengambil posisi lama.
 
-Status hijau bisa muncul hanya dari `answered_question_ids`, tetapi detail badge `A/B/...` dan opsi terpilih butuh payload jawaban yang lebih lengkap.
+### 4. Hapus soal
 
-Kalau restore cache/refresh revisi tidak lengkap:
-- nomor jadi hijau
-- tapi opsi tetap kosong
-- badge jawaban tidak muncul
+- Jika soal punya history atau jawaban, archive dengan `is_active = 0`.
+- Jika tidak punya history, boleh dihapus fisik.
+- Nomor historis tidak boleh di-renumber ulang hanya karena ada soal yang hilang.
 
-### 3. Save exam saat ada attempt history tidak boleh memperlakukan soal lama sebagai soal baru
+### 5. Numbering authoritative
 
-Saat exam sudah punya attempt:
-- soal lama aktif harus dipakai ulang atau di-link ulang jika memang masih mewakili source yang sama
-- soal lama tidak boleh di-overwrite penuh
-- soal lama tidak boleh gampang di-clone massal
+- Backend harus membentuk:
+  - `canonical_question_order_ids`
+  - `active_question_order_ids`
+  - `display_number_map`
+- `question_order_signature` dihitung dari `active_question_order_ids + display_number_map`.
+- `question_number` tidak boleh lagi dibentuk dari `index + 1` pada jalur attempt active, review, atau result.
 
-Kalau logic matching gagal:
-- semua soal aktif bisa dianggap baru
-- nomor aktif langsung lompat, contoh `21-45`
-- history dan numbering jadi rusak
+### 6. Frontend hanya menerima kontrak order yang valid
 
-### 4. Review helper sempat terlalu patuh pada snapshot lama
+- Frontend menganggap `question_order_ids + question_manifest.question_number + question_order_signature` sebagai satu paket authoritative.
+- Cache order browser hanya boleh dipakai jika signature cocok.
+- Jika kontrak invalid atau signature bentrok, frontend harus menolak patch order dan meminta reload manual.
 
-Jika helper hanya mengikuti snapshot lama dan tidak menambahkan soal baru yang belum ada di order lama:
-- result/review bisa kehilangan soal baru
-- atau sebaliknya tetap membawa soal lama yang seharusnya hanya ada di history
+## Bug Penting yang Sudah Terjadi
 
-## Aturan Canonical yang Harus Dipertahankan
+### A. First refresh setelah tambah soal mengacak nomor
 
-Ini aturan yang saat ini dianggap benar dan jangan diubah tanpa cek regresi:
+Penyebab:
 
-1. `cbt_attempts.question_order` di database adalah snapshot historis canonical.
-2. Runtime Redis hanya mirror atau fallback, bukan sumber utama yang boleh mengganti histori.
-3. Navigasi utama frontend hanya menampilkan soal aktif hasil reconcile.
-4. `History Soal Nonaktif` berasal dari snapshot canonical dikurangi soal aktif yang sekarang masih tampil.
-5. Nomor soal yang ditampilkan ke peserta harus mengikuti nomor asli snapshot attempt, bukan `index + 1` dari list aktif saat ini.
-6. Saat tambah soal pada exam yang sudah punya attempt, soal baru di-append ke snapshot canonical, bukan mengganti nomor lama.
-7. Saat kurangi soal, soal yang punya jawaban/history di-archive (`is_active = 0`), bukan dihapus membabi buta.
-8. Saat exam punya attempt history, save builder harus mencoba match ke soal aktif lama sebelum membuat clone baru.
-9. Restore frontend tidak boleh lebih percaya pada cache lama dibanding payload order dari server untuk revisi yang sama.
+- frontend sempat mencampur payload baru dengan state lama
+- atau backend mengirim kontrak order yang belum stabil
 
-## Hotspot File dan Function
+Solusi yang dipakai:
 
-### Backend REST
+- frontend validasi kontrak authoritative lebih tegas
+- anchor tetap by `question_id`
+- payload invalid ditolak dengan sticky notice, bukan diheuristik
 
-File: `includes/class-cbt-rest.php`
+### B. Soal baru sudah di akhir, tetapi urutan soal lama ikut berubah
 
-Function penting:
-- `resolve_attempt_question_payload()`
-- `reconcile_in_progress_question_order()`
-- `merge_attempt_question_order_ids()`
-- `build_attempt_review_items()`
-- `order_questions_by_attempt_sequence()`
-- `append_missing_attempt_questions()`
-- `append_missing_attempt_review_questions()`
+Penyebab:
 
-Peran:
-- menentukan soal aktif yang tampil di frontend
-- menjaga history soal nonaktif tetap ikut di snapshot
-- menentukan numbering soal
-- menentukan review item/result
+- reconcile attempt aktif memperlakukan soal "recent" terlalu agresif
+- akibatnya soal yang sudah ada di snapshot lama bisa ikut tersusun ulang saat sync berikutnya
 
-### Admin Save Builder
+Solusi yang dipakai:
 
-File: `admin/class-cbt-admin.php`
+- pertahankan seluruh `existing_question_order_ids` yang masih aktif
+- hanya `question_id` yang benar-benar belum ada di snapshot lama yang di-append ke belakang
 
-Function penting:
-- `run_exam_save_sync_batch()`
-- `save_exam_with_source_questions()`
-- `link_existing_exam_question_to_source()`
-- `apply_source_snapshot_to_question()`
-- `archive_or_delete_exam_questions()`
-- `exam_has_attempt_records()`
+### C. Heartbeat session memicu reshuffle baru
 
-Peran:
-- sync bank soal ke exam
-- memilih kapan pakai ulang soal lama
-- memilih kapan buat soal baru
-- memilih kapan archive vs delete
+Penyebab:
 
-### Frontend
+- `get_session()` pernah mengambil row attempt tanpa `question_order` dan `option_order`
+- helper sync menganggap snapshot kosong lalu membentuk urutan baru
 
-File: `public/js/cbt-frontend.js`
+Solusi yang dipakai:
 
-Function penting:
-- `mergeQuestionCacheSnapshots()`
-- `choosePreferredQuestionOrderSnapshot()`
-- `applyQuestionsResponse()`
-- `refreshAttemptQuestionRevision()`
-- `renderArchivedReviewHistorySection()`
-- `getQuestionDisplayNumber()`
+- `get_session()` wajib mengambil `a.question_order` dan `a.option_order`
 
-Peran:
-- restore cache browser
-- menerima urutan soal dari server
-- menampilkan nomor soal stabil
-- menampilkan history nonaktif
+## Jangan Dilanggar Lagi
 
-## Pola Debugging Saat Bug Muncul Lagi
+- Jangan hitung `question_number` dari posisi array untuk attempt aktif, review, atau result.
+- Jangan `shuffle()` ulang attempt `in_progress` hanya karena ada question revision.
+- Jangan gunakan `created_at` untuk menggeser ulang soal lama yang sudah ada dalam snapshot attempt.
+- Jangan kosongkan runtime attempt state tanpa memastikan snapshot DB tetap lengkap dibaca oleh jalur session dan questions.
+- Jangan percaya cache browser untuk struktur order jika `question_order_signature` tidak cocok.
 
-Urutan cek yang paling aman:
+## File Kunci
 
-1. Cek apakah admin save membuat clone baru untuk soal lama.
-2. Cek apakah `cbt_attempts.question_order` masih berisi snapshot historis yang benar.
-3. Cek apakah runtime Redis menyimpan order yang lebih pendek atau berbeda.
-4. Cek apakah endpoint `questions` mengirim:
-   - `question_order_ids` aktif yang benar
-   - `archived_review_items` yang benar
-5. Cek apakah frontend memakai `question_order_ids` baru atau malah memulihkan cache lama.
-6. Cek apakah nomor yang tampil berasal dari `question_number`, bukan `index + 1`.
+- `includes/class-cbt-rest.php`
+- `includes/class-cbt-runtime.php`
+- `src/frontend/app/exam/question-runtime.js`
+- `src/frontend/app/core/session-heartbeat.js`
+- `src/frontend/app/core/exam-session.js`
+- `src/frontend/app/storage/question-cache.js`
+- `src/frontend/app/storage/attempt-ui-state.js`
 
-## Pertanyaan Diagnosis yang Paling Berguna
+## Checklist Cepat Setelah Menyentuh Area Ini
 
-Kalau bug muncul lagi, jawab dulu pertanyaan ini:
-
-1. Apakah bug muncul setelah `tambah soal`, `kurangi soal`, atau keduanya?
-2. Apakah jawaban hilang di frontend saja, atau di result/admin result juga?
-3. Apakah nomor aktif berubah total?
-4. Apakah `History Soal Nonaktif` hilang, kosong, atau hanya tidak sinkron?
-5. Apakah gejala hilang setelah reload biasa, hard refresh, atau tetap ada?
-6. Apakah exam yang sama sudah pernah telanjur mengalami clone massal sebelumnya?
-
-## Gejala -> Dugaan Cepat
-
-Kalau gejalanya seperti ini, biasanya penyebab awalnya:
-
-- Navigasi hijau tapi opsi kosong:
-  frontend restore/cache tidak lengkap
-
-- Semua nomor merah:
-  revision reconcile berjalan, tetapi manifest lama dan baru sedang bentrok
-
-- Nomor aktif lompat jadi `21-45` setelah tambah 5 soal:
-  save builder gagal match soal aktif lama dan membuat clone massal
-
-- `History Soal Nonaktif` hilang setelah tambah soal:
-  snapshot order canonical kalah oleh order runtime yang lebih pendek
-
-- Soal nonaktif masih ikut di navigasi utama:
-  `question_order_ids` aktif yang dikirim ke frontend masih tercampur history
-
-- Result membawa jumlah soal yang aneh:
-  helper review atau progress membaca snapshot lama tanpa filter aktif/historis yang tepat
-
-## Kondisi yang Dianggap Benar
-
-### Jika tambah soal
-
-Contoh:
-- semula 20 soal
-- tambah 5 soal
-
-Expected:
-- navigasi utama menjadi 25 soal aktif
-- nomor lama tetap 1-20
-- soal baru mendapat nomor lanjutan 21-25
-- history nonaktif yang lama tetap ada jika memang sudah pernah ada
-- jawaban lama tetap menempel
-
-### Jika kurangi soal
-
-Contoh:
-- semula 25 soal
-- 5 soal dihapus dari exam aktif
-
-Expected:
-- navigasi utama hanya menampilkan 20 soal aktif
-- nomor aktif tetap mengikuti nomor asli attempt dan boleh ada gap
-- soal yang dihapus pindah ke `History Soal Nonaktif` jika punya history
-- jawaban soal nonaktif tetap terlihat di history/result
-
-## Hal yang Jangan Dilakukan Lagi
-
-- Jangan jadikan runtime Redis sebagai sumber utama order attempt.
-- Jangan renumber nomor aktif dengan `index + 1` saat exam sudah punya attempt berjalan.
-- Jangan overwrite penuh soal lama jika exam sudah punya history attempt.
-- Jangan menghapus soal historis yang masih dirujuk jawaban/attempt.
-- Jangan anggap cache browser yang lebih panjang selalu lebih benar daripada payload server.
-
-## File Pegangan Tambahan
-
-Untuk uji cepat setelah perubahan, lihat juga:
-- `REGRESSION-CHECKLIST.md`
-
-Checklist itu dipakai untuk validasi.
-Dokumen ini dipakai untuk memahami pola bug dan hotspot teknisnya.
+1. Tambah 1 soal pada exam acak dengan attempt aktif.
+2. Pastikan urutan lama tetap, soal baru masuk di belakang.
+3. Hapus 1-2 soal dan pastikan nomor historis tidak dirapatkan ulang.
+4. Reload tab siswa dan bandingkan dengan tab lama.
+5. Cek review/result siswa dan admin result memakai nomor yang sama.
+6. Cek heartbeat session tidak memicu reshuffle pada first sync.

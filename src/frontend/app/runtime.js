@@ -587,11 +587,34 @@ export function bootstrapFrontendApp() {
         clearMessages: clearMessages,
         documentRef: document,
         escapeHtml: escapeHtml,
+        exitNativeFullscreen: function () {
+            if (fullscreenStateManager && typeof fullscreenStateManager.exitNativeFullscreen === 'function') {
+                return fullscreenStateManager.exitNativeFullscreen.apply(fullscreenStateManager, arguments);
+            }
+            return Promise.resolve(false);
+        },
         isExamCopyPasteBlocked: isExamCopyPasteBlocked,
         isExamFullscreenRequired: isExamFullscreenRequired,
         isSecurityLoggingActiveForAttempt: isSecurityLoggingActiveForAttempt,
+        requestNativeFullscreen: function () {
+            if (fullscreenStateManager && typeof fullscreenStateManager.requestNativeFullscreen === 'function') {
+                return fullscreenStateManager.requestNativeFullscreen.apply(fullscreenStateManager, arguments);
+            }
+            return Promise.resolve(false);
+        },
         root: root,
-        sendSecurityEventSilently: sendSecurityEventSilently,
+        sendSecurityEventSilently: function () {
+            if (securityLoggingManager && typeof securityLoggingManager.sendSecurityEventSilently === 'function') {
+                return securityLoggingManager.sendSecurityEventSilently.apply(securityLoggingManager, arguments);
+            }
+            return false;
+        },
+        setNativeFullscreenActive: function () {
+            if (fullscreenStateManager && typeof fullscreenStateManager.setNativeFullscreenActive === 'function') {
+                return fullscreenStateManager.setNativeFullscreenActive.apply(fullscreenStateManager, arguments);
+            }
+            return false;
+        },
         state: state,
         syncFullscreenState: function () {
             if (typeof syncFullscreenState === 'function') {
@@ -605,6 +628,7 @@ export function bootstrapFrontendApp() {
         buildDoubtfulSessionStorageKey: doubtfulStateStorage.buildDoubtfulSessionStorageKey,
         clearPersistedDoubtfulState: doubtfulStateStorage.clearPersistedDoubtfulState,
         getQuestionCount: questionWindowManager.getQuestionCount,
+        getQuestionIdAtIndex: questionWindowManager.getQuestionIdAtIndex,
         getSessionStorage: getSessionStorage,
         normalizeOrUseQuestionCacheSnapshot: questionCacheStorage.normalizeOrUseQuestionCacheSnapshot,
         normalizeQuestionCacheSnapshot: questionCacheStorage.normalizeQuestionCacheSnapshot,
@@ -759,6 +783,7 @@ export function bootstrapFrontendApp() {
     var readPersistedDoubtfulState = doubtfulStateStorage.readPersistedDoubtfulState;
     var buildAutoSaveStateSnapshot = questionCacheStorage.buildAutoSaveStateSnapshot;
     var buildChangedQuestionLookup = questionCacheStorage.buildChangedQuestionLookup;
+    var buildQuestionOrderSignature = questionCacheStorage.buildQuestionOrderSignature;
     var buildQuestionCacheSessionStorageKey = questionCacheStorage.buildQuestionCacheSessionStorageKey;
     var buildQuestionCacheSnapshot = questionCacheStorage.buildQuestionCacheSnapshot;
     var buildQuestionManifestById = questionCacheStorage.buildQuestionManifestById;
@@ -776,6 +801,7 @@ export function bootstrapFrontendApp() {
     var persistQuestionCacheLocally = questionCacheStorage.persistQuestionCacheLocally;
     var questionManifestContentSignature = questionCacheStorage.questionManifestContentSignature;
     var questionManifestUpdatedAt = questionCacheStorage.questionManifestUpdatedAt;
+    var questionOrderSignatureEquals = questionCacheStorage.questionOrderSignatureEquals;
     var questionRevisionEquals = questionCacheStorage.questionRevisionEquals;
     var questionRevisionSignature = questionCacheStorage.questionRevisionSignature;
     var readPersistedQuestionCache = questionCacheStorage.readPersistedQuestionCache;
@@ -904,6 +930,7 @@ export function bootstrapFrontendApp() {
         buildChangedQuestionLookup: buildChangedQuestionLookup,
         buildQuestionManifestById: buildQuestionManifestById,
         buildQuestionManifestFromQuestions: buildQuestionManifestFromQuestions,
+        buildQuestionOrderSignature: buildQuestionOrderSignature,
         captureRevisionSafeLocalAnswers: captureRevisionSafeLocalAnswers,
         clearAttemptUiStateSyncTimer: clearAttemptUiStateSyncTimer,
         clearAutoSaveRuntimeState: clearAutoSaveRuntimeState,
@@ -941,6 +968,7 @@ export function bootstrapFrontendApp() {
         primeSubmittedPayloadCacheFromQuestionItems: primeSubmittedPayloadCacheFromQuestionItems,
         pruneAnswerSyncState: pruneAnswerSyncState,
         prunePendingRevisionSafeAnswerRestoreState: prunePendingRevisionSafeAnswerRestoreState,
+        questionOrderSignatureEquals: questionOrderSignatureEquals,
         questionRevisionEquals: questionRevisionEquals,
         questionWindowOffsetForIndex: questionWindowOffsetForIndex,
         questionWindowSize: QUESTION_WINDOW_SIZE,
@@ -1045,13 +1073,21 @@ export function bootstrapFrontendApp() {
             return api.apply(null, arguments);
         },
         applyAttemptTimerPayload: applyAttemptTimerPayload,
+        clearCalculatorRuntimeState: function () {
+            if (stageRuntimeManager && typeof stageRuntimeManager.clearCalculatorRuntimeState === 'function') {
+                return stageRuntimeManager.clearCalculatorRuntimeState.apply(stageRuntimeManager, arguments);
+            }
+            return undefined;
+        },
         diagnosticsManager: diagnosticsManager,
         getQuestionCount: getQuestionCount,
         normalizeQuestionRevision: normalizeQuestionRevision,
+        questionOrderSignatureEquals: questionOrderSignatureEquals,
         questionRevisionEquals: questionRevisionEquals,
         refreshAttemptQuestionRevision: refreshAttemptQuestionRevision,
         recordActionTrail: recordActionTrail,
         recordTimeline: recordTimeline,
+        render: render,
         sessionHeartbeatIntervalMs: SESSION_HEARTBEAT_INTERVAL_MS,
         setQuestionRevision: setQuestionRevision,
         state: state,
@@ -1473,7 +1509,8 @@ export function bootstrapFrontendApp() {
     var fullscreenStateManager = createFullscreenStateManager({
         documentRef: document,
         render: render,
-        state: state
+        state: state,
+        windowRef: window
     });
     var syncFullscreenState = fullscreenStateManager.syncFullscreenState;
 

@@ -8,6 +8,7 @@ final class CBT_Admin_Analytics_Service
 {
     private const CACHE_TTL = 300;
     private const CACHE_VERSION = 'v3';
+    private const OVERVIEW_PER_PAGE = 10;
     private const DISTRIBUTION_BUCKETS = [
         ['label' => '0-19%', 'min' => 0.0, 'max' => 19.99],
         ['label' => '20-39%', 'min' => 20.0, 'max' => 39.99],
@@ -36,50 +37,76 @@ final class CBT_Admin_Analytics_Service
         $current_user_id = get_current_user_id();
         $notice = isset($query['cbt_msg']) ? sanitize_text_field(wp_unslash((string) $query['cbt_msg'])) : '';
         $error = isset($query['cbt_err']) ? sanitize_text_field(wp_unslash((string) $query['cbt_err'])) : '';
+        $run_analytics_mode = self::get_run_analytics_mode($query);
+        $has_run_analytics = $run_analytics_mode === 'single';
+        $overview_page = self::normalize_positive_page(isset($query['cbt_overview_page']) ? (string) wp_unslash($query['cbt_overview_page']) : '');
 
         $accessible_exam_rows = self::get_accessible_exam_rows($is_admin_scope, $current_user_id);
-        $subject_filter_rows = self::build_subject_filter_rows($accessible_exam_rows);
         $kelas_filter_rows = CBT_Admin_Report_Exam_Service::get_distinct_user_meta_values('kode_kelas');
-
-        $selected_subject_id = isset($query['cbt_subject_id']) ? absint(wp_unslash((string) $query['cbt_subject_id'])) : 0;
-        if ($selected_subject_id > 0 && !isset($subject_filter_rows[$selected_subject_id])) {
-            $selected_subject_id = 0;
-        }
 
         $selected_exam_id = isset($query['cbt_exam_id']) ? absint(wp_unslash((string) $query['cbt_exam_id'])) : 0;
         $selected_exam = self::find_exam_row($selected_exam_id, $accessible_exam_rows);
         if (empty($selected_exam)) {
             $selected_exam_id = 0;
-        } elseif ($selected_subject_id <= 0) {
-            $selected_subject_id = (int) ($selected_exam['subject_id'] ?? 0);
-        } elseif ((int) ($selected_exam['subject_id'] ?? 0) !== $selected_subject_id) {
-            $selected_subject_id = (int) ($selected_exam['subject_id'] ?? 0);
         }
 
-        $selected_kelas = isset($query['cbt_result_kelas']) ? sanitize_text_field(wp_unslash((string) $query['cbt_result_kelas'])) : '';
-        if ($selected_kelas !== '' && !in_array($selected_kelas, $kelas_filter_rows, true)) {
-            $selected_kelas = '';
-        }
+        // Analytics now always runs across all classes; the class filter has been removed from the page.
+        $selected_kelas = '';
 
         $active_tab = self::normalize_tab(isset($query['cbt_analytics_tab']) ? (string) wp_unslash($query['cbt_analytics_tab']) : '');
-        $exam_filter_rows = self::filter_exam_rows_by_subject($accessible_exam_rows, $selected_subject_id);
-        if ($selected_exam_id > 0 && empty(self::find_exam_row($selected_exam_id, $exam_filter_rows))) {
-            $exam_filter_rows = $accessible_exam_rows;
-        }
+        $exam_filter_rows = $accessible_exam_rows;
 
         $overview_data = self::get_overview_analytics(
-            $selected_subject_id,
+            $accessible_exam_rows,
             $selected_exam_id,
             $selected_kelas,
             $is_admin_scope,
             $current_user_id
         );
+        $overview_pagination = self::build_overview_pagination(
+            (array) ($overview_data['exam_rows'] ?? []),
+            $overview_page,
+            $selected_exam_id,
+            $selected_kelas,
+            $has_run_analytics
+        );
+
+        if ($run_analytics_mode === 'all') {
+            $processed_exam_count = self::warm_exam_analytics_for_rows(
+                (array) ($overview_data['exam_rows'] ?? []),
+                $selected_kelas,
+                $is_admin_scope,
+                $current_user_id
+            );
+            if ($processed_exam_count > 0) {
+                $notice = sprintf('ANALYTIC ALL selesai untuk %d exam.', $processed_exam_count);
+            } elseif ($error === '') {
+                $error = 'Tidak ada exam pada scope filter saat ini untuk diproses oleh ANALYTIC ALL.';
+            }
+        }
+
+        if ($has_run_analytics && ($selected_exam_id <= 0 || empty($selected_exam))) {
+            $has_run_analytics = false;
+            $active_tab = 'overview';
+            if ($error === '') {
+                $error = 'Pilih satu exam terlebih dahulu sebelum menjalankan Analytic.';
+            }
+            $overview_pagination = self::build_overview_pagination(
+                (array) ($overview_data['exam_rows'] ?? []),
+                $overview_page,
+                0,
+                $selected_kelas,
+                false
+            );
+        } elseif ($has_run_analytics && $active_tab === 'overview') {
+            $active_tab = 'exam';
+        }
 
         $exam_analytics = null;
         $item_analysis_rows = [];
         $item_analysis_summary = [];
         $student_rows = [];
-        if ($selected_exam_id > 0 && !empty($selected_exam)) {
+        if ($has_run_analytics && $selected_exam_id > 0 && !empty($selected_exam)) {
             $statistical_payload = self::get_exam_statistical_payload(
                 $selected_exam,
                 $selected_kelas,
@@ -105,16 +132,13 @@ final class CBT_Admin_Analytics_Service
         }
 
         $active_filters = self::build_active_filters(
-            $selected_subject_id,
             $selected_exam,
-            $selected_kelas,
-            $subject_filter_rows
+            $selected_kelas
         );
 
         $analytics_entry_counts = [
             'accessible_exam_count' => count($accessible_exam_rows),
             'completed_attempt_count' => (int) ($overview_data['summary']['completed_attempts'] ?? 0),
-            'subject_count' => count($subject_filter_rows),
             'kelas_count' => count($kelas_filter_rows),
         ];
 
@@ -128,15 +152,31 @@ final class CBT_Admin_Analytics_Service
             'exam_filter_rows',
             'item_analysis_rows',
             'item_analysis_summary',
-            'kelas_filter_rows',
+            'has_run_analytics',
             'notice',
             'overview_data',
+            'overview_page',
+            'overview_pagination',
             'selected_exam',
             'selected_exam_id',
             'selected_kelas',
-            'selected_subject_id',
-            'student_rows',
-            'subject_filter_rows'
+            'student_rows'
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $args
+     */
+    public static function build_analytics_url(array $args = []): string
+    {
+        return add_query_arg(
+            array_filter(
+                array_merge(['page' => 'cbt-analytics'], $args),
+                static function ($value): bool {
+                    return $value !== null && $value !== '';
+                }
+            ),
+            admin_url('admin.php')
         );
     }
 
@@ -163,6 +203,30 @@ final class CBT_Admin_Analytics_Service
         }
 
         return $tab;
+    }
+
+    private static function get_run_analytics_mode(array $query): string
+    {
+        if (!isset($query['cbt_run_analytics'])) {
+            return '';
+        }
+
+        $value = sanitize_text_field(wp_unslash((string) $query['cbt_run_analytics']));
+        if ($value === 'all') {
+            return 'all';
+        }
+        if ($value === '1') {
+            return 'single';
+        }
+
+        return '';
+    }
+
+    private static function normalize_positive_page(string $raw): int
+    {
+        $value = absint($raw);
+
+        return $value > 0 ? $value : 1;
     }
 
     /**
@@ -274,23 +338,14 @@ final class CBT_Admin_Analytics_Service
     }
 
     /**
-     * @param array<int,array<string,mixed>> $subject_filter_rows
      * @param array<string,mixed> $selected_exam
      * @return array<int,array{label:string,value:string}>
      */
     private static function build_active_filters(
-        int $selected_subject_id,
         array $selected_exam,
-        string $selected_kelas,
-        array $subject_filter_rows
+        string $selected_kelas
     ): array {
         $filters = [];
-        if ($selected_subject_id > 0 && isset($subject_filter_rows[$selected_subject_id])) {
-            $filters[] = [
-                'label' => 'Subject',
-                'value' => (string) ($subject_filter_rows[$selected_subject_id]['name'] ?? '-'),
-            ];
-        }
         if (!empty($selected_exam)) {
             $filters[] = [
                 'label' => 'Exam',
@@ -317,14 +372,13 @@ final class CBT_Admin_Analytics_Service
      * @return array<string,mixed>
      */
     private static function get_overview_analytics(
-        int $selected_subject_id,
+        array $accessible_exam_rows,
         int $selected_exam_id,
         string $selected_kelas,
         bool $is_admin_scope,
         int $current_user_id
     ): array {
         $cache_key = 'admin_analytics_overview_' . self::CACHE_VERSION . '_' . md5((string) wp_json_encode([
-            'subject_id' => $selected_subject_id,
             'exam_id' => $selected_exam_id,
             'kelas' => $selected_kelas,
             'scope' => $is_admin_scope ? 'admin' : 'teacher',
@@ -335,68 +389,52 @@ final class CBT_Admin_Analytics_Service
             $cache_key,
             self::CACHE_TTL,
             [CBT_Cache::namespace_analytics(), CBT_Cache::namespace_catalog()],
-            static function () use ($selected_subject_id, $selected_exam_id, $selected_kelas, $is_admin_scope, $current_user_id): array {
-                $rows = self::get_completed_attempt_metric_rows(
-                    $selected_subject_id,
+            static function () use ($accessible_exam_rows, $selected_exam_id, $selected_kelas, $is_admin_scope, $current_user_id): array {
+                $attempt_aggregates = self::get_overview_attempt_aggregates(
                     $selected_exam_id,
                     $selected_kelas,
                     $is_admin_scope,
                     $current_user_id
                 );
                 $manual_counts = self::get_manual_review_counts(
-                    $selected_subject_id,
+                    0,
                     $selected_exam_id,
                     $selected_kelas,
                     $is_admin_scope,
                     $current_user_id
                 );
 
-                $summary = self::build_summary_metrics($rows, (int) ($manual_counts['total'] ?? 0));
-                $top_exams = [];
-                $lowest_pass_rate_exams = [];
-                $problem_exams = [];
-                $per_kelas_summary = [];
+                $summary = self::build_summary_metrics_from_aggregates(
+                    (int) ($attempt_aggregates['total_attempts'] ?? 0),
+                    (float) ($attempt_aggregates['percentage_total'] ?? 0.0),
+                    (int) ($attempt_aggregates['pass_count'] ?? 0),
+                    (int) ($manual_counts['total'] ?? 0)
+                );
+                $catalog_rows = $accessible_exam_rows;
+                $exam_groups = (array) ($attempt_aggregates['by_exam'] ?? []);
+                if ($selected_exam_id > 0) {
+                    $catalog_rows = array_values(array_filter($accessible_exam_rows, static function (array $exam_row) use ($selected_exam_id): bool {
+                        return (int) ($exam_row['id'] ?? 0) === $selected_exam_id;
+                    }));
+                } elseif ($selected_kelas !== '') {
+                    $catalog_rows = array_values(array_filter($accessible_exam_rows, static function (array $exam_row) use ($manual_counts, $exam_groups): bool {
+                        $exam_id = (int) ($exam_row['id'] ?? 0);
+                        if ($exam_id <= 0) {
+                            return false;
+                        }
 
-                $exam_groups = [];
-                $kelas_groups = [];
-                foreach ($rows as $row) {
-                    $exam_id = (int) ($row['exam_id'] ?? 0);
-                    $kelas = (string) ($row['student_kelas'] ?? '');
-                    $kelas_key = $kelas !== '' ? $kelas : '-';
+                        if (!empty($manual_counts['by_exam'][$exam_id])) {
+                            return true;
+                        }
 
-                    if (!isset($exam_groups[$exam_id])) {
-                        $exam_groups[$exam_id] = [
-                            'exam_id' => $exam_id,
-                            'exam_title' => (string) ($row['exam_title'] ?? '-'),
-                            'subject_name' => (string) ($row['subject_name'] ?? ''),
-                            'kkm_percentage' => (float) ($row['kkm_percentage'] ?? 75.0),
-                            'completed_attempts' => 0,
-                            'pass_count' => 0,
-                            'percentage_total' => 0.0,
-                            'manual_review_count' => (int) (($manual_counts['by_exam'][$exam_id] ?? 0)),
-                        ];
-                    }
-
-                    $exam_groups[$exam_id]['completed_attempts']++;
-                    $exam_groups[$exam_id]['percentage_total'] += (float) ($row['percentage'] ?? 0.0);
-                    $exam_groups[$exam_id]['pass_count'] += (int) ($row['is_passed'] ?? 0);
-
-                    if (!isset($kelas_groups[$kelas_key])) {
-                        $kelas_groups[$kelas_key] = [
-                            'kelas' => $kelas_key,
-                            'completed_attempts' => 0,
-                            'pass_count' => 0,
-                            'percentage_total' => 0.0,
-                            'manual_review_count' => (int) (($manual_counts['by_class'][$kelas_key] ?? 0)),
-                        ];
-                    }
-
-                    $kelas_groups[$kelas_key]['completed_attempts']++;
-                    $kelas_groups[$kelas_key]['percentage_total'] += (float) ($row['percentage'] ?? 0.0);
-                    $kelas_groups[$kelas_key]['pass_count'] += (int) ($row['is_passed'] ?? 0);
+                        return !empty($exam_groups[$exam_id]);
+                    }));
                 }
 
-                foreach ($exam_groups as $group) {
+                $overview_exam_rows = [];
+                foreach ($catalog_rows as $exam_row) {
+                    $exam_id = (int) ($exam_row['id'] ?? 0);
+                    $group = (array) ($exam_groups[$exam_id] ?? []);
                     $completed_attempts = max(0, (int) ($group['completed_attempts'] ?? 0));
                     $average_percentage = $completed_attempts > 0
                         ? round(((float) ($group['percentage_total'] ?? 0.0)) / $completed_attempts, 2)
@@ -404,153 +442,260 @@ final class CBT_Admin_Analytics_Service
                     $pass_rate = $completed_attempts > 0
                         ? round((((int) ($group['pass_count'] ?? 0)) / $completed_attempts) * 100, 2)
                         : 0.0;
-                    $exam_scope = [
-                        'id' => (int) ($group['exam_id'] ?? 0),
-                        'title' => (string) ($group['exam_title'] ?? '-'),
-                        'subject_name' => (string) ($group['subject_name'] ?? ''),
-                        'kkm_percentage' => (float) ($group['kkm_percentage'] ?? 75.0),
-                    ];
-                    $statistical_payload = self::get_exam_statistical_payload($exam_scope, $selected_kelas, $is_admin_scope, $current_user_id);
-                    $quality = (array) ($statistical_payload['exam_quality'] ?? []);
-                    $item_summary = (array) ($statistical_payload['item_summary'] ?? []);
-
-                    $top_exams[] = [
-                        'exam_id' => (int) ($group['exam_id'] ?? 0),
-                        'title' => (string) ($group['exam_title'] ?? '-'),
-                        'subject_name' => (string) ($group['subject_name'] ?? ''),
+                    $overview_exam_rows[] = [
+                        'exam_id' => $exam_id,
+                        'title' => (string) ($exam_row['title'] ?? '-'),
+                        'subject_name' => (string) ($exam_row['subject_name'] ?? ''),
                         'completed_attempts' => $completed_attempts,
                         'average_percentage' => $average_percentage,
                         'average_percentage_display' => self::format_percent($average_percentage),
                         'pass_rate' => $pass_rate,
                         'pass_rate_display' => self::format_percent($pass_rate),
-                        'manual_review_count' => (int) ($group['manual_review_count'] ?? 0),
-                        'reliability' => isset($quality['reliability']) && is_numeric((string) $quality['reliability']) ? (float) $quality['reliability'] : null,
-                        'reliability_display' => (string) ($quality['reliability_display'] ?? 'Insufficient Data'),
-                        'reliability_label' => (string) ($quality['reliability_label'] ?? 'Insufficient Data'),
-                        'reliability_tone' => (string) ($quality['reliability_tone'] ?? 'neutral'),
-                        'problem_item_count' => (int) ($item_summary['problem_item_count'] ?? 0),
-                        'exam_url' => add_query_arg(
-                            array_filter([
-                                'page' => 'cbt-analytics',
-                                'cbt_analytics_tab' => 'exam',
-                                'cbt_exam_id' => (int) ($group['exam_id'] ?? 0),
-                                'cbt_subject_id' => $selected_subject_id > 0 ? $selected_subject_id : null,
-                                'cbt_result_kelas' => $selected_kelas !== '' ? $selected_kelas : null,
-                            ], static function ($value): bool {
-                                return $value !== null && $value !== '';
-                            }),
-                            admin_url('admin.php')
-                        ),
-                    ];
-
-                    $problem_exams[] = [
-                        'exam_id' => (int) ($group['exam_id'] ?? 0),
-                        'title' => (string) ($group['exam_title'] ?? '-'),
-                        'subject_name' => (string) ($group['subject_name'] ?? ''),
-                        'problem_item_count' => (int) ($item_summary['problem_item_count'] ?? 0),
-                        'weak_discrimination_count' => (int) ($item_summary['weak_discrimination_count'] ?? 0),
-                        'high_omission_count' => (int) ($item_summary['high_omission_count'] ?? 0),
-                        'reliability_display' => (string) ($quality['reliability_display'] ?? 'Insufficient Data'),
-                        'reliability_label' => (string) ($quality['reliability_label'] ?? 'Insufficient Data'),
-                        'reliability_tone' => (string) ($quality['reliability_tone'] ?? 'neutral'),
-                        'exam_url' => add_query_arg(
-                            array_filter([
-                                'page' => 'cbt-analytics',
-                                'cbt_analytics_tab' => 'items',
-                                'cbt_exam_id' => (int) ($group['exam_id'] ?? 0),
-                                'cbt_subject_id' => $selected_subject_id > 0 ? $selected_subject_id : null,
-                                'cbt_result_kelas' => $selected_kelas !== '' ? $selected_kelas : null,
-                            ], static function ($value): bool {
-                                return $value !== null && $value !== '';
-                            }),
-                            admin_url('admin.php')
-                        ),
+                        'manual_review_count' => (int) ($group['manual_review_count'] ?? ($manual_counts['by_exam'][$exam_id] ?? 0)),
                     ];
                 }
-
-                $lowest_pass_rate_exams = $top_exams;
-                usort($top_exams, static function (array $left, array $right): int {
-                    $completed_compare = (int) ($right['completed_attempts'] ?? 0) <=> (int) ($left['completed_attempts'] ?? 0);
-                    if ($completed_compare !== 0) {
-                        return $completed_compare;
-                    }
-
-                    return strnatcasecmp((string) ($left['title'] ?? ''), (string) ($right['title'] ?? ''));
-                });
-                usort($lowest_pass_rate_exams, static function (array $left, array $right): int {
-                    $rate_compare = (float) ($left['pass_rate'] ?? 0.0) <=> (float) ($right['pass_rate'] ?? 0.0);
-                    if ($rate_compare !== 0) {
-                        return $rate_compare;
-                    }
-
-                    $completed_compare = (int) ($right['completed_attempts'] ?? 0) <=> (int) ($left['completed_attempts'] ?? 0);
-                    if ($completed_compare !== 0) {
-                        return $completed_compare;
-                    }
-
-                    return strnatcasecmp((string) ($left['title'] ?? ''), (string) ($right['title'] ?? ''));
-                });
-
-                foreach ($kelas_groups as $group) {
-                    $completed_attempts = max(0, (int) ($group['completed_attempts'] ?? 0));
-                    $average_percentage = $completed_attempts > 0
-                        ? round(((float) ($group['percentage_total'] ?? 0.0)) / $completed_attempts, 2)
-                        : 0.0;
-                    $pass_rate = $completed_attempts > 0
-                        ? round((((int) ($group['pass_count'] ?? 0)) / $completed_attempts) * 100, 2)
-                        : 0.0;
-                    $per_kelas_summary[] = [
-                        'kelas' => (string) ($group['kelas'] ?? '-'),
-                        'completed_attempts' => $completed_attempts,
-                        'average_percentage' => $average_percentage,
-                        'average_percentage_display' => self::format_percent($average_percentage),
-                        'pass_rate' => $pass_rate,
-                        'pass_rate_display' => self::format_percent($pass_rate),
-                        'manual_review_count' => (int) ($group['manual_review_count'] ?? 0),
-                    ];
-                }
-
-                usort($per_kelas_summary, static function (array $left, array $right): int {
-                    return strnatcasecmp((string) ($left['kelas'] ?? ''), (string) ($right['kelas'] ?? ''));
-                });
-
-                $reliability_values = array_values(array_filter(array_map(static function (array $row): ?float {
-                    $value = isset($row['reliability']) && is_numeric((string) $row['reliability'])
-                        ? (float) $row['reliability']
-                        : null;
-                    return $value;
-                }, $top_exams), static function ($value): bool {
-                    return $value !== null;
-                }));
-                $average_reliability = !empty($reliability_values)
-                    ? round(array_sum($reliability_values) / count($reliability_values), 4)
-                    : null;
-                $weak_exam_count = count(array_filter($problem_exams, static function (array $row): bool {
-                    return (string) ($row['reliability_label'] ?? '') === 'Weak';
-                }));
-
-                usort($problem_exams, static function (array $left, array $right): int {
-                    $problemCompare = (int) ($right['problem_item_count'] ?? 0) <=> (int) ($left['problem_item_count'] ?? 0);
-                    if ($problemCompare !== 0) {
-                        return $problemCompare;
-                    }
-
-                    return strnatcasecmp((string) ($left['title'] ?? ''), (string) ($right['title'] ?? ''));
-                });
 
                 return [
-                    'summary' => array_merge($summary, [
-                        'average_reliability' => $average_reliability,
-                        'average_reliability_display' => $average_reliability === null ? 'Insufficient Data' : self::format_number($average_reliability),
-                        'weak_exam_count' => $weak_exam_count,
-                    ]),
-                    'top_exams' => array_slice($top_exams, 0, 6),
-                    'lowest_pass_rate_exams' => array_slice($lowest_pass_rate_exams, 0, 6),
-                    'problem_exams' => array_slice($problem_exams, 0, 6),
-                    'per_kelas_summary' => $per_kelas_summary,
+                    'summary' => $summary,
+                    'exam_rows' => $overview_exam_rows,
                 ];
             }
         );
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function get_overview_attempt_aggregates(
+        int $selected_exam_id,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id
+    ): array {
+        global $wpdb;
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+
+        $where_parts = ["a.status = 'completed'"];
+        $params = [];
+        if (!$is_admin_scope) {
+            $where_parts[] = 'e.created_by = %d';
+            $params[] = $current_user_id;
+        }
+        if ($selected_exam_id > 0) {
+            $where_parts[] = 'a.exam_id = %d';
+            $params[] = $selected_exam_id;
+        }
+        if ($selected_kelas !== '') {
+            $where_parts[] = 'kelas_meta.meta_value = %s';
+            $params[] = $selected_kelas;
+        }
+
+        $where_sql = ' WHERE ' . implode(' AND ', $where_parts);
+        $effective_max_score_sql = "CASE
+                WHEN COALESCE(a.max_score, 0) > 0 THEN COALESCE(a.max_score, 0)
+                ELSE COALESCE(qtotal.total_points, 0)
+            END";
+        $normalized_kkm_sql = "LEAST(100, GREATEST(0, COALESCE(e.kkm_percentage, 75)))";
+        $percentage_sql = "CASE
+                WHEN {$effective_max_score_sql} > 0 THEN ROUND((GREATEST(0, COALESCE(a.score, 0)) / {$effective_max_score_sql}) * 100, 2)
+                ELSE 0
+            END";
+        $is_passed_sql = "CASE
+                WHEN {$effective_max_score_sql} > 0 THEN
+                    CASE
+                        WHEN (GREATEST(0, COALESCE(a.score, 0)) + 0.0001) >= ROUND({$effective_max_score_sql} * ({$normalized_kkm_sql} / 100), 2) THEN 1
+                        ELSE 0
+                    END
+                WHEN {$normalized_kkm_sql} <= 0 THEN 1
+                ELSE 0
+            END";
+
+        $sql = "SELECT a.exam_id,
+                       COUNT(*) AS completed_attempts,
+                       COALESCE(SUM({$percentage_sql}), 0) AS percentage_total,
+                       COALESCE(SUM({$is_passed_sql}), 0) AS pass_count
+                FROM {$attempt_table} a
+                INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                INNER JOIN {$wpdb->users} u ON u.ID = a.student_id
+                LEFT JOIN (
+                    SELECT user_id, MAX(meta_value) AS meta_value
+                    FROM {$wpdb->usermeta}
+                    WHERE meta_key = 'kode_kelas'
+                    GROUP BY user_id
+                ) kelas_meta ON kelas_meta.user_id = u.ID
+                LEFT JOIN (
+                    SELECT exam_id, COALESCE(SUM(points), 0) AS total_points
+                    FROM {$question_table}
+                    WHERE COALESCE(is_active, 1) = 1
+                    GROUP BY exam_id
+                ) qtotal ON qtotal.exam_id = a.exam_id
+                {$where_sql}
+                GROUP BY a.exam_id";
+
+        if (!empty($params)) {
+            $sql = $wpdb->prepare($sql, $params);
+        }
+
+        $rows = $wpdb->get_results($sql, ARRAY_A);
+        $result = [
+            'total_attempts' => 0,
+            'percentage_total' => 0.0,
+            'pass_count' => 0,
+            'by_exam' => [],
+        ];
+        if (!is_array($rows)) {
+            return $result;
+        }
+
+        foreach ($rows as $row) {
+            $exam_id = (int) ($row['exam_id'] ?? 0);
+            if ($exam_id <= 0) {
+                continue;
+            }
+
+            $completed_attempts = max(0, (int) ($row['completed_attempts'] ?? 0));
+            $percentage_total = round(max(0.0, (float) ($row['percentage_total'] ?? 0.0)), 2);
+            $pass_count = max(0, (int) ($row['pass_count'] ?? 0));
+
+            $result['total_attempts'] += $completed_attempts;
+            $result['percentage_total'] += $percentage_total;
+            $result['pass_count'] += $pass_count;
+            $result['by_exam'][$exam_id] = [
+                'completed_attempts' => $completed_attempts,
+                'percentage_total' => $percentage_total,
+                'pass_count' => $pass_count,
+            ];
+        }
+
+        $result['percentage_total'] = round((float) $result['percentage_total'], 2);
+
+        return $result;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<string,mixed>
+     */
+    private static function build_overview_pagination(
+        array $rows,
+        int $current_page,
+        int $selected_exam_id,
+        string $selected_kelas,
+        bool $has_run_analytics
+    ): array {
+        $total_rows = count($rows);
+        $per_page = self::OVERVIEW_PER_PAGE;
+        $total_pages = max(1, (int) ceil($total_rows / $per_page));
+        $current_page = max(1, min($current_page, $total_pages));
+        $offset = ($current_page - 1) * $per_page;
+        $current_rows = array_slice($rows, $offset, $per_page);
+
+        $base_args = [
+            'cbt_analytics_tab' => 'overview',
+            'cbt_exam_id' => $selected_exam_id > 0 ? $selected_exam_id : null,
+            'cbt_result_kelas' => $selected_kelas !== '' ? $selected_kelas : null,
+            'cbt_run_analytics' => $has_run_analytics ? '1' : null,
+        ];
+
+        foreach ($current_rows as &$row) {
+            $row['analytic_url'] = self::build_analytics_url([
+                'cbt_analytics_tab' => 'exam',
+                'cbt_exam_id' => (int) ($row['exam_id'] ?? 0),
+                'cbt_result_kelas' => $selected_kelas !== '' ? $selected_kelas : null,
+                'cbt_overview_page' => $current_page,
+                'cbt_run_analytics' => '1',
+            ]);
+        }
+        unset($row);
+
+        $page_links = [];
+        $window_start = max(1, $current_page - 2);
+        $window_end = min($total_pages, $window_start + 4);
+        $window_start = max(1, $window_end - 4);
+        for ($page = $window_start; $page <= $window_end; $page++) {
+            $page_links[] = [
+                'page' => $page,
+                'is_current' => $page === $current_page ? 1 : 0,
+                'url' => self::build_analytics_url(array_merge($base_args, [
+                    'cbt_overview_page' => $page,
+                ])),
+            ];
+        }
+
+        return [
+            'rows' => $current_rows,
+            'current_page' => $current_page,
+            'per_page' => $per_page,
+            'total_pages' => $total_pages,
+            'total_rows' => $total_rows,
+            'start_row' => $total_rows > 0 ? ($offset + 1) : 0,
+            'end_row' => $total_rows > 0 ? min($total_rows, $offset + $per_page) : 0,
+            'has_multiple_pages' => $total_pages > 1 ? 1 : 0,
+            'prev_url' => $current_page > 1
+                ? self::build_analytics_url(array_merge($base_args, ['cbt_overview_page' => $current_page - 1]))
+                : '',
+            'next_url' => $current_page < $total_pages
+                ? self::build_analytics_url(array_merge($base_args, ['cbt_overview_page' => $current_page + 1]))
+                : '',
+            'page_links' => $page_links,
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $exam_rows
+     */
+    private static function warm_exam_analytics_for_rows(
+        array $exam_rows,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id
+    ): int {
+        $processed = 0;
+
+        foreach ($exam_rows as $exam_row) {
+            $exam = (array) $exam_row;
+            $exam_id = (int) ($exam['exam_id'] ?? ($exam['id'] ?? 0));
+            if ($exam_id <= 0) {
+                continue;
+            }
+
+            $exam_scope = [
+                'id' => $exam_id,
+                'title' => (string) ($exam['title'] ?? '-'),
+                'subject_name' => (string) ($exam['subject_name'] ?? ''),
+                'kkm_percentage' => (float) ($exam['kkm_percentage'] ?? 75.0),
+            ];
+
+            $statistical_payload = self::get_exam_statistical_payload(
+                $exam_scope,
+                $selected_kelas,
+                $is_admin_scope,
+                $current_user_id
+            );
+
+            self::get_exam_analytics(
+                $exam_scope,
+                $selected_kelas,
+                $is_admin_scope,
+                $current_user_id,
+                $statistical_payload
+            );
+
+            self::get_student_drilldown_rows(
+                $exam_scope,
+                $selected_kelas,
+                $is_admin_scope,
+                $current_user_id,
+                $statistical_payload
+            );
+
+            $processed++;
+        }
+
+        return $processed;
     }
 
     /**
@@ -1325,16 +1470,14 @@ final class CBT_Admin_Analytics_Service
     {
         $attempt_metrics = (array) ($objective_context['attempts'] ?? []);
         $question_ratios = (array) ($objective_context['question_ratios'] ?? []);
-        $eligible_question_ids = array_values(array_filter(array_map(static function (array $row): int {
-            $isObjective = !empty($row['is_objective']);
-            $isEssay = (string) ($row['question_type'] ?? '') === 'essay';
-            $manualCount = (int) ($row['manual_count'] ?? 0);
-            return ($isObjective && !$isEssay && $manualCount <= 0) ? (int) ($row['question_id'] ?? 0) : 0;
-        }, $item_rows), static function (int $question_id): bool {
+        $question_diagnostics = self::build_reliability_question_diagnostics($item_rows);
+        $eligible_question_ids = array_values(array_filter(array_map('intval', (array) ($question_diagnostics['included_question_ids'] ?? [])), static function (int $question_id): bool {
             return $question_id > 0;
         }));
         if (!empty($eligible_question_ids)) {
             $question_ratios = array_intersect_key($question_ratios, array_fill_keys($eligible_question_ids, true));
+        } else {
+            $question_ratios = [];
         }
 
         $objective_percentages = [];
@@ -1349,7 +1492,11 @@ final class CBT_Admin_Analytics_Service
         $stddev = self::calculate_standard_deviation($objective_percentages);
         $variance = self::calculate_variance($objective_percentages);
 
-        $reliability = self::calculate_exam_reliability($question_ratios);
+        $average_objective_percentage = !empty($objective_percentages) ? round(array_sum($objective_percentages) / count($objective_percentages), 2) : 0.0;
+        $reliability = self::calculate_exam_reliability(
+            $question_ratios,
+            (string) ($question_diagnostics['preferred_method'] ?? 'Insufficient Data')
+        );
         $reliability_value = $reliability['value'];
         $sem = ($reliability_value !== null && $reliability_value >= 0.0 && $reliability_value <= 1.0)
             ? round($stddev * sqrt(max(0.0, 1.0 - $reliability_value)), 4)
@@ -1370,10 +1517,14 @@ final class CBT_Admin_Analytics_Service
             }
         }
 
+        $objective_profile = self::determine_objective_profile($question_diagnostics, $reliability);
+        $diagnostics = self::build_reliability_diagnostics_payload($question_diagnostics, $reliability);
+
         return [
-            'objective_attempt_count' => count($objective_percentages),
-            'average_objective_percentage' => !empty($objective_percentages) ? round(array_sum($objective_percentages) / count($objective_percentages), 2) : 0.0,
-            'average_objective_percentage_display' => self::format_percent(!empty($objective_percentages) ? round(array_sum($objective_percentages) / count($objective_percentages), 2) : 0.0),
+            'objective_attempt_count' => (int) ($reliability['attempt_count'] ?? 0),
+            'eligible_attempt_count' => (int) ($reliability['attempt_count'] ?? 0),
+            'average_objective_percentage' => $average_objective_percentage,
+            'average_objective_percentage_display' => self::format_percent($average_objective_percentage),
             'variance' => $variance,
             'variance_display' => $variance === null ? 'Insufficient Data' : self::format_number($variance),
             'standard_deviation' => $stddev,
@@ -1383,6 +1534,7 @@ final class CBT_Admin_Analytics_Service
             'reliability' => $reliability_value,
             'reliability_display' => $reliability_value === null ? 'Insufficient Data' : self::format_number($reliability_value),
             'reliability_method' => (string) ($reliability['method'] ?? 'Insufficient Data'),
+            'reliability_preferred_method' => (string) ($question_diagnostics['preferred_method'] ?? 'Insufficient Data'),
             'reliability_label' => $quality_label,
             'reliability_tone' => $quality_tone,
             'insufficient_reason' => (string) ($reliability['reason'] ?? ''),
@@ -1396,7 +1548,356 @@ final class CBT_Admin_Analytics_Service
             'manual_component_count' => count(array_filter($item_rows, static function (array $row): bool {
                 return (string) ($row['question_type'] ?? '') === 'essay' || (int) ($row['manual_count'] ?? 0) > 0;
             })),
-            'eligible_objective_item_count' => count($question_ratios),
+            'eligible_objective_item_count' => (int) ($question_diagnostics['included_item_count'] ?? 0),
+            'objective_profile' => $objective_profile,
+            'objective_profile_label' => self::format_objective_profile_label($objective_profile),
+            'objective_profile_reason' => (string) ($diagnostics['profile_reason'] ?? ''),
+            'diagnostics' => $diagnostics,
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $item_rows
+     * @return array<string,mixed>
+     */
+    private static function build_reliability_question_diagnostics(array $item_rows): array
+    {
+        $included_question_ids = [];
+        $included_types = [];
+        $excluded_types = [];
+        $excluded_reasons = [];
+        $mixed_types = [];
+        $dichotomous_item_count = 0;
+        $mixed_objective_item_count = 0;
+        $excluded_item_count = 0;
+
+        foreach ($item_rows as $item_row) {
+            $row = (array) $item_row;
+            $classification = self::classify_question_for_reliability($row);
+            $question_id = (int) ($row['question_id'] ?? 0);
+            $question_type = (string) ($row['question_type'] ?? '');
+            $question_type_label = (string) ($row['question_type_label'] ?? self::format_question_type_label($question_type));
+
+            if (!empty($classification['included']) && $question_id > 0) {
+                $included_question_ids[$question_id] = $question_id;
+            }
+
+            if ((string) ($classification['category'] ?? '') === 'dichotomous') {
+                $dichotomous_item_count++;
+                self::increment_reliability_type_bucket($included_types, $question_type, $question_type_label);
+                continue;
+            }
+
+            if ((string) ($classification['category'] ?? '') === 'mixed_objective') {
+                $mixed_objective_item_count++;
+                self::increment_reliability_type_bucket($included_types, $question_type, $question_type_label);
+                self::increment_reliability_type_bucket($mixed_types, $question_type, $question_type_label);
+                continue;
+            }
+
+            $excluded_item_count++;
+            self::increment_reliability_type_bucket(
+                $excluded_types,
+                $question_type !== '' ? $question_type : 'unknown',
+                $question_type_label !== '' ? $question_type_label : 'Unknown',
+                (string) ($classification['reason'] ?? '')
+            );
+            self::increment_reliability_reason_bucket($excluded_reasons, (string) ($classification['reason'] ?? 'Tidak memenuhi syarat reliability.'));
+        }
+
+        $included_item_count = $dichotomous_item_count + $mixed_objective_item_count;
+        $composition_profile = 'insufficient';
+        if ($included_item_count > 0) {
+            $composition_profile = $mixed_objective_item_count > 0 ? 'mixed_objective' : 'dichotomous';
+        }
+
+        $preferred_method = 'Insufficient Data';
+        if ($composition_profile === 'dichotomous') {
+            $preferred_method = 'KR-20';
+        } elseif ($composition_profile === 'mixed_objective') {
+            $preferred_method = "Cronbach's Alpha";
+        }
+
+        $mixed_type_labels = self::extract_bucket_labels($mixed_types);
+        $profile_reason = 'Belum ada soal objective finalized yang layak masuk reliability.';
+        if ($composition_profile === 'dichotomous') {
+            $profile_reason = sprintf(
+                'Semua %d butir objective yang masuk reliability saat ini masih bertipe benar/salah atau exact-match, jadi profilnya dikotomis.',
+                $included_item_count
+            );
+        } elseif ($composition_profile === 'mixed_objective') {
+            $profile_reason = sprintf(
+                'Ada %1$d butir objective dengan skor parsial seperti %2$s, jadi komposisi paket ini dibaca sebagai mixed objective.',
+                $mixed_objective_item_count,
+                self::format_label_list($mixed_type_labels)
+            );
+        }
+
+        $method_reason = 'Belum ada metode reliability yang bisa dipilih karena item objective finalized yang layak belum tersedia.';
+        if ($preferred_method === 'KR-20') {
+            $method_reason = 'KR-20 dipakai karena semua butir objective yang eligible masih memakai pola skor benar/salah atau exact-match.';
+        } elseif ($preferred_method === "Cronbach's Alpha") {
+            $method_reason = sprintf(
+                "Cronbach's Alpha dipakai karena ada butir objective dengan skor parsial seperti %s, sehingga KR-20 tidak lagi mewakili paket soal ini dengan baik.",
+                self::format_label_list($mixed_type_labels)
+            );
+        }
+
+        return [
+            'included_question_ids' => array_values($included_question_ids),
+            'included_item_count' => $included_item_count,
+            'dichotomous_item_count' => $dichotomous_item_count,
+            'mixed_objective_item_count' => $mixed_objective_item_count,
+            'excluded_item_count' => $excluded_item_count,
+            'included_types' => self::finalize_reliability_type_buckets($included_types),
+            'excluded_types' => self::finalize_reliability_type_buckets($excluded_types),
+            'excluded_reasons' => self::finalize_reliability_reason_buckets($excluded_reasons),
+            'mixed_types' => self::finalize_reliability_type_buckets($mixed_types),
+            'composition_profile' => $composition_profile,
+            'preferred_method' => $preferred_method,
+            'profile_reason' => $profile_reason,
+            'method_reason' => $method_reason,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return array{category:string,included:bool,reason:string}
+     */
+    private static function classify_question_for_reliability(array $row): array
+    {
+        $question_type = (string) ($row['question_type'] ?? '');
+        $is_objective = !empty($row['is_objective']) && $question_type !== 'essay';
+        if (!$is_objective) {
+            return [
+                'category' => 'excluded',
+                'included' => false,
+                'reason' => 'Essay atau komponen manual dinilai terpisah dan tidak ikut reliability.',
+            ];
+        }
+
+        if ((int) ($row['manual_count'] ?? 0) > 0) {
+            return [
+                'category' => 'excluded',
+                'included' => false,
+                'reason' => 'Masih ada review manual, jadi butir ini belum finalized untuk reliability.',
+            ];
+        }
+
+        switch ($question_type) {
+            case 'multiple_choice':
+            case 'true_false':
+            case 'multiple_answer':
+                return [
+                    'category' => 'dichotomous',
+                    'included' => true,
+                    'reason' => '',
+                ];
+            case 'short_answer':
+                return [
+                    'category' => !empty($row['is_partial_credit']) ? 'mixed_objective' : 'dichotomous',
+                    'included' => true,
+                    'reason' => '',
+                ];
+            case 'true_false_matrix':
+                return [
+                    'category' => 'mixed_objective',
+                    'included' => true,
+                    'reason' => '',
+                ];
+            case 'essay':
+                return [
+                    'category' => 'excluded',
+                    'included' => false,
+                    'reason' => 'Essay atau komponen manual dinilai terpisah dan tidak ikut reliability.',
+                ];
+            default:
+                return [
+                    'category' => !empty($row['is_partial_credit']) ? 'mixed_objective' : 'dichotomous',
+                    'included' => true,
+                    'reason' => '',
+                ];
+        }
+    }
+
+    /**
+     * @param array<string,array<string,mixed>> $buckets
+     */
+    private static function increment_reliability_type_bucket(array &$buckets, string $question_type, string $label, string $note = ''): void
+    {
+        $key = $question_type !== '' ? $question_type : 'unknown';
+        if (!isset($buckets[$key])) {
+            $buckets[$key] = [
+                'question_type' => $key,
+                'label' => $label !== '' ? $label : 'Unknown',
+                'count' => 0,
+                'notes' => [],
+            ];
+        }
+
+        $buckets[$key]['count'] = (int) ($buckets[$key]['count'] ?? 0) + 1;
+        if ($note !== '') {
+            $buckets[$key]['notes'][$note] = $note;
+        }
+    }
+
+    /**
+     * @param array<string,array<string,mixed>> $buckets
+     */
+    private static function increment_reliability_reason_bucket(array &$buckets, string $reason): void
+    {
+        $key = $reason !== '' ? $reason : 'Tidak memenuhi syarat reliability.';
+        if (!isset($buckets[$key])) {
+            $buckets[$key] = [
+                'reason' => $key,
+                'count' => 0,
+            ];
+        }
+
+        $buckets[$key]['count'] = (int) ($buckets[$key]['count'] ?? 0) + 1;
+    }
+
+    /**
+     * @param array<string,array<string,mixed>> $buckets
+     * @return array<int,array<string,mixed>>
+     */
+    private static function finalize_reliability_type_buckets(array $buckets): array
+    {
+        $rows = array_values(array_map(static function (array $bucket): array {
+            $bucket['notes'] = array_values((array) ($bucket['notes'] ?? []));
+            return $bucket;
+        }, $buckets));
+
+        usort($rows, static function (array $left, array $right): int {
+            $count_compare = (int) ($right['count'] ?? 0) <=> (int) ($left['count'] ?? 0);
+            if ($count_compare !== 0) {
+                return $count_compare;
+            }
+
+            return strnatcasecmp((string) ($left['label'] ?? ''), (string) ($right['label'] ?? ''));
+        });
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string,array<string,mixed>> $buckets
+     * @return array<int,array<string,mixed>>
+     */
+    private static function finalize_reliability_reason_buckets(array $buckets): array
+    {
+        $rows = array_values($buckets);
+        usort($rows, static function (array $left, array $right): int {
+            $count_compare = (int) ($right['count'] ?? 0) <=> (int) ($left['count'] ?? 0);
+            if ($count_compare !== 0) {
+                return $count_compare;
+            }
+
+            return strnatcasecmp((string) ($left['reason'] ?? ''), (string) ($right['reason'] ?? ''));
+        });
+
+        return $rows;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $buckets
+     * @return array<int,string>
+     */
+    private static function extract_bucket_labels(array $buckets): array
+    {
+        return array_values(array_filter(array_map(static function (array $bucket): string {
+            return (string) ($bucket['label'] ?? '');
+        }, $buckets), static function (string $label): bool {
+            return $label !== '';
+        }));
+    }
+
+    /**
+     * @param array<int,string> $labels
+     */
+    private static function format_label_list(array $labels): string
+    {
+        $labels = array_values(array_unique(array_filter(array_map('strval', $labels), static function (string $label): bool {
+            return trim($label) !== '';
+        })));
+        if (empty($labels)) {
+            return 'soal objective campuran';
+        }
+        if (count($labels) === 1) {
+            return $labels[0];
+        }
+        if (count($labels) === 2) {
+            return $labels[0] . ' dan ' . $labels[1];
+        }
+
+        $last = array_pop($labels);
+        return implode(', ', $labels) . ', dan ' . $last;
+    }
+
+    /**
+     * @param array<string,mixed> $question_diagnostics
+     * @param array<string,mixed> $reliability
+     */
+    private static function determine_objective_profile(array $question_diagnostics, array $reliability): string
+    {
+        $composition_profile = (string) ($question_diagnostics['composition_profile'] ?? 'insufficient');
+        if ($composition_profile === 'insufficient') {
+            return 'insufficient';
+        }
+
+        if ((int) ($question_diagnostics['included_item_count'] ?? 0) < 2) {
+            return 'insufficient';
+        }
+
+        if (!empty($reliability['reason'])) {
+            return 'insufficient';
+        }
+
+        return $composition_profile;
+    }
+
+    private static function format_objective_profile_label(string $profile): string
+    {
+        switch ($profile) {
+            case 'dichotomous':
+                return 'Dikotomis';
+            case 'mixed_objective':
+                return 'Mixed Objective';
+            default:
+                return 'Belum Layak Dinilai';
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $question_diagnostics
+     * @param array<string,mixed> $reliability
+     * @return array<string,mixed>
+     */
+    private static function build_reliability_diagnostics_payload(array $question_diagnostics, array $reliability): array
+    {
+        $composition_profile = (string) ($question_diagnostics['composition_profile'] ?? 'insufficient');
+        $profile_reason = (string) ($question_diagnostics['profile_reason'] ?? '');
+        $method_reason = (string) ($question_diagnostics['method_reason'] ?? '');
+        $fallback_reason = (string) ($reliability['reason'] ?? '');
+
+        return [
+            'composition_profile' => $composition_profile,
+            'composition_profile_label' => self::format_objective_profile_label($composition_profile),
+            'profile_reason' => $profile_reason,
+            'method' => (string) ($reliability['method'] ?? 'Insufficient Data'),
+            'method_reason' => $method_reason,
+            'fallback_reason' => $fallback_reason,
+            'why_reason' => trim($method_reason . ($fallback_reason !== '' ? ' ' . $fallback_reason : '')),
+            'included_types' => array_values((array) ($question_diagnostics['included_types'] ?? [])),
+            'excluded_types' => array_values((array) ($question_diagnostics['excluded_types'] ?? [])),
+            'excluded_reasons' => array_values((array) ($question_diagnostics['excluded_reasons'] ?? [])),
+            'counts' => [
+                'included_items' => (int) ($question_diagnostics['included_item_count'] ?? 0),
+                'dichotomous_items' => (int) ($question_diagnostics['dichotomous_item_count'] ?? 0),
+                'mixed_objective_items' => (int) ($question_diagnostics['mixed_objective_item_count'] ?? 0),
+                'excluded_items' => (int) ($question_diagnostics['excluded_item_count'] ?? 0),
+                'eligible_attempts' => (int) ($reliability['attempt_count'] ?? 0),
+            ],
         ];
     }
 
@@ -1707,15 +2208,18 @@ final class CBT_Admin_Analytics_Service
 
     /**
      * @param array<int,array<int,float>> $question_ratios
-     * @return array{value:?float,method:string,reason:string}
+     * @return array{value:?float,method:string,reason:string,item_count:int,attempt_count:int}
      */
-    private static function calculate_exam_reliability(array $question_ratios): array
+    private static function calculate_exam_reliability(array $question_ratios, string $preferred_method = 'Insufficient Data'): array
     {
+        $method = $preferred_method !== '' ? $preferred_method : 'Insufficient Data';
         if (empty($question_ratios)) {
             return [
                 'value' => null,
-                'method' => 'Insufficient Data',
-                'reason' => 'Belum ada item objektif yang cukup untuk menghitung reliability.',
+                'method' => $method,
+                'reason' => 'Belum ada butir objective finalized yang cukup untuk menghitung reliability.',
+                'item_count' => 0,
+                'attempt_count' => 0,
             ];
         }
 
@@ -1723,13 +2227,7 @@ final class CBT_Admin_Analytics_Service
         $question_ids = array_values(array_filter(array_map('intval', $question_ids), static function (int $question_id): bool {
             return $question_id > 0;
         }));
-        if (count($question_ids) < 2) {
-            return [
-                'value' => null,
-                'method' => 'Insufficient Data',
-                'reason' => 'Minimal dua item objektif finalized diperlukan untuk reliability.',
-            ];
-        }
+        $item_count = count($question_ids);
 
         $attempt_ids = [];
         foreach ($question_ratios as $ratio_map) {
@@ -1742,17 +2240,27 @@ final class CBT_Admin_Analytics_Service
         }
         $attempt_ids = array_values($attempt_ids);
         sort($attempt_ids);
+        if ($item_count < 2) {
+            return [
+                'value' => null,
+                'method' => $method,
+                'reason' => 'Minimal dua butir objective finalized diperlukan agar hubungan antarsoal bisa dibaca.',
+                'item_count' => $item_count,
+                'attempt_count' => count($attempt_ids),
+            ];
+        }
         if (count($attempt_ids) < 5) {
             return [
                 'value' => null,
-                'method' => 'Insufficient Data',
-                'reason' => 'Minimal lima peserta selesai diperlukan untuk reliability.',
+                'method' => $method,
+                'reason' => 'Minimal lima peserta selesai diperlukan agar reliability tidak terlalu rapuh.',
+                'item_count' => $item_count,
+                'attempt_count' => count($attempt_ids),
             ];
         }
 
         $item_variances = [];
         $total_scores = [];
-        $all_dichotomous = true;
 
         foreach ($attempt_ids as $attempt_id) {
             $total_scores[$attempt_id] = 0.0;
@@ -1764,9 +2272,6 @@ final class CBT_Admin_Analytics_Service
                 $value = isset($question_ratios[$question_id][$attempt_id]) ? (float) $question_ratios[$question_id][$attempt_id] : 0.0;
                 $values[] = $value;
                 $total_scores[$attempt_id] += $value;
-                if ($value !== 0.0 && $value !== 1.0) {
-                    $all_dichotomous = false;
-                }
             }
             $item_variances[] = self::calculate_variance($values);
         }
@@ -1776,17 +2281,20 @@ final class CBT_Admin_Analytics_Service
         if ($total_variance === null || $total_variance <= 0.0) {
             return [
                 'value' => null,
-                'method' => $all_dichotomous ? 'KR-20' : 'Cronbach Alpha',
-                'reason' => 'Variance total skor objektif tidak cukup untuk menghitung reliability.',
+                'method' => $method,
+                'reason' => 'Sebaran total skor objective masih terlalu datar, jadi reliability belum bisa dihitung dengan aman.',
+                'item_count' => $item_count,
+                'attempt_count' => count($attempt_ids),
             ];
         }
 
-        $item_count = count($question_ids);
         if ($item_count < 2) {
             return [
                 'value' => null,
-                'method' => 'Insufficient Data',
-                'reason' => 'Jumlah item objektif finalized belum cukup.',
+                'method' => $method,
+                'reason' => 'Jumlah item objective finalized belum cukup.',
+                'item_count' => $item_count,
+                'attempt_count' => count($attempt_ids),
             ];
         }
 
@@ -1800,8 +2308,10 @@ final class CBT_Admin_Analytics_Service
 
         return [
             'value' => $alpha,
-            'method' => $all_dichotomous ? 'KR-20' : 'Cronbach Alpha',
+            'method' => $method,
             'reason' => '',
+            'item_count' => $item_count,
+            'attempt_count' => count($attempt_ids),
         ];
     }
 
@@ -2385,6 +2895,29 @@ final class CBT_Admin_Analytics_Service
             $percentage_total += (float) ($row['percentage'] ?? 0.0);
             $pass_count += (int) ($row['is_passed'] ?? 0);
         }
+
+        $average_percentage = $completed_attempts > 0 ? round($percentage_total / $completed_attempts, 2) : 0.0;
+        $pass_rate = $completed_attempts > 0 ? round(($pass_count / $completed_attempts) * 100, 2) : 0.0;
+
+        return [
+            'completed_attempts' => $completed_attempts,
+            'average_percentage' => $average_percentage,
+            'average_percentage_display' => self::format_percent($average_percentage),
+            'pass_rate' => $pass_rate,
+            'pass_rate_display' => self::format_percent($pass_rate),
+            'manual_review_count' => max(0, $manual_review_count),
+        ];
+    }
+
+    private static function build_summary_metrics_from_aggregates(
+        int $completed_attempts,
+        float $percentage_total,
+        int $pass_count,
+        int $manual_review_count
+    ): array {
+        $completed_attempts = max(0, $completed_attempts);
+        $percentage_total = max(0.0, $percentage_total);
+        $pass_count = max(0, $pass_count);
 
         $average_percentage = $completed_attempts > 0 ? round($percentage_total / $completed_attempts, 2) : 0.0;
         $pass_rate = $completed_attempts > 0 ? round(($pass_count / $completed_attempts) * 100, 2) : 0.0;

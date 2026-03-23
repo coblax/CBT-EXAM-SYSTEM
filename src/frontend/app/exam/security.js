@@ -10,7 +10,65 @@ export function createExamSecurityManager(deps) {
     var isSecurityLoggingActiveForAttempt = deps.isSecurityLoggingActiveForAttempt;
     var sendSecurityEventSilently = deps.sendSecurityEventSilently;
     var syncFullscreenState = deps.syncFullscreenState;
+    var requestNativeFullscreen = deps.requestNativeFullscreen;
+    var setNativeFullscreenActive = deps.setNativeFullscreenActive;
+    var exitNativeFullscreen = deps.exitNativeFullscreen;
     var fullscreenExitLogSuppressedUntil = 0;
+
+    function normalizeNativeFullscreenActive(value) {
+        if (value === true || value === false) {
+            return value;
+        }
+
+        if (typeof value === 'number') {
+            return value !== 0;
+        }
+
+        if (typeof value === 'string') {
+            var normalized = value.trim().toLowerCase();
+            if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on' || normalized === 'active') {
+                return true;
+            }
+            if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off' || normalized === 'inactive') {
+                return false;
+            }
+        }
+
+        return null;
+    }
+
+    function getNativeFullscreenEventActive(event) {
+        var detail = event && event.detail && typeof event.detail === 'object'
+            ? event.detail
+            : null;
+
+        if (!detail) {
+            return null;
+        }
+
+        return normalizeNativeFullscreenActive(detail.active);
+    }
+
+    function logFullscreenExitIfNeeded(source, wasFullscreenActive) {
+        if (
+            !wasFullscreenActive
+            || state.isFullscreenActive
+            || !isExamFullscreenRequired()
+            || !isSecurityLoggingActiveForAttempt()
+            || Date.now() <= fullscreenExitLogSuppressedUntil
+        ) {
+            return;
+        }
+
+        sendSecurityEventSilently('fullscreen_exit', {
+            source: String(source || 'fullscreenchange')
+        }, {
+            attemptId: Number(state.attemptId) || 0,
+            keepalive: true,
+            debounceMs: 1500,
+            requireFullscreen: true
+        });
+    }
 
     function isExamFullscreenBlockingActive() {
         return state.stage === 'exam' && isExamFullscreenRequired() && !state.isFullscreenActive;
@@ -101,9 +159,16 @@ export function createExamSecurityManager(deps) {
             }
             if (documentRef.msFullscreenElement && typeof documentRef.msExitFullscreen === 'function') {
                 documentRef.msExitFullscreen();
+                return;
             }
         } catch (error) {
             // Ignore fullscreen exit errors.
+        }
+
+        if (typeof exitNativeFullscreen === 'function') {
+            exitNativeFullscreen().catch(function () {
+                // Ignore native fullscreen exit errors.
+            });
         }
     }
 
@@ -131,6 +196,20 @@ export function createExamSecurityManager(deps) {
             }
         } catch (error) {
             syncFullscreenState(false);
+        }
+
+        if (typeof requestNativeFullscreen === 'function') {
+            try {
+                var enteredNatively = await requestNativeFullscreen();
+                syncFullscreenState(false);
+
+                if (enteredNatively || state.isFullscreenActive) {
+                    clearMessages();
+                    return true;
+                }
+            } catch (error) {
+                syncFullscreenState(false);
+            }
         }
 
         if (!options.silent) {
@@ -164,24 +243,25 @@ export function createExamSecurityManager(deps) {
             documentRef.addEventListener(eventName, function () {
                 var wasFullscreenActive = state.isFullscreenActive;
                 syncFullscreenState(true);
-
-                if (
-                    wasFullscreenActive
-                    && !state.isFullscreenActive
-                    && isExamFullscreenRequired()
-                    && isSecurityLoggingActiveForAttempt()
-                    && Date.now() > fullscreenExitLogSuppressedUntil
-                ) {
-                    sendSecurityEventSilently('fullscreen_exit', {
-                        source: 'fullscreenchange'
-                    }, {
-                        attemptId: Number(state.attemptId) || 0,
-                        keepalive: true,
-                        debounceMs: 1500,
-                        requireFullscreen: true
-                    });
-                }
+                logFullscreenExitIfNeeded('fullscreenchange', wasFullscreenActive);
             });
+        });
+
+        function handleNativeFullscreenChange(event) {
+            var wasFullscreenActive = state.isFullscreenActive;
+            var nextActive = getNativeFullscreenEventActive(event);
+
+            if (nextActive === null || typeof setNativeFullscreenActive !== 'function') {
+                return;
+            }
+
+            setNativeFullscreenActive(nextActive, true);
+            logFullscreenExitIfNeeded('native-fullscreen-change', wasFullscreenActive);
+        }
+
+        ['cbt-native-fullscreen-change', 'cbt:native-fullscreen-change'].forEach(function (eventName) {
+            windowRef.addEventListener(eventName, handleNativeFullscreenChange);
+            documentRef.addEventListener(eventName, handleNativeFullscreenChange);
         });
 
         ['copy', 'cut', 'paste'].forEach(function (eventName) {

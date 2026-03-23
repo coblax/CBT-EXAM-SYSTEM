@@ -95,6 +95,8 @@
                             'status' => (string) ($editing_exam['status'] ?? 'draft'),
                             'duration_minutes' => (int) ($editing_exam['duration_minutes'] ?? 60),
                             'kkm_percentage' => (float) ($editing_exam['kkm_percentage'] ?? 75),
+                            'show_student_result' => (int) ($editing_exam['show_student_result'] ?? 1),
+                            'enable_calculator' => (int) ($editing_exam['enable_calculator'] ?? 1),
                             'starts_at' => (string) ($editing_exam['starts_at'] ?? ''),
                             'ends_at' => (string) ($editing_exam['ends_at'] ?? ''),
                             'target_kelas' => (string) ($editing_exam['target_kelas'] ?? ''),
@@ -239,6 +241,24 @@
                                         <label class="cbt-exam-inline-toggle">
                                             <input type="checkbox" id="cbt-exam-randomize-options" name="randomize_options" value="1" <?php checked((int) ($editing_exam['randomize_options'] ?? 0), 1); ?> />
                                             Acak urutan opsi untuk Multiple Choice, Multiple Answer, dan TF Matrix
+                                        </label>
+                                    </td>
+                                </tr>
+                                <tr class="cbt-exam-detail-row cbt-exam-detail-row--toggle">
+                                    <th><label for="cbt-exam-show-student-result">Lihat Nilai & Review</label></th>
+                                    <td>
+                                        <label class="cbt-exam-inline-toggle">
+                                            <input type="checkbox" id="cbt-exam-show-student-result" name="show_student_result" value="1" <?php checked((int) ($editing_exam['show_student_result'] ?? 1), 1); ?> />
+                                            Tampilkan nilai dan review jawaban ke siswa setelah ujian selesai
+                                        </label>
+                                    </td>
+                                </tr>
+                                <tr class="cbt-exam-detail-row cbt-exam-detail-row--toggle">
+                                    <th><label for="cbt-exam-enable-calculator">Aktifkan Kalkulator</label></th>
+                                    <td>
+                                        <label class="cbt-exam-inline-toggle">
+                                            <input type="checkbox" id="cbt-exam-enable-calculator" name="enable_calculator" value="1" <?php checked((int) ($editing_exam['enable_calculator'] ?? 1), 1); ?> />
+                                            Izinkan siswa membuka kalkulator saat mengerjakan exam
                                         </label>
                                     </td>
                                 </tr>
@@ -755,6 +775,8 @@
                             $status_class = sanitize_html_class($status_value);
                             $randomize_questions_enabled = !empty($exam['randomize_questions']);
                             $randomize_options_enabled = !empty($exam['randomize_options']);
+                            $show_student_result_enabled = !array_key_exists('show_student_result', $exam) || !empty($exam['show_student_result']);
+                            $enable_calculator_enabled = !array_key_exists('enable_calculator', $exam) || !empty($exam['enable_calculator']);
                             ?>
                             <tr>
                                 <td><?php echo (int) $exam['id']; ?></td>
@@ -780,6 +802,12 @@
                                             </span>
                                             <span class="cbt-exam-status-flag cbt-exam-status-flag--option<?php echo $randomize_options_enabled ? ' is-active' : ' is-inactive'; ?>">
                                                 <?php echo esc_html($randomize_options_enabled ? 'Acak Opsi On' : 'Acak Opsi Off'); ?>
+                                            </span>
+                                            <span class="cbt-exam-status-flag cbt-exam-status-flag--result<?php echo $show_student_result_enabled ? ' is-active' : ' is-inactive'; ?>">
+                                                <?php echo esc_html($show_student_result_enabled ? 'Hasil Siswa On' : 'Hasil Siswa Off'); ?>
+                                            </span>
+                                            <span class="cbt-exam-status-flag cbt-exam-status-flag--calc<?php echo $enable_calculator_enabled ? ' is-active' : ' is-inactive'; ?>">
+                                                <?php echo esc_html($enable_calculator_enabled ? 'Kalkulator On' : 'Kalkulator Off'); ?>
                                             </span>
                                         </div>
                                     </div>
@@ -4548,7 +4576,7 @@
                         const keyword = String(searchInput?.value || '').trim();
                         const selectedType = String(typeFilter?.value || '');
                         const selectedSource = String(sourceFilter?.value || '');
-                        const selectedPerPage = String(perPageFilter?.value || '150');
+                        const selectedPerPage = String(perPageFilter?.value || '50');
 
                         if (keyword !== '') {
                             url.searchParams.set('cbt_exam_question_search', keyword);
@@ -4568,7 +4596,7 @@
                             url.searchParams.delete('cbt_exam_question_source');
                         }
 
-                        if (selectedPerPage !== '150') {
+                        if (selectedPerPage !== '50') {
                             url.searchParams.set('cbt_exam_question_per_page', selectedPerPage);
                         } else {
                             url.searchParams.delete('cbt_exam_question_per_page');

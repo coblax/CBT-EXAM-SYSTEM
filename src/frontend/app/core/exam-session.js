@@ -378,6 +378,7 @@ export function createExamSessionManager(deps) {
 
         var localAttemptUiState = readPersistedAttemptUiState(state.attemptId);
         var restoredQuestionCacheSnapshot = await readPersistedQuestionCache(state.attemptId);
+        var expectedQuestionOrderSignature = String(startPayload && startPayload.question_order_signature || '').trim();
         if (
             restoredQuestionCacheSnapshot &&
             !questionRevisionEquals(
@@ -386,6 +387,23 @@ export function createExamSessionManager(deps) {
                 examId
             )
         ) {
+            clearPersistedQuestionCache(state.attemptId);
+            restoredQuestionCacheSnapshot = null;
+        }
+        if (
+            restoredQuestionCacheSnapshot &&
+            expectedQuestionOrderSignature !== '' &&
+            String(restoredQuestionCacheSnapshot.questionOrderSignature || '').trim() !== expectedQuestionOrderSignature
+        ) {
+            applyPersistedQuestionCache(
+                restoredQuestionCacheSnapshot,
+                {
+                    attemptId: state.attemptId,
+                    examId: examId,
+                    expectedQuestionRevision: state.questionRevision,
+                    restoreAnswersOnly: true
+                }
+            );
             clearPersistedQuestionCache(state.attemptId);
             restoredQuestionCacheSnapshot = null;
         }
@@ -408,6 +426,7 @@ export function createExamSessionManager(deps) {
             {
                 attemptId: state.attemptId,
                 examId: examId,
+                expectedQuestionOrderSignature: expectedQuestionOrderSignature,
                 preferredIndex: requestedResumeIndex,
                 windowSize: questionWindowSize,
                 expectedQuestionRevision: state.questionRevision
@@ -526,7 +545,12 @@ export function createExamSessionManager(deps) {
 
     async function tryResumeExamCandidate(exam) {
         var examId = Number(exam && exam.id) || 0;
+        var latestAttemptId = Number(exam && exam.latest_attempt_id) || 0;
+        var latestAttemptStatus = String(exam && exam.latest_attempt_status ? exam.latest_attempt_status : '').toLowerCase();
         if (examId <= 0) {
+            return false;
+        }
+        if (latestAttemptId <= 0 || latestAttemptStatus !== 'in_progress') {
             return false;
         }
 
@@ -777,11 +801,26 @@ export function createExamSessionManager(deps) {
             var attemptData = reviewPayload && typeof reviewPayload === 'object'
                 ? (reviewPayload.attempt || null)
                 : null;
-            var score = Number(attemptData && attemptData.score !== undefined ? attemptData.score : selectedExam.latest_attempt_score);
-            var maxScore = Number(attemptData && attemptData.max_score !== undefined ? attemptData.max_score : selectedExam.latest_attempt_max_score);
-            var percentage = maxScore > 0
-                ? ((score / maxScore) * 100)
-                : Number(selectedExam.latest_attempt_percentage || 0);
+            var showStudentResult = Number(
+                reviewPayload && typeof reviewPayload === 'object' && reviewPayload.show_student_result !== undefined
+                    ? reviewPayload.show_student_result
+                    : (selectedExam && selectedExam.show_student_result !== undefined ? selectedExam.show_student_result : 1)
+            ) === 1;
+            var resultViewMode = reviewPayload && typeof reviewPayload === 'object' && reviewPayload.result_view_mode
+                ? String(reviewPayload.result_view_mode)
+                : (showStudentResult ? 'full' : 'restricted');
+            var isRestrictedResult = !showStudentResult || resultViewMode.toLowerCase() === 'restricted';
+            var score = isRestrictedResult
+                ? 0
+                : Number(attemptData && attemptData.score !== undefined ? attemptData.score : selectedExam.latest_attempt_score);
+            var maxScore = isRestrictedResult
+                ? 0
+                : Number(attemptData && attemptData.max_score !== undefined ? attemptData.max_score : selectedExam.latest_attempt_max_score);
+            var percentage = isRestrictedResult
+                ? 0
+                : (maxScore > 0
+                    ? ((score / maxScore) * 100)
+                    : Number(selectedExam.latest_attempt_percentage || 0));
             var passMeta = buildResultPassMeta(
                 score,
                 maxScore,
@@ -796,25 +835,30 @@ export function createExamSessionManager(deps) {
             state.result = {
                 attempt_id: attemptId,
                 status: String(attemptData && attemptData.status ? attemptData.status : 'completed'),
+                show_student_result: showStudentResult ? 1 : 0,
+                result_view_mode: resultViewMode,
+                submission_summary: reviewPayload && typeof reviewPayload === 'object' && reviewPayload.submission_summary && typeof reviewPayload.submission_summary === 'object'
+                    ? reviewPayload.submission_summary
+                    : null,
                 score: Number.isFinite(score) ? score : 0,
                 max_score: Number.isFinite(maxScore) ? maxScore : 0,
                 percentage: Number.isFinite(percentage) ? percentage : 0,
-                kkm_percentage: passMeta.kkm_percentage,
-                passing_score: passMeta.passing_score,
-                is_passed: passMeta.is_passed,
-                pass_label: passMeta.pass_label,
-                result_tone: passMeta.result_tone,
+                kkm_percentage: isRestrictedResult ? 0 : passMeta.kkm_percentage,
+                passing_score: isRestrictedResult ? 0 : passMeta.passing_score,
+                is_passed: isRestrictedResult ? 0 : passMeta.is_passed,
+                pass_label: isRestrictedResult ? '' : passMeta.pass_label,
+                result_tone: isRestrictedResult ? '' : passMeta.result_tone,
                 attempt: attemptData,
                 exam: reviewPayload && typeof reviewPayload === 'object'
                     ? (reviewPayload.exam || selectedExam)
                     : selectedExam,
-                answers: reviewPayload && typeof reviewPayload === 'object' && Array.isArray(reviewPayload.answers)
+                answers: !isRestrictedResult && reviewPayload && typeof reviewPayload === 'object' && Array.isArray(reviewPayload.answers)
                     ? reviewPayload.answers
                     : [],
-                review_items: reviewPayload && typeof reviewPayload === 'object' && Array.isArray(reviewPayload.review_items)
+                review_items: !isRestrictedResult && reviewPayload && typeof reviewPayload === 'object' && Array.isArray(reviewPayload.review_items)
                     ? reviewPayload.review_items
                     : [],
-                review_summary: reviewPayload && typeof reviewPayload === 'object' && reviewPayload.review_summary && typeof reviewPayload.review_summary === 'object'
+                review_summary: !isRestrictedResult && reviewPayload && typeof reviewPayload === 'object' && reviewPayload.review_summary && typeof reviewPayload.review_summary === 'object'
                     ? reviewPayload.review_summary
                     : null
             };

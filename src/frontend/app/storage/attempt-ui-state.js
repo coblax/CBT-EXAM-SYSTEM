@@ -1,6 +1,7 @@
 export function createAttemptUiStateStorage(deps) {
     var state = deps.state;
     var getSessionStorage = deps.getSessionStorage;
+    var getQuestionIdAtIndex = deps.getQuestionIdAtIndex;
     var storageKeyPrefix = String(deps.storageKeyPrefix || '');
     var buildDoubtfulSessionStorageKey = deps.buildDoubtfulSessionStorageKey;
     var clearPersistedDoubtfulState = deps.clearPersistedDoubtfulState;
@@ -17,6 +18,32 @@ export function createAttemptUiStateStorage(deps) {
             return '';
         }
         return storageKeyPrefix + String(userId) + '_' + String(safeAttemptId);
+    }
+
+    function findQuestionIndexById(questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        if (safeQuestionId <= 0) {
+            return -1;
+        }
+
+        if (Array.isArray(state.questionOrderIds) && state.questionOrderIds.length) {
+            for (var orderIndex = 0; orderIndex < state.questionOrderIds.length; orderIndex++) {
+                if ((Number(state.questionOrderIds[orderIndex]) || 0) === safeQuestionId) {
+                    return orderIndex;
+                }
+            }
+        }
+
+        if (typeof getQuestionIdAtIndex === 'function') {
+            var questionCount = Math.max(0, Number(getQuestionCount()) || 0);
+            for (var index = 0; index < questionCount; index++) {
+                if ((Number(getQuestionIdAtIndex(index)) || 0) === safeQuestionId) {
+                    return index;
+                }
+            }
+        }
+
+        return -1;
     }
 
     function normalizeAttemptUiState(snapshot, attemptId) {
@@ -49,13 +76,34 @@ export function createAttemptUiStateStorage(deps) {
         if (!Number.isFinite(currentIndex) || currentIndex < 0) {
             currentIndex = 0;
         }
+        var currentQuestionId = Number(
+            snapshot && (
+                snapshot.current_question_id !== undefined
+                    ? snapshot.current_question_id
+                    : snapshot.currentQuestionId
+            )
+        ) || 0;
+
+        if (questionCount > 0 && currentQuestionId > 0 && !questionIdSet[currentQuestionId]) {
+            currentQuestionId = 0;
+        }
+        if (currentQuestionId > 0) {
+            var resolvedCurrentIndex = findQuestionIndexById(currentQuestionId);
+            if (resolvedCurrentIndex >= 0) {
+                currentIndex = resolvedCurrentIndex;
+            }
+        }
         if (questionCount > 0 && currentIndex >= questionCount) {
             currentIndex = questionCount - 1;
+        }
+        if (currentQuestionId <= 0 && questionCount > 0 && typeof getQuestionIdAtIndex === 'function') {
+            currentQuestionId = Number(getQuestionIdAtIndex(currentIndex)) || 0;
         }
 
         return {
             attempt_id: safeAttemptId,
             current_index: currentIndex,
+            current_question_id: currentQuestionId,
             doubtful_question_ids: doubtfulIds
         };
     }
@@ -121,6 +169,7 @@ export function createAttemptUiStateStorage(deps) {
         return normalizeAttemptUiState({
             attempt_id: safeAttemptId,
             current_index: selectedSnapshot.current_index,
+            current_question_id: selectedSnapshot.current_question_id,
             doubtful_question_ids: mergeAttemptUiStateDoubtfulIds(normalizedLocal, normalizedRemote)
         }, safeAttemptId);
     }
@@ -134,6 +183,9 @@ export function createAttemptUiStateStorage(deps) {
         return normalizeAttemptUiState({
             attempt_id: safeAttemptId,
             current_index: state.currentIndex,
+            current_question_id: typeof getQuestionIdAtIndex === 'function'
+                ? (Number(getQuestionIdAtIndex(state.currentIndex)) || 0)
+                : 0,
             doubtful_question_ids: Object.keys(state.doubtful).reduce(function (accumulator, key) {
                 var questionId = Number(key) || 0;
                 if (questionId > 0 && state.doubtful[key]) {

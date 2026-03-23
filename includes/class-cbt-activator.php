@@ -8,7 +8,7 @@ class CBT_Activator
 {
     private const OPTION_DB_VERSION = 'cbt_exam_system_db_version';
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
-    private const DB_VERSION = '1.6.6';
+    private const DB_VERSION = '1.6.9';
 
     public static function activate(): void
     {
@@ -64,6 +64,8 @@ class CBT_Activator
             total_questions INT UNSIGNED NOT NULL DEFAULT 0,
             randomize_questions TINYINT(1) NOT NULL DEFAULT 0,
             randomize_options TINYINT(1) NOT NULL DEFAULT 0,
+            show_student_result TINYINT(1) NOT NULL DEFAULT 1,
+            enable_calculator TINYINT(1) NOT NULL DEFAULT 1,
             status VARCHAR(20) NOT NULL DEFAULT 'draft',
             starts_at DATETIME NULL,
             ends_at DATETIME NULL,
@@ -202,6 +204,8 @@ class CBT_Activator
         self::ensure_question_activity_schema($wpdb);
         self::ensure_attempt_extra_time_schema($wpdb);
         self::ensure_exam_kkm_schema($wpdb);
+        self::ensure_exam_student_result_visibility_schema($wpdb);
+        self::ensure_exam_calculator_schema($wpdb);
         self::migrate_question_type_details($wpdb);
         self::seed_default_subjects($wpdb);
         self::register_roles();
@@ -320,6 +324,36 @@ class CBT_Activator
         if (!in_array('kkm_percentage', $columns, true)) {
             $wpdb->query(
                 "ALTER TABLE {$exam_table} ADD COLUMN kkm_percentage DECIMAL(5,2) NOT NULL DEFAULT 75.00 AFTER duration_minutes"
+            );
+        }
+    }
+
+    private static function ensure_exam_student_result_visibility_schema(wpdb $wpdb): void
+    {
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$exam_table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (!in_array('show_student_result', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$exam_table} ADD COLUMN show_student_result TINYINT(1) NOT NULL DEFAULT 1 AFTER randomize_options"
+            );
+        }
+    }
+
+    private static function ensure_exam_calculator_schema(wpdb $wpdb): void
+    {
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$exam_table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (!in_array('enable_calculator', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$exam_table} ADD COLUMN enable_calculator TINYINT(1) NOT NULL DEFAULT 1 AFTER show_student_result"
             );
         }
     }

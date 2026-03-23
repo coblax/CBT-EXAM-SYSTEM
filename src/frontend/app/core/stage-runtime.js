@@ -74,6 +74,22 @@ export function createStageRuntimeManager(deps) {
         }
     }
 
+    function isCalculatorEnabledForCurrentExam() {
+        var selectedExam = getSelectedExam();
+        if (!selectedExam || selectedExam.enable_calculator === undefined) {
+            return true;
+        }
+
+        return Number(selectedExam.enable_calculator) !== 0;
+    }
+
+    function clearCalculatorRuntimeState() {
+        state.calculatorVisible = false;
+        state.calculatorExpression = '';
+        state.calculatorResult = '';
+        state.calculatorError = '';
+    }
+
     function normalizeKkmPercentage(value) {
         var number = Number(value);
         if (!Number.isFinite(number)) {
@@ -399,6 +415,10 @@ export function createStageRuntimeManager(deps) {
     }
 
     function prefetchCalculatorFeature() {
+        if (!isCalculatorEnabledForCurrentExam()) {
+            return;
+        }
+
         ensureCalculatorFeature({
             prefetchOnly: true
         }).catch(function () {});
@@ -410,10 +430,16 @@ export function createStageRuntimeManager(deps) {
         }
 
         prefetchExamStageRenderer();
-        prefetchCalculatorFeature();
+        if (isCalculatorEnabledForCurrentExam()) {
+            prefetchCalculatorFeature();
+        }
     }
 
     function renderCalculatorToggleButton(isOpen) {
+        if (!isCalculatorEnabledForCurrentExam()) {
+            return '';
+        }
+
         var classes = ['cbt-icon-button', 'cbt-calculator-toggle'];
         if (isOpen) {
             classes.push('is-open');
@@ -449,6 +475,10 @@ export function createStageRuntimeManager(deps) {
     }
 
     function renderCalculatorPanel() {
+        if (!isCalculatorEnabledForCurrentExam()) {
+            return '';
+        }
+
         if (calculatorFeature) {
             return calculatorFeature.renderPanel();
         }
@@ -617,6 +647,13 @@ export function createStageRuntimeManager(deps) {
         if (state.stage !== 'exam') {
             return;
         }
+        if (!isCalculatorEnabledForCurrentExam()) {
+            if (state.calculatorVisible || state.calculatorExpression || state.calculatorResult || state.calculatorError) {
+                clearCalculatorRuntimeState();
+                render();
+            }
+            return;
+        }
         if (state.calculatorVisible) {
             state.calculatorVisible = false;
             state.calculatorError = '';
@@ -644,7 +681,7 @@ export function createStageRuntimeManager(deps) {
     }
 
     function handleCalculatorAction(action, actionNode) {
-        if (state.stage !== 'exam' || !calculatorFeature) {
+        if (state.stage !== 'exam' || !calculatorFeature || !isCalculatorEnabledForCurrentExam()) {
             return false;
         }
 
@@ -664,13 +701,13 @@ export function createStageRuntimeManager(deps) {
     }
 
     function handleCalculatorInput(target) {
-        if (target instanceof HTMLInputElement && calculatorFeature) {
+        if (target instanceof HTMLInputElement && calculatorFeature && isCalculatorEnabledForCurrentExam()) {
             calculatorFeature.handleInput(target);
         }
     }
 
     function handleCalculatorEnterKey() {
-        if (!calculatorFeature) {
+        if (!calculatorFeature || !isCalculatorEnabledForCurrentExam()) {
             return false;
         }
 
@@ -689,6 +726,7 @@ export function createStageRuntimeManager(deps) {
         ensureCalculatorFeature: ensureCalculatorFeature,
         ensureExamStageRenderer: ensureExamStageRenderer,
         ensureResultStageRenderer: ensureResultStageRenderer,
+        clearCalculatorRuntimeState: clearCalculatorRuntimeState,
         handleCalculatorAction: handleCalculatorAction,
         handleCalculatorEnterKey: handleCalculatorEnterKey,
         handleCalculatorInput: handleCalculatorInput,

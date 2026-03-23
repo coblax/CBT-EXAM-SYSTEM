@@ -2,7 +2,7 @@
 
 Plugin WordPress untuk ujian CBT berbasis web dengan panel admin penuh, REST API berbasis JWT, frontend siswa berbasis JavaScript, dan toolkit operasional untuk ujian serentak.
 
-Versi plugin saat ini: `1.6.3`
+Versi plugin saat ini: `1.6.6`
 
 ## Ringkasan
 
@@ -114,6 +114,7 @@ Catatan penting:
 - Satu sesi login aktif per akun untuk mencegah login ganda bersamaan.
 - Resume attempt, autosave per soal, batch submit, timer dari server, auto finish saat waktu habis, penanda soal ragu-ragu, dan kalkulator bawaan.
 - Guard security frontend mendukung fullscreen wajib, blok clipboard khusus saat stage ujian aktif, serta event log untuk `fullscreen_exit`, `tab_hidden`, `window_blur`, `page_leave`, `clipboard_blocked`, dan `session_revoked`.
+- Untuk aplikasi Android WebView, guard fullscreen juga bisa disinkronkan lewat bridge native `window.CBTNativeFullscreenBridge` dengan `requestFullscreen()`, `exitFullscreen()`, dan `isActive()` atau properti `active`, atau lewat event `cbt-native-fullscreen-change` dengan payload `{ active: true|false }`.
 - UI state per attempt disimpan ke server, sementara preferensi lokal seperti font, tema, panel navigasi, dan posisi kalkulator tetap disimpan di browser.
 - Soal yang sudah dimuat disimpan ke `sessionStorage`, `localStorage`, dan `IndexedDB`, lalu dipadukan kembali saat reload agar perpindahan dan resume attempt lebih stabil.
 - Runtime frontend sudah mendukung prefetch soal bertahap, no-cache headers pada halaman shortcode, dan review jawaban arsip saat attempt lama berisi soal yang kini nonaktif.
@@ -183,6 +184,7 @@ Catatan penting:
 - Untuk attempt `in_progress`, nomor soal frontend mengikuti snapshot urutan attempt, bukan sekadar `index + 1` dari daftar aktif saat ini.
 - Jika admin menambahkan soal ke exam yang sedang berjalan dan mode acak soal aktif, soal baru akan di-append ke bagian akhir navigasi attempt yang aktif.
 - Jika soal lama dinonaktifkan atau dikeluarkan dari exam aktif, histori attempt dan review arsip tetap dipertahankan agar jawaban lama tidak hilang.
+- Jika bug urutan atau nomor soal random attempt muncul lagi, lihat `BUG-NOTES-QUESTION-ORDER.md` di root plugin sebelum mengubah logika reconcile atau cache frontend.
 
 ### 2. Tipe Soal
 

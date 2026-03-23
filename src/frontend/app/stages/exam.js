@@ -199,6 +199,7 @@ export function createExamStageRenderer(deps) {
         var totalQuestions = getQuestionCount();
         var progressSummary = getExamProgressSummary();
         var selectedExam = getSelectedExam();
+        var calculatorEnabled = !selectedExam || Number(selectedExam.enable_calculator !== undefined ? selectedExam.enable_calculator : 1) !== 0;
         var activeExamTitle = selectedExam && selectedExam.title ? String(selectedExam.title) : '-';
         var answeredCount = progressSummary.answeredQuestions;
         var answeredPercentage = totalQuestions > 0 ? (answeredCount / totalQuestions) * 100 : 0;
@@ -302,6 +303,7 @@ export function createExamStageRenderer(deps) {
             answeredFilterTitle: answeredFilterTitle,
             answeredPercentageText: answeredPercentageText,
             answeredPercentageWidth: answeredPercentageWidth,
+            calculatorEnabled: calculatorEnabled,
             calculatorPanelPosition: calculatorPanelPosition,
             changedQuestionCount: changedQuestionCount,
             revisionMarkerCount: revisionMarkerCount,
@@ -415,7 +417,7 @@ export function createExamStageRenderer(deps) {
             renderQuestionFontControls(),
             '</div>',
             '<div class="cbt-question-head-tools">',
-            renderCalculatorToggleButton(state.calculatorVisible),
+            (viewModel.calculatorEnabled ? renderCalculatorToggleButton(state.calculatorVisible) : ''),
             renderNavToggleButton(state.navPanelVisible, 'cbt-nav-toggle-head'),
             '</div>',
             '</div>',
@@ -447,7 +449,7 @@ export function createExamStageRenderer(deps) {
             renderQuestionFontControls(),
             '</div>',
             '<div class="cbt-question-head-tools">',
-            renderCalculatorToggleButton(state.calculatorVisible),
+            (viewModel.calculatorEnabled ? renderCalculatorToggleButton(state.calculatorVisible) : ''),
             renderNavToggleButton(state.navPanelVisible, 'cbt-nav-toggle-head'),
             '</div>',
             '</div>',
@@ -536,7 +538,7 @@ export function createExamStageRenderer(deps) {
 
         var examLayoutMarkup = '<div class="' + viewModel.examLayoutClass + '" data-cbt-exam-layout="1">' + layoutContent + '</div>';
         var calculatorMarkup = renderCalculatorPanel();
-        var stageShellClass = 'cbt-exam-stage-shell cbt-calc-pos-' + viewModel.calculatorPanelPosition + (state.calculatorVisible ? '' : ' is-calc-hidden');
+        var stageShellClass = 'cbt-exam-stage-shell cbt-calc-pos-' + viewModel.calculatorPanelPosition + ((viewModel.calculatorEnabled && state.calculatorVisible) ? '' : ' is-calc-hidden');
         var fullscreenPromptMarkup = renderExamFullscreenPrompt();
         var stageContent;
 

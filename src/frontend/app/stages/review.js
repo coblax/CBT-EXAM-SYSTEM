@@ -314,11 +314,11 @@ export function createReviewRenderer(deps) {
         return [
             '<article class="cbt-review-item">',
             '<header class="cbt-review-item-head">',
-            '<div>',
+            '<div class="cbt-review-item-main">',
             '<h4>Soal ' + escapeHtml(item && item.question_number ? item.question_number : '-') + '</h4>',
             '<p class="cbt-muted">' + escapeHtml(formatQuestionType(context.questionType)) + '</p>',
             '</div>',
-            '<div class="cbt-review-item-right">',
+            '<div class="cbt-review-item-status-group">',
             '<span class="cbt-review-status ' + reviewStatusClass(context.status) + '">' + escapeHtml(reviewStatusLabel(context.status)) + '</span>',
             '<small class="cbt-muted">Skor ' + escapeHtml(formatScoreValue(context.scoreAwarded)) + ' / ' + escapeHtml(formatScoreValue(context.points)) + '</small>',
             '</div>',
@@ -360,54 +360,9 @@ export function createReviewRenderer(deps) {
             return '';
         }
 
-        var summary = state.result && state.result.review_summary && typeof state.result.review_summary === 'object'
-            ? state.result.review_summary
-            : null;
-
-        var totalQuestions = summary ? Number(summary.total_questions) || reviewItems.length : reviewItems.length;
-        var correctQuestions = summary ? Number(summary.correct_questions) || 0 : 0;
-        var wrongQuestions = summary ? Number(summary.wrong_questions) || 0 : 0;
-        var unansweredQuestions = summary ? Number(summary.unanswered_questions) || 0 : 0;
-        var manualQuestions = summary ? Number(summary.manual_questions) || 0 : 0;
-        var pendingEssayQuestions = 0;
-        var pendingEssayMaxPoints = 0;
-
-        reviewItems.forEach(function (item) {
-            var status = String(item && item.status ? item.status : 'unanswered');
-            var questionType = String(item && item.question_type ? item.question_type : '');
-            var points = Number(item && item.points !== undefined ? item.points : 0);
-            if (questionType === 'essay' && status === 'manual') {
-                pendingEssayQuestions += 1;
-                if (Number.isFinite(points) && points > 0) {
-                    pendingEssayMaxPoints += points;
-                }
-            }
-
-            if (!summary) {
-                if (status === 'correct') {
-                    correctQuestions += 1;
-                } else if (status === 'wrong') {
-                    wrongQuestions += 1;
-                } else if (status === 'manual') {
-                    manualQuestions += 1;
-                } else {
-                    unansweredQuestions += 1;
-                }
-            }
-        });
-
-        var summaryText = 'Total ' + totalQuestions + ' soal | Benar ' + correctQuestions + ' | Salah ' + wrongQuestions + ' | Belum dijawab ' + unansweredQuestions;
-        if (manualQuestions > 0) {
-            summaryText += ' | Perlu nilai guru ' + manualQuestions;
-        }
-        if (pendingEssayQuestions > 0) {
-            summaryText += ' | Esai menunggu koreksi ' + pendingEssayQuestions + ' (maks ' + formatScoreValue(pendingEssayMaxPoints) + ' poin)';
-        }
-
         return [
             '<section class="cbt-card cbt-review-card">',
-            '<h3>Review Jawaban</h3>',
-            '<p class="cbt-subtitle">' + escapeHtml(summaryText) + '</p>',
+            '<h3 class="cbt-review-card-title">REVIEW JAWABAN</h3>',
             '<div class="cbt-review-list">',
             reviewItems.map(renderReviewItem).join(''),
             '</div>',

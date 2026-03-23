@@ -117,10 +117,47 @@ export function createResultStageRenderer(deps) {
         };
     }
 
+    function renderRestrictedResultStage(examTitle, submissionSummary) {
+        var totalQuestions = submissionSummary ? Math.max(0, Number(submissionSummary.total_questions) || 0) : 0;
+        var answeredQuestions = submissionSummary ? Math.max(0, Number(submissionSummary.answered_questions) || 0) : 0;
+        var pendingManualQuestions = submissionSummary ? Math.max(0, Number(submissionSummary.pending_manual_questions) || 0) : 0;
+        var restrictedLabel = pendingManualQuestions > 0 ? 'MENUNGGU KOREKSI' : 'HASIL BELUM DITAMPILKAN';
+        var restrictedCopy = pendingManualQuestions > 0
+            ? 'Masih ada jawaban yang menunggu koreksi guru sebelum hasil lengkap bisa ditampilkan.'
+            : 'Hasil detail untuk exam ini belum ditampilkan oleh admin. Jawaban Anda tetap sudah tersimpan di sistem.';
+
+        return [
+            '<div class="cbt-result-wrap">',
+            '<section class="cbt-card cbt-result-card cbt-result-card--restricted">',
+            '<div class="cbt-result-status-strip cbt-result-status-strip--neutral">',
+            '<span class="cbt-result-status-label">UJIAN SUDAH SELESAI</span>',
+            '</div>',
+            '<div class="cbt-result-hero cbt-result-hero--restricted">',
+            '<h3>' + escapeHtml(examTitle) + '</h3>',
+            '<div class="cbt-result-restricted-panel">',
+            '<span class="cbt-result-restricted-kicker">' + escapeHtml(restrictedLabel) + '</span>',
+            '<p class="cbt-result-restricted-copy">' + escapeHtml(restrictedCopy) + '</p>',
+            '<div class="cbt-result-restricted-summary">JAWABAN TERSIMPAN : ' + escapeHtml(String(answeredQuestions)) + ' DARI ' + escapeHtml(String(totalQuestions)) + ' SOAL</div>',
+            '</div>',
+            '</div>',
+            '<div class="cbt-result-body">',
+            '<div class="cbt-actions cbt-result-actions">',
+            '<button class="cbt-button cbt-button-secondary" data-action="back-confirm" type="button">Kembali ke Daftar Exam</button>',
+            '<button class="cbt-button cbt-button-danger" data-action="logout" type="button">Logout</button>',
+            '</div>',
+            '</div>',
+            '</section>',
+            '</div>'
+        ].join('');
+    }
+
     function renderResultStage() {
         var selectedExam = getSelectedExam();
         var resultExam = state.result && state.result.exam && typeof state.result.exam === 'object' ? state.result.exam : null;
         var resultAttempt = state.result && state.result.attempt && typeof state.result.attempt === 'object' ? state.result.attempt : null;
+        var submissionSummary = state.result && state.result.submission_summary && typeof state.result.submission_summary === 'object'
+            ? state.result.submission_summary
+            : null;
         var reviewItems = state.result && Array.isArray(state.result.review_items) ? state.result.review_items : [];
         var reviewSummary = state.result && state.result.review_summary && typeof state.result.review_summary === 'object'
             ? state.result.review_summary
@@ -128,10 +165,11 @@ export function createResultStageRenderer(deps) {
         var examTitle = resultExam && resultExam.title
             ? String(resultExam.title)
             : (selectedExam && selectedExam.title ? String(selectedExam.title) : '-');
-        var subjectLabel = resultExam && resultExam.subject_name
-            ? String(resultExam.subject_name)
-            : (selectedExam && selectedExam.subject_name ? String(selectedExam.subject_name) : examTitle);
-
+        var restrictedMode = Number(state.result && state.result.show_student_result !== undefined ? state.result.show_student_result : 1) !== 1
+            || String(state.result && state.result.result_view_mode ? state.result.result_view_mode : '').toLowerCase() === 'restricted';
+        if (restrictedMode) {
+            return renderRestrictedResultStage(examTitle, submissionSummary);
+        }
         var score = state.result && state.result.score !== undefined
             ? Number(state.result.score)
             : Number(resultAttempt && resultAttempt.score !== undefined ? resultAttempt.score : 0);
@@ -140,7 +178,11 @@ export function createResultStageRenderer(deps) {
             : Number(resultAttempt && resultAttempt.max_score !== undefined ? resultAttempt.max_score : 0);
         var safeScore = Number.isFinite(score) ? score : 0;
         var safeMaxScore = Number.isFinite(maxScore) ? maxScore : 0;
-        var scoreValueText = formatScoreValue(safeScore);
+        var percentage = state.result && state.result.percentage !== undefined
+            ? Number(state.result.percentage)
+            : (safeMaxScore > 0 ? ((safeScore / safeMaxScore) * 100) : 0);
+        var safePercentage = Number.isFinite(percentage) ? Math.max(0, percentage) : 0;
+        var percentageValueText = formatScoreValue(safePercentage);
         var passingMeta = resolveResultPassMeta(safeScore, safeMaxScore, resultExam, selectedExam);
         var totalQuestions = reviewSummary
             ? Number(reviewSummary.total_questions) || reviewItems.length
@@ -149,7 +191,20 @@ export function createResultStageRenderer(deps) {
         var wrongQuestions = reviewSummary ? Number(reviewSummary.wrong_questions) || 0 : 0;
         var unansweredQuestions = reviewSummary ? Number(reviewSummary.unanswered_questions) || 0 : 0;
         var manualQuestions = reviewSummary ? Number(reviewSummary.manual_questions) || 0 : 0;
+        var pendingEssayQuestions = 0;
+        var pendingEssayMaxPoints = 0;
         var pendingEssayInfoMarkup = '';
+        reviewItems.forEach(function (item) {
+            var status = String(item && item.status ? item.status : 'unanswered');
+            var questionType = String(item && item.question_type ? item.question_type : '');
+            var points = Number(item && item.points !== undefined ? item.points : 0);
+            if (questionType === 'essay' && status === 'manual') {
+                pendingEssayQuestions += 1;
+                if (Number.isFinite(points) && points > 0) {
+                    pendingEssayMaxPoints += points;
+                }
+            }
+        });
         var breakdown = buildResultBreakdown(
             totalQuestions,
             correctQuestions,
@@ -169,21 +224,23 @@ export function createResultStageRenderer(deps) {
         var progressLegendMarkup = breakdown.segments.map(function (segment) {
             return '<span class="cbt-result-progress-legend ' +
                 escapeHtml(segment.className) +
-                '"><span class="cbt-result-progress-dot"></span>' +
-                escapeHtml(segment.label) +
-                ' ' +
+                '"><span class="cbt-result-progress-dot"></span><span class="cbt-result-progress-legend-label">' +
+                escapeHtml(String(segment.label || '').toUpperCase()) +
+                ' :</span><span class="cbt-result-progress-legend-value">' +
                 escapeHtml(String(segment.value)) +
-                ' soal' +
+                ' SOAL</span>' +
                 '</span>';
         }).join('');
 
         if (manualQuestions > 0) {
+            var pendingEssayCount = pendingEssayQuestions > 0 ? pendingEssayQuestions : manualQuestions;
             pendingEssayInfoMarkup = [
                 '<article class="cbt-result-pending-card">',
                 '<div class="cbt-result-pending-head">',
                 '<span class="cbt-result-pending-kicker">Menunggu Koreksi</span>',
-                '<strong>' + escapeHtml(String(manualQuestions)) + ' soal esai</strong>',
+                '<strong>' + escapeHtml(String(pendingEssayCount)) + ' SOAL ESAI</strong>',
                 '</div>',
+                '<div class="cbt-result-pending-meta">MAX POIN TAMBAHAN : ' + escapeHtml(formatScoreValue(pendingEssayMaxPoints)) + ' POIN</div>',
                 '<p>Hasil ini masih sementara. Status lulus atau gagal masih bisa berubah setelah koreksi guru selesai.</p>',
                 '</article>'
             ].join('');
@@ -194,38 +251,29 @@ export function createResultStageRenderer(deps) {
             '<section class="cbt-card cbt-result-card cbt-result-card--' + escapeHtml(passingMeta.resultTone) + '">',
             '<div class="cbt-result-status-strip cbt-result-status-strip--' + escapeHtml(passingMeta.resultTone) + '">',
             '<span class="cbt-result-status-label">' + escapeHtml(passingMeta.passLabel) + '</span>',
-            '<span class="cbt-result-status-subject">' + escapeHtml(subjectLabel) + '</span>',
             '</div>',
             '<div class="cbt-result-hero">',
-            '<p class="cbt-result-kicker">SKOR AKHIR</p>',
             '<h3>' + escapeHtml(examTitle) + '</h3>',
             '<div class="cbt-result-score-panel">',
-            '<div class="cbt-score">' + escapeHtml(scoreValueText) + '</div>',
-            '<p class="cbt-result-score-note">Dari ' + escapeHtml(formatScoreValue(safeMaxScore)) + ' poin · Batas lulus ' + escapeHtml(formatScoreValue(passingMeta.passingScore)) + ' poin</p>',
+            '<div class="cbt-score"><span class="cbt-score-value">' + escapeHtml(percentageValueText) + '</span></div>',
+            '<p class="cbt-result-score-note">' +
+            '<span class="cbt-result-score-metric-label">TOTAL POINT</span><span class="cbt-result-score-metric-colon">:</span><span class="cbt-result-score-metric-value">' + escapeHtml(formatScoreValue(safeMaxScore)) + ' POIN</span>' +
+            '<span class="cbt-result-score-metric-label">PEROLEHAN</span><span class="cbt-result-score-metric-colon">:</span><span class="cbt-result-score-metric-value">' + escapeHtml(formatScoreValue(safeScore)) + ' POIN</span>' +
+            '<span class="cbt-result-score-metric-label">BATAS LULUS</span><span class="cbt-result-score-metric-colon">:</span><span class="cbt-result-score-metric-value">' + escapeHtml(formatScoreValue(passingMeta.passingScore)) + ' POIN</span>' +
+            '</p>',
             '<div class="cbt-result-progress-card">',
             '<div class="cbt-result-progress-track">',
             progressSegmentsMarkup,
             '</div>',
             '<div class="cbt-result-progress-meta">',
             '<div class="cbt-result-progress-legend-group">' + progressLegendMarkup + '</div>',
-            '<span class="cbt-result-progress-pill">KKM ' + escapeHtml(formatScoreValue(passingMeta.kkmPercentage)) + '%</span>',
+            '<span class="cbt-result-progress-pill">KKM ' + escapeHtml(formatScoreValue(passingMeta.kkmPercentage)) + '</span>',
             '</div>',
             '</div>',
             '</div>',
             '</div>',
             '<div class="cbt-result-body">',
             pendingEssayInfoMarkup,
-            renderAlert(),
-            '<div class="cbt-result-stat-grid">',
-            '<article class="cbt-result-stat is-correct"><strong>' + escapeHtml(String(correctQuestions)) + '</strong><span>BENAR</span></article>',
-            '<article class="cbt-result-stat is-wrong"><strong>' + escapeHtml(String(wrongQuestions)) + '</strong><span>SALAH</span></article>',
-            '<article class="cbt-result-stat is-unanswered"><strong>' + escapeHtml(String(unansweredQuestions)) + '</strong><span>TDK DIJAWAB</span></article>',
-            '</div>',
-            '<div class="cbt-result-detail-card">',
-            '<div class="cbt-result-detail-row"><span>MATA UJIAN</span><strong>' + escapeHtml(subjectLabel) + '</strong></div>',
-            '<div class="cbt-result-detail-row"><span>TOTAL SOAL</span><strong>' + escapeHtml(String(totalQuestions)) + ' soal</strong></div>',
-            '<div class="cbt-result-detail-row"><span>BATAS LULUS</span><strong>' + escapeHtml(formatScoreValue(passingMeta.passingScore)) + ' poin (' + escapeHtml(formatScoreValue(passingMeta.kkmPercentage)) + '%)</strong></div>',
-            '</div>',
             '<div class="cbt-actions cbt-result-actions">',
             '<button class="cbt-button cbt-button-secondary" data-action="back-confirm" type="button">Kembali ke Daftar Exam</button>',
             '<button class="cbt-button cbt-button-danger" data-action="logout" type="button">Logout</button>',
