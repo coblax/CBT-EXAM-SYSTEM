@@ -8,7 +8,7 @@ class CBT_Activator
 {
     private const OPTION_DB_VERSION = 'cbt_exam_system_db_version';
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
-    private const DB_VERSION = '1.6.9';
+    private const DB_VERSION = '1.6.10';
 
     public static function activate(): void
     {
@@ -88,7 +88,7 @@ class CBT_Activator
             question_type VARCHAR(30) NOT NULL,
             points DECIMAL(6,2) NOT NULL DEFAULT 1.00,
             correct_text TEXT NULL,
-            explanation TEXT NULL,
+            explanation LONGTEXT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -103,7 +103,7 @@ class CBT_Activator
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             question_id BIGINT UNSIGNED NOT NULL,
             option_key VARCHAR(10) NULL,
-            option_text TEXT NOT NULL,
+            option_text LONGTEXT NOT NULL,
             is_correct TINYINT(1) NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -206,6 +206,7 @@ class CBT_Activator
         self::ensure_exam_kkm_schema($wpdb);
         self::ensure_exam_student_result_visibility_schema($wpdb);
         self::ensure_exam_calculator_schema($wpdb);
+        self::ensure_question_rich_text_storage_schema($wpdb);
         self::migrate_question_type_details($wpdb);
         self::seed_default_subjects($wpdb);
         self::register_roles();
@@ -354,6 +355,34 @@ class CBT_Activator
         if (!in_array('enable_calculator', $columns, true)) {
             $wpdb->query(
                 "ALTER TABLE {$exam_table} ADD COLUMN enable_calculator TINYINT(1) NOT NULL DEFAULT 1 AFTER show_student_result"
+            );
+        }
+    }
+
+    private static function ensure_question_rich_text_storage_schema(wpdb $wpdb): void
+    {
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $option_table = $wpdb->prefix . 'cbt_options';
+
+        $question_explanation_column = $wpdb->get_row(
+            "SHOW COLUMNS FROM {$question_table} LIKE 'explanation'",
+            ARRAY_A
+        );
+        $question_explanation_type = strtolower((string) ($question_explanation_column['Type'] ?? ''));
+        if ($question_explanation_type !== 'longtext') {
+            $wpdb->query(
+                "ALTER TABLE {$question_table} MODIFY COLUMN explanation LONGTEXT NULL"
+            );
+        }
+
+        $option_text_column = $wpdb->get_row(
+            "SHOW COLUMNS FROM {$option_table} LIKE 'option_text'",
+            ARRAY_A
+        );
+        $option_text_type = strtolower((string) ($option_text_column['Type'] ?? ''));
+        if ($option_text_type !== 'longtext') {
+            $wpdb->query(
+                "ALTER TABLE {$option_table} MODIFY COLUMN option_text LONGTEXT NOT NULL"
             );
         }
     }

@@ -588,6 +588,9 @@ class CBT_Frontend
             'securityForceFullscreen' => $security['force_fullscreen'],
             'securityBlockCopyPaste' => $security['block_copy_paste'],
             'securityLogEvents' => $security['log_security_events'],
+            'securityDetectIdle' => $security['detect_idle_during_exam'],
+            'securityIdleThresholdMinutes' => $security['idle_threshold_minutes'],
+            'securityIdleThresholdSeconds' => $security['idle_threshold_minutes'] * MINUTE_IN_SECONDS,
             'homeUrl' => (string) home_url('/'),
             'tokenMinLength' => 6,
             'tokenLength' => 6,
@@ -884,7 +887,7 @@ class CBT_Frontend
     }
 
     /**
-     * @return array{force_fullscreen:int,block_copy_paste:int,log_security_events:int}
+     * @return array{force_fullscreen:int,block_copy_paste:int,log_security_events:int,detect_idle_during_exam:int,idle_threshold_minutes:int}
      */
     private static function get_setup_security_config(): array
     {
@@ -897,6 +900,8 @@ class CBT_Frontend
             'force_fullscreen' => !empty($raw['force_fullscreen']) ? 1 : 0,
             'block_copy_paste' => !empty($raw['block_copy_paste']) ? 1 : 0,
             'log_security_events' => !empty($raw['log_security_events']) ? 1 : 0,
+            'detect_idle_during_exam' => !array_key_exists('detect_idle_during_exam', $raw) || !empty($raw['detect_idle_during_exam']) ? 1 : 0,
+            'idle_threshold_minutes' => max(1, absint($raw['idle_threshold_minutes'] ?? 5)),
         ];
     }
 }

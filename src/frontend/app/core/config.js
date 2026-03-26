@@ -65,6 +65,12 @@ export function getFrontendConfig(win) {
         securityForceFullscreen: normalizeBooleanFlag(raw.securityForceFullscreen),
         securityBlockCopyPaste: normalizeBooleanFlag(raw.securityBlockCopyPaste),
         securityLogEvents: normalizeBooleanFlag(raw.securityLogEvents),
+        securityDetectIdle: normalizeBooleanFlag(raw.securityDetectIdle !== undefined ? raw.securityDetectIdle : 1),
+        securityIdleThresholdMinutes: normalizeIntegerFlag(raw.securityIdleThresholdMinutes, 5),
+        securityIdleThresholdSeconds: normalizeIntegerFlag(
+            raw.securityIdleThresholdSeconds,
+            normalizeIntegerFlag(raw.securityIdleThresholdMinutes, 5) * 60
+        ),
         frontendDebugUi: normalizeBooleanFlag(raw.frontendDebugUi),
         frontendDiagnosticsEnabled: normalizeBooleanFlag(raw.frontendDiagnosticsEnabled),
         frontendDiagnosticsScenarioEnabled: normalizeBooleanFlag(raw.frontendDiagnosticsScenarioEnabled),

@@ -121,6 +121,15 @@ final class CBT_Admin_Menu
 
         add_submenu_page(
             'cbt-exams',
+            'CBT Test Hub',
+            'CBT Test Hub',
+            'manage_options',
+            'cbt-test-hub',
+            [CBT_Admin_Test_Hub_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
             'CBT Cache',
             'CBT Cache',
             'manage_options',

@@ -361,6 +361,19 @@ export function createFinishFlowManager(deps) {
         return !state.pendingFinishAutoSubmit && state.remainingSeconds > 0;
     }
 
+    function unlockExamAfterFinishFailure() {
+        state.examLockedForPendingFinish = false;
+        state.pendingFinishAutoSubmit = false;
+        syncPendingAnswerRuntimeState({
+            persist: false,
+            clearLastSyncError: false
+        });
+        persistCurrentQuestionCacheLocally();
+        if (state.stage === 'exam') {
+            startTimer();
+        }
+    }
+
     async function finalizeExamAfterSync() {
         if (
             state.stage !== 'exam'
@@ -477,11 +490,7 @@ export function createFinishFlowManager(deps) {
                 state.lastSyncError = error instanceof Error && error.message ? error.message : 'Gagal menyelesaikan ujian.';
                 state.error = error instanceof Error ? error.message : 'Gagal menyelesaikan ujian.';
                 if (shouldUnlockExamAfterFinishFailure()) {
-                    state.examLockedForPendingFinish = false;
-                    state.pendingFinishAutoSubmit = false;
-                    if (state.stage === 'exam') {
-                        startTimer();
-                    }
+                    unlockExamAfterFinishFailure();
                 }
                 syncPendingAnswerRuntimeState({
                     persist: true,
@@ -507,10 +516,10 @@ export function createFinishFlowManager(deps) {
             || hasAnswerBatchFlushInFlight()
             || getNavigatorConnectionStatus() === 'offline'
         ) {
-            return;
+            return Promise.resolve(null);
         }
 
-        finalizeExamAfterSync().catch(function () {
+        return finalizeExamAfterSync().catch(function () {
             // Error ditangani di finalizeExamAfterSync.
         });
     }
@@ -579,11 +588,7 @@ export function createFinishFlowManager(deps) {
                         state.lastSyncError = error instanceof Error && error.message ? error.message : 'Sinkronisasi jawaban gagal.';
                         state.error = error instanceof Error ? error.message : 'Sinkronisasi jawaban gagal.';
                         if (shouldUnlockExamAfterFinishFailure()) {
-                            state.examLockedForPendingFinish = false;
-                            state.pendingFinishAutoSubmit = false;
-                            if (state.stage === 'exam') {
-                                startTimer();
-                            }
+                            unlockExamAfterFinishFailure();
                         }
                         syncPendingAnswerRuntimeState({
                             persist: true,
@@ -599,9 +604,7 @@ export function createFinishFlowManager(deps) {
         } catch (error) {
             state.error = error instanceof Error ? error.message : 'Gagal menyelesaikan ujian.';
             if (shouldUnlockExamAfterFinishFailure() && state.stage === 'exam') {
-                state.examLockedForPendingFinish = false;
-                state.pendingFinishAutoSubmit = false;
-                startTimer();
+                unlockExamAfterFinishFailure();
             }
         } finally {
             render();

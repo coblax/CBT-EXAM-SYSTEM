@@ -51,17 +51,21 @@ export function createSecurityLoggingManager(deps) {
     function sendLogoutRequestSilently(token) {
         var authToken = String(token || '');
         if (authToken === '') {
-            return;
+            return Promise.resolve(false);
         }
 
-        fetchImpl(buildUrl('logout'), {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Authorization': 'Bearer ' + authToken
-            },
-            keepalive: true
-        }).catch(function () {});
+        try {
+            return fetchImpl(buildUrl('logout'), {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': 'Bearer ' + authToken
+                },
+                keepalive: true
+            });
+        } catch (error) {
+            return Promise.reject(error);
+        }
     }
 
     function sendSecurityEventSilently(eventType, context, options) {

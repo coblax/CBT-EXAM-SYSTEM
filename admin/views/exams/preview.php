@@ -58,49 +58,14 @@
             <?php if (empty($questions)): ?>
                 <div class="notice notice-warning"><p>Exam ini belum memiliki soal.</p></div>
             <?php else: ?>
-                <div class="cbt-admin-review-list">
+                <div class="cbt-admin-review-list cbt-admin-student-preview-list">
                     <?php foreach ($questions as $index => $question): ?>
                         <?php
                         $question_id = (int) ($question['id'] ?? 0);
                         $question_type = (string) ($question['question_type'] ?? '');
                         $type_label = (string) ($question_type_labels[$question_type] ?? ucwords(str_replace('_', ' ', $question_type)));
-                        $points_text = number_format((float) ($question['points'] ?? 0), 2);
                         $options = (array) ($options_map[$question_id] ?? []);
                         $question_detail = CBT_Admin_Questions_Helper::get_question_type_detail($question_id, $question_type);
-
-                        if ($question_type === 'true_false' && !empty($options)) {
-                            $has_correct = false;
-                            foreach ($options as $option_row) {
-                                if ((int) ($option_row['is_correct'] ?? 0) === 1) {
-                                    $has_correct = true;
-                                    break;
-                                }
-                            }
-
-                            if (!$has_correct && isset($question_detail['correct_value'])) {
-                                $expected = (int) $question_detail['correct_value'];
-                                foreach ($options as $opt_index => $option_row) {
-                                    $option_value = CBT_Admin_Questions_Helper::normalize_true_false_value((string) ($option_row['option_text'] ?? ''));
-                                    if ($option_value === $expected) {
-                                        $options[$opt_index]['is_correct'] = 1;
-                                    }
-                                }
-                            }
-                        }
-
-                        $short_answer_values = [];
-                        if ($question_type === 'short_answer') {
-                            $short_answer_values = CBT_Admin_Questions_Helper::normalize_short_answer_values(
-                                (string) ($question_detail['correct_text'] ?? ($question['correct_text'] ?? ''))
-                            );
-                        }
-
-                        $essay_rubric = '';
-                        if ($question_type === 'essay') {
-                            $essay_rubric = trim((string) ($question_detail['rubric_text'] ?? ($question['correct_text'] ?? '')));
-                        }
-
-                        $fallback_answer = trim((string) ($question['correct_text'] ?? ''));
                         $source_question_id = (int) ($question['source_question_id'] ?? 0);
                         $source_exam_title = (string) ($question['source_exam_title'] ?? '');
                         $is_bank_backed = $source_question_id > 0 && stripos($source_exam_title, 'Bank Soal - ') === 0;
@@ -121,105 +86,43 @@
                                 $edit_question_hint = 'Row exam ini adalah turunan operasional. Perubahan diarahkan ke soal master di Bank Soal agar sinkronisasi tetap satu arah.';
                             }
                         }
+                        $preview_meta_lines = [];
+                        $preview_subject_name = trim((string) ($question['subject_name'] ?? ''));
+                        if ($preview_subject_name !== '') {
+                            $preview_meta_lines[] = 'Mapel: ' . $preview_subject_name;
+                        }
+                        if ($source_exam_title !== '') {
+                            $preview_meta_lines[] = 'Sumber: ' . $source_exam_title;
+                        }
+                        $preview_extra_chips = [];
+                        if ($is_bank_backed) {
+                            $preview_extra_chips[] = [
+                                'label' => 'Bank-backed',
+                                'tone' => 'source',
+                            ];
+                        }
+                        $preview_actions_html = '';
+                        if ($edit_question_url !== '') {
+                            $preview_actions_html = sprintf(
+                                '<a class="button button-secondary" href="%s" target="_blank" rel="noopener noreferrer">%s</a>',
+                                esc_url($edit_question_url),
+                                esc_html($edit_question_label)
+                            );
+                        }
                         ?>
-                        <article class="cbt-admin-review-item">
-                            <header class="cbt-admin-review-item-head">
-                                <div>
-                                    <h3>Soal <?php echo esc_html((string) ($index + 1)); ?></h3>
-                                    <p class="cbt-admin-review-type"><?php echo esc_html($type_label); ?></p>
-                                    <?php if ($is_bank_backed): ?>
-                                        <div class="cbt-admin-review-source-note">
-                                            <span class="cbt-admin-review-source-chip">Bank-backed</span>
-                                            <span class="cbt-admin-review-source-text">
-                                                Sumber: <?php echo esc_html($source_exam_title); ?>
-                                            </span>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="cbt-admin-review-item-actions">
-                                    <span class="cbt-admin-review-points">Poin <?php echo esc_html($points_text); ?></span>
-                                    <?php if ($edit_question_url !== ''): ?>
-                                        <a
-                                            class="button button-small cbt-admin-review-edit-btn"
-                                            href="<?php echo esc_url($edit_question_url); ?>"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            <?php echo esc_html($edit_question_label); ?>
-                                        </a>
-                                    <?php endif; ?>
-                                </div>
-                            </header>
-
-                            <?php if ($edit_question_hint !== ''): ?>
-                                <div class="cbt-admin-review-edit-hint">
-                                    <?php echo esc_html($edit_question_hint); ?>
-                                </div>
-                            <?php endif; ?>
-
-                            <div class="cbt-admin-review-question">
-                                <?php echo wp_kses_post((string) ($question['question_text'] ?? '')); ?>
-                            </div>
-
-                            <?php if (!empty($options)): ?>
-                                <div class="cbt-admin-review-options">
-                                    <?php foreach ($options as $option_index => $option): ?>
-                                        <?php
-                                        $is_correct = ((int) ($option['is_correct'] ?? 0) === 1);
-                                        $option_key = strtoupper(trim((string) ($option['option_key'] ?? '')));
-                                        if ($option_key === '') {
-                                            $option_key = chr(65 + ($option_index % 26));
-                                        }
-                                        ?>
-                                        <div class="cbt-admin-review-option<?php echo $is_correct ? ' is-correct' : ''; ?>">
-                                            <div class="cbt-admin-review-option-main">
-                                                <span class="cbt-admin-option-key"><?php echo esc_html($option_key); ?></span>
-                                                <span class="cbt-admin-option-label"><?php echo wp_kses_post((string) ($option['option_text'] ?? '')); ?></span>
-                                            </div>
-                                            <?php if ($is_correct): ?>
-                                                <span class="cbt-admin-review-badge">Kunci</span>
-                                            <?php endif; ?>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php elseif ($question_type === 'short_answer'): ?>
-                                <div class="cbt-admin-review-short-answer">
-                                    <strong>Kunci Jawaban:</strong>
-                                    <div class="cbt-admin-review-chip-list">
-                                        <?php if (!empty($short_answer_values)): ?>
-                                            <?php foreach ($short_answer_values as $short_answer): ?>
-                                                <span class="cbt-admin-review-chip"><?php echo esc_html($short_answer); ?></span>
-                                            <?php endforeach; ?>
-                                        <?php else: ?>
-                                            <span class="cbt-admin-review-empty">-</span>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            <?php elseif ($question_type === 'essay'): ?>
-                                <div class="cbt-admin-review-essay">
-                                    <strong>Acuan/Rubrik:</strong>
-                                    <div class="cbt-admin-review-text">
-                                        <?php if ($essay_rubric !== ''): ?>
-                                            <?php echo wp_kses_post($essay_rubric); ?>
-                                        <?php else: ?>
-                                            <span class="cbt-admin-review-empty">-</span>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            <?php elseif ($fallback_answer !== ''): ?>
-                                <div class="cbt-admin-review-essay">
-                                    <strong>Kunci Jawaban:</strong>
-                                    <div class="cbt-admin-review-text"><?php echo wp_kses_post($fallback_answer); ?></div>
-                                </div>
-                            <?php endif; ?>
-
-                            <?php if (trim((string) ($question['explanation'] ?? '')) !== ''): ?>
-                                <div class="cbt-admin-review-explanation">
-                                    <strong>Pembahasan:</strong>
-                                    <?php echo wp_kses_post((string) $question['explanation']); ?>
-                                </div>
-                            <?php endif; ?>
-                        </article>
+                        <?php echo CBT_Admin_Questions_Helper::render_admin_student_preview_card(
+                            $question,
+                            $options,
+                            $question_detail,
+                            [
+                                'eyebrow' => 'Soal ' . (string) ($index + 1),
+                                'type_label' => $type_label,
+                                'meta_lines' => $preview_meta_lines,
+                                'extra_chips' => $preview_extra_chips,
+                                'note_text' => $edit_question_hint,
+                                'actions_html' => $preview_actions_html,
+                            ]
+                        ); ?>
                     <?php endforeach; ?>
                 </div>
             <?php endif; ?>
@@ -409,6 +312,23 @@
                 color: #0f172a;
                 font-weight: 600;
             }
+            .cbt-admin-review-item :where(table) {
+                margin: 0.45em 0;
+                border-collapse: collapse;
+                border-spacing: 0;
+                background: #fff;
+                border: 1px solid #d6deea;
+            }
+            .cbt-admin-review-item :where(th, td) {
+                border: 1px solid #d6deea;
+                padding: 8px 10px;
+                vertical-align: top;
+            }
+            .cbt-admin-review-item :where(th) {
+                background: #f8fbff;
+                color: #0f172a;
+                font-weight: 700;
+            }
             .cbt-admin-review-options {
                 margin-top: 12px;
                 display: grid;
@@ -530,5 +450,6 @@
                     grid-template-columns: 1fr;
                 }
             }
+            <?php echo CBT_Admin_Questions_Helper::get_admin_student_preview_css(); ?>
         </style>
         <?php endif; ?>

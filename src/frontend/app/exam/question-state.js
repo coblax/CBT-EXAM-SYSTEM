@@ -435,17 +435,14 @@ export function createQuestionStateManager(deps) {
         }
 
         if (question.question_type === 'multiple_answer') {
-            if (!Array.isArray(answer) || !answer.length) {
-                return null;
-            }
-            var cleaned = answer
-                .map(function (item) { return Number(item) || 0; })
-                .filter(function (item) { return item > 0; });
-            if (!cleaned.length) {
+            var normalizedMultiAnswer = normalizeAnswerValueForQuestion(question, answer, {
+                preserveText: true
+            });
+            if (!normalizedMultiAnswer.hasValue || !Array.isArray(normalizedMultiAnswer.value) || !normalizedMultiAnswer.value.length) {
                 return null;
             }
             var seen = {};
-            return cleaned.filter(function (item) {
+            return normalizedMultiAnswer.value.filter(function (item) {
                 if (seen[item]) {
                     return false;
                 }
@@ -455,11 +452,13 @@ export function createQuestionStateManager(deps) {
         }
 
         if (question.question_type === 'true_false_matrix') {
-            var matrixAnswer = normalizeTrueFalseMatrixAnswer(answer);
-            if (!Object.keys(matrixAnswer).length) {
+            var normalizedMatrixAnswer = normalizeAnswerValueForQuestion(question, answer, {
+                preserveText: true
+            });
+            if (!normalizedMatrixAnswer.hasValue || !normalizedMatrixAnswer.value || !Object.keys(normalizedMatrixAnswer.value).length) {
                 return null;
             }
-            return matrixAnswer;
+            return normalizeTrueFalseMatrixAnswer(normalizedMatrixAnswer.value);
         }
 
         if (question.question_type === 'short_answer') {

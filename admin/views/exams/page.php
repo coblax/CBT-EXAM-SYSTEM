@@ -411,12 +411,30 @@
                                                                 admin_url('admin.php')
                                                             );
                                                             $source_options = $source_options_map[$source_question_id] ?? [];
-                                                            $source_correct_keys = [];
-                                                            foreach ($source_options as $source_option) {
-                                                                if ((int) ($source_option['is_correct'] ?? 0) === 1) {
-                                                                    $source_correct_keys[] = strtoupper((string) ($source_option['option_key'] ?? ''));
-                                                                }
+                                                            $source_question_detail = CBT_Admin_Questions_Helper::get_question_type_detail($source_question_id, $source_type);
+                                                            $source_preview_meta_lines = [];
+                                                            $source_subject_name = trim((string) ($source_question['subject_name'] ?? ''));
+                                                            if ($source_subject_name !== '') {
+                                                                $source_preview_meta_lines[] = 'Mapel: ' . $source_subject_name;
                                                             }
+                                                            $source_context_display = trim((string) ($source_question['source_context_display'] ?? ($source_question['exam_title'] ?? '')));
+                                                            $source_context_label = trim((string) ($source_question['source_context_label'] ?? 'Sumber'));
+                                                            if ($source_context_display !== '') {
+                                                                $source_preview_meta_lines[] = ($source_context_label !== '' ? $source_context_label : 'Sumber') . ': ' . $source_context_display;
+                                                            }
+                                                            $source_preview_extra_chips = [];
+                                                            $source_lineage_label = trim((string) ($source_question['lineage_label'] ?? ''));
+                                                            if ($source_lineage_label !== '') {
+                                                                $source_preview_extra_chips[] = [
+                                                                    'label' => $source_lineage_label,
+                                                                    'tone' => 'source',
+                                                                ];
+                                                            }
+                                                            $source_preview_actions = sprintf(
+                                                                '<a class="button button-secondary" href="%s" target="_blank" rel="noopener noreferrer">%s</a>',
+                                                                esc_url($source_question_edit_url),
+                                                                esc_html__('Edit Soal', 'cbt-exam-system')
+                                                            );
                                                             ?>
                                                             <tr class="cbt-exam-question-row<?php echo $is_checked ? ' is-selected' : ''; ?>"
                                                                 data-question-id="<?php echo (int) $source_question_id; ?>"
@@ -467,29 +485,19 @@
                                                                         </button>
                                                                     </div>
                                                                     <div id="cbt-quick-view-content-<?php echo (int) $source_question_id; ?>" style="display:none;">
-                                                                        <p><strong>Subject:</strong> <?php echo esc_html((string) ($source_question['subject_name'] ?? '-')); ?></p>
-                                                                        <p><strong>Sumber:</strong> <?php echo esc_html((string) ($source_question['source_context_display'] ?? ($source_question['exam_title'] ?? '-'))); ?></p>
-                                                                        <p><strong>Lineage:</strong> <?php echo esc_html((string) ($source_question['lineage_label'] ?? 'Source')); ?><?php echo !empty($source_question['lineage_hint']) ? ' - ' . esc_html((string) $source_question['lineage_hint']) : ''; ?></p>
-                                                                        <p><strong>Tipe:</strong> <?php echo esc_html($source_type_label); ?></p>
-                                                                        <p><strong>Poin:</strong> <?php echo esc_html((string) ($source_question['points'] ?? '1')); ?></p>
-                                                                        <hr />
-                                                                        <div><?php echo wp_kses_post((string) ($source_question['question_text'] ?? '')); ?></div>
-                                                                        <?php if (!empty($source_options)): ?>
-                                                                            <hr />
-                                                                            <p><strong>Opsi:</strong></p>
-                                                                            <ol style="margin-left:18px;">
-                                                                                <?php foreach ($source_options as $source_option): ?>
-                                                                                    <?php $option_key = strtoupper((string) ($source_option['option_key'] ?? '')); ?>
-                                                                                    <li>
-                                                                                        <strong><?php echo esc_html($option_key); ?>.</strong>
-                                                                                        <?php echo wp_kses_post((string) ($source_option['option_text'] ?? '')); ?>
-                                                                                    </li>
-                                                                                <?php endforeach; ?>
-                                                                            </ol>
-                                                                            <?php if (!empty($source_correct_keys)): ?>
-                                                                                <p><strong>Kunci:</strong> <?php echo esc_html(implode(', ', $source_correct_keys)); ?></p>
-                                                                            <?php endif; ?>
-                                                                        <?php endif; ?>
+                                                                        <?php echo CBT_Admin_Questions_Helper::render_admin_student_preview_card(
+                                                                            $source_question,
+                                                                            $source_options,
+                                                                            $source_question_detail,
+                                                                            [
+                                                                                'eyebrow' => 'Soal #' . (int) $source_question_id,
+                                                                                'type_label' => $source_type_label,
+                                                                                'meta_lines' => $source_preview_meta_lines,
+                                                                                'extra_chips' => $source_preview_extra_chips,
+                                                                                'note_text' => (string) ($source_question['lineage_hint'] ?? ''),
+                                                                                'actions_html' => $source_preview_actions,
+                                                                            ]
+                                                                        ); ?>
                                                                     </div>
                                                                 </td>
                                                             </tr>
@@ -1862,6 +1870,23 @@
                     z-index: 1;
                     background: #f8fbff;
                 }
+                #cbt-exam-quickview-body :where(table) {
+                    margin: 0.45em 0;
+                    border-collapse: collapse;
+                    border-spacing: 0;
+                    background: #fff;
+                    border: 1px solid #d6deea;
+                }
+                #cbt-exam-quickview-body :where(th, td) {
+                    border: 1px solid #d6deea;
+                    padding: 8px 10px;
+                    vertical-align: top;
+                }
+                #cbt-exam-quickview-body :where(th) {
+                    background: #f8fbff;
+                    color: #0f172a;
+                    font-weight: 700;
+                }
                 .cbt-exam-question-actions {
                     display: grid;
                     gap: 5px;
@@ -2880,6 +2905,7 @@
                         font-size: 13px;
                     }
                 }
+                <?php echo CBT_Admin_Questions_Helper::get_admin_student_preview_css(); ?>
             </style>
         </div>
         <script>

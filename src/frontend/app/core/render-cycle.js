@@ -17,6 +17,7 @@ export function createRenderCycleManager(deps) {
     var renderUserPhotoModal = deps.renderUserPhotoModal;
     var root = deps.root;
     var state = deps.state;
+    var syncIdleDetectionState = deps.syncIdleDetectionState;
     var updateQuestionPrefetchIndicator = deps.updateQuestionPrefetchIndicator;
     var updateTimerLabel = deps.updateTimerLabel;
     var windowRef = deps.windowRef;
@@ -263,6 +264,9 @@ export function createRenderCycleManager(deps) {
         scheduleNavigationGridLayout();
         updateQuestionPrefetchIndicator();
         maybePrefetchExamRuntime();
+        if (typeof syncIdleDetectionState === 'function') {
+            syncIdleDetectionState();
+        }
         if (typeof recordRenderPerformed === 'function') {
             recordRenderPerformed(currentReason, currentMeta, currentStage);
         }

@@ -549,6 +549,723 @@ final class CBT_Admin_Questions_Helper
             return 1;
         }
 
+        public static function get_question_type_label(string $question_type): string
+        {
+            switch ($question_type) {
+                case 'multiple_choice':
+                    return 'Multiple Choice';
+                case 'multiple_answer':
+                    return 'Multiple Answer';
+                case 'true_false':
+                    return 'True/False';
+                case 'true_false_matrix':
+                    return 'TF Matrix';
+                case 'short_answer':
+                    return 'Short Answer';
+                case 'essay':
+                    return 'Essay';
+                default:
+                    return ucwords(str_replace('_', ' ', $question_type));
+            }
+        }
+
+        public static function get_admin_student_preview_css(): string
+        {
+            return <<<'CSS'
+.cbt-admin-student-preview-list {
+    display: grid;
+    gap: 16px;
+}
+.cbt-admin-student-preview-card {
+    border: 1px solid #d9e4f2;
+    border-radius: 22px;
+    background:
+        radial-gradient(circle at top right, rgba(34, 197, 94, 0.08), transparent 26%),
+        linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    padding: 18px;
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
+}
+.cbt-admin-student-preview-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+.cbt-admin-student-preview-head-main {
+    min-width: 0;
+    flex: 1;
+}
+.cbt-admin-student-preview-kicker {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid #d9e4f2;
+    background: #ffffff;
+    color: #2a5d9f;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cbt-admin-student-preview-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+.cbt-admin-student-preview-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid #d8e3ee;
+    background: #ffffff;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+}
+.cbt-admin-student-preview-chip--type {
+    background: #f5f9ff;
+    color: #14478a;
+    border-color: #c9dbef;
+}
+.cbt-admin-student-preview-chip--points {
+    background: #fff7e6;
+    color: #935500;
+    border-color: #f1d7a3;
+}
+.cbt-admin-student-preview-chip--source {
+    background: #edf8ff;
+    color: #0b6092;
+    border-color: #bfe0f4;
+}
+.cbt-admin-student-preview-chip--accent {
+    background: #ecfbf4;
+    color: #0f7a56;
+    border-color: #9adfc5;
+}
+.cbt-admin-student-preview-meta {
+    display: grid;
+    gap: 4px;
+    margin-top: 12px;
+    color: #5b6b7b;
+    font-size: 13px;
+    line-height: 1.55;
+}
+.cbt-admin-student-preview-actions {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.cbt-admin-student-preview-actions .button {
+    min-height: 32px;
+    border-radius: 999px;
+    padding: 0 12px;
+}
+.cbt-admin-student-preview-note {
+    margin-top: 14px;
+    padding: 11px 13px;
+    border: 1px solid #d9e6f7;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.84);
+    color: #516377;
+    font-size: 12px;
+    line-height: 1.6;
+}
+.cbt-admin-student-preview-body {
+    display: grid;
+    gap: 14px;
+    margin-top: 14px;
+}
+.cbt-admin-student-preview-question,
+.cbt-admin-student-preview-section {
+    border: 1px solid #dbe5ef;
+    border-radius: 16px;
+    background: #ffffff;
+    padding: 16px 18px;
+}
+.cbt-admin-student-preview-section--explanation {
+    background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+    border-left: 4px solid #bfd8f4;
+}
+.cbt-admin-student-preview-section-title {
+    display: block;
+    margin-bottom: 12px;
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+}
+.cbt-admin-student-preview-richtext {
+    color: #1f2937;
+    font-size: 14px;
+    line-height: 1.72;
+}
+.cbt-admin-student-preview-richtext > :first-child {
+    margin-top: 0;
+}
+.cbt-admin-student-preview-richtext > :last-child {
+    margin-bottom: 0;
+}
+.cbt-admin-student-preview-richtext :where(ul, ol) {
+    margin: 0.55em 0 0.55em 1.2em;
+}
+.cbt-admin-student-preview-richtext :where(table) {
+    margin: 0.55em 0;
+    border-collapse: collapse;
+    border-spacing: 0;
+    background: #ffffff;
+    border: 1px solid #d6deea;
+    max-width: 100%;
+}
+.cbt-admin-student-preview-richtext :where(th, td) {
+    border: 1px solid #d6deea;
+    padding: 8px 10px;
+    vertical-align: top;
+}
+.cbt-admin-student-preview-richtext :where(th) {
+    background: #f8fbff;
+    color: #0f172a;
+    font-weight: 700;
+}
+.cbt-admin-student-preview-richtext :where(img) {
+    max-width: 100%;
+    height: auto;
+}
+.cbt-admin-student-preview-richtext :where(figure) {
+    margin: 0.75em 0;
+}
+.cbt-admin-student-preview-richtext .cbt-rich-spacer {
+    display: block;
+    height: 0.95em;
+}
+.cbt-admin-student-preview-richtext > img,
+.cbt-admin-student-preview-richtext figure.cbt-pasted-image-block > img,
+.cbt-admin-student-preview-richtext p > img:only-child,
+.cbt-admin-student-preview-richtext div > img:only-child {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0.55em 0;
+    border-radius: 8px;
+}
+.cbt-admin-student-preview-options {
+    display: grid;
+    gap: 10px;
+}
+.cbt-admin-student-preview-option {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid #dbe5ef;
+    border-radius: 14px;
+    background: #ffffff;
+}
+.cbt-admin-student-preview-option.is-correct {
+    border-color: #9adfc5;
+    background: #ecfbf4;
+}
+.cbt-admin-student-preview-option-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+.cbt-admin-student-preview-option-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    background: #eef4ff;
+    color: #1e3a6f;
+    font-size: 12px;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+.cbt-admin-student-preview-option-text {
+    min-width: 0;
+}
+.cbt-admin-student-preview-option-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+}
+.cbt-admin-student-preview-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 9px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.cbt-admin-student-preview-badge--key {
+    background: #eafbf4;
+    color: #0f7a56;
+    border-color: #9adfc5;
+}
+.cbt-admin-student-preview-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.cbt-admin-student-preview-answer-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 0 11px;
+    border-radius: 12px;
+    border: 1px solid #d0def2;
+    background: #eef4ff;
+    color: #1e3a6f;
+    font-size: 12px;
+    font-weight: 700;
+}
+.cbt-admin-student-preview-matrix {
+    display: grid;
+    gap: 10px;
+}
+.cbt-admin-student-preview-matrix-row {
+    display: grid;
+    gap: 10px;
+    padding: 13px 14px;
+    border: 1px solid #dbe5ef;
+    border-radius: 14px;
+    background: #ffffff;
+}
+.cbt-admin-student-preview-matrix-answer {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid #d0def2;
+    background: #f8fbff;
+    color: #33526e;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+.cbt-admin-student-preview-empty {
+    color: #64748b;
+    font-size: 13px;
+}
+@media (max-width: 782px) {
+    .cbt-admin-student-preview-card {
+        padding: 15px;
+        border-radius: 18px;
+    }
+    .cbt-admin-student-preview-head {
+        flex-direction: column;
+    }
+    .cbt-admin-student-preview-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+}
+CSS;
+        }
+
+        /**
+         * @param array<string,mixed> $question
+         * @param array<int,array<string,mixed>> $options
+         * @param array<string,mixed> $question_detail
+         * @param array<string,mixed> $context
+         */
+        public static function render_admin_student_preview_card(
+            array $question,
+            array $options = [],
+            array $question_detail = [],
+            array $context = []
+        ): string {
+            $question_type = (string) ($question['question_type'] ?? '');
+            $type_label = trim((string) ($context['type_label'] ?? self::get_question_type_label($question_type)));
+            $eyebrow = trim((string) ($context['eyebrow'] ?? 'Soal'));
+            $actions_html = trim((string) ($context['actions_html'] ?? ''));
+            $note_text = trim((string) ($context['note_text'] ?? ''));
+            $meta_lines = [];
+            foreach ((array) ($context['meta_lines'] ?? []) as $meta_line) {
+                if (!is_scalar($meta_line)) {
+                    continue;
+                }
+                $meta_line = trim((string) $meta_line);
+                if ($meta_line === '') {
+                    continue;
+                }
+                $meta_lines[] = $meta_line;
+            }
+
+            $extra_chips = [];
+            foreach ((array) ($context['extra_chips'] ?? []) as $chip) {
+                if (!is_array($chip)) {
+                    continue;
+                }
+                $chip_label = trim((string) ($chip['label'] ?? ''));
+                if ($chip_label === '') {
+                    continue;
+                }
+                $chip_tone = sanitize_html_class((string) ($chip['tone'] ?? ''));
+                $extra_chips[] = [
+                    'label' => $chip_label,
+                    'tone' => $chip_tone,
+                ];
+            }
+
+            $points_label = trim((string) ($context['points_label'] ?? ''));
+            if ($points_label === '') {
+                $points_value = (float) ($question['points'] ?? 0);
+                $points_text = rtrim(rtrim(number_format($points_value, 2, '.', ''), '0'), '.');
+                if ($points_text === '') {
+                    $points_text = '0';
+                }
+                $points_label = 'Poin ' . $points_text;
+            }
+
+            $options = self::normalize_admin_student_preview_options($question, $options, $question_detail);
+
+            ob_start();
+            ?>
+            <div class="cbt-admin-student-preview">
+                <article class="cbt-admin-student-preview-card">
+                    <header class="cbt-admin-student-preview-head">
+                        <div class="cbt-admin-student-preview-head-main">
+                            <?php if ($eyebrow !== ''): ?>
+                                <span class="cbt-admin-student-preview-kicker"><?php echo esc_html($eyebrow); ?></span>
+                            <?php endif; ?>
+                            <div class="cbt-admin-student-preview-chip-row">
+                                <span class="cbt-admin-student-preview-chip cbt-admin-student-preview-chip--type"><?php echo esc_html($type_label); ?></span>
+                                <span class="cbt-admin-student-preview-chip cbt-admin-student-preview-chip--points"><?php echo esc_html($points_label); ?></span>
+                                <?php foreach ($extra_chips as $extra_chip): ?>
+                                    <span class="cbt-admin-student-preview-chip<?php echo $extra_chip['tone'] !== '' ? ' cbt-admin-student-preview-chip--' . esc_attr($extra_chip['tone']) : ''; ?>">
+                                        <?php echo esc_html($extra_chip['label']); ?>
+                                    </span>
+                                <?php endforeach; ?>
+                            </div>
+                            <?php if (!empty($meta_lines)): ?>
+                                <div class="cbt-admin-student-preview-meta">
+                                    <?php foreach ($meta_lines as $meta_line): ?>
+                                        <div><?php echo esc_html($meta_line); ?></div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        <?php if ($actions_html !== ''): ?>
+                            <div class="cbt-admin-student-preview-actions">
+                                <?php echo $actions_html; ?>
+                            </div>
+                        <?php endif; ?>
+                    </header>
+
+                    <?php if ($note_text !== ''): ?>
+                        <div class="cbt-admin-student-preview-note"><?php echo esc_html($note_text); ?></div>
+                    <?php endif; ?>
+
+                    <div class="cbt-admin-student-preview-body">
+                        <div class="cbt-admin-student-preview-question cbt-admin-student-preview-richtext">
+                            <?php echo self::render_editor_html((string) ($question['question_text'] ?? '')); ?>
+                        </div>
+
+                        <?php echo self::render_admin_student_preview_answer_section($question, $options, $question_detail); ?>
+
+                        <?php if (self::has_non_empty_html_content((string) ($question['explanation'] ?? ''))): ?>
+                            <section class="cbt-admin-student-preview-section cbt-admin-student-preview-section--explanation">
+                                <strong class="cbt-admin-student-preview-section-title">Pembahasan</strong>
+                                <div class="cbt-admin-student-preview-richtext">
+                                    <?php echo self::render_editor_html((string) ($question['explanation'] ?? '')); ?>
+                                </div>
+                            </section>
+                        <?php endif; ?>
+                    </div>
+                </article>
+            </div>
+            <?php
+
+            return trim((string) ob_get_clean());
+        }
+
+        /**
+         * @param array<string,mixed> $question
+         * @param array<int,array<string,mixed>> $options
+         * @param array<string,mixed> $question_detail
+         * @return array<int,array<string,mixed>>
+         */
+        private static function normalize_admin_student_preview_options(
+            array $question,
+            array $options,
+            array $question_detail
+        ): array {
+            $question_type = (string) ($question['question_type'] ?? '');
+            if ($question_type !== 'true_false' || empty($options)) {
+                return $options;
+            }
+
+            foreach ($options as $option) {
+                if ((int) ($option['is_correct'] ?? 0) === 1) {
+                    return $options;
+                }
+            }
+
+            if (!isset($question_detail['correct_value'])) {
+                return $options;
+            }
+
+            $expected = (int) $question_detail['correct_value'];
+            foreach ($options as $idx => $option) {
+                $option_value = self::normalize_true_false_value((string) ($option['option_text'] ?? ''));
+                if ($option_value === $expected) {
+                    $options[$idx]['is_correct'] = 1;
+                }
+            }
+
+            return $options;
+        }
+
+        /**
+         * @param array<string,mixed> $question
+         * @param array<int,array<string,mixed>> $options
+         * @param array<string,mixed> $question_detail
+         */
+        private static function render_admin_student_preview_answer_section(
+            array $question,
+            array $options,
+            array $question_detail
+        ): string {
+            $question_type = (string) ($question['question_type'] ?? '');
+
+            if (!empty($options)) {
+                return self::render_admin_student_preview_options($options);
+            }
+
+            if ($question_type === 'short_answer') {
+                $short_answers = self::normalize_short_answer_values(
+                    (string) ($question_detail['correct_text'] ?? ($question['correct_text'] ?? ''))
+                );
+
+                if (empty($short_answers)) {
+                    return '';
+                }
+
+                ob_start();
+                ?>
+                <section class="cbt-admin-student-preview-section">
+                    <strong class="cbt-admin-student-preview-section-title">Jawaban Valid</strong>
+                    <div class="cbt-admin-student-preview-chip-list">
+                        <?php foreach ($short_answers as $short_answer): ?>
+                            <span class="cbt-admin-student-preview-answer-chip"><?php echo esc_html($short_answer); ?></span>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+                <?php
+                return trim((string) ob_get_clean());
+            }
+
+            if ($question_type === 'true_false') {
+                $correct_value = isset($question_detail['correct_value']) && (int) $question_detail['correct_value'] === 0
+                    ? 'False'
+                    : 'True';
+
+                return self::render_admin_student_preview_chip_section('Kunci Jawaban', [$correct_value]);
+            }
+
+            if ($question_type === 'true_false_matrix') {
+                $matrix_rows = self::normalize_true_false_matrix_config((string) ($question['correct_text'] ?? ''));
+                if (empty($matrix_rows)) {
+                    return '';
+                }
+
+                ob_start();
+                ?>
+                <section class="cbt-admin-student-preview-section">
+                    <strong class="cbt-admin-student-preview-section-title">Pernyataan dan Kunci</strong>
+                    <div class="cbt-admin-student-preview-matrix">
+                        <?php foreach ($matrix_rows as $matrix_row): ?>
+                            <div class="cbt-admin-student-preview-matrix-row">
+                                <div><?php echo esc_html((string) ($matrix_row['text'] ?? '')); ?></div>
+                                <span class="cbt-admin-student-preview-matrix-answer">
+                                    <?php echo ((string) ($matrix_row['answer'] ?? 'true') === 'false') ? 'Kunci Salah' : 'Kunci Benar'; ?>
+                                </span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+                <?php
+                return trim((string) ob_get_clean());
+            }
+
+            if ($question_type === 'essay') {
+                $essay_rubric = (string) ($question_detail['rubric_text'] ?? ($question['correct_text'] ?? ''));
+                if (!self::has_non_empty_html_content($essay_rubric)) {
+                    return '';
+                }
+
+                return self::render_admin_student_preview_richtext_section('Acuan Jawaban', $essay_rubric);
+            }
+
+            $fallback_answer = (string) ($question['correct_text'] ?? '');
+            if (self::has_non_empty_html_content($fallback_answer)) {
+                return self::render_admin_student_preview_richtext_section('Kunci Jawaban', $fallback_answer);
+            }
+
+            return '';
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $options
+         */
+        private static function render_admin_student_preview_options(array $options): string
+        {
+            ob_start();
+            ?>
+            <section class="cbt-admin-student-preview-section">
+                <strong class="cbt-admin-student-preview-section-title">Opsi Jawaban</strong>
+                <div class="cbt-admin-student-preview-options">
+                    <?php foreach ($options as $index => $option): ?>
+                        <?php
+                        $is_correct = (int) ($option['is_correct'] ?? 0) === 1;
+                        $option_key = strtoupper(trim((string) ($option['option_key'] ?? '')));
+                        if ($option_key === '') {
+                            $option_key = chr(65 + ($index % 26));
+                        }
+                        ?>
+                        <div class="cbt-admin-student-preview-option<?php echo $is_correct ? ' is-correct' : ''; ?>">
+                            <div class="cbt-admin-student-preview-option-main">
+                                <span class="cbt-admin-student-preview-option-key"><?php echo esc_html($option_key); ?></span>
+                                <div class="cbt-admin-student-preview-option-text cbt-admin-student-preview-richtext">
+                                    <?php echo self::render_editor_html((string) ($option['option_text'] ?? '')); ?>
+                                </div>
+                            </div>
+                            <div class="cbt-admin-student-preview-option-badges">
+                                <?php if ($is_correct): ?>
+                                    <span class="cbt-admin-student-preview-badge cbt-admin-student-preview-badge--key">Kunci</span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+            <?php
+            return trim((string) ob_get_clean());
+        }
+
+        /**
+         * @param string[] $items
+         */
+        private static function render_admin_student_preview_chip_section(string $title, array $items): string
+        {
+            $items = array_values(array_filter(array_map(static function ($item): string {
+                return is_scalar($item) ? trim((string) $item) : '';
+            }, $items), static function (string $item): bool {
+                return $item !== '';
+            }));
+
+            if (empty($items)) {
+                return '';
+            }
+
+            ob_start();
+            ?>
+            <section class="cbt-admin-student-preview-section">
+                <strong class="cbt-admin-student-preview-section-title"><?php echo esc_html($title); ?></strong>
+                <div class="cbt-admin-student-preview-chip-list">
+                    <?php foreach ($items as $item): ?>
+                        <span class="cbt-admin-student-preview-answer-chip"><?php echo esc_html($item); ?></span>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+            <?php
+            return trim((string) ob_get_clean());
+        }
+
+        private static function render_admin_student_preview_richtext_section(string $title, string $html): string
+        {
+            ob_start();
+            ?>
+            <section class="cbt-admin-student-preview-section">
+                <strong class="cbt-admin-student-preview-section-title"><?php echo esc_html($title); ?></strong>
+                <div class="cbt-admin-student-preview-richtext">
+                    <?php echo self::render_editor_html($html); ?>
+                </div>
+            </section>
+            <?php
+            return trim((string) ob_get_clean());
+        }
+
+        public static function sanitize_editor_html(string $html): string
+        {
+            $allowed_protocols = array_values(array_unique(array_merge(
+                wp_allowed_protocols(),
+                ['data']
+            )));
+
+            return wp_kses(
+                (string) $html,
+                wp_kses_allowed_html('post'),
+                $allowed_protocols
+            );
+        }
+
+        public static function render_editor_html(string $html): string
+        {
+            return self::normalize_rendered_rich_html(self::sanitize_editor_html($html));
+        }
+
+        private static function normalize_rendered_rich_html(string $html): string
+        {
+            $html = (string) $html;
+            if ($html === '') {
+                return '';
+            }
+
+            $spacer_markup = '<div class="cbt-rich-spacer" aria-hidden="true"></div>';
+            $html = str_replace(["\r\n", "\r"], "\n", $html);
+            $html = (string) preg_replace('/<p\b[^>]*>\s*(?:&nbsp;|&#160;|<br\s*\/?>|\s)*<\/p>/i', $spacer_markup, $html);
+            $html = (string) preg_replace(
+                '/(?:\s*<div class="cbt-rich-spacer" aria-hidden="true"><\/div>\s*){2,}/i',
+                $spacer_markup,
+                $html
+            );
+            $html = (string) preg_replace(
+                '/^(?:\s*<div class="cbt-rich-spacer" aria-hidden="true"><\/div>\s*)+/i',
+                '',
+                $html
+            );
+            $html = (string) preg_replace(
+                '/(?:\s*<div class="cbt-rich-spacer" aria-hidden="true"><\/div>\s*)+$/i',
+                '',
+                $html
+            );
+
+            $has_explicit_line_break_markup = preg_match(
+                '/<(?:br|p|div|table|thead|tbody|tfoot|tr|td|th|ul|ol|li|blockquote|pre|figure|figcaption|h[1-6]|hr)\b/i',
+                $html
+            ) === 1;
+
+            if (!$has_explicit_line_break_markup && strpos($html, "\n") !== false) {
+                $html = (string) preg_replace("/\n\s*\n+/", "\n", $html);
+                $html = str_replace("\n", '<br />', $html);
+            }
+
+            return $html;
+        }
+
         public static function parse_options(string $options_raw): array
         {
             $items = [];
@@ -562,7 +1279,7 @@ final class CBT_Admin_Questions_Helper
                             continue;
                         }
     
-                        $text = isset($entry['option_text']) ? wp_kses_post((string) $entry['option_text']) : '';
+                        $text = isset($entry['option_text']) ? self::sanitize_editor_html((string) $entry['option_text']) : '';
                         $is_correct = !empty($entry['is_correct']) ? 1 : 0;
     
                         if (self::has_non_empty_option_content($text)) {
@@ -585,7 +1302,7 @@ final class CBT_Admin_Questions_Helper
                 }
     
                 $parts = array_map('trim', explode('|', $line));
-                $text = isset($parts[0]) ? wp_kses_post((string) $parts[0]) : '';
+                $text = isset($parts[0]) ? self::sanitize_editor_html((string) $parts[0]) : '';
                 $is_correct = isset($parts[1]) && $parts[1] === '1' ? 1 : 0;
     
                 if (self::has_non_empty_option_content($text)) {
@@ -597,6 +1314,17 @@ final class CBT_Admin_Questions_Helper
             }
     
             return $items;
+        }
+
+        public static function has_non_empty_html_content(string $html): bool
+        {
+            return self::has_non_empty_option_content($html);
+        }
+
+        public static function normalize_optional_rich_text(string $html): ?string
+        {
+            $html = self::sanitize_editor_html($html);
+            return self::has_non_empty_option_content($html) ? $html : null;
         }
 
         private static function has_non_empty_option_content(string $html): bool

@@ -54,12 +54,12 @@ final class CBT_Admin_Questions_Service
                 }
                 $lock_question_type = ($active_question_type !== '');
                 $import_type_help_map = [
-                    'multiple_choice' => 'Mode import aktif: Multiple Choice. DOCX didukung (maks 5 opsi, jawaban nomor opsi, gambar bisa ditempel).',
-                    'multiple_answer' => 'Mode import aktif: Multiple Answer. DOCX didukung (maks 12 opsi, jawaban bisa lebih dari satu: contoh 1,3,5).',
-                    'true_false' => 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false).',
-                    'true_false_matrix' => 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false).',
-                    'short_answer' => 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, gunakan placeholder [INPUT_1] s.d. [INPUT_8] di teks soal).',
-                    'essay' => 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik).',
+                    'multiple_choice' => 'Mode import aktif: Multiple Choice. DOCX didukung (maks 5 opsi, jawaban nomor opsi, gambar bisa ditempel, field opsional PEMBAHASAN didukung).',
+                    'multiple_answer' => 'Mode import aktif: Multiple Answer. DOCX didukung (maks 12 opsi, jawaban bisa lebih dari satu: contoh 1,3,5, field opsional PEMBAHASAN didukung).',
+                    'true_false' => 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false, field opsional PEMBAHASAN didukung).',
+                    'true_false_matrix' => 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false, field opsional PEMBAHASAN didukung).',
+                    'short_answer' => 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, gunakan placeholder [INPUT_1] s.d. [INPUT_8] di teks soal, field opsional PEMBAHASAN didukung).',
+                    'essay' => 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).',
                 ];
                 $import_active_type = $lock_question_type ? $active_question_type : 'multiple_choice';
                 $import_help_text = $import_type_help_map[$import_active_type] ?? $import_type_help_map['multiple_choice'];
@@ -515,6 +515,7 @@ final class CBT_Admin_Questions_Service
                 }
                 $editing_short_answer_payload = !empty($editing_short_answer_values) ? wp_json_encode($editing_short_answer_values) : '';
                 $editing_essay_answer = (string) ($editing_detail['rubric_text'] ?? ($editing_question['correct_text'] ?? ''));
+                $editing_explanation = (string) ($editing_question['explanation'] ?? '');
                 $editing_tf_matrix_values = CBT_Admin_Questions_Helper::normalize_true_false_matrix_config((string) ($editing_question['correct_text'] ?? ''));
                 $tf_matrix_rows = array_fill(1, 10, ['text' => '', 'answer' => 'true']);
                 foreach ($editing_tf_matrix_values as $idx => $row) {
@@ -847,12 +848,19 @@ final class CBT_Admin_Questions_Service
             $id = isset($_POST['id']) ? absint($_POST['id']) : 0;
             $exam_id = isset($_POST['exam_id']) ? absint($_POST['exam_id']) : 0;
             $subject_id = isset($_POST['subject_id']) ? absint($_POST['subject_id']) : 0;
-            $question_text = isset($_POST['question_text']) ? wp_kses_post(wp_unslash($_POST['question_text'])) : '';
+            $question_text = isset($_POST['question_text'])
+                ? CBT_Admin_Questions_Helper::sanitize_editor_html((string) wp_unslash($_POST['question_text']))
+                : '';
             $question_type = isset($_POST['question_type']) ? sanitize_text_field(wp_unslash($_POST['question_type'])) : 'multiple_choice';
             $points = isset($_POST['points']) ? (float) wp_unslash($_POST['points']) : 1.0;
             $correct_text_raw = isset($_POST['correct_text']) ? (string) wp_unslash($_POST['correct_text']) : '';
             $correct_text = sanitize_text_field($correct_text_raw);
-            $essay_answer = isset($_POST['essay_answer']) ? wp_kses_post(wp_unslash($_POST['essay_answer'])) : '';
+            $essay_answer = isset($_POST['essay_answer'])
+                ? CBT_Admin_Questions_Helper::sanitize_editor_html((string) wp_unslash($_POST['essay_answer']))
+                : '';
+            $explanation = isset($_POST['explanation'])
+                ? CBT_Admin_Questions_Helper::normalize_optional_rich_text((string) wp_unslash($_POST['explanation']))
+                : null;
             $options_raw = isset($_POST['options']) ? wp_unslash($_POST['options']) : '';
             $return_page = CBT_Admin_Questions_Helper::normalize_question_page_slug(isset($_POST['return_page']) ? wp_unslash($_POST['return_page']) : 'cbt-question-bank');
             $forced_question_type = CBT_Admin_Questions_Helper::forced_question_type_for_page($return_page);
@@ -948,6 +956,7 @@ final class CBT_Admin_Questions_Service
                 'points' => $points,
                 // Keep legacy field for backward compatibility; source of truth is per-type detail table.
                 'correct_text' => $normalized_detail_text !== '' ? $normalized_detail_text : null,
+                'explanation' => $explanation,
                 'updated_at' => current_time('mysql'),
             ];
     
@@ -1008,7 +1017,7 @@ final class CBT_Admin_Questions_Service
                     $question_table,
                     $data,
                     ['id' => $id],
-                    ['%d', '%s', '%s', '%f', '%s', '%s'],
+                    ['%d', '%s', '%s', '%f', '%s', '%s', '%s'],
                     ['%d']
                 );
                 $question_id = $id;
@@ -1018,7 +1027,7 @@ final class CBT_Admin_Questions_Service
                 $wpdb->insert(
                     $question_table,
                     $data,
-                    ['%d', '%s', '%s', '%f', '%s', '%s', '%s']
+                    ['%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s']
                 );
                 $question_id = (int) $wpdb->insert_id;
             }

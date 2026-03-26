@@ -309,7 +309,18 @@ class CBT_UI_State
         if (is_array($raw_doubtful)) {
             foreach ($raw_doubtful as $key => $value) {
                 $question_id = 0;
-                if (is_int($key) && (is_int($value) || is_string($value) || is_float($value))) {
+                if (
+                    is_int($key)
+                    && $key > 0
+                    && (
+                        $value === true
+                        || $value === 'true'
+                        || $value === 1
+                        || $value === '1'
+                    )
+                ) {
+                    $question_id = $key;
+                } elseif (is_int($key) && (is_int($value) || is_string($value) || is_float($value))) {
                     $question_id = (int) $value;
                 } elseif (is_string($key) && ((int) $value === 1 || $value === true || $value === 'true')) {
                     $question_id = (int) $key;

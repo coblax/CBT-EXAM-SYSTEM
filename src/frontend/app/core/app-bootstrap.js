@@ -3,6 +3,7 @@ export function mountFrontendAppRuntime(deps) {
     var debugManager = deps.debugManager;
     var documentRef = deps.documentRef;
     var examSecurityManager = deps.examSecurityManager;
+    var idleDetectionManager = deps.idleDetectionManager;
     var lifecycleManager = deps.lifecycleManager;
     var root = deps.root;
 
@@ -112,6 +113,9 @@ export function mountFrontendAppRuntime(deps) {
     });
 
     examSecurityManager.mountSecurityListeners();
+    if (idleDetectionManager && typeof idleDetectionManager.mountIdleListeners === 'function') {
+        idleDetectionManager.mountIdleListeners();
+    }
     lifecycleManager.mountLifecycleListeners();
 }
 

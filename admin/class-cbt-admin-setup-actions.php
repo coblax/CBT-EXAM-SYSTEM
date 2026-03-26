@@ -86,6 +86,10 @@ final class CBT_Admin_Setup_Actions
         $force_fullscreen = isset($_POST['force_fullscreen']) && (string) wp_unslash($_POST['force_fullscreen']) === '1';
         $block_copy_paste = isset($_POST['block_copy_paste']) && (string) wp_unslash($_POST['block_copy_paste']) === '1';
         $log_security_events = isset($_POST['log_security_events']) && (string) wp_unslash($_POST['log_security_events']) === '1';
+        $detect_idle_during_exam = isset($_POST['detect_idle_during_exam']) && (string) wp_unslash($_POST['detect_idle_during_exam']) === '1';
+        $idle_threshold_minutes = isset($_POST['idle_threshold_minutes'])
+            ? max(1, absint(wp_unslash($_POST['idle_threshold_minutes'])))
+            : 5;
 
         update_option(
             CBT_Admin_Setup_Service::security_option_key(),
@@ -93,6 +97,8 @@ final class CBT_Admin_Setup_Actions
                 'force_fullscreen' => $force_fullscreen ? 1 : 0,
                 'block_copy_paste' => $block_copy_paste ? 1 : 0,
                 'log_security_events' => $log_security_events ? 1 : 0,
+                'detect_idle_during_exam' => $detect_idle_during_exam ? 1 : 0,
+                'idle_threshold_minutes' => $idle_threshold_minutes,
             ],
             false
         );

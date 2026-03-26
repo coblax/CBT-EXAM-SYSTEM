@@ -1,0 +1,367 @@
+import { describe, expect, it, vi } from 'vitest';
+import { createFinishFlowManager } from '../../../src/frontend/app/exam/finish-flow.js';
+
+function createFixture(overrides = {}) {
+    var calls = {
+        clearAllAutoSaveTimers: 0,
+        clearAttemptUiStateSyncTimer: 0,
+        clearAutoSaveRuntimeState: 0,
+        clearMessages: 0,
+        clearPersistedAttemptUiState: [],
+        clearPersistedQuestionCache: [],
+        clearQuestionCachePersistTimer: 0,
+        clearQuestionPrefetchRuntimeState: 0,
+        exitFullscreenSilently: 0,
+        flushAttemptUiState: [],
+        flushPendingAnswerBatch: [],
+        persistCurrentQuestionCacheLocally: 0,
+        prefetchResultStageRenderer: 0,
+        render: 0,
+        schedulePendingAnswerRetry: [],
+        setConnectionStatus: [],
+        startTimer: 0,
+        stopTimer: 0,
+        syncFullscreenState: [],
+        syncPendingAnswerRuntimeState: []
+    };
+    var state = Object.assign({
+        attemptId: 88,
+        error: '',
+        examLockedForPendingFinish: true,
+        exams: [
+            {
+                id: 9,
+                kkm_percentage: 75,
+                latest_attempt_id: 0,
+                latest_attempt_is_passed: 0,
+                latest_attempt_max_score: 0,
+                latest_attempt_pass_label: '',
+                latest_attempt_percentage: 0,
+                latest_attempt_result_tone: '',
+                latest_attempt_score: 0,
+                latest_attempt_status: '',
+                show_student_result: 1,
+                title: 'Flow Result Fixture'
+            }
+        ],
+        finishConfirmOpen: false,
+        finishConfirmSummary: null,
+        isFinishing: false,
+        lastSyncError: '',
+        pendingFinishAutoSubmit: false,
+        pendingSyncCount: 0,
+        remainingSeconds: 120,
+        result: null,
+        selectedExamId: 9,
+        stage: 'exam',
+        success: ''
+    }, overrides.state || {});
+    var apiRequest = vi.fn(async function (path, options) {
+        if (typeof overrides.apiRequest === 'function') {
+            return overrides.apiRequest(path, options);
+        }
+
+        if (path === 'finish_exam') {
+            return {
+                attempt_id: 88,
+                finished_at: '2026-03-24 15:10:00',
+                is_passed: 0,
+                kkm_percentage: 75,
+                max_score: 100,
+                pass_label: 'TIDAK LULUS',
+                percentage: 60,
+                result_tone: 'fail',
+                score: 60,
+                show_student_result: 1,
+                status: 'completed',
+                submission_summary: {
+                    answered_questions: 10,
+                    pending_manual_questions: 0,
+                    total_questions: 10
+                }
+            };
+        }
+
+        if (path === 'result') {
+            return {
+                attempt: {
+                    exam_id: 9,
+                    id: 88,
+                    max_score: 100,
+                    score: 80,
+                    started_at: '2026-03-24 14:00:00',
+                    status: 'completed'
+                },
+                exam: {
+                    id: 9,
+                    kkm_percentage: 75,
+                    show_student_result: 1,
+                    title: 'Flow Result Fixture'
+                },
+                is_passed: 1,
+                kkm_percentage: 75,
+                pass_label: 'LULUS',
+                percentage: 80,
+                result_tone: 'pass',
+                result_view_mode: 'full',
+                review_items: [],
+                review_summary: {
+                    answered_questions: 10,
+                    correct_questions: 8,
+                    manual_questions: 0,
+                    total_questions: 10,
+                    unanswered_questions: 0,
+                    wrong_questions: 2
+                },
+                show_student_result: 1,
+                submission_summary: {
+                    answered_questions: 10,
+                    pending_manual_questions: 0,
+                    total_questions: 10
+                }
+            };
+        }
+
+        throw new Error('Unexpected apiRequest path: ' + String(path));
+    });
+
+    var manager = createFinishFlowManager({
+        apiRequest,
+        clearAllAutoSaveTimers: function () {
+            calls.clearAllAutoSaveTimers += 1;
+        },
+        clearAttemptUiStateSyncTimer: function () {
+            calls.clearAttemptUiStateSyncTimer += 1;
+        },
+        clearAutoSaveRuntimeState: function () {
+            calls.clearAutoSaveRuntimeState += 1;
+        },
+        clearMessages: function () {
+            calls.clearMessages += 1;
+        },
+        clearPersistedAttemptUiState: function (attemptId) {
+            calls.clearPersistedAttemptUiState.push(Number(attemptId) || 0);
+        },
+        clearPersistedQuestionCache: function (attemptId) {
+            calls.clearPersistedQuestionCache.push(Number(attemptId) || 0);
+        },
+        clearQuestionCachePersistTimer: function () {
+            calls.clearQuestionCachePersistTimer += 1;
+        },
+        clearQuestionPrefetchRuntimeState: function () {
+            calls.clearQuestionPrefetchRuntimeState += 1;
+        },
+        diagnosticsManager: null,
+        exitFullscreenSilently: function () {
+            calls.exitFullscreenSilently += 1;
+        },
+        flushAttemptUiState: async function (options) {
+            calls.flushAttemptUiState.push(options || null);
+            return null;
+        },
+        flushPendingAnswerBatch: async function (options) {
+            calls.flushPendingAnswerBatch.push(options || null);
+            return null;
+        },
+        getExamProgressSummary: function () {
+            return {
+                answeredQuestions: 10,
+                totalQuestions: 10
+            };
+        },
+        getNavigatorConnectionStatus: function () {
+            return String(overrides.connectionStatus || 'online');
+        },
+        getQuestionAtIndex: function () {
+            return null;
+        },
+        getQuestionCount: function () {
+            return 0;
+        },
+        handleRecoverableAnswerSyncFailure: function () {},
+        hasAnswerBatchFlushInFlight: function () {
+            return false;
+        },
+        isNetworkConnectivityError: function (error) {
+            return !!(error && error.isNetworkError);
+        },
+        isQuestionAnswered: function () {
+            return false;
+        },
+        isRetryableAnswerSyncError: function () {
+            return false;
+        },
+        persistCurrentQuestionCacheLocally: function () {
+            calls.persistCurrentQuestionCacheLocally += 1;
+        },
+        prefetchResultStageRenderer: function () {
+            calls.prefetchResultStageRenderer += 1;
+        },
+        queueQuestionAnswer: function () {
+            return false;
+        },
+        recordActionTrail: function () {},
+        recordTimeline: function () {},
+        render: function () {
+            calls.render += 1;
+        },
+        schedulePendingAnswerRetry: function (reason, meta) {
+            calls.schedulePendingAnswerRetry.push({
+                meta: meta || null,
+                reason: String(reason || '')
+            });
+        },
+        setConnectionStatus: function (status, meta) {
+            calls.setConnectionStatus.push({
+                meta: meta || null,
+                status: String(status || '')
+            });
+        },
+        startTimer: function () {
+            calls.startTimer += 1;
+        },
+        state,
+        stopTimer: function () {
+            calls.stopTimer += 1;
+        },
+        syncFullscreenState: function (value) {
+            calls.syncFullscreenState.push(Boolean(value));
+        },
+        syncPendingAnswerRuntimeState: function (meta) {
+            calls.syncPendingAnswerRuntimeState.push(meta || null);
+        }
+    });
+
+    return {
+        apiRequest,
+        calls,
+        manager,
+        state
+    };
+}
+
+describe('createFinishFlowManager', function () {
+    it('uses the reviewed result payload when finish score drifts from the final review snapshot', async function () {
+        var fixture = createFixture();
+
+        await fixture.manager.maybeFinalizeLockedExam('unit-test');
+
+        expect(fixture.state.stage).toBe('result');
+        expect(fixture.state.result.score).toBe(80);
+        expect(fixture.state.result.max_score).toBe(100);
+        expect(fixture.state.result.pass_label).toBe('LULUS');
+        expect(fixture.state.result.result_tone).toBe('pass');
+        expect(fixture.state.exams[0].latest_attempt_score).toBe(80);
+        expect(fixture.state.exams[0].latest_attempt_is_passed).toBe(1);
+        expect(fixture.state.exams[0].latest_attempt_pass_label).toBe('LULUS');
+        expect(fixture.calls.clearPersistedAttemptUiState).toEqual([88]);
+        expect(fixture.calls.clearPersistedQuestionCache).toEqual([88]);
+    });
+
+    it('zeros restricted result details and keeps the exam list from leaking score fields', async function () {
+        var fixture = createFixture({
+            apiRequest: async function (path) {
+                if (path === 'finish_exam') {
+                    return {
+                        attempt_id: 88,
+                        finished_at: '2026-03-24 15:10:00',
+                        score: 60,
+                        show_student_result: 0,
+                        status: 'completed'
+                    };
+                }
+
+                if (path === 'result') {
+                    return {
+                        attempt: {
+                            exam_id: 9,
+                            id: 88,
+                            max_score: 100,
+                            score: 90,
+                            started_at: '2026-03-24 14:00:00',
+                            status: 'completed'
+                        },
+                        exam: {
+                            id: 9,
+                            show_student_result: 0,
+                            title: 'Restricted Flow Result'
+                        },
+                        is_passed: 1,
+                        pass_label: 'LULUS',
+                        percentage: 90,
+                        result_tone: 'pass',
+                        result_view_mode: 'restricted',
+                        review_items: [
+                            {
+                                id: 3
+                            }
+                        ],
+                        review_summary: {
+                            answered_questions: 10,
+                            correct_questions: 9,
+                            manual_questions: 0,
+                            total_questions: 10,
+                            unanswered_questions: 0,
+                            wrong_questions: 1
+                        },
+                        show_student_result: 0,
+                        submission_summary: {
+                            answered_questions: 10,
+                            pending_manual_questions: 0,
+                            total_questions: 10
+                        }
+                    };
+                }
+
+                throw new Error('Unexpected apiRequest path: ' + String(path));
+            }
+        });
+
+        await fixture.manager.maybeFinalizeLockedExam('unit-test');
+
+        expect(fixture.state.stage).toBe('result');
+        expect(fixture.state.result.show_student_result).toBe(0);
+        expect(fixture.state.result.result_view_mode).toBe('restricted');
+        expect(fixture.state.result.score).toBe(0);
+        expect(fixture.state.result.max_score).toBe(0);
+        expect(fixture.state.result.review_items).toEqual([]);
+        expect(fixture.state.result.review_summary).toBeNull();
+        expect(fixture.state.exams[0].show_student_result).toBe(0);
+        expect(fixture.state.exams[0].latest_attempt_score).toBe(0);
+        expect(fixture.state.exams[0].latest_attempt_pass_label).toBe('');
+        expect(fixture.state.exams[0].latest_attempt_result_tone).toBe('');
+    });
+
+    it('persists an unlocked cache snapshot immediately when finish finalization fails', async function () {
+        var fixture = createFixture({
+            apiRequest: async function (path) {
+                if (path === 'finish_exam') {
+                    var error = new Error('Finish gagal dari unit test.');
+                    error.status = 503;
+                    throw error;
+                }
+
+                throw new Error('Unexpected apiRequest path: ' + String(path));
+            }
+        });
+
+        await fixture.manager.maybeFinalizeLockedExam('unit-test');
+
+        expect(fixture.state.examLockedForPendingFinish).toBe(false);
+        expect(fixture.state.pendingFinishAutoSubmit).toBe(false);
+        expect(fixture.state.isFinishing).toBe(false);
+        expect(fixture.state.error).toBe('Finish gagal dari unit test.');
+        expect(fixture.calls.persistCurrentQuestionCacheLocally).toBe(1);
+        expect(fixture.calls.startTimer).toBe(1);
+        expect(fixture.calls.syncPendingAnswerRuntimeState).toEqual([
+            {
+                clearLastSyncError: false,
+                persist: false
+            },
+            {
+                clearLastSyncError: false,
+                persist: true
+            }
+        ]);
+    });
+});

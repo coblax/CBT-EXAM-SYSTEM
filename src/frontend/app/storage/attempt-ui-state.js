@@ -1,6 +1,7 @@
 export function createAttemptUiStateStorage(deps) {
     var state = deps.state;
     var getSessionStorage = deps.getSessionStorage;
+    var now = typeof deps.now === 'function' ? deps.now : Date.now;
     var getQuestionIdAtIndex = deps.getQuestionIdAtIndex;
     var storageKeyPrefix = String(deps.storageKeyPrefix || '');
     var buildDoubtfulSessionStorageKey = deps.buildDoubtfulSessionStorageKey;
@@ -48,6 +49,13 @@ export function createAttemptUiStateStorage(deps) {
 
     function normalizeAttemptUiState(snapshot, attemptId) {
         var safeAttemptId = Number(attemptId || (snapshot && snapshot.attempt_id)) || 0;
+        var updatedAt = Math.max(0, Number(
+            snapshot && (
+                snapshot.updated_at !== undefined
+                    ? snapshot.updated_at
+                    : snapshot.updatedAt
+            )
+        ) || 0);
         var questionCount = getQuestionCount();
         var questionIdSet = validAttemptQuestionIds();
         var rawDoubtful = [];
@@ -100,12 +108,17 @@ export function createAttemptUiStateStorage(deps) {
             currentQuestionId = Number(getQuestionIdAtIndex(currentIndex)) || 0;
         }
 
-        return {
+        var normalizedSnapshot = {
             attempt_id: safeAttemptId,
             current_index: currentIndex,
             current_question_id: currentQuestionId,
             doubtful_question_ids: doubtfulIds
         };
+        if (updatedAt > 0) {
+            normalizedSnapshot.updated_at = updatedAt;
+        }
+
+        return normalizedSnapshot;
     }
 
     function questionCacheHasPayloadForIndex(snapshot, index) {
@@ -164,13 +177,20 @@ export function createAttemptUiStateStorage(deps) {
             } else if (normalizedRemote && questionCacheHasPayloadForIndex(normalizedQuestionCache, normalizedRemote.current_index)) {
                 selectedSnapshot = normalizedRemote;
             }
+        } else if (normalizedLocal && normalizedRemote) {
+            var localUpdatedAt = Math.max(0, Number(normalizedLocal.updated_at) || 0);
+            var remoteUpdatedAt = Math.max(0, Number(normalizedRemote.updated_at) || 0);
+            if (localUpdatedAt !== remoteUpdatedAt) {
+                selectedSnapshot = localUpdatedAt >= remoteUpdatedAt ? normalizedLocal : normalizedRemote;
+            }
         }
 
         return normalizeAttemptUiState({
             attempt_id: safeAttemptId,
             current_index: selectedSnapshot.current_index,
             current_question_id: selectedSnapshot.current_question_id,
-            doubtful_question_ids: mergeAttemptUiStateDoubtfulIds(normalizedLocal, normalizedRemote)
+            doubtful_question_ids: mergeAttemptUiStateDoubtfulIds(normalizedLocal, normalizedRemote),
+            updated_at: Number(selectedSnapshot.updated_at) || 0
         }, safeAttemptId);
     }
 
@@ -186,6 +206,7 @@ export function createAttemptUiStateStorage(deps) {
             current_question_id: typeof getQuestionIdAtIndex === 'function'
                 ? (Number(getQuestionIdAtIndex(state.currentIndex)) || 0)
                 : 0,
+            updated_at: now(),
             doubtful_question_ids: Object.keys(state.doubtful).reduce(function (accumulator, key) {
                 var questionId = Number(key) || 0;
                 if (questionId > 0 && state.doubtful[key]) {

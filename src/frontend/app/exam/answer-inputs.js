@@ -46,6 +46,18 @@ export function createAnswerInputManager(deps) {
             }
 
             var selected = Array.isArray(state.answers[multiQid]) ? state.answers[multiQid].slice() : [];
+            var normalizedSelected = [];
+            var seenSelectedLookup = {};
+            selected.forEach(function (item) {
+                var optionId = Number(item) || 0;
+                if (optionId <= 0 || seenSelectedLookup[optionId]) {
+                    return;
+                }
+
+                seenSelectedLookup[optionId] = true;
+                normalizedSelected.push(optionId);
+            });
+            selected = normalizedSelected;
             var checked = target instanceof HTMLInputElement ? target.checked : false;
 
             if (checked && selected.indexOf(multiOptionId) < 0) {

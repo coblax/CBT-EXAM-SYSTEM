@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit
+    bootstrap="tests/php/bootstrap.php"
+    cacheDirectory=".phpunit.cache"
+    colors="true"
+    executionOrder="depends,defects"
+    failOnRisky="true"
+    failOnWarning="true"
+    beStrictAboutOutputDuringTests="true"
+>
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/php/unit</directory>
+        </testsuite>
+        <testsuite name="integration">
+            <directory>tests/php/integration</directory>
+        </testsuite>
+    </testsuites>
+
+    <source>
+        <include>
+            <directory>admin</directory>
+            <directory>includes</directory>
+        </include>
+    </source>
+</phpunit>

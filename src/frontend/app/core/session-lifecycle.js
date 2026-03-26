@@ -297,7 +297,17 @@ export function createSessionLifecycleManager(deps) {
             }
         }
 
-        sendLogoutRequestSilently(activeToken);
+        try {
+            await withTimeout(
+                Promise.resolve(sendLogoutRequestSilently(activeToken)).catch(function () {
+                    return null;
+                }),
+                logoutSyncTimeoutMs,
+                'Logout server terlalu lama. Sesi lokal dibersihkan, tetapi sesi server mungkin belum tertutup sempurna.'
+            );
+        } catch (error) {
+            // Tetap lanjutkan clear state lokal agar UI tidak tersangkut.
+        }
         clearAuthenticatedFrontendState({
             stage: 'login'
         });

@@ -24,7 +24,7 @@ final class CBT_Admin_Setup_Service
     }
 
     /**
-     * @return array{force_fullscreen:int,block_copy_paste:int,log_security_events:int}
+     * @return array{force_fullscreen:int,block_copy_paste:int,log_security_events:int,detect_idle_during_exam:int,idle_threshold_minutes:int}
      */
     public static function get_security_settings(): array
     {
@@ -36,11 +36,15 @@ final class CBT_Admin_Setup_Service
         $force_fullscreen = !empty($raw['force_fullscreen']);
         $block_copy_paste = !empty($raw['block_copy_paste']);
         $log_security_events = !empty($raw['log_security_events']);
+        $detect_idle_during_exam = !array_key_exists('detect_idle_during_exam', $raw) || !empty($raw['detect_idle_during_exam']);
+        $idle_threshold_minutes = max(1, absint($raw['idle_threshold_minutes'] ?? 5));
 
         return [
             'force_fullscreen' => $force_fullscreen ? 1 : 0,
             'block_copy_paste' => $block_copy_paste ? 1 : 0,
             'log_security_events' => $log_security_events ? 1 : 0,
+            'detect_idle_during_exam' => $detect_idle_during_exam ? 1 : 0,
+            'idle_threshold_minutes' => $idle_threshold_minutes,
         ];
     }
 
@@ -68,6 +72,8 @@ final class CBT_Admin_Setup_Service
         $security_force_fullscreen = !empty($security['force_fullscreen']);
         $security_block_copy_paste = !empty($security['block_copy_paste']);
         $security_log_events_enabled = !empty($security['log_security_events']);
+        $security_detect_idle_during_exam = !empty($security['detect_idle_during_exam']);
+        $security_idle_threshold_minutes = max(1, (int) ($security['idle_threshold_minutes'] ?? 5));
         $security_log_event_definitions = CBT_Security_Log::event_definitions();
 
         $teacher_scope = self::is_admin_scope() ? 0 : get_current_user_id();
@@ -100,7 +106,9 @@ final class CBT_Admin_Setup_Service
             'school_regency_country_ln',
             'school_village',
             'security_block_copy_paste',
+            'security_detect_idle_during_exam',
             'security_force_fullscreen',
+            'security_idle_threshold_minutes',
             'security_log_event_definitions',
             'security_log_events_enabled',
             'security_log_must_watch_attempts',

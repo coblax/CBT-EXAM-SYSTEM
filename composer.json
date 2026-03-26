@@ -6,9 +6,17 @@
     "firebase/php-jwt": "^6.10",
     "phpoffice/phpspreadsheet": "^2.2"
   },
+  "require-dev": {
+    "brain/monkey": "^2.6",
+    "mockery/mockery": "^1.6",
+    "phpunit/phpunit": "^10.5"
+  },
   "autoload": {
     "psr-4": {
       "CbtExamSystem\\": "includes/"
     }
+  },
+  "scripts": {
+    "test:php": "vendor/bin/phpunit -c phpunit.xml.dist"
   }
 }

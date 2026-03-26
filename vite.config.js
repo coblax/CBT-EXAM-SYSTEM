@@ -4,6 +4,17 @@ import { resolve } from 'node:path';
 export default defineConfig(({ command }) => ({
     base: './',
     publicDir: false,
+    test: {
+        environment: 'jsdom',
+        globals: true,
+        setupFiles: [resolve(__dirname, 'tests/js/setup/vitest.setup.js')],
+        include: ['tests/js/**/*.test.js'],
+        coverage: {
+            provider: 'v8',
+            reporter: ['text', 'html'],
+            reportsDirectory: resolve(__dirname, 'coverage/js')
+        }
+    },
     build: {
         emptyOutDir: true,
         manifest: 'manifest.json',

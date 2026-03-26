@@ -72,6 +72,21 @@ export function createAppMetaManager(deps) {
         return Number(config.securityLogEvents || 0) === 1;
     }
 
+    function isIdleDetectionEnabled() {
+        return Number(config.securityDetectIdle || 0) === 1;
+    }
+
+    function getIdleDetectionThresholdSeconds() {
+        var minutes = Number(config.securityIdleThresholdMinutes || 5);
+        var seconds = Number(config.securityIdleThresholdSeconds || (minutes * 60));
+
+        if (!Number.isFinite(seconds) || seconds <= 0) {
+            seconds = 300;
+        }
+
+        return Math.max(60, Math.floor(seconds));
+    }
+
     function isSecurityLoggingActiveForAttempt() {
         return isSecurityLoggingEnabled() && state.stage === 'exam' && (Number(state.attemptId) || 0) > 0;
     }
@@ -154,11 +169,15 @@ export function createAppMetaManager(deps) {
 
     function safeRichHtml(value) {
         var html = String(value || '');
+        var spacerMarkup = '<div class="cbt-rich-spacer" aria-hidden="true"></div>';
         html = html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
         html = html.replace(/\son\w+="[^"]*"/gi, '');
         html = html.replace(/\son\w+='[^']*'/gi, '');
         html = html.replace(/\r\n?/g, '\n');
-        html = html.replace(/<p\b[^>]*>\s*(?:&nbsp;|&#160;|<br\s*\/?>)*\s*<\/p>/gi, '');
+        html = html.replace(/<p\b[^>]*>\s*(?:&nbsp;|&#160;|<br\s*\/?>|\s)*<\/p>/gi, spacerMarkup);
+        html = html.replace(/(?:\s*<div class="cbt-rich-spacer" aria-hidden="true"><\/div>\s*){2,}/gi, spacerMarkup);
+        html = html.replace(/^(?:\s*<div class="cbt-rich-spacer" aria-hidden="true"><\/div>\s*)+/i, '');
+        html = html.replace(/(?:\s*<div class="cbt-rich-spacer" aria-hidden="true"><\/div>\s*)+$/i, '');
 
         var hasExplicitLineBreakMarkup = /<(?:br|p|div|table|thead|tbody|tfoot|tr|td|th|ul|ol|li|blockquote|pre|figure|figcaption|h[1-6]|hr)\b/i.test(html);
         if (!hasExplicitLineBreakMarkup && html.indexOf('\n') >= 0) {
@@ -318,6 +337,7 @@ export function createAppMetaManager(deps) {
         getCurrentUserPhoto: getCurrentUserPhoto,
         getCurrentUserRole: getCurrentUserRole,
         getExamFooterSyncMeta: getExamFooterSyncMeta,
+        getIdleDetectionThresholdSeconds: getIdleDetectionThresholdSeconds,
         getLoginHeroSchoolBranding: getLoginHeroSchoolBranding,
         getNavigatorConnectionStatus: getNavigatorConnectionStatus,
         getSelectedExam: getSelectedExam,
@@ -326,6 +346,7 @@ export function createAppMetaManager(deps) {
         isConnectionOffline: isConnectionOffline,
         isExamCopyPasteBlocked: isExamCopyPasteBlocked,
         isExamFullscreenRequired: isExamFullscreenRequired,
+        isIdleDetectionEnabled: isIdleDetectionEnabled,
         isSecurityLoggingActiveForAttempt: isSecurityLoggingActiveForAttempt,
         isSecurityLoggingEnabled: isSecurityLoggingEnabled,
         normalizePhotoUrl: normalizePhotoUrl,

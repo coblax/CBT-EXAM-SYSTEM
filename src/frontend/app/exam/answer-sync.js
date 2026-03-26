@@ -112,12 +112,20 @@ export function createAnswerSyncManager(deps) {
     }
 
     function shouldFallbackToLegacyBatch(error) {
-        if (!error || isRetryableAnswerSyncError(error)) {
+        if (!error) {
             return false;
         }
 
         var status = Number(error.status) || 0;
         var code = String(error.code || '');
+        if (code === 'runtime_buffer_unavailable') {
+            return true;
+        }
+
+        if (isRetryableAnswerSyncError(error)) {
+            return false;
+        }
+
         return (
             status >= 500 ||
             status === 503 ||
@@ -723,28 +731,47 @@ export function createAnswerSyncManager(deps) {
     async function submitLegacyAnswerBatch(items, options) {
         options = options || {};
         var responseItems = [];
+        var submittedItems = [];
 
         for (var i = 0; i < items.length; i++) {
             var item = items[i];
-            var legacyPayload = await apiRequest('submit_answer', {
-                method: 'POST',
-                keepalive: !!options.keepalive,
-                body: {
-                    attempt_id: state.attemptId,
-                    question_id: item.question_id,
-                    answer: item.answer
-                }
-            });
+            try {
+                var legacyPayload = await apiRequest('submit_answer', {
+                    method: 'POST',
+                    keepalive: !!options.keepalive,
+                    body: {
+                        attempt_id: state.attemptId,
+                        question_id: item.question_id,
+                        answer: item.answer
+                    }
+                });
 
-            responseItems.push({
-                question_id: Number(item.question_id) || 0,
-                is_correct: legacyPayload && Object.prototype.hasOwnProperty.call(legacyPayload, 'is_correct')
-                    ? legacyPayload.is_correct
-                    : null,
-                score_awarded: Number(legacyPayload && legacyPayload.score_awarded !== undefined ? legacyPayload.score_awarded : 0),
-                deferred: Number(legacyPayload && legacyPayload.deferred !== undefined ? legacyPayload.deferred : 0),
-                cleared: Number(legacyPayload && legacyPayload.cleared !== undefined ? legacyPayload.cleared : 0)
-            });
+                submittedItems.push(item);
+                responseItems.push({
+                    question_id: Number(item.question_id) || 0,
+                    is_correct: legacyPayload && Object.prototype.hasOwnProperty.call(legacyPayload, 'is_correct')
+                        ? legacyPayload.is_correct
+                        : null,
+                    score_awarded: Number(legacyPayload && legacyPayload.score_awarded !== undefined ? legacyPayload.score_awarded : 0),
+                    deferred: Number(legacyPayload && legacyPayload.deferred !== undefined ? legacyPayload.deferred : 0),
+                    cleared: Number(legacyPayload && legacyPayload.cleared !== undefined ? legacyPayload.cleared : 0)
+                });
+            } catch (error) {
+                var partialError = error instanceof Error
+                    ? error
+                    : new Error('Legacy answer batch submission failed.');
+
+                if (error && typeof error === 'object') {
+                    Object.keys(error).forEach(function (key) {
+                        partialError[key] = error[key];
+                    });
+                }
+
+                partialError.partialSubmittedItems = submittedItems.slice();
+                partialError.partialResponseItems = responseItems.slice();
+                partialError.remainingItems = items.slice(i);
+                throw partialError;
+            }
         }
 
         return {
@@ -805,7 +832,27 @@ export function createAnswerSyncManager(deps) {
             } catch (legacyError) {
                 answerBatchInFlightItems = [];
                 if (requestGeneration === getQuestionDataGeneration()) {
-                    requeuePendingAnswerBatchItems(items);
+                    var partialSubmittedItems = Array.isArray(legacyError && legacyError.partialSubmittedItems)
+                        ? legacyError.partialSubmittedItems
+                        : [];
+                    var partialResponseItems = Array.isArray(legacyError && legacyError.partialResponseItems)
+                        ? legacyError.partialResponseItems
+                        : [];
+                    var remainingItems = Array.isArray(legacyError && legacyError.remainingItems)
+                        ? legacyError.remainingItems
+                        : [];
+
+                    if (partialSubmittedItems.length > 0) {
+                        applySubmittedBatchItems(partialSubmittedItems, partialResponseItems, {
+                            questionDataGeneration: requestGeneration
+                        });
+                    }
+
+                    if (remainingItems.length > 0) {
+                        requeuePendingAnswerBatchItems(remainingItems);
+                    } else if (partialSubmittedItems.length <= 0) {
+                        requeuePendingAnswerBatchItems(items);
+                    }
                 }
                 throw (legacyError instanceof Error) ? legacyError : batchError;
             }

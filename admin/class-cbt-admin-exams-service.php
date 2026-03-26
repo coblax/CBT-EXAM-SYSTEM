@@ -394,42 +394,53 @@ final class CBT_Admin_Exams_Service
             }
 
             $question_type = (string) ($question_row['question_type'] ?? '');
-            $question_type_label = (string) ($question_row['question_type_label'] ?? $question_type);
+            $question_type_label = (string) ($question_row['question_type_label'] ?? CBT_Admin_Questions_Helper::get_question_type_label($question_type));
             $question_options = $options_map[$question_id] ?? [];
-            $correct_keys = [];
-            foreach ($question_options as $question_option) {
-                if ((int) ($question_option['is_correct'] ?? 0) === 1) {
-                    $correct_keys[] = strtoupper((string) ($question_option['option_key'] ?? ''));
-                }
+            $question_detail = CBT_Admin_Questions_Helper::get_question_type_detail($question_id, $question_type);
+            $meta_lines = [];
+            $subject_name = trim((string) ($question_row['subject_name'] ?? ''));
+            if ($subject_name !== '') {
+                $meta_lines[] = 'Mapel: ' . $subject_name;
             }
 
-            ob_start();
-            ?>
-            <p><strong>Subject:</strong> <?php echo esc_html((string) ($question_row['subject_name'] ?? '-')); ?></p>
-            <p><strong>Sumber:</strong> <?php echo esc_html((string) ($question_row['source_context_display'] ?? ($question_row['exam_title'] ?? '-'))); ?></p>
-            <p><strong>Lineage:</strong> <?php echo esc_html((string) ($question_row['lineage_label'] ?? 'Source')); ?><?php echo !empty($question_row['lineage_hint']) ? ' - ' . esc_html((string) $question_row['lineage_hint']) : ''; ?></p>
-            <p><strong>Tipe:</strong> <?php echo esc_html($question_type_label); ?></p>
-            <p><strong>Poin:</strong> <?php echo esc_html((string) ($question_row['points'] ?? '1')); ?></p>
-            <hr />
-            <div><?php echo wp_kses_post((string) ($question_row['question_text'] ?? '')); ?></div>
-            <?php if (!empty($question_options)): ?>
-                <hr />
-                <p><strong>Opsi:</strong></p>
-                <ol style="margin-left:18px;">
-                    <?php foreach ($question_options as $question_option): ?>
-                        <?php $option_key = strtoupper((string) ($question_option['option_key'] ?? '')); ?>
-                        <li>
-                            <strong><?php echo esc_html($option_key); ?>.</strong>
-                            <?php echo wp_kses_post((string) ($question_option['option_text'] ?? '')); ?>
-                        </li>
-                    <?php endforeach; ?>
-                </ol>
-                <?php if (!empty($correct_keys)): ?>
-                    <p><strong>Kunci:</strong> <?php echo esc_html(implode(', ', $correct_keys)); ?></p>
-                <?php endif; ?>
-            <?php endif; ?>
-            <?php
-            $preview_map[$question_id] = trim((string) ob_get_clean());
+            $source_context_label = trim((string) ($question_row['source_context_label'] ?? 'Sumber'));
+            $source_context_display = trim((string) ($question_row['source_context_display'] ?? ($question_row['exam_title'] ?? '')));
+            if ($source_context_display !== '') {
+                $meta_lines[] = ($source_context_label !== '' ? $source_context_label : 'Sumber') . ': ' . $source_context_display;
+            }
+
+            $extra_chips = [];
+            $lineage_label = trim((string) ($question_row['lineage_label'] ?? ''));
+            if ($lineage_label !== '') {
+                $extra_chips[] = [
+                    'label' => $lineage_label,
+                    'tone' => 'source',
+                ];
+            }
+
+            $actions_html = '';
+            $edit_url = trim((string) ($question_row['edit_url'] ?? ''));
+            if ($edit_url !== '') {
+                $actions_html = sprintf(
+                    '<a class="button button-secondary" href="%s" target="_blank" rel="noopener noreferrer">%s</a>',
+                    esc_url($edit_url),
+                    esc_html__('Edit Soal', 'cbt-exam-system')
+                );
+            }
+
+            $preview_map[$question_id] = CBT_Admin_Questions_Helper::render_admin_student_preview_card(
+                $question_row,
+                $question_options,
+                $question_detail,
+                [
+                    'eyebrow' => 'Soal #' . $question_id,
+                    'type_label' => $question_type_label,
+                    'meta_lines' => $meta_lines,
+                    'extra_chips' => $extra_chips,
+                    'note_text' => (string) ($question_row['lineage_hint'] ?? ''),
+                    'actions_html' => $actions_html,
+                ]
+            );
         }
 
         return $preview_map;
@@ -1202,12 +1213,22 @@ final class CBT_Admin_Exams_Service
         if (!empty($selected_sidebar_questions)) {
             $selected_sidebar_questions = self::enrich_source_question_rows($selected_sidebar_questions, $selected_source_meta_map);
             foreach ($selected_sidebar_questions as &$selected_sidebar_question) {
+                $sidebar_question_id = (int) ($selected_sidebar_question['id'] ?? 0);
                 $sidebar_question_type = (string) ($selected_sidebar_question['question_type'] ?? '');
                 $selected_sidebar_question['question_type_label'] = (string) ($question_type_labels[$sidebar_question_type] ?? $sidebar_question_type);
                 $selected_sidebar_question['question_preview'] = wp_trim_words(
                     (string) wp_strip_all_tags((string) ($selected_sidebar_question['question_text'] ?? '')),
                     16
                 );
+                $selected_sidebar_question['edit_url'] = $sidebar_question_id > 0
+                    ? add_query_arg(
+                        [
+                            'page' => 'cbt-question-bank',
+                            'edit' => $sidebar_question_id,
+                        ],
+                        admin_url('admin.php')
+                    )
+                    : '';
             }
             unset($selected_sidebar_question);
         }

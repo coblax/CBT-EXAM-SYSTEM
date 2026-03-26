@@ -8,7 +8,11 @@ export function createExamSecurityManager(deps) {
     var isExamCopyPasteBlocked = deps.isExamCopyPasteBlocked;
     var isExamFullscreenRequired = deps.isExamFullscreenRequired;
     var isSecurityLoggingActiveForAttempt = deps.isSecurityLoggingActiveForAttempt;
-    var sendSecurityEventSilently = deps.sendSecurityEventSilently;
+    var sendSecurityEventSilently = typeof deps.sendSecurityEventSilently === 'function'
+        ? deps.sendSecurityEventSilently
+        : function () {
+            return false;
+        };
     var syncFullscreenState = deps.syncFullscreenState;
     var requestNativeFullscreen = deps.requestNativeFullscreen;
     var setNativeFullscreenActive = deps.setNativeFullscreenActive;

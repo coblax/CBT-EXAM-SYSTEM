@@ -22,6 +22,39 @@ export function createAttemptUiSyncManager(deps) {
         return payloadSignature(snapshot);
     }
 
+    function numericUpdatedAt(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') {
+            return 0;
+        }
+
+        return Math.max(0, Number(snapshot.updated_at) || 0);
+    }
+
+    function shouldPersistResponseAttemptState(sentSnapshot, latestLocalSnapshot, remoteSnapshot) {
+        if (!remoteSnapshot || typeof remoteSnapshot !== 'object') {
+            return false;
+        }
+
+        if (!latestLocalSnapshot || typeof latestLocalSnapshot !== 'object') {
+            return true;
+        }
+
+        var remoteUpdatedAt = numericUpdatedAt(remoteSnapshot);
+        var localUpdatedAt = numericUpdatedAt(latestLocalSnapshot);
+        if (remoteUpdatedAt > 0 && localUpdatedAt > 0) {
+            return remoteUpdatedAt >= localUpdatedAt;
+        }
+
+        var latestLocalSignature = signature(latestLocalSnapshot);
+        if (latestLocalSignature === '') {
+            return true;
+        }
+
+        var sentSignature = signature(sentSnapshot);
+        var remoteSignature = signature(remoteSnapshot);
+        return latestLocalSignature === sentSignature || latestLocalSignature === remoteSignature;
+    }
+
     function syncSignatureToCurrentState() {
         var snapshot = buildAttemptUiStateSnapshot();
         lastSignature = snapshot ? signature(snapshot) : '';
@@ -33,8 +66,27 @@ export function createAttemptUiSyncManager(deps) {
         clearTimer();
     }
 
+    function hasAuthToken(options) {
+        var token = options && options.token !== undefined
+            ? String(options.token || '')
+            : String(state.token || '');
+
+        return token.trim() !== '';
+    }
+
+    function isTerminalAuthError(error) {
+        if (!error || typeof error !== 'object') {
+            return false;
+        }
+
+        var status = Number(error.status) || 0;
+        var code = String(error.code || '').trim().toLowerCase();
+        return status === 401 || status === 403 || code === 'unauthorized' || code === 'forbidden';
+    }
+
     function scheduleSync(delayMs) {
-        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
+        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || !hasAuthToken()) {
+            clearTimer();
             return;
         }
 
@@ -60,7 +112,7 @@ export function createAttemptUiSyncManager(deps) {
     async function flush(options) {
         options = options || {};
 
-        if (state.stage !== 'exam' || state.attemptId <= 0) {
+        if (state.stage !== 'exam' || state.attemptId <= 0 || !hasAuthToken(options)) {
             return null;
         }
         if (state.isFinishing && !options.allowWhileFinishing) {
@@ -87,6 +139,7 @@ export function createAttemptUiSyncManager(deps) {
             return null;
         }
 
+        var terminalAuthFailure = false;
         syncInFlight = apiRequest('ui_state', {
             method: 'POST',
             keepalive: !!options.keepalive,
@@ -98,14 +151,27 @@ export function createAttemptUiSyncManager(deps) {
             lastSignature = snapshotSignature;
 
             if (responsePayload && responsePayload.attempt_state && typeof responsePayload.attempt_state === 'object') {
-                persistAttemptUiStateLocally(responsePayload.attempt_state);
+                var latestLocalSnapshot = buildAttemptUiStateSnapshot();
+                if (shouldPersistResponseAttemptState(snapshot, latestLocalSnapshot, responsePayload.attempt_state)) {
+                    persistAttemptUiStateLocally(responsePayload.attempt_state);
+                }
             }
 
             return responsePayload;
+        }).catch(function (error) {
+            if (isTerminalAuthError(error)) {
+                terminalAuthFailure = true;
+            }
+
+            throw error;
         }).finally(function () {
             syncInFlight = null;
 
-            if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
+            if (terminalAuthFailure) {
+                return;
+            }
+
+            if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || !hasAuthToken()) {
                 return;
             }
 

@@ -52,6 +52,7 @@ import { createAuthStageManager } from './core/auth-stages';
 import { createBrowserStorageAccess } from './core/browser-storage';
 import { createBootstrapSessionManager } from './core/bootstrap-session';
 import { createLifecycleManager } from './core/lifecycle';
+import { createIdleDetectionManager } from './core/idle-detection';
 import { createRenderCycleManager } from './core/render-cycle';
 import { createSecurityLoggingManager } from './core/security-logging';
 import { createExamSessionManager } from './core/exam-session';
@@ -474,6 +475,7 @@ export function bootstrapFrontendApp() {
     var getCurrentUserPhoto = appMetaManager.getCurrentUserPhoto;
     var getCurrentUserRole = appMetaManager.getCurrentUserRole;
     var getExamFooterSyncMeta = appMetaManager.getExamFooterSyncMeta;
+    var getIdleDetectionThresholdSeconds = appMetaManager.getIdleDetectionThresholdSeconds;
     var getLoginHeroSchoolBranding = appMetaManager.getLoginHeroSchoolBranding;
     var getNavigatorConnectionStatus = appMetaManager.getNavigatorConnectionStatus;
     var getSelectedExam = appMetaManager.getSelectedExam;
@@ -482,6 +484,7 @@ export function bootstrapFrontendApp() {
     var isConnectionOffline = appMetaManager.isConnectionOffline;
     var isExamCopyPasteBlocked = appMetaManager.isExamCopyPasteBlocked;
     var isExamFullscreenRequired = appMetaManager.isExamFullscreenRequired;
+    var isIdleDetectionEnabled = appMetaManager.isIdleDetectionEnabled;
     var isSecurityLoggingActiveForAttempt = appMetaManager.isSecurityLoggingActiveForAttempt;
     var isSecurityLoggingEnabled = appMetaManager.isSecurityLoggingEnabled;
     var renderAlert = appMetaManager.renderAlert;
@@ -840,9 +843,30 @@ export function bootstrapFrontendApp() {
         windowBlurLogDelayMs: WINDOW_BLUR_LOG_DELAY_MS,
         windowRef: window
     });
+    var idleDetectionManager = createIdleDetectionManager({
+        documentRef: document,
+        getIdleThresholdSeconds: getIdleDetectionThresholdSeconds,
+        getQuestionDisplayNumber: questionWindowManager.getQuestionDisplayNumber,
+        isExamFullscreenBlockingActive: function () {
+            return typeof isExamFullscreenBlockingActive === 'function'
+                ? isExamFullscreenBlockingActive()
+                : false;
+        },
+        isIdleDetectionEnabled: isIdleDetectionEnabled,
+        isSecurityLoggingEnabled: isSecurityLoggingEnabled,
+        sendSecurityEventSilently: securityLoggingManager.sendSecurityEventSilently,
+        state: state,
+        windowRef: window
+    });
     var cancelScheduledTabHiddenSecurityLog = securityLoggingManager.cancelScheduledTabHiddenSecurityLog;
     var cancelScheduledWindowBlurSecurityLog = securityLoggingManager.cancelScheduledWindowBlurSecurityLog;
     var clearSecurityLoggingRuntimeState = securityLoggingManager.clearRuntimeState;
+    var clearIdleDetectionRuntimeState = idleDetectionManager.clearRuntimeState;
+    var syncIdleDetectionState = idleDetectionManager.syncState;
+    var clearSecurityRuntimeState = function () {
+        clearSecurityLoggingRuntimeState();
+        clearIdleDetectionRuntimeState();
+    };
     var isWindowBlurLoggingActiveForAttempt = securityLoggingManager.isWindowBlurLoggingActiveForAttempt;
     var logPageLeaveSecurityEvent = securityLoggingManager.logPageLeaveSecurityEvent;
     var scheduleTabHiddenSecurityLog = securityLoggingManager.scheduleTabHiddenSecurityLog;
@@ -1033,7 +1057,7 @@ export function bootstrapFrontendApp() {
         clearQuestionRevisionRefreshState: function () {
             questionRuntimeManager.clearQuestionRevisionRefreshState();
         },
-        clearSecurityLoggingRuntimeState: clearSecurityLoggingRuntimeState,
+        clearSecurityLoggingRuntimeState: clearSecurityRuntimeState,
         exitFullscreenSilently: exitFullscreenSilently,
         flushAttemptUiState: flushAttemptUiState,
         flushPendingAnswerBatch: flushPendingAnswerBatch,
@@ -1551,6 +1575,7 @@ export function bootstrapFrontendApp() {
         renderUserPhotoModal: renderUserPhotoModal,
         root: root,
         state: state,
+        syncIdleDetectionState: syncIdleDetectionState,
         updateQuestionPrefetchIndicator: updateQuestionPrefetchIndicator,
         updateTimerLabel: updateTimerLabel,
         windowRef: window
@@ -1615,6 +1640,7 @@ export function bootstrapFrontendApp() {
         debugManager: debugManager,
         documentRef: document,
         examSecurityManager: examSecurityManager,
+        idleDetectionManager: idleDetectionManager,
         lifecycleManager: lifecycleManager,
         root: root
     });

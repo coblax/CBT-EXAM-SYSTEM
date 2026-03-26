@@ -683,6 +683,7 @@ final class CBT_Admin_Questions_Import_Helper
             $question_type = self::map_import_question_type((string) ($row['question_type'] ?? ''));
             $question_text = wp_kses_post((string) ($row['question_text'] ?? ''));
             $question_text = trim($question_text);
+            $explanation = CBT_Admin_Questions_Helper::normalize_optional_rich_text((string) ($row['explanation'] ?? ($row['pembahasan'] ?? '')));
             if ($question_type === '' || $question_text === '') {
                 return 'failed';
             }
@@ -747,10 +748,11 @@ final class CBT_Admin_Questions_Import_Helper
                     'question_type' => $question_type,
                     'points' => $points,
                     'correct_text' => $correct_text !== '' ? $correct_text : null,
+                    'explanation' => $explanation,
                     'created_at' => current_time('mysql'),
                     'updated_at' => current_time('mysql'),
                 ],
-                ['%d', '%s', '%s', '%f', '%s', '%s', '%s']
+                ['%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s']
             );
             if (!$inserted) {
                 return 'failed';
@@ -1283,6 +1285,7 @@ final class CBT_Admin_Questions_Import_Helper
                     'Field wajib: SOAL, PILIHAN_1..PILIHAN_minimal_2, JAWABAN.',
                     'JAWABAN diisi nomor pilihan (1-12) dan boleh lebih dari satu, contoh 2,4.',
                     'POIN opsional, default 1.',
+                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
@@ -1298,6 +1301,7 @@ final class CBT_Admin_Questions_Import_Helper
                     }
                     $block[] = 'JAWABAN: 1,3,5';
                     $block[] = 'POIN: 1';
+                    $block[] = 'PEMBAHASAN: Tulis pembahasan opsional di sini.';
                     $blocks[] = $block;
                 }
             } elseif ($template_type === 'true_false') {
@@ -1307,6 +1311,7 @@ final class CBT_Admin_Questions_Import_Helper
                     'Field wajib: JENIS_SOAL, SOAL, JAWABAN.',
                     'JAWABAN diisi TRUE atau FALSE.',
                     'POIN opsional, default 1.',
+                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
@@ -1319,6 +1324,7 @@ final class CBT_Admin_Questions_Import_Helper
                         'SOAL: [TF ' . $idx . '] Tulis pernyataan benar/salah di sini.',
                         'JAWABAN: ' . $answer,
                         'POIN: 1',
+                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
                 }
             } elseif ($template_type === 'true_false_matrix') {
@@ -1329,6 +1335,7 @@ final class CBT_Admin_Questions_Import_Helper
                     'Isi PERNYATAAN_1..PERNYATAAN_10 (maks 10 baris).',
                     'Isi KUNCI_1..KUNCI_10 dengan TRUE/FALSE (atau BENAR/SALAH).',
                     'POIN opsional, default 1.',
+                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
@@ -1349,6 +1356,7 @@ final class CBT_Admin_Questions_Import_Helper
                         'PERNYATAAN_5: Pernyataan E',
                         'KUNCI_5: true',
                         'POIN: 1',
+                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
                 }
             } elseif ($template_type === 'short_answer') {
@@ -1361,6 +1369,7 @@ final class CBT_Admin_Questions_Import_Helper
                     'Isi jawaban bisa pakai JAWABAN_A sampai JAWABAN_H.',
                     'Alternatif lama juga didukung: JAWABAN: isi_a||isi_b||isi_c',
                     'POIN opsional, default 1.',
+                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
@@ -1379,6 +1388,7 @@ final class CBT_Admin_Questions_Import_Helper
                         'JAWABAN_G: jawaban-7',
                         'JAWABAN_H: jawaban-8',
                         'POIN: 1',
+                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
                 }
             } elseif ($template_type === 'essay') {
@@ -1388,6 +1398,7 @@ final class CBT_Admin_Questions_Import_Helper
                     'Field wajib: JENIS_SOAL, SOAL, JAWABAN.',
                     'JAWABAN diisi acuan jawaban/rubrik.',
                     'POIN opsional, default 1.',
+                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
@@ -1399,6 +1410,7 @@ final class CBT_Admin_Questions_Import_Helper
                         'SOAL: [ESSAY ' . $idx . '] Tulis pertanyaan essay di sini.',
                         'JAWABAN: Tulis acuan jawaban/rubrik penilaian.',
                         'POIN: 1',
+                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
                 }
             } else {
@@ -1409,6 +1421,7 @@ final class CBT_Admin_Questions_Import_Helper
                     'JAWABAN diisi nomor pilihan (1-5).',
                     'Untuk multiple_choice: hanya satu jawaban, contoh 2.',
                     'POIN opsional, default 1.',
+                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
@@ -1424,6 +1437,7 @@ final class CBT_Admin_Questions_Import_Helper
                         'PILIHAN_4: Opsi D',
                         'JAWABAN: ' . $answer,
                         'POIN: 1',
+                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
                 }
             }
@@ -1516,6 +1530,7 @@ final class CBT_Admin_Questions_Import_Helper
         private static function parse_docx_multiple_choice_block(array $block): ?array
         {
             $question_parts = [];
+            $explanation_parts = [];
             $max_option_index = 12;
             $options_map = [];
             for ($idx = 1; $idx <= $max_option_index; $idx++) {
@@ -1562,6 +1577,8 @@ final class CBT_Admin_Questions_Import_Helper
                             } else {
                                 $question_parts[] = $img_html;
                             }
+                        } elseif ($active_context === 'explanation') {
+                            $explanation_parts[] = $img_html;
                         } else {
                             $question_parts[] = $img_html;
                         }
@@ -1630,6 +1647,14 @@ final class CBT_Admin_Questions_Import_Helper
                         $answer_text = $value;
                         $answer_indices = self::normalize_docx_answer_indices($value);
                         $active_context = 'answer';
+                        continue;
+                    }
+
+                    if (in_array($key, ['pembahasan', 'explanation'], true)) {
+                        if ($value !== '') {
+                            $explanation_parts[] = $value;
+                        }
+                        $active_context = 'explanation';
                         continue;
                     }
     
@@ -1726,6 +1751,11 @@ final class CBT_Admin_Questions_Import_Helper
                         continue;
                     }
                 }
+
+                if ($active_context === 'explanation') {
+                    $explanation_parts[] = $line;
+                    continue;
+                }
     
                 // Any free-text line in the block is appended as question body.
                 $question_parts[] = $line;
@@ -1733,6 +1763,7 @@ final class CBT_Admin_Questions_Import_Helper
             }
     
             $question_text = self::build_docx_question_text($question_parts);
+            $explanation_text = CBT_Admin_Questions_Helper::normalize_optional_rich_text(self::build_docx_question_text($explanation_parts));
             if ($question_text === '') {
                 return null;
             }
@@ -1762,6 +1793,9 @@ final class CBT_Admin_Questions_Import_Helper
                 if ($exam_title !== '') {
                     $row['exam_title'] = $exam_title;
                 }
+                if ($explanation_text !== null) {
+                    $row['explanation'] = $explanation_text;
+                }
                 return $row;
             }
     
@@ -1783,6 +1817,9 @@ final class CBT_Admin_Questions_Import_Helper
                 }
                 if ($exam_title !== '') {
                     $row['exam_title'] = $exam_title;
+                }
+                if ($explanation_text !== null) {
+                    $row['explanation'] = $explanation_text;
                 }
                 return $row;
             }
@@ -1813,6 +1850,9 @@ final class CBT_Admin_Questions_Import_Helper
                 }
                 if ($exam_title !== '') {
                     $row['exam_title'] = $exam_title;
+                }
+                if ($explanation_text !== null) {
+                    $row['explanation'] = $explanation_text;
                 }
                 return $row;
             }
@@ -1858,6 +1898,9 @@ final class CBT_Admin_Questions_Import_Helper
                 }
                 if ($exam_title !== '') {
                     $row['exam_title'] = $exam_title;
+                }
+                if ($explanation_text !== null) {
+                    $row['explanation'] = $explanation_text;
                 }
                 return $row;
             }
@@ -1951,6 +1994,9 @@ final class CBT_Admin_Questions_Import_Helper
             if ($exam_title !== '') {
                 $row['exam_title'] = $exam_title;
             }
+            if ($explanation_text !== null) {
+                $row['explanation'] = $explanation_text;
+            }
     
             return $row;
         }
@@ -1989,7 +2035,7 @@ final class CBT_Admin_Questions_Import_Helper
             }
     
             return (bool) preg_match(
-                '/^(jenis_soal|question_type|type|soal|question|pertanyaan|subject_code|kode_mapel|exam_title|judul_exam|ujian|point|points|poin|nilai|jawaban|answer|correct_answer|jawaban_ke|answer_option|correct_text|rubrik|rubric|rubric_text|(pilihan|opsi|option)_?([1-9]|1[0-2])|(pernyataan|statement|item)_?([1-9]|10)|(kunci|truth|tf)_?([1-9]|10)|(jawaban|answer|correct)_?([1-9]|10|[a-h])|[a-l])$/i',
+                '/^(jenis_soal|question_type|type|soal|question|pertanyaan|subject_code|kode_mapel|exam_title|judul_exam|ujian|point|points|poin|nilai|pembahasan|explanation|jawaban|answer|correct_answer|jawaban_ke|answer_option|correct_text|rubrik|rubric|rubric_text|(pilihan|opsi|option)_?([1-9]|1[0-2])|(pernyataan|statement|item)_?([1-9]|10)|(kunci|truth|tf)_?([1-9]|10)|(jawaban|answer|correct)_?([1-9]|10|[a-h])|[a-l])$/i',
                 $line
             );
         }

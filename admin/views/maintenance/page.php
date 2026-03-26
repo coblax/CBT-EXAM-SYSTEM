@@ -311,6 +311,210 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
     .cbt-maintenance-panel.is-active {
         display: grid;
     }
+    .cbt-maintenance-card--unit {
+        border-color: #d6e2f0;
+        background:
+            radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 26%),
+            linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+    .cbt-maintenance-unit-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+    }
+    .cbt-maintenance-unit-summary-item {
+        padding: 16px 18px;
+        border: 1px solid #dbe5ef;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.88);
+    }
+    .cbt-maintenance-unit-summary-item span {
+        display: block;
+        margin-bottom: 6px;
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .cbt-maintenance-unit-summary-item strong {
+        display: block;
+        color: #0f172a;
+        font-size: 18px;
+        line-height: 1.3;
+    }
+    .cbt-maintenance-subtabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+    }
+    .cbt-maintenance-subtab {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 0 16px;
+        border: 1px solid #d7dbe2;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #334155;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1;
+        cursor: pointer;
+        transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease, color 140ms ease, transform 140ms ease;
+    }
+    .cbt-maintenance-subtab:hover,
+    .cbt-maintenance-subtab:focus {
+        border-color: #94a3b8;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+        outline: none;
+        transform: translateY(-1px);
+    }
+    .cbt-maintenance-subtab.is-active {
+        border-color: #2563eb;
+        background: linear-gradient(180deg, #eff6ff 0%, #e0f2fe 100%);
+        color: #1d4ed8;
+        box-shadow: 0 10px 22px rgba(37, 99, 235, 0.12);
+    }
+    .cbt-maintenance-subtab-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 24px;
+        height: 22px;
+        margin-left: 10px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: #f1f5f9;
+        color: #334155;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .cbt-maintenance-subtab.is-active .cbt-maintenance-subtab-badge {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+    .cbt-maintenance-unit-subpanels {
+        display: grid;
+        gap: 18px;
+        margin-top: 18px;
+    }
+    .cbt-maintenance-unit-subpanel {
+        display: none;
+        gap: 18px;
+    }
+    .cbt-maintenance-unit-subpanel.is-active {
+        display: grid;
+    }
+    .cbt-maintenance-unit-panel-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+    }
+    .cbt-maintenance-unit-panel-copy {
+        min-width: 0;
+    }
+    .cbt-maintenance-unit-kicker {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 10px;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+    .cbt-maintenance-unit-panel-copy h3 {
+        margin: 10px 0 6px;
+        font-size: 20px;
+        line-height: 1.2;
+        color: #0f172a;
+    }
+    .cbt-maintenance-unit-panel-copy p {
+        margin: 0;
+        color: #475569;
+        line-height: 1.6;
+    }
+    .cbt-maintenance-unit-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+    }
+    .cbt-maintenance-unit-section {
+        padding: 18px;
+        border: 1px solid #dbe5ef;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+    }
+    .cbt-maintenance-unit-section--goal {
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+    .cbt-maintenance-unit-section h4 {
+        margin: 0 0 12px;
+        color: #0f172a;
+        font-size: 15px;
+        line-height: 1.3;
+    }
+    .cbt-maintenance-unit-section p {
+        margin: 0;
+        color: #475569;
+        line-height: 1.7;
+    }
+    .cbt-maintenance-unit-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+    .cbt-maintenance-unit-list li {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 0;
+        border-top: 1px solid #e5edf5;
+    }
+    .cbt-maintenance-unit-list li:first-child {
+        padding-top: 0;
+        border-top: 0;
+    }
+    .cbt-maintenance-unit-list-copy {
+        flex: 1 1 auto;
+        min-width: 0;
+        color: #334155;
+        line-height: 1.6;
+    }
+    .cbt-maintenance-unit-meta {
+        display: grid;
+        gap: 14px;
+    }
+    .cbt-maintenance-unit-meta-block strong {
+        display: block;
+        margin-bottom: 8px;
+        color: #0f172a;
+        font-size: 13px;
+        line-height: 1.3;
+    }
+    .cbt-maintenance-unit-meta-block ul {
+        margin: 0;
+        padding-left: 18px;
+        color: #475569;
+        line-height: 1.65;
+    }
+    .cbt-maintenance-unit-note {
+        margin-top: 16px;
+        color: #475569;
+        line-height: 1.65;
+    }
     .cbt-maintenance-card--danger {
         border-color: #f2c6c6;
         background: linear-gradient(180deg, #fffefe 0%, #fff7f7 100%);
@@ -353,6 +557,10 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
     .cbt-maintenance-chip--running {
         background: #e8f1ff;
         color: #0f4fa8;
+    }
+    .cbt-maintenance-chip--planned {
+        background: #eff6ff;
+        color: #1d4ed8;
     }
     .cbt-maintenance-chip--done {
         background: #e8f7ee;
@@ -1116,6 +1324,14 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
         .cbt-maintenance-actions--load-job .cbt-maintenance-load-job-actions {
             flex-wrap: wrap;
         }
+        .cbt-maintenance-unit-panel-head {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .cbt-maintenance-unit-summary-grid,
+        .cbt-maintenance-unit-grid {
+            grid-template-columns: 1fr;
+        }
     }
     @media (max-width: 1220px) {
         .cbt-maintenance-actions--load-primary {
@@ -1139,6 +1355,11 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
         }
         .cbt-maintenance-live-value {
             font-size: 24px;
+        }
+        .cbt-maintenance-tab,
+        .cbt-maintenance-subtab {
+            width: 100%;
+            justify-content: space-between;
         }
     }
 </style>
@@ -1467,10 +1688,6 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
                     <span class="cbt-maintenance-chip cbt-maintenance-chip--running">Test Seeder</span>
                 </div>
 
-                <div class="cbt-maintenance-alert" style="border-color:#cfe0f3;background:#f6fbff;color:#1e3a8a;">
-                    <strong>Catatan:</strong> generator membuat subject, user, Bank Soal, exam uji, dan root question yang disinkronkan ke exam. Generator tidak membuat attempt, answer, nilai, atau hasil report.
-                </div>
-
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Generator akan reset penuh CBT lalu membuat dataset uji baru. Lanjutkan?');" style="margin-top:18px;">
                     <?php wp_nonce_field('cbt_generate_test_dataset'); ?>
                     <input type="hidden" name="action" value="cbt_generate_test_dataset" />
@@ -1541,6 +1758,9 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
                         akan membuat root question di Bank Soal per mapel, lalu menyinkronkannya ke exam uji. User login dibuat dengan password default
                         <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_default_password); ?></span>.
                         Akun test khusus yang selalu dibuat: <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_username); ?></span> / <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_password); ?></span>.
+                        Short answer bulk memakai placeholder inline <span class="cbt-maintenance-inline-code">[INPUT_1]</span> sampai <span class="cbt-maintenance-inline-code">[INPUT_8]</span>, dan jumlah input selalu sama dengan jumlah jawaban yang disimpan.
+                        Rich content bulk memakai sample image internal plugin, lalu menyimpan gambar seperti import soal: prioritas ke uploads WordPress dan fallback ke base64 bila upload gagal.
+                        Tabel HTML dipakai di stem soal, dan option <code>multiple_choice</code> / <code>multiple_answer</code> bisa membawa gambar serta tabel ringkas yang compact.
                     </p>
 
                     <div class="cbt-maintenance-question-breakdown">
@@ -1553,6 +1773,21 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
                                 <?php if ((int) $question_count <= 0) { continue; } ?>
                                 <span class="cbt-maintenance-question-chip">
                                     <?php echo esc_html((string) ($seed_question_type_labels[$question_type] ?? $question_type) . ': ' . number_format_i18n((int) $question_count)); ?>
+                                </span>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                    <div class="cbt-maintenance-question-breakdown">
+                        <span class="cbt-maintenance-question-breakdown-title">Komposisi Profil Exam</span>
+                        <p class="cbt-maintenance-question-breakdown-copy" data-seed-exam-profile-summary-text>
+                            <?php echo esc_html($selected_seed_exam_profile_summary); ?>
+                        </p>
+                        <div class="cbt-maintenance-question-chip-list" id="cbt-seed-exam-profile-breakdown">
+                            <?php foreach ($selected_seed_exam_profile_counts as $profile_key => $profile_count): ?>
+                                <?php if ((int) $profile_count <= 0) { continue; } ?>
+                                <span class="cbt-maintenance-question-chip">
+                                    <?php echo esc_html((string) ($seed_exam_profile_labels[$profile_key] ?? $profile_key) . ': ' . number_format_i18n((int) $profile_count)); ?>
                                 </span>
                             <?php endforeach; ?>
                         </div>
@@ -1895,6 +2130,7 @@ k6 version</code></pre>
                 </section>
             </section>
         </div>
+
     </div>
 </div>
 <script>
@@ -1902,6 +2138,7 @@ k6 version</code></pre>
         const tabButtons = Array.prototype.slice.call(document.querySelectorAll('[data-maintenance-tab]'));
         const tabPanels = Array.prototype.slice.call(document.querySelectorAll('[data-maintenance-panel]'));
         const questionTypeLabels = <?php echo wp_json_encode($seed_question_type_labels); ?>;
+        const examProfileLabels = <?php echo wp_json_encode($seed_exam_profile_labels); ?>;
         const loadTestGlobalToken = <?php echo wp_json_encode((string) (($load_test_runtime['global_token_meta']['token'] ?? ''))); ?>;
         const syncUrl = function (tabName) {
             if (!window.history || !window.history.replaceState) {
@@ -1910,6 +2147,7 @@ k6 version</code></pre>
 
             const url = new URL(window.location.href);
             url.searchParams.set('cbt_maintenance_tab', tabName);
+            url.searchParams.delete('cbt_unit_test_tab');
             window.history.replaceState({}, '', url.toString());
         };
         const activateTab = function (tabName, shouldSyncUrl) {
@@ -1959,6 +2197,8 @@ k6 version</code></pre>
 
             const breakdownContainer = document.getElementById('cbt-seed-question-breakdown');
             const questionSummaryTextNode = document.querySelector('[data-seed-question-summary-text]');
+            const examProfileBreakdownContainer = document.getElementById('cbt-seed-exam-profile-breakdown');
+            const examProfileSummaryTextNode = document.querySelector('[data-seed-exam-profile-summary-text]');
             const updateSummary = function () {
                 const preset = presets[select.value] || presets.small || null;
                 if (!preset) {
@@ -1980,6 +2220,9 @@ k6 version</code></pre>
                 if (questionSummaryTextNode) {
                     questionSummaryTextNode.textContent = preset.question_type_summary || '';
                 }
+                if (examProfileSummaryTextNode) {
+                    examProfileSummaryTextNode.textContent = preset.exam_profile_summary || '';
+                }
 
                 if (breakdownContainer) {
                     breakdownContainer.innerHTML = '';
@@ -1994,6 +2237,22 @@ k6 version</code></pre>
                         chip.className = 'cbt-maintenance-question-chip';
                         chip.textContent = (questionTypeLabels[typeKey] || typeKey) + ': ' + (numberFormatter ? numberFormatter.format(count) : String(count));
                         breakdownContainer.appendChild(chip);
+                    });
+                }
+
+                if (examProfileBreakdownContainer) {
+                    examProfileBreakdownContainer.innerHTML = '';
+                    const profileCounts = preset.exam_profile_counts || {};
+                    Object.keys(profileCounts).forEach(function (profileKey) {
+                        const count = Number(profileCounts[profileKey] || 0);
+                        if (!count) {
+                            return;
+                        }
+
+                        const chip = document.createElement('span');
+                        chip.className = 'cbt-maintenance-question-chip';
+                        chip.textContent = (examProfileLabels[profileKey] || profileKey) + ': ' + (numberFormatter ? numberFormatter.format(count) : String(count));
+                        examProfileBreakdownContainer.appendChild(chip);
                     });
                 }
             };

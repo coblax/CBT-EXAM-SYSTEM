@@ -11,6 +11,20 @@ final class CBT_Admin_Maintenance_Service
     private const TEST_DATA_SEED_DEFAULT_PASSWORD = 'Skills39';
     private const TEST_DATA_SEED_SPECIAL_USERNAME = 'coblax';
     private const TEST_DATA_SEED_SPECIAL_PASSWORD = '223611';
+    private const TEST_DATA_SEED_SPECIAL_ADMIN_USERNAME = 'cbtadmin';
+    private const TEST_DATA_SEED_SPECIAL_ADMIN_PASSWORD = '223611';
+    private const TEST_DATA_SEED_RECOVERY_FIXTURE_TITLE = 'TEST Recovery Fixture';
+    private const TEST_DATA_SEED_SESSION_FIXTURE_TITLE = 'TEST Session Fixture';
+    private const TEST_DATA_SEED_SYNC_FIXTURE_TITLE = 'TEST Sync Fixture';
+    private const TEST_DATA_SEED_RESULT_FULL_FIXTURE_TITLE = 'TEST Result Fixture [FULL]';
+    private const TEST_DATA_SEED_RESULT_RESTRICTED_FIXTURE_TITLE = 'TEST Result Fixture [RESTRICTED]';
+    private const TEST_DATA_SEED_RESULT_ESSAY_FIXTURE_TITLE = 'TEST Result Fixture [ESSAY]';
+    private const TEST_DATA_SEED_TIMER_FIXTURE_TITLE = 'TEST Timer Fixture';
+    private const TEST_DATA_SEED_RUNTIME_FIXTURE_TITLE = 'TEST Runtime Fixture';
+    private const TEST_DATA_SEED_SECURITY_FIXTURE_TITLE = 'TEST Security Fixture';
+    private const TEST_DATA_SEED_IMPORT_PREVIEW_FIXTURE_TITLE = 'TEST Import Preview Fixture';
+    private const TEST_DATA_SEED_SAMPLE_IMAGE_DIRECTORY = 'public/images/test-data';
+    private const TEST_DATA_SEED_BULK_UPLOAD_FILE_PREFIX = 'cbt-bulk-question-';
     private const LOAD_TEST_JOBS_OPTION = 'cbt_load_test_jobs';
     private const LOAD_TEST_RUNTIME_DIRECTORY = 'cbt-load-test';
     private const LOAD_TEST_MAX_JOB_HISTORY = 24;
@@ -18,6 +32,71 @@ final class CBT_Admin_Maintenance_Service
     public static function can_manage_maintenance(): bool
     {
         return current_user_can('manage_options');
+    }
+
+    public static function get_seed_special_student_username(): string
+    {
+        return self::TEST_DATA_SEED_SPECIAL_USERNAME;
+    }
+
+    public static function get_seed_special_student_password(): string
+    {
+        return self::TEST_DATA_SEED_SPECIAL_PASSWORD;
+    }
+
+    public static function get_seed_special_admin_username(): string
+    {
+        return self::TEST_DATA_SEED_SPECIAL_ADMIN_USERNAME;
+    }
+
+    public static function get_seed_special_admin_password(): string
+    {
+        return self::TEST_DATA_SEED_SPECIAL_ADMIN_PASSWORD;
+    }
+
+    public static function get_seed_default_password(): string
+    {
+        return self::TEST_DATA_SEED_DEFAULT_PASSWORD;
+    }
+
+    public static function get_seed_recovery_fixture_exam_title(): string
+    {
+        return self::TEST_DATA_SEED_RECOVERY_FIXTURE_TITLE;
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    public static function get_seed_flow_check_fixture_exam_titles(): array
+    {
+        return [
+            'recovery_persistence' => self::TEST_DATA_SEED_RECOVERY_FIXTURE_TITLE,
+            'auth_session' => self::TEST_DATA_SEED_SESSION_FIXTURE_TITLE,
+            'sync_rest' => self::TEST_DATA_SEED_SYNC_FIXTURE_TITLE,
+            'result_full' => self::TEST_DATA_SEED_RESULT_FULL_FIXTURE_TITLE,
+            'result_restricted' => self::TEST_DATA_SEED_RESULT_RESTRICTED_FIXTURE_TITLE,
+            'result_essay' => self::TEST_DATA_SEED_RESULT_ESSAY_FIXTURE_TITLE,
+            'timer_lifecycle' => self::TEST_DATA_SEED_TIMER_FIXTURE_TITLE,
+            'question_runtime' => self::TEST_DATA_SEED_RUNTIME_FIXTURE_TITLE,
+            'security_log_observability' => self::TEST_DATA_SEED_SECURITY_FIXTURE_TITLE,
+            'import_preview' => self::TEST_DATA_SEED_IMPORT_PREVIEW_FIXTURE_TITLE,
+        ];
+    }
+
+    public static function get_seed_fixture_exam_title(string $fixture_key): string
+    {
+        $definitions = self::get_seed_flow_check_fixture_exam_titles();
+        $normalized = sanitize_key($fixture_key);
+
+        return isset($definitions[$normalized]) ? (string) $definitions[$normalized] : '';
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function allowed_maintenance_tabs(): array
+    {
+        return ['reset', 'seed', 'load'];
     }
 
     /**
@@ -165,17 +244,31 @@ final class CBT_Admin_Maintenance_Service
             : 'Belum ada generator aktif';
         $seed_progress_stage_preview = $seed_progress_phase_label !== '' ? $seed_progress_phase_label : 'Belum ada proses aktif';
         $seed_question_type_labels = self::get_test_data_seed_question_type_labels();
+        $seed_exam_profile_labels = self::get_test_data_seed_exam_profile_labels();
         $seed_presets_view = [];
         foreach ($seed_presets as $preset_key => $preset_meta) {
+            $exam_profile_counts = self::get_test_data_seed_exam_profile_counts(
+                $preset_key,
+                (int) ($preset_meta['exams'] ?? 0)
+            );
+            $preset_meta['exam_profile_counts'] = $exam_profile_counts;
+            $preset_meta['exam_profile_summary'] = self::format_test_data_seed_exam_profile_summary($exam_profile_counts);
             $question_type_counts = self::get_test_data_seed_question_type_counts(
                 $preset_key,
-                (int) ($preset_meta['questions'] ?? 0)
+                (int) ($preset_meta['questions'] ?? 0),
+                (int) ($preset_meta['exams'] ?? 0)
             );
             $preset_meta['question_type_counts'] = $question_type_counts;
             $preset_meta['question_type_summary'] = self::format_test_data_seed_question_type_summary($question_type_counts);
             $seed_presets_view[$preset_key] = $preset_meta;
         }
         $selected_seed_preset_data = $seed_presets_view[$selected_seed_preset];
+        $selected_seed_exam_profile_counts = isset($selected_seed_preset_data['exam_profile_counts']) && is_array($selected_seed_preset_data['exam_profile_counts'])
+            ? (array) $selected_seed_preset_data['exam_profile_counts']
+            : [];
+        $selected_seed_exam_profile_summary = isset($selected_seed_preset_data['exam_profile_summary'])
+            ? (string) $selected_seed_preset_data['exam_profile_summary']
+            : self::format_test_data_seed_exam_profile_summary($selected_seed_exam_profile_counts);
         $selected_seed_question_type_counts = isset($selected_seed_preset_data['question_type_counts']) && is_array($selected_seed_preset_data['question_type_counts'])
             ? (array) $selected_seed_preset_data['question_type_counts']
             : [];
@@ -225,7 +318,7 @@ final class CBT_Admin_Maintenance_Service
         $requested_maintenance_tab = isset($query['cbt_maintenance_tab'])
             ? sanitize_key((string) wp_unslash((string) $query['cbt_maintenance_tab']))
             : '';
-        $allowed_maintenance_tabs = ['reset', 'seed', 'load'];
+        $allowed_maintenance_tabs = self::allowed_maintenance_tabs();
         $active_maintenance_tab = in_array($requested_maintenance_tab, $allowed_maintenance_tabs, true)
             ? $requested_maintenance_tab
             : '';
@@ -281,8 +374,11 @@ final class CBT_Admin_Maintenance_Service
             'seed_progress_summary_label' => $seed_progress_summary_label,
             'seed_progress_stage_preview' => $seed_progress_stage_preview,
             'seed_question_type_labels' => $seed_question_type_labels,
+            'seed_exam_profile_labels' => $seed_exam_profile_labels,
             'seed_presets_json' => $seed_presets_json,
             'selected_seed_preset_data' => $selected_seed_preset_data,
+            'selected_seed_exam_profile_counts' => $selected_seed_exam_profile_counts,
+            'selected_seed_exam_profile_summary' => $selected_seed_exam_profile_summary,
             'selected_seed_question_type_counts' => $selected_seed_question_type_counts,
             'selected_seed_question_type_summary' => $selected_seed_question_type_summary,
             'load_test_runtime' => $load_test_runtime,
@@ -626,6 +722,9 @@ final class CBT_Admin_Maintenance_Service
             'seed_bank_exam_created_count' => 0,
             'seed_bank_exam_failed_count' => 0,
             'bank_exams' => [],
+            'seed_bulk_upload_cleanup_done' => 0,
+            'seed_bulk_upload_cleanup_count' => 0,
+            'bulk_image_source_map' => [],
             'seed_user_offset' => 0,
             'seed_user_created_count' => 0,
             'seed_user_updated_count' => 0,
@@ -703,6 +802,11 @@ final class CBT_Admin_Maintenance_Service
         $seed_bank_exam_created_count = max(0, (int) ($state['seed_bank_exam_created_count'] ?? 0));
         $seed_bank_exam_failed_count = max(0, (int) ($state['seed_bank_exam_failed_count'] ?? 0));
         $bank_exams = isset($state['bank_exams']) && is_array($state['bank_exams']) ? (array) $state['bank_exams'] : [];
+        $seed_bulk_upload_cleanup_done = !empty($state['seed_bulk_upload_cleanup_done']) ? 1 : 0;
+        $seed_bulk_upload_cleanup_count = max(0, (int) ($state['seed_bulk_upload_cleanup_count'] ?? 0));
+        $bulk_image_source_map = isset($state['bulk_image_source_map']) && is_array($state['bulk_image_source_map'])
+            ? (array) $state['bulk_image_source_map']
+            : [];
         $seed_user_total = (int) ($preset['teachers'] ?? 0) + (int) ($preset['students'] ?? 0);
         $seed_user_offset = max(0, min($seed_user_total, (int) ($state['seed_user_offset'] ?? 0)));
         $seed_user_created_count = max(0, (int) ($state['seed_user_created_count'] ?? 0));
@@ -756,6 +860,11 @@ final class CBT_Admin_Maintenance_Service
         $batch_started_at = microtime(true);
 
         global $wpdb;
+
+        if (!$seed_bulk_upload_cleanup_done) {
+            $seed_bulk_upload_cleanup_count = self::cleanup_test_data_seed_bulk_upload_files();
+            $seed_bulk_upload_cleanup_done = 1;
+        }
 
         if ($phase === 'reset_tables') {
             if (empty($state['foreign_keys_disabled'])) {
@@ -854,6 +963,7 @@ final class CBT_Admin_Maintenance_Service
                         'id' => $subject_id,
                         'name' => (string) ($upserted_subject['name'] ?? $subject_entry['name']),
                         'code' => (string) ($upserted_subject['code'] ?? $subject_entry['code']),
+                        'image_bucket' => sanitize_key((string) ($subject_entry['image_bucket'] ?? self::build_test_data_seed_subject_image_bucket($seed_subject_offset))),
                     ];
                     if ($subject_status === 'updated') {
                         $seed_subject_updated_count++;
@@ -998,14 +1108,19 @@ final class CBT_Admin_Maintenance_Service
             $exam_batch_size = self::get_test_data_seed_batch_size('exams');
             $processed_exams_this_round = 0;
             $creator_id = isset($state['user_id']) ? (int) $state['user_id'] : get_current_user_id();
+            $exam_profiles = self::build_test_data_seed_exam_profiles((string) ($state['preset_key'] ?? 'small'), $exam_total);
 
             while ($seed_exam_offset < $exam_total && $processed_exams_this_round < $exam_batch_size) {
+                $exam_profile = isset($exam_profiles[$seed_exam_offset]) && is_array($exam_profiles[$seed_exam_offset])
+                    ? (array) $exam_profiles[$seed_exam_offset]
+                    : self::build_test_data_seed_exam_profile_definition('mixed');
                 $exam_entry = self::build_test_data_seed_exam_entry(
                     $seed_exam_offset,
                     $subjects,
                     $kelas_codes,
                     (string) ($state['preset_key'] ?? 'small'),
-                    $creator_id
+                    $creator_id,
+                    $exam_profile
                 );
                 $upserted_exam = self::upsert_test_data_seed_exam($exam_entry);
                 $exam_id = (int) ($upserted_exam['id'] ?? 0);
@@ -1018,6 +1133,10 @@ final class CBT_Admin_Maintenance_Service
                         'subject_name' => (string) ($upserted_exam['subject_name'] ?? ($exam_entry['subject_name'] ?? '')),
                         'title' => (string) ($upserted_exam['title'] ?? ($exam_entry['title'] ?? '')),
                         'target_kelas' => (string) ($upserted_exam['target_kelas'] ?? ($exam_entry['target_kelas'] ?? '')),
+                        'seed_profile' => (string) ($exam_entry['seed_profile'] ?? 'mixed'),
+                        'seed_profile_label' => (string) ($exam_entry['seed_profile_label'] ?? 'MIXED'),
+                        'seed_profile_question_type' => (string) ($exam_entry['seed_profile_question_type'] ?? ''),
+                        'seed_image_bucket' => (string) ($exam_entry['seed_image_bucket'] ?? ''),
                     ];
                     if ($exam_status === 'updated') {
                         $seed_exam_updated_count++;
@@ -1061,7 +1180,8 @@ final class CBT_Admin_Maintenance_Service
                     $seed_bank_question_offset,
                     $exams,
                     $bank_exams,
-                    (string) ($state['preset_key'] ?? 'small')
+                    (string) ($state['preset_key'] ?? 'small'),
+                    $bulk_image_source_map
                 );
 
                 try {
@@ -1181,6 +1301,9 @@ final class CBT_Admin_Maintenance_Service
         $state['seed_bank_exam_created_count'] = $seed_bank_exam_created_count;
         $state['seed_bank_exam_failed_count'] = $seed_bank_exam_failed_count;
         $state['bank_exams'] = $bank_exams;
+        $state['seed_bulk_upload_cleanup_done'] = $seed_bulk_upload_cleanup_done;
+        $state['seed_bulk_upload_cleanup_count'] = $seed_bulk_upload_cleanup_count;
+        $state['bulk_image_source_map'] = $bulk_image_source_map;
         $state['seed_user_offset'] = $seed_user_offset;
         $state['seed_user_created_count'] = $seed_user_created_count;
         $state['seed_user_updated_count'] = $seed_user_updated_count;
@@ -1278,11 +1401,11 @@ final class CBT_Admin_Maintenance_Service
             $requested_tab = isset($_REQUEST['cbt_maintenance_tab'])
                 ? sanitize_key((string) wp_unslash($_REQUEST['cbt_maintenance_tab']))
                 : '';
-            if (in_array($requested_tab, ['reset', 'seed', 'load'], true)) {
+            if (in_array($requested_tab, self::allowed_maintenance_tabs(), true)) {
                 $tab = $requested_tab;
             }
         }
-        if ($tab !== null && $tab !== '' && in_array($tab, ['reset', 'seed', 'load'], true)) {
+        if ($tab !== null && $tab !== '' && in_array($tab, self::allowed_maintenance_tabs(), true)) {
             $args['cbt_maintenance_tab'] = $tab;
         }
         if ($message !== null && $message !== '') {
@@ -1414,13 +1537,13 @@ final class CBT_Admin_Maintenance_Service
             'small' => [
                 'label' => 'Small',
                 'subjects' => 5,
-                'exams' => 10,
+                'exams' => 17,
                 'questions' => 200,
                 'students' => 60,
                 'teachers' => 6,
                 'classes' => 6,
                 'rooms' => 3,
-                'include_true_false_matrix' => false,
+                'include_true_false_matrix' => true,
             ],
             'medium' => [
                 'label' => 'Medium',
@@ -1484,9 +1607,888 @@ final class CBT_Admin_Maintenance_Service
     }
 
     /**
+     * @return array<string,array{profile:string,label:string,suffix:string,question_type:string}>
+     */
+    private static function get_test_data_seed_exam_profile_definitions(): array
+    {
+        return [
+            'multiple_choice' => [
+                'profile' => 'multiple_choice_only',
+                'label' => 'MC ONLY',
+                'suffix' => '[MC ONLY]',
+                'question_type' => 'multiple_choice',
+            ],
+            'multiple_answer' => [
+                'profile' => 'multiple_answer_only',
+                'label' => 'MULTI ANSWER ONLY',
+                'suffix' => '[MULTI ANSWER ONLY]',
+                'question_type' => 'multiple_answer',
+            ],
+            'true_false' => [
+                'profile' => 'true_false_only',
+                'label' => 'TRUE FALSE ONLY',
+                'suffix' => '[TRUE FALSE ONLY]',
+                'question_type' => 'true_false',
+            ],
+            'true_false_matrix' => [
+                'profile' => 'true_false_matrix_only',
+                'label' => 'TF MATRIX ONLY',
+                'suffix' => '[TF MATRIX ONLY]',
+                'question_type' => 'true_false_matrix',
+            ],
+            'short_answer' => [
+                'profile' => 'short_answer_only',
+                'label' => 'SHORT ANSWER ONLY',
+                'suffix' => '[SHORT ANSWER ONLY]',
+                'question_type' => 'short_answer',
+            ],
+            'essay' => [
+                'profile' => 'essay_only',
+                'label' => 'ESSAY ONLY',
+                'suffix' => '[ESSAY ONLY]',
+                'question_type' => 'essay',
+            ],
+            'mixed' => [
+                'profile' => 'mixed',
+                'label' => 'MIXED',
+                'suffix' => '[MIXED]',
+                'question_type' => '',
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private static function get_test_data_seed_exam_profile_labels(): array
+    {
+        $definitions = self::get_test_data_seed_exam_profile_definitions();
+        $labels = [];
+        foreach ($definitions as $definition) {
+            $profile_key = sanitize_key((string) ($definition['profile'] ?? ''));
+            if ($profile_key === '') {
+                continue;
+            }
+            $labels[$profile_key] = (string) ($definition['label'] ?? strtoupper(str_replace('_', ' ', $profile_key)));
+        }
+
+        return $labels;
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function get_test_data_seed_image_bucket_keys(): array
+    {
+        return [
+            'biology',
+            'chemistry',
+            'computer_science',
+            'economics',
+            'engineering',
+            'geography',
+            'history',
+            'mathematics',
+            'music',
+            'physics',
+        ];
+    }
+
+    private static function build_test_data_seed_subject_image_bucket(int $offset): string
+    {
+        $buckets = self::get_test_data_seed_image_bucket_keys();
+        if (empty($buckets)) {
+            return 'mathematics';
+        }
+
+        return (string) $buckets[$offset % count($buckets)];
+    }
+
+    private static function format_test_data_seed_image_bucket_label(string $bucket): string
+    {
+        $bucket = sanitize_key($bucket);
+        if ($bucket === '') {
+            return 'General';
+        }
+
+        return ucwords(str_replace('_', ' ', $bucket));
+    }
+
+    /**
+     * @return array<string,array<int,string>>
+     */
+    private static function get_test_data_seed_sample_images(): array
+    {
+        static $cache = null;
+
+        if (is_array($cache)) {
+            return $cache;
+        }
+
+        $cache = [];
+        $base_dir = trailingslashit(CBT_EXAM_SYSTEM_PATH . self::TEST_DATA_SEED_SAMPLE_IMAGE_DIRECTORY);
+        $extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
+
+        foreach (self::get_test_data_seed_image_bucket_keys() as $bucket) {
+            $bucket_dir = $base_dir . $bucket;
+            $files = [];
+            if (is_dir($bucket_dir)) {
+                foreach ($extensions as $extension) {
+                    $matches = glob($bucket_dir . '/*.' . $extension);
+                    if (is_array($matches) && !empty($matches)) {
+                        $files = array_merge($files, $matches);
+                    }
+                }
+            }
+
+            $files = array_values(array_unique(array_filter(array_map('strval', $files))));
+            usort($files, [self::class, 'compare_test_data_seed_asset_paths']);
+            $cache[$bucket] = $files;
+        }
+
+        return $cache;
+    }
+
+    private static function compare_test_data_seed_asset_paths(string $left, string $right): int
+    {
+        $left_name = (string) pathinfo($left, PATHINFO_FILENAME);
+        $right_name = (string) pathinfo($right, PATHINFO_FILENAME);
+        $left_match = [];
+        $right_match = [];
+        $left_index = preg_match('/(\d+)$/', $left_name, $left_match) === 1 ? (int) $left_match[1] : PHP_INT_MAX;
+        $right_index = preg_match('/(\d+)$/', $right_name, $right_match) === 1 ? (int) $right_match[1] : PHP_INT_MAX;
+
+        if ($left_index === $right_index) {
+            return strnatcasecmp($left_name, $right_name);
+        }
+
+        return $left_index <=> $right_index;
+    }
+
+    private static function resolve_test_data_seed_sample_image_path(string $bucket, int $position): string
+    {
+        $images = self::get_test_data_seed_sample_images();
+        $bucket = sanitize_key($bucket);
+        $candidate_list = isset($images[$bucket]) && is_array($images[$bucket]) ? array_values($images[$bucket]) : [];
+
+        if (empty($candidate_list)) {
+            foreach ($images as $fallback_list) {
+                if (is_array($fallback_list) && !empty($fallback_list)) {
+                    $candidate_list = array_values($fallback_list);
+                    break;
+                }
+            }
+        }
+
+        if (empty($candidate_list)) {
+            return '';
+        }
+
+        $index = $position > 0 ? (($position - 1) % count($candidate_list)) : 0;
+
+        return (string) ($candidate_list[$index] ?? '');
+    }
+
+    private static function resolve_test_data_seed_sample_image_src(string $bucket, int $position, array &$source_map): string
+    {
+        $asset_path = self::resolve_test_data_seed_sample_image_path($bucket, $position);
+        if ($asset_path === '' || !is_string($asset_path)) {
+            return '';
+        }
+
+        $asset_key = str_replace('\\', '/', str_replace(CBT_EXAM_SYSTEM_PATH, '', $asset_path));
+        $asset_key = ltrim($asset_key, '/');
+        if ($asset_key !== '' && isset($source_map[$asset_key]) && is_string($source_map[$asset_key])) {
+            return (string) $source_map[$asset_key];
+        }
+
+        $binary = @file_get_contents($asset_path);
+        if (!is_string($binary) || $binary === '') {
+            return '';
+        }
+
+        $src = self::store_test_data_seed_image_and_get_url($binary, basename($asset_path));
+        if ($src !== '' && $asset_key !== '') {
+            $source_map[$asset_key] = $src;
+        }
+
+        return $src;
+    }
+
+    private static function store_test_data_seed_image_and_get_url(string $binary, string $filename): string
+    {
+        if ($binary === '') {
+            return '';
+        }
+
+        $ext = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
+        if ($ext === '') {
+            $ext = 'png';
+        }
+
+        $safe_ext = preg_replace('/[^a-z0-9]/', '', $ext);
+        if ($safe_ext === '') {
+            $safe_ext = 'png';
+        }
+
+        $upload_name = self::TEST_DATA_SEED_BULK_UPLOAD_FILE_PREFIX . wp_generate_password(10, false, false) . '.' . $safe_ext;
+        $upload = wp_upload_bits($upload_name, null, $binary);
+        if (is_array($upload) && empty($upload['error']) && !empty($upload['url'])) {
+            return esc_url_raw((string) $upload['url']);
+        }
+
+        $mime = self::guess_test_data_seed_image_mime_from_extension($safe_ext);
+
+        return 'data:' . $mime . ';base64,' . base64_encode($binary);
+    }
+
+    private static function guess_test_data_seed_image_mime_from_extension(string $ext): string
+    {
+        switch (strtolower($ext)) {
+            case 'jpg':
+            case 'jpeg':
+                return 'image/jpeg';
+            case 'gif':
+                return 'image/gif';
+            case 'webp':
+                return 'image/webp';
+            case 'bmp':
+                return 'image/bmp';
+            case 'svg':
+                return 'image/svg+xml';
+            case 'png':
+            default:
+                return 'image/png';
+        }
+    }
+
+    private static function cleanup_test_data_seed_bulk_upload_files(): int
+    {
+        $upload_dir = wp_upload_dir();
+        $base_dir = isset($upload_dir['basedir']) ? (string) $upload_dir['basedir'] : '';
+        if ($base_dir === '' || !is_dir($base_dir)) {
+            return 0;
+        }
+
+        $deleted_count = 0;
+        $flags = FilesystemIterator::SKIP_DOTS | FilesystemIterator::CURRENT_AS_FILEINFO;
+
+        try {
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($base_dir, $flags),
+                RecursiveIteratorIterator::LEAVES_ONLY
+            );
+        } catch (Throwable $exception) {
+            return 0;
+        }
+
+        foreach ($iterator as $file_info) {
+            if (!$file_info instanceof SplFileInfo || !$file_info->isFile()) {
+                continue;
+            }
+
+            $basename = $file_info->getBasename();
+            if (strpos($basename, self::TEST_DATA_SEED_BULK_UPLOAD_FILE_PREFIX) !== 0) {
+                continue;
+            }
+
+            $path = $file_info->getPathname();
+            if ($path !== '' && @unlink($path)) {
+                $deleted_count++;
+            }
+        }
+
+        return $deleted_count;
+    }
+
+    /**
+     * @return array{key:string,stem_image:bool,stem_table:bool,option_image:bool}
+     */
+    private static function resolve_test_data_seed_rich_profile(string $question_type, int $question_number): array
+    {
+        $question_type = sanitize_key($question_type);
+        $slot = max(0, (($question_number - 1) % 6));
+        if ($question_type === 'multiple_choice') {
+            switch ($slot) {
+                case 2:
+                case 3:
+                case 5:
+                    return ['key' => 'stem_image_table', 'stem_image' => true, 'stem_table' => true, 'option_image' => false];
+                case 4:
+                    return ['key' => 'stem_image_option_image', 'stem_image' => true, 'stem_table' => false, 'option_image' => true];
+                case 0:
+                case 1:
+                default:
+                    return ['key' => 'stem_image', 'stem_image' => true, 'stem_table' => false, 'option_image' => false];
+            }
+        }
+
+        $supports_option_image = ($question_type === 'multiple_answer');
+
+        if ($supports_option_image) {
+            switch ($slot) {
+                case 1:
+                    return ['key' => 'stem_image', 'stem_image' => true, 'stem_table' => false, 'option_image' => false];
+                case 2:
+                    return ['key' => 'stem_table', 'stem_image' => false, 'stem_table' => true, 'option_image' => false];
+                case 3:
+                    return ['key' => 'stem_image_table', 'stem_image' => true, 'stem_table' => true, 'option_image' => false];
+                case 4:
+                    return ['key' => 'option_image', 'stem_image' => false, 'stem_table' => false, 'option_image' => true];
+                case 5:
+                    return ['key' => 'stem_image_table', 'stem_image' => true, 'stem_table' => true, 'option_image' => false];
+                case 0:
+                default:
+                    return ['key' => 'plain', 'stem_image' => false, 'stem_table' => false, 'option_image' => false];
+            }
+        }
+
+        switch ($slot) {
+            case 1:
+                return ['key' => 'stem_image', 'stem_image' => true, 'stem_table' => false, 'option_image' => false];
+            case 2:
+                return ['key' => 'stem_table', 'stem_image' => false, 'stem_table' => true, 'option_image' => false];
+            case 3:
+                return ['key' => 'stem_image_table', 'stem_image' => true, 'stem_table' => true, 'option_image' => false];
+            case 4:
+                return ['key' => 'stem_image', 'stem_image' => true, 'stem_table' => false, 'option_image' => false];
+            case 5:
+                return ['key' => 'stem_table', 'stem_image' => false, 'stem_table' => true, 'option_image' => false];
+            case 0:
+            default:
+                return ['key' => 'plain', 'stem_image' => false, 'stem_table' => false, 'option_image' => false];
+        }
+    }
+
+    private static function build_test_data_seed_stem_paragraph_html(string $text): string
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return '';
+        }
+
+        return trim((string) wpautop(esc_html($text)));
+    }
+
+    private static function build_test_data_seed_rich_image_html(string $src, string $alt, string $caption = ''): string
+    {
+        $src = trim($src);
+        if ($src === '') {
+            return '';
+        }
+
+        $caption_markup = $caption !== ''
+            ? '<figcaption class="cbt-rich-image-caption">' . esc_html($caption) . '</figcaption>'
+            : '';
+
+        return '<figure class="cbt-rich-image-figure">'
+            . '<img class="cbt-rich-image" src="' . esc_attr($src) . '" alt="' . esc_attr($alt) . '" loading="lazy" decoding="async" />'
+            . $caption_markup
+            . '</figure>';
+    }
+
+    private static function wrap_test_data_seed_rich_table(string $table_html): string
+    {
+        $table_html = trim($table_html);
+        if ($table_html === '') {
+            return '';
+        }
+
+        return '<div class="cbt-rich-table-wrap">' . $table_html . '</div>';
+    }
+
+    /**
+     * @param string[] $headers
+     * @param array<int,array<int|string>> $rows
+     */
+    private static function build_test_data_seed_html_table(array $headers, array $rows, string $caption = ''): string
+    {
+        if (empty($headers) || empty($rows)) {
+            return '';
+        }
+
+        $head_cells = '';
+        foreach ($headers as $header) {
+            $head_cells .= '<th scope="col">' . esc_html((string) $header) . '</th>';
+        }
+
+        $body_rows = '';
+        foreach ($rows as $row) {
+            if (!is_array($row) || empty($row)) {
+                continue;
+            }
+
+            $body_cells = '';
+            foreach ($row as $cell) {
+                $body_cells .= '<td>' . esc_html((string) $cell) . '</td>';
+            }
+
+            if ($body_cells !== '') {
+                $body_rows .= '<tr>' . $body_cells . '</tr>';
+            }
+        }
+
+        if ($body_rows === '') {
+            return '';
+        }
+
+        $caption_markup = $caption !== ''
+            ? '<caption>' . esc_html($caption) . '</caption>'
+            : '';
+
+        return '<table class="cbt-rich-content-table">'
+            . $caption_markup
+            . '<thead><tr>' . $head_cells . '</tr></thead>'
+            . '<tbody>' . $body_rows . '</tbody>'
+            . '</table>';
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function build_test_data_seed_rich_table_html(
+        string $question_type,
+        int $question_number,
+        string $subject_name,
+        array $context = []
+    ): string {
+        $headers = ['Keterangan', 'Nilai'];
+        $rows = [];
+        $caption = 'Data pendukung soal uji.';
+
+        switch (sanitize_key($question_type)) {
+            case 'multiple_choice':
+                $rows = [
+                    ['Bilangan pertama', (string) ($context['left'] ?? (($question_number % 37) + 13))],
+                    ['Bilangan kedua', (string) ($context['right'] ?? (($question_number % 10) + 3))],
+                    ['Operasi', 'Penjumlahan'],
+                ];
+                $caption = 'Perhatikan data penjumlahan berikut.';
+                break;
+
+            case 'multiple_answer':
+                $rows = [
+                    ['Bilangan dasar', (string) ($context['base'] ?? (($question_number % 12) + 2))],
+                    ['Instruksi', 'Pilih semua kelipatan yang tepat'],
+                    ['Jumlah opsi', (string) ($context['option_count'] ?? 4)],
+                ];
+                $caption = 'Gunakan data dasar berikut untuk menyeleksi kelipatan.';
+                break;
+
+            case 'true_false':
+                $rows = [
+                    ['Angka pertama', (string) ($context['left'] ?? (($question_number % 21) + 9))],
+                    ['Angka kedua', (string) ($context['right'] ?? (($question_number % 8) + 3))],
+                    ['Nilai klaim', (string) ($context['claim'] ?? (($question_number % 21) + 12))],
+                ];
+                $caption = 'Bandingkan data berikut dengan pernyataan pada soal.';
+                break;
+
+            case 'true_false_matrix':
+                $rows = [
+                    ['Bilangan dasar', (string) ($context['base'] ?? (($question_number % 17) + 6))],
+                    ['Fokus evaluasi', 'Positif, penjumlahan, dan perkalian'],
+                    ['Jenis jawaban', 'Benar atau Salah'],
+                ];
+                $caption = 'Gunakan konteks berikut untuk menilai setiap pernyataan.';
+                break;
+
+            case 'short_answer':
+                $rows = [
+                    ['Mapel', $subject_name],
+                    ['Jumlah isian', (string) ($context['input_count'] ?? ((($question_number - 1) % 8) + 1))],
+                    ['Format jawaban', 'Isian singkat berurutan'],
+                ];
+                $caption = 'Isi semua kotak sesuai urutan data pendukung berikut.';
+                break;
+
+            case 'essay':
+                $rows = [
+                    ['Topik', $subject_name],
+                    ['Fokus', 'Konsep utama dan langkah kerja'],
+                    ['Output', 'Penjelasan runtut dan kesimpulan'],
+                ];
+                $caption = 'Gunakan poin konteks berikut untuk menyusun jawaban essay.';
+                break;
+        }
+
+        return self::wrap_test_data_seed_rich_table(
+            self::build_test_data_seed_html_table($headers, $rows, $caption)
+        );
+    }
+
+    private static function build_test_data_seed_rich_option_table_html(
+        string $question_type,
+        string $option_key,
+        string $option_text,
+        int $question_number
+    ): string {
+        $rows = [];
+        if (sanitize_key($question_type) === 'multiple_answer') {
+            $rows = [
+                ['Key', $option_key],
+                ['Angka', $option_text],
+                ['Cek', 'Kelipatan kandidat'],
+            ];
+        } else {
+            $rows = [
+                ['Key', $option_key],
+                ['Nilai', $option_text],
+                ['Soal', 'No. ' . $question_number],
+            ];
+        }
+
+        return '<div class="cbt-rich-table-wrap cbt-rich-table-wrap--compact">'
+            . self::build_test_data_seed_html_table(
+                ['Field', 'Isi'],
+                $rows,
+                ''
+            )
+            . '</div>';
+    }
+
+    private static function build_test_data_seed_rich_option_html(
+        string $option_text,
+        string $src,
+        string $headline,
+        string $caption = '',
+        string $table_html = ''
+    ): string {
+        $media_markup = $src !== ''
+            ? '<span class="cbt-rich-option-media"><img src="' . esc_attr($src) . '" alt="' . esc_attr($headline) . '" loading="lazy" decoding="async" /></span>'
+            : '';
+        $caption_markup = $caption !== ''
+            ? '<span class="cbt-rich-option-caption">' . esc_html($caption) . '</span>'
+            : '';
+        $table_markup = trim($table_html) !== ''
+            ? $table_html
+            : '';
+
+        return '<div class="cbt-rich-option-card">'
+            . $media_markup
+            . '<span class="cbt-rich-option-copy">'
+            . '<span class="cbt-rich-option-title">' . esc_html($headline) . '</span>'
+            . '<span class="cbt-rich-option-text">' . esc_html($option_text) . '</span>'
+            . $table_markup
+            . $caption_markup
+            . '</span>'
+            . '</div>';
+    }
+
+    /**
+     * @param string[] $plain_options
+     * @param string[] $correct_keys
+     * @param array<string,string> $source_map
+     */
+    private static function build_test_data_seed_rich_option_payload(
+        array $plain_options,
+        array $correct_keys,
+        string $question_type,
+        string $image_bucket,
+        int $question_number,
+        bool $include_images,
+        array &$source_map
+    ): string {
+        if (empty($plain_options)) {
+            return '';
+        }
+
+        $entries = [];
+        foreach (array_values($plain_options) as $idx => $plain_option) {
+            $option_key = chr(65 + $idx);
+            $src = $include_images
+                ? self::resolve_test_data_seed_sample_image_src($image_bucket, $question_number + $idx + 1, $source_map)
+                : '';
+            $table_html = self::build_test_data_seed_rich_option_table_html(
+                $question_type,
+                $option_key,
+                (string) $plain_option,
+                $question_number
+            );
+            $entries[] = [
+                'option_text' => self::build_test_data_seed_rich_option_html(
+                    (string) $plain_option,
+                    $src,
+                    sprintf('Pilihan %s', $option_key),
+                    $question_type === 'multiple_answer'
+                        ? 'Periksa apakah opsi ini memenuhi semua syarat soal.'
+                        : 'Gunakan data mini berikut untuk membaca pilihan jawaban.',
+                    $table_html
+                ),
+                'is_correct' => in_array($option_key, $correct_keys, true) ? 1 : 0,
+            ];
+        }
+
+        $encoded = wp_json_encode($entries);
+
+        return is_string($encoded) ? $encoded : '';
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @param array{key:string,stem_image:bool,stem_table:bool,option_image:bool} $rich_profile
+     * @param array<string,mixed> $context
+     * @param array<string,string> $source_map
+     * @return array<string,mixed>
+     */
+    private static function decorate_test_data_seed_question_row_with_rich_content(
+        array $row,
+        int $question_number,
+        string $subject_name,
+        string $image_bucket,
+        array $rich_profile,
+        array $context,
+        array &$source_map
+    ): array {
+        $question_type = sanitize_key((string) ($row['question_type'] ?? ''));
+        $has_stem_image = !empty($rich_profile['stem_image']);
+        $has_stem_table = !empty($rich_profile['stem_table']);
+        $supports_rich_options = in_array($question_type, ['multiple_choice', 'multiple_answer'], true);
+        $has_option_image = !empty($rich_profile['option_image']) && $supports_rich_options;
+
+        if (!$has_stem_image && !$has_stem_table && !$supports_rich_options) {
+            return $row;
+        }
+
+        $bucket = sanitize_key($image_bucket);
+        if ($bucket === '') {
+            $bucket = 'mathematics';
+        }
+
+        if ($has_stem_image || $has_stem_table) {
+            $stem_parts = [];
+            if ($has_stem_image) {
+                $image_src = self::resolve_test_data_seed_sample_image_src($bucket, $question_number, $source_map);
+                $image_markup = self::build_test_data_seed_rich_image_html(
+                    $image_src,
+                    sprintf('Ilustrasi %s soal %03d', $subject_name, $question_number),
+                    'Ilustrasi ' . self::format_test_data_seed_image_bucket_label($bucket)
+                );
+                if ($image_markup !== '') {
+                    $stem_parts[] = $image_markup;
+                }
+            }
+
+            $stem_parts[] = self::build_test_data_seed_stem_paragraph_html((string) ($row['question_text'] ?? ''));
+
+            if ($has_stem_table) {
+                $table_markup = self::build_test_data_seed_rich_table_html(
+                    $question_type,
+                    $question_number,
+                    $subject_name,
+                    $context
+                );
+                if ($table_markup !== '') {
+                    $stem_parts[] = $table_markup;
+                }
+            }
+
+            $row['question_text'] = implode('', array_values(array_filter($stem_parts, static function ($part): bool {
+                return is_string($part) && trim($part) !== '';
+            })));
+        }
+
+        if ($supports_rich_options) {
+            $plain_options = isset($context['plain_options']) && is_array($context['plain_options'])
+                ? array_values(array_map('strval', (array) $context['plain_options']))
+                : [];
+            $correct_keys = isset($context['correct_keys']) && is_array($context['correct_keys'])
+                ? array_values(array_map('strval', (array) $context['correct_keys']))
+                : [];
+
+            $options_payload = self::build_test_data_seed_rich_option_payload(
+                $plain_options,
+                $correct_keys,
+                $question_type,
+                $bucket,
+                $question_number,
+                $has_option_image,
+                $source_map
+            );
+
+            if ($options_payload !== '') {
+                $row['options_payload'] = $options_payload;
+            }
+        }
+
+        return $row;
+    }
+
+    /**
+     * @return array{profile:string,label:string,suffix:string,question_type:string}
+     */
+    private static function build_test_data_seed_exam_profile_definition(string $definition_key): array
+    {
+        $definitions = self::get_test_data_seed_exam_profile_definitions();
+        if (isset($definitions[$definition_key]) && is_array($definitions[$definition_key])) {
+            return $definitions[$definition_key];
+        }
+
+        return $definitions['mixed'];
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function get_test_data_seed_active_full_question_types(string $preset_key): array
+    {
+        $types = [
+            'multiple_choice',
+            'multiple_answer',
+            'true_false',
+        ];
+
+        if (self::preset_supports_test_data_seed_true_false_matrix($preset_key)) {
+            $types[] = 'true_false_matrix';
+        }
+
+        $types[] = 'short_answer';
+        $types[] = 'essay';
+
+        return $types;
+    }
+
+    private static function preset_supports_test_data_seed_true_false_matrix(string $preset_key): bool
+    {
+        $presets = self::test_data_seed_presets();
+        if (!isset($presets[$preset_key]) || !is_array($presets[$preset_key])) {
+            return false;
+        }
+
+        return !empty($presets[$preset_key]['include_true_false_matrix']);
+    }
+
+    private static function get_test_data_seed_full_exam_repeat_count(string $preset_key): int
+    {
+        return $preset_key === 'large' ? 2 : 1;
+    }
+
+    /**
+     * @return array<int,array{profile:string,label:string,suffix:string,question_type:string}>
+     */
+    private static function build_test_data_seed_fixed_exam_profiles(): array
+    {
+        $profiles = [];
+        foreach (self::get_test_data_seed_fixed_exam_fixture_definitions('') as $fixture_definition) {
+            if (!is_array($fixture_definition)) {
+                continue;
+            }
+
+            $profile = sanitize_key((string) ($fixture_definition['seed_profile'] ?? ''));
+            if ($profile === '') {
+                $profile = 'fixed_fixture';
+            }
+
+            $label = sanitize_text_field((string) ($fixture_definition['seed_profile_label'] ?? strtoupper(str_replace('_', ' ', $profile))));
+            $suffix = '[' . $label . ']';
+            $profiles[] = [
+                'profile' => $profile,
+                'label' => $label,
+                'suffix' => $suffix,
+                'question_type' => sanitize_key((string) ($fixture_definition['seed_profile_question_type'] ?? '')),
+            ];
+        }
+
+        return $profiles;
+    }
+
+    /**
+     * @return array<int,array{profile:string,label:string,suffix:string,question_type:string}>
+     */
+    private static function build_test_data_seed_exam_profiles(string $preset_key, int $total_exams): array
+    {
+        $profiles = [];
+        $total_exams = max(0, $total_exams);
+        if ($total_exams <= 0) {
+            return $profiles;
+        }
+
+        $fixed_profiles = self::build_test_data_seed_fixed_exam_profiles();
+        $fixed_total = min($total_exams, count($fixed_profiles));
+        for ($index = 0; $index < $fixed_total; $index++) {
+            $profiles[] = $fixed_profiles[$index];
+        }
+
+        $dynamic_total = max(0, $total_exams - $fixed_total);
+        if ($dynamic_total <= 0) {
+            return $profiles;
+        }
+
+        $active_question_types = self::get_test_data_seed_active_full_question_types($preset_key);
+        $repeat_count = self::get_test_data_seed_full_exam_repeat_count($preset_key);
+
+        for ($index = 0; $index < $repeat_count; $index++) {
+            foreach ($active_question_types as $question_type) {
+                if ((count($profiles) - $fixed_total) >= $dynamic_total) {
+                    break 2;
+                }
+                $profiles[] = self::build_test_data_seed_exam_profile_definition($question_type);
+            }
+        }
+
+        while ((count($profiles) - $fixed_total) < $dynamic_total) {
+            $profiles[] = self::build_test_data_seed_exam_profile_definition('mixed');
+        }
+
+        return $profiles;
+    }
+
+    /**
      * @return array<string,int>
      */
-    private static function get_test_data_seed_question_type_counts(string $preset_key, int $total_questions): array
+    private static function get_test_data_seed_exam_profile_counts(string $preset_key, int $total_exams): array
+    {
+        $counts = [];
+        foreach (self::build_test_data_seed_exam_profiles($preset_key, $total_exams) as $profile) {
+            $profile_key = sanitize_key((string) ($profile['profile'] ?? 'mixed'));
+            if ($profile_key === '') {
+                continue;
+            }
+            if (!isset($counts[$profile_key])) {
+                $counts[$profile_key] = 0;
+            }
+            $counts[$profile_key] += 1;
+        }
+
+        return $counts;
+    }
+
+    /**
+     * @param array<string,int> $exam_profile_counts
+     */
+    private static function format_test_data_seed_exam_profile_summary(
+        array $exam_profile_counts,
+        string $prefix = 'Komposisi profil exam: ',
+        int $max_items = 0
+    ): string {
+        $labels = self::get_test_data_seed_exam_profile_labels();
+        $parts = [];
+        foreach ($exam_profile_counts as $profile_key => $profile_count) {
+            $count = (int) $profile_count;
+            if ($count <= 0) {
+                continue;
+            }
+
+            $label = isset($labels[$profile_key])
+                ? (string) $labels[$profile_key]
+                : strtoupper(str_replace('_', ' ', (string) $profile_key));
+            $parts[] = $label . ' ' . number_format_i18n($count);
+            if ($max_items > 0 && count($parts) >= $max_items) {
+                break;
+            }
+        }
+
+        if (empty($parts)) {
+            return 'Belum ada exam yang akan dibuat dari preset ini.';
+        }
+
+        return $prefix . implode(', ', $parts) . '.';
+    }
+
+    /**
+     * @return array<string,int>
+     */
+    private static function get_test_data_seed_question_type_counts(string $preset_key, int $total_questions, int $exam_total = 0): array
     {
         $counts = [];
         $cycle = self::test_data_seed_question_type_cycle($preset_key);
@@ -1495,9 +2497,39 @@ final class CBT_Admin_Maintenance_Service
             return $counts;
         }
 
-        $cycle_size = count($cycle);
+        $exam_total = max(0, $exam_total);
+        if ($exam_total <= 0) {
+            $cycle_size = count($cycle);
+            for ($index = 0; $index < $total_questions; $index++) {
+                $question_type = (string) $cycle[$index % $cycle_size];
+                if ($question_type === '') {
+                    continue;
+                }
+                if (!isset($counts[$question_type])) {
+                    $counts[$question_type] = 0;
+                }
+                $counts[$question_type] += 1;
+            }
+
+            return $counts;
+        }
+
+        $exam_profiles = self::build_test_data_seed_exam_profiles($preset_key, $exam_total);
+        if (empty($exam_profiles)) {
+            return $counts;
+        }
+
         for ($index = 0; $index < $total_questions; $index++) {
-            $question_type = (string) $cycle[$index % $cycle_size];
+            $exam_offset = $index % $exam_total;
+            $exam_entry = isset($exam_profiles[$exam_offset]) && is_array($exam_profiles[$exam_offset])
+                ? (array) $exam_profiles[$exam_offset]
+                : self::build_test_data_seed_exam_profile_definition('mixed');
+            $question_type = self::resolve_test_data_seed_question_type_for_exam_entry(
+                $exam_entry,
+                $index,
+                $exam_total,
+                $preset_key
+            );
             if ($question_type === '') {
                 continue;
             }
@@ -1508,6 +2540,28 @@ final class CBT_Admin_Maintenance_Service
         }
 
         return $counts;
+    }
+
+    private static function resolve_test_data_seed_question_type_for_exam_entry(
+        array $exam_entry,
+        int $question_offset,
+        int $exam_count,
+        string $preset_key
+    ): string {
+        $profile_question_type = sanitize_key((string) ($exam_entry['seed_profile_question_type'] ?? ($exam_entry['question_type'] ?? '')));
+        if ($profile_question_type !== '') {
+            return $profile_question_type;
+        }
+
+        $cycle = self::test_data_seed_question_type_cycle($preset_key);
+        $cycle_size = count($cycle);
+        if ($cycle_size <= 0) {
+            return '';
+        }
+
+        $exam_question_index = $exam_count > 0 ? intdiv($question_offset, $exam_count) : $question_offset;
+
+        return (string) $cycle[$exam_question_index % $cycle_size];
     }
 
     /**
@@ -1880,17 +2934,19 @@ final class CBT_Admin_Maintenance_Service
     }
 
     /**
-     * @return array{name:string,code:string,description:string}
+     * @return array{name:string,code:string,description:string,image_bucket:string}
      */
     private static function build_test_data_seed_subject_entry(int $offset): array
     {
         $number = $offset + 1;
         $label = str_pad((string) $number, 2, '0', STR_PAD_LEFT);
+        $image_bucket = self::build_test_data_seed_subject_image_bucket($offset);
 
         return [
             'name' => 'TEST Subject ' . $label,
             'code' => 'TST' . $label,
             'description' => 'Dataset uji otomatis untuk subject ' . $label . '.',
+            'image_bucket' => $image_bucket,
         ];
     }
 
@@ -1986,6 +3042,10 @@ final class CBT_Admin_Maintenance_Service
 
             if ($index < $teacher_total) {
                 $number = $index + 1;
+                if ($number === 1) {
+                    $rows[] = self::build_test_data_seed_special_admin_row($ruang_codes, $agama_options);
+                    continue;
+                }
                 $username = sprintf('test_guru_%04d', $number);
                 $rows[] = [
                     'name' => sprintf('Guru Test %03d', $number),
@@ -2039,6 +3099,29 @@ final class CBT_Admin_Maintenance_Service
     }
 
     /**
+     * @param string[] $ruang_codes
+     * @param string[] $agama_options
+     * @return array<string,string>
+     */
+    private static function build_test_data_seed_special_admin_row(array $ruang_codes, array $agama_options): array
+    {
+        $agama = !empty($agama_options) ? (string) reset($agama_options) : '';
+
+        return [
+            'name' => 'CBT ADMIN',
+            'email' => self::TEST_DATA_SEED_SPECIAL_ADMIN_USERNAME . '@example.local',
+            'username' => self::TEST_DATA_SEED_SPECIAL_ADMIN_USERNAME,
+            'password' => self::TEST_DATA_SEED_SPECIAL_ADMIN_PASSWORD,
+            'role' => 'administrator',
+            'kode_kelas' => '',
+            'kode_ruang' => !empty($ruang_codes) ? (string) $ruang_codes[0] : '',
+            'agama' => $agama,
+            'foto' => '',
+            '__seed_kind' => 'teacher',
+        ];
+    }
+
+    /**
      * @param string[] $kelas_codes
      * @param string[] $ruang_codes
      * @param string[] $agama_options
@@ -2067,6 +3150,161 @@ final class CBT_Admin_Maintenance_Service
     }
 
     /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_test_data_seed_fixed_exam_fixture_definitions(string $special_test_kelas): array
+    {
+        $target_kelas = $special_test_kelas !== '' ? $special_test_kelas : '';
+
+        return [
+            0 => [
+                'title' => self::TEST_DATA_SEED_RECOVERY_FIXTURE_TITLE,
+                'description' => sprintf(
+                    'Fixture recovery deterministik untuk flow check Playwright. Exam ini aktif, khusus kelas %s, randomize_questions = 0, dan dipakai akun seed %s.',
+                    $target_kelas !== '' ? $target_kelas : 'seed class',
+                    self::TEST_DATA_SEED_SPECIAL_USERNAME
+                ),
+                'target_kelas' => $target_kelas,
+                'duration_minutes' => 60,
+                'kkm_percentage' => 75.0,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 0,
+                'seed_profile' => 'recovery_fixture',
+                'seed_profile_label' => 'RECOVERY FIXTURE',
+                'seed_profile_question_type' => 'multiple_choice',
+            ],
+            1 => [
+                'title' => self::TEST_DATA_SEED_SESSION_FIXTURE_TITLE,
+                'description' => 'Fixture deterministik untuk flow check Auth & Session. Exam ini aktif, memakai soal objektif, dan difokuskan untuk validasi bootstrap serta revoke session.',
+                'target_kelas' => $target_kelas,
+                'duration_minutes' => 45,
+                'kkm_percentage' => 70.0,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 0,
+                'seed_profile' => 'session_fixture',
+                'seed_profile_label' => 'SESSION FIXTURE',
+                'seed_profile_question_type' => 'multiple_choice',
+            ],
+            2 => [
+                'title' => self::TEST_DATA_SEED_SYNC_FIXTURE_TITLE,
+                'description' => 'Fixture deterministik untuk flow check Sync & REST. Exam ini aktif, memakai soal objektif, dan dijadikan dasar skenario offline, pending sync, dan finish lock.',
+                'target_kelas' => $target_kelas,
+                'duration_minutes' => 60,
+                'kkm_percentage' => 75.0,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 0,
+                'seed_profile' => 'sync_fixture',
+                'seed_profile_label' => 'SYNC FIXTURE',
+                'seed_profile_question_type' => 'multiple_choice',
+            ],
+            3 => [
+                'title' => self::TEST_DATA_SEED_RESULT_FULL_FIXTURE_TITLE,
+                'description' => 'Fixture hasil penuh untuk flow check Result & Scoring. Nilai siswa ditampilkan penuh setelah finish agar score, percentage, dan pass label mudah diverifikasi.',
+                'target_kelas' => $target_kelas,
+                'duration_minutes' => 45,
+                'kkm_percentage' => 70.0,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 0,
+                'seed_profile' => 'result_full_fixture',
+                'seed_profile_label' => 'RESULT FULL FIXTURE',
+                'seed_profile_question_type' => 'multiple_choice',
+            ],
+            4 => [
+                'title' => self::TEST_DATA_SEED_RESULT_RESTRICTED_FIXTURE_TITLE,
+                'description' => 'Fixture hasil restricted untuk flow check Result & Scoring. Hasil tetap bisa dibuka, tetapi score dan review siswa dibatasi oleh setting exam.',
+                'target_kelas' => $target_kelas,
+                'duration_minutes' => 45,
+                'kkm_percentage' => 70.0,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'show_student_result' => 0,
+                'enable_calculator' => 0,
+                'seed_profile' => 'result_restricted_fixture',
+                'seed_profile_label' => 'RESULT RESTRICTED FIXTURE',
+                'seed_profile_question_type' => 'multiple_choice',
+            ],
+            5 => [
+                'title' => self::TEST_DATA_SEED_RESULT_ESSAY_FIXTURE_TITLE,
+                'description' => 'Fixture essay untuk flow check Result & Scoring. Exam ini sengaja memakai soal essay agar pending manual scoring dan regrade admin bisa diverifikasi.',
+                'target_kelas' => $target_kelas,
+                'duration_minutes' => 60,
+                'kkm_percentage' => 75.0,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 0,
+                'seed_profile' => 'result_essay_fixture',
+                'seed_profile_label' => 'RESULT ESSAY FIXTURE',
+                'seed_profile_question_type' => 'essay',
+            ],
+            6 => [
+                'title' => self::TEST_DATA_SEED_TIMER_FIXTURE_TITLE,
+                'description' => 'Fixture timer untuk flow check Timer & Lifecycle. Durasi dibuat pendek agar skenario countdown, timeout, dan extra time bisa dipercepat secara aman.',
+                'target_kelas' => $target_kelas,
+                'duration_minutes' => 5,
+                'kkm_percentage' => 75.0,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'seed_profile' => 'timer_fixture',
+                'seed_profile_label' => 'TIMER FIXTURE',
+                'seed_profile_question_type' => 'multiple_choice',
+            ],
+            7 => [
+                'title' => self::TEST_DATA_SEED_RUNTIME_FIXTURE_TITLE,
+                'description' => 'Fixture runtime campuran untuk flow check Question Runtime. Exam ini aktif, randomize opsi, dan menyediakan kombinasi tipe soal untuk menguji navigasi serta isolasi state.',
+                'target_kelas' => $target_kelas,
+                'duration_minutes' => 75,
+                'kkm_percentage' => 75.0,
+                'randomize_questions' => 0,
+                'randomize_options' => 1,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'seed_profile' => 'runtime_fixture',
+                'seed_profile_label' => 'RUNTIME FIXTURE',
+                'seed_profile_question_type' => '',
+            ],
+            8 => [
+                'title' => self::TEST_DATA_SEED_SECURITY_FIXTURE_TITLE,
+                'description' => 'Fixture security untuk flow check observability. Exam ini dipakai memicu event fullscreen, clipboard, blur, idle, dan follow-up admin action pada attempt aktif.',
+                'target_kelas' => $target_kelas,
+                'duration_minutes' => 60,
+                'kkm_percentage' => 75.0,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 0,
+                'seed_profile' => 'security_fixture',
+                'seed_profile_label' => 'SECURITY FIXTURE',
+                'seed_profile_question_type' => 'multiple_choice',
+            ],
+            9 => [
+                'title' => self::TEST_DATA_SEED_IMPORT_PREVIEW_FIXTURE_TITLE,
+                'description' => 'Fixture import preview untuk flow check DOCX. Exam ini menjadi target parity check antara preview admin, preview exam, dan review siswa.',
+                'target_kelas' => $target_kelas,
+                'duration_minutes' => 60,
+                'kkm_percentage' => 75.0,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 0,
+                'seed_profile' => 'import_preview_fixture',
+                'seed_profile_label' => 'IMPORT PREVIEW FIXTURE',
+                'seed_profile_question_type' => '',
+            ],
+        ];
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $subjects
      * @param string[] $kelas_codes
      * @return array<string,mixed>
@@ -2076,7 +3314,8 @@ final class CBT_Admin_Maintenance_Service
         array $subjects,
         array $kelas_codes,
         string $preset_key,
-        int $creator_id
+        int $creator_id,
+        array $exam_profile
     ): array {
         $subject_total = count($subjects);
         $subject_entry = $subject_total > 0
@@ -2084,6 +3323,7 @@ final class CBT_Admin_Maintenance_Service
             : [];
         $subject_id = (int) ($subject_entry['id'] ?? 0);
         $subject_name = (string) ($subject_entry['name'] ?? 'TEST Subject');
+        $subject_image_bucket = sanitize_key((string) ($subject_entry['image_bucket'] ?? ''));
         $exam_number = $offset + 1;
 
         $target_kelas = [];
@@ -2102,29 +3342,60 @@ final class CBT_Admin_Maintenance_Service
             $target_kelas = array_values(array_unique($target_kelas));
         }
 
-        $status_slot = $offset % 10;
-        if ($status_slot < 5) {
-            $status = 'published';
-        } elseif ($status_slot < 8) {
-            $status = 'draft';
-        } else {
-            $status = 'closed';
-        }
+        $status = 'published';
+        $profile_label = sanitize_text_field((string) ($exam_profile['label'] ?? 'MIXED'));
+        $profile_suffix = sanitize_text_field((string) ($exam_profile['suffix'] ?? '[MIXED]'));
+        $profile_key = sanitize_key((string) ($exam_profile['profile'] ?? 'mixed'));
+        $profile_question_type = sanitize_key((string) ($exam_profile['question_type'] ?? ''));
 
         $schedule = self::build_test_data_seed_exam_schedule($status, $offset);
         $duration_cycle = [45, 60, 75, 90, 120];
         $duration = $duration_cycle[$offset % count($duration_cycle)];
         $kkm_cycle = [65.0, 70.0, 75.0, 80.0, 85.0];
         $kkm_percentage = $kkm_cycle[$offset % count($kkm_cycle)];
+        $fixed_fixture_definitions = self::get_test_data_seed_fixed_exam_fixture_definitions($special_test_kelas);
+        if (isset($fixed_fixture_definitions[$offset]) && is_array($fixed_fixture_definitions[$offset])) {
+            $fixture_definition = (array) $fixed_fixture_definitions[$offset];
+            $fixture_target_kelas = self::normalize_target_kelas_csv((string) ($fixture_definition['target_kelas'] ?? ''));
+
+            return [
+                'subject_id' => $subject_id,
+                'subject_name' => $subject_name,
+                'title' => sanitize_text_field((string) ($fixture_definition['title'] ?? '')),
+                'description' => wp_kses_post((string) ($fixture_definition['description'] ?? '')),
+                'target_kelas' => $fixture_target_kelas,
+                'duration_minutes' => max(1, (int) ($fixture_definition['duration_minutes'] ?? 60)),
+                'kkm_percentage' => self::normalize_maintenance_kkm_percentage((float) ($fixture_definition['kkm_percentage'] ?? 75.0)),
+                'total_questions' => 0,
+                'randomize_questions' => !empty($fixture_definition['randomize_questions']) ? 1 : 0,
+                'randomize_options' => !empty($fixture_definition['randomize_options']) ? 1 : 0,
+                'show_student_result' => !isset($fixture_definition['show_student_result']) || !empty($fixture_definition['show_student_result']) ? 1 : 0,
+                'enable_calculator' => !empty($fixture_definition['enable_calculator']) ? 1 : 0,
+                'status' => $status,
+                'starts_at' => $schedule['starts_at'],
+                'ends_at' => $schedule['ends_at'],
+                'created_by' => $creator_id,
+                'seed_profile' => sanitize_key((string) ($fixture_definition['seed_profile'] ?? 'mixed')),
+                'seed_profile_label' => sanitize_text_field((string) ($fixture_definition['seed_profile_label'] ?? 'MIXED')),
+                'seed_profile_question_type' => sanitize_key((string) ($fixture_definition['seed_profile_question_type'] ?? '')),
+                'seed_image_bucket' => $subject_image_bucket !== '' ? $subject_image_bucket : self::build_test_data_seed_subject_image_bucket($offset),
+            ];
+        }
 
         return [
             'subject_id' => $subject_id,
             'subject_name' => $subject_name,
-            'title' => sprintf('TEST Exam %03d - %s', $exam_number, $subject_name),
+            'title' => sprintf(
+                'TEST Exam %03d - %s %s',
+                $exam_number,
+                $subject_name,
+                $profile_suffix !== '' ? $profile_suffix : '[MIXED]'
+            ),
             'description' => sprintf(
-                'Dataset uji otomatis preset %s untuk %s. Target kelas: %s.',
+                'Dataset uji otomatis preset %s untuk %s. Profil exam: %s. Target kelas: %s.',
                 ucfirst($preset_key),
                 $subject_name,
+                $profile_label !== '' ? $profile_label : 'MIXED',
                 !empty($target_kelas) ? implode(', ', $target_kelas) : 'Semua kelas test'
             ),
             'target_kelas' => implode(',', $target_kelas),
@@ -2132,10 +3403,17 @@ final class CBT_Admin_Maintenance_Service
             'kkm_percentage' => $kkm_percentage,
             'total_questions' => 0,
             'randomize_questions' => ($offset % 2 === 0) ? 1 : 0,
+            'randomize_options' => ($offset % 3 === 0) ? 1 : 0,
+            'show_student_result' => 1,
+            'enable_calculator' => ($offset % 4 === 0) ? 1 : 0,
             'status' => $status,
             'starts_at' => $schedule['starts_at'],
             'ends_at' => $schedule['ends_at'],
             'created_by' => $creator_id,
+            'seed_profile' => $profile_key !== '' ? $profile_key : 'mixed',
+            'seed_profile_label' => $profile_label !== '' ? $profile_label : 'MIXED',
+            'seed_profile_question_type' => $profile_question_type,
+            'seed_image_bucket' => $subject_image_bucket !== '' ? $subject_image_bucket : self::build_test_data_seed_subject_image_bucket($offset),
         ];
     }
 
@@ -2196,6 +3474,9 @@ final class CBT_Admin_Maintenance_Service
             'kkm_percentage' => self::normalize_maintenance_kkm_percentage((float) ($entry['kkm_percentage'] ?? 75.0)),
             'total_questions' => max(0, (int) ($entry['total_questions'] ?? 0)),
             'randomize_questions' => !empty($entry['randomize_questions']) ? 1 : 0,
+            'randomize_options' => !empty($entry['randomize_options']) ? 1 : 0,
+            'show_student_result' => !isset($entry['show_student_result']) || !empty($entry['show_student_result']) ? 1 : 0,
+            'enable_calculator' => !empty($entry['enable_calculator']) ? 1 : 0,
             'status' => sanitize_key((string) ($entry['status'] ?? 'draft')),
             'starts_at' => $entry['starts_at'] ?? null,
             'ends_at' => $entry['ends_at'] ?? null,
@@ -2216,7 +3497,7 @@ final class CBT_Admin_Maintenance_Service
                 $table,
                 $data,
                 ['id' => $existing_id],
-                ['%d', '%s', '%s', '%s', '%d', '%f', '%d', '%d', '%s', '%s', '%s', '%d', '%s'],
+                ['%d', '%s', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s'],
                 ['%d']
             );
 
@@ -2234,7 +3515,7 @@ final class CBT_Admin_Maintenance_Service
         $inserted = $wpdb->insert(
             $table,
             $data,
-            ['%d', '%s', '%s', '%s', '%d', '%f', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s']
+            ['%d', '%s', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s']
         );
 
         return [
@@ -2252,7 +3533,7 @@ final class CBT_Admin_Maintenance_Service
      */
     private static function test_data_seed_question_type_cycle(string $preset_key): array
     {
-        if ($preset_key === 'medium' || $preset_key === 'large') {
+        if (self::preset_supports_test_data_seed_true_false_matrix($preset_key)) {
             return [
                 'multiple_choice',
                 'multiple_choice',
@@ -2284,10 +3565,16 @@ final class CBT_Admin_Maintenance_Service
     /**
      * @param array<int,array<string,mixed>> $exams
      * @param array<int|string,array<string,mixed>> $bank_exams
+     * @param array<string,string> $bulk_image_source_map
      * @return array<string,mixed>
      */
-    private static function build_test_data_seed_bank_question_row(int $offset, array $exams, array $bank_exams, string $preset_key): array
-    {
+    private static function build_test_data_seed_bank_question_row(
+        int $offset,
+        array $exams,
+        array $bank_exams,
+        string $preset_key,
+        array &$bulk_image_source_map
+    ): array {
         $exam_count = count($exams);
         $exam_entry = $exam_count > 0 ? (array) $exams[$offset % $exam_count] : [];
         $target_exam_id = (int) ($exam_entry['id'] ?? 0);
@@ -2297,15 +3584,42 @@ final class CBT_Admin_Maintenance_Service
             : [];
         $exam_id = (int) ($bank_exam_entry['id'] ?? 0);
         $subject_name = sanitize_text_field((string) ($exam_entry['subject_name'] ?? ($bank_exam_entry['subject_name'] ?? 'TEST Subject')));
+        $image_bucket = sanitize_key((string) ($exam_entry['seed_image_bucket'] ?? ''));
         $question_number = $offset + 1;
-        $cycle = self::test_data_seed_question_type_cycle($preset_key);
-        $exam_question_index = $exam_count > 0 ? intdiv($offset, $exam_count) : $offset;
-        $question_type = (string) $cycle[$exam_question_index % max(1, count($cycle))];
+        $question_type = self::resolve_test_data_seed_question_type_for_exam_entry($exam_entry, $offset, $exam_count, $preset_key);
+        $rich_profile = self::resolve_test_data_seed_rich_profile($question_type, $question_number);
+        $row = [];
+        $context = [];
 
         switch ($question_type) {
             case 'multiple_answer':
                 $base = ($question_number % 12) + 2;
-                return [
+                $option_count = 4 + (($question_number - 1) % 9);
+                $desired_correct_count = 2 + (($question_number - 1) % 3);
+                $correct_count = max(2, min($option_count - 1, $desired_correct_count));
+                $correct_positions = [];
+                $position_seed = $question_number;
+                while (count($correct_positions) < $correct_count) {
+                    $position = (($position_seed * 3) + (count($correct_positions) * 2)) % $option_count;
+                    if (!in_array($position, $correct_positions, true)) {
+                        $correct_positions[] = $position;
+                    }
+                    $position_seed++;
+                }
+                sort($correct_positions);
+
+                $options = [];
+                $correct_keys = [];
+                for ($idx = 0; $idx < $option_count; $idx++) {
+                    $is_correct = in_array($idx, $correct_positions, true);
+                    $multiplier = $idx + 2;
+                    $options[] = (string) ($is_correct ? ($base * $multiplier) : (($base * $multiplier) + 1));
+                    if ($is_correct) {
+                        $correct_keys[] = chr(65 + $idx);
+                    }
+                }
+
+                $row = [
                     'exam_id' => $exam_id,
                     'target_exam_id' => $target_exam_id,
                     'question_type' => 'multiple_answer',
@@ -2316,23 +3630,29 @@ final class CBT_Admin_Maintenance_Service
                         $base
                     ),
                     'points' => 1.50,
-                    'options' => implode('||', [
-                        (string) ($base * 2),
-                        (string) (($base * 2) + 1),
-                        (string) ($base * 3),
-                        (string) (($base * 3) + 1),
-                    ]),
-                    'correct_answer' => 'A,C',
+                    'options' => implode('||', $options),
+                    'correct_answer' => implode(',', $correct_keys),
                     'correct_text' => '',
-                    'explanation' => 'Kelipatan yang benar adalah dua nilai yang habis dibagi tanpa sisa.',
+                    'explanation' => sprintf(
+                        'Kelipatan dari %d adalah semua pilihan yang habis dibagi tanpa sisa oleh angka tersebut.',
+                        $base
+                    ),
                 ];
+                $context = [
+                    'base' => $base,
+                    'option_count' => $option_count,
+                    'correct_count' => $correct_count,
+                    'plain_options' => $options,
+                    'correct_keys' => $correct_keys,
+                ];
+                break;
 
             case 'true_false':
                 $left = ($question_number % 21) + 9;
                 $right = ($question_number % 8) + 3;
                 $is_true = ($question_number % 2) === 0;
                 $claim = $is_true ? ($left + $right) : ($left + $right + 1);
-                return [
+                $row = [
                     'exam_id' => $exam_id,
                     'target_exam_id' => $target_exam_id,
                     'question_type' => 'true_false',
@@ -2350,10 +3670,17 @@ final class CBT_Admin_Maintenance_Service
                     'correct_text' => $is_true ? 'true' : 'false',
                     'explanation' => 'Periksa hasil operasi penjumlahan pada pernyataan tersebut.',
                 ];
+                $context = [
+                    'left' => $left,
+                    'right' => $right,
+                    'claim' => $claim,
+                    'is_true' => $is_true,
+                ];
+                break;
 
             case 'true_false_matrix':
                 $base = ($question_number % 17) + 6;
-                return [
+                $row = [
                     'exam_id' => $exam_id,
                     'target_exam_id' => $target_exam_id,
                     'question_type' => 'true_false_matrix',
@@ -2372,30 +3699,31 @@ final class CBT_Admin_Maintenance_Service
                     ]),
                     'explanation' => 'Setiap baris dinilai terpisah sebagai benar atau salah.',
                 ];
+                $context = [
+                    'base' => $base,
+                ];
+                break;
 
             case 'short_answer':
-                $left = ($question_number % 14) + 6;
-                $right = ($question_number % 9) + 4;
-                return [
+                $short_answer_entry = self::build_test_data_seed_short_answer_entry($question_number, $subject_name);
+                $row = [
                     'exam_id' => $exam_id,
                     'target_exam_id' => $target_exam_id,
                     'question_type' => 'short_answer',
-                    'question_text' => sprintf(
-                        'Soal %03d (%s). Isi hasil dari %d x %d pada jawaban singkat.',
-                        $question_number,
-                        $subject_name,
-                        $left,
-                        $right
-                    ),
+                    'question_text' => (string) $short_answer_entry['question_text'],
                     'points' => 1.25,
                     'options' => '',
                     'correct_answer' => '',
-                    'correct_text' => (string) ($left * $right),
-                    'explanation' => 'Jawaban singkat harus sama persis dengan hasil perkalian yang benar.',
+                    'correct_text' => (string) $short_answer_entry['correct_text'],
+                    'explanation' => (string) $short_answer_entry['explanation'],
                 ];
+                $context = [
+                    'input_count' => (($question_number - 1) % 8) + 1,
+                ];
+                break;
 
             case 'essay':
-                return [
+                $row = [
                     'exam_id' => $exam_id,
                     'target_exam_id' => $target_exam_id,
                     'question_type' => 'essay',
@@ -2411,13 +3739,21 @@ final class CBT_Admin_Maintenance_Service
                     'correct_text' => 'Rubrik: jawaban memuat konsep utama, langkah kerja runtut, dan kesimpulan yang konsisten.',
                     'explanation' => 'Penilaian essay mengikuti rubrik langkah, konsep, dan kesimpulan.',
                 ];
+                break;
 
             case 'multiple_choice':
             default:
                 $left = ($question_number % 37) + 13;
                 $right = ($question_number % 10) + 3;
                 $correct = $left + $right;
-                return [
+                $options = [
+                    (string) ($correct + 2),
+                    (string) $correct,
+                    (string) max(1, $correct - 1),
+                    (string) ($correct + 4),
+                ];
+                $correct_keys = ['B'];
+                $row = [
                     'exam_id' => $exam_id,
                     'target_exam_id' => $target_exam_id,
                     'question_type' => 'multiple_choice',
@@ -2429,17 +3765,172 @@ final class CBT_Admin_Maintenance_Service
                         $right
                     ),
                     'points' => 1.00,
-                    'options' => implode('||', [
-                        (string) ($correct + 2),
-                        (string) $correct,
-                        (string) max(1, $correct - 1),
-                        (string) ($correct + 4),
-                    ]),
+                    'options' => implode('||', $options),
                     'correct_answer' => 'B',
                     'correct_text' => '',
                     'explanation' => 'Jawaban benar adalah hasil penjumlahan kedua bilangan.',
                 ];
+                $context = [
+                    'left' => $left,
+                    'right' => $right,
+                    'correct' => $correct,
+                    'plain_options' => $options,
+                    'correct_keys' => $correct_keys,
+                ];
+                break;
         }
+
+        return self::decorate_test_data_seed_question_row_with_rich_content(
+            $row,
+            $question_number,
+            $subject_name,
+            $image_bucket,
+            $rich_profile,
+            $context,
+            $bulk_image_source_map
+        );
+    }
+
+    /**
+     * @return array{question_text:string,correct_text:string,explanation:string}
+     */
+    private static function build_test_data_seed_short_answer_entry(int $question_number, string $subject_name): array
+    {
+        $input_count = (($question_number - 1) % 8) + 1;
+        $answers = [];
+        $question_text = '';
+        $explanation = '';
+
+        switch ($input_count) {
+            case 1:
+                $left = ($question_number % 14) + 6;
+                $right = ($question_number % 9) + 4;
+                $answers = [(string) ($left * $right)];
+                $question_text = sprintf(
+                    'Soal %03d (%s). Hasil dari %d x %d adalah [INPUT_1], lalu tulis tanpa satuan.',
+                    $question_number,
+                    $subject_name,
+                    $left,
+                    $right
+                );
+                $explanation = 'Jawaban singkat diisi dengan hasil perkalian yang tepat tanpa tambahan teks lain.';
+                break;
+
+            case 2:
+                $base = ($question_number % 18) + 10;
+                $answers = [
+                    (string) ($base + 2),
+                    (string) ($base + 4),
+                ];
+                $question_text = sprintf(
+                    'Soal %03d (%s). Lengkapi dua bilangan genap setelah %d, yaitu [INPUT_1] dan [INPUT_2], dengan urutan dari kecil ke besar.',
+                    $question_number,
+                    $subject_name,
+                    $base
+                );
+                $explanation = 'Setiap isian mengikuti urutan dua bilangan genap setelah angka dasar.';
+                break;
+
+            case 3:
+                $base = ($question_number % 8) + 3;
+                $answers = [
+                    (string) ($base * 2),
+                    (string) ($base * 3),
+                    (string) ($base * 4),
+                ];
+                $question_text = sprintf(
+                    'Soal %03d (%s). Lengkapi tiga kelipatan awal dari %d setelah angka dasar: [INPUT_1], [INPUT_2], dan [INPUT_3], disusun berurutan.',
+                    $question_number,
+                    $subject_name,
+                    $base
+                );
+                $explanation = 'Jawaban diisi dengan tiga kelipatan berurutan dari bilangan dasar yang diberikan.';
+                break;
+
+            case 4:
+                $base = ($question_number % 21) + 20;
+                $answers = [
+                    (string) ($base + 1),
+                    (string) ($base + 2),
+                    (string) ($base + 3),
+                    (string) ($base + 4),
+                ];
+                $question_text = sprintf(
+                    'Soal %03d (%s). Empat bilangan berurutan setelah %d adalah [INPUT_1], [INPUT_2], [INPUT_3], dan [INPUT_4], tanpa ada angka yang terlewat.',
+                    $question_number,
+                    $subject_name,
+                    $base
+                );
+                $explanation = 'Isi semua kotak dengan empat bilangan berikutnya secara berurutan.';
+                break;
+
+            case 5:
+                $answers = ['a', 'i', 'u', 'e', 'o'];
+                $question_text = sprintf(
+                    'Soal %03d (%s). Lengkapi urutan huruf vokal bahasa Indonesia: [INPUT_1], [INPUT_2], [INPUT_3], [INPUT_4], dan [INPUT_5], sesuai urutan standar.',
+                    $question_number,
+                    $subject_name
+                );
+                $explanation = 'Gunakan urutan huruf vokal standar a, i, u, e, o.';
+                break;
+
+            case 6:
+                $base = (($question_number % 6) + 4);
+                $answers = [
+                    (string) ($base * 1),
+                    (string) ($base * 2),
+                    (string) ($base * 3),
+                    (string) ($base * 4),
+                    (string) ($base * 5),
+                    (string) ($base * 6),
+                ];
+                $question_text = sprintf(
+                    'Soal %03d (%s). Lengkapi enam kelipatan berurutan dari %d: [INPUT_1], [INPUT_2], [INPUT_3], [INPUT_4], [INPUT_5], dan [INPUT_6].',
+                    $question_number,
+                    $subject_name,
+                    $base
+                );
+                $explanation = 'Isi semua kotak dengan enam kelipatan pertama dari angka dasar secara berurutan.';
+                break;
+
+            case 7:
+                $answers = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu'];
+                $question_text = sprintf(
+                    'Soal %03d (%s). Lengkapi urutan tujuh hari dalam satu minggu: [INPUT_1], [INPUT_2], [INPUT_3], [INPUT_4], [INPUT_5], [INPUT_6], dan [INPUT_7].',
+                    $question_number,
+                    $subject_name
+                );
+                $explanation = 'Gunakan urutan nama hari yang umum dipakai dalam bahasa Indonesia.';
+                break;
+
+            case 8:
+            default:
+                $start = ((($question_number % 5) + 1) * 2);
+                $answers = [
+                    (string) $start,
+                    (string) ($start + 2),
+                    (string) ($start + 4),
+                    (string) ($start + 6),
+                    (string) ($start + 8),
+                    (string) ($start + 10),
+                    (string) ($start + 12),
+                    (string) ($start + 14),
+                ];
+                $question_text = sprintf(
+                    'Soal %03d (%s). Lengkapi delapan bilangan genap berurutan mulai dari %d: [INPUT_1], [INPUT_2], [INPUT_3], [INPUT_4], [INPUT_5], [INPUT_6], [INPUT_7], dan [INPUT_8].',
+                    $question_number,
+                    $subject_name,
+                    $start
+                );
+                $explanation = 'Isi dengan delapan bilangan genap berurutan tanpa ada angka yang terlewat.';
+                break;
+        }
+
+        return [
+            'question_text' => $question_text,
+            'correct_text' => implode('||', $answers),
+            'explanation' => $explanation,
+        ];
     }
 
     /**
@@ -2450,8 +3941,8 @@ final class CBT_Admin_Maintenance_Service
         global $wpdb;
 
         $question_type = self::map_import_question_type((string) ($row['question_type'] ?? ''));
-        $question_text = trim(wp_kses_post((string) ($row['question_text'] ?? '')));
-        $explanation = trim(wp_kses_post((string) ($row['explanation'] ?? '')));
+        $question_text = trim(CBT_Admin_Questions_Helper::sanitize_editor_html((string) ($row['question_text'] ?? '')));
+        $explanation = trim(CBT_Admin_Questions_Helper::sanitize_editor_html((string) ($row['explanation'] ?? '')));
         $exam_id = absint($row['exam_id'] ?? 0);
         if ($question_type === '' || $question_text === '' || $exam_id <= 0) {
             return [
@@ -2463,19 +3954,24 @@ final class CBT_Admin_Maintenance_Service
         $points = isset($row['points']) && $row['points'] !== '' ? (float) $row['points'] : 1.0;
         $points = max(0, $points);
         $options_input = (string) ($row['options'] ?? '');
+        $options_payload = trim((string) ($row['options_payload'] ?? ''));
         $correct_answer = (string) ($row['correct_answer'] ?? '');
         $correct_text = (string) ($row['correct_text'] ?? '');
         $options_raw = '';
 
         if (in_array($question_type, ['multiple_choice', 'multiple_answer'], true)) {
-            $built = self::build_options_raw_from_import($options_input, $correct_answer, $question_type);
-            if ($built === '') {
-                return [
-                    'status' => 'failed',
-                    'question_id' => 0,
-                ];
+            if ($options_payload !== '') {
+                $options_raw = $options_payload;
+            } else {
+                $built = self::build_options_raw_from_import($options_input, $correct_answer, $question_type);
+                if ($built === '') {
+                    return [
+                        'status' => 'failed',
+                        'question_id' => 0,
+                    ];
+                }
+                $options_raw = $built;
             }
-            $options_raw = $built;
             $correct_text = '';
         } elseif ($question_type === 'true_false') {
             $normalized = strtolower(trim($correct_answer !== '' ? $correct_answer : $correct_text));

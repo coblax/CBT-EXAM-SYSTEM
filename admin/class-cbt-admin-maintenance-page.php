@@ -12,6 +12,31 @@ final class CBT_Admin_Maintenance_Page
             wp_die('Unauthorized');
         }
 
+        $requested_tab = isset($_GET['cbt_maintenance_tab'])
+            ? sanitize_key((string) wp_unslash($_GET['cbt_maintenance_tab']))
+            : '';
+        if ($requested_tab === 'unit_test') {
+            $redirect_args = ['page' => 'cbt-test-hub'];
+            $active_unit_test_tab = CBT_Admin_Test_Hub_Service::normalize_unit_test_tab(
+                isset($_GET['cbt_unit_test_tab']) ? wp_unslash((string) $_GET['cbt_unit_test_tab']) : ''
+            );
+            if ($active_unit_test_tab !== '') {
+                $redirect_args['cbt_unit_test_tab'] = $active_unit_test_tab;
+            }
+            if (isset($_GET['cbt_test_run_token'])) {
+                $redirect_args['cbt_test_run_token'] = sanitize_key(wp_unslash((string) $_GET['cbt_test_run_token']));
+            }
+            if (isset($_GET['cbt_msg'])) {
+                $redirect_args['cbt_msg'] = sanitize_text_field(wp_unslash((string) $_GET['cbt_msg']));
+            }
+            if (isset($_GET['cbt_err'])) {
+                $redirect_args['cbt_err'] = sanitize_text_field(wp_unslash((string) $_GET['cbt_err']));
+            }
+
+            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+            exit;
+        }
+
         $context = CBT_Admin_Maintenance_Service::build_page_context($_GET);
         $context['load_test_jobs_html'] = self::render_load_test_jobs_markup(
             isset($context['load_test_jobs']) && is_array($context['load_test_jobs'])

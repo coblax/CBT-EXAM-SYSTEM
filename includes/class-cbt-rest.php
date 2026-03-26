@@ -1007,7 +1007,7 @@ class CBT_REST
 
         $attempt = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, exam_id, student_id, status, started_at
+                "SELECT id, exam_id, student_id, status, started_at, finished_at, score, max_score, duration_seconds
                  FROM {$attempt_table}
                  WHERE id = %d",
                 $attempt_id
@@ -1020,6 +1020,10 @@ class CBT_REST
 
         if ((int) $attempt['student_id'] !== $user_id) {
             return new WP_Error('forbidden', 'You cannot finish this attempt', ['status' => 403]);
+        }
+
+        if ((string) ($attempt['status'] ?? '') === 'completed') {
+            return rest_ensure_response(self::build_idempotent_finish_exam_response($attempt_id, $attempt));
         }
 
         if ((string) ($attempt['status'] ?? '') !== 'in_progress') {
@@ -1053,6 +1057,62 @@ class CBT_REST
                 CBT_Cache::release_lock('finish_attempt:' . $attempt_id);
             }
         }
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @return array<string,mixed>
+     */
+    private static function build_idempotent_finish_exam_response(int $attempt_id, array $attempt): array
+    {
+        $score = is_finite((float) ($attempt['score'] ?? 0))
+            ? round((float) ($attempt['score'] ?? 0), 2)
+            : 0.0;
+        $max_score = is_finite((float) ($attempt['max_score'] ?? 0))
+            ? round(max(0.0, (float) ($attempt['max_score'] ?? 0)), 2)
+            : 0.0;
+        $percentage = ($max_score > 0)
+            ? round(($score / $max_score) * 100, 2)
+            : 0.0;
+        $show_student_result = self::get_exam_show_student_result((int) ($attempt['exam_id'] ?? 0));
+        $kkm_percentage = self::get_exam_kkm_percentage((int) ($attempt['exam_id'] ?? 0));
+        $pass_meta = self::build_result_pass_meta($score, $max_score, $kkm_percentage);
+
+        $response = [
+            'attempt_id' => $attempt_id,
+            'status' => 'completed',
+            'show_student_result' => $show_student_result,
+            'result_view_mode' => ($show_student_result === 1 ? 'full' : 'restricted'),
+            'submission_summary' => [
+                'total_questions' => 0,
+                'answered_questions' => 0,
+                'pending_manual_questions' => 0,
+            ],
+            'score' => $score,
+            'max_score' => $max_score,
+            'percentage' => $percentage,
+            'finished_at' => (string) ($attempt['finished_at'] ?? ''),
+            'kkm_percentage' => $pass_meta['kkm_percentage'],
+            'passing_score' => $pass_meta['passing_score'],
+            'is_passed' => $pass_meta['is_passed'],
+            'pass_label' => $pass_meta['pass_label'],
+            'result_tone' => $pass_meta['result_tone'],
+        ];
+
+        if ($show_student_result !== 1) {
+            unset(
+                $response['score'],
+                $response['max_score'],
+                $response['percentage'],
+                $response['kkm_percentage'],
+                $response['passing_score'],
+                $response['is_passed'],
+                $response['pass_label'],
+                $response['result_tone']
+            );
+        }
+
+        return $response;
     }
 
     public static function security_event(WP_REST_Request $request)
@@ -2777,7 +2837,7 @@ class CBT_REST
             return $questions;
         }
 
-        foreach ($questions as $question_row) {
+        foreach ($questions as $index => $question_row) {
             $question = (array) $question_row;
             $question_id = (int) ($question['id'] ?? 0);
             if ($question_id <= 0 || !isset($option_order_map[$question_id])) {

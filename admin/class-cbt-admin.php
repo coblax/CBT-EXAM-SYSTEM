@@ -31,6 +31,9 @@ class CBT_Admin
         add_action('admin_post_cbt_save_developer_settings', [CBT_Admin_Developer_Actions::class, 'handle_save_settings']);
         add_action('admin_post_cbt_check_developer_dev_server', [CBT_Admin_Developer_Actions::class, 'handle_check_dev_server']);
         add_action('admin_post_cbt_stop_developer_dev_server', [CBT_Admin_Developer_Actions::class, 'handle_stop_dev_server']);
+        add_action('admin_post_cbt_run_all_unit_tests', [CBT_Admin_Test_Hub_Actions::class, 'handle_run_all_unit_tests']);
+        add_action('admin_post_cbt_save_test_hub_settings', [CBT_Admin_Test_Hub_Actions::class, 'handle_save_settings']);
+        add_action('admin_post_cbt_queue_flow_check_job', [CBT_Admin_Test_Hub_Actions::class, 'handle_queue_flow_check_job']);
         add_action('wp_ajax_cbt_sync_exam_builder_selection', [CBT_Admin_Exams_Actions::class, 'handle_sync_exam_builder_selection']);
         add_action('wp_ajax_cbt_clear_exam_builder_selection', [CBT_Admin_Exams_Actions::class, 'handle_clear_exam_builder_selection']);
         add_action('wp_ajax_cbt_start_exam_save_progress', [CBT_Admin_Exams_Actions::class, 'handle_start_exam_save_progress']);
@@ -38,6 +41,7 @@ class CBT_Admin
         add_action('admin_post_cbt_cache_action', [CBT_Admin_Cache_Actions::class, 'handle_cache_action']);
         add_action('admin_post_cbt_reset_database', [CBT_Admin_Maintenance_Actions::class, 'handle_reset_database']);
         add_action('admin_post_cbt_generate_test_dataset', [CBT_Admin_Maintenance_Actions::class, 'handle_generate_test_dataset']);
+        add_action('admin_post_cbt_run_unit_test_suite', [CBT_Admin_Test_Hub_Actions::class, 'handle_run_unit_test_suite']);
         add_action('admin_post_cbt_start_load_test', [CBT_Admin_Maintenance_Actions::class, 'handle_start_load_test']);
         add_action('admin_post_cbt_cancel_load_test', [CBT_Admin_Maintenance_Actions::class, 'handle_cancel_load_test']);
         add_action('admin_post_cbt_delete_load_test_job', [CBT_Admin_Maintenance_Actions::class, 'handle_delete_load_test_job']);

@@ -187,6 +187,7 @@
                 color: #111827;
             }
             .cbt-setup-field input[type="text"],
+            .cbt-setup-field input[type="number"],
             .cbt-setup-field textarea {
                 width: 100%;
                 margin: 0;
@@ -197,7 +198,8 @@
                 padding: 11px 13px;
                 transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
             }
-            .cbt-setup-field input[type="text"] {
+            .cbt-setup-field input[type="text"],
+            .cbt-setup-field input[type="number"] {
                 min-height: 46px;
             }
             .cbt-setup-field textarea {
@@ -206,6 +208,7 @@
                 line-height: 1.5;
             }
             .cbt-setup-field input[type="text"]:focus,
+            .cbt-setup-field input[type="number"]:focus,
             .cbt-setup-field textarea:focus {
                 border-color: #3b82f6;
                 background: #ffffff;
@@ -401,6 +404,21 @@
                 margin: 0;
                 color: #646970;
                 line-height: 1.5;
+            }
+            .cbt-setup-security-threshold {
+                display: grid;
+                gap: 8px;
+                margin-top: 14px;
+                padding-top: 14px;
+                border-top: 1px solid rgba(159, 181, 211, 0.4);
+            }
+            .cbt-setup-security-threshold label {
+                font-weight: 600;
+                color: #111827;
+            }
+            .cbt-setup-security-threshold .description {
+                margin: 0;
+                color: #5b6574;
             }
             .cbt-setup-security-log-card {
                 grid-column: 1 / -1;
@@ -1277,6 +1295,33 @@
                                                 <span>Catat event inti seperti keluar fullscreen, pindah tab, refresh/tutup halaman, sesi dicabut, dan reset login admin. Histori log bisa dipantau di tab Security Log selama 30 hari terakhir.</span>
                                             </span>
                                         </label>
+                                    </div>
+                                    <div class="cbt-setup-security-option">
+                                        <label class="cbt-setup-security-checkbox" for="cbt-setup-security-detect-idle">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-security-detect-idle"
+                                                name="detect_idle_during_exam"
+                                                value="1"
+                                                <?php checked($security_detect_idle_during_exam); ?>
+                                            />
+                                            <span>
+                                                <strong>Deteksi Idle Saat Ujian</strong>
+                                                <span>Catat event security saat peserta tidak menunjukkan aktivitas pada halaman ujian selama ambang waktu tertentu. V1 hanya menambah observability dan tidak mengganggu pengerjaan ujian.</span>
+                                            </span>
+                                        </label>
+                                        <div class="cbt-setup-security-threshold">
+                                            <label for="cbt-setup-security-idle-threshold">Ambang Idle (menit)</label>
+                                            <input
+                                                type="number"
+                                                id="cbt-setup-security-idle-threshold"
+                                                name="idle_threshold_minutes"
+                                                min="1"
+                                                step="1"
+                                                value="<?php echo esc_attr((string) $security_idle_threshold_minutes); ?>"
+                                            />
+                                            <p class="description">Idle dihitung hanya saat tab ujian terlihat dan window masih fokus. Event hidden/blur tetap dicatat terpisah lewat security logging yang sudah ada.</p>
+                                        </div>
                                     </div>
                                     <div class="cbt-setup-security-option">
                                         <label class="cbt-setup-security-checkbox" for="cbt-setup-security-block-copy-paste">

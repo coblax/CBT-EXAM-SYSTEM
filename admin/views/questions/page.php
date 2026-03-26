@@ -470,6 +470,23 @@ if (!defined('ABSPATH')) {
                     .cbt-questions-panel .insert-media {
                         border-radius: 12px;
                     }
+                    .cbt-question-inline-preview :where(table) {
+                        margin: 0.45em 0;
+                        border-collapse: collapse;
+                        border-spacing: 0;
+                        background: #fff;
+                        border: 1px solid #d6deea;
+                    }
+                    .cbt-question-inline-preview :where(th, td) {
+                        border: 1px solid #d6deea;
+                        padding: 8px 10px;
+                        vertical-align: top;
+                    }
+                    .cbt-question-inline-preview :where(th) {
+                        background: #f8fbff;
+                        color: #0f172a;
+                        font-weight: 700;
+                    }
                     .cbt-qtype-panel {
                         display: none;
                     }
@@ -748,6 +765,20 @@ if (!defined('ABSPATH')) {
                         box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
                         color: #1e293b;
                         line-height: 1.72;
+                    }
+                    .cbt-question-inline-preview-question .cbt-rich-spacer {
+                        display: block;
+                        height: 0.95em;
+                    }
+                    .cbt-question-inline-preview-question > img,
+                    .cbt-question-inline-preview-question figure.cbt-pasted-image-block > img,
+                    .cbt-question-inline-preview-question p > img:only-child,
+                    .cbt-question-inline-preview-question div > img:only-child {
+                        display: block;
+                        max-width: 100%;
+                        height: auto;
+                        margin: 0.55em 0;
+                        border-radius: 8px;
                     }
                     .cbt-question-inline-preview-body {
                         color: #1e293b;
@@ -1185,6 +1216,7 @@ if (!defined('ABSPATH')) {
                             font-size: 13px;
                         }
                     }
+                    <?php echo CBT_Admin_Questions_Helper::get_admin_student_preview_css(); ?>
                 </style>
 
                 <div class="cbt-questions-tabs" role="tablist" aria-label="Navigasi CBT Questions">
@@ -1239,11 +1271,23 @@ if (!defined('ABSPATH')) {
                                 <strong>Kenapa dikunci?</strong>
                                 Soal <em>bank-backed</em> adalah salinan operasional yang dipakai exam siswa. Jika row ini diedit langsung, arah sinkronisasi akan membingungkan. Karena itu, perubahan harus masuk dari <strong>Bank Soal</strong> sebagai sumber kebenaran.
                             </div>
-                            <div class="cbt-question-inline-preview-question"><?php echo wp_kses_post((string) ($editing_question['question_text'] ?? '')); ?></div>
+                            <div class="cbt-question-inline-preview-question"><?php echo CBT_Admin_Questions_Helper::render_editor_html((string) ($editing_question['question_text'] ?? '')); ?></div>
                         </div>
                     <?php else: ?>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="cbt-question-manual-form" data-cbt-questions-tab-submit="form">
                     <?php wp_nonce_field('cbt_save_question'); ?>
+                    <?php
+                    $question_editor_content_style = implode('', [
+                        'body.mce-content-body table{margin:0.45em 0;border-collapse:collapse;border-spacing:0;border:1px solid #cfdbe8;background:#ffffff;max-width:100%;}',
+                        'body.mce-content-body th,body.mce-content-body td{border:1px solid #cfdbe8;padding:8px 10px;vertical-align:top;word-break:break-word;}',
+                        'body.mce-content-body th{background:#f8fbff;color:#0f172a;font-weight:700;}',
+                        'body.mce-content-body figure.cbt-pasted-image-block{margin:0.75em 0;}',
+                        'body.mce-content-body figure.cbt-pasted-image-block img{display:block;max-width:100%;height:auto;margin:0;}',
+                    ]);
+                    $question_editor_tinymce = [
+                        'content_style' => $question_editor_content_style,
+                    ];
+                    ?>
                     <input type="hidden" name="action" value="cbt_save_question" />
                     <input type="hidden" name="return_page" value="<?php echo esc_attr($current_page_slug); ?>" />
                     <input type="hidden" name="id" value="<?php echo esc_attr($editing_question['id'] ?? 0); ?>" />
@@ -1340,10 +1384,11 @@ if (!defined('ABSPATH')) {
                                         'media_buttons' => true,
                                         'teeny' => false,
                                         'quicktags' => true,
+                                        'tinymce' => $question_editor_tinymce,
                                     ]
                                 );
                                 ?>
-                                <p class="description">Bisa teks, tabel, dan gambar (upload/paste) langsung di editor soal.</p>
+                                <p class="description">Bisa teks, tabel, dan gambar. Paste langsung dari clipboard untuk gambar kecil, lalu gunakan Add Media untuk file besar.</p>
                             </td>
                         </tr>
                         <tr>
@@ -1368,13 +1413,14 @@ if (!defined('ABSPATH')) {
                                                     'media_buttons' => true,
                                                     'teeny' => true,
                                                     'quicktags' => true,
+                                                    'tinymce' => $question_editor_tinymce,
                                                 ]
                                             );
                                             ?>
                                         </div>
                                     <?php endfor; ?>
                                 </div>
-                                <p class="cbt-inline-help">Isi minimal 2 pilihan, maksimal 5 pilihan. Tiap pilihan bisa teks atau gambar (paste/upload).</p>
+                                <p class="cbt-inline-help">Isi minimal 2 pilihan, maksimal 5 pilihan. Tiap pilihan bisa teks atau gambar. Paste langsung dari clipboard untuk gambar kecil, atau pakai Add Media untuk file besar.</p>
                                 <label for="cbt-correct-mc-index">Jawaban Benar</label>
                                 <select id="cbt-correct-mc-index">
                                     <?php for ($i = 1; $i <= 5; $i++): ?>
@@ -1401,6 +1447,7 @@ if (!defined('ABSPATH')) {
                                                     'media_buttons' => true,
                                                     'teeny' => true,
                                                     'quicktags' => true,
+                                                    'tinymce' => $question_editor_tinymce,
                                                 ]
                                             );
                                             ?>
@@ -1411,7 +1458,7 @@ if (!defined('ABSPATH')) {
                                         </div>
                                     <?php endfor; ?>
                                 </div>
-                                <p class="cbt-inline-help">Isi minimal 2 pilihan, maksimal 12 pilihan. Centang semua jawaban yang benar. Tiap pilihan bisa teks atau gambar.</p>
+                                <p class="cbt-inline-help">Isi minimal 2 pilihan, maksimal 12 pilihan. Centang semua jawaban yang benar. Tiap pilihan bisa teks atau gambar. Paste langsung dari clipboard untuk gambar kecil, atau pakai Add Media untuk file besar.</p>
                             </td>
                         </tr>
                         <tr class="cbt-qtype-panel<?php echo $editing_type === 'true_false' ? ' cbt-active' : ''; ?>" data-qtype="true_false">
@@ -1475,10 +1522,31 @@ if (!defined('ABSPATH')) {
                                         'media_buttons' => true,
                                         'teeny' => false,
                                         'quicktags' => true,
+                                        'tinymce' => $question_editor_tinymce,
                                     ]
                                 );
                                 ?>
-                                <p class="description">Isi jawaban/acuan jawaban essay. Bisa menyertakan gambar.</p>
+                                <p class="description">Isi jawaban/acuan jawaban essay. Bisa paste gambar langsung dari clipboard untuk file kecil, atau gunakan Add Media untuk file besar.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="cbt_question_explanation_editor">Pembahasan</label></th>
+                            <td>
+                                <?php
+                                wp_editor(
+                                    (string) ($editing_explanation ?? ''),
+                                    'cbt_question_explanation_editor',
+                                    [
+                                        'textarea_name' => 'explanation',
+                                        'textarea_rows' => 5,
+                                        'media_buttons' => true,
+                                        'teeny' => false,
+                                        'quicktags' => true,
+                                        'tinymce' => $question_editor_tinymce,
+                                    ]
+                                );
+                                ?>
+                                <p class="description">Opsional. Isi pembahasan/penjelasan soal. Bisa paste gambar langsung dari clipboard untuk file kecil, atau gunakan Add Media untuk file besar.</p>
                             </td>
                         </tr>
                     </table>
@@ -1597,6 +1665,7 @@ if (!defined('ABSPATH')) {
                                 <p class="description">
                                     Format didukung: <code>.docx</code>.
                                     Template berbentuk <strong>tabel</strong> untuk <strong>multiple choice</strong>, <strong>multiple answer</strong>, <strong>true/false</strong>, <strong>true/false matrix</strong>, <strong>short answer</strong>, dan <strong>essay</strong> (gambar bisa ditempel langsung di soal, termasuk opsi jawaban).
+                                    Gunakan field <code>PEMBAHASAN:</code> jika ingin mengisi pembahasan; gambar setelah field ini akan masuk ke pembahasan.
                                     Progress import akan tampil otomatis (jumlah diproses, persentase, created/failed).
                                 </p>
                             </td>
@@ -1879,6 +1948,37 @@ if (!defined('ABSPATH')) {
                                 </tr>
                             <?php endif; ?>
                             <?php if ($question_is_view_open): ?>
+                                <?php
+                                $view_preview_meta_lines = [];
+                                $view_subject_name = trim((string) ($question['subject_name'] ?? ''));
+                                if ($view_subject_name !== '') {
+                                    $view_preview_meta_lines[] = 'Mapel: ' . $view_subject_name;
+                                }
+                                if ($question_exam_title !== '') {
+                                    $view_preview_meta_lines[] = 'Exam: ' . $question_exam_title;
+                                }
+                                if ($question_is_bank_backed && $question_source_exam_title !== '') {
+                                    $view_preview_meta_lines[] = 'Sumber bank: ' . $question_source_exam_title;
+                                }
+                                $view_preview_extra_chips = [];
+                                if ($question_source_label !== '') {
+                                    $view_preview_extra_chips[] = [
+                                        'label' => $question_source_label,
+                                        'tone' => 'source',
+                                    ];
+                                }
+                                $view_preview_html = CBT_Admin_Questions_Helper::render_admin_student_preview_card(
+                                    $view_question,
+                                    $view_options,
+                                    $view_detail,
+                                    [
+                                        'eyebrow' => 'Soal #' . (int) ($view_question['id'] ?? 0),
+                                        'type_label' => (string) ($question_type_labels[(string) ($view_question['question_type'] ?? '')] ?? (string) ($view_question['question_type'] ?? '')),
+                                        'meta_lines' => $view_preview_meta_lines,
+                                        'extra_chips' => $view_preview_extra_chips,
+                                    ]
+                                );
+                                ?>
                                 <tr class="cbt-question-inline-preview-row">
                                     <td colspan="8">
                                         <div class="cbt-question-inline-preview">
@@ -1886,91 +1986,14 @@ if (!defined('ABSPATH')) {
                                                 <div>
                                                     <span class="cbt-question-inline-preview-kicker">Preview Soal</span>
                                                     <div class="cbt-question-inline-preview-title">Soal #<?php echo (int) $view_question['id']; ?></div>
-                                                    <div class="cbt-question-inline-preview-meta">
-                                                        <?php echo esc_html((string) ($question['subject_name'] ?? '-')); ?>
-                                                        <?php if ($question_exam_title !== ''): ?>
-                                                            · <?php echo esc_html($question_exam_title); ?>
-                                                        <?php endif; ?>
-                                                    </div>
-                                                    <div class="cbt-question-inline-preview-chips" style="margin-top:10px;">
-                                                        <span class="cbt-question-inline-preview-pill cbt-question-inline-preview-pill--type">
-                                                            <?php echo esc_html((string) ($question_type_labels[(string) ($view_question['question_type'] ?? '')] ?? (string) ($view_question['question_type'] ?? ''))); ?>
-                                                        </span>
-                                                        <span class="cbt-questions-chip <?php echo esc_attr($question_source_chip_class); ?>">
-                                                            <?php echo esc_html($question_source_label); ?>
-                                                        </span>
-                                                        <span class="cbt-question-inline-preview-pill cbt-question-inline-preview-pill--points">
-                                                            <?php echo esc_html(sprintf('%s poin', (string) ($question['points'] ?? '0'))); ?>
-                                                        </span>
-                                                    </div>
+                                                    <?php if (!empty($view_preview_meta_lines)): ?>
+                                                        <div class="cbt-question-inline-preview-meta"><?php echo esc_html(implode(' · ', $view_preview_meta_lines)); ?></div>
+                                                    <?php endif; ?>
                                                 </div>
                                                 <a class="button button-secondary" data-cbt-questions-inline-view="1" href="<?php echo esc_url($question_hide_view_url); ?>">Tutup Preview</a>
                                             </div>
                                             <div class="cbt-question-inline-preview-body">
-                                                <div class="cbt-question-inline-preview-question"><?php echo wp_kses_post((string) ($view_question['question_text'] ?? '')); ?></div>
-                                                <?php if (!empty($view_options)): ?>
-                                                    <div class="cbt-question-inline-preview-section">
-                                                        <strong>Opsi Jawaban</strong>
-                                                        <div class="cbt-question-inline-preview-options">
-                                                            <?php foreach ($view_options as $index => $opt): ?>
-                                                                <?php $option_is_correct = (int) ($opt['is_correct'] ?? 0) === 1; ?>
-                                                                <div class="cbt-question-inline-preview-option<?php echo $option_is_correct ? ' is-correct' : ''; ?>">
-                                                                    <div class="cbt-question-inline-preview-option-main">
-                                                                        <span class="cbt-question-inline-preview-option-key"><?php echo esc_html((string) ($opt['option_key'] ?? chr(65 + (int) $index))); ?></span>
-                                                                        <div class="cbt-question-inline-preview-option-text"><?php echo wp_kses_post((string) ($opt['option_text'] ?? '')); ?></div>
-                                                                    </div>
-                                                                    <div class="cbt-question-inline-preview-badges">
-                                                                        <?php if ($option_is_correct): ?>
-                                                                            <span class="cbt-question-inline-preview-badge cbt-question-inline-preview-badge--correct">Kunci</span>
-                                                                        <?php endif; ?>
-                                                                    </div>
-                                                                </div>
-                                                            <?php endforeach; ?>
-                                                        </div>
-                                                    </div>
-                                                <?php endif; ?>
-                                                <?php if ((string) ($view_question['question_type'] ?? '') === 'short_answer'): ?>
-                                                    <?php $view_short_answers = CBT_Admin_Questions_Helper::normalize_short_answer_values((string) ($view_detail['correct_text'] ?? '')); ?>
-                                                    <?php if (!empty($view_short_answers)): ?>
-                                                        <div class="cbt-question-inline-preview-section">
-                                                            <strong>Jawaban Valid</strong>
-                                                            <div class="cbt-question-inline-preview-chip-list">
-                                                                <?php foreach ($view_short_answers as $ans): ?>
-                                                                    <span class="cbt-question-inline-preview-chip"><?php echo esc_html($ans); ?></span>
-                                                                <?php endforeach; ?>
-                                                            </div>
-                                                        </div>
-                                                    <?php endif; ?>
-                                                <?php elseif ((string) ($view_question['question_type'] ?? '') === 'true_false'): ?>
-                                                    <div class="cbt-question-inline-preview-section">
-                                                        <strong>Jawaban</strong>
-                                                        <div class="cbt-question-inline-preview-chip-list">
-                                                            <span class="cbt-question-inline-preview-chip"><?php echo ((int) ($view_detail['correct_value'] ?? 1) === 1) ? 'True' : 'False'; ?></span>
-                                                        </div>
-                                                    </div>
-                                                <?php elseif ((string) ($view_question['question_type'] ?? '') === 'true_false_matrix'): ?>
-                                                    <?php $view_tf_matrix = CBT_Admin_Questions_Helper::normalize_true_false_matrix_config((string) ($view_question['correct_text'] ?? '')); ?>
-                                                    <?php if (!empty($view_tf_matrix)): ?>
-                                                        <div class="cbt-question-inline-preview-section">
-                                                            <strong>Pernyataan (Kunci Benar/Salah)</strong>
-                                                            <div class="cbt-question-inline-preview-matrix">
-                                                                <?php foreach ($view_tf_matrix as $row): ?>
-                                                                    <div class="cbt-question-inline-preview-matrix-row">
-                                                                        <div><?php echo esc_html((string) ($row['text'] ?? '')); ?></div>
-                                                                        <div class="cbt-question-inline-preview-matrix-answer">
-                                                                            Kunci: <strong><?php echo ((string) ($row['answer'] ?? 'true') === 'false') ? 'Salah' : 'Benar'; ?></strong>
-                                                                        </div>
-                                                                    </div>
-                                                                <?php endforeach; ?>
-                                                            </div>
-                                                        </div>
-                                                    <?php endif; ?>
-                                                <?php elseif ((string) ($view_question['question_type'] ?? '') === 'essay'): ?>
-                                                    <div class="cbt-question-inline-preview-section">
-                                                        <strong>Acuan Jawaban</strong>
-                                                        <div class="cbt-question-inline-preview-text"><?php echo wp_kses_post((string) ($view_detail['rubric_text'] ?? '')); ?></div>
-                                                    </div>
-                                                <?php endif; ?>
+                                                <?php echo $view_preview_html; ?>
                                             </div>
                                         </div>
                                     </td>
@@ -2169,32 +2192,32 @@ if (!defined('ABSPATH')) {
 
                 const importTypeInfo = {
                     multiple_choice: {
-                        help: 'Mode import aktif: Multiple Choice. DOCX didukung (maks 5 opsi, jawaban nomor opsi, gambar bisa ditempel).',
+                        help: 'Mode import aktif: Multiple Choice. DOCX didukung (maks 5 opsi, jawaban nomor opsi, gambar bisa ditempel, field opsional PEMBAHASAN didukung).',
                         buttonLabel: 'Download Template Word MC (.docx)',
                         urlKey: 'urlMc',
                     },
                     multiple_answer: {
-                        help: 'Mode import aktif: Multiple Answer. DOCX didukung (maks 12 opsi, jawaban bisa lebih dari satu: contoh 1,3,5).',
+                        help: 'Mode import aktif: Multiple Answer. DOCX didukung (maks 12 opsi, jawaban bisa lebih dari satu: contoh 1,3,5, field opsional PEMBAHASAN didukung).',
                         buttonLabel: 'Download Template Word MA (.docx)',
                         urlKey: 'urlMa',
                     },
                     true_false: {
-                        help: 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false).',
+                        help: 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false, field opsional PEMBAHASAN didukung).',
                         buttonLabel: 'Download Template Word TF (.docx)',
                         urlKey: 'urlTf',
                     },
                     true_false_matrix: {
-                        help: 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false).',
+                        help: 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false, field opsional PEMBAHASAN didukung).',
                         buttonLabel: 'Download Template Word TF Matrix (.docx)',
                         urlKey: 'urlTfm',
                     },
                     short_answer: {
-                        help: 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, gunakan placeholder [INPUT_1] s.d. [INPUT_8] di teks soal).',
+                        help: 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, gunakan placeholder [INPUT_1] s.d. [INPUT_8] di teks soal, field opsional PEMBAHASAN didukung).',
                         buttonLabel: 'Download Template Word SA (.docx)',
                         urlKey: 'urlSa',
                     },
                     essay: {
-                        help: 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik).',
+                        help: 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).',
                         buttonLabel: 'Download Template Word Essay (.docx)',
                         urlKey: 'urlEssay',
                     },
@@ -2438,7 +2461,233 @@ if (!defined('ABSPATH')) {
 
                 bindQuestionListInteractions();
 
+                const clipboardImageMaxBytes = 1572864;
+                const manualRichEditorIdPattern = /^(cbt_question_text_editor|cbt_essay_answer_editor|cbt_question_explanation_editor|cbt_(mc|ma)_option_\d+)$/;
                 const manualForm = document.getElementById('cbt-question-manual-form');
+
+                function isManualRichEditorId(editorId) {
+                    return manualRichEditorIdPattern.test(String(editorId || '').trim());
+                }
+
+                function isAllowedClipboardImageType(mimeType) {
+                    const normalizedType = String(mimeType || '').toLowerCase().trim();
+                    if (normalizedType === '' || normalizedType === 'image/svg+xml') {
+                        return false;
+                    }
+
+                    return normalizedType.startsWith('image/');
+                }
+
+                function getClipboardImageFile(event) {
+                    const clipboardData = event?.clipboardData || event?.originalEvent?.clipboardData || null;
+                    if (!clipboardData) {
+                        return null;
+                    }
+
+                    const items = Array.from(clipboardData.items || []);
+                    for (const item of items) {
+                        if (!item || item.kind !== 'file') {
+                            continue;
+                        }
+
+                        const mimeType = String(item.type || '').toLowerCase();
+                        if (!isAllowedClipboardImageType(mimeType) || typeof item.getAsFile !== 'function') {
+                            continue;
+                        }
+
+                        const file = item.getAsFile();
+                        if (file) {
+                            return file;
+                        }
+                    }
+
+                    const files = Array.from(clipboardData.files || []);
+                    for (const file of files) {
+                        const mimeType = String(file?.type || '').toLowerCase();
+                        if (isAllowedClipboardImageType(mimeType)) {
+                            return file;
+                        }
+                    }
+
+                    return null;
+                }
+
+                function escapeHtmlAttribute(value) {
+                    return String(value || '')
+                        .replace(/&/g, '&amp;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+                }
+
+                function readFileAsDataUrl(file) {
+                    return new Promise((resolve, reject) => {
+                        const reader = new window.FileReader();
+                        reader.onload = () => resolve(String(reader.result || ''));
+                        reader.onerror = () => reject(new Error('clipboard-image-read-failed'));
+                        reader.readAsDataURL(file);
+                    });
+                }
+
+                function buildClipboardImageHtml(dataUrl) {
+                    return `<figure class="cbt-pasted-image-block"><img src="${escapeHtmlAttribute(dataUrl)}" alt="Pasted image" /></figure>`;
+                }
+
+                function insertHtmlIntoTextarea(textarea, html) {
+                    if (!textarea) {
+                        return;
+                    }
+
+                    const safeHtml = String(html || '');
+                    const currentValue = String(textarea.value || '');
+                    const start = typeof textarea.selectionStart === 'number' ? textarea.selectionStart : currentValue.length;
+                    const end = typeof textarea.selectionEnd === 'number' ? textarea.selectionEnd : currentValue.length;
+
+                    textarea.focus();
+                    if (typeof textarea.setRangeText === 'function') {
+                        textarea.setRangeText(safeHtml, start, end, 'end');
+                    } else {
+                        textarea.value = `${currentValue.slice(0, start)}${safeHtml}${currentValue.slice(end)}`;
+                        const caret = start + safeHtml.length;
+                        if (typeof textarea.setSelectionRange === 'function') {
+                            textarea.setSelectionRange(caret, caret);
+                        }
+                    }
+
+                    textarea.dispatchEvent(new window.Event('input', { bubbles: true }));
+                    textarea.dispatchEvent(new window.Event('change', { bubbles: true }));
+                }
+
+                async function handleClipboardImagePaste(event, insertHtml) {
+                    const nativeClipboardEvent = event?.clipboardData ? event : (event?.originalEvent || null);
+                    if (nativeClipboardEvent && nativeClipboardEvent.__cbtClipboardImageHandled) {
+                        return;
+                    }
+
+                    const clipboardImage = getClipboardImageFile(event);
+                    if (!clipboardImage) {
+                        return;
+                    }
+
+                    if (nativeClipboardEvent) {
+                        nativeClipboardEvent.__cbtClipboardImageHandled = true;
+                    }
+                    if (event && typeof event === 'object') {
+                        event.__cbtClipboardImageHandled = true;
+                    }
+
+                    event.preventDefault();
+
+                    if (clipboardImage.size > clipboardImageMaxBytes) {
+                        window.alert('Gambar dari clipboard terlalu besar. Gunakan Add Media untuk file di atas 1.5 MB.');
+                        return;
+                    }
+
+                    try {
+                        const dataUrl = await readFileAsDataUrl(clipboardImage);
+                        if (dataUrl === '') {
+                            throw new Error('clipboard-image-empty');
+                        }
+
+                        insertHtml(buildClipboardImageHtml(dataUrl));
+                    } catch (error) {
+                        window.alert('Gambar dari clipboard gagal diproses. Coba ulangi atau gunakan Add Media.');
+                    }
+                }
+
+                function bindTextareaClipboard(textarea) {
+                    if (!textarea || textarea.dataset.cbtClipboardPasteBound === '1' || !isManualRichEditorId(textarea.id)) {
+                        return;
+                    }
+
+                    textarea.addEventListener('paste', (event) => {
+                        void handleClipboardImagePaste(event, (html) => {
+                            insertHtmlIntoTextarea(textarea, html);
+                        });
+                    });
+
+                    textarea.dataset.cbtClipboardPasteBound = '1';
+                }
+
+                function bindTinyMceClipboard(editor) {
+                    if (!editor || editor.__cbtClipboardPasteBound || !isManualRichEditorId(editor.id)) {
+                        return;
+                    }
+
+                    const pasteHandler = (event) => {
+                        void handleClipboardImagePaste(event, (html) => {
+                            editor.focus();
+                            if (typeof editor.insertContent === 'function') {
+                                editor.insertContent(html);
+                            } else if (typeof editor.execCommand === 'function') {
+                                editor.execCommand('mceInsertContent', false, html);
+                            }
+                            if (typeof editor.save === 'function') {
+                                editor.save();
+                            }
+                        });
+                    };
+
+                    const bindEditorDomPaste = () => {
+                        if (editor.__cbtClipboardDomPasteBound) {
+                            return;
+                        }
+
+                        const editorDoc = typeof editor.getDoc === 'function' ? editor.getDoc() : null;
+                        if (!editorDoc || typeof editorDoc.addEventListener !== 'function') {
+                            return;
+                        }
+
+                        editorDoc.addEventListener('paste', pasteHandler, true);
+                        editor.__cbtClipboardDomPasteBound = true;
+                    };
+
+                    editor.on('paste', pasteHandler);
+                    editor.on('init', bindEditorDomPaste);
+                    if (editor.initialized) {
+                        bindEditorDomPaste();
+                    }
+
+                    editor.__cbtClipboardPasteBound = true;
+                }
+
+                function bindManualTextareasClipboardHandlers() {
+                    if (!manualForm) {
+                        return;
+                    }
+
+                    manualForm.querySelectorAll('textarea.wp-editor-area').forEach((textarea) => {
+                        bindTextareaClipboard(textarea);
+                    });
+                }
+
+                function bindManualTinyMceClipboardHandlers(retryCount = 0) {
+                    const tinyMceGlobal = window.tinymce || window.tinyMCE;
+                    if (!tinyMceGlobal) {
+                        if (retryCount < 20) {
+                            window.setTimeout(() => {
+                                bindManualTinyMceClipboardHandlers(retryCount + 1);
+                            }, 250);
+                        }
+                        return;
+                    }
+
+                    const editors = Array.isArray(tinyMceGlobal.editors) ? tinyMceGlobal.editors : [];
+                    editors.forEach((editor) => {
+                        bindTinyMceClipboard(editor);
+                    });
+
+                    if (!tinyMceGlobal.__cbtClipboardAddEditorBound && typeof tinyMceGlobal.on === 'function') {
+                        tinyMceGlobal.on('AddEditor', (event) => {
+                            bindTinyMceClipboard(event?.editor || null);
+                        });
+                        tinyMceGlobal.__cbtClipboardAddEditorBound = true;
+                    }
+                }
+
+                bindManualTextareasClipboardHandlers();
+                bindManualTinyMceClipboardHandlers();
+
                 if (manualForm) {
                     manualForm.addEventListener('submit', (event) => {
                         if (window.tinyMCE && typeof window.tinyMCE.triggerSave === 'function') {

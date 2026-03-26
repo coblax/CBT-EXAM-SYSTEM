@@ -54,6 +54,11 @@ class CBT_Security_Log
                 'severity' => 'warning',
                 'message' => 'Peserta mencoba melakukan copy, cut, atau paste saat ujian berlangsung.',
             ],
+            'idle_detected' => [
+                'label' => 'Idle saat ujian',
+                'severity' => 'warning',
+                'message' => 'Peserta tidak menunjukkan aktivitas pada halaman ujian selama ambang waktu yang ditentukan.',
+            ],
             'admin_reset_login' => [
                 'label' => 'Reset login admin',
                 'severity' => 'info',
@@ -752,6 +757,7 @@ class CBT_Security_Log
             'page_leave' => 5,
             'fullscreen_exit' => 4,
             'tab_hidden' => 3,
+            'idle_detected' => 2,
             'clipboard_blocked' => 2,
             'window_blur' => 2,
             'admin_reset_login' => 0,
@@ -940,6 +946,7 @@ class CBT_Security_Log
             'visibilitychange' => 'Visibility API',
             'blur' => 'Window blur',
             'fullscreenchange' => 'Fullscreen API',
+            'idle_timer' => 'Timer idle',
             'pagehide' => 'Page lifecycle',
             'beforeunload' => 'Before unload',
             'admin_reset_user_login' => 'Panel admin',
