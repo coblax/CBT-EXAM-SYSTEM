@@ -10,6 +10,7 @@ export function createSecurityLoggingManager(deps) {
     var state = deps.state;
     var windowBlurLogDelayMs = deps.windowBlurLogDelayMs;
     var windowRef = deps.windowRef;
+    var pendingPageLeaveStorageKey = 'cbt_exam_frontend_pending_page_leave_v1';
 
     var securityEventLastSentAtByKey = {};
     var pageLeaveLoggedAttemptId = 0;
@@ -31,6 +32,97 @@ export function createSecurityLoggingManager(deps) {
         windowBlurLogScheduledAttemptId = 0;
         pageLeaveLoggedAttemptId = 0;
         securityEventLastSentAtByKey = {};
+    }
+
+    function getSessionStorage() {
+        try {
+            return windowRef && windowRef.sessionStorage ? windowRef.sessionStorage : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function readPendingPageLeaveMarker() {
+        var storage = getSessionStorage();
+        var raw = '';
+        var parsed = null;
+
+        if (!storage) {
+            return null;
+        }
+
+        try {
+            raw = String(storage.getItem(pendingPageLeaveStorageKey) || '');
+        } catch (error) {
+            return null;
+        }
+
+        if (raw === '') {
+            return null;
+        }
+
+        try {
+            parsed = JSON.parse(raw);
+        } catch (error) {
+            return null;
+        }
+
+        if (!parsed || typeof parsed !== 'object') {
+            return null;
+        }
+
+        return parsed;
+    }
+
+    function writePendingPageLeaveMarker(marker) {
+        var storage = getSessionStorage();
+
+        if (!storage || !marker || typeof marker !== 'object') {
+            return;
+        }
+
+        try {
+            storage.setItem(pendingPageLeaveStorageKey, JSON.stringify(marker));
+        } catch (error) {
+            // Ignore storage failures (private mode / blocked storage).
+        }
+    }
+
+    function clearPendingPageLeaveMarker() {
+        var storage = getSessionStorage();
+
+        if (!storage) {
+            return;
+        }
+
+        try {
+            storage.removeItem(pendingPageLeaveStorageKey);
+        } catch (error) {
+            // Ignore storage failures (private mode / blocked storage).
+        }
+    }
+
+    function detectNavigationType() {
+        try {
+            if (!windowRef || !windowRef.performance) {
+                return '';
+            }
+
+            if (typeof windowRef.performance.getEntriesByType === 'function') {
+                var entries = windowRef.performance.getEntriesByType('navigation');
+                if (entries && entries[0] && typeof entries[0].type === 'string') {
+                    return String(entries[0].type || '');
+                }
+            }
+
+            if (windowRef.performance.navigation && Number(windowRef.performance.navigation.type) === 1) {
+                return 'reload';
+            }
+        } catch (error) {
+            return '';
+        }
+
+        return '';
     }
 
     function shouldThrottleSecurityEvent(eventType, attemptId, debounceMs) {
@@ -232,11 +324,64 @@ export function createSecurityLoggingManager(deps) {
         pageLeaveLoggedAttemptId = attemptId;
         cancelScheduledTabHiddenSecurityLog();
         cancelScheduledWindowBlurSecurityLog();
+        writePendingPageLeaveMarker({
+            attemptId: attemptId,
+            recordedAt: Date.now(),
+            source: String(source || 'pagehide'),
+            href: windowRef && windowRef.location && windowRef.location.href
+                ? String(windowRef.location.href)
+                : ''
+        });
         sendSecurityEventSilently('page_leave', {
             source: String(source || 'pagehide')
         }, {
             attemptId: attemptId,
             keepalive: true
+        });
+    }
+
+    function reconcilePendingPageRefreshSecurityEvent() {
+        var marker = readPendingPageLeaveMarker();
+        var navigationType = detectNavigationType();
+        var attemptId;
+        var markerAttemptId;
+        var markerAgeMs;
+
+        if (!marker) {
+            return false;
+        }
+
+        if (navigationType !== 'reload') {
+            clearPendingPageLeaveMarker();
+            return false;
+        }
+
+        attemptId = Number(state.attemptId) || 0;
+        markerAttemptId = Number(marker.attemptId) || 0;
+        markerAgeMs = Math.max(0, Date.now() - (Number(marker.recordedAt) || 0));
+
+        if (
+            !isSecurityLoggingActiveForAttempt()
+            || attemptId <= 0
+            || markerAttemptId <= 0
+            || markerAttemptId !== attemptId
+            || markerAgeMs > 30000
+        ) {
+            return false;
+        }
+
+        clearPendingPageLeaveMarker();
+
+        return sendSecurityEventSilently('page_refresh', {
+            source: 'reload_resume',
+            unload_source: String(marker.source || 'pagehide'),
+            navigation_type: navigationType,
+            reload_delay_ms: markerAgeMs,
+            previous_href: marker.href ? String(marker.href) : ''
+        }, {
+            attemptId: attemptId,
+            keepalive: true,
+            debounceMs: 500
         });
     }
 
@@ -246,6 +391,7 @@ export function createSecurityLoggingManager(deps) {
         clearRuntimeState: clearRuntimeState,
         isWindowBlurLoggingActiveForAttempt: isWindowBlurLoggingActiveForAttempt,
         logPageLeaveSecurityEvent: logPageLeaveSecurityEvent,
+        reconcilePendingPageRefreshSecurityEvent: reconcilePendingPageRefreshSecurityEvent,
         scheduleTabHiddenSecurityLog: scheduleTabHiddenSecurityLog,
         scheduleWindowBlurSecurityLog: scheduleWindowBlurSecurityLog,
         sendLogoutRequestSilently: sendLogoutRequestSilently,

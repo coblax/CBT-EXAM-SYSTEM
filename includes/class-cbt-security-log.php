@@ -39,10 +39,40 @@ class CBT_Security_Log
                 'severity' => 'warning',
                 'message' => 'Window ujian kehilangan fokus saat attempt masih berlangsung.',
             ],
+            'forbidden_process_detected' => [
+                'label' => 'Aplikasi terlarang terdeteksi',
+                'severity' => 'warning',
+                'message' => 'Native Windows mendeteksi aplikasi terlarang aktif saat ujian berlangsung.',
+            ],
+            'forbidden_process_terminated' => [
+                'label' => 'Aplikasi terlarang ditutup',
+                'severity' => 'warning',
+                'message' => 'Native Windows mendeteksi lalu menutup aplikasi terlarang saat ujian berlangsung.',
+            ],
+            'forbidden_process_active' => [
+                'label' => 'Aplikasi terlarang masih aktif',
+                'severity' => 'warning',
+                'message' => 'Native Windows gagal menutup aplikasi terlarang, sehingga aplikasi masih aktif saat ujian berlangsung.',
+            ],
+            'task_manager_blocked' => [
+                'label' => 'Task Manager diblok',
+                'severity' => 'warning',
+                'message' => 'Native Windows mendeteksi akses ke Task Manager dan memblokirnya saat ujian berlangsung.',
+            ],
+            'exit_blocked' => [
+                'label' => 'Keluar diblokir',
+                'severity' => 'warning',
+                'message' => 'Native Windows mendeteksi percobaan keluar dari shell ujian dan memblokirnya.',
+            ],
             'page_leave' => [
                 'label' => 'Meninggalkan halaman',
                 'severity' => 'warning',
-                'message' => 'Peserta me-refresh, menutup, atau meninggalkan halaman ujian.',
+                'message' => 'Peserta menutup atau meninggalkan halaman ujian.',
+            ],
+            'page_refresh' => [
+                'label' => 'Refresh halaman',
+                'severity' => 'info',
+                'message' => 'Peserta me-refresh halaman ujian saat attempt masih berlangsung.',
             ],
             'session_revoked' => [
                 'label' => 'Sesi dicabut',
@@ -124,11 +154,52 @@ class CBT_Security_Log
      */
     public static function native_supported_event_definitions(): array
     {
+        return self::native_supported_event_definitions_for_app('');
+    }
+
+    /**
+     * @return array<string,array{label:string,severity:string,message:string}>
+     */
+    public static function native_supported_event_definitions_for_app(string $native_app): array
+    {
+        $definitions = self::event_definitions();
+        $supported = [];
+        $native_app = sanitize_key($native_app);
+
+        if ($native_app === 'android_webview') {
+            $supported_types = self::android_native_event_type_names();
+        } elseif ($native_app === 'windows_cefsharp') {
+            $supported_types = self::windows_native_event_type_names();
+        } else {
+            $supported_types = array_values(array_unique(array_merge(
+                self::android_native_event_type_names(),
+                self::windows_native_event_type_names()
+            )));
+        }
+
+        foreach ($supported_types as $event_type) {
+            if (isset($definitions[$event_type])) {
+                $supported[$event_type] = $definitions[$event_type];
+            }
+        }
+
+        return $supported;
+    }
+
+    /**
+     * Katalog event browser/CBT saat ini dipisah dari native API supaya event browser seperti refresh halaman
+     * bisa punya label dan skor sendiri tanpa otomatis ikut menjadi event native yang diterima endpoint direct API.
+     *
+     * @return array<string,array{label:string,severity:string,message:string}>
+     */
+    public static function browser_supported_event_definitions(): array
+    {
         $definitions = self::event_definitions();
         $supported_types = [
             'tab_hidden',
             'window_blur',
             'page_leave',
+            'page_refresh',
             'fullscreen_exit',
             'clipboard_blocked',
             'idle_detected',
@@ -144,9 +215,28 @@ class CBT_Security_Log
         return $supported;
     }
 
+    /**
+     * @return array<string,array{label:string,severity:string,message:string}>
+     */
+    public static function android_native_supported_event_definitions(): array
+    {
+        return self::native_supported_event_definitions_for_app('android_webview');
+    }
+
+    /**
+     * @return array<string,array{label:string,severity:string,message:string}>
+     */
+    public static function windows_native_supported_event_definitions(): array
+    {
+        return self::native_supported_event_definitions_for_app('windows_cefsharp');
+    }
+
     public static function is_native_event_type(string $event_type): bool
     {
-        return strpos(sanitize_key($event_type), 'native_') === 0;
+        $event_type = sanitize_key($event_type);
+
+        return strpos($event_type, 'native_') === 0
+            || in_array($event_type, self::windows_native_event_type_names(), true);
     }
 
     /**
@@ -182,12 +272,54 @@ class CBT_Security_Log
         return $labels[$native_app] ?? '';
     }
 
-    public static function get_event_risk_weight(string $event_type): int
+    /**
+     * @return string[]
+     */
+    public static function android_native_event_type_names(): array
+    {
+        return [
+            'tab_hidden',
+            'window_blur',
+            'page_leave',
+            'fullscreen_exit',
+            'clipboard_blocked',
+            'idle_detected',
+        ];
+    }
+
+    /**
+     * @return string[]
+     */
+    public static function windows_native_event_type_names(): array
+    {
+        return [
+            'window_blur',
+            'forbidden_process_detected',
+            'forbidden_process_terminated',
+            'forbidden_process_active',
+            'task_manager_blocked',
+            'exit_blocked',
+        ];
+    }
+
+    public static function get_event_risk_weight(string $event_type): float
     {
         $event_type = sanitize_key($event_type);
         $weights = self::must_watch_event_weights();
 
-        return (int) ($weights[$event_type] ?? 0);
+        return (float) ($weights[$event_type] ?? 0);
+    }
+
+    public static function format_risk_score($score): string
+    {
+        $safe_score = max(0, (float) $score);
+        return number_format_i18n($safe_score, self::risk_score_precision($safe_score));
+    }
+
+    public static function format_risk_score_raw($score): string
+    {
+        $safe_score = max(0, (float) $score);
+        return number_format($safe_score, self::risk_score_precision($safe_score), '.', '');
     }
 
     public static function must_watch_score_threshold(): int
@@ -281,7 +413,7 @@ class CBT_Security_Log
             return false;
         }
 
-        return self::insert_log($attempt, $event_type, $context);
+        return self::record_event_for_attempt_context($attempt, $event_type, $context);
     }
 
     public static function record_latest_student_attempt_event(int $student_id, string $event_type, array $context = []): bool
@@ -295,7 +427,7 @@ class CBT_Security_Log
             return false;
         }
 
-        return self::insert_log($attempt, $event_type, $context);
+        return self::record_event_for_attempt_context($attempt, $event_type, $context);
     }
 
     /**
@@ -446,7 +578,7 @@ class CBT_Security_Log
         $teacher_id = isset($filters['teacher_id']) ? absint($filters['teacher_id']) : 0;
         $risk_weights = self::must_watch_event_weights();
         $tracked_events = array_keys(array_filter($risk_weights, static function ($weight): bool {
-            return (int) $weight > 0;
+            return (float) $weight > 0;
         }));
 
         if (empty($tracked_events)) {
@@ -520,7 +652,7 @@ class CBT_Security_Log
             }
 
             $event_type = sanitize_key((string) ($row['event_type'] ?? ''));
-            $event_weight = isset($risk_weights[$event_type]) ? (int) $risk_weights[$event_type] : 0;
+            $event_weight = isset($risk_weights[$event_type]) ? (float) $risk_weights[$event_type] : 0.0;
             if ($event_weight <= 0) {
                 continue;
             }
@@ -563,7 +695,7 @@ class CBT_Security_Log
                     'exam_title' => trim((string) ($row['exam_title'] ?? '')) !== ''
                         ? (string) $row['exam_title']
                         : ('Exam #' . (int) ($row['exam_id'] ?? 0)),
-                    'risk_score' => 0,
+                    'risk_score' => 0.0,
                     'event_total' => 0,
                     'session_revoked_count' => 0,
                     'last_event_at' => '',
@@ -596,7 +728,7 @@ class CBT_Security_Log
                     'event_type' => $event_type,
                     'label' => (string) ($definitions[$event_type]['label'] ?? ucwords(str_replace('_', ' ', $event_type))),
                     'count' => 0,
-                    'score' => 0,
+                    'score' => 0.0,
                     'last_at' => '',
                 ];
             }
@@ -615,7 +747,7 @@ class CBT_Security_Log
 
         foreach ($aggregated as $attempt) {
             $has_session_revoked = (int) ($attempt['session_revoked_count'] ?? 0) > 0;
-            $risk_score = (int) ($attempt['risk_score'] ?? 0);
+            $risk_score = (float) ($attempt['risk_score'] ?? 0.0);
             $event_total = (int) ($attempt['event_total'] ?? 0);
 
             if (!$has_session_revoked && ($risk_score < self::MUST_WATCH_SCORE_THRESHOLD || $event_total < 2)) {
@@ -637,9 +769,9 @@ class CBT_Security_Log
         }
 
         usort($must_watch_attempts, static function (array $left, array $right): int {
-            $left_score = (int) ($left['risk_score'] ?? 0);
-            $right_score = (int) ($right['risk_score'] ?? 0);
-            if ($left_score !== $right_score) {
+            $left_score = (float) ($left['risk_score'] ?? 0.0);
+            $right_score = (float) ($right['risk_score'] ?? 0.0);
+            if (abs($left_score - $right_score) > 0.0001) {
                 return $right_score <=> $left_score;
             }
 
@@ -699,6 +831,16 @@ class CBT_Security_Log
         return is_numeric($deleted) ? max(0, (int) $deleted) : 0;
     }
 
+    private static function record_event_for_attempt_context(array $attempt, string $event_type, array $context = []): bool
+    {
+        $event_type = sanitize_key($event_type);
+        if ($event_type === 'page_refresh' && self::maybe_promote_recent_page_leave_to_refresh($attempt, $context)) {
+            return true;
+        }
+
+        return self::insert_log($attempt, $event_type, $context);
+    }
+
     private static function insert_log(array $attempt, string $event_type, array $context = []): bool
     {
         $event_type = sanitize_key($event_type);
@@ -710,7 +852,8 @@ class CBT_Security_Log
         global $wpdb;
 
         $table = self::get_table_name($wpdb);
-        $context_json = wp_json_encode(self::normalize_context($context));
+        $normalized_context = self::normalize_context($context);
+        $context_json = wp_json_encode($normalized_context);
         $occurred_at = current_time('mysql');
 
         try {
@@ -740,6 +883,92 @@ class CBT_Security_Log
         self::maybe_prune_expired_logs();
 
         return true;
+    }
+
+    private static function maybe_promote_recent_page_leave_to_refresh(array $attempt, array $context = []): bool
+    {
+        $definition = self::event_definitions()['page_refresh'] ?? null;
+        if (!$definition) {
+            return false;
+        }
+
+        global $wpdb;
+
+        $table = self::get_table_name($wpdb);
+        $recent_leave = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, context_json
+                 FROM {$table}
+                 WHERE attempt_id = %d
+                   AND event_type = %s
+                 ORDER BY occurred_at DESC, id DESC
+                 LIMIT 1",
+                (int) ($attempt['id'] ?? 0),
+                'page_leave'
+            ),
+            ARRAY_A
+        );
+
+        if (!is_array($recent_leave) || (int) ($recent_leave['id'] ?? 0) <= 0) {
+            return false;
+        }
+
+        $existing_context = self::decode_context_json((string) ($recent_leave['context_json'] ?? ''));
+        $refresh_context = self::normalize_context($context);
+
+        if (
+            !isset($refresh_context['unload_source'])
+            && !empty($existing_context['source'])
+        ) {
+            $refresh_context['unload_source'] = (string) $existing_context['source'];
+        }
+
+        if (empty($refresh_context['source'])) {
+            $refresh_context['source'] = 'reload_resume';
+        }
+
+        $merged_context = array_merge($existing_context, $refresh_context);
+        $context_json = wp_json_encode(self::normalize_context($merged_context));
+        $log_id = (int) ($recent_leave['id'] ?? 0);
+
+        try {
+            if (method_exists($wpdb, 'update')) {
+                $updated = $wpdb->update(
+                    $table,
+                    [
+                        'event_type' => 'page_refresh',
+                        'severity' => (string) $definition['severity'],
+                        'message' => (string) $definition['message'],
+                        'context_json' => is_string($context_json) ? $context_json : '{}',
+                    ],
+                    [
+                        'id' => $log_id,
+                    ],
+                    ['%s', '%s', '%s', '%s'],
+                    ['%d']
+                );
+            } else {
+                $updated = $wpdb->query(
+                    $wpdb->prepare(
+                        "UPDATE {$table}
+                         SET event_type = %s,
+                             severity = %s,
+                             message = %s,
+                             context_json = %s
+                         WHERE id = %d",
+                        'page_refresh',
+                        (string) $definition['severity'],
+                        (string) $definition['message'],
+                        is_string($context_json) ? $context_json : '{}',
+                        $log_id
+                    )
+                );
+            }
+        } catch (Throwable $exception) {
+            return false;
+        }
+
+        return $updated !== false;
     }
 
     /**
@@ -876,18 +1105,24 @@ class CBT_Security_Log
     }
 
     /**
-     * @return array<string,int>
+     * @return array<string,float>
      */
     private static function must_watch_event_weights(): array
     {
         return [
             'session_revoked' => 3,
             'page_leave' => 5,
+            'page_refresh' => 0.5,
             'fullscreen_exit' => 4,
             'tab_hidden' => 3,
             'idle_detected' => 2,
             'clipboard_blocked' => 2,
             'window_blur' => 2,
+            'forbidden_process_detected' => 3,
+            'forbidden_process_terminated' => 3,
+            'forbidden_process_active' => 5,
+            'task_manager_blocked' => 4,
+            'exit_blocked' => 5,
             'admin_reset_login' => 0,
             'admin_force_complete' => 0,
             'native_task_switch' => 3,
@@ -900,7 +1135,7 @@ class CBT_Security_Log
     }
 
     /**
-     * @param array<string,array{event_type:string,label:string,count:int,score:int,last_at:string}> $event_counts
+     * @param array<string,array{event_type:string,label:string,count:int,score:float,last_at:string}> $event_counts
      * @return string[]
      */
     private static function build_must_watch_indicators(array $event_counts): array
@@ -920,7 +1155,7 @@ class CBT_Security_Log
     }
 
     /**
-     * @param array<string,array{event_type:string,label:string,count:int,score:int,last_at:string}> $event_counts
+     * @param array<string,array{event_type:string,label:string,count:int,score:float,last_at:string}> $event_counts
      * @return array{event_type:string,label:string}
      */
     private static function build_must_watch_primary_event(array $event_counts): array
@@ -942,8 +1177,8 @@ class CBT_Security_Log
     }
 
     /**
-     * @param array<string,array{event_type:string,label:string,count:int,score:int,last_at:string}> $event_counts
-     * @return array<int,array{event_type:string,label:string,count:int,score:int,last_at:string}>
+     * @param array<string,array{event_type:string,label:string,count:int,score:float,last_at:string}> $event_counts
+     * @return array<int,array{event_type:string,label:string,count:int,score:float,last_at:string}>
      */
     private static function sort_must_watch_event_items(array $event_counts): array
     {
@@ -953,9 +1188,9 @@ class CBT_Security_Log
 
         $items = array_values($event_counts);
         usort($items, static function (array $left, array $right): int {
-            $left_score = (int) ($left['score'] ?? 0);
-            $right_score = (int) ($right['score'] ?? 0);
-            if ($left_score !== $right_score) {
+            $left_score = (float) ($left['score'] ?? 0.0);
+            $right_score = (float) ($right['score'] ?? 0.0);
+            if (abs($left_score - $right_score) > 0.0001) {
                 return $right_score <=> $left_score;
             }
 
@@ -1066,6 +1301,11 @@ class CBT_Security_Log
             $parts[] = 'Sumber deteksi: ' . $source_label . '.';
         }
 
+        $unload_source_label = self::security_context_source_label((string) ($context['unload_source'] ?? ''), $event_type);
+        if ($event_type === 'page_refresh' && $unload_source_label !== '') {
+            $parts[] = 'Sumber unload awal: ' . $unload_source_label . '.';
+        }
+
         $native_app_label = self::native_app_label((string) ($context['native_app'] ?? ''));
         if ($native_app_label !== '') {
             $parts[] = 'Native app: ' . $native_app_label . '.';
@@ -1109,6 +1349,7 @@ class CBT_Security_Log
             'idle_timer' => 'Timer idle',
             'pagehide' => 'Page lifecycle',
             'beforeunload' => 'Before unload',
+            'reload_resume' => 'Resume setelah refresh',
             'admin_reset_user_login' => 'Panel admin',
             'admin_force_complete_attempt' => 'Panel Must Watch',
             'must_watch_panel' => 'Panel Must Watch',
@@ -1172,5 +1413,18 @@ class CBT_Security_Log
         }
 
         return $normalized;
+    }
+
+    private static function risk_score_precision(float $score): int
+    {
+        if (abs($score - round($score)) < 0.0001) {
+            return 0;
+        }
+
+        if (abs($score - round($score, 1)) < 0.0001) {
+            return 1;
+        }
+
+        return 2;
     }
 }

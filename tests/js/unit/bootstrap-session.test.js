@@ -16,6 +16,7 @@ function createFixture(overrides = {}) {
         fullLogout: 0,
         loadExams: 0,
         persistAuthSession: 0,
+        reconcilePendingPageRefreshSecurityEvent: 0,
         render: 0,
         startSessionHeartbeat: 0,
         triggerPendingSyncLifecycleRetry: [],
@@ -43,6 +44,9 @@ function createFixture(overrides = {}) {
         },
         readPersistedAuthSession: function () {
             return overrides.persisted || null;
+        },
+        reconcilePendingPageRefreshSecurityEvent: function () {
+            calls.reconcilePendingPageRefreshSecurityEvent += 1;
         },
         render: function () {
             calls.render += 1;
@@ -96,6 +100,7 @@ describe('createBootstrapSessionManager', function () {
         expect(fixture.state.busy).toBe(false);
         expect(fixture.calls.startSessionHeartbeat).toBe(1);
         expect(fixture.calls.persistAuthSession).toBe(1);
+        expect(fixture.calls.reconcilePendingPageRefreshSecurityEvent).toBe(1);
         expect(fixture.calls.triggerPendingSyncLifecycleRetry).toEqual([
             {
                 options: { delayMs: 220 },
@@ -121,6 +126,7 @@ describe('createBootstrapSessionManager', function () {
         expect(fixture.state.stage).toBe('confirm');
         expect(fixture.state.busy).toBe(false);
         expect(fixture.calls.startSessionHeartbeat).toBe(1);
+        expect(fixture.calls.reconcilePendingPageRefreshSecurityEvent).toBe(0);
         expect(fixture.calls.triggerPendingSyncLifecycleRetry).toEqual([
             {
                 options: { delayMs: 220 },

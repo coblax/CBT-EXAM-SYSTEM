@@ -4,6 +4,7 @@ export function createBootstrapSessionManager(deps) {
     var loadExams = deps.loadExams;
     var persistAuthSession = deps.persistAuthSession;
     var readPersistedAuthSession = deps.readPersistedAuthSession;
+    var reconcilePendingPageRefreshSecurityEvent = deps.reconcilePendingPageRefreshSecurityEvent;
     var render = deps.render;
     var startSessionHeartbeat = deps.startSessionHeartbeat;
     var state = deps.state;
@@ -31,6 +32,9 @@ export function createBootstrapSessionManager(deps) {
                 selectedOnly: Number(persisted.selectedExamId) > 0
             });
             if (resumed) {
+                if (typeof reconcilePendingPageRefreshSecurityEvent === 'function') {
+                    reconcilePendingPageRefreshSecurityEvent();
+                }
                 persistAuthSession();
                 startSessionHeartbeat();
                 state.busy = false;

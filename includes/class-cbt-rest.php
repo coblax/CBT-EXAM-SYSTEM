@@ -1162,8 +1162,17 @@ class CBT_REST
             return new WP_Error('invalid_event_type', 'Event type is not allowed', ['status' => 400]);
         }
 
-        if ($native_mode && !isset(CBT_Security_Log::native_supported_event_definitions()[$event_type])) {
-            return new WP_Error('invalid_native_event_type', 'Native endpoint only accepts supported CBT security events', ['status' => 400]);
+        $native_app = '';
+        if ($native_mode) {
+            $native_app = sanitize_key((string) self::get_request_payload_value($request, 'native_app'));
+            $allowed_native_apps = CBT_Security_Log::native_app_labels();
+            if ($native_app === '' || !isset($allowed_native_apps[$native_app])) {
+                return new WP_Error('invalid_native_app', 'Native app is not allowed', ['status' => 400]);
+            }
+
+            if (!isset(CBT_Security_Log::native_supported_event_definitions_for_app($native_app)[$event_type])) {
+                return new WP_Error('invalid_native_event_type', 'Native endpoint only accepts supported CBT security events', ['status' => 400]);
+            }
         }
 
         if (!$native_mode && CBT_Security_Log::is_native_event_type($event_type)) {
@@ -1181,12 +1190,6 @@ class CBT_REST
         }
 
         if ($native_mode) {
-            $native_app = sanitize_key((string) self::get_request_payload_value($request, 'native_app'));
-            $allowed_native_apps = CBT_Security_Log::native_app_labels();
-            if ($native_app === '' || !isset($allowed_native_apps[$native_app])) {
-                return new WP_Error('invalid_native_app', 'Native app is not allowed', ['status' => 400]);
-            }
-
             $context = self::enrich_native_security_event_context($request, $context, [
                 'native_app' => $native_app,
                 'native_version' => self::get_request_payload_value($request, 'native_version'),

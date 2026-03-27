@@ -225,7 +225,7 @@ final class SecurityLogObservabilityTest extends TestCase
 
         self::assertCount(2, $attempts);
         self::assertSame(22, $attempts[0]['attempt_id']);
-        self::assertSame(5, $attempts[0]['risk_score']);
+        self::assertSame(5.0, $attempts[0]['risk_score']);
         self::assertSame(2, $attempts[0]['event_total']);
         self::assertSame(1, $attempts[0]['session_revoked_count']);
         self::assertSame('Sesi dicabut', $attempts[0]['primary_event_label']);
@@ -241,16 +241,25 @@ final class SecurityLogObservabilityTest extends TestCase
 
         $definitions = \CBT_Security_Log::event_definitions();
         self::assertArrayHasKey('idle_detected', $definitions);
+        self::assertArrayHasKey('page_refresh', $definitions);
         self::assertSame('Idle saat ujian', $definitions['idle_detected']['label']);
         self::assertSame('warning', $definitions['idle_detected']['severity']);
+        self::assertSame('Refresh halaman', $definitions['page_refresh']['label']);
+        self::assertSame('info', $definitions['page_refresh']['severity']);
         self::assertSame(
             'Peserta tidak menunjukkan aktivitas pada halaman ujian selama ambang waktu yang ditentukan.',
             $definitions['idle_detected']['message']
         );
 
+        $browserCatalog = \CBT_Security_Log::browser_supported_event_definitions();
         $nativeCatalog = \CBT_Security_Log::native_supported_event_definitions();
+        $windowsCatalog = \CBT_Security_Log::windows_native_supported_event_definitions();
+        self::assertArrayHasKey('page_refresh', $browserCatalog);
         self::assertArrayHasKey('tab_hidden', $nativeCatalog);
         self::assertArrayHasKey('fullscreen_exit', $nativeCatalog);
+        self::assertArrayHasKey('task_manager_blocked', $windowsCatalog);
+        self::assertSame('Task Manager diblok', $windowsCatalog['task_manager_blocked']['label']);
+        self::assertArrayNotHasKey('page_refresh', $nativeCatalog);
         self::assertSame('Pindah tab / aplikasi', $nativeCatalog['tab_hidden']['label']);
 
         $reflection = new \ReflectionClass(\CBT_Security_Log::class);
@@ -260,11 +269,65 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertSame(3, $weights['session_revoked']);
         self::assertSame(2, $weights['idle_detected']);
         self::assertSame(3, $weights['tab_hidden']);
+        self::assertSame(0.5, $weights['page_refresh']);
+        self::assertSame(4, $weights['task_manager_blocked']);
+        self::assertSame(5, $weights['exit_blocked']);
 
         $sourceLabelMethod = $reflection->getMethod('security_context_source_label');
         $sourceLabelMethod->setAccessible(true);
         self::assertSame('Timer idle', $sourceLabelMethod->invoke(null, 'idle_timer', 'idle_detected'));
         self::assertSame('Windows CEFSharp Shell', $sourceLabelMethod->invoke(null, 'windows_cefsharp_shell', 'tab_hidden'));
+        self::assertSame('Resume setelah refresh', $sourceLabelMethod->invoke(null, 'reload_resume', 'page_refresh'));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_page_refresh_promotes_recent_page_leave_log_instead_of_inserting_a_new_warning(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        update_option('cbt_setup_security', ['log_security_events' => 1]);
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->attemptsById[10] = [
+            'id' => 10,
+            'exam_id' => 51,
+            'student_id' => 9,
+            'status' => 'in_progress',
+        ];
+        $wpdb->recentLogs = [
+            [
+                'id' => 77,
+                'attempt_id' => 10,
+                'exam_id' => 51,
+                'student_id' => 9,
+                'event_type' => 'page_leave',
+                'severity' => 'warning',
+                'message' => 'Peserta menutup atau meninggalkan halaman ujian.',
+                'context_json' => wp_json_encode([
+                    'source' => 'beforeunload',
+                    'device_type' => 'desktop',
+                ]),
+                'occurred_at' => '2026-03-27 09:15:00',
+                'created_at' => '2026-03-27 09:15:00',
+            ],
+        ];
+
+        self::assertTrue(\CBT_Security_Log::record_attempt_event(10, 'page_refresh', [
+            'source' => 'reload_resume',
+            'navigation_type' => 'reload',
+        ]));
+        self::assertCount(0, $wpdb->insertedRows);
+        self::assertCount(1, $wpdb->updatedRows);
+        self::assertSame('page_refresh', $wpdb->recentLogs[0]['event_type']);
+        self::assertSame('info', $wpdb->recentLogs[0]['severity']);
+        self::assertSame('Peserta me-refresh halaman ujian saat attempt masih berlangsung.', $wpdb->recentLogs[0]['message']);
+
+        $updatedContext = json_decode((string) $wpdb->recentLogs[0]['context_json'], true);
+        self::assertIsArray($updatedContext);
+        self::assertSame('reload_resume', $updatedContext['source']);
+        self::assertSame('beforeunload', $updatedContext['unload_source']);
     }
 
     #[RunInSeparateProcess]
@@ -334,6 +397,9 @@ class SecurityLogFakeWpdb extends \wpdb
     /** @var array<int,array<string,mixed>> */
     public array $mustWatchRows = [];
 
+    /** @var array<int,array<string,mixed>> */
+    public array $updatedRows = [];
+
     public function prepare($query, ...$args): string
     {
         if (count($args) === 1 && is_array($args[0])) {
@@ -354,6 +420,28 @@ class SecurityLogFakeWpdb extends \wpdb
         return 1;
     }
 
+    public function update($table, $data, $where, $format = null, $where_format = null): int|false
+    {
+        $row = [
+            'table' => $table,
+            'data' => is_array($data) ? $data : [],
+            'where' => is_array($where) ? $where : [],
+        ];
+        $this->updatedRows[] = $row;
+
+        $targetId = (int) ($row['where']['id'] ?? 0);
+        foreach ($this->recentLogs as $index => $existing) {
+            if ((int) ($existing['id'] ?? 0) !== $targetId) {
+                continue;
+            }
+
+            $this->recentLogs[$index] = array_merge($existing, $row['data']);
+            return 1;
+        }
+
+        return 0;
+    }
+
     public function query($query): int|false
     {
         return 0;
@@ -369,6 +457,22 @@ class SecurityLogFakeWpdb extends \wpdb
         if (preg_match('/WHERE student_id = (\d+)/', (string) $query, $matches)) {
             $studentId = (int) $matches[1];
             return $this->latestAttemptByStudent[$studentId] ?? null;
+        }
+
+        if (
+            preg_match('/FROM ' . preg_quote($this->prefix . 'cbt_security_logs', '/') . '/', (string) $query)
+            && preg_match('/WHERE attempt_id = (\d+)/', (string) $query, $attemptMatches)
+            && str_contains((string) $query, "event_type = 'page_leave'")
+        ) {
+            $attemptId = (int) $attemptMatches[1];
+            foreach ($this->recentLogs as $row) {
+                if ((int) ($row['attempt_id'] ?? 0) === $attemptId && (string) ($row['event_type'] ?? '') === 'page_leave') {
+                    return [
+                        'id' => (int) ($row['id'] ?? 0),
+                        'context_json' => (string) ($row['context_json'] ?? ''),
+                    ];
+                }
+            }
         }
 
         return null;

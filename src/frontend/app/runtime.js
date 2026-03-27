@@ -1638,6 +1638,7 @@ export function bootstrapFrontendApp() {
         loadExams: loadExams,
         persistAuthSession: persistAuthSession,
         readPersistedAuthSession: readPersistedAuthSession,
+        reconcilePendingPageRefreshSecurityEvent: securityLoggingManager.reconcilePendingPageRefreshSecurityEvent,
         render: render,
         startSessionHeartbeat: startSessionHeartbeat,
         state: state,

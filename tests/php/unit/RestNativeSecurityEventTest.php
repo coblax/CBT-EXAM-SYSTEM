@@ -108,6 +108,53 @@ final class RestNativeSecurityEventTest extends TestCase
         ));
         self::assertTrue(is_wp_error($unsupportedEvent));
         self::assertSame('invalid_native_event_type', $unsupportedEvent->get_error_code());
+
+        $windowsOnlyOnAndroid = \CBT_REST::native_security_event(new \WP_REST_Request(
+            [],
+            [
+                'attempt_id' => 114,
+                'event_type' => 'task_manager_blocked',
+                'native_app' => 'android_webview',
+            ]
+        ));
+        self::assertTrue(is_wp_error($windowsOnlyOnAndroid));
+        self::assertSame('invalid_native_event_type', $windowsOnlyOnAndroid->get_error_code());
+    }
+
+    #[RunInSeparateProcess]
+    public function test_native_security_event_accepts_windows_specific_event_for_windows_app(): void
+    {
+        $this->bootstrapNativeRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new RestNativeSecurityEventFakeWpdb([
+            114 => [
+                'id' => 114,
+                'exam_id' => 16,
+                'student_id' => 7,
+                'status' => 'in_progress',
+                'started_at' => '2026-03-26 21:00:00',
+                'extra_time_minutes' => 0,
+            ],
+        ]);
+
+        $response = \CBT_REST::native_security_event(new \WP_REST_Request(
+            [],
+            [
+                'attempt_id' => 114,
+                'event_type' => 'task_manager_blocked',
+                'native_app' => 'windows_cefsharp',
+                'warning_code' => 'task_manager_detected',
+                'warning_message' => 'TEST WARNING: Task Manager tidak diizinkan selama ujian',
+            ]
+        ));
+
+        self::assertIsArray($response);
+        self::assertSame(1, $response['logged']);
+        self::assertSame('task_manager_blocked', $response['event_type']);
+        self::assertCount(1, CBT_Security_Log::$recordedEvents);
+        self::assertSame('task_manager_blocked', CBT_Security_Log::$recordedEvents[0]['event_type']);
     }
 
     private function bootstrapNativeRestScaffold(): void
@@ -144,6 +191,7 @@ class CBT_Security_Log
     {
         return [
             'tab_hidden' => ['label' => 'Pindah tab / aplikasi', 'severity' => 'warning', 'message' => ''],
+            'task_manager_blocked' => ['label' => 'Task Manager diblok', 'severity' => 'warning', 'message' => ''],
             'session_revoked' => ['label' => 'Sesi dicabut', 'severity' => 'critical', 'message' => ''],
         ];
     }
@@ -152,12 +200,28 @@ class CBT_Security_Log
     {
         return [
             'tab_hidden' => ['label' => 'Pindah tab / aplikasi', 'severity' => 'warning', 'message' => ''],
+            'task_manager_blocked' => ['label' => 'Task Manager diblok', 'severity' => 'warning', 'message' => ''],
+        ];
+    }
+
+    public static function native_supported_event_definitions_for_app(string $native_app): array
+    {
+        if ($native_app === 'windows_cefsharp') {
+            return [
+                'tab_hidden' => ['label' => 'Pindah tab / aplikasi', 'severity' => 'warning', 'message' => ''],
+                'task_manager_blocked' => ['label' => 'Task Manager diblok', 'severity' => 'warning', 'message' => ''],
+            ];
+        }
+
+        return [
+            'tab_hidden' => ['label' => 'Pindah tab / aplikasi', 'severity' => 'warning', 'message' => ''],
         ];
     }
 
     public static function is_native_event_type(string $event_type): bool
     {
-        return strpos((string) $event_type, 'native_') === 0;
+        return strpos((string) $event_type, 'native_') === 0
+            || in_array((string) $event_type, ['task_manager_blocked'], true);
     }
 
     public static function native_app_labels(): array

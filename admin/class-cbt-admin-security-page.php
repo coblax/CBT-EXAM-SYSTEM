@@ -58,7 +58,9 @@ final class CBT_Admin_Security_Page
                         $exam_title = trim((string) ($must_watch_attempt['exam_title'] ?? '')) !== ''
                             ? (string) $must_watch_attempt['exam_title']
                             : ($exam_id > 0 ? ('Exam #' . $exam_id) : '-');
-                        $risk_score = max(0, (int) ($must_watch_attempt['risk_score'] ?? 0));
+                        $risk_score = max(0, (float) ($must_watch_attempt['risk_score'] ?? 0));
+                        $risk_score_display = CBT_Security_Log::format_risk_score($risk_score);
+                        $risk_score_raw = CBT_Security_Log::format_risk_score_raw($risk_score);
                         $risk_tone = sanitize_key((string) ($must_watch_attempt['risk_tone'] ?? 'watch'));
                         if (!in_array($risk_tone, ['watch', 'high-risk'], true)) {
                             $risk_tone = 'watch';
@@ -102,7 +104,7 @@ final class CBT_Admin_Security_Page
                             data-focus-event="<?php echo esc_attr($primary_event_type); ?>"
                             data-focus-event-label="<?php echo esc_attr($primary_event_label); ?>"
                             data-sort-order="<?php echo esc_attr((string) ((int) $must_watch_index)); ?>"
-                            data-sort-score="<?php echo esc_attr((string) $risk_score); ?>"
+                            data-sort-score="<?php echo esc_attr($risk_score_raw); ?>"
                             data-sort-last-at="<?php echo esc_attr($last_event_at); ?>"
                             title="Klik untuk fokus ke histori log attempt ini."
                         >
@@ -112,7 +114,7 @@ final class CBT_Admin_Security_Page
                                 </div>
                                 <div class="cbt-setup-security-log-watch-item-side">
                                     <span class="cbt-setup-security-log-badge is-<?php echo esc_attr($risk_tone); ?>"><?php echo esc_html($risk_label); ?></span>
-                                    <span class="cbt-setup-security-log-badge is-score"><?php echo esc_html('Skor ' . $risk_score); ?></span>
+                                    <span class="cbt-setup-security-log-badge is-score"><?php echo esc_html('Skor ' . $risk_score_display); ?></span>
                                     <span class="cbt-setup-security-log-badge is-device-<?php echo esc_attr($last_device_type); ?>"><?php echo esc_html($last_device_label); ?></span>
                                 </div>
                             </div>

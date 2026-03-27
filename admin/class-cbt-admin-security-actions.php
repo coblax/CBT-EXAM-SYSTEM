@@ -129,15 +129,15 @@ final class CBT_Admin_Security_Actions
             exit;
         }
 
-        $native_event_definitions = CBT_Security_Log::native_supported_event_definitions();
-        if ($event_type === '' || !isset($native_event_definitions[$event_type])) {
-            wp_safe_redirect(admin_url('admin.php?page=cbt-security&cbt_err=' . rawurlencode('Event native tidak dikenali.')) . '#native');
-            exit;
-        }
-
         $native_app_labels = CBT_Security_Log::native_app_labels();
         if ($native_app === '' || !isset($native_app_labels[$native_app])) {
             wp_safe_redirect(admin_url('admin.php?page=cbt-security&cbt_err=' . rawurlencode('Native app tidak dikenali.')) . '#native');
+            exit;
+        }
+
+        $native_event_definitions = CBT_Security_Log::native_supported_event_definitions_for_app($native_app);
+        if ($event_type === '' || !isset($native_event_definitions[$event_type])) {
+            wp_safe_redirect(admin_url('admin.php?page=cbt-security&cbt_err=' . rawurlencode('Event native tidak dikenali untuk app yang dipilih.')) . '#native');
             exit;
         }
 

@@ -1302,6 +1302,50 @@
                 color: #4b5563;
                 line-height: 1.55;
             }
+            .cbt-setup-security-log-detail-copy {
+                margin: 0;
+            }
+            .cbt-setup-security-log-json {
+                margin-top: 10px;
+            }
+            .cbt-setup-security-log-json summary {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 28px;
+                padding: 0 10px;
+                border: 1px solid #cbd5e1;
+                border-radius: 999px;
+                background: #f8fbff;
+                color: #1d4f91;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+                cursor: pointer;
+                user-select: none;
+                list-style: none;
+            }
+            .cbt-setup-security-log-json summary::-webkit-details-marker {
+                display: none;
+            }
+            .cbt-setup-security-log-json[open] summary {
+                background: #e8f1ff;
+                border-color: #bfdbfe;
+                color: #0f4fa8;
+            }
+            .cbt-setup-security-log-json-pre {
+                margin: 10px 0 0;
+                padding: 12px 14px;
+                border-radius: 12px;
+                background: #0f172a;
+                color: #dbeafe;
+                font-size: 12px;
+                line-height: 1.6;
+                white-space: pre-wrap;
+                word-break: break-word;
+                overflow-x: auto;
+            }
             .cbt-setup-security-log-empty {
                 padding: 20px 18px !important;
                 text-align: center;
@@ -1817,6 +1861,51 @@
                                                                 $student_kelas = sanitize_text_field((string) ($security_log['student_kode_kelas'] ?? ''));
                                                                 $student_ruang = sanitize_text_field((string) ($security_log['student_kode_ruang'] ?? ''));
                                                                 $student_name = (string) ($security_log['student_name'] ?? '-');
+                                                                $security_log_context = isset($security_log['context']) && is_array($security_log['context'])
+                                                                    ? $security_log['context']
+                                                                    : [];
+                                                                $security_log_json_context = $security_log_context;
+                                                                $security_log_json_payload = [
+                                                                    'attempt_id' => (int) ($security_log['attempt_id'] ?? 0),
+                                                                    'event_type' => $event_type,
+                                                                ];
+                                                                $security_log_native_app = sanitize_key((string) ($security_log_context['native_app'] ?? ''));
+
+                                                                if ($security_log_native_app !== '') {
+                                                                    $security_log_json_payload['native_app'] = $security_log_native_app;
+
+                                                                    if (!empty($security_log_context['native_version'])) {
+                                                                        $security_log_json_payload['native_version'] = (string) $security_log_context['native_version'];
+                                                                    }
+                                                                    if (!empty($security_log_context['warning_code'])) {
+                                                                        $security_log_json_payload['warning_code'] = (string) $security_log_context['warning_code'];
+                                                                    }
+                                                                    if (!empty($security_log_context['warning_message'])) {
+                                                                        $security_log_json_payload['warning_message'] = (string) $security_log_context['warning_message'];
+                                                                    }
+                                                                    if (!empty($security_log_context['occurred_at_client'])) {
+                                                                        $security_log_json_payload['occurred_at_client'] = (string) $security_log_context['occurred_at_client'];
+                                                                    }
+
+                                                                    unset(
+                                                                        $security_log_json_context['native_app'],
+                                                                        $security_log_json_context['native_version'],
+                                                                        $security_log_json_context['warning_code'],
+                                                                        $security_log_json_context['warning_message'],
+                                                                        $security_log_json_context['occurred_at_client']
+                                                                    );
+                                                                }
+
+                                                                $security_log_json_payload['context'] = !empty($security_log_json_context)
+                                                                    ? $security_log_json_context
+                                                                    : new stdClass();
+                                                                $security_log_json_pretty = wp_json_encode(
+                                                                    $security_log_json_payload,
+                                                                    JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                                                                );
+                                                                if (!is_string($security_log_json_pretty) || $security_log_json_pretty === '') {
+                                                                    $security_log_json_pretty = '{}';
+                                                                }
                                                                 ?>
                                                                 <tr
                                                                     data-security-log-row
@@ -1860,7 +1949,13 @@
                                                                             <span class="cbt-setup-security-log-event-meta"><?php echo esc_html($device_summary); ?></span>
                                                                         </div>
                                                                     </td>
-                                                                    <td class="cbt-setup-security-log-detail"><?php echo esc_html((string) ($security_log['message_display'] ?? $security_log['message'] ?? '-')); ?></td>
+                                                                    <td class="cbt-setup-security-log-detail">
+                                                                        <p class="cbt-setup-security-log-detail-copy"><?php echo esc_html((string) ($security_log['message_display'] ?? $security_log['message'] ?? '-')); ?></p>
+                                                                        <details class="cbt-setup-security-log-json">
+                                                                            <summary>JSON</summary>
+                                                                            <pre class="cbt-setup-security-log-json-pre"><?php echo esc_html($security_log_json_pretty); ?></pre>
+                                                                        </details>
+                                                                    </td>
                                                                 </tr>
                                                             <?php endforeach; ?>
                                                             <tr id="cbt-setup-security-log-filter-empty" hidden>
@@ -2343,8 +2438,16 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                             <div class="cbt-native-field">
                                                 <label for="cbt-native-simulate-event-type">Event Type</label>
                                                 <select id="cbt-native-simulate-event-type" name="event_type">
-                                                    <?php foreach ($native_event_catalog as $native_event): ?>
-                                                        <option value="<?php echo esc_attr((string) ($native_event['event_type'] ?? '')); ?>"><?php echo esc_html((string) ($native_event['label'] ?? '')); ?></option>
+                                                    <?php foreach ($native_simulation_event_catalog as $native_event): ?>
+                                                        <?php
+                                                        $option_supported_apps = isset($native_event['supported_apps']) && is_array($native_event['supported_apps'])
+                                                            ? implode(',', array_map('sanitize_key', $native_event['supported_apps']))
+                                                            : '';
+                                                        ?>
+                                                        <option
+                                                            value="<?php echo esc_attr((string) ($native_event['event_type'] ?? '')); ?>"
+                                                            data-native-apps="<?php echo esc_attr($option_supported_apps); ?>"
+                                                        ><?php echo esc_html((string) ($native_event['label'] ?? '')); ?></option>
                                                     <?php endforeach; ?>
                                                 </select>
                                             </div>
@@ -2440,12 +2543,12 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    <?php foreach ($native_event_catalog as $native_event): ?>
+                                                    <?php foreach ($native_browser_event_catalog as $native_event): ?>
                                                         <tr>
                                                             <td><code><?php echo esc_html((string) ($native_event['event_type'] ?? '')); ?></code></td>
                                                             <td><?php echo esc_html((string) ($native_event['label'] ?? '')); ?></td>
                                                             <td><?php echo esc_html((string) ($native_event['severity'] ?? 'info')); ?></td>
-                                                            <td><?php echo esc_html((string) ((int) ($native_event['risk_weight'] ?? 0))); ?></td>
+                                                            <td><?php echo esc_html(CBT_Security_Log::format_risk_score((float) ($native_event['risk_weight'] ?? 0))); ?></td>
                                                             <td><?php echo esc_html((string) ($native_event['message'] ?? '')); ?></td>
                                                         </tr>
                                                     <?php endforeach; ?>
@@ -2455,36 +2558,56 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                     </section>
 
                                     <section class="cbt-native-catalog-panel" id="cbt-native-catalog-panel-android" data-native-catalog-panel="android" role="tabpanel" hidden>
-                                        <div class="cbt-native-catalog-empty">
-                                            <h3>Android Native sedang disiapkan</h3>
-                                            <p>Tab ini disediakan untuk katalog warning Android WebView/native ke depan. Sampai saat ini, Android Native masih memakai event CBT yang sudah ada pada tab Browser / CBT Saat Ini.</p>
-                                            <div class="cbt-native-catalog-meta-grid">
-                                                <div class="cbt-native-catalog-meta-card">
-                                                    <strong>native_app</strong>
-                                                    <code>android_webview</code>
-                                                </div>
-                                                <div class="cbt-native-catalog-meta-card">
-                                                    <strong>source</strong>
-                                                    <code>android_webview_shell</code>
-                                                </div>
-                                            </div>
+                                        <div class="cbt-native-catalog-table-shell">
+                                            <table class="widefat striped cbt-native-catalog-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Event Type</th>
+                                                        <th>Label</th>
+                                                        <th>Severity</th>
+                                                        <th>Skor</th>
+                                                        <th>Deskripsi</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php foreach ($native_android_event_catalog as $native_event): ?>
+                                                        <tr>
+                                                            <td><code><?php echo esc_html((string) ($native_event['event_type'] ?? '')); ?></code></td>
+                                                            <td><?php echo esc_html((string) ($native_event['label'] ?? '')); ?></td>
+                                                            <td><?php echo esc_html((string) ($native_event['severity'] ?? 'info')); ?></td>
+                                                            <td><?php echo esc_html(CBT_Security_Log::format_risk_score((float) ($native_event['risk_weight'] ?? 0))); ?></td>
+                                                            <td><?php echo esc_html((string) ($native_event['message'] ?? '')); ?></td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </section>
 
                                     <section class="cbt-native-catalog-panel" id="cbt-native-catalog-panel-windows" data-native-catalog-panel="windows" role="tabpanel" hidden>
-                                        <div class="cbt-native-catalog-empty">
-                                            <h3>Windows Native sedang disiapkan</h3>
-                                            <p>Tab ini disediakan untuk katalog warning Windows CEFSharp/native ke depan. Sampai saat ini, Windows Native masih memakai event CBT yang sudah ada pada tab Browser / CBT Saat Ini.</p>
-                                            <div class="cbt-native-catalog-meta-grid">
-                                                <div class="cbt-native-catalog-meta-card">
-                                                    <strong>native_app</strong>
-                                                    <code>windows_cefsharp</code>
-                                                </div>
-                                                <div class="cbt-native-catalog-meta-card">
-                                                    <strong>source</strong>
-                                                    <code>windows_cefsharp_shell</code>
-                                                </div>
-                                            </div>
+                                        <div class="cbt-native-catalog-table-shell">
+                                            <table class="widefat striped cbt-native-catalog-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Event Type</th>
+                                                        <th>Label</th>
+                                                        <th>Severity</th>
+                                                        <th>Skor</th>
+                                                        <th>Deskripsi</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php foreach ($native_windows_event_catalog as $native_event): ?>
+                                                        <tr>
+                                                            <td><code><?php echo esc_html((string) ($native_event['event_type'] ?? '')); ?></code></td>
+                                                            <td><?php echo esc_html((string) ($native_event['label'] ?? '')); ?></td>
+                                                            <td><?php echo esc_html((string) ($native_event['severity'] ?? 'info')); ?></td>
+                                                            <td><?php echo esc_html(CBT_Security_Log::format_risk_score((float) ($native_event['risk_weight'] ?? 0))); ?></td>
+                                                            <td><?php echo esc_html((string) ($native_event['message'] ?? '')); ?></td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </section>
                                 </div>
@@ -2589,9 +2712,35 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                     var sampleTabButtons = document.querySelectorAll('[data-native-sample-tab-button]');
                     var samplePanels = document.querySelectorAll('[data-native-sample-panel]');
                     var endpointUrl = <?php echo wp_json_encode((string) $native_security_endpoint_url); ?>;
+                    var eventTypeOptions = Array.prototype.slice.call(eventTypeSelect ? eventTypeSelect.options : []);
 
                     if (!attemptInput || !appSelect || !eventTypeSelect || !payloadBlock || !curlBlock || !androidBlock || !cefsharpBlock) {
                         return;
+                    }
+
+                    function syncNativeEventTypeOptions() {
+                        var nativeApp = String(appSelect.value || 'android_webview');
+                        var currentValue = String(eventTypeSelect.value || '');
+                        var fallbackValue = '';
+                        var index = 0;
+
+                        for (index = 0; index < eventTypeOptions.length; index += 1) {
+                            var option = eventTypeOptions[index];
+                            var supportedApps = String(option.getAttribute('data-native-apps') || '');
+                            var appList = supportedApps ? supportedApps.split(',') : [];
+                            var isSupported = appList.length === 0 || appList.indexOf(nativeApp) >= 0;
+
+                            option.hidden = !isSupported;
+                            option.disabled = !isSupported;
+
+                            if (isSupported && fallbackValue === '') {
+                                fallbackValue = String(option.value || '');
+                            }
+                        }
+
+                        if (!currentValue || !eventTypeSelect.querySelector('option[value="' + currentValue + '"]:not([disabled])')) {
+                            eventTypeSelect.value = fallbackValue;
+                        }
                     }
 
                     function setActiveSampleTab(tabName) {
@@ -2688,7 +2837,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         });
                     }
 
-                    [attemptInput, appSelect, eventTypeSelect, nativeVersionInput, warningCodeInput, warningMessageInput].forEach(function (field) {
+                    [attemptInput, eventTypeSelect, nativeVersionInput, warningCodeInput, warningMessageInput].forEach(function (field) {
                         if (!field) {
                             return;
                         }
@@ -2697,6 +2846,12 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         field.addEventListener('change', renderSamples);
                     });
 
+                    appSelect.addEventListener('change', function () {
+                        syncNativeEventTypeOptions();
+                        renderSamples();
+                    });
+
+                    syncNativeEventTypeOptions();
                     renderSamples();
                     setActiveSampleTab('json');
                 }
@@ -3022,8 +3177,8 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         items.sort(function (left, right) {
                             var leftOrder = parseInt(left.getAttribute('data-sort-order') || '0', 10) || 0;
                             var rightOrder = parseInt(right.getAttribute('data-sort-order') || '0', 10) || 0;
-                            var leftScore = parseInt(left.getAttribute('data-sort-score') || '0', 10) || 0;
-                            var rightScore = parseInt(right.getAttribute('data-sort-score') || '0', 10) || 0;
+                            var leftScore = parseFloat(left.getAttribute('data-sort-score') || '0') || 0;
+                            var rightScore = parseFloat(right.getAttribute('data-sort-score') || '0') || 0;
                             var leftLastAt = String(left.getAttribute('data-sort-last-at') || '');
                             var rightLastAt = String(right.getAttribute('data-sort-last-at') || '');
 

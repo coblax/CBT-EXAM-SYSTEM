@@ -74,7 +74,10 @@ final class CBT_Admin_Security_Service
         ]);
         $security_must_watch_score_threshold = CBT_Security_Log::must_watch_score_threshold();
         $security_must_watch_high_risk_threshold = CBT_Security_Log::must_watch_high_risk_threshold();
-        $native_event_catalog = self::build_native_event_catalog();
+        $native_browser_event_catalog = self::build_event_catalog(CBT_Security_Log::browser_supported_event_definitions(), ['android_webview', 'windows_cefsharp']);
+        $native_android_event_catalog = self::build_event_catalog(CBT_Security_Log::android_native_supported_event_definitions(), ['android_webview']);
+        $native_windows_event_catalog = self::build_event_catalog(CBT_Security_Log::windows_native_supported_event_definitions(), ['windows_cefsharp']);
+        $native_simulation_event_catalog = self::build_simulation_event_catalog();
         $native_supported_apps = CBT_Security_Log::native_app_labels();
         $native_security_endpoint_url = rest_url('cbt/v1/native_security_event');
         $native_security_sample_attempt_id = 0;
@@ -90,10 +93,13 @@ final class CBT_Admin_Security_Service
         return compact(
             'error',
             'notice',
-            'native_event_catalog',
+            'native_android_event_catalog',
+            'native_browser_event_catalog',
             'native_security_endpoint_url',
             'native_security_sample_attempt_id',
+            'native_simulation_event_catalog',
             'native_supported_apps',
+            'native_windows_event_catalog',
             'security_block_copy_paste',
             'security_detect_idle_during_exam',
             'security_force_fullscreen',
@@ -110,20 +116,59 @@ final class CBT_Admin_Security_Service
     /**
      * @return array<int,array<string,mixed>>
      */
-    private static function build_native_event_catalog(): array
+    private static function build_event_catalog(array $definitions, array $supported_apps = []): array
     {
         $catalog = [];
 
-        foreach (CBT_Security_Log::native_supported_event_definitions() as $event_type => $definition) {
+        foreach ($definitions as $event_type => $definition) {
             $catalog[] = [
                 'event_type' => $event_type,
                 'label' => (string) ($definition['label'] ?? $event_type),
                 'severity' => (string) ($definition['severity'] ?? 'info'),
                 'message' => (string) ($definition['message'] ?? ''),
                 'risk_weight' => CBT_Security_Log::get_event_risk_weight($event_type),
+                'supported_apps' => $supported_apps,
             ];
         }
 
         return $catalog;
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_simulation_event_catalog(): array
+    {
+        $grouped = [];
+
+        foreach (self::build_event_catalog(CBT_Security_Log::android_native_supported_event_definitions(), ['android_webview']) as $item) {
+            $event_type = (string) ($item['event_type'] ?? '');
+            if ($event_type === '') {
+                continue;
+            }
+            $grouped[$event_type] = $item;
+        }
+
+        foreach (self::build_event_catalog(CBT_Security_Log::windows_native_supported_event_definitions(), ['windows_cefsharp']) as $item) {
+            $event_type = (string) ($item['event_type'] ?? '');
+            if ($event_type === '') {
+                continue;
+            }
+
+            if (isset($grouped[$event_type])) {
+                $existing_apps = isset($grouped[$event_type]['supported_apps']) && is_array($grouped[$event_type]['supported_apps'])
+                    ? $grouped[$event_type]['supported_apps']
+                    : [];
+                $next_apps = isset($item['supported_apps']) && is_array($item['supported_apps'])
+                    ? $item['supported_apps']
+                    : [];
+                $grouped[$event_type]['supported_apps'] = array_values(array_unique(array_merge($existing_apps, $next_apps)));
+                continue;
+            }
+
+            $grouped[$event_type] = $item;
+        }
+
+        return array_values($grouped);
     }
 }
