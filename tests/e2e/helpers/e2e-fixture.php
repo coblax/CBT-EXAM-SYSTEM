@@ -34,6 +34,15 @@ function e2e_fixture_success(array $payload): void
 
 function e2e_fixture_bootstrap_wordpress(): void
 {
+    $env_wp_load = getenv('CBT_E2E_WP_LOAD');
+    if (is_string($env_wp_load) && $env_wp_load !== '') {
+        $candidate = realpath($env_wp_load) ?: $env_wp_load;
+        if (is_file($candidate)) {
+            require_once $candidate;
+            return;
+        }
+    }
+
     $scan = __DIR__;
     while ($scan !== dirname($scan)) {
         $candidate = $scan . '/wp-load.php';
@@ -44,7 +53,17 @@ function e2e_fixture_bootstrap_wordpress(): void
         $scan = dirname($scan);
     }
 
-    e2e_fixture_fail('WordPress bootstrap tidak ditemukan. Pastikan helper E2E dijalankan dari repo plugin CBT.');
+    $scan = getcwd() ?: '';
+    while ($scan !== '' && $scan !== dirname($scan)) {
+        $candidate = $scan . '/wp-load.php';
+        if (is_file($candidate)) {
+            require_once $candidate;
+            return;
+        }
+        $scan = dirname($scan);
+    }
+
+    e2e_fixture_fail('WordPress bootstrap tidak ditemukan. Set `CBT_E2E_WP_LOAD` ke path wp-load.php yang valid.');
 }
 
 function e2e_fixture_read_payload(array $argv): array
