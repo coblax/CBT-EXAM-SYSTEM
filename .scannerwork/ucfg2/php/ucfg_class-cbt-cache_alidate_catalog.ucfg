@@ -1,37 +1,0 @@
-
-cbt_cache::invalidate_catalog^
-R/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-cache.phpœ œ(-"1*=
-2
-class-cbt-cache.php"!
-
-   (
-implicit return*Ý
-1
-ž ž(>]
-[
-
-ž# ž(<
-%1"cbt_cache::namespace_catalog*)
-
-__unknown_file ("
-	cbt_cache…
-‚
-
-ž ž(=
-%2"cbt_cache::invalidate_namespace*)
-
-__unknown_file ("
-	cbt_cache*"
-
-__unknown_file (
-
-%1`
-^
-
-Ÿ Ÿ($
-%3"cbt_cache::invalidate_analytics*)
-
-__unknown_file ("
-	cbt_cache*
-2B
-	cbt_cacheH

@@ -1,519 +1,0 @@
-
-#cbt_security_log::event_definitionsc
-Y/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-security-log.php (,"1*ì2
-1 H(
-
- H(	
-%1"$Array
-! (
-%2"$Arrayõ
-ò
-! (
-%3"__mapSet*"
-
-__unknown_file (
-
-%2*%
-
-__unknown_file (	
-label*1
-
-__unknown_file (
-Keluar fullscreenî
-ë
-! (
-%4"__mapSet*"
-
-__unknown_file (
-
-%2*(
-
-__unknown_file (
-
-severity*'
-
-__unknown_file (	
-warning«
-ƒ
-! (
-%5"__mapSet*"
-
-__unknown_file (
-
-%2*'
-
-__unknown_file (	
-message*[
-
-__unknown_file (?=
-;Peserta keluar dari mode fullscreen saat ujian berlangsung.ñ
-ì
- H(	
-%6"__mapSet*"
-
-__unknown_file (
-
-%1*/
-
-__unknown_file (
-fullscreen_exit*"
-
-__unknown_file (
-
-%2
-  $(
-%7"$Arrayü
-ú
-  $(
-%8"__mapSet*"
-
-__unknown_file (
-
-%7*%
-
-__unknown_file (	
-label*5
-
-__unknown_file (
-Pindah tab / aplikasiî
-ë
-  $(
-%9"__mapSet*"
-
-__unknown_file (
-
-%7*(
-
-__unknown_file (
-
-severity*'
-
-__unknown_file (	
-warning»
-≈
-  $(
-%10"__mapSet*"
-
-__unknown_file (
-
-%7*'
-
-__unknown_file (	
-message*[
-
-__unknown_file (?=
-;Peserta berpindah tab atau aplikasi saat ujian berlangsung.í
-è
- H(	
-%11"__mapSet*"
-
-__unknown_file (
-
-%1**
-
-__unknown_file (
-
-tab_hidden*"
-
-__unknown_file (
-
-%7
-% )(
-%12"$Array¢
-ü
-% )(
-%13"__mapSet*#
-
-__unknown_file (
-
-%12*%
-
-__unknown_file (	
-label*6
-
-__unknown_file (
-Fokus window berpindahñ
-ì
-% )(
-%14"__mapSet*#
-
-__unknown_file (
-
-%12*(
-
-__unknown_file (
-
-severity*'
-
-__unknown_file (	
-warningÀ
-»
-% )(
-%15"__mapSet*#
-
-__unknown_file (
-
-%12*'
-
-__unknown_file (	
-message*]
-
-__unknown_file (A?
-=Window ujian kehilangan fokus saat attempt masih berlangsung.î
-ë
- H(	
-%16"__mapSet*"
-
-__unknown_file (
-
-%1*+
-
-__unknown_file (
-window_blur*#
-
-__unknown_file (
-
-%12
-* .(
-%17"$Array†
-ù
-* .(
-%18"__mapSet*#
-
-__unknown_file (
-
-%17*%
-
-__unknown_file (	
-label*4
-
-__unknown_file (
-Meninggalkan halamanñ
-ì
-* .(
-%19"__mapSet*#
-
-__unknown_file (
-
-%17*(
-
-__unknown_file (
-
-severity*'
-
-__unknown_file (	
-warningÀ
-»
-* .(
-%20"__mapSet*#
-
-__unknown_file (
-
-%17*'
-
-__unknown_file (	
-message*]
-
-__unknown_file (A?
-=Peserta me-refresh, menutup, atau meninggalkan halaman ujian.ì
-ê
- H(	
-%21"__mapSet*"
-
-__unknown_file (
-
-%1**
-
-__unknown_file (
-
-page_leave*#
-
-__unknown_file (
-
-%17
-/! 3(
-%22"$Arrayò
-ï
-/! 3(
-%23"__mapSet*#
-
-__unknown_file (
-
-%22*%
-
-__unknown_file (	
-label*,
-
-__unknown_file (
-Sesi dicabutó
-î
-/! 3(
-%24"__mapSet*#
-
-__unknown_file (
-
-%22*(
-
-__unknown_file (
-
-severity*(
-
-__unknown_file (
-
-critical◊
-‘
-/! 3(
-%25"__mapSet*#
-
-__unknown_file (
-
-%22*'
-
-__unknown_file (	
-message*i
-
-__unknown_file (MK
-ISesi login attempt ini dicabut karena tidak lagi cocok dengan sesi aktif.ò
-ï
- H(	
-%26"__mapSet*"
-
-__unknown_file (
-
-%1*/
-
-__unknown_file (
-session_revoked*#
-
-__unknown_file (
-
-%22
-4# 8(
-%27"$Arrayû
-õ
-4# 8(
-%28"__mapSet*#
-
-__unknown_file (
-
-%27*%
-
-__unknown_file (	
-label*2
-
-__unknown_file (
-Clipboard diblokirñ
-ì
-4# 8(
-%29"__mapSet*#
-
-__unknown_file (
-
-%27*(
-
-__unknown_file (
-
-severity*'
-
-__unknown_file (	
-warning’
-“
-4# 8(
-%30"__mapSet*#
-
-__unknown_file (
-
-%27*'
-
-__unknown_file (	
-message*g
-
-__unknown_file (KI
-GPeserta mencoba melakukan copy, cut, atau paste saat ujian berlangsung.ö
-ó
- H(	
-%31"__mapSet*"
-
-__unknown_file (
-
-%1*1
-
-__unknown_file (
-clipboard_blocked*#
-
-__unknown_file (
-
-%27
-9 =(
-%32"$Arrayõ
-ò
-9 =(
-%33"__mapSet*#
-
-__unknown_file (
-
-%32*%
-
-__unknown_file (	
-label*/
-
-__unknown_file (
-Idle saat ujianñ
-ì
-9 =(
-%34"__mapSet*#
-
-__unknown_file (
-
-%32*(
-
-__unknown_file (
-
-severity*'
-
-__unknown_file (	
-warningÈ
-Ê
-9 =(
-%35"__mapSet*#
-
-__unknown_file (
-
-%32*'
-
-__unknown_file (	
-message*{
-
-__unknown_file (_]
-[Peserta tidak menunjukkan aktivitas pada halaman ujian selama ambang waktu yang ditentukan.ñ
-ì
- H(	
-%36"__mapSet*"
-
-__unknown_file (
-
-%1*-
-
-__unknown_file (
-idle_detected*#
-
-__unknown_file (
-
-%32
-># B(
-%37"$Arrayù
-ö
-># B(
-%38"__mapSet*#
-
-__unknown_file (
-
-%37*%
-
-__unknown_file (	
-label*1
-
-__unknown_file (
-Reset login adminì
-ê
-># B(
-%39"__mapSet*#
-
-__unknown_file (
-
-%37*(
-
-__unknown_file (
-
-severity*$
-
-__unknown_file (
-info…
-∆
-># B(
-%40"__mapSet*#
-
-__unknown_file (
-
-%37*'
-
-__unknown_file (	
-message*[
-
-__unknown_file (?=
-;Pengawas atau admin mereset login siswa dari panel attempt.ö
-ó
- H(	
-%41"__mapSet*"
-
-__unknown_file (
-
-%1*1
-
-__unknown_file (
-admin_reset_login*#
-
-__unknown_file (
-
-%37
-C& G(
-%42"$Arrayü
-ú
-C& G(
-%43"__mapSet*#
-
-__unknown_file (
-
-%42*%
-
-__unknown_file (	
-label*3
-
-__unknown_file (
-Paksa selesai adminì
-ê
-C& G(
-%44"__mapSet*#
-
-__unknown_file (
-
-%42*(
-
-__unknown_file (
-
-severity*$
-
-__unknown_file (
-info–
-Õ
-C& G(
-%45"__mapSet*#
-
-__unknown_file (
-
-%42*'
-
-__unknown_file (	
-message*b
-
-__unknown_file (FD
-BPengawas atau admin memaksa attempt selesai dari panel Must Watch.ù
-ö
- H(	
-%46"__mapSet*"
-
-__unknown_file (
-
-%1*4
-
-__unknown_file (
-admin_force_complete*#
-
-__unknown_file (
-
-%42"
- H(
-
-
-%1B
-cbt_security_logH

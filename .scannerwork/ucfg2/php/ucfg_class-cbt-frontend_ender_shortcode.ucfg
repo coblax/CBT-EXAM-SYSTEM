@@ -1,32 +1,0 @@
-
-cbt_frontend::render_shortcode_
-U/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-frontend.php4 4(+"1*î
-16 6(I
-G
-4 4(+
-$atts"__id*,
-
-__unknown_file (
-
-$attsarrayo
-m
-7 7(/
-%1"-cbt_frontend::ensure_frontend_assets_prepared*,
-
-__unknown_file ("
-cbt_frontendŽ
-‹
-8 8(2
-%2"$cbt_frontend::render_frontend_markup*,
-
-__unknown_file ("
-cbt_frontend*%
-
-__unknown_file (	
-false"
-8 8(3
-
-%2:
-4, 4(<
-$attsarrayB
-cbt_frontendH

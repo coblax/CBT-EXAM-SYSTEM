@@ -1,51 +1,0 @@
-
-xcbtexamsystem\tests\unit\questionshelperpreviewrenderingtest::test_normalize_optional_rich_text_treats_images_as_contentv
-l/var/www/wordpress/wp-content/plugins/cbt-exam-system/tests/php/unit/QuestionsHelperPreviewRenderingTest.php0 0(N"1*O
-2)
-'QuestionsHelperPreviewRenderingTest.php"
-7 7(
-implicit return*Ë
-12 2(e¸
-µ
-2 2(c
-%1"8cbt_admin_questions_helper::normalize_optional_rich_text*:
-
-__unknown_file ("
-cbt_admin_questions_helper*-
-
-__unknown_file (
-<p>&nbsp;</p>ß
-Ü
-2 2(d
-%2"Hcbtexamsystem\tests\unit\questionshelperpreviewrenderingtest::assertnull*\
-
-__unknown_file (@">
-<cbtexamsystem\tests\unit\questionshelperpreviewrenderingtest*"
-
-__unknown_file (
-
-%1à
-Ý
-5 5(~
-%3"8cbt_admin_questions_helper::normalize_optional_rich_text*:
-
-__unknown_file ("
-cbt_admin_questions_helper*U
-
-__unknown_file (97
-5<p><img src="data:image/png;base64,xyz" alt="" /></p>¶
-³
-3 6(	
-%4"Hcbtexamsystem\tests\unit\questionshelperpreviewrenderingtest::assertsame*\
-
-__unknown_file (@">
-<cbtexamsystem\tests\unit\questionshelperpreviewrenderingtest*U
-
-__unknown_file (97
-5<p><img src="data:image/png;base64,xyz" alt="" /></p>*"
-
-__unknown_file (
-
-%3*
-2B@>
-<cbtexamsystem\tests\unit\questionshelperpreviewrenderingtestH

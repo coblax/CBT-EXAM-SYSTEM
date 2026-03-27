@@ -1,16 +1,0 @@
-
-cbt_deactivator::deactivateb
-X/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-deactivator.php	 	(%"1*A
-2
-class-cbt-deactivator.php"
- (
-implicit return*l
-1 ("X
-V
- (!
-%1"cbt_runtime::deactivate*+
-
-__unknown_file ("
-cbt_runtime*
-2B
-cbt_deactivatorH

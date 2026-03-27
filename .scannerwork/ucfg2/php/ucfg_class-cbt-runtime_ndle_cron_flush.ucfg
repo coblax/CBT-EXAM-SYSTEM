@@ -1,22 +1,0 @@
-
-cbt_runtime::handle_cron_flush^
-T/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-runtime.phpD D(,"1*=
-2
-class-cbt-runtime.php"
-H H(
-implicit return*ß
-1F F(#`
-^
-F F("
-%1"cbt_runtime::flush_due_attempts*+
-
-__unknown_file ("
-cbt_runtimei
-g
-G G(+
-%2"(cbt_runtime::prune_stale_active_attempts*+
-
-__unknown_file ("
-cbt_runtime*
-2B
-cbt_runtimeH

@@ -1,293 +1,0 @@
-
-3cbt_admin_cache_service::cache_namespace_group_metai
-]/var/www/wordpress/wp-content/plugins/cbt-exam-system/admin/class-cbt-admin-cache-service.phpí í(5"1*´
-1
-î ≠(
-
-
-î ≠(	
-%1"$Array
-
-ï ò(
-%2"$Arrayµ
-≤
-
-ï ò(
-%3"__mapSet*"
-
-__unknown_file (
-
-%2*%
-
-__unknown_file (	
-label*I
-
-__unknown_file (-+
-)__global__ | versi global semua cache CBT§
-°
-
-ï ò(
-%4"__mapSet*"
-
-__unknown_file (
-
-%2*+
-
-__unknown_file (
-description*±
-
-__unknown_file (îë
-éNamespace global untuk versi induk semua cache CBT. Jika ini berubah, hampir semua cache CBT akan ikut dibangun ulang pada request berikutnya.ì
-ê
-
-î ≠(	
-%5"__mapSet*"
-
-__unknown_file (
-
-%1**
-
-__unknown_file (
-
-__global__*"
-
-__unknown_file (
-
-%2
-
-ô ú(
-%6"$Array≠
-™
-
-ô ú(
-%7"__mapSet*"
-
-__unknown_file (
-
-%6*%
-
-__unknown_file (	
-label*A
-
-__unknown_file (%#
-!attempt | cache per attempt ujian°
-û
-
-ô ú(
-%8"__mapSet*"
-
-__unknown_file (
-
-%6*+
-
-__unknown_file (
-description*Æ
-
-__unknown_file (ëé
-ãCache yang terkait satu attempt ujian tertentu, misalnya payload hasil, state attempt, dan data yang perlu sinkron per peserta per attempt.ê
-ç
-
-î ≠(	
-%9"__mapSet*"
-
-__unknown_file (
-
-%1*'
-
-__unknown_file (	
-attempt*"
-
-__unknown_file (
-
-%6
-
-ù †(
-%10"$Array∏
-µ
-
-ù †(
-%11"__mapSet*#
-
-__unknown_file (
-
-%10*%
-
-__unknown_file (	
-label*J
-
-__unknown_file (.,
-*catalog | daftar exam, mapel, token global≤
-Ø
-
-ù †(
-%12"__mapSet*#
-
-__unknown_file (
-
-%10*+
-
-__unknown_file (
-description*Ω
-
-__unknown_file (†ù
-öCache katalog global yang dipakai lintas user, seperti daftar exam, subject, dan metadata global. Ini untuk listing/metadata umum, bukan payload isi soal.í
-è
-
-î ≠(	
-%13"__mapSet*"
-
-__unknown_file (
-
-%1*'
-
-__unknown_file (	
-catalog*#
-
-__unknown_file (
-
-%10
-
-° §(
-%14"$Array≠
-™
-
-° §(
-%15"__mapSet*#
-
-__unknown_file (
-
-%14*%
-
-__unknown_file (	
-label*?
-
-__unknown_file (#!
-exam | cache spesifik satu examπ
-∂
-
-° §(
-%16"__mapSet*#
-
-__unknown_file (
-
-%14*+
-
-__unknown_file (
-description*ƒ
-
-__unknown_file (ß§
-°Cache yang hanya berlaku untuk satu exam, termasuk payload soal statis saat frontend/backend ambil soal, setting exam, dan data turunan yang scope-nya satu exam.è
-å
-
-î ≠(	
-%17"__mapSet*"
-
-__unknown_file (
-
-%1*$
-
-__unknown_file (
-exam*#
-
-__unknown_file (
-
-%14
-
-• ®(
-%18"$Array∑
-¥
-
-• ®(
-%19"__mapSet*#
-
-__unknown_file (
-
-%18*%
-
-__unknown_file (	
-label*I
-
-__unknown_file (-+
-)ui_state | preferensi UI dan resume ujianõ
-ò
-
-• ®(
-%20"__mapSet*#
-
-__unknown_file (
-
-%18*+
-
-__unknown_file (
-description*¶
-
-__unknown_file (âÜ
-ÉCache untuk state UI frontend, seperti preferensi tampilan, posisi soal terakhir, dan tanda ragu-ragu yang disimpan lintas browser.ì
-ê
-
-î ≠(	
-%21"__mapSet*"
-
-__unknown_file (
-
-%1*(
-
-__unknown_file (
-
-ui_state*#
-
-__unknown_file (
-
-%18
-
-© ¨(
-%22"$Array≠
-™
-
-© ¨(
-%23"__mapSet*#
-
-__unknown_file (
-
-%22*%
-
-__unknown_file (	
-label*?
-
-__unknown_file (#!
-user | cache spesifik satu userû
-õ
-
-© ¨(
-%24"__mapSet*#
-
-__unknown_file (
-
-%22*+
-
-__unknown_file (
-description*©
-
-__unknown_file (åâ
-ÜCache yang terkait satu user tertentu, misalnya daftar exam sesuai hak akses user, profil ringkas, atau state yang scope-nya per akun.è
-å
-
-î ≠(	
-%25"__mapSet*"
-
-__unknown_file (
-
-%1*$
-
-__unknown_file (
-user*#
-
-__unknown_file (
-
-%22"
-
-î ≠(
-
-
-%1B
-cbt_admin_cache_serviceH

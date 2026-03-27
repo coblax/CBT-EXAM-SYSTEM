@@ -21,3 +21,4 @@ playwright-results/
 coverage/playwright-report/
 test-results/
 .phpunit.cache/
+.scannerwork/
