@@ -1,0 +1,34 @@
+
+&cbt_frontend::prepare_frontend_request_
+U/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-frontend.phpq q(3"1*#
+2t t("
+t t(
+void*ì
+3w w((g
+e
+w w('
+%2"%cbt_frontend::suppress_frontend_noise*,
+
+__unknown_file ("
+cbt_frontendo
+m
+x x(/
+%3"-cbt_frontend::ensure_frontend_assets_prepared*,
+
+__unknown_file ("
+cbt_frontend*
+4*>
+4
+class-cbt-frontend.php"
+y y(
+implicit return*‚
+1s s(0k
+i
+s s(0
+%1")cbt_frontend::is_frontend_request_context*,
+
+__unknown_file ("
+cbt_frontend*
+2
+3B
+cbt_frontendH

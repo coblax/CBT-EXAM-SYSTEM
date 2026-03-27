@@ -54,11 +54,11 @@ final class CBT_Admin_Questions_Service
                 }
                 $lock_question_type = ($active_question_type !== '');
                 $import_type_help_map = [
-                    'multiple_choice' => 'Mode import aktif: Multiple Choice. DOCX didukung (maks 5 opsi, jawaban nomor opsi, gambar bisa ditempel, field opsional PEMBAHASAN didukung).',
-                    'multiple_answer' => 'Mode import aktif: Multiple Answer. DOCX didukung (maks 12 opsi, jawaban bisa lebih dari satu: contoh 1,3,5, field opsional PEMBAHASAN didukung).',
+                    'multiple_choice' => 'Mode import aktif: Multiple Choice. DOCX didukung (minimal 3 opsi, maks 5 opsi, tepat 1 jawaban benar berupa nomor opsi, opsi tidak boleh duplikat, gambar bisa ditempel, field opsional PEMBAHASAN didukung).',
+                    'multiple_answer' => 'Mode import aktif: Multiple Answer. DOCX didukung (minimal 3 opsi, maks 12 opsi, minimal 1 jawaban benar, opsi tidak boleh duplikat, jawaban bisa lebih dari satu: contoh 1,3,5, field opsional PEMBAHASAN didukung).',
                     'true_false' => 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false, field opsional PEMBAHASAN didukung).',
-                    'true_false_matrix' => 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false, field opsional PEMBAHASAN didukung).',
-                    'short_answer' => 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, gunakan placeholder [INPUT_1] s.d. [INPUT_8] di teks soal, field opsional PEMBAHASAN didukung).',
+                    'true_false_matrix' => 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false secara berurutan tanpa nomor loncat, pernyataan tidak boleh duplikat, field opsional PEMBAHASAN didukung).',
+                    'short_answer' => 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, wajib gunakan placeholder [INPUT_1] s.d. [INPUT_8] tanpa duplikat di teks soal, jumlah placeholder harus sama dengan jumlah jawaban valid, dan wajib pakai JAWABAN_A..H sesuai key input, field opsional PEMBAHASAN didukung).',
                     'essay' => 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).',
                 ];
                 $import_active_type = $lock_question_type ? $active_question_type : 'multiple_choice';
@@ -238,6 +238,7 @@ final class CBT_Admin_Questions_Service
                 $question_import_offset = 0;
                 $question_import_created = 0;
                 $question_import_failed = 0;
+                $question_import_recent_failures = [];
                 $question_import_progress_percent = 0.0;
                 $question_import_is_running = false;
                 $question_import_continue_url = '';
@@ -251,6 +252,15 @@ final class CBT_Admin_Questions_Service
                         }
                         $question_import_created = max(0, isset($question_import_state['created']) ? (int) $question_import_state['created'] : 0);
                         $question_import_failed = max(0, isset($question_import_state['failed']) ? (int) $question_import_state['failed'] : 0);
+                        $question_import_recent_failures = isset($question_import_state['recent_failures']) && is_array($question_import_state['recent_failures'])
+                            ? array_map(static function (array $entry) use ($question_type_labels): array {
+                                $question_type = (string) ($entry['question_type'] ?? '');
+                                $entry['question_type_label'] = $question_type !== '' && isset($question_type_labels[$question_type])
+                                    ? (string) $question_type_labels[$question_type]
+                                    : '';
+                                return $entry;
+                            }, CBT_Admin_Questions_Import_Helper::normalize_question_import_failure_entries($question_import_state['recent_failures']))
+                            : [];
                         $question_import_progress_percent = $question_import_total > 0
                             ? round(((float) $question_import_offset / (float) $question_import_total) * 100, 2)
                             : 0.0;
@@ -862,6 +872,9 @@ final class CBT_Admin_Questions_Service
                 ? CBT_Admin_Questions_Helper::normalize_optional_rich_text((string) wp_unslash($_POST['explanation']))
                 : null;
             $options_raw = isset($_POST['options']) ? wp_unslash($_POST['options']) : '';
+            $validation_meta_raw = isset($_POST['validation_meta']) ? (string) wp_unslash($_POST['validation_meta']) : '';
+            $validation_meta = json_decode($validation_meta_raw, true);
+            $validation_meta = is_array($validation_meta) ? $validation_meta : [];
             $return_page = CBT_Admin_Questions_Helper::normalize_question_page_slug(isset($_POST['return_page']) ? wp_unslash($_POST['return_page']) : 'cbt-question-bank');
             $forced_question_type = CBT_Admin_Questions_Helper::forced_question_type_for_page($return_page);
             $existing_question_type = '';
@@ -930,11 +943,49 @@ final class CBT_Admin_Questions_Service
             if ($question_type === 'short_answer' && $normalized_detail_text === '') {
                 self::redirect_question_import_with_error('Short Answer minimal harus punya 1 jawaban valid.', $return_page);
             }
+
+            if ($question_type === 'short_answer') {
+                $short_answer_values = CBT_Admin_Questions_Helper::normalize_short_answer_values($normalized_detail_text);
+                $short_answer_validation_error = CBT_Admin_Questions_Helper::validate_short_answer_definition(
+                    $question_text,
+                    $short_answer_values,
+                    [
+                        'provided_keys' => isset($validation_meta['provided_keys']) && is_array($validation_meta['provided_keys'])
+                            ? $validation_meta['provided_keys']
+                            : [],
+                    ]
+                );
+                if ($short_answer_validation_error !== '') {
+                    self::redirect_question_import_with_error($short_answer_validation_error, $return_page);
+                }
+            }
     
             if ($question_type === 'true_false_matrix') {
+                $matrix_source_payload = json_decode($correct_text_raw, true);
+                $matrix_source_rows = [];
+                $matrix_provided_indexes = [];
+                if (is_array($matrix_source_payload) && isset($matrix_source_payload['statements']) && is_array($matrix_source_payload['statements'])) {
+                    foreach ($matrix_source_payload['statements'] as $statement_row) {
+                        if (!is_array($statement_row)) {
+                            continue;
+                        }
+                        $matrix_source_rows[] = $statement_row;
+                        $statement_index = isset($statement_row['index']) ? (int) $statement_row['index'] : 0;
+                        if ($statement_index > 0) {
+                            $matrix_provided_indexes[] = $statement_index;
+                        }
+                    }
+                }
                 $matrix_rows = CBT_Admin_Questions_Helper::normalize_true_false_matrix_config($normalized_detail_text);
-                if (count($matrix_rows) < 2) {
-                    self::redirect_question_import_with_error('True/False Matrix minimal harus punya 2 pernyataan.', $return_page);
+                $matrix_validation_error = CBT_Admin_Questions_Helper::validate_true_false_matrix_items(
+                    $matrix_rows,
+                    [
+                        'provided_indexes' => $matrix_provided_indexes,
+                        'source_rows' => $matrix_source_rows,
+                    ]
+                );
+                if ($matrix_validation_error !== '') {
+                    self::redirect_question_import_with_error($matrix_validation_error, $return_page);
                 }
             }
     
@@ -1038,40 +1089,49 @@ final class CBT_Admin_Questions_Service
                 $options_to_insert = CBT_Admin_Questions_Helper::parse_options($options_raw);
     
                 if ($question_type === 'multiple_choice') {
-                    if (count($options_to_insert) < 2) {
-                        self::redirect_question_import_with_error('Multiple Choice minimal harus punya 2 pilihan.', $return_page);
+                    $selected_correct_index = isset($validation_meta['selected_correct_index']) ? (int) $validation_meta['selected_correct_index'] : 0;
+                    $has_empty_correct_reference = CBT_Admin_Questions_Helper::has_empty_correct_option_reference((string) $options_raw);
+                    if (
+                        !$has_empty_correct_reference &&
+                        $selected_correct_index >= 1 &&
+                        $selected_correct_index <= 5 &&
+                        !self::manual_editor_field_has_content('cbt_mc_option_' . $selected_correct_index)
+                    ) {
+                        $has_empty_correct_reference = true;
                     }
-                    if (count($options_to_insert) > 5) {
-                        self::redirect_question_import_with_error('Multiple Choice maksimal 5 pilihan.', $return_page);
-                    }
-    
-                    $correct_count = 0;
-                    foreach ($options_to_insert as $opt) {
-                        if ((int) ($opt['is_correct'] ?? 0) === 1) {
-                            $correct_count++;
-                        }
-                    }
-                    if ($correct_count !== 1) {
-                        self::redirect_question_import_with_error('Multiple Choice harus memiliki tepat 1 jawaban benar.', $return_page);
+                    $choice_validation_error = CBT_Admin_Questions_Helper::validate_choice_options(
+                        'multiple_choice',
+                        $options_to_insert,
+                        ['has_empty_correct_reference' => $has_empty_correct_reference]
+                    );
+                    if ($choice_validation_error !== '') {
+                        self::redirect_question_import_with_error($choice_validation_error, $return_page);
                     }
                 }
-    
+
                 if ($question_type === 'multiple_answer') {
-                    if (count($options_to_insert) < 2) {
-                        self::redirect_question_import_with_error('Multiple Answer minimal harus punya 2 pilihan.', $return_page);
-                    }
-                    if (count($options_to_insert) > 12) {
-                        self::redirect_question_import_with_error('Multiple Answer maksimal 12 pilihan.', $return_page);
-                    }
-    
-                    $correct_count = 0;
-                    foreach ($options_to_insert as $opt) {
-                        if ((int) ($opt['is_correct'] ?? 0) === 1) {
-                            $correct_count++;
+                    $selected_correct_indexes = isset($validation_meta['selected_correct_indexes']) && is_array($validation_meta['selected_correct_indexes'])
+                        ? array_values(array_unique(array_map('intval', $validation_meta['selected_correct_indexes'])))
+                        : [];
+                    $has_empty_correct_reference = CBT_Admin_Questions_Helper::has_empty_correct_option_reference((string) $options_raw);
+                    if (!$has_empty_correct_reference) {
+                        foreach ($selected_correct_indexes as $selected_index) {
+                            if ($selected_index < 1 || $selected_index > 12) {
+                                continue;
+                            }
+                            if (!self::manual_editor_field_has_content('cbt_ma_option_' . $selected_index)) {
+                                $has_empty_correct_reference = true;
+                                break;
+                            }
                         }
                     }
-                    if ($correct_count < 1) {
-                        self::redirect_question_import_with_error('Multiple Answer harus memiliki minimal 1 jawaban benar.', $return_page);
+                    $choice_validation_error = CBT_Admin_Questions_Helper::validate_choice_options(
+                        'multiple_answer',
+                        $options_to_insert,
+                        ['has_empty_correct_reference' => $has_empty_correct_reference]
+                    );
+                    if ($choice_validation_error !== '') {
+                        self::redirect_question_import_with_error($choice_validation_error, $return_page);
                     }
                 }
     
@@ -1552,6 +1612,17 @@ final class CBT_Admin_Questions_Service
             }
     
             return $seconds;
+        }
+
+        private static function manual_editor_field_has_content(string $field_name): bool
+        {
+            if ($field_name === '' || !isset($_POST[$field_name])) {
+                return false;
+            }
+
+            $value = CBT_Admin_Questions_Helper::sanitize_editor_html((string) wp_unslash($_POST[$field_name]));
+
+            return CBT_Admin_Questions_Helper::has_non_empty_html_content($value);
         }
 
         private static function redirect_question_import_with_error(string $message, string $return_page = 'cbt-question-bank'): void

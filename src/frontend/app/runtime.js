@@ -53,6 +53,7 @@ import { createBrowserStorageAccess } from './core/browser-storage';
 import { createBootstrapSessionManager } from './core/bootstrap-session';
 import { createLifecycleManager } from './core/lifecycle';
 import { createIdleDetectionManager } from './core/idle-detection';
+import { createNativeBridgeManager } from './core/native-bridge';
 import { createRenderCycleManager } from './core/render-cycle';
 import { createSecurityLoggingManager } from './core/security-logging';
 import { createExamSessionManager } from './core/exam-session';
@@ -843,6 +844,15 @@ export function bootstrapFrontendApp() {
         windowBlurLogDelayMs: WINDOW_BLUR_LOG_DELAY_MS,
         windowRef: window
     });
+    var nativeBridgeManager = createNativeBridgeManager({
+        buildUrl: buildUrl,
+        isSecurityLoggingEnabled: isSecurityLoggingEnabled,
+        readPersistedAuthSession: readPersistedAuthSession,
+        state: state,
+        windowRef: window
+    });
+    nativeBridgeManager.mount();
+    nativeBridgeManager.sync('mount');
     var idleDetectionManager = createIdleDetectionManager({
         documentRef: document,
         getIdleThresholdSeconds: getIdleDetectionThresholdSeconds,
@@ -1518,6 +1528,7 @@ export function bootstrapFrontendApp() {
         if (renderCycleManager) {
             try {
                 renderCycleManager.render(reason, meta);
+                nativeBridgeManager.sync(reason || 'render');
             } catch (error) {
                 renderFatalRuntimeError('render', error);
             }

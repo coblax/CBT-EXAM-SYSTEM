@@ -607,7 +607,6 @@
 
 .cbt-web-shell.cbt-theme-light .cbt-brand h2,
 .cbt-web-shell.cbt-theme-light .cbt-login-hero h1,
-.cbt-web-shell.cbt-theme-light .cbt-login-panel h3,
 .cbt-web-shell.cbt-theme-light .cbt-result-hero h3 {
     color: #fff;
 }
@@ -685,6 +684,7 @@
 .cbt-web-shell.cbt-theme-light .cbt-review-question,
 .cbt-web-shell.cbt-theme-light .cbt-field label,
 .cbt-web-shell.cbt-theme-light .cbt-exam-title,
+.cbt-web-shell.cbt-theme-light .cbt-login-panel-title,
 .cbt-web-shell.cbt-theme-light .cbt-side-card .cbt-side-card-title,
 .cbt-web-shell.cbt-theme-light .cbt-calc-head-title,
 .cbt-web-shell.cbt-theme-light .cbt-finish-modal h3 {

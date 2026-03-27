@@ -1,0 +1,22 @@
+
+cbt_activator::activate`
+V/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-activator.php (#"1*?
+2
+class-cbt-activator.php"
+ (
+implicit return*Ì
+1 (`
+^
+ (
+%1"cbt_activator::run_migrations*-
+
+__unknown_file ("
+cbt_activatorV
+T
+ (
+%2"cbt_runtime::activate*+
+
+__unknown_file ("
+cbt_runtime*
+2B
+cbt_activatorH

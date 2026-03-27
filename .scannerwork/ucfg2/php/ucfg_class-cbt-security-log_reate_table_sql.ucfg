@@ -1,0 +1,83 @@
+
+&cbt_security_log::get_create_table_sqlc
+Y/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-security-log.phpT T(/"1*£
+1V V(0H
+F
+T T(/
+$wpdb"__id*+
+
+__unknown_file (
+
+$wpdbwpdbNL
+V V(/
+%1*%
+
+__unknown_file (	
+
+$wpdb2get_charset_collateB
+@
+V V(/
+
+$charset"__id*"
+
+__unknown_file (
+
+%1Ž
+‹
+W W(,
+%2" cbt_security_log::get_table_name*0
+
+__unknown_file ("
+cbt_security_log*%
+
+__unknown_file (	
+
+$wpdb@
+>
+W W(,
+$table"__id*"
+
+__unknown_file (
+
+%2Î
+Ë
+Y i(
+%3"__concat*
+Y Y(
+CREATE TABLE *Ê
+Y% i(
+½º
+· (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            attempt_id BIGINT UNSIGNED NOT NULL,
+            exam_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            student_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            event_type VARCHAR(50) NOT NULL,
+            severity VARCHAR(20) NOT NULL DEFAULT 'info',
+            message TEXT NOT NULL,
+            context_json LONGTEXT NULL,
+            occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_attempt_occurred_at (attempt_id, occurred_at),
+            KEY idx_student_occurred_at (student_id, occurred_at),
+            KEY idx_event_occurred_at (event_type, occurred_at),
+            KEY idx_occurred_at (occurred_at)
+        ) *
+i i(
+;*
+Y Y(%
+
+
+$table*
+i
+ i(
+
+
+$charset"
+Y i(
+
+%3:
+T0 T(:
+$wpdbwpdbB
+cbt_security_logH

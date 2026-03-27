@@ -94,11 +94,19 @@ final class CBT_Admin_Introduction_Page
                 'items' => [
                     [
                         'slug' => 'cbt-setup',
-                        'label' => 'CBT Setup',
+                        'label' => 'CBT Branding',
                         'capability' => 'cbt_manage_exams',
-                        'summary' => 'Mengatur identitas sistem, branding, dan pengaturan inti operasional plugin.',
-                        'when_to_use' => 'Dipakai saat awal implementasi plugin, saat mengganti branding, atau saat meninjau pengaturan pengawasan dan keamanan.',
-                        'output' => 'Konfigurasi plugin siap dipakai sebagai dasar seluruh proses CBT.',
+                        'summary' => 'Mengatur identitas sistem dan branding sekolah yang dipakai di frontend CBT serta dokumen terkait.',
+                        'when_to_use' => 'Dipakai saat awal implementasi plugin atau saat mengganti identitas visual sekolah.',
+                        'output' => 'Konfigurasi branding yang siap dipakai sebagai identitas visual seluruh proses CBT.',
+                    ],
+                    [
+                        'slug' => 'cbt-security',
+                        'label' => 'CBT Security',
+                        'capability' => 'cbt_manage_exams',
+                        'summary' => 'Mengatur kontrol keamanan ujian dan memantau histori security log dari attempt yang sedang atau sudah berjalan.',
+                        'when_to_use' => 'Dipakai saat menyalakan kontrol pengawasan, memantau event keamanan, atau menindak attempt yang masuk Must Watch.',
+                        'output' => 'Konfigurasi security aktif dan panel observability yang siap dipakai pengawas/admin.',
                     ],
                     [
                         'slug' => 'cbt-subjects',

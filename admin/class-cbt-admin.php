@@ -13,6 +13,7 @@ class CBT_Admin
     {
         add_action('admin_menu', [CBT_Admin_Menu::class, 'register_menu']);
         add_action('admin_init', [CBT_Admin_Menu::class, 'redirect_removed_admin_pages']);
+        add_action('admin_head', [CBT_Admin_Menu::class, 'render_legacy_security_hash_redirect']);
         add_action('admin_notices', [CBT_Admin_Cache_Page::class, 'render_runtime_notice']);
 
         add_action('admin_post_cbt_save_subject', [CBT_Admin_Subjects_Actions::class, 'handle_save_subject']);
@@ -26,8 +27,10 @@ class CBT_Admin
         add_action('admin_post_cbt_delete_exam', [CBT_Admin_Exams_Actions::class, 'handle_delete_exam']);
         add_action('admin_post_cbt_save_global_exam_token', [CBT_Admin_Tokens_Actions::class, 'handle_save_global_exam_token']);
         add_action('admin_post_cbt_save_setup_branding', [CBT_Admin_Setup_Actions::class, 'handle_save_setup_branding']);
-        add_action('admin_post_cbt_save_setup_security', [CBT_Admin_Setup_Actions::class, 'handle_save_setup_security']);
-        add_action('admin_post_cbt_manage_security_logs', [CBT_Admin_Setup_Actions::class, 'handle_manage_security_logs']);
+        add_action('admin_post_cbt_save_setup_security', [CBT_Admin_Security_Actions::class, 'handle_save_setup_security']);
+        add_action('admin_post_cbt_save_security_settings', [CBT_Admin_Security_Actions::class, 'handle_save_security_settings']);
+        add_action('admin_post_cbt_manage_security_logs', [CBT_Admin_Security_Actions::class, 'handle_manage_security_logs']);
+        add_action('admin_post_cbt_simulate_native_security_event', [CBT_Admin_Security_Actions::class, 'handle_simulate_native_security_event']);
         add_action('admin_post_cbt_save_developer_settings', [CBT_Admin_Developer_Actions::class, 'handle_save_settings']);
         add_action('admin_post_cbt_check_developer_dev_server', [CBT_Admin_Developer_Actions::class, 'handle_check_dev_server']);
         add_action('admin_post_cbt_stop_developer_dev_server', [CBT_Admin_Developer_Actions::class, 'handle_stop_dev_server']);

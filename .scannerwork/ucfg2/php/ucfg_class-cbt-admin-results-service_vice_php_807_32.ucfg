@@ -1,0 +1,56 @@
+
+u__sonar_lambda_/var/www/wordpress/wp-content/plugins/cbt-exam-system/admin/class-cbt-admin-results-service.php_807_32k
+_/var/www/wordpress/wp-content/plugins/cbt-exam-system/admin/class-cbt-admin-results-service.php§  §(("1*M
+2%
+#class-cbt-admin-results-service.php"!
+
+© ©(	
+implicit return*Î
+1
+¨ ¨(YR
+P
+
+§  §((
+
+$message"__id*0
+
+__unknown_file (
+
+$messagestringN
+L
+
+§  §((
+$error"__id*.
+
+__unknown_file (
+
+$errorstring“
+
+
+¨ ¨(X
+%1">cbt_admin_results_service::redirect_with_attempt_action_return*9
+
+__unknown_file ("
+cbt_admin_results_service*/
+
+__unknown_file (
+
+$return_context*(
+
+__unknown_file (
+
+
+$message*&
+
+__unknown_file (
+
+
+$error*
+2: 
+
+§* §(A
+$messagestring:
+
+§C §(X
+$errorstringB
+cbt_admin_results_serviceH

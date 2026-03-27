@@ -225,7 +225,7 @@ final class SecurityLogObservabilityTest extends TestCase
 
         self::assertCount(2, $attempts);
         self::assertSame(22, $attempts[0]['attempt_id']);
-        self::assertSame(10, $attempts[0]['risk_score']);
+        self::assertSame(5, $attempts[0]['risk_score']);
         self::assertSame(2, $attempts[0]['event_total']);
         self::assertSame(1, $attempts[0]['session_revoked_count']);
         self::assertSame('Sesi dicabut', $attempts[0]['primary_event_label']);
@@ -234,7 +234,7 @@ final class SecurityLogObservabilityTest extends TestCase
     }
 
     #[RunInSeparateProcess]
-    public function test_idle_detected_event_definition_weight_and_source_label_are_registered(): void
+    public function test_idle_detected_native_supported_catalog_and_source_label_are_registered(): void
     {
         $this->bootstrapSecurityLogScaffold();
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
@@ -248,15 +248,68 @@ final class SecurityLogObservabilityTest extends TestCase
             $definitions['idle_detected']['message']
         );
 
+        $nativeCatalog = \CBT_Security_Log::native_supported_event_definitions();
+        self::assertArrayHasKey('tab_hidden', $nativeCatalog);
+        self::assertArrayHasKey('fullscreen_exit', $nativeCatalog);
+        self::assertSame('Pindah tab / aplikasi', $nativeCatalog['tab_hidden']['label']);
+
         $reflection = new \ReflectionClass(\CBT_Security_Log::class);
         $weightsMethod = $reflection->getMethod('must_watch_event_weights');
         $weightsMethod->setAccessible(true);
         $weights = $weightsMethod->invoke(null);
+        self::assertSame(3, $weights['session_revoked']);
         self::assertSame(2, $weights['idle_detected']);
+        self::assertSame(3, $weights['tab_hidden']);
 
         $sourceLabelMethod = $reflection->getMethod('security_context_source_label');
         $sourceLabelMethod->setAccessible(true);
         self::assertSame('Timer idle', $sourceLabelMethod->invoke(null, 'idle_timer', 'idle_detected'));
+        self::assertSame('Windows CEFSharp Shell', $sourceLabelMethod->invoke(null, 'windows_cefsharp_shell', 'tab_hidden'));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_native_recent_log_display_surfaces_native_fields_cleanly(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->recentLogs = [
+            [
+                'id' => 8,
+                'attempt_id' => 114,
+                'exam_id' => 501,
+                'student_id' => 71,
+                'event_type' => 'tab_hidden',
+                'severity' => 'warning',
+                'message' => 'Peserta berpindah tab atau aplikasi saat ujian berlangsung.',
+                'context_json' => wp_json_encode([
+                    'source' => 'windows_cefsharp_shell',
+                    'native_app' => 'windows_cefsharp',
+                    'warning_code' => 'task_switch',
+                    'warning_message' => 'Window ujian kehilangan fokus karena task switch',
+                    'occurred_at_client' => '2026-03-26T21:31:02+07:00',
+                    'device_type' => 'desktop',
+                    'device_platform' => 'windows',
+                ]),
+                'occurred_at' => '2026-03-26 21:31:03',
+                'created_at' => '2026-03-26 21:31:03',
+                'student_display_name' => 'Coblax Student',
+                'student_login' => 'coblax',
+                'student_kode_kelas' => 'X-A',
+                'student_kode_ruang' => 'R1',
+                'exam_title' => 'Security Fixture',
+            ],
+        ];
+
+        $logs = \CBT_Security_Log::get_recent_logs();
+
+        self::assertCount(1, $logs);
+        self::assertStringContainsString('Native app: Windows CEFSharp.', $logs[0]['message_display']);
+        self::assertStringContainsString('Warning native: Window ujian kehilangan fokus karena task switch [task_switch].', $logs[0]['message_display']);
+        self::assertStringContainsString('Waktu client: 2026-03-26T21:31:02+07:00.', $logs[0]['message_display']);
+        self::assertStringContainsString('Sumber deteksi: Windows CEFSharp Shell.', $logs[0]['message_display']);
     }
 
     private function bootstrapSecurityLogScaffold(): void

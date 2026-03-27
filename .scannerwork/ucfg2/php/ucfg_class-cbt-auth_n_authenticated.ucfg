@@ -1,0 +1,47 @@
+
+"cbt_auth::permission_authenticated]
+Q/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-auth.phpÕ Õ(3"1*Û
+1
+× ×(4"
+ 
+
+Õ Õ(3
+%1"__entrypoint¦£
+
+Õ Õ(3
+$requestwp_rest_request"&wp_rest_request::__sonar_inject_symbol*9
+
+__unknown_file (
+
+$requestwp_rest_request2__sonar_inject_symbol[
+Y
+
+Õ Õ(3
+
+$request"__id*9
+
+__unknown_file (
+
+$requestwp_rest_request‰
+†
+
+× ×(3
+%2"cbt_auth::verify_request_token*(
+
+__unknown_file ("
+
+cbt_auth*(
+
+__unknown_file (
+
+
+$request"
+
+× ×(4
+
+%2:)
+
+Õ4 Õ(L
+$requestwp_rest_requestB
+
+cbt_authH

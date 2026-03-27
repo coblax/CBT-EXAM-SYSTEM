@@ -488,7 +488,7 @@ final class CBT_Admin_Test_Hub_Service
                     'commands' => [
                         [
                             'label' => 'PHPUnit Import & Preview',
-                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/QuestionsImportPreviewTest.php tests/php/unit/QuestionsHelperPreviewRenderingTest.php',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/QuestionsImportPreviewTest.php tests/php/unit/QuestionsHelperPreviewRenderingTest.php tests/php/unit/QuestionsHelperShortAnswerTest.php',
                         ],
                     ],
                 ],
@@ -520,6 +520,22 @@ final class CBT_Admin_Test_Hub_Service
                             'label' => 'Playwright Import Linebreak Review Parity',
                             'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: line-break review stays consistent after finish"',
                         ],
+                        [
+                            'label' => 'Playwright Import Invalid Failure List',
+                            'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: invalid DOCX import shows precise failure list"',
+                        ],
+                        [
+                            'label' => 'Playwright Authoring MC Empty Correct',
+                            'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: manual MC save blocks empty correct option"',
+                        ],
+                        [
+                            'label' => 'Playwright Authoring MA Empty Correct',
+                            'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: manual MA save blocks checked empty option"',
+                        ],
+                        [
+                            'label' => 'Playwright Authoring TFM Validation',
+                            'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: manual TF matrix save blocks numbering gap and duplicate statement"',
+                        ],
                     ],
                 ],
             ],
@@ -533,8 +549,16 @@ final class CBT_Admin_Test_Hub_Service
                             'command' => './node_modules/.bin/vitest run tests/js/unit/security-manager.test.js --reporter=verbose',
                         ],
                         [
+                            'label' => 'Vitest Native Bridge',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/native-bridge.test.js --reporter=verbose',
+                        ],
+                        [
                             'label' => 'PHPUnit Security Log',
                             'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/SecurityLogObservabilityTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Native Security Event',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/RestNativeSecurityEventTest.php',
                         ],
                     ],
                 ],
@@ -561,6 +585,14 @@ final class CBT_Admin_Test_Hub_Service
                         [
                             'label' => 'Playwright Security Refresh Persistence',
                             'command' => 'node tests/e2e/run-security-log-flow.mjs --grep "Security Flow: frontend event remains visible after admin refresh"',
+                        ],
+                        [
+                            'label' => 'Playwright Security Native Direct API',
+                            'command' => 'node tests/e2e/run-security-log-flow.mjs --grep "Security Flow: native direct API event appears in observability panel"',
+                        ],
+                        [
+                            'label' => 'Playwright Security Native Tool',
+                            'command' => 'node tests/e2e/run-security-log-flow.mjs --grep "Security Flow: native tab sample request and simulate tool create visible native log"',
                         ],
                     ],
                 ],
@@ -1801,6 +1833,13 @@ final class CBT_Admin_Test_Hub_Service
             ? self::build_flow_job_run_results($flow_job)
             : self::resolve_unit_test_item_run_results($tab_key, $list_key, $runner_commands, $unit_test_run_result, $global_unit_run_result);
         $has_runner_output = !empty($run_results);
+        $failed_run_results = array_values(array_filter(
+            $run_results,
+            static function ($run_result): bool {
+                return is_array($run_result) && empty($run_result['success']);
+            }
+        ));
+        $has_failed_run_results = !empty($failed_run_results);
         $job_status = $list_key === 'smoke_tests' && !empty($flow_job) ? self::normalize_flow_job_status((string) ($flow_job['status'] ?? 'queued')) : '';
         $job_status_meta = $job_status !== '' ? self::flow_job_status_meta_for_job($flow_job) : null;
         $async_output_preview = $list_key === 'smoke_tests' ? self::build_flow_job_output_preview($flow_job) : '';
@@ -1813,6 +1852,8 @@ final class CBT_Admin_Test_Hub_Service
         $item['evidence'] = $evidence;
         $item['runner_commands'] = $runner_commands;
         $item['run_results'] = $run_results;
+        $item['failed_run_results'] = $failed_run_results;
+        $item['has_failed_run_results'] = $has_failed_run_results;
         $item['has_runner'] = !empty($runner_commands);
         $item['async_job'] = $flow_job;
         $item['async_status'] = $job_status;
@@ -1831,7 +1872,7 @@ final class CBT_Admin_Test_Hub_Service
                     ? 'Flow check sedang diproses di background'
                     : ($status === 'ready' ? 'Coverage awal sudah ditautkan' : 'Backlog dan proses verifikasi')
             );
-        $item['detail_open'] = !empty($item['open_by_default']) || $should_surface_async_preview;
+        $item['detail_open'] = !empty($item['open_by_default']) || $should_surface_async_preview || $has_failed_run_results;
 
         return $item;
     }
@@ -3515,6 +3556,64 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['PHPUnit Import & Preview'],
                     ]),
+                    self::unit_test_checklist_item('Validator manual dan DOCX menolak jawaban benar yang menunjuk pilihan kosong serta pilihan duplikat secara konsisten.', 'ready', [
+                        'description' => 'Helper validasi authoring sekarang mengunci dua guard inti untuk MC dan MA: pilihan minimal tetap dijaga, dan referensi jawaban benar ke opsi kosong tidak lagi jatuh ke error generik.',
+                        'process_steps' => [
+                            'PHPUnit memanggil validate_choice_options() untuk kasus MC dan MA dengan referensi jawaban benar ke opsi kosong.',
+                            'Parser DOCX diuji lagi pada blok yang menandai jawaban benar ke opsi yang tidak ada atau duplikat.',
+                            'Assertion memverifikasi pesan error spesifik tetap konsisten antara helper dan parser DOCX.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/QuestionsHelperShortAnswerTest.php',
+                            'tests/php/unit/QuestionsImportPreviewTest.php',
+                            'admin/class-cbt-admin-questions-helper.php',
+                            'admin/class-cbt-admin-questions-import-helper.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Import & Preview'],
+                    ]),
+                    self::unit_test_checklist_item('Validator manual dan DOCX untuk TF Matrix menjaga gap numbering, statement kosong, dan statement duplikat.', 'ready', [
+                        'description' => 'True/False Matrix sekarang memakai helper validasi yang sama untuk memastikan nomor pernyataan tetap kontigu, statement kosong ditolak dari source payload, dan duplikasi statement tidak lolos.',
+                        'process_steps' => [
+                            'PHPUnit memanggil validate_true_false_matrix_items() untuk gap numbering dan statement kosong pada source rows.',
+                            'Parser DOCX diuji lagi untuk gap numbering, key tanpa statement, dan duplicate statement.',
+                            'Assertion memastikan alasan gagal tetap spesifik dan tidak turun ke generic parse failure.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/QuestionsHelperShortAnswerTest.php',
+                            'tests/php/unit/QuestionsImportPreviewTest.php',
+                            'admin/class-cbt-admin-questions-helper.php',
+                            'admin/class-cbt-admin-questions-import-helper.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Import & Preview'],
+                    ]),
+                    self::unit_test_checklist_item('Short Answer tetap positional: placeholder dan key dijaga ketat, tetapi jawaban antar input boleh sama.', 'ready', [
+                        'description' => 'Hardening Short Answer sekarang eksplisit mempertahankan model positional: key placeholder wajib cocok, tetapi dua input berbeda tetap boleh punya jawaban valid yang sama setelah normalisasi.',
+                        'process_steps' => [
+                            'PHPUnit memanggil validate_short_answer_definition() dengan dua jawaban yang ternormalisasi sama untuk input A dan B.',
+                            'Parser DOCX tetap diuji untuk mismatch key dan duplicate placeholder.',
+                            'Assertion memastikan duplicate normalized answers tidak dianggap invalid selama key dan jumlah input tetap benar.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/QuestionsHelperShortAnswerTest.php',
+                            'tests/php/unit/QuestionsImportPreviewTest.php',
+                            'admin/class-cbt-admin-questions-helper.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Import & Preview'],
+                    ]),
+                    self::unit_test_checklist_item('State import DOCX menyimpan failure terstruktur agar UI admin bisa menampilkan blok, tipe, preview, dan pesan spesifik.', 'ready', [
+                        'description' => 'Jalur import sekarang menormalkan recent_failures ke entry terstruktur, sehingga panel import bisa menampilkan alasan gagal yang mudah discan tanpa kehilangan metadata blok dan preview.',
+                        'process_steps' => [
+                            'PHPUnit memanggil normalize_question_import_failure_entries() dengan payload structured dan legacy string.',
+                            'describe_docx_block_failure() diverifikasi mengembalikan alasan spesifik untuk gap TF Matrix dan mismatch key Short Answer.',
+                            'Assertion memverifikasi field block_number, question_type, question_preview, message, dan formatted tetap terisi konsisten.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/QuestionsImportPreviewTest.php',
+                            'admin/class-cbt-admin-questions-import-helper.php',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Import & Preview'],
+                    ]),
                 ],
                 'smoke_tests' => [
                     self::unit_test_checklist_item('Import satu DOCX dengan gambar, tabel, dan PEMBAHASAN lalu cek hasil preview.', 'ready', [
@@ -3596,6 +3695,62 @@ final class CBT_Admin_Test_Hub_Service
                             'tests/e2e/fixtures/import-preview/image-linebreak.docx',
                         ],
                         'runner_commands' => ['Playwright Import Linebreak Review Parity'],
+                    ]),
+                    self::unit_test_checklist_item('Import DOCX invalid menampilkan daftar failure yang spesifik per blok.', 'ready', [
+                        'description' => 'Flow check ini mengunggah fixture DOCX invalid campuran dan memastikan panel import admin menampilkan metadata blok, tipe soal, preview singkat, dan pesan error spesifik untuk tiap blok yang gagal.',
+                        'process_steps' => [
+                            'Admin login ke wp-admin lalu mengunggah tests/e2e/fixtures/import-preview/invalid-hardening.docx.',
+                            'Import dibiarkan selesai sampai state progress berubah menjadi selesai diproses.',
+                            'Daftar Gagal import terbaru harus memuat blok MC, Short Answer, dan TF Matrix dengan alasan gagal masing-masing.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/import-preview.spec.js',
+                            'tests/e2e/fixtures/import-preview/invalid-hardening.docx',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['Playwright Import Invalid Failure List'],
+                    ]),
+                    self::unit_test_checklist_item('Save manual MC ditahan saat jawaban benar menunjuk pilihan kosong.', 'ready', [
+                        'description' => 'Flow check ini memakai form question manual di wp-admin untuk memastikan guard client-side authoring tetap memblokir MC ketika pilihan yang dipilih sebagai jawaban benar belum diisi.',
+                        'process_steps' => [
+                            'Admin membuka Form Question, memilih subject fixture, lalu mengisi soal MC dengan pilihan 1, 3, dan 4 saja.',
+                            'Dropdown Jawaban Benar dipilih ke Pilihan 2 yang kosong.',
+                            'Submit harus memunculkan alert spesifik dan form tetap tidak tersimpan.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/import-preview.spec.js',
+                            'tests/e2e/helpers/admin-browser.js',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['Playwright Authoring MC Empty Correct'],
+                    ]),
+                    self::unit_test_checklist_item('Save manual Multiple Answer ditahan saat checkbox benar menandai pilihan kosong.', 'ready', [
+                        'description' => 'Flow check ini memastikan guard authoring MA tetap menolak kondisi ketika admin mencentang opsi kosong sebagai jawaban benar, sehingga payload tidak sempat jatuh ke validasi generik.',
+                        'process_steps' => [
+                            'Admin mengisi soal MA dengan pilihan 1, 2, dan 4, lalu mencentang pilihan 1 dan 3 sebagai benar.',
+                            'Pilihan 3 dibiarkan kosong untuk memicu guard.',
+                            'Submit harus memunculkan alert spesifik dan form tetap berada di panel manual.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/import-preview.spec.js',
+                            'tests/e2e/helpers/admin-browser.js',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['Playwright Authoring MA Empty Correct'],
+                    ]),
+                    self::unit_test_checklist_item('Save manual TF Matrix ditahan saat numbering loncat atau pernyataan duplikat.', 'ready', [
+                        'description' => 'Flow check ini menguji dua guard manual TF Matrix dalam satu sesi: numbering gap saat statement diisi loncat, lalu duplicate statement setelah numbering dibuat kontigu.',
+                        'process_steps' => [
+                            'Admin mengisi Pernyataan 1 dan 3 untuk memicu gap numbering.',
+                            'Setelah alert pertama, Pernyataan 2 diisi dengan teks yang sama seperti Pernyataan 1.',
+                            'Submit kedua harus memunculkan alert duplicate statement dan form tetap tidak tersimpan.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/import-preview.spec.js',
+                            'tests/e2e/helpers/admin-browser.js',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['Playwright Authoring TFM Validation'],
                     ]),
                 ],
             ],
@@ -3682,6 +3837,20 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['Vitest Security Log'],
                     ]),
+                    self::unit_test_checklist_item('Bridge resmi native mengembalikan token, attempt aktif, dan endpoint hanya saat sesi exam valid.', 'ready', [
+                        'description' => 'Frontend sekarang mengekspor CBTNativeBridge.getSecuritySnapshot() agar Android WebView dan Windows CEFSharp bisa membaca auth snapshot resmi tanpa mengandalkan struktur sessionStorage mentah.',
+                        'process_steps' => [
+                            'Vitest memasang native bridge dengan state exam aktif dan endpoint builder yang deterministik.',
+                            'Snapshot diverifikasi memuat token, attemptId, selectedExamId, dan nativeSecurityEvent endpoint saat stage exam.',
+                            'Skenario login/non-exam diverifikasi mengembalikan ok=0, token kosong, dan tetap mempertahankan property bridge native yang sudah ada.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/native-bridge.test.js',
+                            'src/frontend/app/core/native-bridge.js',
+                            'src/frontend/app/runtime.js',
+                        ],
+                        'runner_commands' => ['Vitest Native Bridge'],
+                    ]),
                     self::unit_test_checklist_item('[PHP Unit] Logging disabled short-circuit tanpa write ke database log.', 'ready', [
                         'description' => 'Guard global logging sekarang punya assertion eksplisit: saat log_security_events dimatikan, record_attempt_event() harus berhenti sebelum insert ke database dilakukan.',
                         'process_steps' => [
@@ -3694,6 +3863,19 @@ final class CBT_Admin_Test_Hub_Service
                             'includes/class-cbt-security-log.php',
                         ],
                         'runner_commands' => ['PHPUnit Security Log'],
+                    ]),
+                    self::unit_test_checklist_item('Endpoint native security memvalidasi native app dan memaksa source canonical dari backend.', 'ready', [
+                        'description' => 'REST native sekarang punya coverage untuk payload valid, rejection native_app invalid, dan guard bahwa native event tidak boleh lewat endpoint browser biasa.',
+                        'process_steps' => [
+                            'PHPUnit memanggil native_security_event dengan payload JSON dan fake attempt aktif milik siswa yang benar.',
+                            'Context yang direkam diverifikasi memakai source canonical windows_cefsharp_shell, bukan source mentah dari client.',
+                            'Skenario native_app invalid dan native event yang dikirim ke security_event biasa diverifikasi ditolak dengan error code yang eksplisit.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/RestNativeSecurityEventTest.php',
+                            'includes/class-cbt-rest.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Native Security Event'],
                     ]),
                     self::unit_test_checklist_item('[PHP Unit] Unknown event type punya fallback aman atau ditolak eksplisit sesuai kebijakan final.', 'ready', [
                         'description' => 'Kebijakan final di backend adalah reject eksplisit. Coverage sekarang mengunci bahwa event_type yang tidak punya definition tidak boleh ditulis ke security log.',
@@ -3737,7 +3919,7 @@ final class CBT_Admin_Test_Hub_Service
                 ],
                 'smoke_tests' => [
                     self::unit_test_checklist_item('Picu event security saat attempt aktif lalu pastikan log muncul di panel observability.', 'ready', [
-                        'description' => 'Flow check ini memicu clipboard_blocked dari browser siswa lalu memverifikasi row log yang sama muncul di panel Setup > Security Log lewat UI admin.',
+                        'description' => 'Flow check ini memicu clipboard_blocked dari browser siswa lalu memverifikasi row log yang sama muncul di panel CBT Security > Security Log lewat UI admin.',
                         'process_steps' => [
                             'Runner menyalakan logging security dan blok clipboard untuk TEST Security Fixture.',
                             'Siswa memulai attempt aktif lalu memicu aksi copy yang diblok.',
@@ -3754,12 +3936,12 @@ final class CBT_Admin_Test_Hub_Service
                         'description' => 'Flow check ini menggunakan tombol Reset Login pada kartu Must Watch lalu memastikan follow-up event admin_reset_login ikut masuk ke histori observability.',
                         'process_steps' => [
                             'Siswa memicu cukup banyak event frontend untuk membuat attempt masuk Must Watch.',
-                            'Admin membuka Setup > Security Log dan menjalankan action Reset Login dari kartu Must Watch.',
+                            'Admin membuka CBT Security > Security Log dan menjalankan action Reset Login dari kartu Must Watch.',
                             'Histori log harus memuat row Reset login admin sebagai event follow-up baru.',
                         ],
                         'evidence' => [
                             'tests/e2e/security-log-observability.spec.js',
-                            'admin/class-cbt-admin-setup-page.php',
+                            'admin/class-cbt-admin-security-page.php',
                         ],
                         'runner_commands' => ['Playwright Security Admin Follow Up'],
                     ]),
@@ -3772,7 +3954,7 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'evidence' => [
                             'tests/e2e/security-log-observability.spec.js',
-                            'admin/class-cbt-admin-setup-page.php',
+                            'admin/class-cbt-admin-security-page.php',
                         ],
                         'runner_commands' => ['Playwright Security Must Watch Order'],
                     ]),
@@ -3798,9 +3980,37 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'evidence' => [
                             'tests/e2e/security-log-observability.spec.js',
-                            'admin/views/setup/page.php',
+                            'admin/views/security/page.php',
                         ],
                         'runner_commands' => ['Playwright Security Refresh Persistence'],
+                    ]),
+                    self::unit_test_checklist_item('Native direct API bisa menulis security log yang muncul normal di observability panel.', 'ready', [
+                        'description' => 'Flow ini memulai attempt siswa, membaca snapshot auth resmi dari frontend, lalu mengirim event CBT existing langsung ke endpoint native security event dengan bearer token siswa.',
+                        'process_steps' => [
+                            'Siswa membuka TEST Security Fixture dan bridge native dibaca dari browser untuk mendapatkan token, attemptId, dan endpoint native.',
+                            'Runner mengirim POST native_security_event langsung dari konteks frontend memakai warning task_switch untuk Windows CEFSharp.',
+                            'Admin membuka Security Log dan memastikan row Pindah tab / aplikasi muncul untuk attempt yang sama lengkap dengan detail native.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/security-log-observability.spec.js',
+                            'src/frontend/app/core/native-bridge.js',
+                            'includes/class-cbt-rest.php',
+                        ],
+                        'runner_commands' => ['Playwright Security Native Direct API'],
+                    ]),
+                    self::unit_test_checklist_item('Tab Native menampilkan sample request dan simulator admin menulis log sample ke observability.', 'ready', [
+                        'description' => 'Flow ini memverifikasi tab Native pada CBT Security berfungsi sebagai pusat spec + tool: sample request tampil, lalu simulator admin menambahkan fullscreen_exit ke log dan menaikkan skor Must Watch.',
+                        'process_steps' => [
+                            'Siswa memulai attempt dan memicu satu clipboard blocked sebagai baseline skor observability.',
+                            'Admin membuka tab Native, memeriksa sample JSON/cURL/snippet Android serta CEFSharp, lalu mensimulasikan fullscreen_exit untuk attempt yang sama.',
+                            'Panel Security Log harus menampilkan row baru dan kartu Must Watch siswa naik ke skor total 6.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/security-log-observability.spec.js',
+                            'admin/views/setup/page.php',
+                            'admin/class-cbt-admin-security-actions.php',
+                        ],
+                        'runner_commands' => ['Playwright Security Native Tool'],
                     ]),
                 ],
             ],

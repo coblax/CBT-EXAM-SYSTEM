@@ -1,0 +1,41 @@
+
+}cbtexamsystem\tests\unit\authtokennormalizationtest::test_normalize_exam_token_input_uppercases_and_strips_invalid_charactersm
+c/var/www/wordpress/wp-content/plugins/cbt-exam-system/tests/php/unit/AuthTokenNormalizationTest.php (\"1*F
+2 
+AuthTokenNormalizationTest.php"
+ (
+implicit return*Ô
+1 (Mí
+è
+ (L
+%1"$cbt_auth::normalize_exam_token_input*(
+
+__unknown_file ("
+
+cbt_auth*-
+
+__unknown_file (
+ ab-c 123 io E
+C
+ (L
+$normalized"__id*"
+
+__unknown_file (
+
+%1˛
+˚
+ (/
+%2"?cbtexamsystem\tests\unit\authtokennormalizationtest::assertsame*S
+
+__unknown_file (7"5
+3cbtexamsystem\tests\unit\authtokennormalizationtest*&
+
+__unknown_file (
+
+ABC123*+
+
+__unknown_file (
+
+$normalized*
+2B75
+3cbtexamsystem\tests\unit\authtokennormalizationtestH

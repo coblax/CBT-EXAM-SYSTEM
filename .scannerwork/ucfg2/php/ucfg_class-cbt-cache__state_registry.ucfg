@@ -1,0 +1,56 @@
+
+"cbt_cache::clear_ui_state_registry^
+R/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-cache.php£ £(2"1*=
+2
+class-cbt-cache.php"!
+
+¨ ¨(
+implicit return*ø
+1
+¥ ¥(*Y
+W
+
+¥ ¥()
+%1"cbt_cache::load_registry*)
+
+__unknown_file ("
+	cbt_cacheE
+C
+
+¥ ¥()
+	$registry"__id*"
+
+__unknown_file (
+
+%1
+
+¦! ¦(#
+%2"$Array™
+–
+
+¦ ¦(
+%3"__mapSet*)
+
+__unknown_file (
+
+	$registry*)
+
+__unknown_file (
+	ui_states*"
+
+__unknown_file (
+
+%2…
+‚
+
+§ §(&
+%4"cbt_cache::save_registry*)
+
+__unknown_file ("
+	cbt_cache*)
+
+__unknown_file (
+
+	$registry*
+2B
+	cbt_cacheH

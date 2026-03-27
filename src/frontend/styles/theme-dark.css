@@ -1011,8 +1011,8 @@
         font-size: 8px;
     }
 
-    .cbt-side-summary-value {
-        font-size: 14px;
+    .cbt-web-shell.cbt-theme-dark .cbt-side-summary-value {
+        font-size: 9px;
     }
 
     .cbt-side-stat-grid {
@@ -1036,25 +1036,25 @@
 
     .cbt-nav-grid {
         margin-top: 6px;
-        grid-template-rows: repeat(var(--cbt-nav-rows, 1), 34px);
-        grid-auto-columns: 30px;
+        grid-template-rows: repeat(var(--cbt-nav-rows, 1), 24px);
+        grid-auto-columns: 21px;
         gap: 3px;
-        padding: 5px 1px 7px;
+        padding: 4px 0 6px;
     }
 
     .cbt-nav-btn {
-        min-height: 24px;
-        border-radius: 7px;
-        font-size: 10px;
+        min-height: 18px;
+        border-radius: 6px;
+        font-size: 8px;
     }
 
     .cbt-nav-number {
-        min-width: 12px;
+        min-width: 8px;
     }
 
     .cbt-nav-answer-badges {
-        top: -4px;
-        right: -4px;
+        top: -3px;
+        right: -3px;
         gap: 1px;
     }
 
@@ -1066,9 +1066,9 @@
     }
 
     .cbt-nav-type-badge {
-        bottom: -4px;
-        left: -4px;
-        min-width: 11px;
+        bottom: -3px;
+        left: -3px;
+        min-width: 10px;
         height: 10px;
         padding: 0 2px;
         font-size: 6px;

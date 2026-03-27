@@ -1,0 +1,44 @@
+
+Ccbt_admin_test_hub_service::default_unit_test_checklist_descriptionl
+`/var/www/wordpress/wp-content/plugins/cbt-exam-system/admin/class-cbt-admin-test-hub-service.phpõ õ(C"1*±
+2ø ø("
+ø ø(‹
+ˆCheckpoint untuk memverifikasi flow nyata di browser atau admin. Detail ini dipakai sebagai panduan saat flow check belum diotomatisasi.*Â
+4ü ü(¯"¯
+ü ü(¯Ÿœ
+™Checklist ini sudah punya coverage awal. Gunakan detail di bawah untuk melihat proses verifikasi, evidence file, dan hasil runner terbaru yang terhubung.*š
+6€ €(Š"‡
+€ €(Šxv
+tChecklist ini tertahan. Detail di bawah dipakai untuk menunjukkan gap implementasi dan target verifikasi berikutnya.*²
+7ƒ ƒ(›"Ÿ
+ƒ ƒ(›Œ
+‰Checklist ini masih backlog. Detail di bawah dipakai untuk mengarahkan target file, proses verifikasi, dan evidence yang perlu disiapkan.*Å
+1
+÷ ÷('T
+R
+
+õ õ(C
+	$list_key"__id*1
+
+__unknown_file (
+
+	$list_keystringP
+N
+
+õ õ(C	
+$status"__id*/
+
+__unknown_file (
+
+$statusstring*
+2
+4
+6
+7:!
+
+õD õ(T
+	$list_keystring:
+
+õV õ(d
+$statusstringB
+cbt_admin_test_hub_serviceH

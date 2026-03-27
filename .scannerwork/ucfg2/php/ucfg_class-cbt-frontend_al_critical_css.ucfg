@@ -1,0 +1,112 @@
+
++cbt_frontend::render_canonical_critical_cssa
+U/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-frontend.php (8"1*¹(
+1
+Ÿ Ä(‘(
+(
+
+Ÿ Ä(
+%1"__concat*8
+
+Ÿ Ÿ(7*(
+&<style id="cbt-frontend-critical-css">*o
+
+   (ma_
+]html{background:linear-gradient(180deg,#e8f0ff 0%,#edf4ff 56%,#f4f8ff 100%);min-height:100%;}*Ğ
+¡ ¡(ÊÀ½
+ºbody.cbt-exam-page-canonical{margin:0;min-height:100vh;background:transparent;color:#16324f;font-family:"Source Sans 3",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}*V
+
+¢ ¢(THF
+D.cbt-frontpage{min-height:100vh;display:flex;flex-direction:column;}*M
+
+£ £(K?=
+;.cbt-frontpage__skip{position:absolute;left:-9999px;top:0;}*Õ
+¤ ¤(ÏÅÂ
+¿.cbt-frontpage__skip:focus{left:16px;top:16px;z-index:1000;background:#fff;border-radius:999px;padding:10px 14px;color:#0f4eb3;text-decoration:none;box-shadow:0 8px 18px rgba(15,78,179,.18);}*b
+
+¥ ¥(`TR
+P.cbt-frontpage__shell{flex:1;display:grid;place-items:center;padding:32px 18px;}*P
+
+¦ ¦(NB@
+>.cbt-boot-shell{width:min(100%,1180px);display:grid;gap:22px;}*B
+
+§ §(@42
+0.cbt-boot-shell--compact{width:min(100%,560px);}*ø
+¨ ¨(òèå
+â.cbt-boot-shell__hero{display:flex;align-items:center;gap:16px;padding:20px 24px;border-radius:24px;background:linear-gradient(135deg,#0f6fd7 0%,#2f8ef2 52%,#5da8ff 100%);color:#fff;box-shadow:0 24px 52px rgba(18,86,176,.22);}*b
+
+© ©(`TR
+P.cbt-boot-shell__logos{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}*±
+ª ª(«¡
+›.cbt-boot-shell__logo{width:56px;height:56px;object-fit:contain;border-radius:16px;background:rgba(255,255,255,.14);padding:8px;backdrop-filter:blur(6px);}*K
+
+« «(I=;
+9.cbt-boot-shell__brand{display:grid;gap:2px;min-width:0;}*†
+¬ ¬(ƒwu
+s.cbt-boot-shell__eyebrow{font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.85;font-weight:700;}*Š
+­ ­(‡{y
+w.cbt-boot-shell__title{font-size:clamp(28px,4vw,44px);line-height:1.02;font-weight:800;letter-spacing:-.03em;margin:0;}*N
+
+® ®(L@>
+<.cbt-boot-shell__motto{font-size:15px;opacity:.92;margin:0;}*à
+¯ ¯(ÚĞÍ
+Ê.cbt-boot-shell__card{background:rgba(255,255,255,.92);border:1px solid rgba(162,191,229,.45);border-radius:28px;padding:28px 24px;box-shadow:0 18px 44px rgba(35,73,132,.12);backdrop-filter:blur(12px);}*?
+
+° °(=1/
+-.cbt-boot-shell__card--compact{padding:18px;}*
+± ±(Š~|
+z.cbt-boot-shell__grid{display:grid;gap:18px;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);align-items:start;}*°
+² ²(ª 
+š.cbt-boot-shell__block{padding:20px;border-radius:22px;background:linear-gradient(180deg,#f8fbff 0%,#eef5ff 100%);border:1px solid rgba(176,200,233,.48);}*:
+
+³ ³(8,*
+(.cbt-boot-shell__app--compact{gap:14px;}*“
+´ ´(ƒ€
+~.cbt-boot-shell__block h2{margin:0 0 8px;font-size:24px;line-height:1.05;font-weight:800;letter-spacing:-.02em;color:#143861;}*c
+
+µ µ(aUS
+Q.cbt-boot-shell__block p{margin:0;color:#506a86;font-size:16px;line-height:1.55;}*Ä
+¶ ¶(¾´±
+®.cbt-boot-shell__progress{position:relative;overflow:hidden;height:14px;margin-top:18px;border-radius:999px;background:#dbe7fb;box-shadow:inset 0 1px 2px rgba(15,23,42,.08);}*ñ
+· ·(ëáŞ
+Û.cbt-boot-shell__progress-fill{display:block;width:12%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#2271b1 0%,#5da8ff 100%);box-shadow:0 10px 24px rgba(34,113,177,.24);transition:width .28s ease;}*Ê
+¸ ¸(Äº·
+´.cbt-boot-shell__progress-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;font-size:13px;line-height:1.45;color:#4c6480;flex-wrap:wrap;}*Q
+
+¹ ¹(OCA
+?.cbt-boot-shell__progress-label{font-weight:700;color:#1d4f8f;}*Q
+
+º º(OCA
+?.cbt-boot-shell__progress-value{font-weight:800;color:#19385b;}*—
+» »(‘‡„
+.cbt-boot-shell__status{display:inline-flex;align-items:center;gap:10px;padding:10px 14px;border-radius:999px;background:#fff;border:1px solid rgba(180,199,226,.78);font-size:13px;font-weight:700;color:#1f4fa2;letter-spacing:.08em;text-transform:uppercase;}*Ã
+¼ ¼(½³°
+­.cbt-boot-shell__dot{width:10px;height:10px;border-radius:999px;background:#0f6fd7;box-shadow:0 0 0 6px rgba(15,111,215,.14);animation:cbtBootDot 1.2s ease-in-out infinite;}*O
+
+½ ½(MA?
+=.cbt-boot-shell__meta{display:grid;gap:10px;margin-top:18px;}*
+
+¾ ¾(}qo
+m.cbt-boot-shell__meta-item{display:flex;justify-content:space-between;gap:14px;font-size:14px;color:#4c6480;}*C
+
+¿ ¿(A53
+1.cbt-boot-shell__meta-item strong{color:#19385b;}*>
+
+À À(<0.
+,.cbt-boot-shell__app{display:grid;gap:12px;}*¬
+Á Á(¦œ™
+–.cbt-web-noscript{max-width:1180px;margin:0 auto 24px;padding:16px 18px;border-radius:18px;background:#fff0f0;border:1px solid #efb5b5;color:#8e2424;}*v
+
+Â Â(thf
+d@keyframes cbtBootDot{0%,100%{transform:scale(.9);opacity:.88;}50%{transform:scale(1.1);opacity:1;}}*ì
+Ã Ã(æÜÙ
+Ö@media (max-width: 960px){.cbt-boot-shell__grid{grid-template-columns:1fr;}.cbt-boot-shell__hero{padding:18px 18px 20px;border-radius:22px;}.cbt-boot-shell__card{padding:18px;}.cbt-boot-shell__block{padding:18px;}}*
+
+Ä Ä(
+
+</style>"
+
+Ÿ Ä(
+
+%1B
+cbt_frontendH

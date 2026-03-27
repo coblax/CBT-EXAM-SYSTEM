@@ -208,6 +208,33 @@ final class RestSyncValidationTest extends TestCase
         self::assertSame('restricted', $restrictedPayload['result_view_mode']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_short_answer_evaluation_is_case_insensitive_and_tolerates_spacing_and_edge_punctuation(): void
+    {
+        $this->bootstrapRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        $evaluator = new ReflectionMethod('CBT_REST', 'evaluate_answer');
+        $evaluator->setAccessible(true);
+
+        $result = $evaluator->invoke(
+            null,
+            [
+                'question_type' => 'short_answer',
+                'points' => 5,
+                'correct_text' => 'Jakarta',
+            ],
+            [],
+            '  JAKARTA.  ',
+            [
+                'correct_text' => 'Jakarta',
+            ]
+        );
+
+        self::assertSame(1, $result['is_correct']);
+        self::assertSame(5.0, $result['score_awarded']);
+    }
+
     private function bootstrapRestScaffold(): void
     {
         if (!class_exists('CBT_Auth')) {

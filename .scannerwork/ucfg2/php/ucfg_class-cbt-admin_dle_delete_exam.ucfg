@@ -1,0 +1,16 @@
+
+cbt_admin::handle_delete_examY
+O/var/www/wordpress/wp-content/plugins/cbt-exam-system/admin/class-cbt-admin.phpc c(-"1*;
+2
+class-cbt-admin.php"
+f f(
+implicit return*Œ
+1e e(6x
+v
+e e(5
+%1"+cbt_admin_exams_service::handle_delete_exam*7
+
+__unknown_file ("
+cbt_admin_exams_service*
+2B
+	cbt_adminH

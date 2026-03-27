@@ -1,0 +1,54 @@
+
+#cbt_frontend::strip_frontend_assets_
+U/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-frontend.php{ {(0"1*#
+2~ ~("
+~ ~(
+void*Ö
+3
+Å Å(.l
+j
+
+Å Å(.
+%2"(cbt_frontend::is_canonical_frontend_page*,
+
+__unknown_file ("
+cbt_frontend*
+4
+5*î
+4
+Ç Ç(.k
+i
+
+Ç Ç(-
+%3"'cbt_frontend::strip_assets_by_whitelist*,
+
+__unknown_file ("
+cbt_frontend"
+
+É É(
+void*ç
+5
+Ü Ü(6w
+u
+
+Ü Ü(5
+%4"3cbt_frontend::strip_fallback_frontend_noise_handles*,
+
+__unknown_file ("
+cbt_frontend*
+6*@
+6
+class-cbt-frontend.php"!
+
+á á(
+implicit return*Ç
+1} }(0k
+i
+} }(0
+%1")cbt_frontend::is_frontend_request_context*,
+
+__unknown_file ("
+cbt_frontend*
+2
+3B
+cbt_frontendH

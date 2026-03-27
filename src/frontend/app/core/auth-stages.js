@@ -192,6 +192,9 @@ export function createAuthStageManager(deps) {
         var schoolBranding = getLoginHeroSchoolBranding(schoolNameRaw);
         var schoolBrandTag = schoolBranding.tag ? escapeHtml(schoolBranding.tag) : '';
         var schoolBrandTitle = escapeHtml(schoolNameRaw || schoolBranding.title || 'CBT Exam');
+        var loginPanelTitle = schoolNameRaw !== ''
+            ? escapeHtml(schoolNameRaw)
+            : 'Masuk ke CBT';
         var schoolMottoRaw = getConfiguredSchoolMotto();
         var schoolMotto = schoolMottoRaw !== '' ? escapeHtml(schoolMottoRaw) : '';
         var heroMottoBlock = schoolMotto !== ''
@@ -246,7 +249,7 @@ export function createAuthStageManager(deps) {
             '</div>',
             '</div>',
             '<div class="cbt-login-panel">',
-            '<h3>Masuk ke CBT</h3>',
+            '<h3 class="cbt-login-panel-title">' + loginPanelTitle + '</h3>',
             mobilePanelLogoBlock,
             '<form id="cbt-login-form" class="cbt-form-grid">',
             '<div class="cbt-field"><label for="cbt-identifier">EMAIL / USERNAME / NISN</label><input id="cbt-identifier" class="cbt-input" name="identifier" autocomplete="username" value="' + escapeHtml(state.loginIdentifier) + '" placeholder="Contoh: 231045 atau siswa@smkn1tpd.sch.id" required /></div>',

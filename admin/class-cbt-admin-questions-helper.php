@@ -138,8 +138,15 @@ final class CBT_Admin_Questions_Helper
 
         public static function normalize_short_answer_compare_value(string $value): string
         {
-            $value = strtolower(trim((string) $value));
-            $value = preg_replace('/\s+/', ' ', $value);
+            $value = trim((string) $value);
+            $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if (function_exists('mb_strtolower')) {
+                $value = mb_strtolower($value, 'UTF-8');
+            } else {
+                $value = strtolower($value);
+            }
+            $value = preg_replace('/\s+/u', ' ', $value);
+            $value = is_string($value) ? preg_replace('/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/u', '', $value) : '';
             return $value === null ? '' : $value;
         }
 
@@ -200,6 +207,144 @@ final class CBT_Admin_Questions_Helper
             }
     
             return (string) wp_json_encode($values);
+        }
+
+        public static function validate_short_answer_definition(string $question_text, array $values, array $context = []): string
+        {
+            if (!empty(self::find_duplicate_short_answer_input_keys($question_text))) {
+                return 'Placeholder Short Answer tidak boleh duplikat.';
+            }
+
+            $input_keys = self::resolve_short_answer_input_keys($question_text);
+            if (empty($input_keys)) {
+                return 'Short Answer wajib memakai placeholder [INPUT_1] s.d. [INPUT_8] pada teks soal.';
+            }
+
+            $normalized_values = [];
+            foreach ($values as $value) {
+                $value = sanitize_text_field(trim((string) $value));
+                if ($value === '') {
+                    continue;
+                }
+                $normalized_values[] = $value;
+            }
+
+            if (count($input_keys) !== count($normalized_values)) {
+                return 'Jumlah placeholder Short Answer harus sama dengan jumlah jawaban valid.';
+            }
+
+            $provided_keys = isset($context['provided_keys']) && is_array($context['provided_keys'])
+                ? array_values(array_filter(array_map(static function ($key): string {
+                    return self::normalize_short_answer_input_token((string) $key);
+                }, $context['provided_keys']), static fn(string $key): bool => $key !== ''))
+                : [];
+
+            if (!empty($provided_keys)) {
+                sort($provided_keys);
+                $expected_keys = $input_keys;
+                sort($expected_keys);
+                if ($provided_keys !== $expected_keys) {
+                    return 'Key placeholder Short Answer harus cocok dengan key jawaban yang diisi.';
+                }
+            }
+
+            return '';
+        }
+
+        /**
+         * @return string[]
+         */
+        public static function resolve_short_answer_input_keys(string $question_text): array
+        {
+            $keys = [];
+            foreach (self::extract_short_answer_input_key_tokens($question_text) as $token) {
+                if (!in_array($token, $keys, true)) {
+                    $keys[] = $token;
+                }
+            }
+
+            return $keys;
+        }
+
+        /**
+         * @return string[]
+         */
+        public static function find_duplicate_short_answer_input_keys(string $question_text): array
+        {
+            $counts = [];
+            foreach (self::extract_short_answer_input_key_tokens($question_text) as $token) {
+                $counts[$token] = (int) ($counts[$token] ?? 0) + 1;
+            }
+
+            $duplicates = [];
+            foreach ($counts as $token => $count) {
+                if ($count > 1) {
+                    $duplicates[] = (string) $token;
+                }
+            }
+
+            return $duplicates;
+        }
+
+        public static function validate_true_false_matrix_items(array $items, array $context = []): string
+        {
+            $provided_indexes = isset($context['provided_indexes']) && is_array($context['provided_indexes'])
+                ? array_values(array_unique(array_map('intval', $context['provided_indexes'])))
+                : [];
+
+            if (!empty($provided_indexes)) {
+                sort($provided_indexes);
+                if ($provided_indexes !== range(1, count($provided_indexes))) {
+                    return 'Pernyataan True/False Matrix harus diisi berurutan tanpa nomor yang loncat.';
+                }
+            }
+
+            $source_rows = isset($context['source_rows']) && is_array($context['source_rows'])
+                ? $context['source_rows']
+                : [];
+            foreach ($source_rows as $source_row) {
+                if (!is_array($source_row)) {
+                    continue;
+                }
+
+                $row_index = isset($source_row['index']) ? (int) $source_row['index'] : 0;
+                if ($row_index <= 0) {
+                    continue;
+                }
+
+                $text = sanitize_text_field(trim((string) ($source_row['text'] ?? $source_row['statement'] ?? '')));
+                if ($text === '') {
+                    return 'Pernyataan True/False Matrix tidak boleh kosong.';
+                }
+            }
+
+            $normalized_items = [];
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $text = sanitize_text_field(trim((string) ($item['text'] ?? $item['statement'] ?? $item['pernyataan'] ?? '')));
+                if ($text === '') {
+                    continue;
+                }
+
+                $answer = strtolower(trim((string) ($item['answer'] ?? $item['correct'] ?? 'true')));
+                $normalized_items[] = [
+                    'text' => $text,
+                    'answer' => in_array($answer, ['false', '0', 'f', 'no', 'tidak', 'salah'], true) ? 'false' : 'true',
+                ];
+            }
+
+            if (count($normalized_items) < 2) {
+                return 'True/False Matrix minimal harus punya 2 pernyataan.';
+            }
+
+            if (!empty(self::find_duplicate_true_false_matrix_statement_indexes($normalized_items))) {
+                return 'True/False Matrix tidak boleh punya pernyataan duplikat.';
+            }
+
+            return '';
         }
 
         public static function normalize_true_false_matrix_config(string $raw): array
@@ -287,6 +432,37 @@ final class CBT_Admin_Questions_Helper
             return $normalized;
         }
 
+        /**
+         * @param array<int, array<string, mixed>> $items
+         * @return int[]
+         */
+        public static function find_duplicate_true_false_matrix_statement_indexes(array $items): array
+        {
+            $signatures = [];
+            $duplicate_indexes = [];
+
+            foreach ($items as $idx => $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $text = (string) ($item['text'] ?? $item['statement'] ?? $item['pernyataan'] ?? '');
+                $signature = self::normalize_true_false_matrix_statement_compare_value($text);
+                if ($signature === '') {
+                    continue;
+                }
+
+                if (isset($signatures[$signature])) {
+                    $duplicate_indexes[] = (int) $idx + 1;
+                    continue;
+                }
+
+                $signatures[$signature] = (int) $idx + 1;
+            }
+
+            return $duplicate_indexes;
+        }
+
         public static function normalize_true_false_matrix_payload(string $raw): string
         {
             $items = self::normalize_true_false_matrix_config($raw);
@@ -297,6 +473,50 @@ final class CBT_Admin_Questions_Helper
             return (string) wp_json_encode([
                 'statements' => $items,
             ]);
+        }
+
+        public static function validate_choice_options(string $question_type, array $options, array $context = []): string
+        {
+            $question_type = in_array($question_type, ['multiple_choice', 'multiple_answer'], true)
+                ? $question_type
+                : 'multiple_choice';
+            $label = $question_type === 'multiple_answer' ? 'Multiple Answer' : 'Multiple Choice';
+
+            $option_count = count($options);
+            $minimum_count = 3;
+            $maximum_count = $question_type === 'multiple_answer' ? 12 : 5;
+            if ($option_count < $minimum_count) {
+                return $label . ' minimal harus punya 3 pilihan.';
+            }
+            if ($option_count > $maximum_count) {
+                return $label . ' maksimal ' . $maximum_count . ' pilihan.';
+            }
+
+            if (!empty($context['has_empty_correct_reference'])) {
+                return $question_type === 'multiple_answer'
+                    ? 'Multiple Answer tidak boleh menandai jawaban benar pada pilihan yang kosong.'
+                    : 'Jawaban benar Multiple Choice tidak boleh menunjuk pilihan kosong.';
+            }
+
+            $correct_count = 0;
+            foreach ($options as $option) {
+                if (is_array($option) && (int) ($option['is_correct'] ?? 0) === 1) {
+                    $correct_count++;
+                }
+            }
+
+            if ($question_type === 'multiple_choice' && $correct_count !== 1) {
+                return 'Multiple Choice harus memiliki tepat 1 jawaban benar.';
+            }
+            if ($question_type === 'multiple_answer' && $correct_count < 1) {
+                return 'Multiple Answer harus memiliki minimal 1 jawaban benar.';
+            }
+
+            if (!empty(self::find_duplicate_option_indexes($options))) {
+                return $label . ' tidak boleh punya pilihan duplikat.';
+            }
+
+            return '';
         }
 
         public static function ensure_subject_question_bank_exam(int $subject_id, bool $is_admin_scope, int $current_user_id): int
@@ -1268,52 +1488,56 @@ CSS;
 
         public static function parse_options(string $options_raw): array
         {
-            $items = [];
-    
-            $raw_trimmed = trim($options_raw);
-            if ($raw_trimmed !== '' && ($raw_trimmed[0] ?? '') === '[') {
-                $decoded = json_decode($raw_trimmed, true);
-                if (is_array($decoded)) {
-                    foreach ($decoded as $entry) {
-                        if (!is_array($entry)) {
-                            continue;
-                        }
-    
-                        $text = isset($entry['option_text']) ? self::sanitize_editor_html((string) $entry['option_text']) : '';
-                        $is_correct = !empty($entry['is_correct']) ? 1 : 0;
-    
-                        if (self::has_non_empty_option_content($text)) {
-                            $items[] = [
-                                'option_text' => $text,
-                                'is_correct' => $is_correct,
-                            ];
-                        }
-                    }
-                    return $items;
-                }
-            }
-    
-            $lines = preg_split('/\r\n|\r|\n/', $options_raw);
-    
-            foreach ((array) $lines as $line) {
-                $line = trim($line);
-                if ($line === '') {
+            return self::parse_option_entries_from_raw($options_raw, false);
+        }
+
+        public static function has_empty_correct_option_reference(string $options_raw): bool
+        {
+            foreach (self::parse_option_entries_from_raw($options_raw, true) as $item) {
+                if (!is_array($item)) {
                     continue;
                 }
-    
-                $parts = array_map('trim', explode('|', $line));
-                $text = isset($parts[0]) ? self::sanitize_editor_html((string) $parts[0]) : '';
-                $is_correct = isset($parts[1]) && $parts[1] === '1' ? 1 : 0;
-    
-                if (self::has_non_empty_option_content($text)) {
-                    $items[] = [
-                        'option_text' => $text,
-                        'is_correct' => $is_correct,
-                    ];
+
+                if ((int) ($item['is_correct'] ?? 0) !== 1) {
+                    continue;
+                }
+
+                if (!self::has_non_empty_option_content((string) ($item['option_text'] ?? ''))) {
+                    return true;
                 }
             }
-    
-            return $items;
+
+            return false;
+        }
+
+        /**
+         * @param array<int, array<string, mixed>> $options
+         * @return int[]
+         */
+        public static function find_duplicate_option_indexes(array $options): array
+        {
+            $signatures = [];
+            $duplicate_indexes = [];
+
+            foreach ($options as $idx => $option) {
+                if (!is_array($option)) {
+                    continue;
+                }
+
+                $signature = self::normalize_option_compare_signature((string) ($option['option_text'] ?? ''));
+                if ($signature === '') {
+                    continue;
+                }
+
+                if (isset($signatures[$signature])) {
+                    $duplicate_indexes[] = (int) $idx + 1;
+                    continue;
+                }
+
+                $signatures[$signature] = (int) $idx + 1;
+            }
+
+            return $duplicate_indexes;
         }
 
         public static function has_non_empty_html_content(string $html): bool
@@ -1333,14 +1557,163 @@ CSS;
             if ($trimmed === '') {
                 return false;
             }
-    
+
             if (preg_match('/<img\b/i', $trimmed)) {
                 return true;
             }
-    
+
             $text = str_replace('&nbsp;', ' ', $trimmed);
             $text = wp_strip_all_tags($text);
             return trim($text) !== '';
+        }
+
+        /**
+         * @return string[]
+         */
+        private static function extract_short_answer_input_key_tokens(string $question_text): array
+        {
+            $plain = wp_strip_all_tags((string) $question_text);
+            $tokens = [];
+
+            if (preg_match_all('/\[\s*input(?:\s*[_-]?\s*)?([a-h1-8])\s*\]/i', $plain, $matches)) {
+                foreach ((array) ($matches[1] ?? []) as $token) {
+                    $normalized = self::normalize_short_answer_input_token((string) $token);
+                    if ($normalized !== '') {
+                        $tokens[] = $normalized;
+                    }
+                }
+            }
+
+            return $tokens;
+        }
+
+        private static function normalize_short_answer_input_token(string $token): string
+        {
+            $token = strtoupper(trim($token));
+            if ($token === '') {
+                return '';
+            }
+
+            if (is_numeric($token)) {
+                $idx = (int) $token;
+                if ($idx >= 1 && $idx <= 8) {
+                    $token = chr(64 + $idx);
+                }
+            }
+
+            return preg_match('/^[A-H]$/', $token) === 1 ? $token : '';
+        }
+
+        private static function normalize_option_compare_signature(string $html): string
+        {
+            $html = self::render_editor_html($html);
+            if ($html === '') {
+                return '';
+            }
+
+            $text = html_entity_decode(wp_strip_all_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if (function_exists('mb_strtolower')) {
+                $text = mb_strtolower($text, 'UTF-8');
+            } else {
+                $text = strtolower($text);
+            }
+            $text = preg_replace('/\s+/u', ' ', trim($text));
+            $text = is_string($text) ? preg_replace('/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/u', '', $text) : '';
+            $text = $text === null ? '' : $text;
+
+            $image_sources = [];
+            if (preg_match_all('/<img\b[^>]*\bsrc=(["\'])(.*?)\1/i', $html, $matches)) {
+                foreach ((array) ($matches[2] ?? []) as $src) {
+                    $src = trim((string) $src);
+                    if ($src === '') {
+                        continue;
+                    }
+                    $image_sources[] = strtolower($src);
+                }
+            }
+
+            $parts = [];
+            if ($text !== '') {
+                $parts[] = 'text:' . $text;
+            }
+            if (!empty($image_sources)) {
+                $parts[] = 'img:' . implode('|', $image_sources);
+            }
+
+            return implode("\n", $parts);
+        }
+
+        /**
+         * @return array<int, array{option_text:string,is_correct:int}>
+         */
+        private static function parse_option_entries_from_raw(string $options_raw, bool $preserve_empty): array
+        {
+            $items = [];
+
+            $raw_trimmed = trim($options_raw);
+            if ($raw_trimmed !== '' && ($raw_trimmed[0] ?? '') === '[') {
+                $decoded = json_decode($raw_trimmed, true);
+                if (is_array($decoded)) {
+                    foreach ($decoded as $entry) {
+                        if (!is_array($entry)) {
+                            continue;
+                        }
+
+                        $text = isset($entry['option_text']) ? self::sanitize_editor_html((string) $entry['option_text']) : '';
+                        $is_correct = !empty($entry['is_correct']) ? 1 : 0;
+
+                        if ($preserve_empty || self::has_non_empty_option_content($text)) {
+                            $items[] = [
+                                'option_text' => $text,
+                                'is_correct' => $is_correct,
+                            ];
+                        }
+                    }
+
+                    return $items;
+                }
+            }
+
+            $lines = preg_split('/\r\n|\r|\n/', $options_raw);
+            foreach ((array) $lines as $line) {
+                $line = trim((string) $line);
+                if ($line === '') {
+                    continue;
+                }
+
+                $parts = array_map('trim', explode('|', $line));
+                $text = isset($parts[0]) ? self::sanitize_editor_html((string) $parts[0]) : '';
+                $is_correct = isset($parts[1]) && $parts[1] === '1' ? 1 : 0;
+
+                if ($preserve_empty || self::has_non_empty_option_content($text)) {
+                    $items[] = [
+                        'option_text' => $text,
+                        'is_correct' => $is_correct,
+                    ];
+                }
+            }
+
+            return $items;
+        }
+
+        public static function normalize_true_false_matrix_statement_compare_value(string $value): string
+        {
+            $value = html_entity_decode(wp_strip_all_tags((string) $value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $value = trim($value);
+            if ($value === '') {
+                return '';
+            }
+
+            if (function_exists('mb_strtolower')) {
+                $value = mb_strtolower($value, 'UTF-8');
+            } else {
+                $value = strtolower($value);
+            }
+
+            $value = preg_replace('/\s+/u', ' ', $value);
+            $value = is_string($value) ? preg_replace('/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/u', '', $value) : '';
+
+            return $value === null ? '' : $value;
         }
 
         /**

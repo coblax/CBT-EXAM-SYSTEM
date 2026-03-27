@@ -1,0 +1,16 @@
+
+Ccbt_admin_questions_actions::handle_download_question_template_xlsxk
+a/var/www/wordpress/wp-content/plugins/cbt-exam-system/admin/class-cbt-admin-questions-actions.php" "(A"1*M
+2'
+%class-cbt-admin-questions-actions.php"
+% %(
+implicit return*¶
+1$ $(T¡
+ž
+$ $(S
+%1"Icbt_admin_questions_import_helper::handle_download_question_template_xlsx*A
+
+__unknown_file (%"#
+!cbt_admin_questions_import_helper*
+2B
+cbt_admin_questions_actionsH

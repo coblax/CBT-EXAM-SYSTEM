@@ -1,0 +1,28 @@
+
+Icbt_admin_questions_import_helper::handle_download_question_template_words
+g/var/www/wordpress/wp-content/plugins/cbt-exam-system/admin/class-cbt-admin-questions-import-helper.phpÅ Å(E"1*U
+2-
++class-cbt-admin-questions-import-helper.php"!
+
+Ì Ì(	
+implicit return*ü
+1
+Ç Ë(å
+â
+
+Ç Ë(
+%1"Bcbt_admin_questions_import_helper::download_word_question_template*A
+
+__unknown_file (%"#
+!cbt_admin_questions_import_helper*C
+
+__unknown_file ('%
+#cbt_download_question_template_word*/
+
+__unknown_file (
+multiple_choice*Q
+
+__unknown_file (53
+1cbt-question-import-template-multiple-choice.docx*
+2B%#
+!cbt_admin_questions_import_helperH

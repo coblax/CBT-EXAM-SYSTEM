@@ -55,6 +55,7 @@ final class QuestionsImportPreviewTest extends TestCase
             '__IMG__:http://example.test/pembahasan.png',
             'A. Biru',
             'B. Merah',
+            'C. Hijau',
             'ANSWER: A',
         ]]);
 
@@ -79,6 +80,8 @@ final class QuestionsImportPreviewTest extends TestCase
             'Jakarta',
             'B',
             'Bandung',
+            'C',
+            'Surabaya',
             'ANSWER: A',
         ]]);
         $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [$normalizedLines]);
@@ -104,6 +107,322 @@ final class QuestionsImportPreviewTest extends TestCase
         self::assertSame('true_false', $row['question_type']);
         self::assertSame('false', $row['correct_answer']);
         self::assertSame('', $row['correct_text']);
+    }
+
+    public function test_parse_docx_true_false_requires_non_empty_and_valid_answer_value(): void
+    {
+        $missingAnswer = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Pernyataan ini benar?',
+            'QUESTION_TYPE: true_false',
+        ]]);
+        $invalidAnswer = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Pernyataan ini benar?',
+            'QUESTION_TYPE: true_false',
+            'ANSWER: mungkin',
+        ]]);
+
+        self::assertNull($missingAnswer);
+        self::assertNull($invalidAnswer);
+    }
+
+    public function test_parse_docx_multiple_choice_requires_at_least_three_options(): void
+    {
+        $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Ibu kota Indonesia adalah?',
+            'A. Jakarta',
+            'B. Bandung',
+            'ANSWER: A',
+        ]]);
+
+        self::assertNull($row);
+    }
+
+    public function test_parse_docx_multiple_choice_requires_exactly_one_correct_answer(): void
+    {
+        $missingAnswer = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Planet terdekat dari Matahari?',
+            'A. Merkurius',
+            'B. Venus',
+            'C. Bumi',
+        ]]);
+        $multipleAnswers = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Planet terdekat dari Matahari?',
+            'QUESTION_TYPE: multiple_choice',
+            'A. Merkurius',
+            'B. Venus',
+            'C. Bumi',
+            'ANSWER: A,C',
+        ]]);
+
+        self::assertNull($missingAnswer);
+        self::assertNull($multipleAnswers);
+    }
+
+    public function test_parse_docx_multiple_choice_and_multiple_answer_reject_duplicate_options(): void
+    {
+        $duplicateMultipleChoice = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Ibu kota Indonesia adalah?',
+            'A. Jakarta',
+            'B.  jakarta. ',
+            'C. Bandung',
+            'ANSWER: A',
+        ]]);
+        $duplicateMultipleAnswer = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Pilih semua pernyataan yang benar.',
+            'QUESTION_TYPE: multiple_answer',
+            'A. Air membeku pada 0C',
+            'B. air membeku pada 0c.',
+            'C. Matahari adalah bintang',
+            'ANSWER: A,C',
+        ]]);
+
+        self::assertNull($duplicateMultipleChoice);
+        self::assertNull($duplicateMultipleAnswer);
+    }
+
+    public function test_parse_docx_multiple_choice_and_multiple_answer_reject_correct_answer_that_points_to_empty_option(): void
+    {
+        $multipleChoiceEmptyCorrect = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Ibu kota Indonesia adalah?',
+            'A. Jakarta',
+            'C. Bandung',
+            'D. Surabaya',
+            'ANSWER: B',
+        ]]);
+        $multipleAnswerEmptyCorrect = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Pilih semua bilangan genap.',
+            'QUESTION_TYPE: multiple_answer',
+            'A. 2',
+            'B. 4',
+            'D. 6',
+            'ANSWER: A,C',
+        ]]);
+
+        self::assertNull($multipleChoiceEmptyCorrect);
+        self::assertNull($multipleAnswerEmptyCorrect);
+    }
+
+    public function test_parse_docx_multiple_answer_requires_at_least_three_options_and_one_correct_answer(): void
+    {
+        $tooFewOptions = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Bilangan genap adalah?',
+            'QUESTION_TYPE: multiple_answer',
+            'A. 2',
+            'B. 3',
+            'ANSWER: A',
+        ]]);
+        $missingCorrectAnswer = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Bilangan genap adalah?',
+            'QUESTION_TYPE: multiple_answer',
+            'A. 2',
+            'B. 3',
+            'C. 4',
+        ]]);
+        $validRow = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Bilangan genap adalah?',
+            'QUESTION_TYPE: multiple_answer',
+            'A. 2',
+            'B. 3',
+            'C. 4',
+            'ANSWER: A,C',
+        ]]);
+
+        self::assertNull($tooFewOptions);
+        self::assertNull($missingCorrectAnswer);
+        self::assertIsArray($validRow);
+        self::assertSame('multiple_answer', $validRow['question_type']);
+        self::assertSame('A,C', $validRow['correct_answer']);
+    }
+
+    public function test_parse_docx_true_false_matrix_requires_valid_key_for_each_statement(): void
+    {
+        $missingKey = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Tentukan Benar/Salah untuk tiap pernyataan.',
+            'QUESTION_TYPE: true_false_matrix',
+            'PERNYATAAN_1: Air membeku pada 0C.',
+            'KUNCI_1: benar',
+            'PERNYATAAN_2: Matahari mengelilingi Bumi.',
+        ]]);
+        $invalidKey = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Tentukan Benar/Salah untuk tiap pernyataan.',
+            'QUESTION_TYPE: true_false_matrix',
+            'PERNYATAAN_1: Air membeku pada 0C.',
+            'KUNCI_1: benar',
+            'PERNYATAAN_2: Matahari mengelilingi Bumi.',
+            'KUNCI_2: mungkin',
+        ]]);
+        $validRow = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Tentukan Benar/Salah untuk tiap pernyataan.',
+            'QUESTION_TYPE: true_false_matrix',
+            'PERNYATAAN_1: Air membeku pada 0C.',
+            'KUNCI_1: benar',
+            'PERNYATAAN_2: Matahari mengelilingi Bumi.',
+            'KUNCI_2: salah',
+        ]]);
+
+        self::assertNull($missingKey);
+        self::assertNull($invalidKey);
+        self::assertIsArray($validRow);
+        self::assertSame('true_false_matrix', $validRow['question_type']);
+        self::assertStringContainsString('"answer":"true"', (string) $validRow['correct_text']);
+        self::assertStringContainsString('"answer":"false"', (string) $validRow['correct_text']);
+    }
+
+    public function test_parse_docx_true_false_matrix_requires_contiguous_numbering_and_unique_statements(): void
+    {
+        $gapNumbering = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Tentukan Benar/Salah untuk tiap pernyataan.',
+            'QUESTION_TYPE: true_false_matrix',
+            'PERNYATAAN_1: Air membeku pada 0C.',
+            'KUNCI_1: benar',
+            'PERNYATAAN_3: Matahari adalah bintang.',
+            'KUNCI_3: benar',
+        ]]);
+        $duplicateStatements = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Tentukan Benar/Salah untuk tiap pernyataan.',
+            'QUESTION_TYPE: true_false_matrix',
+            'PERNYATAAN_1: Air membeku pada 0C.',
+            'KUNCI_1: benar',
+            'PERNYATAAN_2:  air membeku pada 0c. ',
+            'KUNCI_2: salah',
+        ]]);
+
+        self::assertNull($gapNumbering);
+        self::assertNull($duplicateStatements);
+    }
+
+    public function test_parse_docx_true_false_matrix_rejects_key_without_statement(): void
+    {
+        $keyWithoutStatement = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Tentukan Benar/Salah untuk tiap pernyataan.',
+            'QUESTION_TYPE: true_false_matrix',
+            'KUNCI_1: benar',
+            'PERNYATAAN_2: Matahari adalah bintang.',
+            'KUNCI_2: benar',
+        ]]);
+
+        self::assertNull($keyWithoutStatement);
+    }
+
+    public function test_parse_docx_short_answer_requires_placeholder_count_to_match_valid_answers(): void
+    {
+        $missingPlaceholder = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Sebutkan ibu kota Indonesia.',
+            'QUESTION_TYPE: short_answer',
+            'JAWABAN_A: Jakarta',
+        ]]);
+        $mismatchCount = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Lengkapi [INPUT_1] dan [INPUT_2].',
+            'QUESTION_TYPE: short_answer',
+            'JAWABAN_A: merah',
+        ]]);
+        $validRow = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Lengkapi [INPUT_1] dan [INPUT_2].',
+            'QUESTION_TYPE: short_answer',
+            'JAWABAN_A: merah',
+            'JAWABAN_B: putih',
+        ]]);
+
+        self::assertNull($missingPlaceholder);
+        self::assertNull($mismatchCount);
+        self::assertIsArray($validRow);
+        self::assertSame('short_answer', $validRow['question_type']);
+        self::assertStringContainsString('merah', (string) $validRow['correct_text']);
+        self::assertStringContainsString('putih', (string) $validRow['correct_text']);
+    }
+
+    public function test_parse_docx_short_answer_requires_answer_keys_to_match_placeholder_keys(): void
+    {
+        $mismatchKeys = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Lengkapi [INPUT_A] dan [INPUT_C].',
+            'QUESTION_TYPE: short_answer',
+            'JAWABAN_A: merah',
+            'JAWABAN_B: putih',
+        ]]);
+        $matchingKeys = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Lengkapi [INPUT_A] dan [INPUT_C].',
+            'QUESTION_TYPE: short_answer',
+            'JAWABAN_A: merah',
+            'JAWABAN_C: putih',
+        ]]);
+
+        self::assertNull($mismatchKeys);
+        self::assertIsArray($matchingKeys);
+        self::assertSame('short_answer', $matchingKeys['question_type']);
+        self::assertStringContainsString('merah', (string) $matchingKeys['correct_text']);
+        self::assertStringContainsString('putih', (string) $matchingKeys['correct_text']);
+    }
+
+    public function test_parse_docx_short_answer_rejects_duplicate_placeholders_and_legacy_unkeyed_answers(): void
+    {
+        $duplicatePlaceholders = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Lengkapi [INPUT_A], [INPUT_A], dan [INPUT_B].',
+            'QUESTION_TYPE: short_answer',
+            'JAWABAN_A: merah',
+            'JAWABAN_B: putih',
+        ]]);
+        $legacyUnkeyedAnswers = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Lengkapi [INPUT_1] dan [INPUT_2].',
+            'QUESTION_TYPE: short_answer',
+            'JAWABAN: merah||putih',
+        ]]);
+
+        self::assertNull($duplicatePlaceholders);
+        self::assertNull($legacyUnkeyedAnswers);
+    }
+
+    public function test_describe_docx_block_failure_reports_specific_reason_for_empty_correct_option(): void
+    {
+        $message = $this->invokeImportHelper('describe_docx_block_failure', [[
+            'QUESTION: Ibu kota Indonesia adalah?',
+            'A. Jakarta',
+            'C. Bandung',
+            'D. Surabaya',
+            'ANSWER: B',
+        ]]);
+
+        self::assertSame('Jawaban benar menunjuk ke pilihan yang kosong atau tidak ada.', $message);
+    }
+
+    public function test_describe_docx_block_failure_reports_specific_reason_for_true_false_matrix_gap_and_short_answer_key_mismatch(): void
+    {
+        $gapMessage = $this->invokeImportHelper('describe_docx_block_failure', [[
+            'QUESTION: Tentukan Benar/Salah untuk tiap pernyataan.',
+            'QUESTION_TYPE: true_false_matrix',
+            'PERNYATAAN_1: Air membeku pada 0C.',
+            'KUNCI_1: benar',
+            'PERNYATAAN_3: Matahari adalah bintang.',
+            'KUNCI_3: benar',
+        ]]);
+        $shortAnswerMismatch = $this->invokeImportHelper('describe_docx_block_failure', [[
+            'QUESTION: Lengkapi [INPUT_A] dan [INPUT_C].',
+            'QUESTION_TYPE: short_answer',
+            'JAWABAN_A: merah',
+            'JAWABAN_B: putih',
+        ]]);
+
+        self::assertSame('PERNYATAAN_n dan KUNCI_n harus diisi berurutan tanpa nomor yang loncat.', $gapMessage);
+        self::assertSame('Key placeholder Short Answer harus cocok dengan key jawaban yang diisi.', $shortAnswerMismatch);
+    }
+
+    public function test_normalize_question_import_failure_entries_preserves_structured_metadata(): void
+    {
+        $entries = \CBT_Admin_Questions_Import_Helper::normalize_question_import_failure_entries([
+            [
+                'block_number' => 3,
+                'question_type' => 'multiple_choice',
+                'question_preview' => '<p>Marker soal gagal yang sangat panjang untuk dipotong otomatis oleh formatter preview.</p>',
+                'message' => 'Jawaban benar menunjuk ke pilihan yang kosong atau tidak ada.',
+            ],
+            'Legacy string failure',
+        ]);
+
+        self::assertCount(2, $entries);
+        self::assertSame(3, $entries[0]['block_number']);
+        self::assertSame('multiple_choice', $entries[0]['question_type']);
+        self::assertStringContainsString('Jawaban benar menunjuk ke pilihan yang kosong atau tidak ada.', $entries[0]['formatted']);
+        self::assertSame(0, $entries[1]['block_number']);
+        self::assertSame('Legacy string failure', $entries[1]['formatted']);
     }
 
     private function invokeImportHelper(string $method, array $args): mixed

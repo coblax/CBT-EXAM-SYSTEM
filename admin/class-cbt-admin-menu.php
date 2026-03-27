@@ -40,11 +40,20 @@ final class CBT_Admin_Menu
 
         add_submenu_page(
             'cbt-exams',
-            'CBT Setup',
-            'CBT Setup',
+            'CBT Branding',
+            'CBT Branding',
             'cbt_manage_exams',
             'cbt-setup',
             [CBT_Admin_Setup_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
+            'CBT Security',
+            'CBT Security',
+            'cbt_manage_exams',
+            'cbt-security',
+            [CBT_Admin_Security_Page::class, 'render']
         );
 
         add_submenu_page(
@@ -185,5 +194,35 @@ final class CBT_Admin_Menu
 
         wp_safe_redirect(admin_url('admin.php?page=cbt-subjects'));
         exit;
+    }
+
+    public static function render_legacy_security_hash_redirect(): void
+    {
+        if (!is_admin()) {
+            return;
+        }
+
+        $page = isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : '';
+        if ($page !== 'cbt-setup') {
+            return;
+        }
+
+        if (!current_user_can('cbt_manage_exams')) {
+            return;
+        }
+
+        $target_url = admin_url('admin.php?page=cbt-security');
+        ?>
+        <script>
+            (function () {
+                var hash = String(window.location.hash || '');
+                if (hash !== '#security' && hash !== '#security-log') {
+                    return;
+                }
+
+                window.location.replace(<?php echo wp_json_encode($target_url); ?> + hash);
+            })();
+        </script>
+        <?php
     }
 }

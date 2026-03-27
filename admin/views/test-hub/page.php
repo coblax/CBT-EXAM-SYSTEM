@@ -800,6 +800,32 @@ if (!defined('ABSPATH')) {
             font-size: 13px;
             line-height: 1.6;
         }
+        .cbt-test-hub-item-run-summary {
+            margin: 0 0 12px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid #fecaca;
+            background: #fff5f5;
+            color: #991b1b;
+        }
+        .cbt-test-hub-item-run-summary strong {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+        .cbt-test-hub-item-run-summary p {
+            margin: 0 0 8px;
+            color: #7f1d1d;
+            line-height: 1.6;
+        }
+        .cbt-test-hub-item-run-summary ul {
+            margin: 0;
+            padding-left: 18px;
+        }
+        .cbt-test-hub-item-run-summary li {
+            margin: 0 0 6px;
+            line-height: 1.6;
+        }
         .cbt-test-hub-item-run-list {
             display: grid;
             gap: 10px;
@@ -1354,6 +1380,24 @@ if (!defined('ABSPATH')) {
                                                                     <?php endif; ?>
                                                                 </div>
                                                             <?php endif; ?>
+                                                            <?php if (!empty($unit_test_item['has_failed_run_results'])): ?>
+                                                                <div class="cbt-test-hub-item-run-summary">
+                                                                    <strong>Ringkasan Gagal Task Ini</strong>
+                                                                    <p>Command berikut gagal pada task ini. Detail output lengkap tetap tersedia tepat di bawah ringkasan ini.</p>
+                                                                    <ul>
+                                                                        <?php foreach ((array) ($unit_test_item['failed_run_results'] ?? []) as $failed_run_command): ?>
+                                                                            <li>
+                                                                                <?php
+                                                                                echo esc_html((string) ($failed_run_command['label'] ?? 'Test Command') . ' (exit ' . (int) ($failed_run_command['exit_code'] ?? 1) . ')');
+                                                                                if (!empty($failed_run_command['failure_summary'])) {
+                                                                                    echo esc_html(': ' . (string) $failed_run_command['failure_summary']);
+                                                                                }
+                                                                                ?>
+                                                                            </li>
+                                                                        <?php endforeach; ?>
+                                                                    </ul>
+                                                                </div>
+                                                            <?php endif; ?>
                                                             <?php if (!empty($unit_test_item['run_results'])): ?>
                                                                 <div class="cbt-test-hub-item-run-list">
                                                                     <?php foreach ((array) ($unit_test_item['run_results'] ?? []) as $run_command): ?>
@@ -1523,6 +1567,24 @@ if (!defined('ABSPATH')) {
                                                         </div>
                                                         <div class="cbt-test-hub-item-meta-block cbt-test-hub-item-meta-block--wide">
                                                             <h5>Hasil Runner Terbaru</h5>
+                                                            <?php if (!empty($unit_test_item['has_failed_run_results'])): ?>
+                                                                <div class="cbt-test-hub-item-run-summary">
+                                                                    <strong>Ringkasan Gagal Task Ini</strong>
+                                                                    <p>Command berikut gagal pada task ini. Detail output lengkap tetap tersedia tepat di bawah ringkasan ini.</p>
+                                                                    <ul>
+                                                                        <?php foreach ((array) ($unit_test_item['failed_run_results'] ?? []) as $failed_run_command): ?>
+                                                                            <li>
+                                                                                <?php
+                                                                                echo esc_html((string) ($failed_run_command['label'] ?? 'Test Command') . ' (exit ' . (int) ($failed_run_command['exit_code'] ?? 1) . ')');
+                                                                                if (!empty($failed_run_command['failure_summary'])) {
+                                                                                    echo esc_html(': ' . (string) $failed_run_command['failure_summary']);
+                                                                                }
+                                                                                ?>
+                                                                            </li>
+                                                                        <?php endforeach; ?>
+                                                                    </ul>
+                                                                </div>
+                                                            <?php endif; ?>
                                                             <?php if (!empty($unit_test_item['run_results'])): ?>
                                                                 <div class="cbt-test-hub-item-run-list">
                                                                     <?php foreach ((array) ($unit_test_item['run_results'] ?? []) as $run_command): ?>

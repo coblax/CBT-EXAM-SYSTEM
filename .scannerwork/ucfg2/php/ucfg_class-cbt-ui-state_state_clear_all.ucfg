@@ -1,0 +1,26 @@
+
+cbt_ui_state::clear_alla
+U/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-ui-state.phpÈ È($"1*@
+2
+class-cbt-ui-state.php"!
+
+Ì Ì(
+implicit return*Ú
+1
+Ê Ê()_
+]
+
+Ê Ê((
+%1"cbt_cache::invalidate_ui_state*)
+
+__unknown_file ("
+	cbt_cachec
+a
+
+Ë Ë(,
+%2""cbt_cache::clear_ui_state_registry*)
+
+__unknown_file ("
+	cbt_cache*
+2B
+cbt_ui_stateH

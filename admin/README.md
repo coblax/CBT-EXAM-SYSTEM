@@ -451,19 +451,20 @@ jawabannya hampir selalu ada di sini.
 | ---: | --- | --- | --- | --- |
 | 1 | `Introduction` | `cbt-introduction` | `cbt_manage_exams` | `CBT_Admin_Introduction_Page::render` |
 | 2 | `CBT Exams` | `cbt-exams` | `cbt_manage_exams` | `CBT_Admin_Exams_Page::render` |
-| 3 | `CBT Setup` | `cbt-setup` | `cbt_manage_exams` | `CBT_Admin_Setup_Page::render` |
-| 4 | `CBT Subjects` | `cbt-subjects` | `manage_options` | `CBT_Admin_Subjects_Page::render` |
-| 5 | `CBT Users` | `cbt-user-import` | `manage_options` | `CBT_Admin_Users_Page::render` |
-| 6 | `CBT Questions` | `cbt-question-bank` | `cbt_manage_questions` | `CBT_Admin_Questions_Page::render` |
-| 7 | `CBT Tokens` | `cbt-tokens` | `cbt_manage_exams` | `CBT_Admin_Tokens_Page::render` |
-| 8 | `CBT Exam Cards` | `cbt-exam-cards` | `cbt_manage_users` | `CBT_Admin_Exam_Cards_Page::render` |
-| 9 | `CBT Results` | `cbt-results` | `cbt_view_results` | `CBT_Admin_Results_Page::render` |
-| 10 | `CBT Analytics` | `cbt-analytics` | `cbt_view_results` | `CBT_Admin_Analytics_Page::render` |
-| 11 | `CBT Report Exam` | `cbt-report-exam` | `cbt_view_results` | `CBT_Admin_Report_Exam_Page::render` |
-| 12 | `CBT Test Hub` | `cbt-test-hub` | `manage_options` | `CBT_Admin_Test_Hub_Page::render` |
-| 13 | `CBT Cache` | `cbt-cache` | `manage_options` | `CBT_Admin_Cache_Page::render` |
-| 14 | `CBT Maintenance` | `cbt-maintenance` | `manage_options` | `CBT_Admin_Maintenance_Page::render` |
-| 15 | `CBT Developer` | `cbt-developer` | `manage_options` | `CBT_Admin_Developer_Page::render` |
+| 3 | `CBT Branding` | `cbt-setup` | `cbt_manage_exams` | `CBT_Admin_Setup_Page::render` |
+| 4 | `CBT Security` | `cbt-security` | `cbt_manage_exams` | `CBT_Admin_Security_Page::render` |
+| 5 | `CBT Subjects` | `cbt-subjects` | `manage_options` | `CBT_Admin_Subjects_Page::render` |
+| 6 | `CBT Users` | `cbt-user-import` | `manage_options` | `CBT_Admin_Users_Page::render` |
+| 7 | `CBT Questions` | `cbt-question-bank` | `cbt_manage_questions` | `CBT_Admin_Questions_Page::render` |
+| 8 | `CBT Tokens` | `cbt-tokens` | `cbt_manage_exams` | `CBT_Admin_Tokens_Page::render` |
+| 9 | `CBT Exam Cards` | `cbt-exam-cards` | `cbt_manage_users` | `CBT_Admin_Exam_Cards_Page::render` |
+| 10 | `CBT Results` | `cbt-results` | `cbt_view_results` | `CBT_Admin_Results_Page::render` |
+| 11 | `CBT Analytics` | `cbt-analytics` | `cbt_view_results` | `CBT_Admin_Analytics_Page::render` |
+| 12 | `CBT Report Exam` | `cbt-report-exam` | `cbt_view_results` | `CBT_Admin_Report_Exam_Page::render` |
+| 13 | `CBT Test Hub` | `cbt-test-hub` | `manage_options` | `CBT_Admin_Test_Hub_Page::render` |
+| 14 | `CBT Cache` | `cbt-cache` | `manage_options` | `CBT_Admin_Cache_Page::render` |
+| 15 | `CBT Maintenance` | `cbt-maintenance` | `manage_options` | `CBT_Admin_Maintenance_Page::render` |
+| 16 | `CBT Developer` | `cbt-developer` | `manage_options` | `CBT_Admin_Developer_Page::render` |
 
 ### Special Case di Menu
 
@@ -851,7 +852,7 @@ Ia menjadi tempat untuk:
 
 | Item | Nilai |
 | --- | --- |
-| Label menu | `CBT Setup` |
+| Label menu | `CBT Branding` |
 | Slug | `cbt-setup` |
 | Capability | `cbt_manage_exams` |
 | Callback render | `CBT_Admin_Setup_Page::render()` |
@@ -881,8 +882,9 @@ Selain `render()`, page class juga punya:
 | Hook | Target | Fungsi |
 | --- | --- | --- |
 | `admin_post_cbt_save_setup_branding` | `CBT_Admin_Setup_Actions::handle_save_setup_branding()` | Simpan branding |
-| `admin_post_cbt_save_setup_security` | `CBT_Admin_Setup_Actions::handle_save_setup_security()` | Simpan security config |
-| `admin_post_cbt_manage_security_logs` | `CBT_Admin_Setup_Actions::handle_manage_security_logs()` | Kelola security logs |
+| `admin_post_cbt_save_security_settings` | `CBT_Admin_Security_Actions::handle_save_security_settings()` | Simpan security config |
+| `admin_post_cbt_save_setup_security` | `CBT_Admin_Security_Actions::handle_save_setup_security()` | Alias kompatibilitas save security lama |
+| `admin_post_cbt_manage_security_logs` | `CBT_Admin_Security_Actions::handle_manage_security_logs()` | Kelola security logs |
 
 ### Public Method Map
 
@@ -2283,8 +2285,9 @@ Bagian ini adalah daftar lengkap hook admin yang didaftarkan di bootstrap admin,
 ### `admin_post`
 
 - `cbt_save_setup_branding` -> `CBT_Admin_Setup_Actions::handle_save_setup_branding()`
-- `cbt_save_setup_security` -> `CBT_Admin_Setup_Actions::handle_save_setup_security()`
-- `cbt_manage_security_logs` -> `CBT_Admin_Setup_Actions::handle_manage_security_logs()`
+- `cbt_save_security_settings` -> `CBT_Admin_Security_Actions::handle_save_security_settings()`
+- `cbt_save_setup_security` -> `CBT_Admin_Security_Actions::handle_save_setup_security()` (alias kompatibilitas)
+- `cbt_manage_security_logs` -> `CBT_Admin_Security_Actions::handle_manage_security_logs()`
 
 ## Developer
 
@@ -2392,7 +2395,8 @@ Bagian ini memampatkan relasi menu, slug, dan capability dalam format yang bisa 
 | --- | --- | --- | --- |
 | Introduction | `Introduction` | `cbt-introduction` | `cbt_manage_exams` |
 | Exams | `CBT Exams` | `cbt-exams` | `cbt_manage_exams` |
-| Setup | `CBT Setup` | `cbt-setup` | `cbt_manage_exams` |
+| Setup | `CBT Branding` | `cbt-setup` | `cbt_manage_exams` |
+| Security | `CBT Security` | `cbt-security` | `cbt_manage_exams` |
 | Subjects | `CBT Subjects` | `cbt-subjects` | `manage_options` |
 | Users | `CBT Users` | `cbt-user-import` | `manage_options` |
 | Questions | `CBT Questions` | `cbt-question-bank` | `cbt_manage_questions` |

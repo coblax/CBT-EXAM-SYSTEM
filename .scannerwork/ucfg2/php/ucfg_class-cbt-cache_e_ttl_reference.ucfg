@@ -1,0 +1,156 @@
+
+cbt_cache::ttl_reference^
+R/var/www/wordpress/wp-content/plugins/cbt-exam-system/includes/class-cbt-cache.php– –(("1*∆
+1
+“ ›(
+
+
+“ ›(	
+%1"$Arrayê
+ç
+
+“ ›(	
+%2"__mapSet*"
+
+__unknown_file (
+
+%1*)
+
+__unknown_file (
+	get_exams* 
+
+__unknown_file (2ñ
+ì
+
+“ ›(	
+%3"__mapSet*"
+
+__unknown_file (
+
+%1*-
+
+__unknown_file (
+get_questions*"
+
+__unknown_file (2¿—†
+ù
+
+“ ›(	
+%4"__mapSet*"
+
+__unknown_file (
+
+%1*7
+
+__unknown_file (
+submit_question_context*"
+
+__unknown_file (2¿—í
+è
+
+“ ›(	
+%5"__mapSet*"
+
+__unknown_file (
+
+%1**
+
+__unknown_file (
+
+get_result*!
+
+__unknown_file (2¨ò
+ï
+
+“ ›(	
+%6"__mapSet*"
+
+__unknown_file (
+
+%1*.
+
+__unknown_file (
+ui_preferences*#
+
+__unknown_file (2Äöûô
+ñ
+
+“ ›(	
+%7"__mapSet*"
+
+__unknown_file (
+
+%1*0
+
+__unknown_file (
+ui_attempt_state*"
+
+__unknown_file (2Ä∆
+å
+â
+
+“ ›(	
+%8"__mapSet*"
+
+__unknown_file (
+
+%1*%
+
+__unknown_file (	
+locks* 
+
+__unknown_file (2ö
+ó
+
+“ ›(	
+%9"__mapSet*"
+
+__unknown_file (
+
+%1*3
+
+__unknown_file (
+runtime_flush_delay* 
+
+__unknown_file (2¶
+£
+
+“ ›(	
+%10"__mapSet*"
+
+__unknown_file (
+
+%1*=
+
+__unknown_file (!
+runtime_attempt_ttl_extension*!
+
+__unknown_file (2†8n
+l
+
+‹' ‹(P
+%11",cbt_cache::namespace_prune_retention_seconds*)
+
+__unknown_file ("
+	cbt_cache†
+ù
+
+“ ›(	
+%12"__mapSet*"
+
+__unknown_file (
+
+%1*5
+
+__unknown_file (
+namespace_prune_after*#
+
+__unknown_file (
+
+%11"
+
+“ ›(
+
+
+%1B
+	cbt_cacheH

@@ -127,7 +127,8 @@ test.describe('Recovery & Persistence flow check', () => {
         });
 
         await test.step('Jalankan finish dan pastikan tetap tertahan di exam shell', async () => {
-            await jumpToQuestion(page, 20);
+            const totalQuestions = await page.locator('[data-action="jump"]').count();
+            await jumpToQuestion(page, totalQuestions > 0 ? totalQuestions : 1);
             await page.locator('[data-action="collect"], [data-action="finish"]').first().click({ force: true });
             await page.locator('[data-action="finish-confirm-submit"]').first().click({ force: true });
             await expect(page.getByText('Finish sengaja digagalkan untuk flow check recovery.')).toBeVisible({ timeout: 20000 });

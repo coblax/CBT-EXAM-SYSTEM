@@ -342,7 +342,8 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login::-webkit-s
 }
 
 .cbt-web-shell .cbt-side-summary-value {
-    font-size: calc(19px * var(--cbt-font-scale));
+    font-size: calc(11px * var(--cbt-font-scale));
+    font-weight: 700;
 }
 
 .cbt-web-shell .cbt-login-panel h3 {
@@ -352,4 +353,3 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login::-webkit-s
 .cbt-web-shell .cbt-score {
     font-size: calc(54px * var(--cbt-font-scale));
 }
-

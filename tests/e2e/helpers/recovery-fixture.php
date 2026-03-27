@@ -344,6 +344,27 @@ function recovery_fixture_get_global_token_meta(): array
     ];
 }
 
+/**
+ * @return array<string,mixed>
+ */
+function recovery_fixture_save_global_token(array $payload): array
+{
+    recovery_fixture_require_class(CBT_Auth::class);
+
+    $token = strtoupper(trim((string) ($payload['token'] ?? '')));
+    $refresh_minutes = max(1, (int) ($payload['refresh_minutes'] ?? 15));
+    $frontend_auto_apply = array_key_exists('frontend_auto_apply', $payload)
+        ? !empty($payload['frontend_auto_apply'])
+        : null;
+    $regenerate = !empty($payload['regenerate']);
+
+    CBT_Auth::save_global_exam_token_settings($token, $refresh_minutes, $regenerate, $frontend_auto_apply);
+
+    return [
+        'token_meta' => recovery_fixture_get_global_token_meta(),
+    ];
+}
+
 recovery_fixture_bootstrap_wordpress();
 
 $action = isset($argv[1]) ? trim((string) $argv[1]) : 'fixture';
@@ -385,6 +406,10 @@ switch ($action) {
             'fixture' => $fixture,
             'token_meta' => recovery_fixture_get_global_token_meta(),
         ]);
+        break;
+
+    case 'set_global_token':
+        recovery_fixture_success(recovery_fixture_save_global_token($payload));
         break;
 
     default:

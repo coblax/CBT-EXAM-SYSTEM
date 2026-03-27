@@ -20,6 +20,9 @@ const {
 const {
     loginToWpAdmin,
     openExamPreviewPage,
+    prepareManualQuestion,
+    setWpEditorContent,
+    submitManualQuestionExpectDialog,
     uploadQuestionsDocx,
 } = require('./helpers/admin-browser');
 
@@ -29,6 +32,7 @@ const richOptionMarker = 'FLOW_RICH_OPSI_A';
 const legacyMarker = 'FLOW IMPORT LEGACY 20260324: marker essay legacy tanpa pembahasan.';
 const linebreakMarkerOne = 'FLOW IMPORT LINEBREAK 20260324 BARIS 1';
 const linebreakMarkerTwo = 'BARIS 2';
+const invalidImportMarker = 'FLOW IMPORT INVALID HARDENING 20260326';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -91,6 +95,40 @@ async function openReviewQuestion(page, marker) {
     const reviewQuestion = page.locator('.cbt-review-question').filter({ hasText: String(marker || '') }).first();
     await expect(reviewQuestion).toBeVisible({ timeout: 20000 });
     return reviewQuestion;
+}
+
+async function expectImportFailureEntry(page, options = {}) {
+    const blockNumber = Number(options.blockNumber || 0);
+    const typeLabel = String(options.typeLabel || '');
+    const preview = String(options.preview || '');
+    const message = String(options.message || '');
+    let row = page.locator('.notice-warning li').first();
+    if (blockNumber > 0) {
+        row = page.locator('.notice-warning li').filter({
+            hasText: `Blok #${blockNumber}`,
+        }).first();
+    } else if (preview !== '') {
+        row = page.locator('.notice-warning li').filter({
+            hasText: preview,
+        }).first();
+    } else if (message !== '') {
+        row = page.locator('.notice-warning li').filter({
+            hasText: message,
+        }).first();
+    }
+    await expect(row).toBeVisible({ timeout: 20000 });
+    if (blockNumber > 0) {
+        await expect(row).toContainText(`Blok #${blockNumber}`);
+    }
+    if (typeLabel !== '') {
+        await expect(row).toContainText(typeLabel);
+    }
+    if (preview !== '') {
+        await expect(row).toContainText(preview);
+    }
+    if (message !== '') {
+        await expect(row).toContainText(message);
+    }
 }
 
 test.describe('Import & Preview flow check', () => {
@@ -246,5 +284,144 @@ test.describe('Import & Preview flow check', () => {
             expect(reviewHtml).toContain(linebreakMarkerTwo);
             expect(/<br\s*\/?>/i.test(reviewHtml)).toBeTruthy();
         });
+    });
+
+    test('Import Flow: invalid DOCX import shows precise failure list', async ({ browser, baseURL }) => {
+        test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');
+
+        const fixture = getE2EFixture('import_preview', 'primary_student');
+        const catalog = getE2ECatalog();
+        const adminContext = await browser.newContext();
+        const adminPage = await adminContext.newPage();
+
+        try {
+            await test.step('Admin mengunggah DOCX invalid yang memuat beberapa blok hardening failure', async () => {
+                await loginToWpAdmin(adminPage, catalog.users.admin_seed);
+                await uploadQuestionsDocx(adminPage, Number(fixture.exam.subject_id), path.join(fixtureDirectory, 'invalid-hardening.docx'), 'multiple_choice');
+                await expect(
+                    adminPage.getByText(/Import (ke Bank Soal selesai diproses\.|soal ke Bank Soal selesai\.)/i).first()
+                ).toBeVisible({ timeout: 20000 });
+            });
+
+            await test.step('Panel import menampilkan daftar failure dengan blok, tipe, preview, dan pesan spesifik', async () => {
+                await expectImportFailureEntry(adminPage, {
+                    blockNumber: 1,
+                    typeLabel: 'Multiple Choice',
+                    preview: invalidImportMarker,
+                    message: 'Jawaban benar menunjuk ke pilihan yang kosong atau tidak ada.',
+                });
+                await expectImportFailureEntry(adminPage, {
+                    blockNumber: 2,
+                    preview: 'Lengkapi [INPUT_A] dan [INPUT_C].',
+                    message: 'Key placeholder Short Answer harus cocok dengan key jawaban yang diisi.',
+                });
+                await expectImportFailureEntry(adminPage, {
+                    blockNumber: 3,
+                    preview: 'Tentukan Benar/Salah untuk tiap pernyataan.',
+                    message: 'PERNYATAAN_n dan KUNCI_n harus diisi berurutan tanpa nomor yang loncat.',
+                });
+            });
+        } finally {
+            await adminContext.close();
+        }
+    });
+
+    test('Import Flow: manual MC save blocks empty correct option', async ({ browser, baseURL }) => {
+        test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');
+
+        const fixture = getE2EFixture('import_preview', 'primary_student');
+        const catalog = getE2ECatalog();
+        const adminContext = await browser.newContext();
+        const adminPage = await adminContext.newPage();
+
+        try {
+            await loginToWpAdmin(adminPage, catalog.users.admin_seed);
+            await prepareManualQuestion(adminPage, {
+                subjectId: Number(fixture.exam.subject_id),
+                questionType: 'multiple_choice',
+                questionHtml: '<p>FLOW MANUAL MC INVALID 20260326</p>',
+            });
+            await setWpEditorContent(adminPage, 'cbt_mc_option_1', '<p>Jakarta</p>');
+            await setWpEditorContent(adminPage, 'cbt_mc_option_3', '<p>Bandung</p>');
+            await setWpEditorContent(adminPage, 'cbt_mc_option_4', '<p>Surabaya</p>');
+            await adminPage.selectOption('#cbt-correct-mc-index', '2');
+
+            await test.step('Save manual ditahan dengan alert spesifik saat jawaban benar menunjuk pilihan kosong', async () => {
+                const dialog = await submitManualQuestionExpectDialog(adminPage);
+                expect(dialog.message()).toContain('Jawaban benar Multiple Choice tidak boleh menunjuk pilihan kosong.');
+                await dialog.dismiss();
+                await expect(adminPage.locator('#cbt-question-manual-form')).toBeVisible({ timeout: 20000 });
+            });
+        } finally {
+            await adminContext.close();
+        }
+    });
+
+    test('Import Flow: manual MA save blocks checked empty option', async ({ browser, baseURL }) => {
+        test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');
+
+        const fixture = getE2EFixture('import_preview', 'primary_student');
+        const catalog = getE2ECatalog();
+        const adminContext = await browser.newContext();
+        const adminPage = await adminContext.newPage();
+
+        try {
+            await loginToWpAdmin(adminPage, catalog.users.admin_seed);
+            await prepareManualQuestion(adminPage, {
+                subjectId: Number(fixture.exam.subject_id),
+                questionType: 'multiple_answer',
+                questionHtml: '<p>FLOW MANUAL MA INVALID 20260326</p>',
+            });
+            await setWpEditorContent(adminPage, 'cbt_ma_option_1', '<p>2</p>');
+            await setWpEditorContent(adminPage, 'cbt_ma_option_2', '<p>4</p>');
+            await setWpEditorContent(adminPage, 'cbt_ma_option_4', '<p>6</p>');
+            await adminPage.locator('#cbt-ma-correct-1').check({ force: true });
+            await adminPage.locator('#cbt-ma-correct-3').check({ force: true });
+
+            await test.step('Save manual ditahan dengan alert spesifik saat checkbox benar menandai pilihan kosong', async () => {
+                const dialog = await submitManualQuestionExpectDialog(adminPage);
+                expect(dialog.message()).toContain('Multiple Answer tidak boleh menandai jawaban benar pada pilihan yang kosong.');
+                await dialog.dismiss();
+                await expect(adminPage.locator('#cbt-question-manual-form')).toBeVisible({ timeout: 20000 });
+            });
+        } finally {
+            await adminContext.close();
+        }
+    });
+
+    test('Import Flow: manual TF matrix save blocks numbering gap and duplicate statement', async ({ browser, baseURL }) => {
+        test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');
+
+        const fixture = getE2EFixture('import_preview', 'primary_student');
+        const catalog = getE2ECatalog();
+        const adminContext = await browser.newContext();
+        const adminPage = await adminContext.newPage();
+
+        try {
+            await loginToWpAdmin(adminPage, catalog.users.admin_seed);
+            await prepareManualQuestion(adminPage, {
+                subjectId: Number(fixture.exam.subject_id),
+                questionType: 'true_false_matrix',
+                questionHtml: '<p>FLOW MANUAL TFM INVALID 20260326</p>',
+            });
+
+            await test.step('Gap numbering diblokir saat statement diisi loncat', async () => {
+                await adminPage.locator('#cbt-tfm-statement-1').fill('Air membeku pada 0C.');
+                await adminPage.locator('#cbt-tfm-statement-3').fill('Matahari adalah bintang.');
+                const dialog = await submitManualQuestionExpectDialog(adminPage);
+                expect(dialog.message()).toContain('Pernyataan True/False Matrix harus diisi berurutan tanpa nomor yang loncat.');
+                await dialog.dismiss();
+            });
+
+            await test.step('Duplicate statement diblokir setelah numbering dibuat kontigu', async () => {
+                await adminPage.locator('#cbt-tfm-statement-2').fill(' air membeku pada 0c. ');
+                const dialog = await submitManualQuestionExpectDialog(adminPage);
+                expect(dialog.message()).toContain('True/False Matrix tidak boleh punya pernyataan duplikat.');
+                await dialog.dismiss();
+                await expect(adminPage.locator('#cbt-question-manual-form')).toBeVisible({ timeout: 20000 });
+            });
+        } finally {
+            await adminContext.close();
+        }
     });
 });

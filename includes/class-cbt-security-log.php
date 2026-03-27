@@ -69,7 +69,135 @@ class CBT_Security_Log
                 'severity' => 'info',
                 'message' => 'Pengawas atau admin memaksa attempt selesai dari panel Must Watch.',
             ],
+            'native_task_switch' => [
+                'label' => 'Task switch native',
+                'severity' => 'warning',
+                'message' => 'Aplikasi ujian native kehilangan fokus karena perpindahan task atau window.',
+            ],
+            'native_app_backgrounded' => [
+                'label' => 'App native di-background',
+                'severity' => 'warning',
+                'message' => 'Aplikasi ujian native berpindah ke background saat attempt masih berlangsung.',
+            ],
+            'native_multi_window' => [
+                'label' => 'Multi-window native',
+                'severity' => 'warning',
+                'message' => 'Aplikasi ujian native mendeteksi mode multi-window atau split-screen saat ujian berjalan.',
+            ],
+            'native_overlay_detected' => [
+                'label' => 'Overlay native terdeteksi',
+                'severity' => 'warning',
+                'message' => 'Aplikasi ujian native mendeteksi overlay atau jendela lain di atas shell ujian.',
+            ],
+            'native_kiosk_escape' => [
+                'label' => 'Keluar kiosk native',
+                'severity' => 'critical',
+                'message' => 'Aplikasi ujian native mendeteksi percobaan keluar dari mode kiosk atau lock task.',
+            ],
+            'native_shell_closed' => [
+                'label' => 'Shell native ditutup',
+                'severity' => 'critical',
+                'message' => 'Shell aplikasi ujian native ditutup saat attempt masih berlangsung.',
+            ],
         ];
+    }
+
+    /**
+     * @return array<string,array{label:string,severity:string,message:string}>
+     */
+    public static function native_event_definitions(): array
+    {
+        $native = [];
+        foreach (self::event_definitions() as $event_type => $definition) {
+            if (self::is_native_event_type($event_type)) {
+                $native[$event_type] = $definition;
+            }
+        }
+
+        return $native;
+    }
+
+    /**
+     * Native direct API v1 memakai event CBT yang sudah ada agar label, severity, dan scoring tetap konsisten.
+     *
+     * @return array<string,array{label:string,severity:string,message:string}>
+     */
+    public static function native_supported_event_definitions(): array
+    {
+        $definitions = self::event_definitions();
+        $supported_types = [
+            'tab_hidden',
+            'window_blur',
+            'page_leave',
+            'fullscreen_exit',
+            'clipboard_blocked',
+            'idle_detected',
+        ];
+        $supported = [];
+
+        foreach ($supported_types as $event_type) {
+            if (isset($definitions[$event_type])) {
+                $supported[$event_type] = $definitions[$event_type];
+            }
+        }
+
+        return $supported;
+    }
+
+    public static function is_native_event_type(string $event_type): bool
+    {
+        return strpos(sanitize_key($event_type), 'native_') === 0;
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    public static function native_app_labels(): array
+    {
+        return [
+            'android_webview' => 'Android WebView',
+            'windows_cefsharp' => 'Windows CEFSharp',
+        ];
+    }
+
+    public static function native_app_source(string $native_app): string
+    {
+        $native_app = sanitize_key($native_app);
+
+        switch ($native_app) {
+            case 'android_webview':
+                return 'android_webview_shell';
+            case 'windows_cefsharp':
+                return 'windows_cefsharp_shell';
+            default:
+                return '';
+        }
+    }
+
+    public static function native_app_label(string $native_app): string
+    {
+        $native_app = sanitize_key($native_app);
+        $labels = self::native_app_labels();
+
+        return $labels[$native_app] ?? '';
+    }
+
+    public static function get_event_risk_weight(string $event_type): int
+    {
+        $event_type = sanitize_key($event_type);
+        $weights = self::must_watch_event_weights();
+
+        return (int) ($weights[$event_type] ?? 0);
+    }
+
+    public static function must_watch_score_threshold(): int
+    {
+        return self::MUST_WATCH_SCORE_THRESHOLD;
+    }
+
+    public static function must_watch_high_risk_threshold(): int
+    {
+        return self::MUST_WATCH_HIGH_RISK_THRESHOLD;
     }
 
     public static function get_table_name(?wpdb $wpdb = null): string
@@ -753,7 +881,7 @@ class CBT_Security_Log
     private static function must_watch_event_weights(): array
     {
         return [
-            'session_revoked' => 8,
+            'session_revoked' => 3,
             'page_leave' => 5,
             'fullscreen_exit' => 4,
             'tab_hidden' => 3,
@@ -762,6 +890,12 @@ class CBT_Security_Log
             'window_blur' => 2,
             'admin_reset_login' => 0,
             'admin_force_complete' => 0,
+            'native_task_switch' => 3,
+            'native_app_backgrounded' => 4,
+            'native_multi_window' => 4,
+            'native_overlay_detected' => 4,
+            'native_kiosk_escape' => 5,
+            'native_shell_closed' => 5,
         ];
     }
 
@@ -932,6 +1066,32 @@ class CBT_Security_Log
             $parts[] = 'Sumber deteksi: ' . $source_label . '.';
         }
 
+        $native_app_label = self::native_app_label((string) ($context['native_app'] ?? ''));
+        if ($native_app_label !== '') {
+            $parts[] = 'Native app: ' . $native_app_label . '.';
+        }
+
+        $warning_code = trim((string) ($context['warning_code'] ?? ''));
+        $warning_message = trim((string) ($context['warning_message'] ?? ''));
+        if ($warning_code !== '' || $warning_message !== '') {
+            $warning_copy = 'Warning native: ';
+            if ($warning_message !== '') {
+                $warning_copy .= $warning_message;
+                if ($warning_code !== '') {
+                    $warning_copy .= ' [' . $warning_code . ']';
+                }
+            } else {
+                $warning_copy .= $warning_code;
+            }
+
+            $parts[] = $warning_copy . '.';
+        }
+
+        $occurred_at_client = trim((string) ($context['occurred_at_client'] ?? ''));
+        if ($occurred_at_client !== '') {
+            $parts[] = 'Waktu client: ' . $occurred_at_client . '.';
+        }
+
         return implode(' ', $parts);
     }
 
@@ -952,6 +1112,9 @@ class CBT_Security_Log
             'admin_reset_user_login' => 'Panel admin',
             'admin_force_complete_attempt' => 'Panel Must Watch',
             'must_watch_panel' => 'Panel Must Watch',
+            'android_webview_shell' => 'Android WebView Shell',
+            'windows_cefsharp_shell' => 'Windows CEFSharp Shell',
+            'native_test_tool' => 'Native test tool',
             'copy' => 'Shortcut atau menu copy',
             'cut' => 'Shortcut atau menu cut',
             'paste' => 'Shortcut atau menu paste',

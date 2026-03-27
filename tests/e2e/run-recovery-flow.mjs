@@ -216,7 +216,18 @@ if (!tokenPayload || tokenPayload.ok !== true) {
 }
 
 const resolvedExamToken = String(tokenPayload.token_meta && tokenPayload.token_meta.token ? tokenPayload.token_meta.token : '').trim().toUpperCase();
+let pinnedTokenMeta = tokenPayload.token_meta || {};
 if (resolvedExamToken !== '') {
+    const pinnedTokenPayload = callRecoveryHelper('set_global_token', {
+        token: resolvedExamToken,
+        refresh_minutes: Number(tokenPayload.token_meta && tokenPayload.token_meta.refresh_minutes ? tokenPayload.token_meta.refresh_minutes : 15) || 15,
+        frontend_auto_apply: Number(tokenPayload.token_meta && tokenPayload.token_meta.frontend_auto_apply ? tokenPayload.token_meta.frontend_auto_apply : 0) === 1
+    });
+    if (!pinnedTokenPayload || pinnedTokenPayload.ok !== true) {
+        console.error('Preflight token pin recovery gagal.');
+        process.exit(1);
+    }
+    pinnedTokenMeta = pinnedTokenPayload.token_meta || pinnedTokenMeta;
     process.env.CBT_E2E_EXAM_TOKEN = resolvedExamToken;
 } else {
     delete process.env.CBT_E2E_EXAM_TOKEN;
@@ -224,9 +235,9 @@ if (resolvedExamToken !== '') {
 
 printFlowHeader('Preflight Token Resolve', [
     resolvedExamToken !== ''
-        ? 'Token aktif terdeteksi dan akan diisikan eksplisit oleh runner.'
+        ? 'Token aktif terdeteksi, dipin ulang, dan akan diisikan eksplisit oleh runner.'
         : 'Token global tidak aktif. Flow akan berjalan tanpa token eksplisit.',
-    'Frontend auto apply: ' + ((Number(tokenPayload.token_meta && tokenPayload.token_meta.frontend_auto_apply ? tokenPayload.token_meta.frontend_auto_apply : 0) === 1) ? 'ON' : 'OFF'),
+    'Frontend auto apply: ' + ((Number(pinnedTokenMeta && pinnedTokenMeta.frontend_auto_apply ? pinnedTokenMeta.frontend_auto_apply : 0) === 1) ? 'ON' : 'OFF'),
 ]);
 
 const previousUmask = process.umask(0o000);

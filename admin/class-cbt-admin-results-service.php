@@ -407,7 +407,7 @@ final class CBT_Admin_Results_Service
     private static function get_attempt_action_return_context_from_request(): array
     {
         $return_page = isset($_POST['return_page']) ? sanitize_key((string) wp_unslash($_POST['return_page'])) : 'cbt-results';
-        if (!in_array($return_page, ['cbt-results', 'cbt-setup'], true)) {
+        if (!in_array($return_page, ['cbt-results', 'cbt-setup', 'cbt-security'], true)) {
             $return_page = 'cbt-results';
         }
 
@@ -451,8 +451,13 @@ final class CBT_Admin_Results_Service
     private static function redirect_with_attempt_action_return(array $context, ?string $message = null, ?string $error = null): void
     {
         $page = isset($context['page']) ? (string) $context['page'] : 'cbt-results';
-        if ($page === 'cbt-setup') {
-            $args = ['page' => 'cbt-setup'];
+        if ($page === 'cbt-setup' || $page === 'cbt-security') {
+            $target_page = $page === 'cbt-security' ? 'cbt-security' : 'cbt-setup';
+            if ($target_page === 'cbt-setup' && in_array((string) ($context['hash'] ?? ''), ['security', 'security-log'], true)) {
+                $target_page = 'cbt-security';
+            }
+
+            $args = ['page' => $target_page];
             if ($message !== null && $message !== '') {
                 $args['cbt_msg'] = $message;
             }
@@ -859,7 +864,8 @@ final class CBT_Admin_Results_Service
         }
 
         CBT_Cache::invalidate_user($student_id);
-        $action_source = (string) ($return_context['page'] ?? '') === 'cbt-setup' ? 'must_watch_panel' : 'admin_reset_user_login';
+        $return_page = (string) ($return_context['page'] ?? '');
+        $action_source = in_array($return_page, ['cbt-setup', 'cbt-security'], true) ? 'must_watch_panel' : 'admin_reset_user_login';
         CBT_Security_Log::record_attempt_event((int) ($attempt['id'] ?? 0), 'admin_reset_login', [
             'actor_user_id' => get_current_user_id(),
             'source' => $action_source,

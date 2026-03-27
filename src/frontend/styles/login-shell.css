@@ -238,6 +238,17 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     color: #0d2744;
 }
 
+.cbt-login-panel .cbt-login-panel-title {
+    margin: 0 auto 10px;
+    max-width: min(100%, 18ch);
+    text-align: center;
+    text-transform: uppercase;
+    text-wrap: balance;
+    line-height: 1.15;
+    letter-spacing: 0.04em;
+    color: var(--cbt-text);
+}
+
 .cbt-login-panel .cbt-subtitle {
     margin-bottom: 16px;
 }
@@ -819,4 +830,3 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     background: rgba(255, 255, 255, 0.04);
     color: #aab6c5;
 }
-

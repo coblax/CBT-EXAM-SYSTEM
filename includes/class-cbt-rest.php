@@ -137,6 +137,12 @@ class CBT_REST
             'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
         ]);
 
+        register_rest_route('cbt/v1', '/native_security_event', [
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => [self::class, 'native_security_event'],
+            'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
+        ]);
+
         register_rest_route('cbt/v1', '/ui_state', [
             [
                 'methods' => WP_REST_Server::READABLE,
@@ -1117,6 +1123,16 @@ class CBT_REST
 
     public static function security_event(WP_REST_Request $request)
     {
+        return self::handle_security_event_request($request, false);
+    }
+
+    public static function native_security_event(WP_REST_Request $request)
+    {
+        return self::handle_security_event_request($request, true);
+    }
+
+    private static function handle_security_event_request(WP_REST_Request $request, bool $native_mode)
+    {
         $user_id = CBT_Auth::current_user_id($request);
         $role = CBT_Auth::current_user_role($request);
         if ($user_id <= 0) {
@@ -1136,14 +1152,22 @@ class CBT_REST
             ]);
         }
 
-        $attempt_id = (int) $request->get_param('attempt_id');
+        $attempt_id = (int) self::get_request_payload_value($request, 'attempt_id');
         if ($attempt_id <= 0) {
             return new WP_Error('invalid_payload', 'attempt_id is required', ['status' => 400]);
         }
 
-        $event_type = sanitize_key((string) $request->get_param('event_type'));
+        $event_type = sanitize_key((string) self::get_request_payload_value($request, 'event_type'));
         if ($event_type === '' || !isset(CBT_Security_Log::event_definitions()[$event_type])) {
             return new WP_Error('invalid_event_type', 'Event type is not allowed', ['status' => 400]);
+        }
+
+        if ($native_mode && !isset(CBT_Security_Log::native_supported_event_definitions()[$event_type])) {
+            return new WP_Error('invalid_native_event_type', 'Native endpoint only accepts supported CBT security events', ['status' => 400]);
+        }
+
+        if (!$native_mode && CBT_Security_Log::is_native_event_type($event_type)) {
+            return new WP_Error('native_event_requires_native_endpoint', 'Native event type must use native_security_event endpoint', ['status' => 400]);
         }
 
         $attempt = self::get_attempt_for_submission($attempt_id, $user_id);
@@ -1151,19 +1175,54 @@ class CBT_REST
             return $attempt;
         }
 
-        $context = $request->get_param('context');
+        $context = self::get_request_payload_value($request, 'context');
         if (!is_array($context)) {
             $context = [];
         }
-        $context = self::enrich_security_event_context($request, $context);
+
+        if ($native_mode) {
+            $native_app = sanitize_key((string) self::get_request_payload_value($request, 'native_app'));
+            $allowed_native_apps = CBT_Security_Log::native_app_labels();
+            if ($native_app === '' || !isset($allowed_native_apps[$native_app])) {
+                return new WP_Error('invalid_native_app', 'Native app is not allowed', ['status' => 400]);
+            }
+
+            $context = self::enrich_native_security_event_context($request, $context, [
+                'native_app' => $native_app,
+                'native_version' => self::get_request_payload_value($request, 'native_version'),
+                'warning_code' => self::get_request_payload_value($request, 'warning_code'),
+                'warning_message' => self::get_request_payload_value($request, 'warning_message'),
+                'occurred_at_client' => self::get_request_payload_value($request, 'occurred_at_client'),
+            ]);
+        } else {
+            $context = self::enrich_security_event_context($request, $context);
+        }
 
         $logged = CBT_Security_Log::record_attempt_event((int) ($attempt['id'] ?? 0), $event_type, $context);
 
         return rest_ensure_response([
             'ok' => true,
+            'event_type' => $event_type,
             'logged' => $logged ? 1 : 0,
             'skipped' => $logged ? 0 : 1,
         ]);
+    }
+
+    private static function get_request_payload_value(WP_REST_Request $request, string $key)
+    {
+        $value = $request->get_param($key);
+        if ($value !== null) {
+            return $value;
+        }
+
+        if (method_exists($request, 'get_json_params')) {
+            $json_params = $request->get_json_params();
+            if (is_array($json_params) && array_key_exists($key, $json_params)) {
+                return $json_params[$key];
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1187,6 +1246,42 @@ class CBT_REST
 
         if (empty($context['device_platform'])) {
             $context['device_platform'] = self::detect_security_request_device_platform($user_agent);
+        }
+
+        return $context;
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     * @param array{native_app:mixed,native_version:mixed,warning_code:mixed,warning_message:mixed,occurred_at_client:mixed} $payload
+     * @return array<string,mixed>
+     */
+    private static function enrich_native_security_event_context(WP_REST_Request $request, array $context, array $payload): array
+    {
+        $context = self::enrich_security_event_context($request, $context);
+
+        $native_app = sanitize_key((string) ($payload['native_app'] ?? ''));
+        $context['source'] = CBT_Security_Log::native_app_source($native_app);
+        $context['native_app'] = $native_app;
+
+        $native_version = sanitize_text_field((string) ($payload['native_version'] ?? ''));
+        if ($native_version !== '') {
+            $context['native_version'] = $native_version;
+        }
+
+        $warning_code = sanitize_key((string) ($payload['warning_code'] ?? ''));
+        if ($warning_code !== '') {
+            $context['warning_code'] = $warning_code;
+        }
+
+        $warning_message = sanitize_text_field((string) ($payload['warning_message'] ?? ''));
+        if ($warning_message !== '') {
+            $context['warning_message'] = $warning_message;
+        }
+
+        $occurred_at_client = sanitize_text_field((string) ($payload['occurred_at_client'] ?? ''));
+        if ($occurred_at_client !== '') {
+            $context['occurred_at_client'] = $occurred_at_client;
         }
 
         return $context;
@@ -5406,8 +5501,15 @@ class CBT_REST
 
     private static function normalize_short_answer_compare_text(string $value): string
     {
-        $value = strtolower(trim((string) $value));
-        $value = preg_replace('/\s+/', ' ', $value);
+        $value = trim((string) $value);
+        $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (function_exists('mb_strtolower')) {
+            $value = mb_strtolower($value, 'UTF-8');
+        } else {
+            $value = strtolower($value);
+        }
+        $value = preg_replace('/\s+/u', ' ', $value);
+        $value = is_string($value) ? preg_replace('/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/u', '', $value) : '';
         return $value === null ? '' : $value;
     }
 

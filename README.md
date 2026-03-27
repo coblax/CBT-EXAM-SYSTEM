@@ -17,7 +17,7 @@ README ini ditulis sebagai dokumen onboarding utama repo: cukup untuk memahami g
 
 ### 1. Admin akademik
 
-- Menu admin untuk `CBT Exams`, `CBT Setup`, `CBT Subjects`, `CBT Users`, `CBT Questions`, `CBT Tokens`, `CBT Exam Cards`, `CBT Results`, `CBT Analytics`, `CBT Report Exam`, `CBT Test Hub`, `CBT Cache`, `CBT Maintenance`, dan `CBT Developer`
+- Menu admin untuk `CBT Exams`, `CBT Branding`, `CBT Security`, `CBT Subjects`, `CBT Users`, `CBT Questions`, `CBT Tokens`, `CBT Exam Cards`, `CBT Results`, `CBT Analytics`, `CBT Report Exam`, `CBT Test Hub`, `CBT Cache`, `CBT Maintenance`, dan `CBT Developer`
 - Builder exam dengan status `draft` / `published` / `closed`, jadwal mulai-selesai, target kelas, token exam, randomisasi soal, dan randomisasi opsi
 - CRUD subject, user, dan bank soal dari dashboard WordPress
 - Monitoring hasil, grading essay manual, analytics, kartu ujian, dan report exam siap cetak
@@ -36,7 +36,7 @@ README ini ditulis sebagai dokumen onboarding utama repo: cukup untuk memahami g
 - Opsi fullscreen wajib saat ujian
 - Opsi blok `copy`, `cut`, dan `paste`
 - Security log untuk event ujian
-- Idle detection yang dapat dikonfigurasi dari setup security
+- Idle detection yang dapat dikonfigurasi dari menu CBT Security
 - Event log frontend/server untuk skenario seperti `fullscreen_exit`, `tab_hidden`, `window_blur`, `page_leave`, `clipboard_blocked`, dan event sesi terkait ujian
 
 ### 4. Maintenance, cache, dan performa
@@ -210,7 +210,8 @@ CBT_E2E_BASE_URL=http://localhost/wordpress npm run test:e2e
 | --- | --- |
 | `Introduction` | Ringkasan awal area plugin dan onboarding admin |
 | `CBT Exams` | Builder exam, jadwal, target kelas, randomisasi, token exam, dan manajemen exam |
-| `CBT Setup` | Branding, pengaturan security, dan observability/security log |
+| `CBT Branding` | Branding sekolah, logo, dan identitas visual CBT |
+| `CBT Security` | Pengaturan security ujian dan observability/security log |
 | `CBT Subjects` | CRUD subject dan import subject |
 | `CBT Users` | CRUD user, import user, foto, filter, dan manajemen akun |
 | `CBT Questions` | Bank soal, import template, preview, sinkronisasi, dan editing multi-tipe |
@@ -319,4 +320,3 @@ Lalu:
 2. buka menu `CBT Exams`
 3. cek halaman frontend `cbt-ujian`
 4. bila ingin develop frontend aktif, pindah ke `Vite Dev Server` atau set `CBT_EXAM_FRONTEND_DEV_SERVER`
-

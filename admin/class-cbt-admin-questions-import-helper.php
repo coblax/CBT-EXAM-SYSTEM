@@ -120,6 +120,7 @@ final class CBT_Admin_Questions_Import_Helper
                 'offset' => 0,
                 'created' => 0,
                 'failed' => 0,
+                'recent_failures' => [],
                 'user_id' => $current_user_id,
                 'started_at' => time(),
                 'return_page' => $return_page,
@@ -166,6 +167,9 @@ final class CBT_Admin_Questions_Import_Helper
             $offset = isset($state['offset']) ? (int) $state['offset'] : 0;
             $created = isset($state['created']) ? (int) $state['created'] : 0;
             $failed = isset($state['failed']) ? (int) $state['failed'] : 0;
+            $recent_failures = isset($state['recent_failures']) && is_array($state['recent_failures'])
+                ? self::normalize_question_import_failure_entries($state['recent_failures'])
+                : [];
             $default_exam_id = isset($state['default_exam_id']) ? (int) $state['default_exam_id'] : 0;
             $is_admin_scope = !empty($state['is_admin_scope']);
             $import_user_id = isset($state['import_user_id']) ? (int) $state['import_user_id'] : get_current_user_id();
@@ -207,17 +211,32 @@ final class CBT_Admin_Questions_Import_Helper
     
             for ($index = $offset; $index < $target_end; $index++) {
                 $row = isset($rows[$index]) && is_array($rows[$index]) ? (array) $rows[$index] : [];
-    
+
                 try {
                     $result = self::import_single_question_row($row, $default_exam_id, $is_admin_scope, $import_user_id, $batch_affected_exam_ids);
                 } catch (Throwable $exception) {
-                    $result = 'failed';
+                    $result = [
+                        'status' => 'failed',
+                        'message' => 'Terjadi error internal saat memproses blok soal.',
+                    ];
                 }
-    
-                if ($result === 'created') {
+
+                $result_status = (string) ($result['status'] ?? 'failed');
+                $result_message = trim((string) ($result['message'] ?? ''));
+
+                if ($result_status === 'created') {
                     $created++;
                 } else {
                     $failed++;
+                    $failure_entry = isset($result['failure_entry']) && is_array($result['failure_entry'])
+                        ? self::normalize_question_import_failure_entry($result['failure_entry'])
+                        : self::normalize_question_import_failure_entry($result_message);
+                    if (is_array($failure_entry)) {
+                        $recent_failures[] = $failure_entry;
+                        if (count($recent_failures) > 8) {
+                            $recent_failures = array_slice($recent_failures, -8);
+                        }
+                    }
                 }
     
                 $end = $index + 1;
@@ -236,6 +255,7 @@ final class CBT_Admin_Questions_Import_Helper
             $state['offset'] = max($offset, $end);
             $state['created'] = $created;
             $state['failed'] = $failed;
+            $state['recent_failures'] = $recent_failures;
             $state['affected_exam_ids'] = array_values($affected_exam_ids);
     
             if ((int) $state['offset'] < $total) {
@@ -254,21 +274,34 @@ final class CBT_Admin_Questions_Import_Helper
                 exit;
             }
     
-            self::clear_question_import_transients($token);
-    
+            $state['offset'] = $total;
+            $state['completed_at'] = time();
+            $state['is_complete'] = true;
+            $final_state_saved = set_transient(self::get_question_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+
             if ($created > 0) {
                 CBT_Cache::invalidate_catalog();
                 CBT_Cache::invalidate_exams(array_values($affected_exam_ids));
             }
     
-            $msg = sprintf('Import soal ke Bank Soal selesai. Total: %d, Created: %d, Failed: %d', $total, $created, $failed);
-            wp_safe_redirect(add_query_arg(
-                [
-                    'page' => $return_page,
-                    'cbt_msg' => $msg,
-                ],
-                admin_url('admin.php')
-            ));
+            $redirect_args = [
+                'page' => $return_page,
+                'cbt_question_import_token' => $token,
+                'cbt_msg' => sprintf('Import soal ke Bank Soal selesai. Total: %d, Created: %d, Failed: %d', $total, $created, $failed),
+            ];
+            if (!empty($recent_failures)) {
+                $redirect_args['cbt_err'] = implode(' || ', array_map(
+                    static function (array $entry): string {
+                        return (string) ($entry['formatted'] ?? '');
+                    },
+                    array_slice($recent_failures, -3)
+                ));
+            }
+            if (!$final_state_saved && empty($redirect_args['cbt_err'])) {
+                $redirect_args['cbt_err'] = 'Import selesai, tetapi detail failure terbaru tidak dapat disimpan untuk ditampilkan ulang.';
+            }
+
+            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             exit;
         }
 
@@ -631,16 +664,31 @@ final class CBT_Admin_Questions_Import_Helper
                 $blocks[] = $current_block;
             }
     
-            $mc_rows = [];
-            foreach ($blocks as $block) {
+            $structured_rows = [];
+            $structured_detected = false;
+            foreach ($blocks as $block_index => $block) {
+                if (!self::is_docx_structured_question_block($block)) {
+                    continue;
+                }
+
+                $structured_detected = true;
                 $row = self::parse_docx_multiple_choice_block($block);
                 if (is_array($row) && !empty($row)) {
-                    $mc_rows[] = $row;
+                    $row['__import_source_block'] = (int) $block_index + 1;
+                    $structured_rows[] = $row;
+                    continue;
                 }
+
+                $structured_rows[] = [
+                    '__import_source_block' => (int) $block_index + 1,
+                    '__import_error' => self::describe_docx_block_failure($block),
+                    'question_type' => self::detect_docx_block_question_type($block),
+                    'question_text' => self::build_docx_block_preview_text($block),
+                ];
             }
     
-            if (!empty($mc_rows)) {
-                return $mc_rows;
+            if ($structured_detected) {
+                return $structured_rows;
             }
     
             // Backward compatibility: legacy KEY:VALUE docx format.
@@ -676,21 +724,30 @@ final class CBT_Admin_Questions_Import_Helper
             return $rows;
         }
 
-        private static function import_single_question_row(array $row, int $default_exam_id, bool $is_admin_scope, int $current_user_id, array &$affected_exam_ids = []): string
+        private static function import_single_question_row(array $row, int $default_exam_id, bool $is_admin_scope, int $current_user_id, array &$affected_exam_ids = []): array
         {
             global $wpdb;
+
+            if (!empty($row['__import_error'])) {
+                $failure_entry = self::build_import_failure_entry_from_row($row, (string) $row['__import_error']);
+                return [
+                    'status' => 'failed',
+                    'message' => (string) ($failure_entry['formatted'] ?? ''),
+                    'failure_entry' => $failure_entry,
+                ];
+            }
     
             $question_type = self::map_import_question_type((string) ($row['question_type'] ?? ''));
             $question_text = wp_kses_post((string) ($row['question_text'] ?? ''));
             $question_text = trim($question_text);
             $explanation = CBT_Admin_Questions_Helper::normalize_optional_rich_text((string) ($row['explanation'] ?? ($row['pembahasan'] ?? '')));
             if ($question_type === '' || $question_text === '') {
-                return 'failed';
+                return self::failed_import_result($row, 'Jenis soal atau pertanyaan wajib diisi.');
             }
     
             $exam_id = self::resolve_import_question_exam_id($row, $default_exam_id, $is_admin_scope, $current_user_id);
             if ($exam_id <= 0) {
-                return 'failed';
+                return self::failed_import_result($row, 'Exam penampung untuk blok soal ini tidak valid.');
             }
             $affected_exam_ids[$exam_id] = $exam_id;
     
@@ -705,7 +762,12 @@ final class CBT_Admin_Questions_Import_Helper
             if (in_array($question_type, ['multiple_choice', 'multiple_answer'], true)) {
                 $built = self::build_options_raw_from_import($options_input, $correct_answer, $question_type);
                 if ($built === '') {
-                    return 'failed';
+                    return self::failed_import_result(
+                        $row,
+                        $question_type === 'multiple_choice'
+                            ? 'Pilihan atau jawaban benar Multiple Choice tidak valid. Pastikan jawaban benar menunjuk ke pilihan yang terisi.'
+                            : 'Pilihan atau jawaban benar Multiple Answer tidak valid. Pastikan minimal 1 jawaban benar menunjuk ke pilihan yang terisi.'
+                    );
                 }
                 $options_raw = $built;
                 $correct_text = '';
@@ -720,19 +782,19 @@ final class CBT_Admin_Questions_Import_Helper
             } elseif ($question_type === 'true_false_matrix') {
                 $correct_text = CBT_Admin_Questions_Helper::normalize_true_false_matrix_payload((string) ($correct_text !== '' ? $correct_text : $correct_answer));
                 if ($correct_text === '' || count(CBT_Admin_Questions_Helper::normalize_true_false_matrix_config($correct_text)) < 2) {
-                    return 'failed';
+                    return self::failed_import_result($row, 'True/False Matrix minimal harus punya 2 pernyataan valid beserta kuncinya.');
                 }
                 $options_raw = '';
             } elseif ($question_type === 'short_answer') {
                 $correct_text = CBT_Admin_Questions_Helper::normalize_short_answer_payload((string) ($correct_text !== '' ? $correct_text : $correct_answer));
                 if ($correct_text === '') {
-                    return 'failed';
+                    return self::failed_import_result($row, 'Short Answer tidak valid. Pastikan placeholder dan jawaban sudah lengkap.');
                 }
                 $options_raw = '';
             } elseif ($question_type === 'essay') {
                 $correct_text = trim($correct_text !== '' ? $correct_text : $correct_answer);
                 if ($correct_text === '') {
-                    return 'failed';
+                    return self::failed_import_result($row, 'Essay wajib memiliki acuan jawaban atau rubrik.');
                 }
                 $options_raw = '';
             } else {
@@ -755,7 +817,7 @@ final class CBT_Admin_Questions_Import_Helper
                 ['%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s']
             );
             if (!$inserted) {
-                return 'failed';
+                return self::failed_import_result($row, 'Gagal menyimpan soal ke database.');
             }
     
             $question_id = (int) $wpdb->insert_id;
@@ -785,7 +847,38 @@ final class CBT_Admin_Questions_Import_Helper
     
             CBT_Admin_Questions_Helper::save_question_type_detail($question_id, $question_type, $correct_text);
     
-            return 'created';
+            return [
+                'status' => 'created',
+                'message' => '',
+            ];
+        }
+
+        private static function failed_import_result(array $row, string $message): array
+        {
+            $failure_entry = self::build_import_failure_entry_from_row($row, $message);
+            return [
+                'status' => 'failed',
+                'message' => (string) ($failure_entry['formatted'] ?? ''),
+                'failure_entry' => $failure_entry,
+            ];
+        }
+
+        private static function build_import_failure_entry_from_row(array $row, string $message): array
+        {
+            $entry = [
+                'block_number' => isset($row['__import_source_block']) ? (int) $row['__import_source_block'] : 0,
+                'question_type' => self::map_import_question_type((string) ($row['question_type'] ?? '')),
+                'question_preview' => (string) ($row['question_text'] ?? ''),
+                'message' => trim($message),
+            ];
+
+            return self::normalize_question_import_failure_entry($entry) ?? [
+                'block_number' => 0,
+                'question_type' => '',
+                'question_preview' => '',
+                'message' => trim($message),
+                'formatted' => trim($message),
+            ];
         }
 
         private static function resolve_import_question_exam_id(array $row, int $default_exam_id, bool $is_admin_scope, int $current_user_id): int
@@ -921,8 +1014,26 @@ final class CBT_Admin_Questions_Import_Helper
             if (in_array($normalized, ['false', '0', 'f', 'no', 'tidak', 'salah', 's'], true)) {
                 return 'false';
             }
-    
+
             return 'true';
+        }
+
+        private static function parse_docx_true_false_value_strict(string $raw): ?string
+        {
+            $normalized = strtolower(trim((string) $raw));
+            if ($normalized === '') {
+                return null;
+            }
+
+            if (in_array($normalized, ['false', '0', 'f', 'no', 'tidak', 'salah', 's'], true)) {
+                return 'false';
+            }
+
+            if (in_array($normalized, ['true', '1', 't', 'yes', 'ya', 'y', 'benar', 'b'], true)) {
+                return 'true';
+            }
+
+            return null;
         }
 
         public static function build_options_raw_from_import(string $options_input, string $correct_answer, string $question_type): string
@@ -1217,6 +1328,89 @@ final class CBT_Admin_Questions_Import_Helper
             return $state;
         }
 
+        public static function normalize_question_import_failure_entry($entry): ?array
+        {
+            if (is_string($entry)) {
+                $message = trim($entry);
+                if ($message === '') {
+                    return null;
+                }
+
+                return [
+                    'block_number' => 0,
+                    'question_type' => '',
+                    'question_preview' => '',
+                    'message' => $message,
+                    'formatted' => $message,
+                ];
+            }
+
+            if (!is_array($entry)) {
+                return null;
+            }
+
+            $block_number = isset($entry['block_number']) ? (int) $entry['block_number'] : 0;
+            $question_type = self::map_import_question_type((string) ($entry['question_type'] ?? ''));
+            $question_preview = wp_strip_all_tags((string) ($entry['question_preview'] ?? ''));
+            $question_preview = preg_replace('/\s+/u', ' ', trim($question_preview));
+            $question_preview = is_string($question_preview) ? trim($question_preview) : '';
+            if ($question_preview !== '') {
+                if (function_exists('mb_substr')) {
+                    $question_preview = mb_substr($question_preview, 0, 90, 'UTF-8');
+                } else {
+                    $question_preview = substr($question_preview, 0, 90);
+                }
+            }
+
+            $message = trim((string) ($entry['message'] ?? ''));
+            if ($message === '') {
+                return null;
+            }
+
+            $normalized = [
+                'block_number' => max(0, $block_number),
+                'question_type' => $question_type,
+                'question_preview' => $question_preview,
+                'message' => $message,
+            ];
+            $normalized['formatted'] = self::format_question_import_failure_entry($normalized);
+
+            return $normalized;
+        }
+
+        public static function normalize_question_import_failure_entries(array $entries): array
+        {
+            $normalized = [];
+            foreach ($entries as $entry) {
+                $entry = self::normalize_question_import_failure_entry($entry);
+                if (!is_array($entry)) {
+                    continue;
+                }
+                $normalized[] = $entry;
+            }
+
+            return $normalized;
+        }
+
+        public static function format_question_import_failure_entry(array $entry): string
+        {
+            $parts = [];
+
+            $block_number = isset($entry['block_number']) ? (int) $entry['block_number'] : 0;
+            if ($block_number > 0) {
+                $parts[] = 'Blok DOCX #' . $block_number;
+            }
+
+            $question_preview = trim((string) ($entry['question_preview'] ?? ''));
+            if ($question_preview !== '') {
+                $parts[] = '"' . $question_preview . '"';
+            }
+
+            $prefix = empty($parts) ? 'Import soal gagal' : implode(' ', $parts);
+
+            return $prefix . ': ' . trim((string) ($entry['message'] ?? ''));
+        }
+
         private static function get_question_import_batch_size(): int
         {
             $batch_size = (int) apply_filters('cbt_question_import_batch_size', 140);
@@ -1282,8 +1476,9 @@ final class CBT_Admin_Questions_Import_Helper
                 $header_lines = [
                     'Template Word ini untuk import Multiple Answer (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: SOAL, PILIHAN_1..PILIHAN_minimal_2, JAWABAN.',
+                    'Field wajib: SOAL, PILIHAN_1..PILIHAN_minimal_3, JAWABAN.',
                     'JAWABAN diisi nomor pilihan (1-12) dan boleh lebih dari satu, contoh 2,4.',
+                    'Isi pilihan tidak boleh duplikat.',
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
@@ -1333,7 +1528,8 @@ final class CBT_Admin_Questions_Import_Helper
                     'Setiap blok soal dipisahkan oleh ---',
                     'Field wajib: JENIS_SOAL, SOAL, minimal 2 pernyataan + kunci.',
                     'Isi PERNYATAAN_1..PERNYATAAN_10 (maks 10 baris).',
-                    'Isi KUNCI_1..KUNCI_10 dengan TRUE/FALSE (atau BENAR/SALAH).',
+                    'Isi KUNCI_1..KUNCI_10 dengan TRUE/FALSE (atau BENAR/SALAH) secara berurutan tanpa nomor loncat.',
+                    'Pernyataan tidak boleh duplikat.',
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
@@ -1364,10 +1560,10 @@ final class CBT_Admin_Questions_Import_Helper
                     'Template Word ini untuk import Short Answer (format tabel, maks 8 jawaban valid).',
                     'Setiap blok soal dipisahkan oleh ---',
                     'Field wajib: JENIS_SOAL, SOAL, minimal 1 jawaban.',
-                    'Tandai titik isian di SOAL dengan [INPUT_1] sampai [INPUT_8].',
+                    'Tandai titik isian di SOAL dengan [INPUT_1] sampai [INPUT_8] tanpa placeholder duplikat.',
+                    'Jumlah placeholder input harus sama dengan jumlah jawaban valid.',
                     'Format lama seperti [INPUT A] / [INPUT 1] tetap didukung.',
-                    'Isi jawaban bisa pakai JAWABAN_A sampai JAWABAN_H.',
-                    'Alternatif lama juga didukung: JAWABAN: isi_a||isi_b||isi_c',
+                    'Isi jawaban bisa pakai JAWABAN_A sampai JAWABAN_H, dan key-nya harus cocok dengan placeholder input.',
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
@@ -1417,9 +1613,10 @@ final class CBT_Admin_Questions_Import_Helper
                 $header_lines = [
                     'Template Word ini untuk import Multiple Choice (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: SOAL, PILIHAN_1..PILIHAN_minimal_2, JAWABAN.',
+                    'Field wajib: SOAL, PILIHAN_1..PILIHAN_minimal_3, JAWABAN.',
                     'JAWABAN diisi nomor pilihan (1-5).',
                     'Untuk multiple_choice: hanya satu jawaban, contoh 2.',
+                    'Isi pilihan tidak boleh duplikat.',
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
@@ -1670,7 +1867,11 @@ final class CBT_Admin_Questions_Import_Helper
                     if (preg_match('/^(kunci|truth|tf)_?([1-9]|10)$/', $key, $matches)) {
                         $statement_idx = (int) $matches[2];
                         if ($statement_idx >= 1 && $statement_idx <= 10) {
-                            $tf_matrix_answer_map[$statement_idx] = self::normalize_docx_true_false_value($value);
+                            $normalized_tf_answer = self::parse_docx_true_false_value_strict($value);
+                            if ($normalized_tf_answer === null) {
+                                return null;
+                            }
+                            $tf_matrix_answer_map[$statement_idx] = $normalized_tf_answer;
                         }
                         $active_context = ['matrix_answer', $statement_idx];
                         continue;
@@ -1680,7 +1881,11 @@ final class CBT_Admin_Questions_Import_Helper
                         $answer_idx = (int) $matches[2];
                         if ($forced_question_type === 'true_false_matrix' || !empty($tf_matrix_statement_map) || $answer_idx >= 9) {
                             if ($answer_idx >= 1 && $answer_idx <= 10) {
-                                $tf_matrix_answer_map[$answer_idx] = self::normalize_docx_true_false_value($value);
+                                $normalized_tf_answer = self::parse_docx_true_false_value_strict($value);
+                                if ($normalized_tf_answer === null) {
+                                    return null;
+                                }
+                                $tf_matrix_answer_map[$answer_idx] = $normalized_tf_answer;
                             }
                             $active_context = ['matrix_answer', $answer_idx];
                             continue;
@@ -1769,16 +1974,19 @@ final class CBT_Admin_Questions_Import_Helper
             }
     
             if ($forced_question_type === 'true_false') {
-                $tf_value = strtolower(trim($answer_text));
-                if ($tf_value === '') {
+                $tf_raw = strtolower(trim($answer_text));
+                if ($tf_raw === '') {
                     return null;
                 }
-                if (in_array($tf_value, ['false', '0', 'f', 'no', 'tidak', 'salah'], true)) {
+
+                if (in_array($tf_raw, ['false', '0', 'f', 'no', 'tidak', 'salah', 's'], true)) {
                     $tf_value = 'false';
-                } else {
+                } elseif (in_array($tf_raw, ['true', '1', 't', 'yes', 'ya', 'y', 'benar', 'b'], true)) {
                     $tf_value = 'true';
+                } else {
+                    return null;
                 }
-    
+
                 $row = [
                     'question_type' => 'true_false',
                     'question_text' => $question_text,
@@ -1826,15 +2034,40 @@ final class CBT_Admin_Questions_Import_Helper
     
             if ($forced_question_type === 'short_answer') {
                 ksort($short_answer_map);
+                $short_answer_input_keys = CBT_Admin_Questions_Helper::resolve_short_answer_input_keys($question_text);
                 $short_answer_values = [];
-                foreach ($short_answer_map as $val) {
-                    $short_answer_values[] = (string) $val;
+                if (empty($short_answer_map)) {
+                    return null;
                 }
-                if ($answer_text !== '') {
-                    $short_answer_values = array_merge($short_answer_values, CBT_Admin_Questions_Helper::normalize_short_answer_values($answer_text));
+
+                $provided_input_keys = [];
+                foreach (array_keys($short_answer_map) as $map_key) {
+                    $map_key = (int) $map_key;
+                    if ($map_key < 1 || $map_key > 8) {
+                        return null;
+                    }
+                    $provided_input_keys[] = chr(64 + $map_key);
+                }
+                sort($provided_input_keys);
+
+                foreach ($short_answer_input_keys as $input_key) {
+                    $input_index = ord($input_key) - 64;
+                    $mapped_value = trim((string) ($short_answer_map[$input_index] ?? ''));
+                    if ($mapped_value === '') {
+                        return null;
+                    }
+                    $short_answer_values[] = $mapped_value;
                 }
                 $short_answer_values = CBT_Admin_Questions_Helper::normalize_short_answer_values(wp_json_encode($short_answer_values));
                 if (empty($short_answer_values)) {
+                    return null;
+                }
+                $short_answer_validation_error = CBT_Admin_Questions_Helper::validate_short_answer_definition(
+                    $question_text,
+                    $short_answer_values,
+                    ['provided_keys' => $provided_input_keys]
+                );
+                if ($short_answer_validation_error !== '') {
                     return null;
                 }
                 $row = [
@@ -1859,16 +2092,38 @@ final class CBT_Admin_Questions_Import_Helper
     
             if ($forced_question_type === 'true_false_matrix' || !empty($tf_matrix_statement_map)) {
                 ksort($tf_matrix_statement_map);
+                ksort($tf_matrix_answer_map);
+
+                if (!empty($tf_matrix_statement_map) || !empty($tf_matrix_answer_map)) {
+                    $statement_keys = array_map('intval', array_keys($tf_matrix_statement_map));
+                    $answer_keys = array_map('intval', array_keys($tf_matrix_answer_map));
+
+                    if (
+                        empty($statement_keys) ||
+                        empty($answer_keys) ||
+                        !self::is_contiguous_one_based_index_set($statement_keys) ||
+                        !self::is_contiguous_one_based_index_set($answer_keys) ||
+                        $statement_keys !== $answer_keys
+                    ) {
+                        return null;
+                    }
+                }
+
                 $matrix_items = [];
                 foreach ($tf_matrix_statement_map as $idx => $statement_text) {
                     $statement_text = trim((string) $statement_text);
                     if ($statement_text === '') {
                         continue;
                     }
-    
-                    $answer_value = isset($tf_matrix_answer_map[$idx])
-                        ? self::normalize_docx_true_false_value((string) $tf_matrix_answer_map[$idx])
-                        : 'true';
+
+                    if (!isset($tf_matrix_answer_map[$idx])) {
+                        return null;
+                    }
+
+                    $answer_value = self::parse_docx_true_false_value_strict((string) $tf_matrix_answer_map[$idx]);
+                    if ($answer_value === null) {
+                        return null;
+                    }
                     $matrix_items[] = [
                         'text' => sanitize_text_field($statement_text),
                         'answer' => $answer_value,
@@ -1879,10 +2134,22 @@ final class CBT_Admin_Questions_Import_Helper
                     $matrix_items = CBT_Admin_Questions_Helper::normalize_true_false_matrix_config($answer_text);
                 }
     
-                if (count($matrix_items) < 2) {
+                $matrix_validation_error = CBT_Admin_Questions_Helper::validate_true_false_matrix_items(
+                    $matrix_items,
+                    [
+                        'provided_indexes' => isset($statement_keys) ? $statement_keys : [],
+                        'source_rows' => array_map(static function (int $index, string $text): array {
+                            return [
+                                'index' => $index,
+                                'text' => $text,
+                            ];
+                        }, array_keys($tf_matrix_statement_map), array_map('strval', array_values($tf_matrix_statement_map))),
+                    ]
+                );
+                if ($matrix_validation_error !== '') {
                     return null;
                 }
-    
+
                 $row = [
                     'question_type' => 'true_false_matrix',
                     'question_text' => $question_text,
@@ -1912,11 +2179,11 @@ final class CBT_Admin_Questions_Import_Helper
                     $options[$idx] = $val;
                 }
             }
-    
-            if (count($options) < 2) {
+
+            if (empty($options)) {
                 return null;
             }
-    
+
             $filled_indices = array_keys($options);
             sort($filled_indices);
             $max_idx = (int) max($filled_indices);
@@ -1924,6 +2191,11 @@ final class CBT_Admin_Questions_Import_Helper
             $detected_question_type = count($answer_indices) > 1 ? 'multiple_answer' : 'multiple_choice';
             if ($forced_question_type !== '') {
                 $detected_question_type = $forced_question_type;
+            }
+
+            $minimum_option_count = in_array($detected_question_type, ['multiple_choice', 'multiple_answer'], true) ? 3 : 2;
+            if (count($options) < $minimum_option_count) {
+                return null;
             }
     
             $max_allowed_index = ($detected_question_type === 'multiple_answer') ? 12 : 5;
@@ -1937,28 +2209,31 @@ final class CBT_Admin_Questions_Import_Helper
                 }
             }
     
-            if (empty($answer_indices)) {
-                return null;
-            }
-    
+            $raw_answer_indices = array_values(array_unique($answer_indices));
+            sort($raw_answer_indices);
             $answer_indices = array_values(array_unique(array_filter(
                 $answer_indices,
                 static fn($idx) => is_int($idx) && $idx >= 1 && $idx <= $max_idx && isset($options[$idx])
             )));
             sort($answer_indices);
-    
-            if (empty($answer_indices)) {
+
+            $options_to_validate = [];
+            foreach ($options as $idx => $option_text) {
+                $options_to_validate[] = [
+                    'option_text' => $option_text,
+                    'is_correct' => in_array((int) $idx, $answer_indices, true) ? 1 : 0,
+                ];
+            }
+
+            $choice_validation_error = CBT_Admin_Questions_Helper::validate_choice_options(
+                $detected_question_type,
+                $options_to_validate,
+                ['has_empty_correct_reference' => !empty($raw_answer_indices) && $answer_indices !== $raw_answer_indices]
+            );
+            if ($choice_validation_error !== '') {
                 return null;
             }
-    
-            if ($detected_question_type === 'multiple_choice' && count($answer_indices) !== 1) {
-                return null;
-            }
-    
-            if ($detected_question_type === 'multiple_answer' && count($answer_indices) < 1) {
-                return null;
-            }
-    
+
             $alpha = range('A', 'L');
             $correct_answer_tokens = [];
             foreach ($answer_indices as $idx) {
@@ -1999,6 +2274,393 @@ final class CBT_Admin_Questions_Import_Helper
             }
     
             return $row;
+        }
+
+        private static function is_docx_structured_question_block(array $block): bool
+        {
+            foreach ($block as $raw_line) {
+                $line = trim((string) $raw_line);
+                if ($line === '' || $line === '---') {
+                    continue;
+                }
+
+                if (
+                    preg_match('/^([1-9]|1[0-2])[\.\)]\s*\S+/u', $line) === 1 ||
+                    preg_match('/^([A-La-l])[\.\)]\s*\S+/u', $line) === 1 ||
+                    preg_match('/^(soal|question|pertanyaan|question_text|jenis_soal|question_type|type|jawaban|answer|correct_answer|correct_text|rubrik|rubric|pernyataan|statement|kunci|truth|tf|pilihan|opsi|option)\b/i', $line) === 1 ||
+                    strpos($line, '__IMG__:') === 0
+                ) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static function build_docx_block_preview_text(array $block): string
+        {
+            foreach ($block as $raw_line) {
+                $line = trim((string) $raw_line);
+                if ($line === '' || $line === '---' || strpos($line, '__IMG__:') === 0) {
+                    continue;
+                }
+
+                if (preg_match('/^(?:soal|question|pertanyaan|question_text)\s*:\s*(.+)$/i', $line, $matches)) {
+                    return trim((string) ($matches[1] ?? ''));
+                }
+
+                if (strpos($line, ':') === false) {
+                    return $line;
+                }
+            }
+
+            return '';
+        }
+
+        private static function detect_docx_block_question_type(array $block): string
+        {
+            $forced_question_type = '';
+            $answer_indices = [];
+            $has_short_answer_keys = false;
+            $has_matrix_keys = false;
+
+            foreach ($block as $raw_line) {
+                $line = trim((string) $raw_line);
+                if ($line === '' || $line === '---') {
+                    continue;
+                }
+
+                $parts = explode(':', $line, 2);
+                if (count($parts) !== 2) {
+                    continue;
+                }
+
+                $key = strtolower(trim((string) $parts[0]));
+                $key = str_replace([' ', '-'], '_', $key);
+                $value = trim((string) $parts[1]);
+
+                if (in_array($key, ['jenis_soal', 'question_type', 'type'], true)) {
+                    $forced_question_type = self::map_import_question_type($value);
+                    continue;
+                }
+
+                if (preg_match('/^(pernyataan|statement|item)_?([1-9]|10)$/', $key) === 1 || preg_match('/^(kunci|truth|tf)_?([1-9]|10)$/', $key) === 1) {
+                    $has_matrix_keys = true;
+                    continue;
+                }
+
+                if (preg_match('/^(jawaban|answer|correct)_?([1-9]|10)$/', $key, $matches) === 1) {
+                    $index = (int) $matches[2];
+                    if ($index >= 9) {
+                        $has_matrix_keys = true;
+                    } else {
+                        $has_short_answer_keys = true;
+                    }
+                    continue;
+                }
+
+                if (preg_match('/^(jawaban|answer|correct)_?([a-h])$/', $key) === 1) {
+                    $has_short_answer_keys = true;
+                    continue;
+                }
+
+                if (in_array($key, ['jawaban', 'answer', 'correct_answer', 'jawaban_ke', 'answer_option'], true)) {
+                    $answer_indices = self::normalize_docx_answer_indices($value);
+                }
+            }
+
+            if ($forced_question_type !== '') {
+                return $forced_question_type;
+            }
+            if ($has_matrix_keys) {
+                return 'true_false_matrix';
+            }
+            if ($has_short_answer_keys) {
+                return 'short_answer';
+            }
+
+            return count($answer_indices) > 1 ? 'multiple_answer' : 'multiple_choice';
+        }
+
+        private static function describe_docx_block_failure(array $block): string
+        {
+            $normalized_block = array_values(array_filter(array_map(static function ($line): string {
+                return trim((string) $line);
+            }, $block), static fn(string $line): bool => $line !== '' && $line !== '---'));
+
+            if (empty($normalized_block)) {
+                return 'Blok kosong atau tidak sesuai template.';
+            }
+
+            $question_text = self::build_docx_block_preview_text($normalized_block);
+            if ($question_text === '') {
+                return 'Field SOAL / QUESTION wajib diisi.';
+            }
+
+            $forced_question_type = '';
+            $answer_text = '';
+            $answer_indices = [];
+            $options_map = [];
+            $tf_matrix_statement_map = [];
+            $tf_matrix_answer_map = [];
+            $short_answer_map = [];
+
+            foreach ($normalized_block as $line) {
+                if (preg_match('/^([1-9]|1[0-2])[\.\)]\s*(.+)$/u', $line, $matches)) {
+                    $options_map[(int) $matches[1]] = trim((string) $matches[2]);
+                    continue;
+                }
+                if (preg_match('/^([A-La-l])[\.\)]\s*(.+)$/u', $line, $matches)) {
+                    $option_index = ord(strtoupper((string) $matches[1])) - ord('A') + 1;
+                    $options_map[$option_index] = trim((string) $matches[2]);
+                    continue;
+                }
+
+                $parts = explode(':', $line, 2);
+                if (count($parts) !== 2) {
+                    continue;
+                }
+
+                $key = strtolower(trim((string) $parts[0]));
+                $key = str_replace([' ', '-'], '_', $key);
+                $value = trim((string) $parts[1]);
+
+                if (in_array($key, ['jenis_soal', 'question_type', 'type'], true)) {
+                    $forced_question_type = self::map_import_question_type($value);
+                    continue;
+                }
+
+                if (in_array($key, ['jawaban', 'answer', 'correct_answer', 'jawaban_ke', 'answer_option', 'correct_text', 'rubrik', 'rubric', 'rubric_text'], true)) {
+                    $answer_text = $value;
+                    $answer_indices = self::normalize_docx_answer_indices($value);
+                    continue;
+                }
+
+                if (preg_match('/^(pernyataan|statement|item)_?([1-9]|10)$/', $key, $matches)) {
+                    $tf_matrix_statement_map[(int) $matches[2]] = $value;
+                    continue;
+                }
+
+                if (preg_match('/^(kunci|truth|tf)_?([1-9]|10)$/', $key, $matches)) {
+                    $tf_matrix_answer_map[(int) $matches[2]] = $value;
+                    continue;
+                }
+
+                if (preg_match('/^(jawaban|answer|correct)_?([1-9]|10)$/', $key, $matches)) {
+                    $answer_index = (int) $matches[2];
+                    if ($forced_question_type === 'true_false_matrix' || !empty($tf_matrix_statement_map) || $answer_index >= 9) {
+                        $tf_matrix_answer_map[$answer_index] = $value;
+                    } elseif ($answer_index >= 1 && $answer_index <= 8) {
+                        $short_answer_map[$answer_index] = $value;
+                    }
+                    continue;
+                }
+
+                if (preg_match('/^(jawaban|answer|correct)_?([a-h])$/', $key, $matches)) {
+                    $short_answer_map[ord(strtoupper((string) $matches[2])) - ord('A') + 1] = $value;
+                    continue;
+                }
+
+                if (preg_match('/^(pilihan|opsi|option)_?([1-9]|1[0-2])$/', $key, $matches)) {
+                    $options_map[(int) $matches[2]] = $value;
+                    continue;
+                }
+
+                if (preg_match('/^[a-l]$/', $key) === 1) {
+                    if ($forced_question_type === 'short_answer' && preg_match('/^[a-h]$/', $key) === 1) {
+                        $short_answer_map[ord(strtoupper($key)) - ord('A') + 1] = $value;
+                    } else {
+                        $options_map[ord(strtoupper($key)) - ord('A') + 1] = $value;
+                    }
+                }
+            }
+
+            if ($forced_question_type === 'essay') {
+                return trim($answer_text) === ''
+                    ? 'Essay wajib memiliki JAWABAN atau rubrik.'
+                    : 'Blok essay tidak sesuai template.';
+            }
+
+            if ($forced_question_type === 'true_false') {
+                if (trim($answer_text) === '') {
+                    return 'True/False wajib memiliki JAWABAN.';
+                }
+
+                return self::parse_docx_true_false_value_strict($answer_text) === null
+                    ? 'Jawaban True/False harus bernilai true/false atau alias yang valid.'
+                    : 'Blok True/False tidak sesuai template.';
+            }
+
+            if ($forced_question_type === 'short_answer') {
+                $input_keys = CBT_Admin_Questions_Helper::resolve_short_answer_input_keys($question_text);
+                if (empty($short_answer_map)) {
+                    return 'Short Answer DOCX wajib memakai JAWABAN_A sampai JAWABAN_H sesuai key placeholder.';
+                }
+
+                $short_answer_values = [];
+                $provided_keys = [];
+                foreach (array_keys($short_answer_map) as $answer_index) {
+                    $answer_index = (int) $answer_index;
+                    if ($answer_index < 1 || $answer_index > 8) {
+                        return 'Key jawaban Short Answer harus berada pada rentang A sampai H.';
+                    }
+                    $provided_keys[] = chr(64 + $answer_index);
+                }
+                sort($provided_keys);
+                $expected_keys = $input_keys;
+                sort($expected_keys);
+
+                if ($provided_keys !== $expected_keys) {
+                    return 'Key placeholder Short Answer harus cocok dengan key jawaban yang diisi.';
+                }
+
+                foreach ($input_keys as $input_key) {
+                    $input_index = ord($input_key) - 64;
+                    $mapped_value = trim((string) ($short_answer_map[$input_index] ?? ''));
+                    if ($mapped_value === '') {
+                        return 'Semua jawaban Short Answer yang dirujuk placeholder wajib diisi.';
+                    }
+                    $short_answer_values[] = $mapped_value;
+                }
+
+                $short_answer_validation_error = CBT_Admin_Questions_Helper::validate_short_answer_definition(
+                    $question_text,
+                    $short_answer_values,
+                    ['provided_keys' => $provided_keys]
+                );
+                if ($short_answer_validation_error !== '') {
+                    return $short_answer_validation_error;
+                }
+
+                return 'Blok Short Answer tidak sesuai template.';
+            }
+
+            if ($forced_question_type === 'true_false_matrix' || !empty($tf_matrix_statement_map) || !empty($tf_matrix_answer_map)) {
+                $statement_keys = array_values(array_unique(array_map('intval', array_keys($tf_matrix_statement_map))));
+                $answer_keys = array_values(array_unique(array_map('intval', array_keys($tf_matrix_answer_map))));
+                sort($statement_keys);
+                sort($answer_keys);
+
+                if (empty($statement_keys) || empty($answer_keys)) {
+                    return 'True/False Matrix wajib memiliki minimal 2 PERNYATAAN dan KUNCI yang sesuai.';
+                }
+                if ($statement_keys !== range(1, count($statement_keys)) || $answer_keys !== range(1, count($answer_keys)) || $statement_keys !== $answer_keys) {
+                    return 'PERNYATAAN_n dan KUNCI_n harus diisi berurutan tanpa nomor yang loncat.';
+                }
+
+                $matrix_items = [];
+                $matrix_source_rows = [];
+                foreach ($statement_keys as $statement_index) {
+                    $statement_text = trim((string) ($tf_matrix_statement_map[$statement_index] ?? ''));
+                    if ($statement_text === '') {
+                        return 'Pernyataan True/False Matrix tidak boleh kosong.';
+                    }
+
+                    $answer_value = self::parse_docx_true_false_value_strict((string) ($tf_matrix_answer_map[$statement_index] ?? ''));
+                    if ($answer_value === null) {
+                        return 'KUNCI_n True/False Matrix harus bernilai true/false atau alias yang valid.';
+                    }
+
+                    $matrix_items[] = [
+                        'text' => $statement_text,
+                        'answer' => $answer_value,
+                    ];
+                    $matrix_source_rows[] = [
+                        'index' => $statement_index,
+                        'text' => $statement_text,
+                    ];
+                }
+
+                $matrix_validation_error = CBT_Admin_Questions_Helper::validate_true_false_matrix_items(
+                    $matrix_items,
+                    [
+                        'provided_indexes' => $statement_keys,
+                        'source_rows' => $matrix_source_rows,
+                    ]
+                );
+                if ($matrix_validation_error !== '') {
+                    return $matrix_validation_error;
+                }
+
+                return 'Blok True/False Matrix tidak sesuai template.';
+            }
+
+            $options = [];
+            foreach ($options_map as $option_index => $option_text) {
+                $option_text = trim((string) $option_text);
+                if ($option_text !== '') {
+                    $options[(int) $option_index] = $option_text;
+                }
+            }
+            ksort($options);
+
+            $detected_question_type = count($answer_indices) > 1 ? 'multiple_answer' : 'multiple_choice';
+            if ($forced_question_type !== '') {
+                $detected_question_type = $forced_question_type;
+            }
+
+            if (empty($options)) {
+                return $detected_question_type === 'multiple_answer'
+                    ? 'Multiple Answer minimal harus punya 3 pilihan.'
+                    : 'Multiple Choice minimal harus punya 3 pilihan.';
+            }
+
+            $filled_option_indexes = array_keys($options);
+            sort($filled_option_indexes);
+            $max_option_index = (int) max($filled_option_indexes);
+            $filtered_answer_indexes = array_values(array_unique(array_filter(
+                $answer_indices,
+                static fn($index): bool => is_int($index) && $index >= 1 && $index <= $max_option_index && isset($options[$index])
+            )));
+            sort($filtered_answer_indexes);
+
+            $raw_answer_indexes = array_values(array_unique($answer_indices));
+            sort($raw_answer_indexes);
+            if (!empty($raw_answer_indexes) && $filtered_answer_indexes !== $raw_answer_indexes) {
+                return 'Jawaban benar menunjuk ke pilihan yang kosong atau tidak ada.';
+            }
+
+            for ($index = 1; $index <= $max_option_index; $index++) {
+                if (!isset($options[$index])) {
+                    return 'Pilihan harus diisi berurutan tanpa nomor yang loncat.';
+                }
+            }
+
+            $options_to_validate = [];
+            foreach ($options as $option_index => $option_text) {
+                $options_to_validate[] = [
+                    'option_text' => $option_text,
+                    'is_correct' => in_array((int) $option_index, $filtered_answer_indexes, true) ? 1 : 0,
+                ];
+            }
+
+            $has_empty_correct_reference = !empty($raw_answer_indexes)
+                && $filtered_answer_indexes !== $raw_answer_indexes;
+            $choice_validation_error = CBT_Admin_Questions_Helper::validate_choice_options(
+                $detected_question_type,
+                $options_to_validate,
+                ['has_empty_correct_reference' => $has_empty_correct_reference]
+            );
+            if ($choice_validation_error !== '') {
+                return $choice_validation_error;
+            }
+
+            return 'Blok soal tidak sesuai template DOCX.';
+        }
+
+        /**
+         * @param int[] $keys
+         */
+        private static function is_contiguous_one_based_index_set(array $keys): bool
+        {
+            if (empty($keys)) {
+                return false;
+            }
+
+            $keys = array_values(array_unique(array_map('intval', $keys)));
+            sort($keys);
+
+            return $keys === range(1, count($keys));
         }
 
         private static function store_docx_image_and_get_url(string $binary, string $filename): string

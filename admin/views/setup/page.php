@@ -1,3 +1,8 @@
+        <?php
+        $cbt_admin_view_mode = isset($cbt_admin_view_mode) && $cbt_admin_view_mode === 'security' ? 'security' : 'branding';
+        $is_security_view = $cbt_admin_view_mode === 'security';
+        $is_branding_view = !$is_security_view;
+        ?>
         <style>
             .cbt-setup-page {
                 max-width: 1160px;
@@ -437,6 +442,330 @@
                 display: grid;
                 gap: 18px;
                 padding: 0;
+            }
+            .cbt-native-grid {
+                display: grid;
+                gap: 18px;
+            }
+            .cbt-native-spec-grid,
+            .cbt-native-tool-grid {
+                display: grid;
+                gap: 14px;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                align-items: start;
+            }
+            .cbt-native-spec-card,
+            .cbt-native-output-card {
+                padding: 16px;
+                border: 1px solid #d7e4f5;
+                border-radius: 16px;
+                background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+            }
+            .cbt-native-spec-card h3,
+            .cbt-native-output-card h3 {
+                margin: 0 0 6px;
+                font-size: 14px;
+                line-height: 1.3;
+            }
+            .cbt-native-spec-card p,
+            .cbt-native-output-card p {
+                margin: 0;
+                color: #5b6574;
+                line-height: 1.6;
+            }
+            .cbt-native-list {
+                margin: 10px 0 0;
+                padding-left: 18px;
+                color: #475569;
+            }
+            .cbt-native-list li {
+                margin: 0 0 6px;
+            }
+            .cbt-native-endpoint {
+                display: inline-flex;
+                margin-top: 10px;
+                padding: 8px 12px;
+                border-radius: 12px;
+                background: #0f172a;
+                color: #e2e8f0;
+                font-family: Consolas, Monaco, monospace;
+                font-size: 12px;
+                line-height: 1.4;
+                word-break: break-all;
+            }
+            .cbt-native-catalog-table-shell {
+                overflow-x: auto;
+            }
+            .cbt-native-catalog-table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            .cbt-native-catalog-table th,
+            .cbt-native-catalog-table td {
+                padding: 12px 10px;
+                border-bottom: 1px solid #e5e7eb;
+                text-align: left;
+                vertical-align: top;
+            }
+            .cbt-native-catalog-table th {
+                color: #334155;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+            }
+            .cbt-native-catalog-shell {
+                display: grid;
+                gap: 14px;
+            }
+            .cbt-native-threshold-grid {
+                display: grid;
+                gap: 12px;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .cbt-native-threshold-card {
+                display: grid;
+                gap: 4px;
+                padding: 12px 14px;
+                border: 1px solid #d7e4f5;
+                border-radius: 14px;
+                background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+            }
+            .cbt-native-threshold-card strong {
+                color: #0f172a;
+                font-size: 12px;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+            }
+            .cbt-native-threshold-card span {
+                color: #1f2937;
+                font-size: 18px;
+                font-weight: 700;
+                line-height: 1.2;
+            }
+            .cbt-native-threshold-card p {
+                margin: 0;
+                color: #64748b;
+                line-height: 1.5;
+            }
+            .cbt-native-threshold-card.is-high-risk {
+                border-color: #f5c7c7;
+                background: linear-gradient(180deg, #fff7f7 0%, #fff2f2 100%);
+            }
+            .cbt-native-catalog-tabs {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .cbt-native-catalog-tab {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 32px;
+                padding: 0 12px;
+                border: 1px solid #cfe0f7;
+                border-radius: 999px;
+                background: #eef4ff;
+                color: #27528c;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                cursor: pointer;
+                transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease, color 140ms ease;
+            }
+            .cbt-native-catalog-tab:hover,
+            .cbt-native-catalog-tab:focus {
+                border-color: #8bb3e4;
+                background: #f6f9ff;
+                color: #173f73;
+                box-shadow: 0 8px 16px rgba(59, 130, 246, 0.10);
+                outline: none;
+            }
+            .cbt-native-catalog-tab.is-active {
+                border-color: #2563eb;
+                background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+                color: #ffffff;
+                box-shadow: 0 10px 18px rgba(37, 99, 235, 0.18);
+            }
+            .cbt-native-catalog-panel[hidden] {
+                display: none !important;
+            }
+            .cbt-native-catalog-empty {
+                display: grid;
+                gap: 14px;
+                padding: 16px;
+                border: 1px solid #d7e4f5;
+                border-radius: 16px;
+                background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+            }
+            .cbt-native-catalog-empty h3 {
+                margin: 0;
+                font-size: 15px;
+                line-height: 1.3;
+            }
+            .cbt-native-catalog-empty p {
+                margin: 0;
+                color: #5b6574;
+                line-height: 1.6;
+            }
+            .cbt-native-catalog-meta-grid {
+                display: grid;
+                gap: 12px;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .cbt-native-catalog-meta-card {
+                display: grid;
+                gap: 6px;
+                padding: 12px 14px;
+                border: 1px solid #d7e4f5;
+                border-radius: 14px;
+                background: #ffffff;
+            }
+            .cbt-native-catalog-meta-card strong {
+                color: #0f172a;
+                font-size: 12px;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            .cbt-native-catalog-meta-card code {
+                font-size: 12px;
+            }
+            .cbt-native-code {
+                margin: 0;
+                padding: 12px 14px;
+                border-radius: 14px;
+                background: #0f172a;
+                color: #e2e8f0;
+                font-family: Consolas, Monaco, monospace;
+                font-size: 12px;
+                line-height: 1.5;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+            .cbt-native-tool-grid {
+                grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+            }
+            .cbt-native-tool-form {
+                display: grid;
+                gap: 12px;
+                align-self: start;
+                align-content: start;
+                padding: 16px;
+                border: 1px solid #d7e4f5;
+                border-radius: 16px;
+                background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+            }
+            .cbt-native-field-grid {
+                display: grid;
+                gap: 12px;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                align-items: start;
+                align-content: start;
+            }
+            .cbt-native-field {
+                display: grid;
+                gap: 6px;
+            }
+            .cbt-native-field label {
+                font-weight: 600;
+                color: #111827;
+                font-size: 12px;
+                letter-spacing: 0.02em;
+            }
+            .cbt-native-field input[type="text"],
+            .cbt-native-field input[type="number"],
+            .cbt-native-field textarea,
+            .cbt-native-field select {
+                width: 100%;
+                margin: 0;
+                border: 1px solid #c7d2e0;
+                border-radius: 12px;
+                background: #fbfdff;
+                color: #111827;
+                padding: 9px 12px;
+                min-height: 42px;
+            }
+            .cbt-native-field textarea {
+                min-height: 78px;
+                resize: vertical;
+            }
+            .cbt-native-field--full {
+                grid-column: 1 / -1;
+            }
+            .cbt-native-actions {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+            .cbt-native-helper-note {
+                margin: 0;
+                color: #64748b;
+                line-height: 1.55;
+            }
+            .cbt-native-auth-grid {
+                display: grid;
+                gap: 18px;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .cbt-native-sample-shell {
+                display: grid;
+                gap: 12px;
+                align-self: start;
+            }
+            .cbt-native-helper-note + .cbt-native-sample-shell {
+                margin-top: 6px;
+            }
+            .cbt-native-sample-tabs {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .cbt-native-sample-tab {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 32px;
+                padding: 0 12px;
+                border: 1px solid #cfe0f7;
+                border-radius: 999px;
+                background: #eef4ff;
+                color: #27528c;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                cursor: pointer;
+                transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease, color 140ms ease;
+            }
+            .cbt-native-sample-tab:hover,
+            .cbt-native-sample-tab:focus {
+                border-color: #8bb3e4;
+                background: #f6f9ff;
+                color: #173f73;
+                box-shadow: 0 8px 16px rgba(59, 130, 246, 0.10);
+                outline: none;
+            }
+            .cbt-native-sample-tab.is-active {
+                border-color: #2563eb;
+                background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+                color: #ffffff;
+                box-shadow: 0 10px 18px rgba(37, 99, 235, 0.18);
+            }
+            .cbt-native-sample-panel[hidden] {
+                display: none !important;
+            }
+            .cbt-native-sample-panel h3 {
+                margin: 0 0 8px;
+            }
+            .cbt-native-implementation-panel[hidden] {
+                display: none !important;
+            }
+            .cbt-native-implementation-panel p {
+                margin: 0 0 10px;
+                color: #5b6574;
+                line-height: 1.6;
             }
             .cbt-setup-security-log-watch-region,
             .cbt-setup-security-log-table-region {
@@ -1025,6 +1354,14 @@
                 .cbt-setup-card {
                     padding: 20px;
                 }
+                .cbt-native-spec-grid,
+                .cbt-native-tool-grid,
+                .cbt-native-auth-grid,
+                .cbt-native-field-grid,
+                .cbt-native-threshold-grid,
+                .cbt-native-catalog-meta-grid {
+                    grid-template-columns: 1fr;
+                }
                 .cbt-setup-security-log-card {
                     padding: 20px;
                     margin-top: 2px;
@@ -1041,13 +1378,24 @@
             <div class="cbt-setup-shell">
                 <section class="cbt-setup-hero">
                     <div class="cbt-setup-hero-copy">
-                        <h1>CBT Setup</h1>
-                        <p>Kelola branding sekolah untuk frontend CBT dan dokumen terkait, lalu siapkan ruang security terpisah agar pengembangan pengamanan ujian berikutnya lebih rapi.</p>
-                        <div class="cbt-setup-tabs" role="tablist" aria-label="Bagian setup CBT">
-                            <button type="button" class="cbt-setup-tab is-active" id="cbt-setup-tab-branding" data-setup-tab-button="branding" role="tab" aria-selected="true" aria-controls="cbt-setup-panel-branding">Branding</button>
-                            <button type="button" class="cbt-setup-tab" id="cbt-setup-tab-security" data-setup-tab-button="security" role="tab" aria-selected="false" aria-controls="cbt-setup-panel-security">Security</button>
-                            <button type="button" class="cbt-setup-tab" id="cbt-setup-tab-security-log" data-setup-tab-button="security-log" role="tab" aria-selected="false" aria-controls="cbt-setup-panel-security-log">Security Log</button>
-                        </div>
+                        <h1><?php echo esc_html($is_security_view ? 'CBT Security' : 'CBT Branding'); ?></h1>
+                        <p>
+                            <?php
+                            echo esc_html(
+                                $is_security_view
+                                    ? 'Kelola kontrol keamanan ujian dan pantau histori security log dalam satu area observability yang terpisah dari branding.'
+                                    : 'Kelola branding sekolah untuk frontend CBT dan dokumen terkait. Area security kini dipisahkan ke menu CBT Security agar pengelolaan lebih rapi.'
+                            );
+                            ?>
+                        </p>
+                        <?php if ($is_security_view): ?>
+                            <div class="cbt-setup-tabs" role="tablist" aria-label="Bagian security CBT">
+                                <button type="button" class="cbt-setup-tab is-active" id="cbt-setup-tab-security" data-setup-tab-button="security" role="tab" aria-selected="true" aria-controls="cbt-setup-panel-security">Security</button>
+                                <button type="button" class="cbt-setup-tab" id="cbt-setup-tab-security-log" data-setup-tab-button="security-log" role="tab" aria-selected="false" aria-controls="cbt-setup-panel-security-log">Security Log</button>
+                                <button type="button" class="cbt-setup-tab" id="cbt-setup-tab-native" data-setup-tab-button="native" role="tab" aria-selected="false" aria-controls="cbt-setup-panel-native">Native Notif</button>
+                                <button type="button" class="cbt-setup-tab" id="cbt-setup-tab-catalog" data-setup-tab-button="catalog" role="tab" aria-selected="false" aria-controls="cbt-setup-panel-catalog">Catalog</button>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </section>
 
@@ -1059,7 +1407,8 @@
                 <?php endif; ?>
 
                 <div class="cbt-setup-panels">
-                    <div class="cbt-setup-panel is-active" id="cbt-setup-panel-branding" data-setup-panel="branding" role="tabpanel" aria-labelledby="cbt-setup-tab-branding">
+                    <?php if ($is_branding_view): ?>
+                    <div class="cbt-setup-panel is-active" id="cbt-setup-panel-branding" data-setup-panel="branding" role="region" aria-label="Branding">
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-form">
                             <?php wp_nonce_field('cbt_save_setup_branding'); ?>
                             <input type="hidden" name="action" value="cbt_save_setup_branding" />
@@ -1252,8 +1601,10 @@
                             </div>
                         </form>
                     </div>
+                    <?php endif; ?>
 
-                    <div class="cbt-setup-panel" id="cbt-setup-panel-security" data-setup-panel="security" role="tabpanel" aria-labelledby="cbt-setup-tab-security" hidden>
+                    <?php if ($is_security_view): ?>
+                    <div class="cbt-setup-panel is-active" id="cbt-setup-panel-security" data-setup-panel="security" role="tabpanel" aria-labelledby="cbt-setup-tab-security">
                         <div class="cbt-setup-security-grid">
                             <section class="cbt-setup-card cbt-setup-security-card">
                                 <div class="cbt-setup-card-header">
@@ -1264,8 +1615,8 @@
                                     <span class="cbt-setup-card-chip">Control</span>
                                 </div>
                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-security-form">
-                                    <?php wp_nonce_field('cbt_save_setup_security'); ?>
-                                    <input type="hidden" name="action" value="cbt_save_setup_security" />
+                                    <?php wp_nonce_field('cbt_save_security_settings'); ?>
+                                    <input type="hidden" name="action" value="cbt_save_security_settings" />
                                     <div class="cbt-setup-security-option">
                                         <label class="cbt-setup-security-checkbox" for="cbt-setup-security-force-fullscreen">
                                             <input
@@ -1359,7 +1710,7 @@
                                 </div>
                                 <div class="cbt-setup-security-log-body">
                                     <div class="cbt-setup-security-log-watch-region" data-security-log-watch-region>
-                                        <?php CBT_Admin_Setup_Page::render_security_log_must_watch_panel($security_log_must_watch_attempts); ?>
+                                        <?php CBT_Admin_Security_Page::render_security_log_must_watch_panel($security_log_must_watch_attempts); ?>
                                     </div>
                                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-security-log-manage-form" id="cbt-setup-security-log-manage-form">
                                         <?php wp_nonce_field('cbt_manage_security_logs'); ?>
@@ -1525,28 +1876,657 @@
                             </section>
                         </div>
                     </div>
+
+                    <div class="cbt-setup-panel" id="cbt-setup-panel-native" data-setup-panel="native" role="tabpanel" aria-labelledby="cbt-setup-tab-native" hidden>
+                        <div class="cbt-native-grid">
+                            <section class="cbt-setup-card cbt-setup-security-card">
+                                <div class="cbt-setup-card-header">
+                                    <div>
+                                        <h2>Alur Native ke Backend</h2>
+                                        <p>Ikuti alur ini saat shell Android WebView atau Windows CEFSharp perlu mengambil sesi ujian aktif, membaca bearer token, lalu mengirim warning ke backend security log CBT.</p>
+                                    </div>
+                                    <span class="cbt-setup-card-chip">Flow</span>
+                                </div>
+                                <div class="cbt-native-spec-grid">
+                                    <article class="cbt-native-spec-card">
+                                        <h3>1. Ambil Snapshot dari Frontend</h3>
+                                        <p>Native memulai dari helper resmi ini untuk membaca status ujian aktif. Saat <code>stage</code> sudah <code>exam</code>, snapshot akan berisi token, attempt aktif, dan endpoint native security event.</p>
+                                        <pre class="cbt-native-code">window.CBTNativeBridge.getSecuritySnapshot()</pre>
+                                        <p class="cbt-native-helper-note">Panggil saat boot, resume, atau tepat sebelum native mengirim warning ke backend.</p>
+                                    </article>
+                                    <article class="cbt-native-spec-card">
+                                        <h3>2. Shape Return yang Dibaca Native</h3>
+                                        <pre class="cbt-native-code">{
+  "ok": 1,
+  "token": "jwt...",
+  "attemptId": 114,
+  "stage": "exam",
+  "studentId": 7662,
+  "selectedExamId": 16,
+  "securityLoggingEnabled": true,
+  "endpoints": {
+    "nativeSecurityEvent": "<?php echo esc_html((string) $native_security_endpoint_url); ?>"
+  }
+}</pre>
+                                    </article>
+                                    <article class="cbt-native-spec-card">
+                                        <h3>3. Kirim Request ke Endpoint Native</h3>
+                                        <p>Native wajib memakai bearer token siswa aktif dan attempt yang memang dimiliki user tersebut. Identitas user tidak perlu dikirim dari native.</p>
+                                        <span class="cbt-native-endpoint"><?php echo esc_html((string) $native_security_endpoint_url); ?></span>
+                                        <ul class="cbt-native-list">
+                                            <li><code>Authorization: Bearer &lt;token&gt;</code></li>
+                                            <li><code>Content-Type: application/json</code></li>
+                                            <li><code>Accept: application/json</code></li>
+                                            <li>Bearer token diambil dari <code>window.CBTNativeBridge.getSecuritySnapshot()</code> saat <code>stage</code> sudah <code>exam</code></li>
+                                            <li>Gunakan <code>snapshot.token</code> untuk header dan <code>snapshot.attemptId</code> untuk body request</li>
+                                        </ul>
+                                    </article>
+                                    <article class="cbt-native-spec-card">
+                                        <h3>4. Format JSON yang Dikirim Native</h3>
+                                        <pre class="cbt-native-code">{
+  "attempt_id": 131,
+  "event_type": "tab_hidden",
+  "native_app": "android_webview",
+  "native_version": "1.0.0",
+  "warning_code": "task_switch",
+  "warning_message": "Window ujian kehilangan fokus karena task switch",
+  "occurred_at_client": "2026-03-26T16:33:58.569Z",
+  "context": {
+    "has_focus": 1,
+    "device_platform": "android",
+    "device_type": "mobile",
+    "native_event_name": "tab hidden"
+  }
+}</pre>
+                                        <p class="cbt-native-helper-note"><code>Authorization: Bearer &lt;token&gt;</code> tidak masuk ke JSON body ini. Header tersebut dikirim terpisah pada request HTTP.</p>
+                                    </article>
+                                    <article class="cbt-native-spec-card">
+                                        <h3>5. Penjelasan Tiap Bagian</h3>
+                                        <ul class="cbt-native-list">
+                                            <li><code>attempt_id</code>: ID attempt aktif dari <code>snapshot.attemptId</code>.</li>
+                                            <li><code>event_type</code>: event CBT yang ingin dicatat, misalnya <code>tab_hidden</code> atau <code>fullscreen_exit</code>.</li>
+                                            <li><code>native_app</code>: kanal pengirim native, v1 hanya <code>android_webview</code> atau <code>windows_cefsharp</code>.</li>
+                                            <li><code>native_version</code>: versi aplikasi native untuk kebutuhan audit/debug.</li>
+                                            <li><code>warning_code</code>: kode singkat internal dari native, misalnya <code>task_switch</code>.</li>
+                                            <li><code>warning_message</code>: pesan manusiawi dari warning yang terdeteksi di sisi native.</li>
+                                            <li><code>occurred_at_client</code>: timestamp saat warning terjadi di device native.</li>
+                                            <li><code>context</code>: detail tambahan yang boleh dikirim native seperti fokus, platform device, tipe device, dan nama event native.</li>
+                                        </ul>
+                                    </article>
+                                    <article class="cbt-native-spec-card">
+                                        <h3>6. Validasi yang Dikerjakan Backend</h3>
+                                        <p>Payload akan ditolak bila token tidak valid, role bukan siswa, attempt bukan milik user, event type tidak ada di whitelist native, atau native app tidak dikenali.</p>
+                                        <ul class="cbt-native-list">
+                                            <li>Backend mengecek <code>Authorization: Bearer &lt;token&gt;</code> dari header HTTP, bukan dari JSON body.</li>
+                                            <li>Native app v1: <strong>Android WebView</strong> dan <strong>Windows CEFSharp</strong></li>
+                                            <li>Source canonical diisi backend dari native app, bukan dipercaya dari payload</li>
+                                            <li>Field root seperti <code>native_version</code>, <code>warning_code</code>, <code>warning_message</code>, dan <code>occurred_at_client</code> akan ikut disimpan ke context log saat dicatat.</li>
+                                            <li>Isi dari <code>context</code> digabung ke log final dan disimpan pada <code>context_json</code>.</li>
+                                        </ul>
+                                    </article>
+                                </div>
+                                <div class="cbt-native-grid">
+                                    <article class="cbt-native-output-card">
+                                        <h3>7. Push Update Opsional</h3>
+                                        <p>Ini adalah lanjutan dari flow 1-6. Mulai dari helper resmi ini untuk menentukan apakah native masih berada di mode ujian aktif. Push update dipakai agar native langsung tahu saat snapshot berubah, tetapi operasi penting tetap membaca ulang snapshot sekali lagi.</p>
+                                        <pre class="cbt-native-code">function applyExamMode(snapshot) {
+  const isExamActive = Number(snapshot && snapshot.ok) === 1
+    && String(snapshot && snapshot.stage ? snapshot.stage : '') === 'exam'
+    && Number(snapshot && snapshot.attemptId ? snapshot.attemptId : 0) &gt; 0
+    && String(snapshot && snapshot.token ? snapshot.token : '') !== '';
+
+  if (isExamActive) {
+    // Aktifkan proteksi native.
+    // Simpan snapshot.token dan snapshot.attemptId untuk request berikutnya.
+    return;
+  }
+
+  // Keluar dari mode ujian.
+  // Hentikan warning native dan buang token/attempt cache lama.
+}
+
+applyExamMode(window.CBTNativeBridge.getSecuritySnapshot());
+
+window.addEventListener(
+  window.CBTNativeBridge.getSecuritySnapshotChangedEventName(),
+  function (event) {
+    applyExamMode(event.detail.snapshot);
+  }
+);
+
+window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
+  applyExamMode(snapshot);
+  console.log('snapshot changed:', reason, snapshot);
+};</pre>
+                                        <ul class="cbt-native-list">
+                                            <li><strong>Tujuan:</strong> native diberi tahu saat snapshot resmi CBT berubah, jadi tidak perlu polling ketat terus-menerus.</li>
+                                            <li><strong>Kapan biasanya terpanggil:</strong> saat frontend mount, login/logout, attempt mulai, stage masuk/keluar <code>exam</code>, atau token dan attempt aktif berubah.</li>
+                                            <li><strong>Apa arti <code>reason</code>:</strong> hanya penanda asal perubahan dari runtime frontend untuk log/debug. Keputusan keamanan native tetap harus melihat isi <code>snapshot</code>.</li>
+                                            <li><strong>Rule aman di native:</strong> anggap ujian aktif hanya jika <code>snapshot.ok === 1</code>, <code>snapshot.stage === "exam"</code>, <code>snapshot.attemptId &gt; 0</code>, dan <code>snapshot.token</code> tidak kosong.</li>
+                                            <li><strong>Fallback manual tetap wajib:</strong> panggil <code>getSecuritySnapshot()</code> saat boot, saat app resume, dan tepat sebelum native mengirim warning penting ke backend.</li>
+                                            <li><strong>Saat keluar dari mode exam:</strong> matikan proteksi native, stop kirim warning ujian, dan buang cache token/attempt lama agar tidak salah kirim ke backend.</li>
+                                        </ul>
+                                        <p class="cbt-native-helper-note">Contoh Android dan WPF di bawah sama-sama mengikuti pola ini; yang berbeda hanya mekanisme bridge JS, object host, dan method evaluasi script di tiap platform.</p>
+                                        <div class="cbt-native-sample-shell">
+                                            <div class="cbt-native-sample-tabs" role="tablist" aria-label="Native implementation examples">
+                                                <button type="button" class="cbt-native-sample-tab is-active" data-native-implementation-tab-button="android" role="tab" aria-selected="true" aria-controls="cbt-native-implementation-panel-android">Android WebView (Kotlin)</button>
+                                                <button type="button" class="cbt-native-sample-tab" data-native-implementation-tab-button="wpf" role="tab" aria-selected="false" aria-controls="cbt-native-implementation-panel-wpf">WPF C#</button>
+                                            </div>
+
+                                            <section class="cbt-native-implementation-panel" id="cbt-native-implementation-panel-android" data-native-implementation-panel="android" role="tabpanel">
+                                                <p>Implementasi Android ini menerapkan pola di atas memakai <code>addJavascriptInterface</code>, hook event snapshot, dan cache ringan di memory native.</p>
+                                                <ul class="cbt-native-list">
+                                                    <li><strong>Bridge JS:</strong> object <code>AndroidCbtBridge</code> menerima snapshot JSON dari frontend setiap kali event berubah.</li>
+                                                    <li><strong>Resume safety:</strong> <code>refreshSnapshot()</code> dipanggil saat attach dan resume supaya token, attempt, dan endpoint tidak stale.</li>
+                                                    <li><strong>Runtime cache:</strong> <code>latestToken</code>, <code>latestAttemptId</code>, dan <code>latestEndpoint</code> disimpan sebagai state terbaru di service.</li>
+                                                    <li><strong>HTTP client:</strong> warning dikirim via <code>OkHttp</code> hanya saat snapshot terakhir masih valid untuk stage <code>exam</code>.</li>
+                                                </ul>
+                                                <pre class="cbt-native-code">class CbtSecurityBridge(
+    private val webView: WebView,
+    private val httpClient: OkHttpClient = OkHttpClient()
+) {
+    @Volatile private var latestToken: String = ""
+    @Volatile private var latestAttemptId: Int = 0
+    @Volatile private var latestEndpoint: String = ""
+
+    fun attach() {
+        webView.addJavascriptInterface(AndroidCbtBridge(), "AndroidCbtBridge")
+        refreshSnapshot()
+        installSnapshotListener()
+    }
+
+    fun onResume() {
+        refreshSnapshot()
+    }
+
+    private fun refreshSnapshot() {
+        webView.evaluateJavascript(
+            "(function(){return JSON.stringify(window.CBTNativeBridge.getSecuritySnapshot());})();"
+        ) { raw ->
+            val json = decodeJsResult(raw)
+            applySnapshot(JSONObject(json))
+        }
+    }
+
+    private fun installSnapshotListener() {
+        val script = """
+            (function () {
+              if (window.__cbtAndroidSnapshotHookInstalled) { return 'installed'; }
+              window.__cbtAndroidSnapshotHookInstalled = true;
+
+              function emit(snapshot, reason) {
+                if (window.AndroidCbtBridge) {
+                  window.AndroidCbtBridge.onSecuritySnapshotChanged(
+                    JSON.stringify(snapshot),
+                    String(reason || 'sync')
+                  );
+                }
+              }
+
+              window.addEventListener(
+                window.CBTNativeBridge.getSecuritySnapshotChangedEventName(),
+                function (event) {
+                  emit(event.detail.snapshot, event.detail.reason);
+                }
+              );
+
+              window.CBTNativeBridge.onSecuritySnapshotChanged = emit;
+              emit(window.CBTNativeBridge.getSecuritySnapshot(), 'bootstrap');
+              return 'installed';
+            })();
+        """.trimIndent()
+
+        webView.evaluateJavascript(script, null)
+    }
+
+    fun sendNativeWarning(eventType: String, warningCode: String, warningMessage: String) {
+        if (latestToken.isBlank() || latestAttemptId <= 0 || latestEndpoint.isBlank()) {
+            return
+        }
+
+        val payload = JSONObject().apply {
+            put("attempt_id", latestAttemptId)
+            put("event_type", eventType)
+            put("native_app", "android_webview")
+            put("native_version", BuildConfig.VERSION_NAME)
+            put("warning_code", warningCode)
+            put("warning_message", warningMessage)
+            put("occurred_at_client", Instant.now().toString())
+            put("context", JSONObject().apply {
+                put("has_focus", 0)
+                put("device_platform", "android")
+                put("device_type", "mobile")
+            })
+        }
+
+        val request = Request.Builder()
+            .url(latestEndpoint)
+            .addHeader("Authorization", "Bearer " + latestToken)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Accept", "application/json")
+            .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {}
+            override fun onResponse(call: Call, response: Response) {
+                response.close()
+            }
+        })
+    }
+
+    private fun applySnapshot(snapshot: JSONObject) {
+        val ok = snapshot.optInt("ok") == 1
+        val stage = snapshot.optString("stage")
+        val attemptId = snapshot.optInt("attemptId")
+        val token = snapshot.optString("token")
+        val endpoint = snapshot.optJSONObject("endpoints")
+            ?.optString("nativeSecurityEvent")
+            .orEmpty()
+
+        if (ok && stage == "exam" && attemptId > 0 && token.isNotBlank()) {
+            latestToken = token
+            latestAttemptId = attemptId
+            latestEndpoint = endpoint
+            return
+        }
+
+        latestToken = ""
+        latestAttemptId = 0
+        latestEndpoint = ""
+    }
+
+    private fun decodeJsResult(raw: String?): String {
+        if (raw == null || raw == "null") {
+            return "{}"
+        }
+
+        return JSONArray("[$raw]").getString(0)
+    }
+
+    inner class AndroidCbtBridge {
+        @JavascriptInterface
+        fun onSecuritySnapshotChanged(snapshotJson: String, reason: String) {
+            applySnapshot(JSONObject(snapshotJson))
+        }
+    }
+}</pre>
+                                            </section>
+
+                                            <section class="cbt-native-implementation-panel" id="cbt-native-implementation-panel-wpf" data-native-implementation-panel="wpf" role="tabpanel" hidden>
+                                                <p>Implementasi WPF ini memakai CEFSharp untuk menjalankan pola yang sama, dengan bridge host object di C# dan request warning lewat <code>HttpClient</code>. Jika Anda memakai WebView2, logikanya tetap sama.</p>
+                                                <ul class="cbt-native-list">
+                                                    <li><strong>Host bridge:</strong> listener JS meneruskan snapshot ke object <code>cbtHost</code> yang diregister di <code>JavascriptObjectRepository</code>.</li>
+                                                    <li><strong>Resume safety:</strong> <code>RefreshSnapshotAsync()</code> dipanggil saat attach dan resume untuk meminimalkan state stale.</li>
+                                                    <li><strong>Runtime cache:</strong> <code>_latestToken</code>, <code>_latestAttemptId</code>, dan <code>_latestEndpoint</code> disimpan di service C#.</li>
+                                                    <li><strong>HTTP client:</strong> warning dipost ke endpoint native security event dengan header <code>Authorization: Bearer ...</code>.</li>
+                                                </ul>
+                                                <pre class="cbt-native-code">public sealed class CbtSecurityBridge
+{
+    private readonly ChromiumWebBrowser _browser;
+    private string _latestToken = string.Empty;
+    private int _latestAttemptId = 0;
+    private string _latestEndpoint = string.Empty;
+
+    public CbtSecurityBridge(ChromiumWebBrowser browser)
+    {
+        _browser = browser;
+    }
+
+    public async Task AttachAsync()
+    {
+        _browser.JavascriptObjectRepository.Register(
+            "cbtHost",
+            new SnapshotHost(this),
+            isAsync: false
+        );
+
+        await RefreshSnapshotAsync();
+        await InstallSnapshotListenerAsync();
+    }
+
+    public async Task OnResumeAsync()
+    {
+        await RefreshSnapshotAsync();
+    }
+
+    public async Task RefreshSnapshotAsync()
+    {
+        var response = await _browser.EvaluateScriptAsync(
+            "JSON.stringify(window.CBTNativeBridge.getSecuritySnapshot())"
+        );
+
+        if (!response.Success || response.Result == null)
+        {
+            return;
+        }
+
+        ApplySnapshot(response.Result.ToString() ?? "{}");
+    }
+
+    public async Task InstallSnapshotListenerAsync()
+    {
+        var script = @"
+(function () {
+  if (window.__cbtWindowsSnapshotHookInstalled) { return 'installed'; }
+  window.__cbtWindowsSnapshotHookInstalled = true;
+
+  function emit(snapshot, reason) {
+    if (window.cbtHost && typeof window.cbtHost.onSecuritySnapshotChanged === 'function') {
+      window.cbtHost.onSecuritySnapshotChanged(
+        JSON.stringify(snapshot),
+        String(reason || 'sync')
+      );
+    }
+  }
+
+  window.addEventListener(
+    window.CBTNativeBridge.getSecuritySnapshotChangedEventName(),
+    function (event) {
+      emit(event.detail.snapshot, event.detail.reason);
+    }
+  );
+
+  window.CBTNativeBridge.onSecuritySnapshotChanged = emit;
+  emit(window.CBTNativeBridge.getSecuritySnapshot(), 'bootstrap');
+  return 'installed';
+})();";
+
+        await _browser.EvaluateScriptAsync(script);
+    }
+
+    public async Task SendNativeWarningAsync(string eventType, string warningCode, string warningMessage)
+    {
+        if (string.IsNullOrWhiteSpace(_latestToken) || _latestAttemptId <= 0 || string.IsNullOrWhiteSpace(_latestEndpoint))
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            attempt_id = _latestAttemptId,
+            event_type = eventType,
+            native_app = "windows_cefsharp",
+            native_version = "1.0.0",
+            warning_code = warningCode,
+            warning_message = warningMessage,
+            occurred_at_client = DateTimeOffset.UtcNow.ToString("O"),
+            context = new
+            {
+                has_focus = 0,
+                device_platform = "windows",
+                device_type = "desktop"
+            }
+        };
+
+        using var client = new HttpClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", _latestToken);
+        client.DefaultRequestHeaders.Accept.Add(
+            new MediaTypeWithQualityHeaderValue("application/json")
+        );
+
+        var json = JsonSerializer.Serialize(payload);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(_latestEndpoint, content);
+        response.EnsureSuccessStatusCode();
+    }
+
+    internal void ApplySnapshot(string snapshotJson)
+    {
+        var snapshot = JsonSerializer.Deserialize&lt;SecuritySnapshot&gt;(snapshotJson);
+
+        if (snapshot != null
+            && snapshot.Ok == 1
+            && string.Equals(snapshot.Stage, "exam", StringComparison.OrdinalIgnoreCase)
+            && snapshot.AttemptId &gt; 0
+            && !string.IsNullOrWhiteSpace(snapshot.Token))
+        {
+            _latestToken = snapshot.Token;
+            _latestAttemptId = snapshot.AttemptId;
+            _latestEndpoint = snapshot.Endpoints?.NativeSecurityEvent ?? string.Empty;
+            return;
+        }
+
+        _latestToken = string.Empty;
+        _latestAttemptId = 0;
+        _latestEndpoint = string.Empty;
+    }
+
+    public sealed class SnapshotHost
+    {
+        private readonly CbtSecurityBridge _owner;
+
+        public SnapshotHost(CbtSecurityBridge owner)
+        {
+            _owner = owner;
+        }
+
+        public void onSecuritySnapshotChanged(string snapshotJson, string reason)
+        {
+            _owner.ApplySnapshot(snapshotJson);
+        }
+    }
+}</pre>
+                                                <p class="cbt-native-helper-note">Jika Anda memakai WebView2, ganti <code>EvaluateScriptAsync</code> dengan <code>ExecuteScriptAsync</code>. Struktur snapshot, event listener, dan request HTTP yang dipakai tetap sama.</p>
+                                            </section>
+                                        </div>
+                                    </article>
+                                </div>
+                            </section>
+
+                            <section class="cbt-setup-card cbt-setup-security-card">
+                                <div class="cbt-setup-card-header">
+                                    <div>
+                                        <h2>Test Tool Native</h2>
+                                        <p>Gunakan panel ini untuk membuat contoh payload dan mensimulasikan native event ke security log. Simulasi hanya untuk verifikasi UI observability dan tidak menggantikan auth test native yang sesungguhnya.</p>
+                                    </div>
+                                    <span class="cbt-setup-card-chip">Spec + Tool</span>
+                                </div>
+                                <div class="cbt-native-tool-grid">
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="cbt-native-simulate-form" class="cbt-native-tool-form">
+                                        <?php wp_nonce_field('cbt_simulate_native_security_event'); ?>
+                                        <input type="hidden" name="action" value="cbt_simulate_native_security_event" />
+                                        <div class="cbt-native-field-grid">
+                                            <div class="cbt-native-field">
+                                                <label for="cbt-native-simulate-attempt-id">Attempt ID</label>
+                                                <input type="number" id="cbt-native-simulate-attempt-id" name="attempt_id" min="1" step="1" value="<?php echo esc_attr((string) $native_security_sample_attempt_id); ?>" />
+                                            </div>
+                                            <div class="cbt-native-field">
+                                                <label for="cbt-native-simulate-app">Native App</label>
+                                                <select id="cbt-native-simulate-app" name="native_app">
+                                                    <?php foreach ($native_supported_apps as $native_app_key => $native_app_label): ?>
+                                                        <option value="<?php echo esc_attr((string) $native_app_key); ?>"><?php echo esc_html((string) $native_app_label); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                            <div class="cbt-native-field">
+                                                <label for="cbt-native-simulate-event-type">Event Type</label>
+                                                <select id="cbt-native-simulate-event-type" name="event_type">
+                                                    <?php foreach ($native_event_catalog as $native_event): ?>
+                                                        <option value="<?php echo esc_attr((string) ($native_event['event_type'] ?? '')); ?>"><?php echo esc_html((string) ($native_event['label'] ?? '')); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                            <div class="cbt-native-field">
+                                                <label for="cbt-native-simulate-native-version">Native Version</label>
+                                                <input type="text" id="cbt-native-simulate-native-version" name="native_version" value="1.0.0" />
+                                            </div>
+                                            <div class="cbt-native-field">
+                                                <label for="cbt-native-simulate-warning-code">Warning Code</label>
+                                                <input type="text" id="cbt-native-simulate-warning-code" name="warning_code" value="task_switch" />
+                                            </div>
+                                            <div class="cbt-native-field cbt-native-field--full">
+                                                <label for="cbt-native-simulate-warning-message">Warning Message</label>
+                                                <textarea id="cbt-native-simulate-warning-message" name="warning_message">Window ujian kehilangan fokus karena task switch</textarea>
+                                            </div>
+                                        </div>
+                                        <div class="cbt-native-actions">
+                                            <button type="button" class="button button-secondary" id="cbt-native-generate-sample-request">Generate Sample Request</button>
+                                            <button type="submit" class="button button-primary">Simulate Native Event</button>
+                                        </div>
+                                        <p class="cbt-native-helper-note">Tip: gunakan attempt aktif milik siswa yang sedang diuji agar row sample langsung bisa Anda lihat di tab Security Log.</p>
+                                    </form>
+
+                                    <article class="cbt-native-output-card cbt-native-sample-shell">
+                                        <div class="cbt-native-sample-tabs" role="tablist" aria-label="Generated native samples">
+                                            <button type="button" class="cbt-native-sample-tab is-active" data-native-sample-tab-button="json" role="tab" aria-selected="true" aria-controls="cbt-native-sample-panel-json">JSON Payload</button>
+                                            <button type="button" class="cbt-native-sample-tab" data-native-sample-tab-button="curl" role="tab" aria-selected="false" aria-controls="cbt-native-sample-panel-curl">cURL</button>
+                                            <button type="button" class="cbt-native-sample-tab" data-native-sample-tab-button="android" role="tab" aria-selected="false" aria-controls="cbt-native-sample-panel-android">Android</button>
+                                            <button type="button" class="cbt-native-sample-tab" data-native-sample-tab-button="windows" role="tab" aria-selected="false" aria-controls="cbt-native-sample-panel-windows">Windows</button>
+                                        </div>
+                                        <section class="cbt-native-sample-panel" id="cbt-native-sample-panel-json" data-native-sample-panel="json" role="tabpanel">
+                                            <h3>Sample JSON Payload</h3>
+                                            <pre class="cbt-native-code" id="cbt-native-sample-request-json"></pre>
+                                        </section>
+                                        <section class="cbt-native-sample-panel" id="cbt-native-sample-panel-curl" data-native-sample-panel="curl" role="tabpanel" hidden>
+                                            <h3>Sample cURL</h3>
+                                            <pre class="cbt-native-code" id="cbt-native-sample-curl"></pre>
+                                        </section>
+                                        <section class="cbt-native-sample-panel" id="cbt-native-sample-panel-android" data-native-sample-panel="android" role="tabpanel" hidden>
+                                            <h3>Android WebView Snippet</h3>
+                                            <pre class="cbt-native-code" id="cbt-native-sample-android"></pre>
+                                        </section>
+                                        <section class="cbt-native-sample-panel" id="cbt-native-sample-panel-windows" data-native-sample-panel="windows" role="tabpanel" hidden>
+                                            <h3>Windows CEFSharp Snippet</h3>
+                                            <pre class="cbt-native-code" id="cbt-native-sample-cefsharp"></pre>
+                                        </section>
+                                    </article>
+                                </div>
+                            </section>
+
+                        </div>
+                    </div>
+
+                    <div class="cbt-setup-panel" id="cbt-setup-panel-catalog" data-setup-panel="catalog" role="tabpanel" aria-labelledby="cbt-setup-tab-catalog" hidden>
+                        <div class="cbt-native-grid">
+                            <section class="cbt-setup-card cbt-setup-security-card">
+                                <div class="cbt-setup-card-header">
+                                    <div>
+                                        <h2>Event Catalog Native</h2>
+                                        <p>Katalog ini dipisah per kanal supaya implementasi Android Native dan Windows Native nanti punya tempat sendiri. Untuk saat ini, event yang benar-benar dipakai masih mengikuti event CBT yang sudah ada.</p>
+                                    </div>
+                                    <span class="cbt-setup-card-chip">Catalog</span>
+                                </div>
+                                <div class="cbt-native-catalog-shell">
+                                    <div class="cbt-native-threshold-grid">
+                                        <div class="cbt-native-threshold-card">
+                                            <strong>Must Watch</strong>
+                                            <span>Mulai <?php echo esc_html((string) ((int) $security_must_watch_score_threshold)); ?> poin</span>
+                                            <p>Attempt akan mulai masuk radar observability saat skor akumulatif mencapai ambang ini.</p>
+                                        </div>
+                                        <div class="cbt-native-threshold-card is-high-risk">
+                                            <strong>High Risk</strong>
+                                            <span>Mulai <?php echo esc_html((string) ((int) $security_must_watch_high_risk_threshold)); ?> poin</span>
+                                            <p>Status badge berubah menjadi High Risk saat total skor attempt mencapai ambang ini.</p>
+                                        </div>
+                                    </div>
+                                    <div class="cbt-native-catalog-tabs" role="tablist" aria-label="Native event catalog channels">
+                                        <button type="button" class="cbt-native-catalog-tab is-active" data-native-catalog-tab-button="browser" role="tab" aria-selected="true" aria-controls="cbt-native-catalog-panel-browser">Browser / CBT Saat Ini</button>
+                                        <button type="button" class="cbt-native-catalog-tab" data-native-catalog-tab-button="android" role="tab" aria-selected="false" aria-controls="cbt-native-catalog-panel-android">Android Native</button>
+                                        <button type="button" class="cbt-native-catalog-tab" data-native-catalog-tab-button="windows" role="tab" aria-selected="false" aria-controls="cbt-native-catalog-panel-windows">Windows Native</button>
+                                    </div>
+
+                                    <section class="cbt-native-catalog-panel" id="cbt-native-catalog-panel-browser" data-native-catalog-panel="browser" role="tabpanel">
+                                        <div class="cbt-native-catalog-table-shell">
+                                            <table class="widefat striped cbt-native-catalog-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Event Type</th>
+                                                        <th>Label</th>
+                                                        <th>Severity</th>
+                                                        <th>Skor</th>
+                                                        <th>Deskripsi</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php foreach ($native_event_catalog as $native_event): ?>
+                                                        <tr>
+                                                            <td><code><?php echo esc_html((string) ($native_event['event_type'] ?? '')); ?></code></td>
+                                                            <td><?php echo esc_html((string) ($native_event['label'] ?? '')); ?></td>
+                                                            <td><?php echo esc_html((string) ($native_event['severity'] ?? 'info')); ?></td>
+                                                            <td><?php echo esc_html((string) ((int) ($native_event['risk_weight'] ?? 0))); ?></td>
+                                                            <td><?php echo esc_html((string) ($native_event['message'] ?? '')); ?></td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </section>
+
+                                    <section class="cbt-native-catalog-panel" id="cbt-native-catalog-panel-android" data-native-catalog-panel="android" role="tabpanel" hidden>
+                                        <div class="cbt-native-catalog-empty">
+                                            <h3>Android Native sedang disiapkan</h3>
+                                            <p>Tab ini disediakan untuk katalog warning Android WebView/native ke depan. Sampai saat ini, Android Native masih memakai event CBT yang sudah ada pada tab Browser / CBT Saat Ini.</p>
+                                            <div class="cbt-native-catalog-meta-grid">
+                                                <div class="cbt-native-catalog-meta-card">
+                                                    <strong>native_app</strong>
+                                                    <code>android_webview</code>
+                                                </div>
+                                                <div class="cbt-native-catalog-meta-card">
+                                                    <strong>source</strong>
+                                                    <code>android_webview_shell</code>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <section class="cbt-native-catalog-panel" id="cbt-native-catalog-panel-windows" data-native-catalog-panel="windows" role="tabpanel" hidden>
+                                        <div class="cbt-native-catalog-empty">
+                                            <h3>Windows Native sedang disiapkan</h3>
+                                            <p>Tab ini disediakan untuk katalog warning Windows CEFSharp/native ke depan. Sampai saat ini, Windows Native masih memakai event CBT yang sudah ada pada tab Browser / CBT Saat Ini.</p>
+                                            <div class="cbt-native-catalog-meta-grid">
+                                                <div class="cbt-native-catalog-meta-card">
+                                                    <strong>native_app</strong>
+                                                    <code>windows_cefsharp</code>
+                                                </div>
+                                                <div class="cbt-native-catalog-meta-card">
+                                                    <strong>source</strong>
+                                                    <code>windows_cefsharp_shell</code>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
         <script>
             (function () {
+                var cbtAdminViewMode = <?php echo wp_json_encode($cbt_admin_view_mode); ?>;
+
                 function bindSetupTabs() {
                     var tabButtons = document.querySelectorAll('[data-setup-tab-button]');
                     var panels = document.querySelectorAll('[data-setup-panel]');
+                    var hasBrandingTab = !!document.querySelector('[data-setup-tab-button="branding"]');
+                    var hasSecurityTab = !!document.querySelector('[data-setup-tab-button="security"]');
+                    var hasSecurityLogTab = !!document.querySelector('[data-setup-tab-button="security-log"]');
+                    var hasNativeTab = !!document.querySelector('[data-setup-tab-button="native"]');
+                    var hasCatalogTab = !!document.querySelector('[data-setup-tab-button="catalog"]');
 
                     if (!tabButtons.length || !panels.length) {
                         return;
                     }
 
                     function setActiveTab(tabName, updateUrl) {
-                        var normalized = 'branding';
+                        var normalized = hasBrandingTab ? 'branding' : 'security';
                         var index = 0;
                         var nextUrl = '';
 
-                        if (tabName === 'security') {
-                            normalized = 'security';
-                        } else if (tabName === 'security-log') {
+                        if (tabName === 'security-log' && hasSecurityLogTab) {
                             normalized = 'security-log';
+                        } else if (tabName === 'catalog' && hasCatalogTab) {
+                            normalized = 'catalog';
+                        } else if (tabName === 'native' && hasNativeTab) {
+                            normalized = 'native';
+                        } else if (tabName === 'security' && hasSecurityTab) {
+                            normalized = 'security';
+                        } else if (tabName === 'branding' && hasBrandingTab) {
+                            normalized = 'branding';
                         }
 
                         for (index = 0; index < tabButtons.length; index += 1) {
@@ -1566,10 +2546,14 @@
 
                         if (updateUrl && window.history && typeof window.history.replaceState === 'function') {
                             nextUrl = window.location.pathname + window.location.search;
-                            if (normalized === 'security') {
-                                nextUrl += '#security';
-                            } else if (normalized === 'security-log') {
+                            if (normalized === 'security-log') {
                                 nextUrl += '#security-log';
+                            } else if (normalized === 'catalog') {
+                                nextUrl += '#catalog';
+                            } else if (normalized === 'native') {
+                                nextUrl += '#native';
+                            } else if (normalized === 'security') {
+                                nextUrl += '#security';
                             }
                             window.history.replaceState(null, document.title, nextUrl);
                         }
@@ -1581,7 +2565,216 @@
                         });
                     }
 
-                    setActiveTab(window.location.hash === '#security-log' ? 'security-log' : (window.location.hash === '#security' ? 'security' : 'branding'), false);
+                    setActiveTab(window.location.hash === '#security-log'
+                        ? 'security-log'
+                        : (window.location.hash === '#catalog'
+                            ? 'catalog'
+                        : (window.location.hash === '#native'
+                            ? 'native'
+                            : (window.location.hash === '#security' ? 'security' : (hasBrandingTab ? 'branding' : 'security')))), false);
+                }
+
+                function bindNativeSecurityTools() {
+                    var attemptInput = document.getElementById('cbt-native-simulate-attempt-id');
+                    var appSelect = document.getElementById('cbt-native-simulate-app');
+                    var eventTypeSelect = document.getElementById('cbt-native-simulate-event-type');
+                    var nativeVersionInput = document.getElementById('cbt-native-simulate-native-version');
+                    var warningCodeInput = document.getElementById('cbt-native-simulate-warning-code');
+                    var warningMessageInput = document.getElementById('cbt-native-simulate-warning-message');
+                    var generateButton = document.getElementById('cbt-native-generate-sample-request');
+                    var payloadBlock = document.getElementById('cbt-native-sample-request-json');
+                    var curlBlock = document.getElementById('cbt-native-sample-curl');
+                    var androidBlock = document.getElementById('cbt-native-sample-android');
+                    var cefsharpBlock = document.getElementById('cbt-native-sample-cefsharp');
+                    var sampleTabButtons = document.querySelectorAll('[data-native-sample-tab-button]');
+                    var samplePanels = document.querySelectorAll('[data-native-sample-panel]');
+                    var endpointUrl = <?php echo wp_json_encode((string) $native_security_endpoint_url); ?>;
+
+                    if (!attemptInput || !appSelect || !eventTypeSelect || !payloadBlock || !curlBlock || !androidBlock || !cefsharpBlock) {
+                        return;
+                    }
+
+                    function setActiveSampleTab(tabName) {
+                        var normalized = tabName === 'curl' || tabName === 'android' || tabName === 'windows'
+                            ? tabName
+                            : 'json';
+                        var index = 0;
+
+                        for (index = 0; index < sampleTabButtons.length; index += 1) {
+                            var button = sampleTabButtons[index];
+                            var isActive = button.getAttribute('data-native-sample-tab-button') === normalized;
+                            button.classList.toggle('is-active', isActive);
+                            button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                            button.setAttribute('tabindex', isActive ? '0' : '-1');
+                        }
+
+                        for (index = 0; index < samplePanels.length; index += 1) {
+                            var panel = samplePanels[index];
+                            var isPanelActive = panel.getAttribute('data-native-sample-panel') === normalized;
+                            panel.hidden = !isPanelActive;
+                        }
+                    }
+
+                    function buildCurrentPayload() {
+                        var nativeApp = String(appSelect.value || 'android_webview');
+                        var eventType = String(eventTypeSelect.value || 'tab_hidden');
+                        var attemptId = Math.max(0, Number(attemptInput.value || 0));
+                        var nativeVersion = String(nativeVersionInput && nativeVersionInput.value ? nativeVersionInput.value : '1.0.0').trim() || '1.0.0';
+                        var warningCode = String(warningCodeInput && warningCodeInput.value ? warningCodeInput.value : '').trim();
+                        var warningMessage = String(warningMessageInput && warningMessageInput.value ? warningMessageInput.value : '').trim();
+
+                        if (!warningCode) {
+                            warningCode = eventType.replace(/^native_/, '') || 'native_warning';
+                        }
+
+                        if (!warningMessage) {
+                            warningMessage = String(eventTypeSelect.options[eventTypeSelect.selectedIndex].textContent || 'Native warning').trim();
+                        }
+
+                        return {
+                            attempt_id: attemptId,
+                            event_type: eventType,
+                            native_app: nativeApp,
+                            native_version: nativeVersion,
+                            warning_code: warningCode,
+                            warning_message: warningMessage,
+                            occurred_at_client: new Date().toISOString(),
+                            context: {
+                                has_focus: nativeApp === 'windows_cefsharp' ? 0 : 1,
+                                device_platform: nativeApp === 'android_webview' ? 'android' : 'windows',
+                                device_type: nativeApp === 'android_webview' ? 'mobile' : 'desktop',
+                                native_event_name: eventType.replace(/^native_/, '').replace(/_/g, ' ')
+                            }
+                        };
+                    }
+
+                    function renderSamples() {
+                        var payload = buildCurrentPayload();
+                        var payloadJson = JSON.stringify(payload, null, 2);
+                        var escapedPayload = payloadJson.replace(/'/g, "\\'");
+
+                        payloadBlock.textContent = payloadJson;
+                        curlBlock.textContent =
+                            "curl -X POST '" + endpointUrl + "' \\\n"
+                            + "  -H 'Authorization: Bearer <token>' \\\n"
+                            + "  -H 'Content-Type: application/json' \\\n"
+                            + "  -H 'Accept: application/json' \\\n"
+                            + "  -d '" + escapedPayload + "'";
+                        androidBlock.textContent =
+                            "val snapshotJson = webView.evaluateJavascript(\"window.CBTNativeBridge.getSecuritySnapshot()\", ...)\n"
+                            + "val snapshot = JSONObject(snapshotJson)\n"
+                            + "val payload = JSONObject(\"\"\"" + payloadJson + "\"\"\")\n"
+                            + "val token = snapshot.getString(\"token\")\n"
+                            + "val endpoint = snapshot.getJSONObject(\"endpoints\").getString(\"nativeSecurityEvent\")\n"
+                            + "// Opsional: dengarkan perubahan via window.CBTNativeBridge.onSecuritySnapshotChanged\n"
+                            + "// Kirim payload ke endpoint dengan Authorization: Bearer <token>";
+                        cefsharpBlock.textContent =
+                            "var snapshot = await browser.EvaluateScriptAsync(\"window.CBTNativeBridge.getSecuritySnapshot()\");\n"
+                            + "var payloadJson = @\"" + payloadJson.replace(/"/g, '""') + "\";\n"
+                            + "// Opsional: pasang listener ke cbt-native-security-snapshot-changed untuk update push\n"
+                            + "// Ambil token dan endpoint dari snapshot.Result lalu POST ke nativeSecurityEvent\n"
+                            + "// Header wajib: Authorization Bearer, Content-Type application/json, Accept application/json";
+                    }
+
+                    if (generateButton) {
+                        generateButton.addEventListener('click', function () {
+                            renderSamples();
+                        });
+                    }
+
+                    for (var sampleTabIndex = 0; sampleTabIndex < sampleTabButtons.length; sampleTabIndex += 1) {
+                        sampleTabButtons[sampleTabIndex].addEventListener('click', function () {
+                            setActiveSampleTab(this.getAttribute('data-native-sample-tab-button') || 'json');
+                        });
+                    }
+
+                    [attemptInput, appSelect, eventTypeSelect, nativeVersionInput, warningCodeInput, warningMessageInput].forEach(function (field) {
+                        if (!field) {
+                            return;
+                        }
+
+                        field.addEventListener('input', renderSamples);
+                        field.addEventListener('change', renderSamples);
+                    });
+
+                    renderSamples();
+                    setActiveSampleTab('json');
+                }
+
+                function bindNativeCatalogTabs() {
+                    var tabButtons = document.querySelectorAll('[data-native-catalog-tab-button]');
+                    var panels = document.querySelectorAll('[data-native-catalog-panel]');
+
+                    if (!tabButtons.length || !panels.length) {
+                        return;
+                    }
+
+                    function setActiveCatalogTab(tabName) {
+                        var normalized = tabName === 'android' || tabName === 'windows'
+                            ? tabName
+                            : 'browser';
+                        var index = 0;
+
+                        for (index = 0; index < tabButtons.length; index += 1) {
+                            var button = tabButtons[index];
+                            var isActive = button.getAttribute('data-native-catalog-tab-button') === normalized;
+                            button.classList.toggle('is-active', isActive);
+                            button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                            button.setAttribute('tabindex', isActive ? '0' : '-1');
+                        }
+
+                        for (index = 0; index < panels.length; index += 1) {
+                            var panel = panels[index];
+                            var isPanelActive = panel.getAttribute('data-native-catalog-panel') === normalized;
+                            panel.hidden = !isPanelActive;
+                        }
+                    }
+
+                    for (var tabIndex = 0; tabIndex < tabButtons.length; tabIndex += 1) {
+                        tabButtons[tabIndex].addEventListener('click', function () {
+                            setActiveCatalogTab(this.getAttribute('data-native-catalog-tab-button') || 'browser');
+                        });
+                    }
+
+                    setActiveCatalogTab('browser');
+                }
+
+                function bindNativeImplementationTabs() {
+                    var tabButtons = document.querySelectorAll('[data-native-implementation-tab-button]');
+                    var panels = document.querySelectorAll('[data-native-implementation-panel]');
+
+                    if (!tabButtons.length || !panels.length) {
+                        return;
+                    }
+
+                    function setActiveImplementationTab(tabName) {
+                        var normalized = tabName === 'wpf'
+                            ? 'wpf'
+                            : 'android';
+                        var index = 0;
+
+                        for (index = 0; index < tabButtons.length; index += 1) {
+                            var button = tabButtons[index];
+                            var isActive = button.getAttribute('data-native-implementation-tab-button') === normalized;
+                            button.classList.toggle('is-active', isActive);
+                            button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                            button.setAttribute('tabindex', isActive ? '0' : '-1');
+                        }
+
+                        for (index = 0; index < panels.length; index += 1) {
+                            var panel = panels[index];
+                            var isPanelActive = panel.getAttribute('data-native-implementation-panel') === normalized;
+                            panel.hidden = !isPanelActive;
+                        }
+                    }
+
+                    for (var tabIndex = 0; tabIndex < tabButtons.length; tabIndex += 1) {
+                        tabButtons[tabIndex].addEventListener('click', function () {
+                            setActiveImplementationTab(this.getAttribute('data-native-implementation-tab-button') || 'android');
+                        });
+                    }
+
+                    setActiveImplementationTab('android');
                 }
 
                 function bindLogoField(config) {
@@ -2401,7 +3594,12 @@
                     });
                 }
 
+                if (cbtAdminViewMode === 'security') {
                 bindSetupTabs();
+                bindNativeCatalogTabs();
+                bindNativeImplementationTabs();
+                bindNativeSecurityTools();
+                }
                 bindLogoField({
                     inputId: 'cbt-setup-logo-1-attachment-id',
                     previewId: 'cbt-setup-logo-1-preview',

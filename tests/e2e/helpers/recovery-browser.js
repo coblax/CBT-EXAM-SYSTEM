@@ -7,7 +7,9 @@ const QUESTION_CACHE_META_LOCAL_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_question
 const QUESTION_CACHE_ITEM_LOCAL_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_question_cache_item_v2_';
 const QUESTION_CACHE_INDEXED_DB_NAME = 'cbt_exam_frontend_cache_v2';
 const DOUBTFUL_SESSION_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_doubtful_v1_';
-const RESOLVED_EXAM_TOKEN = String(process.env.CBT_E2E_EXAM_TOKEN || '').trim().toUpperCase();
+function resolvedExamToken() {
+    return String(process.env.CBT_E2E_EXAM_TOKEN || '').trim().toUpperCase();
+}
 
 async function waitForFrontendRoot(page) {
     await page.goto('/');
@@ -38,18 +40,34 @@ async function selectRecoveryExam(page, fixture) {
     await examCard.click();
 }
 
+async function fillRecoveryExamTokenIfNeeded(page, fixture) {
+    const token = resolvedExamToken();
+    if (token === '') {
+        return;
+    }
+
+    const examTitle = String(fixture.exam_title || '').trim();
+    const selectedTitle = page.locator('.cbt-confirm-selected-title').first();
+    if (examTitle !== '') {
+        await expect(selectedTitle).toContainText(examTitle, { timeout: 20000 });
+    }
+
+    const startButton = page.locator('[data-action="start-exam"]').first();
+    await expect(startButton).toBeVisible({ timeout: 20000 });
+
+    const tokenInput = page.locator('#cbt-exam-token');
+    if (await tokenInput.count()) {
+        await expect(tokenInput).toBeVisible({ timeout: 20000 });
+        await expect(tokenInput).toBeEnabled({ timeout: 20000 });
+        await tokenInput.fill(token);
+        await expect(tokenInput).toHaveValue(token, { timeout: 20000 });
+    }
+}
+
 async function startOrResumeRecoveryAttempt(page, fixture) {
     await selectRecoveryExam(page, fixture);
     const shell = page.locator('[data-cbt-exam-shell="1"]');
-    const tokenInput = page.locator('#cbt-exam-token');
-
-    if (RESOLVED_EXAM_TOKEN !== '' && await tokenInput.count()) {
-        const tokenVisible = await tokenInput.isVisible().catch(() => false);
-        const tokenDisabled = await tokenInput.isDisabled().catch(() => false);
-        if (tokenVisible && !tokenDisabled) {
-            await tokenInput.fill(RESOLVED_EXAM_TOKEN);
-        }
-    }
+    await fillRecoveryExamTokenIfNeeded(page, fixture);
 
     const startResponse = page.waitForResponse((response) => {
         return response.url().includes('/wp-json/cbt/v1/start_attempt');

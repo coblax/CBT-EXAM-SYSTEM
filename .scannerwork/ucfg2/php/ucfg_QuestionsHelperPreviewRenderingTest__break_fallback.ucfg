@@ -1,0 +1,82 @@
+
+‹cbtexamsystem\tests\unit\questionshelperpreviewrenderingtest::test_render_editor_html_preserves_data_images_spacers_and_line_break_fallbackv
+l/var/www/wordpress/wp-content/plugins/cbt-exam-system/tests/php/unit/QuestionsHelperPreviewRenderingTest.php (a"1*O
+2)
+'QuestionsHelperPreviewRenderingTest.php"
+ (
+implicit return*Š
+1 (
+û
+ø
+ (	
+%1".cbt_admin_questions_helper::render_editor_html*:
+
+__unknown_file ("
+cbt_admin_questions_helper*z
+
+__unknown_file (^\
+Z<p>Satu</p><p>&nbsp;</p><p>Dua</p><p><img src="data:image/png;base64,abc123" alt="" /></p>K
+I
+ (	
+$renderedRichHtml"__id*"
+
+__unknown_file (
+
+%1³
+°
+ (b
+%2".cbt_admin_questions_helper::render_editor_html*:
+
+__unknown_file ("
+cbt_admin_questions_helper*2
+
+__unknown_file (
+Baris 1\n\nBaris 2L
+J
+ (b
+$renderedPlainText"__id*"
+
+__unknown_file (
+
+%2¯
+¬
+ (N
+%3"Xcbtexamsystem\tests\unit\questionshelperpreviewrenderingtest::assertstringcontainsstring*\
+
+__unknown_file (@">
+<cbtexamsystem\tests\unit\questionshelperpreviewrenderingtest*/
+
+__unknown_file (
+cbt-rich-spacer*1
+
+__unknown_file (
+
+$renderedRichHtml¼
+¹
+ ([
+%4"Xcbtexamsystem\tests\unit\questionshelperpreviewrenderingtest::assertstringcontainsstring*\
+
+__unknown_file (@">
+<cbtexamsystem\tests\unit\questionshelperpreviewrenderingtest*<
+
+__unknown_file ( 
+data:image/png;base64,abc123*1
+
+__unknown_file (
+
+$renderedRichHtmlµ
+²
+ (T
+%5"Xcbtexamsystem\tests\unit\questionshelperpreviewrenderingtest::assertstringcontainsstring*\
+
+__unknown_file (@">
+<cbtexamsystem\tests\unit\questionshelperpreviewrenderingtest*4
+
+__unknown_file (
+Baris 1<br />Baris 2*2
+
+__unknown_file (
+
+$renderedPlainText*
+2B@>
+<cbtexamsystem\tests\unit\questionshelperpreviewrenderingtestH

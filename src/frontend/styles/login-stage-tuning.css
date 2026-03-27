@@ -125,6 +125,17 @@
     color: #0f172a;
 }
 
+.cbt-login-panel .cbt-login-panel-title {
+    margin-bottom: 12px;
+    max-width: min(100%, 20ch);
+    text-align: center;
+    text-transform: uppercase;
+    text-wrap: balance;
+    line-height: 1.12;
+    letter-spacing: 0.05em;
+    color: #0f172a;
+}
+
 .cbt-login-panel .cbt-form-grid {
     width: min(100%, 520px);
     margin-top: 8px;
@@ -173,4 +184,3 @@
     box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.13);
     background: #f0f7ff;
 }
-

@@ -187,8 +187,8 @@
         margin-bottom: 5px;
     }
 
-    .cbt-side-summary-value {
-        font-size: calc(18px * var(--cbt-font-scale));
+    .cbt-web-shell .cbt-side-summary-value {
+        font-size: calc(12px * var(--cbt-font-scale));
     }
 
     .cbt-side-stat-grid {
@@ -209,42 +209,46 @@
     }
 
     .cbt-nav-grid {
-        grid-template-rows: repeat(var(--cbt-nav-rows, 1), 42px);
-        grid-auto-columns: 38px;
-        gap: 5px;
-        padding: 7px 1px 9px;
+        grid-template-rows: repeat(var(--cbt-nav-rows, 1), 28px);
+        grid-auto-columns: 25px;
+        gap: 4px;
+        padding: 5px 0 7px;
     }
 
     .cbt-nav-btn {
-        min-height: 30px;
-        border-radius: 8px;
-        font-size: calc(11px * var(--cbt-font-scale));
+        min-height: 20px;
+        border-radius: 7px;
+        font-size: calc(9px * var(--cbt-font-scale));
+    }
+
+    .cbt-nav-number {
+        min-width: 10px;
     }
 
     .cbt-nav-answer-badges {
-        top: -5px;
-        right: -5px;
+        top: -4px;
+        right: -4px;
     }
 
     .cbt-nav-answer-badge {
-        min-width: 13px;
-        height: 13px;
-        padding: 0 3px;
-        font-size: 8px;
+        min-width: 11px;
+        height: 11px;
+        padding: 0 2px;
+        font-size: 7px;
     }
 
     .cbt-nav-answer-badge.is-long {
-        min-width: 24px;
-        font-size: 7px;
+        min-width: 18px;
+        font-size: 6px;
     }
 
     .cbt-nav-type-badge {
-        bottom: -5px;
-        left: -5px;
-        min-width: 13px;
-        height: 13px;
-        padding: 0 3px;
-        font-size: 7px;
+        bottom: -4px;
+        left: -4px;
+        min-width: 11px;
+        height: 11px;
+        padding: 0 2px;
+        font-size: 6px;
     }
 
     .cbt-legend {
@@ -404,57 +408,57 @@
     }
 
     .cbt-nav-grid {
-        grid-template-rows: repeat(var(--cbt-nav-rows, 1), 36px);
-        grid-auto-columns: 32px;
-        gap: 4px;
-        padding: 6px 0 8px;
+        grid-template-rows: repeat(var(--cbt-nav-rows, 1), 24px);
+        grid-auto-columns: 21px;
+        gap: 3px;
+        padding: 4px 0 6px;
     }
 
     .cbt-nav-btn {
-        min-height: 28px;
-        border-radius: 8px;
-        font-size: calc(10px * var(--cbt-font-scale));
+        min-height: 18px;
+        border-radius: 6px;
+        font-size: calc(8px * var(--cbt-font-scale));
     }
 
     .cbt-nav-number {
-        min-width: 12px;
+        min-width: 8px;
     }
 
     .cbt-nav-revision-marker {
-        top: -5px;
-        left: -5px;
-        min-width: 13px;
-        height: 13px;
-        padding: 0 3px;
+        top: -4px;
+        left: -4px;
+        min-width: 10px;
+        height: 10px;
+        padding: 0 2px;
         border-width: 1.5px;
-        font-size: 8px;
+        font-size: 7px;
     }
 
     .cbt-nav-answer-badges {
-        top: -4px;
-        right: -4px;
+        top: -3px;
+        right: -3px;
         gap: 1px;
     }
 
     .cbt-nav-answer-badge {
-        min-width: 12px;
-        height: 12px;
+        min-width: 10px;
+        height: 10px;
         padding: 0 2px;
-        font-size: 7px;
+        font-size: 6px;
     }
 
     .cbt-nav-answer-badge.is-long {
-        min-width: 24px;
-        padding: 0 4px;
-        font-size: 7px;
+        min-width: 16px;
+        padding: 0 3px;
+        font-size: 6px;
     }
 
     .cbt-nav-type-badge {
-        bottom: -5px;
-        left: -5px;
-        min-width: 14px;
-        height: 12px;
-        padding: 0 3px;
+        bottom: -4px;
+        left: -4px;
+        min-width: 10px;
+        height: 10px;
+        padding: 0 2px;
         font-size: 6px;
         letter-spacing: 0.02em;
     }

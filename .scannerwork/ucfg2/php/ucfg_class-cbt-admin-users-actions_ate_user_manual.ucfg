@@ -1,0 +1,16 @@
+
+2cbt_admin_users_actions::handle_create_user_manualg
+]/var/www/wordpress/wp-content/plugins/cbt-exam-system/admin/class-cbt-admin-users-actions.php (4"1*I
+2#
+!class-cbt-admin-users-actions.php"
+ (
+implicit return*“
+1 (=
+}
+ (<
+%1"2cbt_admin_users_service::handle_create_user_manual*7
+
+__unknown_file ("
+cbt_admin_users_service*
+2B
+cbt_admin_users_actionsH

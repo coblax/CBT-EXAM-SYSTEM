@@ -78,7 +78,7 @@ function e2e_fixture_require_class(string $class_name): void
 function e2e_fixture_bootstrap_classes(): void
 {
     e2e_fixture_require_class(CBT_Admin_Maintenance_Service::class);
-    e2e_fixture_require_class(CBT_Admin_Setup_Service::class);
+    e2e_fixture_require_class(CBT_Admin_Security_Service::class);
     e2e_fixture_require_class(CBT_Admin_Exams_Service::class);
     e2e_fixture_require_class(CBT_Auth::class);
     e2e_fixture_require_class(CBT_UI_State::class);
@@ -587,7 +587,7 @@ function e2e_fixture_save_global_token(array $payload): array
  */
 function e2e_fixture_set_security_config(array $payload): array
 {
-    $settings = CBT_Admin_Setup_Service::get_security_settings();
+    $settings = CBT_Admin_Security_Service::get_security_settings();
     $next = [
         'force_fullscreen' => array_key_exists('force_fullscreen', $payload)
             ? (!empty($payload['force_fullscreen']) ? 1 : 0)
@@ -606,10 +606,10 @@ function e2e_fixture_set_security_config(array $payload): array
             : max(1, (int) ($settings['idle_threshold_minutes'] ?? 5)),
     ];
 
-    update_option(CBT_Admin_Setup_Service::security_option_key(), $next, false);
+    update_option(CBT_Admin_Security_Service::security_option_key(), $next, false);
 
     return [
-        'security' => CBT_Admin_Setup_Service::get_security_settings(),
+        'security' => CBT_Admin_Security_Service::get_security_settings(),
     ];
 }
 
