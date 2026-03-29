@@ -6,3 +6,5 @@ Thumbs.db
 
 playwright-results/
 test-results/
+.playwright-browsers/
+.scannerwork/
