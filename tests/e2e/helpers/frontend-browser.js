@@ -212,6 +212,7 @@ async function jumpToQuestion(page, questionNumber) {
     const targetIndex = Math.max(0, targetNumber - 1);
     const targetButton = page.locator(`[data-action="jump"][data-index="${targetIndex}"]`).first();
     await expect(targetButton).toBeVisible({ timeout: 20000 });
+    await targetButton.scrollIntoViewIfNeeded();
     await targetButton.click({ force: true });
     await expect(page.locator('.cbt-chip-question-index .cbt-chip-value')).toHaveText(String(targetNumber), { timeout: 20000 });
     await waitForAttemptUiSync(page, 2200);
@@ -238,6 +239,11 @@ async function toggleCurrentQuestionDoubtful(page) {
 
 async function collectAndFinish(page) {
     const collectButton = page.locator('[data-action="collect"], [data-action="finish"]').first();
+
+    if (!(await collectButton.isVisible().catch(() => false))) {
+        await jumpToLastQuestion(page);
+    }
+
     await expect(collectButton).toBeVisible({ timeout: 20000 });
     await collectButton.click({ force: true });
     await page.locator('[data-action="finish-confirm-submit"]').first().click({ force: true });

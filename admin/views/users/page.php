@@ -303,6 +303,35 @@
                 margin: 6px 0 0;
                 color: #6b7280;
             }
+            .cbt-users-import-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 1.85fr) minmax(320px, 1fr);
+                gap: 18px;
+                align-items: start;
+            }
+            .cbt-users-import-card {
+                padding: 18px 20px;
+                border: 1px solid #dbe4ef;
+                border-radius: 18px;
+                background:
+                    radial-gradient(circle at top right, rgba(34, 113, 177, 0.06), transparent 34%),
+                    linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+            }
+            .cbt-users-import-card-label {
+                display: block;
+                margin-bottom: 10px;
+                color: #0f172a;
+                font-size: 14px;
+                font-weight: 700;
+            }
+            .cbt-users-import-card .description {
+                margin-top: 8px;
+            }
+            .cbt-users-import-card ul {
+                margin: 0 0 0 18px;
+                list-style: disc;
+            }
             .cbt-users-panel .button {
                 border-radius: 10px;
             }
@@ -522,6 +551,9 @@
                 .cbt-users-panel {
                     padding: 20px;
                 }
+                .cbt-users-import-grid {
+                    grid-template-columns: 1fr;
+                }
                 .cbt-users-panel .form-table th {
                     width: 100%;
                 }
@@ -588,6 +620,13 @@
                                 <tr>
                                     <th><label for="cbt-edit-user-email">Email</label></th>
                                     <td><input required type="email" id="cbt-edit-user-email" name="email" class="regular-text" value="<?php echo esc_attr((string) $editing_user->user_email); ?>" /></td>
+                                </tr>
+                                <tr>
+                                    <th><label for="cbt-edit-user-nisn">NISN</label></th>
+                                    <td>
+                                        <input type="text" id="cbt-edit-user-nisn" name="nisn" class="regular-text" inputmode="numeric" pattern="[0-9]*" value="<?php echo esc_attr($editing_nisn); ?>" />
+                                        <p class="description">Wajib untuk role siswa. Hanya angka dan tidak boleh sama dengan siswa lain.</p>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <th><label for="cbt-edit-user-username">Username</label></th>
@@ -671,6 +710,13 @@
                                 <tr>
                                     <th><label for="cbt-user-email">Email</label></th>
                                     <td><input required type="email" id="cbt-user-email" name="email" class="regular-text" /></td>
+                                </tr>
+                                <tr>
+                                    <th><label for="cbt-user-nisn">NISN</label></th>
+                                    <td>
+                                        <input type="text" id="cbt-user-nisn" name="nisn" class="regular-text" inputmode="numeric" pattern="[0-9]*" />
+                                        <p class="description">Wajib untuk role siswa. Hanya angka dan tidak boleh sama dengan siswa lain.</p>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <th><label for="cbt-user-username">Username</label></th>
@@ -781,26 +827,41 @@
                         <?php wp_nonce_field('cbt_import_users'); ?>
                         <input type="hidden" name="action" value="cbt_import_users" />
 
-                        <table class="form-table" role="presentation">
-                            <tr>
-                                <th><label for="cbt-user-file">File Import</label></th>
-                                <td>
-                                    <input required type="file" id="cbt-user-file" name="user_file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-                                    <p class="description">
-                                        Kolom wajib: <code>name,username,password,role</code> + salah satu <code>email</code> atau <code>nisn</code>.
-                                        Role yang didukung: <code>admin</code>, <code>guru</code>, <code>siswa</code>
-                                        (juga kompatibel: <code>teacher</code>, <code>student</code>).
-                                        Kolom opsional: <code>email</code>, <code>nisn</code>, <code>kode_kelas</code>, <code>kode_ruang</code>, <code>agama</code>, <code>foto</code>.
-                                        Jika <code>email</code> kosong/tidak valid tapi <code>nisn</code> ada, sistem otomatis membuat email <code>nisn@student.sch.id</code>.
-                                        Format didukung: <code>.csv</code> dan <code>.xlsx</code>.
-                                        Untuk CSV, delimiter koma atau titik-koma didukung.
-                                        Import data besar diproses bertahap otomatis (batch <?php echo (int) $import_batch_size; ?> user per putaran) untuk mencegah timeout.
-                                        Progress import akan ditampilkan otomatis (jumlah diproses, persentase, created/updated/failed).
-                                        Untuk >500 user, disarankan pakai <code>.csv</code> karena parsing biasanya lebih cepat.
-                                    </p>
-                                </td>
-                            </tr>
-                        </table>
+                        <div class="cbt-users-import-grid">
+                            <div class="cbt-users-import-card">
+                                <label class="cbt-users-import-card-label" for="cbt-user-file">File Import</label>
+                                <input required type="file" id="cbt-user-file" name="user_file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                                <div class="description">
+                                    <ul>
+                                        <li>Header template wajib lengkap: <code>name,email,nisn,username,password,role,kode_kelas,kode_ruang,agama,foto_file</code>.</li>
+                                        <li>Role yang didukung: <code>admin</code>, <code>guru</code>, <code>siswa</code> dan juga kompatibel dengan <code>teacher</code>, <code>student</code>.</li>
+                                        <li><code>username</code> dan <code>email</code> tidak boleh duplikat antarbaris dalam file import yang sama.</li>
+                                        <li>Untuk baris <code>siswa</code>, <code>nisn</code> wajib diisi dan tidak boleh duplikat dengan siswa lain maupun antarbaris file import.</li>
+                                        <li>Untuk <code>guru</code>/<code>admin</code>, <code>nisn</code> boleh kosong.</li>
+                                        <li>Kolom opsional per baris: <code>email</code>, <code>kode_kelas</code>, <code>kode_ruang</code>, <code>agama</code>, <code>foto_file</code>.</li>
+                                        <li>Jika <code>email</code> kosong atau tidak valid tetapi <code>nisn</code> ada, sistem otomatis membuat email <code>nisn@student.sch.id</code>.</li>
+                                        <li>Format file yang didukung: <code>.csv</code> dan <code>.xlsx</code>. Untuk CSV, delimiter koma atau titik-koma sama-sama didukung.</li>
+                                        <li>Gambar yang ditempel langsung di Excel tidak dibaca. Untuk foto massal, isi kolom <code>foto_file</code> lalu upload file <code>.zip</code> yang berisi foto-foto tersebut.</li>
+                                        <li>Jika semua kolom <code>foto_file</code> kosong, ZIP foto tidak wajib diupload.</li>
+                                        <li>Import data besar diproses bertahap otomatis, batch <?php echo (int) $import_batch_size; ?> user per putaran, untuk mencegah timeout.</li>
+                                        <li>Progress import akan tampil otomatis: jumlah diproses, persentase, <code>created</code>, <code>updated</code>, dan <code>failed</code>.</li>
+                                        <li>Untuk lebih dari 500 user, disarankan memakai <code>.csv</code> karena parsing biasanya lebih cepat.</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div class="cbt-users-import-card">
+                                <label class="cbt-users-import-card-label" for="cbt-user-photo-zip">ZIP Foto</label>
+                                <input type="file" id="cbt-user-photo-zip" name="user_photo_zip" accept=".zip,application/zip,application/x-zip-compressed" />
+                                <div class="description">
+                                    <ul>
+                                        <li>Opsional. Upload hanya jika ada baris yang mengisi <code>foto_file</code>.</li>
+                                        <li>Nama file di ZIP harus sama persis dengan nilai pada kolom <code>foto_file</code>, misalnya <code>1000000001.jpg</code>.</li>
+                                        <li>ZIP hanya boleh berisi file gambar <code>jpg</code>, <code>jpeg</code>, <code>png</code>, <code>gif</code>, atau <code>webp</code>.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
 
                         <div class="cbt-users-form-actions">
                             <?php echo get_submit_button('Import Users', 'primary', 'submit', false); ?>
@@ -886,6 +947,7 @@
                                 <th>ID</th>
                                 <th>Username</th>
                                 <th>Nama</th>
+                                <th>NISN</th>
                                 <th>Email</th>
                                 <th>Role</th>
                                 <th>Kode Kelas</th>
@@ -898,11 +960,12 @@
                             </thead>
                             <tbody>
                             <?php if (empty($users)): ?>
-                                <tr><td colspan="12">Tidak ada user.</td></tr>
+                                <tr><td colspan="13">Tidak ada user.</td></tr>
                             <?php else: ?>
                                 <?php foreach ($users as $user): ?>
                                     <?php
                                     $role = isset($user->roles[0]) ? (string) $user->roles[0] : '';
+                                    $nisn = (string) get_user_meta((int) $user->ID, 'nisn', true);
                                     $kelas = (string) get_user_meta((int) $user->ID, 'kode_kelas', true);
                                     $ruang = (string) get_user_meta((int) $user->ID, 'kode_ruang', true);
                                     $agama = (string) get_user_meta((int) $user->ID, 'agama', true);
@@ -947,6 +1010,7 @@
                                         <td><?php echo (int) $user->ID; ?></td>
                                         <td><?php echo esc_html((string) $user->user_login); ?></td>
                                         <td><?php echo esc_html((string) $user->display_name); ?></td>
+                                        <td><?php echo esc_html($nisn !== '' ? $nisn : '-'); ?></td>
                                         <td><?php echo esc_html((string) $user->user_email); ?></td>
                                         <td><?php echo esc_html(CBT_Admin_Users_Service::humanize_role($role)); ?></td>
                                         <td><?php echo esc_html($kelas); ?></td>

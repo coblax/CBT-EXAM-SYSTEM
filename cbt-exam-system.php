@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CBT Exam System
  * Description: Computer Based Test plugin with WordPress admin CRUD, REST API, and JWT auth.
- * Version: 1.7.1
+ * Version: 1.8.1
  * Author: COBLAX
  * Requires at least: 6.0
  * Requires PHP: 8.0
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CBT_EXAM_SYSTEM_VERSION', '1.7.1');
+define('CBT_EXAM_SYSTEM_VERSION', '1.8.1');
 define('CBT_EXAM_SYSTEM_PATH', plugin_dir_path(__FILE__));
 define('CBT_EXAM_SYSTEM_URL', plugin_dir_url(__FILE__));
 
@@ -25,6 +25,7 @@ require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-security-log.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-incident-report.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-auth.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-frontend.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-update-release-helper.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-exams-helper.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-exams-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-exams-page.php';
@@ -48,6 +49,7 @@ require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-results-actions.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-introduction-page.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-analytics-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-analytics-page.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-assets.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-branding-settings.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-setup-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-setup-page.php';
@@ -67,6 +69,9 @@ require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-exam-cards-actions.ph
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-cache-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-cache-page.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-cache-actions.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-update-service.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-update-page.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-update-actions.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-tokens-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-tokens-page.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-tokens-actions.php';

@@ -1166,8 +1166,6 @@ Modul `Questions` adalah subsystem bank soal dan salah satu area admin paling ko
 | `admin_post_cbt_delete_question` | `handle_delete_question()` | Hapus soal |
 | `admin_post_cbt_bulk_delete_questions` | `handle_bulk_delete_questions()` | Bulk delete |
 | `admin_post_cbt_import_questions` | `handle_import_questions()` | Import soal |
-| `admin_post_cbt_download_question_template` | `handle_download_question_template()` | Template generic |
-| `admin_post_cbt_download_question_template_xlsx` | `handle_download_question_template_xlsx()` | Template XLSX |
 | `admin_post_cbt_download_question_template_word` | `handle_download_question_template_word()` | Template Word generic |
 | `admin_post_cbt_download_question_template_word_mc` | `handle_download_question_template_word_mc()` | Template Word MC |
 | `admin_post_cbt_download_question_template_word_ma` | `handle_download_question_template_word_ma()` | Template Word MA |
@@ -1245,8 +1243,6 @@ Fungsi:
 `class-cbt-admin-questions-import-helper.php`:
 
 - `handle_import_questions()`
-- `handle_download_question_template()`
-- `handle_download_question_template_xlsx()`
 - `handle_download_question_template_word()`
 - `handle_download_question_template_word_mc()`
 - `handle_download_question_template_word_ma()`
@@ -2338,8 +2334,6 @@ Bagian ini adalah daftar lengkap hook admin yang didaftarkan di bootstrap admin,
 - `cbt_delete_question` -> `CBT_Admin_Questions_Actions::handle_delete_question()`
 - `cbt_bulk_delete_questions` -> `CBT_Admin_Questions_Actions::handle_bulk_delete_questions()`
 - `cbt_import_questions` -> `CBT_Admin_Questions_Actions::handle_import_questions()`
-- `cbt_download_question_template` -> `CBT_Admin_Questions_Actions::handle_download_question_template()`
-- `cbt_download_question_template_xlsx` -> `CBT_Admin_Questions_Actions::handle_download_question_template_xlsx()`
 - `cbt_download_question_template_word` -> `CBT_Admin_Questions_Actions::handle_download_question_template_word()`
 - `cbt_download_question_template_word_mc` -> `CBT_Admin_Questions_Actions::handle_download_question_template_word_mc()`
 - `cbt_download_question_template_word_ma` -> `CBT_Admin_Questions_Actions::handle_download_question_template_word_ma()`

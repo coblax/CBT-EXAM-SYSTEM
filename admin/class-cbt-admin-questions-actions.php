@@ -21,19 +21,14 @@ final class CBT_Admin_Questions_Actions
         CBT_Admin_Questions_Service::handle_bulk_delete_questions();
     }
 
+    public static function handle_delete_all_import_batch_questions(): void
+    {
+        CBT_Admin_Questions_Service::handle_delete_all_import_batch_questions();
+    }
+
     public static function handle_import_questions(): void
     {
         CBT_Admin_Questions_Import_Helper::handle_import_questions();
-    }
-
-    public static function handle_download_question_template(): void
-    {
-        CBT_Admin_Questions_Import_Helper::handle_download_question_template();
-    }
-
-    public static function handle_download_question_template_xlsx(): void
-    {
-        CBT_Admin_Questions_Import_Helper::handle_download_question_template_xlsx();
     }
 
     public static function handle_download_question_template_word(): void

@@ -587,6 +587,171 @@ if (!defined('ABSPATH')) {
                         color: #475569;
                         line-height: 1.55;
                     }
+                    .cbt-import-batch-analysis {
+                        margin: 14px 0 18px;
+                        padding: 16px 18px;
+                        border: 1px solid #dbe5ef;
+                        border-radius: 18px;
+                        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+                        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+                    }
+                    .cbt-import-batch-analysis-head {
+                        display: flex;
+                        align-items: flex-start;
+                        justify-content: space-between;
+                        gap: 12px;
+                        flex-wrap: wrap;
+                        margin-bottom: 12px;
+                    }
+                    .cbt-import-batch-analysis-head p {
+                        margin: 4px 0 0;
+                        color: #4b5563;
+                    }
+                    .cbt-import-batch-analysis-layout {
+                        display: grid;
+                        grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+                        gap: 16px;
+                    }
+                    .cbt-import-batch-analysis-nav {
+                        display: grid;
+                        gap: 10px;
+                        max-height: 640px;
+                        overflow-y: auto;
+                        padding-right: 4px;
+                    }
+                    .cbt-import-batch-analysis-nav-item {
+                        width: 100%;
+                        text-align: left;
+                        padding: 14px 15px;
+                        border: 1px solid #dbe5ef;
+                        border-radius: 14px;
+                        background: #fff;
+                        cursor: pointer;
+                        transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+                    }
+                    .cbt-import-batch-analysis-nav-item:hover,
+                    .cbt-import-batch-analysis-nav-item.is-active {
+                        border-color: #9ec3ea;
+                        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+                        transform: translateY(-1px);
+                    }
+                    .cbt-import-batch-analysis-nav-title {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 8px;
+                        margin-bottom: 6px;
+                    }
+                    .cbt-import-batch-analysis-nav-meta {
+                        color: #64748b;
+                        font-size: 12px;
+                        margin-bottom: 6px;
+                    }
+                    .cbt-import-batch-analysis-nav-preview {
+                        color: #334155;
+                        line-height: 1.55;
+                    }
+                    .cbt-import-batch-analysis-status--needs-review {
+                        background: #fff7ed;
+                        color: #9a3412;
+                    }
+                    .cbt-import-batch-analysis-status--safe {
+                        background: #ecfbf4;
+                        color: #0f766e;
+                    }
+                    .cbt-import-batch-analysis-detail {
+                        min-width: 0;
+                    }
+                    .cbt-import-batch-analysis-detail-panel {
+                        display: none;
+                        padding: 16px 18px;
+                        border: 1px solid #dbe5ef;
+                        border-radius: 16px;
+                        background: rgba(255,255,255,0.96);
+                    }
+                    .cbt-import-batch-analysis-detail-panel.is-active {
+                        display: block;
+                    }
+                    .cbt-import-batch-analysis-preview {
+                        margin: 0 0 12px;
+                        color: #1f2937;
+                        line-height: 1.65;
+                    }
+                    .cbt-import-batch-analysis-actions {
+                        display: flex;
+                        gap: 10px;
+                        flex-wrap: wrap;
+                        margin-bottom: 14px;
+                    }
+                    .cbt-import-batch-analysis-actions .button {
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        text-align: center;
+                        line-height: 1.2;
+                        padding: 0 16px;
+                    }
+                    .cbt-import-batch-analysis-actions--footer {
+                        margin-top: 22px;
+                        padding-top: 14px;
+                        border-top: 1px solid #e5edf5;
+                    }
+                    .cbt-import-batch-analysis-actions--footer .button {
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        text-align: center;
+                        line-height: 1.2;
+                        padding: 0 16px;
+                    }
+                    .cbt-import-batch-analysis-filters {
+                        display: flex;
+                        gap: 8px;
+                        flex-wrap: wrap;
+                        margin: 0 0 14px;
+                    }
+                    .cbt-import-batch-analysis-filters .button.is-active {
+                        background: #2271b1;
+                        border-color: #2271b1;
+                        color: #fff;
+                    }
+                    .cbt-import-batch-analysis-items {
+                        display: grid;
+                        gap: 8px;
+                    }
+                    .cbt-import-batch-analysis-item {
+                        padding: 10px 12px;
+                        border: 1px solid #e5edf5;
+                        border-radius: 12px;
+                        background: #fff;
+                    }
+                    .cbt-import-batch-analysis-item[hidden] {
+                        display: none !important;
+                    }
+                    .cbt-import-batch-analysis-item-meta {
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        flex-wrap: wrap;
+                        margin-bottom: 6px;
+                    }
+                    .cbt-import-batch-analysis-item-message {
+                        color: #334155;
+                        line-height: 1.6;
+                    }
+                    .cbt-import-batch-analysis-empty,
+                    .cbt-import-batch-analysis-note {
+                        color: #475569;
+                        line-height: 1.6;
+                    }
+                    @media (max-width: 960px) {
+                        .cbt-import-batch-analysis-layout {
+                            grid-template-columns: 1fr;
+                        }
+                        .cbt-import-batch-analysis-nav {
+                            max-height: 320px;
+                        }
+                    }
                     .cbt-questions-list-toolbar {
                         display: flex;
                         align-items: center;
@@ -1490,22 +1655,33 @@ if (!defined('ABSPATH')) {
                                     <?php for ($i = 1; $i <= 10; $i++): ?>
                                         <div class="cbt-option-row">
                                             <label for="cbt-tfm-statement-<?php echo (int) $i; ?>">Pernyataan <?php echo (int) $i; ?></label>
-                                            <input
-                                                type="text"
+                                            <textarea
                                                 id="cbt-tfm-statement-<?php echo (int) $i; ?>"
-                                                class="regular-text"
-                                                style="flex:1; min-width:260px;"
-                                                value="<?php echo esc_attr((string) ($tf_matrix_rows[$i]['text'] ?? '')); ?>"
+                                                class="large-text code cbt-tfm-statement-field"
+                                                style="flex:1; min-width:260px; min-height:84px;"
                                                 placeholder="Isi pernyataan ke-<?php echo (int) $i; ?>"
-                                            />
+                                                data-cbt-tfm-statement-field="1"
+                                            ><?php echo esc_textarea((string) ($tf_matrix_rows[$i]['text'] ?? '')); ?></textarea>
+                                            <button
+                                                type="button"
+                                                class="button button-secondary cbt-tfm-equation-button"
+                                                data-cbt-tfm-equation-trigger="<?php echo (int) $i; ?>"
+                                                data-cbt-tfm-statement-target="cbt-tfm-statement-<?php echo (int) $i; ?>"
+                                            >
+                                                Equation
+                                            </button>
                                             <select id="cbt-tfm-answer-<?php echo (int) $i; ?>">
                                                 <option value="true" <?php selected((string) ($tf_matrix_rows[$i]['answer'] ?? 'true'), 'true'); ?>>Benar</option>
                                                 <option value="false" <?php selected((string) ($tf_matrix_rows[$i]['answer'] ?? 'true'), 'false'); ?>>Salah</option>
                                             </select>
+                                            <div
+                                                class="cbt-tfm-statement-preview cbt-admin-student-preview-richtext"
+                                                data-cbt-tfm-statement-preview="cbt-tfm-statement-<?php echo (int) $i; ?>"
+                                            ><?php echo CBT_Admin_Questions_Helper::render_editor_html((string) ($tf_matrix_rows[$i]['text'] ?? '')); ?></div>
                                         </div>
                                     <?php endfor; ?>
                                 </div>
-                                <p class="cbt-inline-help">Isi minimal 2 pernyataan secara berurutan dari nomor 1 tanpa loncat. Pernyataan tidak boleh duplikat. Siswa akan memilih Benar/Salah untuk setiap pernyataan.</p>
+                                <p class="cbt-inline-help">Isi minimal 2 pernyataan secara berurutan dari nomor 1 tanpa loncat. Pernyataan tidak boleh duplikat. Statement TF Matrix manual dibatasi ke teks biasa + equation wrapper. Gunakan tombol Equation untuk menyisipkan rumus tanpa membuka rich editor penuh.</p>
                             </td>
                         </tr>
                         <tr class="cbt-qtype-panel<?php echo $editing_type === 'short_answer' ? ' cbt-active' : ''; ?>" data-qtype="short_answer">
@@ -1642,6 +1818,170 @@ if (!defined('ABSPATH')) {
                             </ul>
                         </div>
                     <?php endif; ?>
+                    <?php if (!empty($question_import_state['is_complete'])): ?>
+                        <div class="cbt-import-batch-analysis" style="margin:14px 0 18px;" data-cbt-import-batch-analysis>
+                            <div class="cbt-import-batch-analysis-head">
+                                <div>
+                                    <strong>Hasil Import Batch Ini</strong>
+                                    <p style="margin:4px 0 0; color:#4b5563;">
+                                        <?php if ($question_import_batch_subject_label !== ''): ?>
+                                            Subject target: <?php echo esc_html($question_import_batch_subject_label); ?>.
+                                        <?php else: ?>
+                                            Soal baru dari batch import ini siap ditinjau.
+                                        <?php endif; ?>
+                                    </p>
+                                </div>
+                                <span class="cbt-questions-chip"><?php echo esc_html('Created ' . (string) $question_import_created); ?></span>
+                            </div>
+                            <div class="cbt-questions-filter-summary" style="margin:0 0 12px;">
+                                <span class="cbt-questions-chip"><?php echo esc_html('Created: ' . (string) $question_import_created); ?></span>
+                                <span class="cbt-questions-chip"><?php echo esc_html('Failed: ' . (string) $question_import_failed); ?></span>
+                                <span class="cbt-questions-chip"><?php echo esc_html('Preserved: ' . (string) ((int) ($question_import_batch_analysis_summary['preserved'] ?? 0))); ?></span>
+                                <span class="cbt-questions-chip"><?php echo esc_html('Fallback: ' . (string) ((int) ($question_import_batch_analysis_summary['fallback'] ?? 0))); ?></span>
+                                <span class="cbt-questions-chip"><?php echo esc_html('Unsupported: ' . (string) ((int) ($question_import_batch_analysis_summary['unsupported'] ?? 0))); ?></span>
+                                <?php if ($question_import_batch_subject_label !== ''): ?>
+                                    <span class="cbt-questions-chip"><?php echo esc_html('Subject: ' . $question_import_batch_subject_label); ?></span>
+                                <?php endif; ?>
+                            </div>
+                            <?php if ($question_import_diagnostic_truncated): ?>
+                                <p class="cbt-import-batch-analysis-note" style="margin:0 0 12px;">Detail diagnostics dipotong agar panel tetap ringkas. Count total tetap akurat.</p>
+                            <?php endif; ?>
+                            <?php if (!empty($question_import_batch_analysis_items)): ?>
+                                <div class="cbt-import-batch-analysis-layout">
+                                    <aside class="cbt-import-batch-analysis-nav">
+                                        <?php foreach ($question_import_batch_analysis_items as $analysis_item): ?>
+                                            <?php
+                                            $analysis_question_id = (int) ($analysis_item['question_id'] ?? 0);
+                                            $analysis_counts = (array) ($analysis_item['diagnostic_counts'] ?? []);
+                                            $analysis_issue_count = max(0, (int) ($analysis_item['issue_count'] ?? 0));
+                                            $analysis_status_label = (string) ($analysis_item['status_label'] ?? ($analysis_issue_count > 0 ? 'Perlu Dicek ' . $analysis_issue_count : 'Aman'));
+                                            $analysis_is_active = $analysis_question_id > 0 && $analysis_question_id === (int) $question_import_batch_selected_question_id;
+                                            ?>
+                                            <button
+                                                type="button"
+                                                class="cbt-import-batch-analysis-nav-item<?php echo $analysis_is_active ? ' is-active' : ''; ?>"
+                                                data-cbt-import-batch-analysis-nav-item
+                                                data-question-id="<?php echo (int) $analysis_question_id; ?>"
+                                            >
+                                                <div class="cbt-import-batch-analysis-nav-title">
+                                                    <strong><?php echo esc_html('Soal #' . (string) $analysis_question_id); ?></strong>
+                                                    <span class="cbt-questions-chip <?php echo $analysis_issue_count > 0 ? 'cbt-import-batch-analysis-status--needs-review' : 'cbt-import-batch-analysis-status--safe'; ?>">
+                                                        <?php echo esc_html($analysis_status_label); ?>
+                                                    </span>
+                                                </div>
+                                                <div class="cbt-import-batch-analysis-nav-meta">
+                                                    <?php echo esc_html((string) ($analysis_item['question_type_label'] ?? '')); ?>
+                                                    <?php if (!empty($analysis_item['block_number'])): ?>
+                                                        · <?php echo esc_html('Blok #' . (string) ((int) $analysis_item['block_number'])); ?>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <div class="cbt-import-batch-analysis-nav-preview"><?php echo esc_html((string) ($analysis_item['preview'] ?? '')); ?></div>
+                                            </button>
+                                        <?php endforeach; ?>
+                                    </aside>
+                                    <div class="cbt-import-batch-analysis-detail">
+                                        <?php foreach ($question_import_batch_analysis_items as $analysis_item): ?>
+                                            <?php
+                                            $analysis_question_id = (int) ($analysis_item['question_id'] ?? 0);
+                                            $analysis_counts = (array) ($analysis_item['diagnostic_counts'] ?? []);
+                                            $analysis_entries = (array) ($analysis_item['diagnostic_entries'] ?? []);
+                                            $analysis_issue_count = max(0, (int) ($analysis_item['issue_count'] ?? 0));
+                                            $analysis_is_active = $analysis_question_id > 0 && $analysis_question_id === (int) $question_import_batch_selected_question_id;
+                                            ?>
+                                            <section
+                                                class="cbt-import-batch-analysis-detail-panel<?php echo $analysis_is_active ? ' is-active' : ''; ?>"
+                                                data-cbt-import-batch-analysis-panel
+                                                data-question-id="<?php echo (int) $analysis_question_id; ?>"
+                                            >
+                                                <div class="cbt-questions-filter-summary" style="margin:0 0 10px;">
+                                                    <span class="cbt-questions-chip"><?php echo esc_html('Soal #' . (string) $analysis_question_id); ?></span>
+                                                    <span class="cbt-questions-chip"><?php echo esc_html((string) ($analysis_item['question_type_label'] ?? '')); ?></span>
+                                                    <?php if (!empty($analysis_item['block_number'])): ?>
+                                                        <span class="cbt-questions-chip"><?php echo esc_html('Blok #' . (string) ((int) $analysis_item['block_number'])); ?></span>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <p class="cbt-import-batch-analysis-preview"><?php echo esc_html((string) ($analysis_item['preview'] ?? '')); ?></p>
+                                                <div class="cbt-questions-filter-summary" style="margin:0 0 10px;">
+                                                    <span class="cbt-questions-chip"><?php echo esc_html('Preserved ' . (string) ((int) ($analysis_counts['preserved'] ?? 0))); ?></span>
+                                                    <span class="cbt-questions-chip"><?php echo esc_html('Fallback ' . (string) ((int) ($analysis_counts['fallback'] ?? 0))); ?></span>
+                                                    <span class="cbt-questions-chip"><?php echo esc_html('Unsupported ' . (string) ((int) ($analysis_counts['unsupported'] ?? 0))); ?></span>
+                                                </div>
+                                                <div class="cbt-import-batch-analysis-actions">
+                                                    <a
+                                                        class="button button-secondary"
+                                                        href="<?php echo esc_url((string) ($analysis_item['view_url'] ?? $question_import_batch_list_url)); ?>"
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        data-cbt-questions-tab-link="list"
+                                                    >
+                                                        Lihat Soal di Question List
+                                                    </a>
+                                                </div>
+                                                <div class="cbt-import-batch-analysis-filters">
+                                                    <button type="button" class="button is-active" data-cbt-import-batch-analysis-filter="needs-review">Perlu Dicek</button>
+                                                    <button type="button" class="button" data-cbt-import-batch-analysis-filter="fallback">Fallback</button>
+                                                    <button type="button" class="button" data-cbt-import-batch-analysis-filter="unsupported">Unsupported</button>
+                                                    <button type="button" class="button" data-cbt-import-batch-analysis-filter="preserved">Preserved</button>
+                                                    <button type="button" class="button" data-cbt-import-batch-analysis-filter="all">Semua</button>
+                                                </div>
+                                                <?php if (!empty($analysis_entries)): ?>
+                                                    <div class="cbt-import-batch-analysis-items">
+                                                        <?php foreach ($analysis_entries as $diagnostic_entry): ?>
+                                                            <?php
+                                                            $diagnostic_kind = trim((string) ($diagnostic_entry['kind'] ?? ''));
+                                                            $diagnostic_field = trim((string) ($diagnostic_entry['field'] ?? 'SOAL'));
+                                                            $diagnostic_feature = trim((string) ($diagnostic_entry['feature'] ?? ''));
+                                                            $diagnostic_message = trim((string) ($diagnostic_entry['message'] ?? ''));
+                                                            ?>
+                                                            <article class="cbt-import-batch-analysis-item" data-diagnostic-kind="<?php echo esc_attr($diagnostic_kind); ?>">
+                                                                <div class="cbt-import-batch-analysis-item-meta">
+                                                                    <span class="cbt-questions-chip"><?php echo esc_html($diagnostic_field); ?></span>
+                                                                    <span class="cbt-questions-chip"><?php echo esc_html(ucfirst($diagnostic_kind)); ?></span>
+                                                                    <span class="cbt-questions-chip"><?php echo esc_html($diagnostic_feature); ?></span>
+                                                                </div>
+                                                                <div class="cbt-import-batch-analysis-item-message"><?php echo esc_html($diagnostic_message); ?></div>
+                                                            </article>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                    <div class="cbt-import-batch-analysis-empty" data-cbt-import-batch-analysis-empty hidden>
+                                                        Soal ini tidak punya catatan yang perlu dicek.
+                                                    </div>
+                                                <?php else: ?>
+                                                    <div class="cbt-import-batch-analysis-empty">Soal ini tidak punya catatan preserve, fallback, atau unsupported tambahan.</div>
+                                                <?php endif; ?>
+                                            </section>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                                <p class="cbt-questions-actions cbt-import-batch-analysis-actions--footer">
+                                    <a
+                                        class="button button-primary"
+                                        href="<?php echo esc_url($question_import_batch_list_url); ?>"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        LIHAT SEMUA HASIL IMPORT INI
+                                    </a>
+                                    <a
+                                        class="button button-secondary"
+                                        href="<?php echo esc_url($question_import_batch_back_to_all_url); ?>"
+                                        data-cbt-questions-tab-link="import"
+                                    >
+                                        TUTUP REPORT INI
+                                    </a>
+                                    <a
+                                        class="button button-secondary"
+                                        href="<?php echo esc_url($question_import_batch_delete_all_url); ?>"
+                                        onclick="return confirm('Hapus semua soal hasil import batch ini?');"
+                                    >
+                                        HAPUS SEMUA HASIL IMPORT INI
+                                    </a>
+                                </p>
+                            <?php else: ?>
+                                <div class="cbt-question-reference-empty">Batch ini tidak memiliki soal sukses yang masih tersisa untuk ditinjau.</div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
                 <?php endif; ?>
                 <p class="description"><strong>Rekomendasi:</strong> gunakan file <code>.docx</code> sesuai jenis soal yang dipilih.</p>
                 <?php if ($lock_question_type): ?>
@@ -1657,6 +1997,14 @@ if (!defined('ABSPATH')) {
                     </div>
                 <?php endif; ?>
                 <p class="description" id="cbt-import-type-help"><?php echo esc_html($import_help_text); ?></p>
+                <div class="notice notice-warning inline" style="margin:10px 0 14px;">
+                    <p style="margin:8px 0;">
+                        <strong>Perhatian:</strong>
+                        file akan ditolak jika tipe soal yang terdeteksi tidak sama dengan menu import aktif.
+                        Contoh: file <strong>Multiple Choice</strong> yang di-upload lewat menu <strong>Multiple Answer</strong> tidak akan diproses.
+                        Template DOCX lama juga perlu diunduh ulang agar membawa marker validasi terbaru.
+                    </p>
+                </div>
                 <p class="cbt-questions-actions">
                     <label for="cbt-word-template-count"><strong>Jumlah Soal</strong></label>
                     <select id="cbt-word-template-count">
@@ -1710,8 +2058,10 @@ if (!defined('ABSPATH')) {
                                 <input required type="file" id="cbt-question-file" name="question_file" accept="<?php echo esc_attr($import_file_accept); ?>" />
                                 <p class="description">
                                     Format didukung: <code>.docx</code>.
-                                    Template berbentuk <strong>tabel</strong> untuk <strong>multiple choice</strong>, <strong>multiple answer</strong>, <strong>true/false</strong>, <strong>true/false matrix</strong>, <strong>short answer</strong>, dan <strong>essay</strong> (gambar bisa ditempel langsung di soal, termasuk opsi jawaban).
-                                    Gunakan field <code>PEMBAHASAN:</code> jika ingin mengisi pembahasan; gambar setelah field ini akan masuk ke pembahasan.
+                                    Template berbentuk <strong>tabel</strong> untuk <strong>multiple choice</strong>, <strong>multiple answer</strong>, <strong>true/false</strong>, <strong>true/false matrix</strong>, <strong>short answer</strong>, dan <strong>essay</strong> (gambar dan tabel bisa ditempel langsung di soal, opsi, maupun pembahasan).
+                                    Gunakan template Word resmi terbaru dari tombol download di atas.
+                                    Jika tipe file tidak cocok dengan menu aktif, sistem akan menolak import sebelum batch dijalankan.
+                                    Gunakan field <code>PEMBAHASAN:</code> jika ingin mengisi pembahasan; gambar atau tabel setelah field ini akan masuk ke pembahasan.
                                     Progress import akan tampil otomatis (jumlah diproses, persentase, created/failed).
                                 </p>
                             </td>
@@ -1732,6 +2082,43 @@ if (!defined('ABSPATH')) {
                         </div>
                         <span class="cbt-questions-chip"><?php echo esc_html(sprintf('%d total', $total_questions)); ?></span>
                     </div>
+                    <?php if ($question_import_batch_active): ?>
+                        <div class="cbt-question-lineage-card" style="margin-bottom:16px;">
+                            <div class="cbt-question-lineage-card-head" style="margin-bottom:10px;">
+                                <div>
+                                    <strong>Hasil Import Batch</strong>
+                                    <p style="margin:4px 0 0; color:#4b5563;">List ini dibatasi hanya ke soal baru dari batch import aktif. Preview inline, delete row, delete selected, dan delete all batch tetap tersedia di sini.</p>
+                                </div>
+                                <span class="cbt-questions-chip">Batch Result</span>
+                            </div>
+                            <div class="cbt-questions-filter-summary" style="margin:0 0 12px;">
+                                <span class="cbt-questions-chip"><?php echo esc_html('Created: ' . (string) $question_import_created); ?></span>
+                                <span class="cbt-questions-chip"><?php echo esc_html('Failed: ' . (string) $question_import_failed); ?></span>
+                                <?php if ($question_import_batch_subject_label !== ''): ?>
+                                    <span class="cbt-questions-chip"><?php echo esc_html('Subject: ' . $question_import_batch_subject_label); ?></span>
+                                <?php endif; ?>
+                            </div>
+                            <p class="cbt-questions-actions" style="margin:0;">
+                                <a
+                                    class="button button-secondary"
+                                    href="<?php echo esc_url($question_import_batch_back_to_all_url); ?>"
+                                    data-cbt-questions-tab-link="list"
+                                >
+                                    Kembali ke Semua Soal
+                                </a>
+                                <?php if (!empty($question_import_batch_created_question_ids)): ?>
+                                    <a
+                                        class="button button-secondary"
+                                        href="<?php echo esc_url($question_import_batch_delete_all_url); ?>"
+                                        onclick="return confirm('Hapus semua soal hasil import batch ini?');"
+                                    >
+                                        Delete All Batch
+                                    </a>
+                                <?php endif; ?>
+                            </p>
+                        </div>
+                    <?php endif; ?>
+                    <?php if (!empty($question_lineage_info_cards)): ?>
                     <div class="cbt-question-lineage-grid">
                         <?php foreach ($question_lineage_info_cards as $lineage_card): ?>
                             <div class="cbt-question-lineage-card">
@@ -1745,6 +2132,7 @@ if (!defined('ABSPATH')) {
                             </div>
                         <?php endforeach; ?>
                     </div>
+                    <?php endif; ?>
             <?php if (is_array($question_delete_state)): ?>
                 <div class="notice notice-info">
                     <p>
@@ -1773,6 +2161,7 @@ if (!defined('ABSPATH')) {
                     </div>
                 </div>
             <?php endif; ?>
+                    <?php if (!$question_import_batch_active): ?>
                     <div class="cbt-questions-list-toolbar">
                         <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-questions-filter-form" data-cbt-questions-tab-submit="list">
                             <input type="hidden" name="page" value="<?php echo esc_attr($current_page_slug); ?>" />
@@ -1829,6 +2218,7 @@ if (!defined('ABSPATH')) {
                         <span class="cbt-questions-chip"><?php echo esc_html('Sumber: ' . $list_filter_source_label); ?></span>
                         <span class="cbt-questions-chip"><?php echo esc_html('Subject: ' . $list_filter_subject_label); ?></span>
                     </div>
+                    <?php endif; ?>
 
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-questions-tab-submit="list" onsubmit="return confirm('Hapus semua soal yang dipilih?');">
                 <?php wp_nonce_field('cbt_bulk_delete_questions'); ?>
@@ -1839,10 +2229,16 @@ if (!defined('ABSPATH')) {
                 <input type="hidden" name="redirect_filter_subject_id" value="<?php echo (int) $list_filter_subject_id; ?>" />
                 <input type="hidden" name="redirect_question_per_page" value="<?php echo (int) $list_per_page; ?>" />
                 <input type="hidden" name="redirect_question_paged" value="<?php echo (int) $list_current_page; ?>" />
+                <?php if ($question_import_batch_active): ?>
+                    <input type="hidden" name="cbt_question_import_token" value="<?php echo esc_attr($question_import_token); ?>" />
+                    <input type="hidden" name="cbt_question_import_scope" value="<?php echo esc_attr($question_import_scope); ?>" />
+                <?php endif; ?>
+                <?php if (!empty($questions)): ?>
                 <p class="cbt-questions-list-actions" style="margin: 0 0 8px;">
                     <button type="button" class="button button-secondary" id="cbt-view-selected-questions">Lihat Selected</button>
                     <button type="submit" class="button button-secondary">Delete Selected</button>
                 </p>
+                <?php endif; ?>
                 <div class="cbt-questions-table-wrap">
                 <table class="widefat striped">
                     <thead>
@@ -1859,7 +2255,7 @@ if (!defined('ABSPATH')) {
                     </thead>
                     <tbody>
                     <?php if (!$questions): ?>
-                        <tr><td colspan="8">No questions found.</td></tr>
+                        <tr><td colspan="8"><?php echo esc_html($question_import_batch_active ? 'Batch hasil import ini sudah kosong atau belum memiliki soal sukses.' : 'No questions found.'); ?></td></tr>
                     <?php else: ?>
                         <?php foreach ($questions as $question): ?>
                             <?php
@@ -1902,8 +2298,22 @@ if (!defined('ABSPATH')) {
                                 ? 'Edit Sumber'
                                 : 'Edit';
                             $question_edit_url = add_query_arg(array_merge($question_list_args, ['edit' => $question_edit_target_id]), admin_url('admin.php'));
+                            $question_delete_args = [
+                                'action' => 'cbt_delete_question',
+                                'id' => (int) $question['id'],
+                                'return_page' => $current_page_slug,
+                                'filter_type' => $list_filter_type,
+                                'filter_source_kind' => $list_filter_source_kind,
+                                'filter_subject_id' => $list_filter_subject_id,
+                                'question_per_page' => $list_per_page,
+                                'question_paged' => $list_current_page,
+                            ];
+                            if ($question_import_batch_active && $question_import_token !== '' && $question_import_scope !== '') {
+                                $question_delete_args['cbt_question_import_token'] = $question_import_token;
+                                $question_delete_args['cbt_question_import_scope'] = $question_import_scope;
+                            }
                             ?>
-                            <tr>
+                            <tr id="cbt-question-row-<?php echo (int) $question['id']; ?>">
                                 <td><input type="checkbox" class="cbt-question-checkbox" name="question_ids[]" value="<?php echo (int) $question['id']; ?>" data-view-url="<?php echo esc_url($question_view_url); ?>" /></td>
                                 <td><?php echo (int) $question['id']; ?></td>
                                 <td>
@@ -1938,8 +2348,10 @@ if (!defined('ABSPATH')) {
                                 <td>
                                     <div class="cbt-questions-row-actions">
                                         <a class="cbt-questions-row-action cbt-questions-row-action--view" data-cbt-questions-inline-view="1" href="<?php echo esc_url($question_is_view_open ? $question_hide_view_url : $question_view_url); ?>"><?php echo esc_html($question_is_view_open ? 'Hide' : 'Lihat'); ?></a>
+                                        <?php if (!$question_import_batch_active): ?>
                                         <a class="cbt-questions-row-action cbt-questions-row-action--edit" href="<?php echo esc_url($question_edit_url); ?>"><?php echo esc_html($question_edit_label); ?></a>
-                                        <a class="cbt-questions-row-action cbt-questions-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg(['action' => 'cbt_delete_question', 'id' => (int) $question['id'], 'return_page' => $current_page_slug, 'filter_type' => $list_filter_type, 'filter_source_kind' => $list_filter_source_kind, 'filter_subject_id' => $list_filter_subject_id, 'question_per_page' => $list_per_page, 'question_paged' => $list_current_page], admin_url('admin-post.php')), 'cbt_delete_question_' . (int) $question['id'])); ?>" onclick="return confirm('Delete this question?');">Delete</a>
+                                        <?php endif; ?>
+                                        <a class="cbt-questions-row-action cbt-questions-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg($question_delete_args, admin_url('admin-post.php')), 'cbt_delete_question_' . (int) $question['id'])); ?>" onclick="return confirm('Delete this question?');">Delete</a>
                                     </div>
                                 </td>
                             </tr>
@@ -2025,7 +2437,7 @@ if (!defined('ABSPATH')) {
                                     ]
                                 );
                                 ?>
-                                <tr class="cbt-question-inline-preview-row">
+                                <tr class="cbt-question-inline-preview-row" id="cbt-question-preview-<?php echo (int) $view_question['id']; ?>">
                                     <td colspan="8">
                                         <div class="cbt-question-inline-preview">
                                             <div class="cbt-question-inline-preview-head">
@@ -2122,6 +2534,26 @@ if (!defined('ABSPATH')) {
                     }
                 }
 
+                function scrollToQuestionHashTarget() {
+                    if (!window.location.hash) {
+                        return;
+                    }
+
+                    const targetId = String(window.location.hash || '').replace(/^#/, '');
+                    if (!targetId) {
+                        return;
+                    }
+
+                    const target = document.getElementById(targetId);
+                    if (!target) {
+                        return;
+                    }
+
+                    window.requestAnimationFrame(() => {
+                        target.scrollIntoView({ behavior: 'auto', block: 'start' });
+                    });
+                }
+
                 if (page && pageTabButtons.length > 0 && pageTabPanels.length > 0) {
                     let initialTab = defaultTab;
                     if (!forceTab && window.localStorage) {
@@ -2132,6 +2564,7 @@ if (!defined('ABSPATH')) {
                     }
 
                     activatePageTab(initialTab, false);
+                    scrollToQuestionHashTarget();
 
                     pageTabButtons.forEach((button) => {
                         button.addEventListener('click', function () {
@@ -2156,6 +2589,8 @@ if (!defined('ABSPATH')) {
                             }
                         });
                     });
+
+                    window.addEventListener('hashchange', scrollToQuestionHashTarget);
                 }
 
                 const qTypeHidden = document.getElementById('cbt-question-type-hidden');
@@ -2235,35 +2670,36 @@ if (!defined('ABSPATH')) {
                 const wordTemplateButton = document.getElementById('cbt-download-word-template');
                 const wordTemplateCount = document.getElementById('cbt-word-template-count');
                 const docxFileAccept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+                const importHelpSuffix = ' Gambar dan tabel di soal, opsi, serta pembahasan didukung. Wajib gunakan template resmi terbaru dan jangan hapus marker CBT_TEMPLATE atau field JENIS_SOAL.';
 
                 const importTypeInfo = {
                     multiple_choice: {
-                        help: 'Mode import aktif: Multiple Choice. DOCX didukung (minimal 3 opsi, maks 5 opsi, tepat 1 jawaban benar, opsi tidak boleh duplikat, gambar bisa ditempel, field opsional PEMBAHASAN didukung).',
+                        help: 'Mode import aktif: Multiple Choice. DOCX didukung (minimal 3 opsi, maks 5 opsi, tepat 1 jawaban benar, opsi tidak boleh duplikat, gambar bisa ditempel, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word MC (.docx)',
                         urlKey: 'urlMc',
                     },
                     multiple_answer: {
-                        help: 'Mode import aktif: Multiple Answer. DOCX didukung (minimal 3 opsi, maks 12 opsi, minimal 1 jawaban benar, opsi tidak boleh duplikat, jawaban bisa lebih dari satu: contoh 1,3,5, field opsional PEMBAHASAN didukung).',
+                        help: 'Mode import aktif: Multiple Answer. DOCX didukung (minimal 3 opsi, maks 12 opsi, minimal 1 jawaban benar, opsi tidak boleh duplikat, jawaban bisa lebih dari satu: contoh 1,3,5, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word MA (.docx)',
                         urlKey: 'urlMa',
                     },
                     true_false: {
-                        help: 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false, field opsional PEMBAHASAN didukung).',
+                        help: 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word TF (.docx)',
                         urlKey: 'urlTf',
                     },
                     true_false_matrix: {
-                        help: 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false secara berurutan tanpa nomor loncat, pernyataan tidak boleh duplikat, field opsional PEMBAHASAN didukung).',
+                        help: 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false secara berurutan tanpa nomor loncat, pernyataan tidak boleh duplikat, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word TF Matrix (.docx)',
                         urlKey: 'urlTfm',
                     },
                     short_answer: {
-                        help: 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, wajib gunakan placeholder [INPUT_1] s.d. [INPUT_8] tanpa duplikat di teks soal, dan wajib pakai JAWABAN_A..H sesuai key placeholder, field opsional PEMBAHASAN didukung).',
+                        help: 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, wajib gunakan placeholder [INPUT_1] s.d. [INPUT_8] tanpa duplikat di teks soal, dan wajib pakai JAWABAN_A..H sesuai key placeholder, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word SA (.docx)',
                         urlKey: 'urlSa',
                     },
                     essay: {
-                        help: 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).',
+                        help: 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word Essay (.docx)',
                         urlKey: 'urlEssay',
                     },
@@ -2320,6 +2756,80 @@ if (!defined('ABSPATH')) {
                 }
 
                 activateImportType(importTypeHidden?.value || 'multiple_choice');
+
+                const batchAnalysisRoot = document.querySelector('[data-cbt-import-batch-analysis]');
+                if (batchAnalysisRoot) {
+                    const navItems = Array.from(batchAnalysisRoot.querySelectorAll('[data-cbt-import-batch-analysis-nav-item]'));
+                    const detailPanels = Array.from(batchAnalysisRoot.querySelectorAll('[data-cbt-import-batch-analysis-panel]'));
+
+                    const applyBatchAnalysisFilter = (panel, kind) => {
+                        if (!panel) return;
+                        const normalizedKind = String(kind || 'needs-review');
+                        const filterButtons = Array.from(panel.querySelectorAll('[data-cbt-import-batch-analysis-filter]'));
+                        const analysisItems = Array.from(panel.querySelectorAll('[data-diagnostic-kind]'));
+                        const emptyState = panel.querySelector('[data-cbt-import-batch-analysis-empty]');
+                        let visibleCount = 0;
+
+                        filterButtons.forEach((button) => {
+                            button.classList.toggle('is-active', button.getAttribute('data-cbt-import-batch-analysis-filter') === normalizedKind);
+                        });
+
+                        analysisItems.forEach((item) => {
+                            const itemKind = String(item.getAttribute('data-diagnostic-kind') || '');
+                            const shouldShow = normalizedKind === 'all'
+                                ? true
+                                : (normalizedKind === 'needs-review'
+                                    ? (itemKind === 'fallback' || itemKind === 'unsupported')
+                                    : itemKind === normalizedKind);
+                            item.hidden = !shouldShow;
+                            if (shouldShow) {
+                                visibleCount += 1;
+                            }
+                        });
+
+                        if (emptyState) {
+                            const emptyMessage = normalizedKind === 'needs-review'
+                                ? 'Soal ini tidak punya catatan yang perlu dicek.'
+                                : 'Tidak ada diagnostics untuk filter ini pada soal terpilih.';
+                            emptyState.textContent = emptyMessage;
+                            emptyState.hidden = visibleCount > 0;
+                        }
+                    };
+
+                    const activateBatchAnalysisQuestion = (questionId) => {
+                        const normalizedId = String(questionId || '');
+                        navItems.forEach((item) => {
+                            item.classList.toggle('is-active', String(item.getAttribute('data-question-id') || '') === normalizedId);
+                        });
+                        detailPanels.forEach((panel) => {
+                            const isActive = String(panel.getAttribute('data-question-id') || '') === normalizedId;
+                            panel.classList.toggle('is-active', isActive);
+                            if (isActive) {
+                                const defaultFilter = panel.querySelector('[data-cbt-import-batch-analysis-filter="needs-review"]');
+                                applyBatchAnalysisFilter(panel, defaultFilter ? 'needs-review' : 'all');
+                            }
+                        });
+                    };
+
+                    navItems.forEach((item) => {
+                        item.addEventListener('click', () => {
+                            activateBatchAnalysisQuestion(item.getAttribute('data-question-id') || '');
+                        });
+                    });
+
+                    detailPanels.forEach((panel) => {
+                        Array.from(panel.querySelectorAll('[data-cbt-import-batch-analysis-filter]')).forEach((button) => {
+                            button.addEventListener('click', () => {
+                                applyBatchAnalysisFilter(panel, button.getAttribute('data-cbt-import-batch-analysis-filter') || 'needs-review');
+                            });
+                        });
+                    });
+
+                    const initiallyActiveItem = navItems.find((item) => item.classList.contains('is-active')) || navItems[0];
+                    if (initiallyActiveItem) {
+                        activateBatchAnalysisQuestion(initiallyActiveItem.getAttribute('data-question-id') || '');
+                    }
+                }
 
                 const questionListPanel = document.querySelector('[data-cbt-questions-panel="list"]');
                 let questionListRequestId = 0;
@@ -2844,7 +3354,7 @@ if (!defined('ABSPATH')) {
                             const signatures = new Map();
                             const duplicates = [];
                             statements.forEach((item) => {
-                                const signature = normalizeCompareText(item?.text || '');
+                                const signature = normalizeCompareText(item?.text || '', { stripHtml: true });
                                 if (signature === '') return;
                                 const itemIndex = Number(item?.index || 0);
                                 if (signatures.has(signature)) {

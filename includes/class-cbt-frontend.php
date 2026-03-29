@@ -505,15 +505,8 @@ class CBT_Frontend
      */
     private static function get_vite_entry_css_files(array $manifest, array $entry): array
     {
-        $css_files = [];
-
-        if (!empty($entry['css']) && is_array($entry['css'])) {
-            foreach ($entry['css'] as $css_file) {
-                if (is_string($css_file) && $css_file !== '') {
-                    $css_files[] = $css_file;
-                }
-            }
-        }
+        $visited = [];
+        $css_files = self::collect_vite_entry_css_files($manifest, $entry, $visited);
 
         if ($css_files !== []) {
             return array_values(array_unique($css_files));
@@ -525,6 +518,73 @@ class CBT_Frontend
         }
 
         return array_values(array_unique($css_files));
+    }
+
+    /**
+     * @param array<string,mixed> $manifest
+     * @param array<string,mixed> $entry
+     * @param array<string,bool>  $visited
+     * @return array<int,string>
+     */
+    private static function collect_vite_entry_css_files(array $manifest, array $entry, array &$visited): array
+    {
+        $visit_key = self::build_manifest_entry_visit_key($entry);
+        if ($visit_key !== '') {
+            if (isset($visited[$visit_key])) {
+                return [];
+            }
+
+            $visited[$visit_key] = true;
+        }
+
+        $css_files = [];
+        if (!empty($entry['imports']) && is_array($entry['imports'])) {
+            foreach ($entry['imports'] as $import_key) {
+                if (!is_string($import_key) || $import_key === '') {
+                    continue;
+                }
+
+                $import_entry = self::get_vite_manifest_entry($manifest, $import_key);
+                if ($import_entry === null) {
+                    continue;
+                }
+
+                $css_files = array_merge(
+                    $css_files,
+                    self::collect_vite_entry_css_files($manifest, $import_entry, $visited)
+                );
+            }
+        }
+
+        if (!empty($entry['css']) && is_array($entry['css'])) {
+            foreach ($entry['css'] as $css_file) {
+                if (is_string($css_file) && $css_file !== '') {
+                    $css_files[] = $css_file;
+                }
+            }
+        }
+
+        return array_values(array_unique($css_files));
+    }
+
+    /**
+     * @param array<string,mixed> $entry
+     */
+    private static function build_manifest_entry_visit_key(array $entry): string
+    {
+        if (!empty($entry['src']) && is_string($entry['src'])) {
+            return 'src:' . ltrim((string) $entry['src'], './');
+        }
+
+        if (!empty($entry['file']) && is_string($entry['file'])) {
+            return 'file:' . ltrim((string) $entry['file'], './');
+        }
+
+        if (!empty($entry['name']) && is_string($entry['name'])) {
+            return 'name:' . (string) $entry['name'];
+        }
+
+        return '';
     }
 
     private static function build_asset_version(string $relative_output_path): string

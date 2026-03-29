@@ -391,8 +391,8 @@ final class CBT_Admin_Questions_Helper
                 }
     
                 if (is_string($candidate) || is_numeric($candidate)) {
-                    $text = sanitize_text_field(trim((string) $candidate));
-                    if ($text === '') {
+                    $text = self::sanitize_editor_html(trim((string) $candidate));
+                    if (!self::has_non_empty_html_content($text)) {
                         continue;
                     }
                     $normalized[] = [
@@ -406,10 +406,10 @@ final class CBT_Admin_Questions_Helper
                     continue;
                 }
     
-                $text = sanitize_text_field(
+                $text = self::sanitize_editor_html(
                     trim((string) ($candidate['text'] ?? $candidate['statement'] ?? $candidate['pernyataan'] ?? ''))
                 );
-                if ($text === '') {
+                if (!self::has_non_empty_html_content($text)) {
                     continue;
                 }
     
@@ -1318,7 +1318,7 @@ CSS;
                     <div class="cbt-admin-student-preview-matrix">
                         <?php foreach ($matrix_rows as $matrix_row): ?>
                             <div class="cbt-admin-student-preview-matrix-row">
-                                <div><?php echo esc_html((string) ($matrix_row['text'] ?? '')); ?></div>
+                                <div class="cbt-admin-student-preview-richtext"><?php echo self::render_editor_html((string) ($matrix_row['text'] ?? '')); ?></div>
                                 <span class="cbt-admin-student-preview-matrix-answer">
                                     <?php echo ((string) ($matrix_row['answer'] ?? 'true') === 'false') ? 'Kunci Salah' : 'Kunci Benar'; ?>
                                 </span>
@@ -1437,9 +1437,142 @@ CSS;
 
             return wp_kses(
                 (string) $html,
-                wp_kses_allowed_html('post'),
+                self::get_editor_allowed_html(),
                 $allowed_protocols
             );
+        }
+
+        public static function sanitize_lightweight_math_html(string $html): string
+        {
+            $raw_html = (string) $html;
+            if ($raw_html === '') {
+                return '';
+            }
+
+            $fragments = [];
+            $cursor = 0;
+            $pattern = '/<(span|div)\b[\s\S]*?<\/\1>/i';
+
+            if (preg_match_all($pattern, $raw_html, $matches, PREG_OFFSET_CAPTURE)) {
+                foreach ($matches[0] as $match) {
+                    $markup = isset($match[0]) ? (string) $match[0] : '';
+                    $match_start = isset($match[1]) ? (int) $match[1] : 0;
+
+                    if ($match_start > $cursor) {
+                        $fragments[] = self::sanitize_lightweight_math_text_fragment(substr($raw_html, $cursor, $match_start - $cursor));
+                    }
+
+                    $wrapper_html = self::sanitize_lightweight_math_wrapper_markup($markup);
+                    if ($wrapper_html !== '') {
+                        $fragments[] = $wrapper_html;
+                    } else {
+                        $fragments[] = self::sanitize_lightweight_math_text_fragment($markup);
+                    }
+
+                    $cursor = $match_start + strlen($markup);
+                }
+            }
+
+            if ($cursor < strlen($raw_html)) {
+                $fragments[] = self::sanitize_lightweight_math_text_fragment(substr($raw_html, $cursor));
+            }
+
+            return trim(implode('', $fragments));
+        }
+
+        private static function sanitize_lightweight_math_text_fragment(string $fragment): string
+        {
+            if ($fragment === '') {
+                return '';
+            }
+
+            $normalized = preg_replace('/<br\s*\/?>/i', "\n", $fragment);
+            $normalized = is_string($normalized) ? $normalized : $fragment;
+            $text = wp_strip_all_tags($normalized, false);
+
+            return nl2br(esc_html($text), false);
+        }
+
+        private static function sanitize_lightweight_math_wrapper_markup(string $markup): string
+        {
+            if ($markup === '') {
+                return '';
+            }
+
+            if (!preg_match('/^<(span|div)\b/i', $markup, $tag_match)) {
+                return '';
+            }
+
+            if (!preg_match('/\bclass=(["\'])(.*?)\1/i', $markup, $class_match)) {
+                return '';
+            }
+
+            $class_tokens = preg_split('/\s+/', trim((string) ($class_match[2] ?? '')));
+            $class_tokens = is_array($class_tokens) ? array_values(array_filter(array_map('trim', $class_tokens))) : [];
+            if (empty($class_tokens) || !in_array('cbt-math', $class_tokens, true)) {
+                return '';
+            }
+
+            if (!preg_match('/\bdata-cbt-math=(["\'])(.*?)\1/i', $markup, $source_match)) {
+                return '';
+            }
+
+            $source = trim(html_entity_decode((string) ($source_match[2] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            if ($source === '') {
+                return '';
+            }
+
+            $display_mode = 'inline';
+            if (preg_match('/\bdata-cbt-math-display=(["\'])(.*?)\1/i', $markup, $display_match)) {
+                $display_mode = strtolower(trim((string) ($display_match[2] ?? ''))) === 'block' ? 'block' : 'inline';
+            }
+
+            $tag_name = strtolower((string) ($tag_match[1] ?? 'span')) === 'div' || $display_mode === 'block' ? 'div' : 'span';
+            $class_name = $display_mode === 'block' ? 'cbt-math cbt-math-block' : 'cbt-math';
+
+            return sprintf(
+                '<%1$s class="%2$s" data-cbt-math="%3$s" data-cbt-math-display="%4$s">%5$s</%1$s>',
+                $tag_name,
+                esc_attr($class_name),
+                esc_attr($source),
+                esc_attr($display_mode),
+                esc_html($source)
+            );
+        }
+
+        /**
+         * @return array<string,array<string,bool>>
+         */
+        private static function get_editor_allowed_html(): array
+        {
+            $allowed_html = wp_kses_allowed_html('post');
+            foreach (['span', 'div', 'p', 'table', 'figure', 'figcaption', 'td', 'th', 'ul', 'ol', 'li'] as $tag_name) {
+                if (!isset($allowed_html[$tag_name]) || !is_array($allowed_html[$tag_name])) {
+                    $allowed_html[$tag_name] = [];
+                }
+
+                $allowed_html[$tag_name]['style'] = true;
+                if (in_array($tag_name, ['span', 'div'], true)) {
+                    $allowed_html[$tag_name]['class'] = true;
+                }
+            }
+
+            if (!isset($allowed_html['img']) || !is_array($allowed_html['img'])) {
+                $allowed_html['img'] = [];
+            }
+            $allowed_html['img']['style'] = true;
+
+            foreach (['span', 'div'] as $tag_name) {
+                if (!isset($allowed_html[$tag_name]) || !is_array($allowed_html[$tag_name])) {
+                    $allowed_html[$tag_name] = [];
+                }
+
+                $allowed_html[$tag_name]['class'] = true;
+                $allowed_html[$tag_name]['data-cbt-math'] = true;
+                $allowed_html[$tag_name]['data-cbt-math-display'] = true;
+            }
+
+            return $allowed_html;
         }
 
         public static function render_editor_html(string $html): string

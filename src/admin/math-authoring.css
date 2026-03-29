@@ -1,0 +1,273 @@
+.cbt-equation-toolbar-button {
+    margin-left: 6px;
+}
+
+.cbt-equation-visual-toolbar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px 0;
+}
+
+.cbt-admin-equation-modal[hidden] {
+    display: none !important;
+}
+
+.cbt-admin-equation-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+}
+
+.cbt-admin-equation-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.cbt-admin-equation-modal__dialog {
+    position: relative;
+    z-index: 1;
+    width: min(1120px, calc(100vw - 32px));
+    margin: 32px auto;
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+    overflow: hidden;
+}
+
+.cbt-admin-equation-modal__header,
+.cbt-admin-equation-modal__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px;
+    border-bottom: 1px solid #dbe4ef;
+}
+
+.cbt-admin-equation-modal__footer {
+    border-top: 1px solid #dbe4ef;
+    border-bottom: none;
+}
+
+.cbt-admin-equation-modal__header h2 {
+    margin: 0 0 6px;
+}
+
+.cbt-admin-equation-modal__header p {
+    margin: 0;
+    color: #475569;
+}
+
+.cbt-admin-equation-modal__body {
+    padding: 18px 20px 20px;
+    display: grid;
+    gap: 16px;
+    grid-template-columns: minmax(220px, 0.9fr) minmax(320px, 1.1fr) minmax(260px, 1fr);
+    align-items: start;
+    overflow: auto;
+}
+
+.cbt-admin-equation-modal__panel {
+    display: grid;
+    gap: 14px;
+    min-height: 100%;
+    padding: 16px;
+    border: 1px solid #dbe4ef;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.cbt-admin-equation-modal__panel-header {
+    display: grid;
+    gap: 6px;
+}
+
+.cbt-admin-equation-modal__panel-header p {
+    margin: 0;
+    color: #475569;
+}
+
+.cbt-admin-equation-modal__templates-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.cbt-admin-equation-modal__category-list,
+.cbt-admin-equation-modal__symbol-list {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.cbt-admin-equation-modal__category-button.is-active {
+    background: #1d4ed8;
+    color: #fff;
+    border-color: #1d4ed8;
+}
+
+.cbt-admin-equation-modal__template-list {
+    display: grid;
+    gap: 10px;
+}
+
+.cbt-admin-equation-modal__template-card {
+    display: grid;
+    gap: 6px;
+    width: 100%;
+    padding: 12px 14px;
+    text-align: left;
+    border: 1px solid #d7e3f1;
+    border-radius: 14px;
+    background: #fff;
+    cursor: pointer;
+}
+
+.cbt-admin-equation-modal__template-card:hover,
+.cbt-admin-equation-modal__template-card:focus {
+    border-color: #1d4ed8;
+    box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.08);
+    outline: none;
+}
+
+.cbt-admin-equation-modal__template-card strong {
+    color: #0f172a;
+}
+
+.cbt-admin-equation-modal__template-card code {
+    display: block;
+    white-space: normal;
+    word-break: break-word;
+    color: #1e3a8a;
+    background: #eef4ff;
+    border-radius: 10px;
+    padding: 8px 10px;
+}
+
+.cbt-admin-equation-modal__field {
+    display: grid;
+    gap: 8px;
+}
+
+.cbt-admin-equation-modal__field > span,
+.cbt-admin-equation-modal__display legend {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.cbt-admin-equation-modal__field textarea {
+    min-height: 172px;
+}
+
+.cbt-admin-equation-modal__symbols {
+    display: grid;
+    gap: 8px;
+}
+
+.cbt-admin-equation-modal__symbol-button {
+    min-width: 46px;
+    padding-inline: 10px;
+}
+
+.cbt-admin-equation-modal__display {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.cbt-admin-equation-modal__display label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.cbt-admin-equation-modal__summary {
+    display: grid;
+    gap: 10px;
+}
+
+.cbt-admin-equation-modal__summary-item {
+    display: grid;
+    gap: 4px;
+    padding: 12px 14px;
+    border: 1px solid #d7e3f1;
+    border-radius: 14px;
+    background: #fff;
+}
+
+.cbt-admin-equation-modal__summary-item span {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748b;
+}
+
+.cbt-admin-equation-modal__summary-item strong {
+    color: #0f172a;
+}
+
+.cbt-admin-equation-modal__summary-item strong.is-valid {
+    color: #0f766e;
+}
+
+.cbt-admin-equation-modal__summary-item strong.is-invalid {
+    color: #b42318;
+}
+
+.cbt-admin-equation-modal__summary-item strong.is-empty {
+    color: #64748b;
+}
+
+.cbt-admin-equation-modal__suggestion-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.cbt-admin-equation-modal__preview-wrap {
+    display: grid;
+    gap: 8px;
+}
+
+.cbt-admin-equation-modal__preview {
+    min-height: 132px;
+    padding: 14px 16px;
+    border: 1px solid #d7e3f1;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
+}
+
+.cbt-admin-equation-modal__error {
+    margin: 0;
+    color: #b42318;
+    font-weight: 600;
+}
+
+.cbt-tfm-statement-preview {
+    flex-basis: 100%;
+    min-height: 56px;
+    padding: 10px 12px;
+    border: 1px solid #dbe4ef;
+    border-radius: 12px;
+    background: #f8fbff;
+}
+
+@media (max-width: 1080px) {
+    .cbt-admin-equation-modal__body {
+        grid-template-columns: 1fr;
+    }
+
+    .cbt-admin-equation-modal__dialog {
+        width: min(900px, calc(100vw - 24px));
+        margin: 20px auto;
+    }
+}

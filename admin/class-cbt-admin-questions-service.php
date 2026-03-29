@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
 
 final class CBT_Admin_Questions_Service
 {
+    private const QUESTION_IMPORT_SCOPE_CREATED = 'created';
+
     public static function can_manage_questions(): bool
     {
         return current_user_can('cbt_manage_questions');
@@ -14,6 +16,75 @@ final class CBT_Admin_Questions_Service
     public static function is_admin_scope(): bool
     {
         return current_user_can('manage_options') || current_user_can('cbt_manage_system');
+    }
+
+    private static function normalize_question_import_scope(string $requested_scope): string
+    {
+        $requested_scope = sanitize_key($requested_scope);
+
+        if ($requested_scope === self::QUESTION_IMPORT_SCOPE_CREATED) {
+            return self::QUESTION_IMPORT_SCOPE_CREATED;
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string,mixed> $args
+     * @return array<string,mixed>
+     */
+    private static function add_question_import_batch_scope_args(array $args, string $token, string $scope): array
+    {
+        if ($token !== '' && $scope === self::QUESTION_IMPORT_SCOPE_CREATED) {
+            $args['cbt_question_import_token'] = $token;
+            $args['cbt_question_import_scope'] = $scope;
+        }
+
+        return $args;
+    }
+
+    /**
+     * @param int[] $target_ids
+     * @param array<string,mixed> $state
+     */
+    private static function start_question_delete_session(array $target_ids, array $state): string
+    {
+        $target_ids = array_values(array_unique(array_filter(array_map('absint', $target_ids))));
+        if (empty($target_ids)) {
+            return '';
+        }
+
+        $token = strtolower((string) wp_generate_password(24, false, false));
+        $state = array_merge(
+            [
+                'total' => count($target_ids),
+                'offset' => 0,
+                'deleted' => 0,
+                'failed' => 0,
+                'user_id' => get_current_user_id(),
+                'started_at' => time(),
+                'return_page' => 'cbt-question-bank',
+                'filter_exam_id' => 0,
+                'filter_type' => '',
+                'filter_source_kind' => '',
+                'filter_subject_id' => 0,
+                'question_per_page' => 20,
+                'question_paged' => 1,
+                'affected_exam_ids' => [],
+                'question_import_token' => '',
+                'question_import_scope' => '',
+            ],
+            $state
+        );
+
+        $rows_saved = set_transient(self::get_question_delete_rows_key($token), $target_ids, 12 * HOUR_IN_SECONDS);
+        $state_saved = set_transient(self::get_question_delete_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+        if (!$rows_saved || !$state_saved) {
+            self::clear_question_delete_transients($token);
+            return '';
+        }
+
+        return $token;
     }
 
     /**
@@ -53,13 +124,14 @@ final class CBT_Admin_Questions_Service
                     }
                 }
                 $lock_question_type = ($active_question_type !== '');
+                $import_type_help_suffix = ' Gambar dan tabel di soal, opsi, serta pembahasan didukung. Wajib gunakan template resmi terbaru dan jangan hapus marker CBT_TEMPLATE atau field JENIS_SOAL.';
                 $import_type_help_map = [
-                    'multiple_choice' => 'Mode import aktif: Multiple Choice. DOCX didukung (minimal 3 opsi, maks 5 opsi, tepat 1 jawaban benar berupa nomor opsi, opsi tidak boleh duplikat, gambar bisa ditempel, field opsional PEMBAHASAN didukung).',
-                    'multiple_answer' => 'Mode import aktif: Multiple Answer. DOCX didukung (minimal 3 opsi, maks 12 opsi, minimal 1 jawaban benar, opsi tidak boleh duplikat, jawaban bisa lebih dari satu: contoh 1,3,5, field opsional PEMBAHASAN didukung).',
-                    'true_false' => 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false, field opsional PEMBAHASAN didukung).',
-                    'true_false_matrix' => 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false secara berurutan tanpa nomor loncat, pernyataan tidak boleh duplikat, field opsional PEMBAHASAN didukung).',
-                    'short_answer' => 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, wajib gunakan placeholder [INPUT_1] s.d. [INPUT_8] tanpa duplikat di teks soal, jumlah placeholder harus sama dengan jumlah jawaban valid, dan wajib pakai JAWABAN_A..H sesuai key input, field opsional PEMBAHASAN didukung).',
-                    'essay' => 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).',
+                    'multiple_choice' => 'Mode import aktif: Multiple Choice. DOCX didukung (minimal 3 opsi, maks 5 opsi, tepat 1 jawaban benar berupa nomor opsi, opsi tidak boleh duplikat, gambar bisa ditempel, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                    'multiple_answer' => 'Mode import aktif: Multiple Answer. DOCX didukung (minimal 3 opsi, maks 12 opsi, minimal 1 jawaban benar, opsi tidak boleh duplikat, jawaban bisa lebih dari satu: contoh 1,3,5, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                    'true_false' => 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                    'true_false_matrix' => 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false secara berurutan tanpa nomor loncat, pernyataan tidak boleh duplikat, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                    'short_answer' => 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, wajib gunakan placeholder [INPUT_1] s.d. [INPUT_8] tanpa duplikat di teks soal, jumlah placeholder harus sama dengan jumlah jawaban valid, dan wajib pakai JAWABAN_A..H sesuai key input, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                    'essay' => 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
                 ];
                 $import_active_type = $lock_question_type ? $active_question_type : 'multiple_choice';
                 $import_help_text = $import_type_help_map[$import_active_type] ?? $import_type_help_map['multiple_choice'];
@@ -233,15 +305,42 @@ final class CBT_Admin_Questions_Service
                 $notice = isset($query['cbt_msg']) ? sanitize_text_field(wp_unslash($query['cbt_msg'])) : '';
                 $error = isset($query['cbt_err']) ? sanitize_text_field(wp_unslash($query['cbt_err'])) : '';
                 $question_import_token = isset($query['cbt_question_import_token']) ? sanitize_key((string) wp_unslash($query['cbt_question_import_token'])) : '';
+                $question_import_scope = isset($query['cbt_question_import_scope'])
+                    ? self::normalize_question_import_scope((string) wp_unslash($query['cbt_question_import_scope']))
+                    : '';
                 $question_import_state = null;
                 $question_import_total = 0;
                 $question_import_offset = 0;
                 $question_import_created = 0;
                 $question_import_failed = 0;
                 $question_import_recent_failures = [];
+                $question_import_diagnostic_counts = [
+                    'preserved' => 0,
+                    'fallback' => 0,
+                    'unsupported' => 0,
+                ];
+                $question_import_diagnostic_entries = [];
+                $question_import_has_diagnostics = false;
+                $question_import_diagnostic_truncated = false;
                 $question_import_progress_percent = 0.0;
                 $question_import_is_running = false;
                 $question_import_continue_url = '';
+                $question_import_batch_active = false;
+                $question_import_batch_has_scope_request = $question_import_scope === self::QUESTION_IMPORT_SCOPE_CREATED;
+                $question_import_batch_subject_id = 0;
+                $question_import_batch_subject_label = '';
+                $question_import_batch_created_question_ids = [];
+                $question_import_batch_analysis_items = [];
+                $question_import_batch_analysis_summary = [
+                    'preserved' => 0,
+                    'fallback' => 0,
+                    'unsupported' => 0,
+                ];
+                $question_import_batch_selected_question_id = 0;
+                $question_import_batch_list_url = '';
+                $question_import_batch_back_to_all_url = '';
+                $question_import_batch_delete_all_url = '';
+                $question_import_batch_expired_notice = '';
                 if ($question_import_token !== '') {
                     $question_import_state = CBT_Admin_Questions_Import_Helper::get_question_import_state_for_current_user($question_import_token);
                     if (is_array($question_import_state)) {
@@ -261,6 +360,21 @@ final class CBT_Admin_Questions_Service
                                 return $entry;
                             }, CBT_Admin_Questions_Import_Helper::normalize_question_import_failure_entries($question_import_state['recent_failures']))
                             : [];
+                        $question_import_diagnostic_counts = array_merge(
+                            $question_import_diagnostic_counts,
+                            isset($question_import_state['diagnostic_counts']) && is_array($question_import_state['diagnostic_counts'])
+                                ? array_intersect_key($question_import_state['diagnostic_counts'], $question_import_diagnostic_counts)
+                                : []
+                        );
+                        $question_import_diagnostic_counts['preserved'] = max(0, (int) ($question_import_diagnostic_counts['preserved'] ?? 0));
+                        $question_import_diagnostic_counts['fallback'] = max(0, (int) ($question_import_diagnostic_counts['fallback'] ?? 0));
+                        $question_import_diagnostic_counts['unsupported'] = max(0, (int) ($question_import_diagnostic_counts['unsupported'] ?? 0));
+                        $question_import_diagnostic_entries = isset($question_import_state['diagnostic_entries']) && is_array($question_import_state['diagnostic_entries'])
+                            ? CBT_Admin_Questions_Import_Helper::normalize_question_import_diagnostic_entries($question_import_state['diagnostic_entries'])
+                            : [];
+                        $question_import_has_diagnostics = !empty($question_import_diagnostic_entries)
+                            || array_sum($question_import_diagnostic_counts) > 0;
+                        $question_import_diagnostic_truncated = !empty($question_import_state['diagnostic_truncated']);
                         $question_import_progress_percent = $question_import_total > 0
                             ? round(((float) $question_import_offset / (float) $question_import_total) * 100, 2)
                             : 0.0;
@@ -272,8 +386,24 @@ final class CBT_Admin_Questions_Service
                             ],
                             admin_url('admin-post.php')
                         );
+                        $question_import_batch_created_question_ids = CBT_Admin_Questions_Import_Helper::get_question_import_created_question_ids_for_current_user($question_import_token);
+                        $question_import_batch_analysis_items = CBT_Admin_Questions_Import_Helper::get_question_import_created_question_items_for_current_user($question_import_token);
+                        $question_import_batch_analysis_summary = CBT_Admin_Questions_Import_Helper::summarize_question_import_created_question_items($question_import_batch_analysis_items);
+                        $question_import_batch_selected_question_id = CBT_Admin_Questions_Import_Helper::get_default_question_import_created_question_item_id($question_import_batch_analysis_items);
+                        $question_import_batch_subject_id = isset($question_import_state['import_subject_id'])
+                            ? (int) $question_import_state['import_subject_id']
+                            : 0;
+                        if ($question_import_batch_has_scope_request) {
+                            $question_import_batch_active = true;
+                        }
                     } elseif ($notice === '' && $error === '') {
-                        $error = 'Sesi import soal tidak ditemukan atau sudah berakhir. Silakan upload ulang file.';
+                        $error = $question_import_batch_has_scope_request
+                            ? 'Sesi hasil import batch sudah berakhir. Kembali menampilkan semua soal.'
+                            : 'Sesi import soal tidak ditemukan atau sudah berakhir. Silakan upload ulang file.';
+                        if ($question_import_batch_has_scope_request) {
+                            $question_import_batch_expired_notice = $error;
+                            $question_import_scope = '';
+                        }
                     }
                 }
                 $show_import_panel_first = is_array($question_import_state);
@@ -357,6 +487,57 @@ final class CBT_Admin_Questions_Service
                     ? self::normalize_standard_list_per_page(absint(wp_unslash($query['cbt_question_per_page'])))
                     : 20;
                 $list_current_page = isset($query['cbt_question_paged']) ? max(1, absint(wp_unslash($query['cbt_question_paged']))) : 1;
+                if ($question_import_batch_active && $question_import_batch_subject_id > 0) {
+                    foreach ((array) $subjects as $batch_subject_row) {
+                        if ((int) ($batch_subject_row['id'] ?? 0) !== $question_import_batch_subject_id) {
+                            continue;
+                        }
+                        $question_import_batch_subject_label = (string) ($batch_subject_row['name'] ?? '');
+                        if (!empty($batch_subject_row['code'])) {
+                            $question_import_batch_subject_label .= ' (' . (string) $batch_subject_row['code'] . ')';
+                        }
+                        break;
+                    }
+                }
+                $question_import_batch_action_scope = is_array($question_import_state)
+                    ? self::QUESTION_IMPORT_SCOPE_CREATED
+                    : '';
+
+                $question_import_batch_list_url = add_query_arg(
+                    self::add_question_import_batch_scope_args(
+                        [
+                            'page' => $current_page_slug,
+                            'cbt_question_per_page' => $list_per_page,
+                            'cbt_question_paged' => 1,
+                        ],
+                        $question_import_token,
+                        $question_import_batch_action_scope
+                    ),
+                    admin_url('admin.php')
+                );
+                $question_import_batch_back_to_all_url = add_query_arg(
+                    [
+                        'page' => $current_page_slug,
+                        'cbt_question_per_page' => $list_per_page,
+                    ],
+                    admin_url('admin.php')
+                );
+                $question_import_batch_delete_all_url = wp_nonce_url(
+                    add_query_arg(
+                        self::add_question_import_batch_scope_args(
+                            [
+                                'action' => 'cbt_delete_all_import_batch_questions',
+                                'return_page' => $current_page_slug,
+                                'question_per_page' => $list_per_page,
+                                'question_paged' => $list_current_page,
+                            ],
+                            $question_import_token,
+                            $question_import_batch_action_scope
+                        ),
+                        admin_url('admin-post.php')
+                    ),
+                    'cbt_delete_all_import_batch_questions'
+                );
         
                 $question_base_where_parts = [];
                 if (!$is_admin_scope) {
@@ -369,6 +550,13 @@ final class CBT_Admin_Questions_Service
                 }
                 if ($list_filter_subject_id > 0) {
                     $question_base_where_parts[] = $wpdb->prepare('e.subject_id = %d', $list_filter_subject_id);
+                }
+                if ($question_import_batch_active) {
+                    if (!empty($question_import_batch_created_question_ids)) {
+                        $question_base_where_parts[] = 'q.id IN (' . implode(',', array_map('intval', $question_import_batch_created_question_ids)) . ')';
+                    } else {
+                        $question_base_where_parts[] = 'q.id = 0';
+                    }
                 }
                 $question_where_parts = $question_base_where_parts;
                 if ($list_filter_source_kind === 'bank') {
@@ -446,6 +634,10 @@ final class CBT_Admin_Questions_Service
                         'description' => 'Data lama yang masih tersimpan di exam biasa tanpa lineage bank. Tetap dibaca untuk kompatibilitas.',
                     ];
                 }
+                if ($question_import_batch_active) {
+                    $question_list_intro_text = 'Menampilkan hanya soal baru dari batch import ini. Gunakan preview inline untuk inspeksi cepat, lalu hapus row yang tidak dibutuhkan langsung dari scope batch ini.';
+                    $question_lineage_info_cards = [];
+                }
                 $total_questions = (int) $wpdb->get_var(
                     "SELECT COUNT(*)
                      FROM {$question_table} q
@@ -506,6 +698,37 @@ final class CBT_Admin_Questions_Service
                 }
                 if ($list_filter_subject_id > 0) {
                     $question_list_args['filter_subject_id'] = $list_filter_subject_id;
+                }
+                $question_list_args = self::add_question_import_batch_scope_args(
+                    $question_list_args,
+                    $question_import_token,
+                    $question_import_batch_active ? $question_import_scope : ''
+                );
+                $question_import_batch_link_args = self::add_question_import_batch_scope_args(
+                    $question_list_args,
+                    $question_import_token,
+                    $question_import_batch_action_scope
+                );
+                if (is_array($question_import_state) && !empty($question_import_batch_analysis_items)) {
+                    foreach ($question_import_batch_analysis_items as &$question_import_batch_analysis_item) {
+                        if (!is_array($question_import_batch_analysis_item)) {
+                            continue;
+                        }
+                        $item_question_id = (int) ($question_import_batch_analysis_item['question_id'] ?? 0);
+                        $item_counts = isset($question_import_batch_analysis_item['diagnostic_counts']) && is_array($question_import_batch_analysis_item['diagnostic_counts'])
+                            ? $question_import_batch_analysis_item['diagnostic_counts']
+                            : ['preserved' => 0, 'fallback' => 0, 'unsupported' => 0];
+                        $item_issue_count = max(0, (int) ($item_counts['fallback'] ?? 0)) + max(0, (int) ($item_counts['unsupported'] ?? 0));
+                        $question_import_batch_analysis_item['issue_count'] = $item_issue_count;
+                        $question_import_batch_analysis_item['status_label'] = $item_issue_count > 0
+                            ? 'Perlu Dicek ' . $item_issue_count
+                            : 'Aman';
+                        $question_import_batch_analysis_item['view_url'] = add_query_arg(
+                            array_merge($question_import_batch_link_args, ['view' => $item_question_id]),
+                            admin_url('admin.php')
+                        ) . '#cbt-question-preview-' . $item_question_id;
+                    }
+                    unset($question_import_batch_analysis_item);
                 }
         
                 $editing_type = $editing_question['question_type'] ?? ($lock_question_type ? $active_question_type : 'multiple_choice');
@@ -631,13 +854,20 @@ final class CBT_Admin_Questions_Service
                 if ($show_import_panel_first) {
                     $default_question_tab = 'import';
                 }
+                if ($question_import_batch_active) {
+                    $default_question_tab = 'list';
+                }
                 if (!empty($editing_question)) {
                     $default_question_tab = 'form';
                 }
                 if (!empty($view_question) || is_array($question_delete_state)) {
                     $default_question_tab = 'list';
                 }
-                $question_tab_is_forced = !empty($editing_question) || $show_import_panel_first || !empty($view_question) || is_array($question_delete_state);
+                $question_tab_is_forced = !empty($editing_question)
+                    || $show_import_panel_first
+                    || !empty($view_question)
+                    || is_array($question_delete_state)
+                    || $question_import_batch_active;
                 $question_clear_edit_url = add_query_arg($question_list_args, admin_url('admin.php'));
                 $question_reset_args = [
                     'page' => $current_page_slug,
@@ -912,10 +1142,37 @@ final class CBT_Admin_Questions_Service
             }
 
             $normalized_detail_text = '';
+            $matrix_source_rows = [];
+            $matrix_provided_indexes = [];
             if ($question_type === 'true_false') {
                 $normalized_detail_text = CBT_Admin_Questions_Helper::normalize_true_false_value($correct_text) === 1 ? 'true' : 'false';
             } elseif ($question_type === 'true_false_matrix') {
-                $normalized_detail_text = CBT_Admin_Questions_Helper::normalize_true_false_matrix_payload($correct_text_raw);
+                $matrix_source_payload = json_decode($correct_text_raw, true);
+                if (is_array($matrix_source_payload) && isset($matrix_source_payload['statements']) && is_array($matrix_source_payload['statements'])) {
+                    foreach ($matrix_source_payload['statements'] as $statement_row) {
+                        if (!is_array($statement_row)) {
+                            continue;
+                        }
+
+                        $statement_index = isset($statement_row['index']) ? (int) $statement_row['index'] : 0;
+                        $statement_text = CBT_Admin_Questions_Helper::sanitize_lightweight_math_html(
+                            trim((string) ($statement_row['text'] ?? $statement_row['statement'] ?? ''))
+                        );
+                        $statement_answer = strtolower(trim((string) ($statement_row['answer'] ?? 'true')));
+                        $normalized_statement_row = [
+                            'index' => $statement_index,
+                            'text' => $statement_text,
+                            'answer' => $statement_answer === 'false' ? 'false' : 'true',
+                        ];
+                        $matrix_source_rows[] = $normalized_statement_row;
+                        if ($statement_index > 0) {
+                            $matrix_provided_indexes[] = $statement_index;
+                        }
+                    }
+                }
+                $normalized_detail_text = (string) wp_json_encode([
+                    'statements' => $matrix_source_rows,
+                ]);
             } elseif ($question_type === 'short_answer') {
                 $normalized_detail_text = CBT_Admin_Questions_Helper::normalize_short_answer_payload($correct_text_raw);
             } elseif ($question_type === 'essay') {
@@ -959,23 +1216,8 @@ final class CBT_Admin_Questions_Service
                     self::redirect_question_import_with_error($short_answer_validation_error, $return_page);
                 }
             }
-    
+
             if ($question_type === 'true_false_matrix') {
-                $matrix_source_payload = json_decode($correct_text_raw, true);
-                $matrix_source_rows = [];
-                $matrix_provided_indexes = [];
-                if (is_array($matrix_source_payload) && isset($matrix_source_payload['statements']) && is_array($matrix_source_payload['statements'])) {
-                    foreach ($matrix_source_payload['statements'] as $statement_row) {
-                        if (!is_array($statement_row)) {
-                            continue;
-                        }
-                        $matrix_source_rows[] = $statement_row;
-                        $statement_index = isset($statement_row['index']) ? (int) $statement_row['index'] : 0;
-                        if ($statement_index > 0) {
-                            $matrix_provided_indexes[] = $statement_index;
-                        }
-                    }
-                }
                 $matrix_rows = CBT_Admin_Questions_Helper::normalize_true_false_matrix_config($normalized_detail_text);
                 $matrix_validation_error = CBT_Admin_Questions_Helper::validate_true_false_matrix_items(
                     $matrix_rows,
@@ -1225,6 +1467,19 @@ final class CBT_Admin_Questions_Service
             if (!in_array($filter_source_kind, $allowed_source_filters, true)) {
                 $filter_source_kind = '';
             }
+            $question_import_token = isset($_GET['cbt_question_import_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_question_import_token'])) : '';
+            $question_import_scope = isset($_GET['cbt_question_import_scope'])
+                ? self::normalize_question_import_scope((string) wp_unslash($_GET['cbt_question_import_scope']))
+                : '';
+            $question_import_batch_ids = [];
+            $question_import_batch_notice = '';
+            if ($question_import_token !== '' && $question_import_scope === self::QUESTION_IMPORT_SCOPE_CREATED) {
+                $question_import_batch_ids = CBT_Admin_Questions_Import_Helper::get_question_import_created_question_ids_for_current_user($question_import_token);
+                if (empty($question_import_batch_ids)) {
+                    $question_import_batch_notice = 'Sesi hasil import batch sudah berakhir. Kembali menampilkan semua soal.';
+                    $question_import_scope = '';
+                }
+            }
     
             if ($id > 0) {
                 global $wpdb;
@@ -1245,6 +1500,9 @@ final class CBT_Admin_Questions_Service
                     }
                 }
                 $wpdb->delete($wpdb->prefix . 'cbt_questions', ['id' => $id], ['%d']);
+                if ($question_import_token !== '' && $question_import_scope === self::QUESTION_IMPORT_SCOPE_CREATED && in_array($id, $question_import_batch_ids, true)) {
+                    CBT_Admin_Questions_Import_Helper::remove_question_import_created_question_ids_for_current_user($question_import_token, [$id]);
+                }
                 if ($affected_exam_id > 0) {
                     CBT_Cache::invalidate_catalog();
                     CBT_Cache::invalidate_exam($affected_exam_id);
@@ -1269,7 +1527,88 @@ final class CBT_Admin_Questions_Service
             if ($filter_subject_id > 0) {
                 $redirect_args['filter_subject_id'] = $filter_subject_id;
             }
+            if ($question_import_batch_notice !== '') {
+                $redirect_args['cbt_err'] = $question_import_batch_notice;
+            } else {
+                $redirect_args = self::add_question_import_batch_scope_args($redirect_args, $question_import_token, $question_import_scope);
+            }
 
+            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+            exit;
+        }
+
+        public static function handle_delete_all_import_batch_questions(): void
+        {
+            if (!current_user_can('cbt_manage_questions')) {
+                wp_die('Unauthorized');
+            }
+
+            check_admin_referer('cbt_delete_all_import_batch_questions');
+
+            $return_page = CBT_Admin_Questions_Helper::normalize_question_page_slug(isset($_GET['return_page']) ? wp_unslash($_GET['return_page']) : 'cbt-question-bank');
+            $question_per_page = self::normalize_standard_list_per_page(
+                isset($_GET['question_per_page']) ? absint(wp_unslash($_GET['question_per_page'])) : 20
+            );
+            $question_paged = isset($_GET['question_paged']) ? max(1, absint(wp_unslash($_GET['question_paged']))) : 1;
+            $question_import_token = isset($_GET['cbt_question_import_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_question_import_token'])) : '';
+            $question_import_scope = isset($_GET['cbt_question_import_scope'])
+                ? self::normalize_question_import_scope((string) wp_unslash($_GET['cbt_question_import_scope']))
+                : '';
+
+            $redirect_args = [
+                'page' => $return_page,
+                'cbt_question_per_page' => $question_per_page,
+                'cbt_question_paged' => $question_paged,
+            ];
+
+            if ($question_import_token === '' || $question_import_scope !== self::QUESTION_IMPORT_SCOPE_CREATED) {
+                $redirect_args['cbt_err'] = 'Batch hasil import tidak valid untuk dihapus.';
+                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+                exit;
+            }
+
+            $target_ids = CBT_Admin_Questions_Import_Helper::get_question_import_created_question_ids_for_current_user($question_import_token);
+            if (empty($target_ids)) {
+                $redirect_args['cbt_err'] = 'Sesi hasil import batch sudah berakhir atau batch ini sudah kosong.';
+                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+                exit;
+            }
+
+            global $wpdb;
+            $affected_exam_ids = [];
+            $placeholders = implode(',', array_fill(0, count($target_ids), '%d'));
+            $exam_rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT DISTINCT exam_id FROM {$wpdb->prefix}cbt_questions WHERE id IN ({$placeholders})",
+                    ...$target_ids
+                ),
+                ARRAY_A
+            );
+            foreach ((array) $exam_rows as $exam_row) {
+                $exam_id = (int) ($exam_row['exam_id'] ?? 0);
+                if ($exam_id > 0) {
+                    $affected_exam_ids[$exam_id] = $exam_id;
+                }
+            }
+
+            $state = [
+                'return_page' => $return_page,
+                'question_per_page' => $question_per_page,
+                'question_paged' => $question_paged,
+                'affected_exam_ids' => array_values($affected_exam_ids),
+                'question_import_token' => $question_import_token,
+                'question_import_scope' => $question_import_scope,
+            ];
+            $token = self::start_question_delete_session($target_ids, $state);
+            if ($token === '') {
+                $redirect_args = self::add_question_import_batch_scope_args($redirect_args, $question_import_token, $question_import_scope);
+                $redirect_args['cbt_err'] = 'Gagal menyiapkan sesi hapus batch hasil import. Coba lagi.';
+                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+                exit;
+            }
+
+            $redirect_args['cbt_question_delete_token'] = $token;
+            $redirect_args = self::add_question_import_batch_scope_args($redirect_args, $question_import_token, $question_import_scope);
             wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             exit;
         }
@@ -1305,6 +1644,12 @@ final class CBT_Admin_Questions_Service
             if (!in_array($filter_source_kind, $allowed_source_filters, true)) {
                 $filter_source_kind = '';
             }
+            $question_import_token = isset($_POST['cbt_question_import_token']) ? sanitize_key((string) wp_unslash($_POST['cbt_question_import_token'])) : '';
+            $question_import_scope = isset($_POST['cbt_question_import_scope'])
+                ? self::normalize_question_import_scope((string) wp_unslash($_POST['cbt_question_import_scope']))
+                : '';
+            $question_import_batch_ids = [];
+            $question_import_batch_expired = false;
     
             $raw_question_ids = isset($_POST['question_ids']) && is_array($_POST['question_ids']) ? wp_unslash($_POST['question_ids']) : [];
             $question_ids = array_values(array_unique(array_filter(array_map('absint', $raw_question_ids))));
@@ -1325,6 +1670,21 @@ final class CBT_Admin_Questions_Service
             }
             if ($filter_subject_id > 0) {
                 $redirect_args['filter_subject_id'] = $filter_subject_id;
+            }
+            if ($question_import_token !== '' && $question_import_scope === self::QUESTION_IMPORT_SCOPE_CREATED) {
+                $question_import_batch_ids = CBT_Admin_Questions_Import_Helper::get_question_import_created_question_ids_for_current_user($question_import_token);
+                if (empty($question_import_batch_ids)) {
+                    $question_import_scope = '';
+                    $question_import_batch_expired = true;
+                    $redirect_args['cbt_err'] = 'Sesi hasil import batch sudah berakhir. Kembali menampilkan semua soal.';
+                } else {
+                    $question_ids = array_values(array_intersect($question_ids, $question_import_batch_ids));
+                    $redirect_args = self::add_question_import_batch_scope_args($redirect_args, $question_import_token, $question_import_scope);
+                }
+            }
+            if ($question_import_batch_expired) {
+                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+                exit;
             }
     
             if (empty($question_ids)) {
@@ -1373,15 +1733,8 @@ final class CBT_Admin_Questions_Service
                     $affected_exam_ids[$exam_id] = $exam_id;
                 }
             }
-    
-            $token = strtolower((string) wp_generate_password(24, false, false));
+
             $state = [
-                'total' => count($target_ids),
-                'offset' => 0,
-                'deleted' => 0,
-                'failed' => 0,
-                'user_id' => get_current_user_id(),
-                'started_at' => time(),
                 'return_page' => $return_page,
                 'filter_exam_id' => $filter_exam_id,
                 'filter_type' => $filter_type,
@@ -1390,11 +1743,11 @@ final class CBT_Admin_Questions_Service
                 'question_per_page' => $question_per_page,
                 'question_paged' => $question_paged,
                 'affected_exam_ids' => array_values($affected_exam_ids),
+                'question_import_token' => $question_import_token,
+                'question_import_scope' => $question_import_scope,
             ];
-            $rows_saved = set_transient(self::get_question_delete_rows_key($token), array_values($target_ids), 12 * HOUR_IN_SECONDS);
-            $state_saved = set_transient(self::get_question_delete_state_key($token), $state, 12 * HOUR_IN_SECONDS);
-            if (!$rows_saved || !$state_saved) {
-                self::clear_question_delete_transients($token);
+            $token = self::start_question_delete_session($target_ids, $state);
+            if ($token === '') {
                 $redirect_args['cbt_err'] = 'Gagal menyiapkan sesi hapus soal. Coba lagi.';
                 wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
                 exit;
@@ -1428,6 +1781,10 @@ final class CBT_Admin_Questions_Service
             }
             $question_per_page = self::normalize_standard_list_per_page(isset($state['question_per_page']) ? (int) $state['question_per_page'] : 20);
             $question_paged = isset($state['question_paged']) ? max(1, (int) $state['question_paged']) : 1;
+            $question_import_token = isset($state['question_import_token']) ? sanitize_key((string) $state['question_import_token']) : '';
+            $question_import_scope = isset($state['question_import_scope'])
+                ? self::normalize_question_import_scope((string) $state['question_import_scope'])
+                : '';
             $redirect_args = [
                 'page' => $return_page,
                 'cbt_question_per_page' => $question_per_page,
@@ -1445,6 +1802,7 @@ final class CBT_Admin_Questions_Service
             if ($filter_subject_id > 0) {
                 $redirect_args['filter_subject_id'] = $filter_subject_id;
             }
+            $redirect_args = self::add_question_import_batch_scope_args($redirect_args, $question_import_token, $question_import_scope);
     
             $target_ids = get_transient(self::get_question_delete_rows_key($token));
             if (!is_array($target_ids) || empty($target_ids)) {
@@ -1487,6 +1845,7 @@ final class CBT_Admin_Questions_Service
             $target_end = min($offset + $batch_size, $total);
             $end = $offset;
             $batch_started_at = microtime(true);
+            $deleted_question_ids = [];
     
             global $wpdb;
             for ($index = $offset; $index < $target_end; $index++) {
@@ -1496,10 +1855,11 @@ final class CBT_Admin_Questions_Service
                     $end = $index + 1;
                     continue;
                 }
-    
+
                 $deleted_rows = $wpdb->delete($wpdb->prefix . 'cbt_questions', ['id' => $question_id], ['%d']);
                 if ($deleted_rows) {
                     $deleted += (int) $deleted_rows;
+                    $deleted_question_ids[] = $question_id;
                 } else {
                     $failed++;
                 }
@@ -1514,6 +1874,12 @@ final class CBT_Admin_Questions_Service
             $state['deleted'] = $deleted;
             $state['failed'] = $failed;
             $state['affected_exam_ids'] = array_values($affected_exam_ids);
+            if (!empty($deleted_question_ids) && $question_import_token !== '' && $question_import_scope === self::QUESTION_IMPORT_SCOPE_CREATED) {
+                CBT_Admin_Questions_Import_Helper::remove_question_import_created_question_ids_for_current_user(
+                    $question_import_token,
+                    $deleted_question_ids
+                );
+            }
     
             if ((int) $state['offset'] < $total) {
                 $state_saved = set_transient(self::get_question_delete_state_key($token), $state, 12 * HOUR_IN_SECONDS);

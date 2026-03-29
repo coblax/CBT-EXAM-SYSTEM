@@ -6,6 +6,12 @@ if (!defined('ABSPATH')) {
 
 final class CBT_Admin_Questions_Import_Helper
 {
+    private const DOCX_TEMPLATE_MARKER_KEY = 'cbt_template';
+    private const DOCX_TEMPLATE_MARKER_VALUE = 'question_import_v2';
+    private const DOCX_HTML_MARKER_PREFIX = '__HTML__:';
+    private const DOCX_DIAGNOSTIC_MARKER_PREFIX = '__DIAG__:';
+    private const QUESTION_IMPORT_DIAGNOSTIC_ENTRY_LIMIT = 200;
+
     private static function prepare_runtime_for_bulk_user_import(): void
     {
         if (function_exists('ignore_user_abort')) {
@@ -23,44 +29,44 @@ final class CBT_Admin_Questions_Import_Helper
             if (!current_user_can('cbt_manage_questions')) {
                 wp_die('Unauthorized');
             }
-    
+
             self::prepare_runtime_for_bulk_user_import();
-    
+
             $token = isset($_GET['cbt_question_import_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_question_import_token'])) : '';
             if ($token !== '') {
                 self::continue_question_import($token);
             }
-    
+
             check_admin_referer('cbt_import_questions');
             $return_page = CBT_Admin_Questions_Helper::normalize_question_page_slug(isset($_POST['return_page']) ? wp_unslash($_POST['return_page']) : 'cbt-question-bank');
             $forced_import_type = CBT_Admin_Questions_Helper::forced_question_type_for_page($return_page);
-    
+
             if (!isset($_FILES['question_file']) || !is_array($_FILES['question_file'])) {
                 self::redirect_question_import_with_error('File tidak ditemukan.', $return_page);
             }
-    
+
             $file = $_FILES['question_file'];
             $tmp_path = $file['tmp_name'] ?? '';
             $original_name = $file['name'] ?? '';
             $error_code = isset($file['error']) ? (int) $file['error'] : UPLOAD_ERR_NO_FILE;
-    
+
             if ($error_code !== UPLOAD_ERR_OK || !$tmp_path) {
                 self::redirect_question_import_with_error('Upload file gagal.', $return_page);
             }
-    
+
             $default_exam_id = 0;
             $import_subject_id = isset($_POST['import_subject_id']) ? absint($_POST['import_subject_id']) : 0;
             if ($import_subject_id <= 0) {
                 self::redirect_question_import_with_error('Subject utama wajib dipilih.', $return_page);
             }
-    
+
             global $wpdb;
             $is_admin_scope = CBT_Admin_Questions_Service::is_admin_scope();
             $default_exam_id = CBT_Admin_Questions_Helper::ensure_subject_question_bank_exam($import_subject_id, $is_admin_scope, get_current_user_id());
             if ($default_exam_id <= 0) {
                 self::redirect_question_import_with_error('Gagal menyiapkan exam penampung untuk subject terpilih.', $return_page);
             }
-    
+
             $requested_import_type = isset($_POST['import_question_type']) ? sanitize_text_field(wp_unslash($_POST['import_question_type'])) : 'all';
             $allowed_import_types = ['all', 'multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'];
             if (!in_array($requested_import_type, $allowed_import_types, true)) {
@@ -69,37 +75,32 @@ final class CBT_Admin_Questions_Import_Helper
             if ($forced_import_type !== '') {
                 $requested_import_type = $forced_import_type;
             }
-    
+
             $extension = strtolower((string) pathinfo((string) $original_name, PATHINFO_EXTENSION));
-            $allowed_extensions = ['csv', 'xlsx'];
-            if (in_array($requested_import_type, ['all', 'multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'], true)) {
-                $allowed_extensions[] = 'docx';
+            $extension_validation = self::validate_question_import_upload_extension($extension);
+            if (is_wp_error($extension_validation)) {
+                self::redirect_question_import_with_error($extension_validation->get_error_message(), $return_page);
             }
-    
-            if (!in_array($extension, $allowed_extensions, true)) {
-                if (in_array($requested_import_type, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'all'], true)) {
-                    self::redirect_question_import_with_error('Format file harus CSV, XLSX, atau DOCX.', $return_page);
-                }
-                self::redirect_question_import_with_error('Untuk tipe soal ini, format file harus CSV atau XLSX.', $return_page);
-            }
-    
+
             if ($extension === 'docx' && !in_array($requested_import_type, ['all', 'multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'], true)) {
                 self::redirect_question_import_with_error('Import DOCX hanya tersedia untuk tab Multiple Choice, Multiple Answer, True/False, TF Matrix, Short Answer, dan Essay.', $return_page);
             }
-    
-            $require_question_type_column = ($requested_import_type === 'all');
-            if ($extension === 'xlsx') {
-                $parsed = self::parse_question_xlsx($tmp_path, $require_question_type_column);
-            } elseif ($extension === 'docx') {
-                $parsed = self::parse_question_docx($tmp_path);
-            } else {
-                $parsed = self::parse_question_csv($tmp_path, $require_question_type_column);
-            }
-    
+
+            $parsed = self::parse_question_docx($tmp_path);
+
             if (is_wp_error($parsed)) {
                 self::redirect_question_import_with_error($parsed->get_error_message(), $return_page);
             }
-    
+
+            $type_mismatch_validation = self::validate_parsed_rows_for_requested_import_type(
+                is_array($parsed) ? $parsed : [],
+                $requested_import_type,
+                $extension
+            );
+            if (is_wp_error($type_mismatch_validation)) {
+                self::redirect_question_import_with_error($type_mismatch_validation->get_error_message(), $return_page);
+            }
+
             if ($requested_import_type !== 'all') {
                 foreach ($parsed as &$row) {
                     if (is_array($row)) {
@@ -108,11 +109,12 @@ final class CBT_Admin_Questions_Import_Helper
                 }
                 unset($row);
             }
-    
+
             if (!is_array($parsed) || empty($parsed)) {
                 self::redirect_question_import_with_error('Tidak ada data soal yang bisa diproses.', $return_page);
             }
-    
+
+            $diagnostic_summary = self::aggregate_question_import_diagnostics($parsed);
             $token = strtolower((string) wp_generate_password(24, false, false));
             $current_user_id = get_current_user_id();
             $state = [
@@ -120,23 +122,29 @@ final class CBT_Admin_Questions_Import_Helper
                 'offset' => 0,
                 'created' => 0,
                 'failed' => 0,
+                'created_question_ids' => [],
+                'created_question_items' => [],
                 'recent_failures' => [],
                 'user_id' => $current_user_id,
                 'started_at' => time(),
                 'return_page' => $return_page,
                 'default_exam_id' => $default_exam_id,
+                'import_subject_id' => $import_subject_id,
                 'is_admin_scope' => $is_admin_scope ? 1 : 0,
                 'import_user_id' => $current_user_id,
                 'affected_exam_ids' => [],
+                'diagnostic_counts' => (array) ($diagnostic_summary['diagnostic_counts'] ?? []),
+                'diagnostic_entries' => (array) ($diagnostic_summary['diagnostic_entries'] ?? []),
+                'diagnostic_truncated' => !empty($diagnostic_summary['diagnostic_truncated']) ? 1 : 0,
             ];
-    
+
             $rows_saved = set_transient(self::get_question_import_rows_key($token), array_values($parsed), 12 * HOUR_IN_SECONDS);
             $state_saved = set_transient(self::get_question_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
             if (!$rows_saved || !$state_saved) {
                 self::clear_question_import_transients($token);
                 self::redirect_question_import_with_error('Gagal menyiapkan sesi import soal. Coba file lebih kecil atau ulangi import.', $return_page);
             }
-    
+
             wp_safe_redirect(add_query_arg(
                 [
                     'page' => $return_page,
@@ -154,19 +162,25 @@ final class CBT_Admin_Questions_Import_Helper
                 self::clear_question_import_transients($token);
                 self::redirect_question_import_with_error('Sesi import soal berakhir. Silakan upload ulang file.');
             }
-    
+
             $return_page = CBT_Admin_Questions_Helper::normalize_question_page_slug((string) ($state['return_page'] ?? 'cbt-question-bank'));
             $rows = get_transient(self::get_question_import_rows_key($token));
             if (!is_array($rows) || empty($rows)) {
                 self::clear_question_import_transients($token);
                 self::redirect_question_import_with_error('Data batch import soal tidak ditemukan. Silakan upload ulang file.', $return_page);
             }
-    
+
             $rows = array_values($rows);
             $total = isset($state['total']) ? (int) $state['total'] : count($rows);
             $offset = isset($state['offset']) ? (int) $state['offset'] : 0;
             $created = isset($state['created']) ? (int) $state['created'] : 0;
             $failed = isset($state['failed']) ? (int) $state['failed'] : 0;
+            $created_question_ids = isset($state['created_question_ids']) && is_array($state['created_question_ids'])
+                ? self::normalize_question_import_created_question_ids($state['created_question_ids'])
+                : [];
+            $created_question_items = isset($state['created_question_items']) && is_array($state['created_question_items'])
+                ? self::normalize_question_import_created_question_items($state['created_question_items'])
+                : [];
             $recent_failures = isset($state['recent_failures']) && is_array($state['recent_failures'])
                 ? self::normalize_question_import_failure_entries($state['recent_failures'])
                 : [];
@@ -176,7 +190,7 @@ final class CBT_Admin_Questions_Import_Helper
             if ($import_user_id <= 0) {
                 $import_user_id = get_current_user_id();
             }
-    
+
             if ($total <= 0 || empty($rows)) {
                 self::clear_question_import_transients($token);
                 self::redirect_question_import_with_error('Data import soal kosong.', $return_page);
@@ -191,7 +205,7 @@ final class CBT_Admin_Questions_Import_Helper
             if ($offset > $total) {
                 $offset = $total;
             }
-    
+
             $affected_exam_ids = [];
             if (isset($state['affected_exam_ids']) && is_array($state['affected_exam_ids'])) {
                 foreach ((array) $state['affected_exam_ids'] as $affected_exam_id) {
@@ -201,14 +215,14 @@ final class CBT_Admin_Questions_Import_Helper
                     }
                 }
             }
-    
+
             $batch_size = self::get_question_import_batch_size();
             $max_batch_seconds = self::get_question_import_max_batch_seconds();
             $target_end = min($offset + $batch_size, $total);
             $end = $offset;
             $batch_started_at = microtime(true);
             $batch_affected_exam_ids = [];
-    
+
             for ($index = $offset; $index < $target_end; $index++) {
                 $row = isset($rows[$index]) && is_array($rows[$index]) ? (array) $rows[$index] : [];
 
@@ -226,6 +240,11 @@ final class CBT_Admin_Questions_Import_Helper
 
                 if ($result_status === 'created') {
                     $created++;
+                    $created_question_id = isset($result['question_id']) ? (int) $result['question_id'] : 0;
+                    if ($created_question_id > 0) {
+                        $created_question_ids[] = $created_question_id;
+                        $created_question_items[] = self::build_question_import_created_question_item($row, $created_question_id);
+                    }
                 } else {
                     $failed++;
                     $failure_entry = isset($result['failure_entry']) && is_array($result['failure_entry'])
@@ -238,26 +257,28 @@ final class CBT_Admin_Questions_Import_Helper
                         }
                     }
                 }
-    
+
                 $end = $index + 1;
                 if (($end - $offset) >= 1 && (microtime(true) - $batch_started_at) >= $max_batch_seconds) {
                     break;
                 }
             }
-    
+
             foreach ((array) $batch_affected_exam_ids as $affected_exam_id) {
                 $affected_exam_id = (int) $affected_exam_id;
                 if ($affected_exam_id > 0) {
                     $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
                 }
             }
-    
+
             $state['offset'] = max($offset, $end);
             $state['created'] = $created;
             $state['failed'] = $failed;
+            $state['created_question_ids'] = self::normalize_question_import_created_question_ids($created_question_ids);
+            $state['created_question_items'] = self::normalize_question_import_created_question_items($created_question_items);
             $state['recent_failures'] = $recent_failures;
             $state['affected_exam_ids'] = array_values($affected_exam_ids);
-    
+
             if ((int) $state['offset'] < $total) {
                 $state_saved = set_transient(self::get_question_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
                 if (!$state_saved) {
@@ -273,7 +294,7 @@ final class CBT_Admin_Questions_Import_Helper
                 ));
                 exit;
             }
-    
+
             $state['offset'] = $total;
             $state['completed_at'] = time();
             $state['is_complete'] = true;
@@ -283,7 +304,7 @@ final class CBT_Admin_Questions_Import_Helper
                 CBT_Cache::invalidate_catalog();
                 CBT_Cache::invalidate_exams(array_values($affected_exam_ids));
             }
-    
+
             $redirect_args = [
                 'page' => $return_page,
                 'cbt_question_import_token' => $token,
@@ -302,56 +323,6 @@ final class CBT_Admin_Questions_Import_Helper
             }
 
             wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-            exit;
-        }
-
-        public static function handle_download_question_template(): void
-        {
-            if (!current_user_can('cbt_manage_questions')) {
-                wp_die('Unauthorized');
-            }
-    
-            check_admin_referer('cbt_download_question_template');
-    
-            $rows = self::question_template_rows();
-            nocache_headers();
-            header('Content-Type: text/csv; charset=utf-8');
-            header('Content-Disposition: attachment; filename="cbt-question-import-template.csv"');
-            $out = fopen('php://output', 'wb');
-            if ($out === false) {
-                wp_die('Gagal membuat file template.');
-            }
-    
-            foreach ($rows as $row) {
-                fputcsv($out, $row);
-            }
-            fclose($out);
-            exit;
-        }
-
-        public static function handle_download_question_template_xlsx(): void
-        {
-            if (!current_user_can('cbt_manage_questions')) {
-                wp_die('Unauthorized');
-            }
-    
-            check_admin_referer('cbt_download_question_template_xlsx');
-    
-            if (!class_exists('\\PhpOffice\\PhpSpreadsheet\\Spreadsheet') || !class_exists('\\PhpOffice\\PhpSpreadsheet\\Writer\\Xlsx')) {
-                wp_die('Library XLSX belum terpasang. Jalankan composer install pada plugin CBT.');
-            }
-    
-            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-            $sheet = $spreadsheet->getActiveSheet();
-            $sheet->fromArray(self::question_template_rows(), null, 'A1');
-    
-            nocache_headers();
-            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            header('Content-Disposition: attachment; filename="cbt-question-import-template.xlsx"');
-            header('Cache-Control: max-age=0');
-    
-            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-            $writer->save('php://output');
             exit;
         }
 
@@ -423,123 +394,92 @@ final class CBT_Admin_Questions_Import_Helper
             if (!current_user_can('cbt_manage_questions')) {
                 wp_die('Unauthorized');
             }
-    
+
             check_admin_referer($nonce_action);
-    
+
             if (!class_exists('ZipArchive')) {
                 wp_die('Extension zip belum aktif. Tidak bisa membuat template Word.');
             }
-    
+
             $question_count = self::sanitize_word_template_question_count();
             $lines = self::build_word_template_lines($template_type, $question_count);
-    
+
             self::output_question_template_word_file($lines, $download_name);
         }
 
-        private static function parse_question_csv(string $tmp_path, bool $require_question_type_column = true)
+        private static function validate_parsed_rows_for_requested_import_type(array $rows, string $requested_import_type, string $extension)
         {
-            $handle = fopen($tmp_path, 'rb');
-            if ($handle === false) {
-                return new WP_Error('csv_open_failed', 'Gagal membuka file CSV.');
+            if ($requested_import_type === 'all' || empty($rows)) {
+                return true;
             }
-    
-            $first_line = fgets($handle);
-            if ($first_line === false) {
-                fclose($handle);
-                return new WP_Error('csv_empty', 'File CSV kosong.');
-            }
-    
-            $delimiter = (substr_count($first_line, ';') > substr_count($first_line, ',')) ? ';' : ',';
-            rewind($handle);
-    
-            $header = fgetcsv($handle, 0, $delimiter);
-            if ($header === false) {
-                fclose($handle);
-                return new WP_Error('csv_empty', 'File CSV kosong.');
-            }
-    
-            $header = self::normalize_question_import_header($header);
-            $valid = self::validate_question_import_header($header, $require_question_type_column);
-            if (is_wp_error($valid)) {
-                fclose($handle);
-                return $valid;
-            }
-    
-            $rows = [];
-            while (($data = fgetcsv($handle, 0, $delimiter)) !== false) {
-                if (!is_array($data)) {
-                    continue;
-                }
-                if (count(array_filter($data, static fn($v) => trim((string) $v) !== '')) === 0) {
-                    continue;
-                }
-                $row = [];
-                foreach ($header as $idx => $col) {
-                    $row[$col] = isset($data[$idx]) ? trim((string) $data[$idx]) : '';
-                }
-                $rows[] = $row;
-            }
-            fclose($handle);
-    
-            if (empty($rows)) {
-                return new WP_Error('csv_no_data', 'Tidak ada data soal di CSV.');
-            }
-    
-            return $rows;
-        }
 
-        private static function parse_question_xlsx(string $tmp_path, bool $require_question_type_column = true)
-        {
-            if (!class_exists('\\PhpOffice\\PhpSpreadsheet\\IOFactory')) {
-                return new WP_Error(
-                    'xlsx_library_missing',
-                    'Library XLSX belum terpasang. Jalankan composer install pada plugin CBT.'
+            $mismatches = [];
+            foreach ($rows as $row_index => $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+
+                $detected_question_type = self::map_import_question_type((string) ($row['question_type'] ?? ''));
+                if ($detected_question_type === '' || $detected_question_type === $requested_import_type) {
+                    continue;
+                }
+
+                $block_number = isset($row['__import_source_block']) ? (int) $row['__import_source_block'] : ($row_index + 1);
+                $question_preview = self::build_docx_block_preview_text([(string) ($row['question_text'] ?? '')]);
+                if ($question_preview === '') {
+                    $question_preview = 'Blok #' . $block_number;
+                }
+
+                $mismatches[] = [
+                    'block_number' => $block_number,
+                    'question_type' => $detected_question_type,
+                    'question_preview' => $question_preview,
+                ];
+            }
+
+            if (empty($mismatches)) {
+                return true;
+            }
+
+            $requested_label = CBT_Admin_Questions_Helper::get_question_type_label($requested_import_type);
+            $detected_labels = [];
+            foreach ($mismatches as $mismatch) {
+                $detected_labels[(string) $mismatch['question_type']] = CBT_Admin_Questions_Helper::get_question_type_label((string) $mismatch['question_type']);
+            }
+
+            $source_label = strtoupper($extension) !== '' ? strtoupper($extension) : 'file';
+            $message = sprintf(
+                'File %s terdeteksi berisi soal %s, tetapi menu import aktif adalah %s. Gunakan menu yang sesuai agar struktur jawaban tidak tertukar.',
+                $source_label,
+                implode(', ', array_values($detected_labels)),
+                $requested_label
+            );
+
+            $mismatch_summaries = [];
+            foreach (array_slice($mismatches, 0, 3) as $mismatch) {
+                $preview = trim((string) ($mismatch['question_preview'] ?? ''));
+                if ($preview !== '') {
+                    $preview = wp_strip_all_tags($preview);
+                    if (function_exists('mb_substr')) {
+                        $preview = mb_substr($preview, 0, 80);
+                    } else {
+                        $preview = substr($preview, 0, 80);
+                    }
+                }
+
+                $mismatch_summaries[] = sprintf(
+                    '#%d %s%s',
+                    (int) ($mismatch['block_number'] ?? 0),
+                    CBT_Admin_Questions_Helper::get_question_type_label((string) ($mismatch['question_type'] ?? '')),
+                    $preview !== '' ? ' (' . $preview . ')' : ''
                 );
             }
-    
-            try {
-                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($tmp_path);
-                $sheet = $spreadsheet->getActiveSheet();
-                $raw_rows = $sheet->toArray('', false, false, false);
-            } catch (Throwable $exception) {
-                return new WP_Error('xlsx_read_failed', 'Gagal membaca file XLSX.');
+
+            if (!empty($mismatch_summaries)) {
+                $message .= ' Mismatch: ' . implode('; ', $mismatch_summaries) . '.';
             }
-    
-            if (!is_array($raw_rows) || empty($raw_rows)) {
-                return new WP_Error('xlsx_empty', 'File XLSX kosong.');
-            }
-    
-            $header = array_shift($raw_rows);
-            if (!is_array($header)) {
-                return new WP_Error('xlsx_header_invalid', 'Header XLSX tidak valid.');
-            }
-    
-            $header = self::normalize_question_import_header($header);
-            $valid = self::validate_question_import_header($header, $require_question_type_column);
-            if (is_wp_error($valid)) {
-                return $valid;
-            }
-    
-            $rows = [];
-            foreach ($raw_rows as $data) {
-                if (!is_array($data)) {
-                    continue;
-                }
-                if (count(array_filter($data, static fn($v) => trim((string) $v) !== '')) === 0) {
-                    continue;
-                }
-                $row = [];
-                foreach ($header as $idx => $col) {
-                    $row[$col] = isset($data[$idx]) ? trim((string) $data[$idx]) : '';
-                }
-                $rows[] = $row;
-            }
-    
-            if (empty($rows)) {
-                return new WP_Error('xlsx_no_data', 'Tidak ada data soal di XLSX.');
-            }
-    
-            return $rows;
+
+            return new WP_Error('import_type_mismatch', $message);
         }
 
         private static function parse_question_docx(string $tmp_path)
@@ -547,16 +487,18 @@ final class CBT_Admin_Questions_Import_Helper
             if (!class_exists('ZipArchive')) {
                 return new WP_Error('docx_zip_missing', 'Extension zip belum aktif, tidak bisa membaca DOCX.');
             }
-    
+
             $zip = new ZipArchive();
             if ($zip->open($tmp_path) !== true) {
                 return new WP_Error('docx_open_failed', 'File DOCX tidak bisa dibuka.');
             }
-    
+
             $document_xml = $zip->getFromName('word/document.xml');
             $rels_xml = $zip->getFromName('word/_rels/document.xml.rels');
-    
+            $numbering_xml = $zip->getFromName('word/numbering.xml');
+
             $image_rel_map = [];
+            $hyperlink_rel_map = [];
             if (is_string($rels_xml) && $rels_xml !== '') {
                 if (preg_match_all('/<Relationship\b[^>]*>/i', $rels_xml, $rel_nodes)) {
                     foreach ($rel_nodes[0] as $node) {
@@ -567,103 +509,65 @@ final class CBT_Admin_Questions_Import_Helper
                         ) {
                             continue;
                         }
-    
+
                         $rel_id = trim((string) $id_match[1]);
                         $rel_type = strtolower(trim((string) $type_match[1]));
                         $target = trim((string) $target_match[1]);
-    
-                        if ($rel_id === '' || $target === '' || strpos($rel_type, '/image') === false) {
+
+                        if ($rel_id === '' || $target === '') {
                             continue;
                         }
-    
+
+                        if (strpos($rel_type, '/hyperlink') !== false) {
+                            $hyperlink_rel_map[$rel_id] = $target;
+                            continue;
+                        }
+
+                        if (strpos($rel_type, '/image') === false) {
+                            continue;
+                        }
+
                         $target = str_replace('\\', '/', $target);
                         while (strpos($target, '../') === 0) {
                             $target = substr($target, 3);
                         }
-    
                         if (strpos($target, 'word/') !== 0) {
                             $target = 'word/' . ltrim($target, '/');
                         }
-    
+
                         $image_rel_map[$rel_id] = $target;
                     }
                 }
             }
-    
-            $lines = [];
-            if (is_string($document_xml) && $document_xml !== '') {
-                if (preg_match_all('/<w:p\b[^>]*>(.*?)<\/w:p>/s', $document_xml, $paragraphs)) {
-                    foreach ($paragraphs[1] as $paragraph) {
-                        $paragraph = (string) $paragraph;
-    
-                        if (preg_match_all('/<w:t[^>]*>(.*?)<\/w:t>/s', $paragraph, $texts)) {
-                            $txt = '';
-                            foreach ($texts[1] as $fragment) {
-                                $txt .= html_entity_decode(strip_tags((string) $fragment), ENT_QUOTES | ENT_XML1, 'UTF-8');
-                            }
-                            $txt = trim($txt);
-                            if ($txt !== '') {
-                                $lines[] = $txt;
-                            }
-                        }
-    
-                        if (preg_match_all('/<a:blip\b[^>]*r:embed="([^"]+)"/i', $paragraph, $embeds)) {
-                            foreach ($embeds[1] as $embed_id) {
-                                $rid = trim((string) $embed_id);
-                                if ($rid === '' || !isset($image_rel_map[$rid])) {
-                                    continue;
-                                }
-    
-                                $target = $image_rel_map[$rid];
-                                $binary = $zip->getFromName($target);
-                                if (!is_string($binary) || $binary === '') {
-                                    $fallback_target = 'word/media/' . basename($target);
-                                    $binary = $zip->getFromName($fallback_target);
-                                }
-    
-                                if (!is_string($binary) || $binary === '') {
-                                    continue;
-                                }
-    
-                                $image_url = self::store_docx_image_and_get_url($binary, basename($target));
-                                if ($image_url !== '') {
-                                    $lines[] = '__IMG__:' . $image_url;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-    
+
+            $numbering_map = self::build_docx_numbering_map((string) $numbering_xml);
+            $lines = self::extract_docx_content_lines((string) $document_xml, $image_rel_map, $zip, $numbering_map, $hyperlink_rel_map);
+
             $zip->close();
-    
+
             if (!is_string($document_xml) || $document_xml === '') {
                 return new WP_Error('docx_invalid', 'Konten DOCX tidak valid.');
             }
-    
+
             $lines = self::normalize_docx_extracted_lines($lines);
-    
+
             if (empty($lines)) {
                 return new WP_Error('docx_empty', 'Tidak ada data soal pada DOCX.');
             }
-    
-            // New docx format: multiple-choice blocks with answer as option number.
-            $blocks = [];
-            $current_block = [];
-            foreach ($lines as $line) {
-                if (trim((string) $line) === '---') {
-                    if (!empty($current_block)) {
-                        $blocks[] = $current_block;
-                        $current_block = [];
-                    }
-                    continue;
-                }
-                $current_block[] = (string) $line;
+
+            if (!self::docx_has_required_template_marker($lines)) {
+                return new WP_Error(
+                    'docx_invalid_template',
+                    'Template DOCX tidak dikenali. Gunakan template Word resmi CBT terbaru dan jangan hapus marker CBT_TEMPLATE.'
+                );
             }
-            if (!empty($current_block)) {
-                $blocks[] = $current_block;
+
+            // Only parse rows after the first block separator so template instructions stay out of question data.
+            $blocks = self::extract_docx_question_blocks($lines);
+            if (empty($blocks)) {
+                return new WP_Error('docx_no_data', 'Format DOCX tidak sesuai template. Pastikan setiap blok soal dipisahkan oleh ---.');
             }
-    
+
             $structured_rows = [];
             $structured_detected = false;
             foreach ($blocks as $block_index => $block) {
@@ -674,7 +578,13 @@ final class CBT_Admin_Questions_Import_Helper
                 $structured_detected = true;
                 $row = self::parse_docx_multiple_choice_block($block);
                 if (is_array($row) && !empty($row)) {
-                    $row['__import_source_block'] = (int) $block_index + 1;
+                    $block_number = (int) $block_index + 1;
+                    $row['__import_source_block'] = $block_number;
+                    $row['__import_diagnostics'] = self::finalize_docx_row_import_diagnostics(
+                        isset($row['__import_diagnostics']) && is_array($row['__import_diagnostics']) ? $row['__import_diagnostics'] : [],
+                        $block_number,
+                        (string) ($row['question_type'] ?? '')
+                    );
                     $structured_rows[] = $row;
                     continue;
                 }
@@ -686,11 +596,11 @@ final class CBT_Admin_Questions_Import_Helper
                     'question_text' => self::build_docx_block_preview_text($block),
                 ];
             }
-    
+
             if ($structured_detected) {
                 return $structured_rows;
             }
-    
+
             // Backward compatibility: legacy KEY:VALUE docx format.
             $rows = [];
             $current = [];
@@ -702,12 +612,12 @@ final class CBT_Admin_Questions_Import_Helper
                     }
                     continue;
                 }
-    
+
                 $parts = explode(':', $line, 2);
                 if (count($parts) !== 2) {
                     continue;
                 }
-    
+
                 $key = strtolower(trim($parts[0]));
                 $key = str_replace([' ', '-'], '_', $key);
                 $value = trim($parts[1]);
@@ -716,12 +626,2508 @@ final class CBT_Admin_Questions_Import_Helper
             if (!empty($current)) {
                 $rows[] = $current;
             }
-    
+
             if (empty($rows)) {
                 return new WP_Error('docx_no_data', 'Format DOCX tidak sesuai template.');
             }
-    
+
             return $rows;
+        }
+
+        private static function extract_docx_content_lines(
+            string $document_xml,
+            array $image_rel_map,
+            ZipArchive $zip,
+            array $numbering_map = [],
+            array $hyperlink_rel_map = []
+        ): array
+        {
+            if ($document_xml === '' || !class_exists('DOMDocument') || !class_exists('DOMXPath')) {
+                return self::extract_docx_content_lines_legacy($document_xml, $image_rel_map, $zip);
+            }
+
+            $previous_libxml_state = libxml_use_internal_errors(true);
+            $dom = new DOMDocument();
+            $loaded = @$dom->loadXML($document_xml, LIBXML_NONET | LIBXML_COMPACT);
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous_libxml_state);
+
+            if (!$loaded) {
+                return self::extract_docx_content_lines_legacy($document_xml, $image_rel_map, $zip);
+            }
+
+            $xpath = new DOMXPath($dom);
+            $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+            $body = $xpath->query('/w:document/w:body')->item(0);
+            if (!$body instanceof DOMNode) {
+                return self::extract_docx_content_lines_legacy($document_xml, $image_rel_map, $zip);
+            }
+
+            return self::extract_docx_lines_from_container(
+                $body,
+                $xpath,
+                $image_rel_map,
+                $zip,
+                $numbering_map,
+                $hyperlink_rel_map,
+                true
+            );
+        }
+
+        private static function extract_docx_lines_from_container(
+            DOMNode $container,
+            DOMXPath $xpath,
+            array $image_rel_map,
+            ZipArchive $zip,
+            array $numbering_map = [],
+            array $hyperlink_rel_map = [],
+            bool $allow_template_tables = false
+        ): array
+        {
+            $lines = [];
+            $list_items = [];
+            foreach ($container->childNodes as $child) {
+                if (!$child instanceof DOMElement) {
+                    continue;
+                }
+
+                if ($child->localName === 'p') {
+                    $list_context = self::get_docx_paragraph_list_context($child, $xpath, $numbering_map);
+                    if (is_array($list_context)) {
+                        $item_html = self::convert_docx_paragraph_element_to_html($child, $image_rel_map, $zip, $hyperlink_rel_map);
+                        if ($item_html !== '') {
+                            $list_items[] = [
+                                'tag' => (string) ($list_context['tag'] ?? 'ul'),
+                                'level' => (int) ($list_context['level'] ?? 0),
+                                'html' => $item_html,
+                            ];
+                        }
+                        continue;
+                    }
+
+                    self::flush_docx_list_buffer($lines, $list_items);
+                    foreach (self::extract_docx_paragraph_lines_from_dom($child, $image_rel_map, $zip, $hyperlink_rel_map) as $line) {
+                        if (trim((string) $line) !== '') {
+                            $lines[] = (string) $line;
+                        }
+                    }
+                    continue;
+                }
+
+                if ($child->localName === 'tbl') {
+                    self::flush_docx_list_buffer($lines, $list_items);
+                    if ($allow_template_tables && self::is_docx_template_key_value_table($child)) {
+                        $template_lines = self::extract_docx_template_key_value_table_lines(
+                            $child,
+                            $xpath,
+                            $image_rel_map,
+                            $zip,
+                            $numbering_map,
+                            $hyperlink_rel_map
+                        );
+                        foreach ($template_lines as $line) {
+                            if (trim((string) $line) !== '') {
+                                $lines[] = (string) $line;
+                            }
+                        }
+                        continue;
+                    }
+
+                    $table_html = self::convert_docx_table_element_to_html($child, $image_rel_map, $zip, $hyperlink_rel_map);
+                    if ($table_html !== '') {
+                        $lines[] = self::create_docx_html_marker($table_html);
+                        foreach (self::build_docx_table_diagnostic_markers($child) as $diagnostic_line) {
+                            $lines[] = $diagnostic_line;
+                        }
+                    }
+                }
+            }
+
+            self::flush_docx_list_buffer($lines, $list_items);
+
+            return $lines;
+        }
+
+        private static function is_docx_template_key_value_table(DOMElement $table): bool
+        {
+            foreach ($table->childNodes as $row_node) {
+                if (
+                    !$row_node instanceof DOMElement ||
+                    (string) $row_node->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    $row_node->localName !== 'tr'
+                ) {
+                    continue;
+                }
+
+                $cells = self::get_docx_direct_table_row_cells($row_node);
+                if (count($cells) < 2) {
+                    continue;
+                }
+
+                $left = strtolower(trim(self::extract_docx_plain_text_from_container($cells[0])));
+                $right = strtolower(trim(self::extract_docx_plain_text_from_container($cells[1])));
+
+                return $left === 'field' && $right === 'value';
+            }
+
+            return false;
+        }
+
+        private static function extract_docx_template_key_value_table_lines(
+            DOMElement $table,
+            DOMXPath $xpath,
+            array $image_rel_map,
+            ZipArchive $zip,
+            array $numbering_map = [],
+            array $hyperlink_rel_map = []
+        ): array {
+            $lines = [];
+            $header_consumed = false;
+
+            foreach ($table->childNodes as $row_node) {
+                if (
+                    !$row_node instanceof DOMElement ||
+                    (string) $row_node->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    $row_node->localName !== 'tr'
+                ) {
+                    continue;
+                }
+
+                $cells = self::get_docx_direct_table_row_cells($row_node);
+                if (count($cells) < 2) {
+                    continue;
+                }
+
+                $left_text = trim(self::extract_docx_plain_text_from_container($cells[0]));
+                $right_text = trim(self::extract_docx_plain_text_from_container($cells[1]));
+
+                if (!$header_consumed) {
+                    if (strtolower($left_text) === 'field' && strtolower($right_text) === 'value') {
+                        $header_consumed = true;
+                    }
+                    continue;
+                }
+
+                $value_lines = self::extract_docx_lines_from_container(
+                    $cells[1],
+                    $xpath,
+                    $image_rel_map,
+                    $zip,
+                    $numbering_map,
+                    $hyperlink_rel_map,
+                    false
+                );
+
+                if ($left_text === '') {
+                    if ($right_text === '---') {
+                        $lines[] = '---';
+                        continue;
+                    }
+
+                    foreach ($value_lines as $value_line) {
+                        if (trim((string) $value_line) !== '') {
+                            $lines[] = (string) $value_line;
+                        }
+                    }
+                    continue;
+                }
+
+                if (empty($value_lines)) {
+                    $lines[] = $left_text . ':';
+                    continue;
+                }
+
+                $first_value_line = (string) array_shift($value_lines);
+                if (
+                    strpos($first_value_line, '__IMG__:') === 0 ||
+                    strpos($first_value_line, self::DOCX_HTML_MARKER_PREFIX) === 0
+                ) {
+                    $lines[] = $left_text . ':';
+                    $lines[] = $first_value_line;
+                } else {
+                    $lines[] = $left_text . ': ' . $first_value_line;
+                }
+
+                foreach ($value_lines as $value_line) {
+                    if (trim((string) $value_line) !== '') {
+                        $lines[] = (string) $value_line;
+                    }
+                }
+            }
+
+            return $lines;
+        }
+
+        /**
+         * @return DOMElement[]
+         */
+        private static function get_docx_direct_table_row_cells(DOMElement $row): array
+        {
+            $cells = [];
+            foreach ($row->childNodes as $cell_node) {
+                if (
+                    $cell_node instanceof DOMElement &&
+                    (string) $cell_node->namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
+                    $cell_node->localName === 'tc'
+                ) {
+                    $cells[] = $cell_node;
+                }
+            }
+
+            return $cells;
+        }
+
+        private static function extract_docx_plain_text_from_container(DOMNode $container): string
+        {
+            $parts = [];
+
+            foreach ($container->childNodes as $child) {
+                if (!$child instanceof DOMElement) {
+                    continue;
+                }
+
+                if (
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+                ) {
+                    continue;
+                }
+
+                if ($child->localName === 'p') {
+                    $xml = $child->ownerDocument instanceof DOMDocument
+                        ? (string) $child->ownerDocument->saveXML($child)
+                        : '';
+                    $text = self::extract_docx_paragraph_text($xml);
+                    if (trim($text) !== '') {
+                        $parts[] = trim($text);
+                    }
+                    continue;
+                }
+
+                if ($child->localName === 'tbl') {
+                    $text = trim((string) $child->textContent);
+                    if ($text !== '') {
+                        $parts[] = $text;
+                    }
+                }
+            }
+
+            return trim(implode(' ', $parts));
+        }
+
+        private static function build_docx_numbering_map(string $numbering_xml): array
+        {
+            if ($numbering_xml === '' || !class_exists('DOMDocument') || !class_exists('DOMXPath')) {
+                return [];
+            }
+
+            $previous_libxml_state = libxml_use_internal_errors(true);
+            $dom = new DOMDocument();
+            $loaded = @$dom->loadXML($numbering_xml, LIBXML_NONET | LIBXML_COMPACT);
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous_libxml_state);
+
+            if (!$loaded) {
+                return [];
+            }
+
+            $xpath = new DOMXPath($dom);
+            $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+
+            $abstract_level_map = [];
+            foreach ($xpath->query('/w:numbering/w:abstractNum') as $abstract_num_node) {
+                if (!$abstract_num_node instanceof DOMElement) {
+                    continue;
+                }
+
+                $abstract_num_id_raw = self::get_docx_attribute_value($abstract_num_node, 'abstractNumId');
+                if ($abstract_num_id_raw === '') {
+                    continue;
+                }
+                $abstract_num_id = (int) $abstract_num_id_raw;
+
+                foreach ($xpath->query('./w:lvl', $abstract_num_node) as $level_node) {
+                    if (!$level_node instanceof DOMElement) {
+                        continue;
+                    }
+
+                    $level = (int) self::get_docx_attribute_value($level_node, 'ilvl');
+                    $format = '';
+                    $format_node = $xpath->query('./w:numFmt', $level_node)->item(0);
+                    if ($format_node instanceof DOMElement) {
+                        $format = strtolower(self::get_docx_attribute_value($format_node, 'val'));
+                    }
+
+                    $abstract_level_map[$abstract_num_id][$level] = [
+                        'tag' => self::map_docx_numbering_format_to_list_tag($format),
+                        'format' => $format,
+                    ];
+                }
+            }
+
+            $numbering_map = [];
+            foreach ($xpath->query('/w:numbering/w:num') as $num_node) {
+                if (!$num_node instanceof DOMElement) {
+                    continue;
+                }
+
+                $num_id_raw = self::get_docx_attribute_value($num_node, 'numId');
+                if ($num_id_raw === '') {
+                    continue;
+                }
+                $num_id = (int) $num_id_raw;
+
+                $abstract_num_id = null;
+                $abstract_node = $xpath->query('./w:abstractNumId', $num_node)->item(0);
+                if ($abstract_node instanceof DOMElement) {
+                    $abstract_num_id_raw = self::get_docx_attribute_value($abstract_node, 'val');
+                    if ($abstract_num_id_raw !== '') {
+                        $abstract_num_id = (int) $abstract_num_id_raw;
+                    }
+                }
+
+                if ($abstract_num_id !== null && !empty($abstract_level_map[$abstract_num_id])) {
+                    $numbering_map[$num_id] = $abstract_level_map[$abstract_num_id];
+                }
+
+                foreach ($xpath->query('./w:lvlOverride', $num_node) as $override_node) {
+                    if (!$override_node instanceof DOMElement) {
+                        continue;
+                    }
+
+                    $level = (int) self::get_docx_attribute_value($override_node, 'ilvl');
+                    $override_level_node = $xpath->query('./w:lvl', $override_node)->item(0);
+                    if (!$override_level_node instanceof DOMElement) {
+                        continue;
+                    }
+
+                    $format_node = $xpath->query('./w:numFmt', $override_level_node)->item(0);
+                    if (!$format_node instanceof DOMElement) {
+                        continue;
+                    }
+
+                    $format = strtolower(self::get_docx_attribute_value($format_node, 'val'));
+                    $numbering_map[$num_id][$level] = [
+                        'tag' => self::map_docx_numbering_format_to_list_tag($format),
+                        'format' => $format,
+                    ];
+                }
+            }
+
+            return $numbering_map;
+        }
+
+        private static function get_docx_paragraph_list_context(DOMElement $paragraph, DOMXPath $xpath, array $numbering_map): ?array
+        {
+            $num_pr_node = $xpath->query('./w:pPr/w:numPr', $paragraph)->item(0);
+            if (!$num_pr_node instanceof DOMElement) {
+                return null;
+            }
+
+            $num_id_node = $xpath->query('./w:numId', $num_pr_node)->item(0);
+            if (!$num_id_node instanceof DOMElement) {
+                return null;
+            }
+
+            $num_id_raw = self::get_docx_attribute_value($num_id_node, 'val');
+            if ($num_id_raw === '') {
+                return null;
+            }
+            $num_id = (int) $num_id_raw;
+
+            $level = 0;
+            $level_node = $xpath->query('./w:ilvl', $num_pr_node)->item(0);
+            if ($level_node instanceof DOMElement) {
+                $level = max(0, (int) self::get_docx_attribute_value($level_node, 'val'));
+            }
+
+            $numbering_meta = $numbering_map[$num_id][$level]
+                ?? $numbering_map[$num_id][0]
+                ?? null;
+            $tag = is_array($numbering_meta) && !empty($numbering_meta['tag'])
+                ? (string) $numbering_meta['tag']
+                : 'ul';
+
+            return [
+                'num_id' => $num_id,
+                'level' => $level,
+                'tag' => $tag === 'ol' ? 'ol' : 'ul',
+            ];
+        }
+
+        private static function get_docx_attribute_value(DOMElement $element, string $attribute_name): string
+        {
+            $candidates = [
+                'w:' . $attribute_name,
+                $attribute_name,
+            ];
+
+            foreach ($candidates as $candidate) {
+                if ($element->hasAttribute($candidate)) {
+                    return trim((string) $element->getAttribute($candidate));
+                }
+            }
+
+            foreach ($element->attributes ?? [] as $attribute_node) {
+                if (!$attribute_node instanceof DOMNode) {
+                    continue;
+                }
+
+                if ((string) $attribute_node->localName === $attribute_name) {
+                    return trim((string) $attribute_node->nodeValue);
+                }
+            }
+
+            return '';
+        }
+
+        private static function map_docx_numbering_format_to_list_tag(string $format): string
+        {
+            $format = strtolower(trim($format));
+            if ($format === 'bullet') {
+                return 'ul';
+            }
+
+            return 'ol';
+        }
+
+        private static function flush_docx_list_buffer(array &$lines, array &$list_items): void
+        {
+            if (empty($list_items)) {
+                return;
+            }
+
+            $list_html = self::render_docx_list_items_to_html($list_items);
+            if ($list_html !== '') {
+                $lines[] = self::create_docx_html_marker($list_html);
+                $lines[] = self::create_docx_diagnostic_marker([
+                    'kind' => 'preserved',
+                    'feature' => 'list_native',
+                    'message' => 'Bullet atau numbering Word native dipertahankan sebagai list HTML.',
+                ]);
+            }
+
+            $list_items = [];
+        }
+
+        private static function render_docx_list_items_to_html(array $list_items): string
+        {
+            if (empty($list_items)) {
+                return '';
+            }
+
+            $html_parts = [];
+            $open_lists = [];
+            $item_started = false;
+
+            foreach ($list_items as $item) {
+                $tag = strtolower(trim((string) ($item['tag'] ?? '')));
+                $tag = ($tag === 'ol') ? 'ol' : 'ul';
+                $level = max(0, (int) ($item['level'] ?? 0));
+                $item_html = trim((string) ($item['html'] ?? ''));
+                if ($item_html === '') {
+                    continue;
+                }
+
+                while (count($open_lists) > ($level + 1)) {
+                    if ($item_started) {
+                        $html_parts[] = '</li>';
+                        $item_started = false;
+                    }
+                    $closing_tag = array_pop($open_lists);
+                    $html_parts[] = '</' . $closing_tag . '>';
+                }
+
+                if (count($open_lists) === ($level + 1)) {
+                    if ($item_started) {
+                        $html_parts[] = '</li>';
+                        $item_started = false;
+                    }
+
+                    $current_tag = end($open_lists);
+                    if ($current_tag !== $tag) {
+                        $closing_tag = array_pop($open_lists);
+                        $html_parts[] = '</' . $closing_tag . '>';
+                    }
+                }
+
+                while (count($open_lists) < ($level + 1)) {
+                    $html_parts[] = '<' . $tag . '>';
+                    $open_lists[] = $tag;
+                }
+
+                if (!empty($open_lists)) {
+                    $current_tag = end($open_lists);
+                    if ($current_tag !== $tag) {
+                        if ($item_started) {
+                            $html_parts[] = '</li>';
+                            $item_started = false;
+                        }
+                        $closing_tag = array_pop($open_lists);
+                        $html_parts[] = '</' . $closing_tag . '>';
+                        $html_parts[] = '<' . $tag . '>';
+                        $open_lists[] = $tag;
+                    }
+                }
+
+                $html_parts[] = '<li>' . $item_html;
+                $item_started = true;
+            }
+
+            while (!empty($open_lists)) {
+                if ($item_started) {
+                    $html_parts[] = '</li>';
+                    $item_started = false;
+                }
+                $closing_tag = array_pop($open_lists);
+                $html_parts[] = '</' . $closing_tag . '>';
+            }
+
+            return implode('', $html_parts);
+        }
+
+        private static function extract_docx_content_lines_legacy(string $document_xml, array $image_rel_map, ZipArchive $zip): array
+        {
+            $lines = [];
+            if ($document_xml === '') {
+                return $lines;
+            }
+
+            if (preg_match_all('/<w:p\b[^>]*>(.*?)<\/w:p>/s', $document_xml, $paragraphs)) {
+                foreach ($paragraphs[1] as $paragraph) {
+                    $paragraph = (string) $paragraph;
+
+                    $txt = self::extract_docx_paragraph_text($paragraph);
+                    if ($txt !== '') {
+                        $lines[] = $txt;
+                    }
+
+                    foreach (self::extract_docx_image_marker_lines_from_xml($paragraph, $image_rel_map, $zip) as $line) {
+                        $lines[] = $line;
+                    }
+                }
+            }
+
+            return $lines;
+        }
+
+        /**
+         * @return string[]
+         */
+        private static function extract_docx_paragraph_lines_from_dom(
+            DOMElement $paragraph,
+            array $image_rel_map,
+            ZipArchive $zip,
+            array $hyperlink_rel_map = []
+        ): array
+        {
+            $xml = $paragraph->ownerDocument instanceof DOMDocument
+                ? (string) $paragraph->ownerDocument->saveXML($paragraph)
+                : '';
+
+            $lines = [];
+            $tokens = self::extract_docx_paragraph_inline_tokens($paragraph, $hyperlink_rel_map);
+            $paragraph_alignment = self::extract_docx_paragraph_alignment($paragraph);
+            $has_rich_inline_markup = self::docx_inline_tokens_require_rich_html($tokens);
+            $rich_html = $has_rich_inline_markup ? self::render_docx_inline_tokens_to_html($tokens) : '';
+            $plain_text = self::extract_docx_paragraph_text($xml);
+
+            if ($rich_html !== '') {
+                $rich_lines = self::build_docx_rich_lines_from_paragraph_tokens($tokens, $plain_text, $paragraph_alignment);
+                if (!empty($rich_lines)) {
+                    $lines = array_merge($lines, $rich_lines);
+                } elseif ($plain_text !== '') {
+                    $lines[] = self::create_docx_html_marker(
+                        self::wrap_docx_inline_html_fragment($rich_html, $paragraph_alignment)
+                    );
+                }
+            } elseif ($plain_text !== '') {
+                if ($paragraph_alignment !== '') {
+                    $safe_text = esc_html($plain_text);
+                    $safe_text = str_replace(["\r\n", "\r"], "\n", $safe_text);
+                    $safe_text = str_replace("\n", '<br />', $safe_text);
+                    $colon_position = strpos($plain_text, ':');
+                    if ($colon_position !== false) {
+                        $key = trim(substr($plain_text, 0, $colon_position));
+                        if (self::is_docx_key_only_line($key)) {
+                            $value_text = trim(substr($plain_text, $colon_position + 1));
+                            if ($value_text === '') {
+                                $lines[] = $key . ':';
+                            } else {
+                                $value_html = esc_html($value_text);
+                                $value_html = str_replace(["\r\n", "\r"], "\n", $value_html);
+                                $value_html = str_replace("\n", '<br />', $value_html);
+                                $lines[] = $key . ':';
+                                $lines[] = self::create_docx_html_marker(
+                                    self::wrap_docx_inline_html_fragment($value_html, $paragraph_alignment)
+                                );
+                            }
+                        } else {
+                            $lines[] = self::create_docx_html_marker(
+                                self::wrap_docx_inline_html_fragment($safe_text, $paragraph_alignment)
+                            );
+                        }
+                    } else {
+                        $lines[] = self::create_docx_html_marker(
+                            self::wrap_docx_inline_html_fragment($safe_text, $paragraph_alignment)
+                        );
+                    }
+                } else {
+                    $lines[] = $plain_text;
+                }
+            }
+
+            foreach (self::collect_docx_paragraph_diagnostic_markers($paragraph_alignment, $tokens, $xml) as $diagnostic_line) {
+                $lines[] = $diagnostic_line;
+            }
+
+            foreach (self::extract_docx_image_marker_lines_from_xml($xml, $image_rel_map, $zip, $paragraph_alignment) as $line) {
+                $lines[] = $line;
+            }
+
+            return $lines;
+        }
+
+        /**
+         * @return string[]
+         */
+        private static function extract_docx_image_marker_lines_from_xml(
+            string $xml,
+            array $image_rel_map,
+            ZipArchive $zip,
+            string $paragraph_alignment = ''
+        ): array
+        {
+            $lines = [];
+            foreach (self::extract_docx_image_html_fragments_from_xml($xml, $image_rel_map, $zip, $paragraph_alignment) as $image_html) {
+                $image_html = trim($image_html);
+                if ($image_html !== '') {
+                    $lines[] = self::create_docx_html_marker($image_html);
+                }
+            }
+
+            foreach (self::extract_docx_image_render_specs_from_xml($xml, $paragraph_alignment) as $image_spec) {
+                foreach (self::build_docx_image_diagnostic_markers((array) $image_spec) as $diagnostic_line) {
+                    $lines[] = $diagnostic_line;
+                }
+            }
+
+            return $lines;
+        }
+
+        /**
+         * @return string[]
+         */
+        private static function extract_docx_image_html_fragments_from_xml(
+            string $xml,
+            array $image_rel_map,
+            ZipArchive $zip,
+            string $paragraph_alignment = ''
+        ): array
+        {
+            $fragments = [];
+            if ($xml === '') {
+                return $fragments;
+            }
+
+            foreach (self::extract_docx_image_render_specs_from_xml($xml, $paragraph_alignment) as $image_spec) {
+                $rid = trim((string) ($image_spec['rid'] ?? ''));
+                if ($rid === '' || !isset($image_rel_map[$rid])) {
+                    continue;
+                }
+
+                $target = (string) $image_rel_map[$rid];
+                $binary = $zip->getFromName($target);
+                if (!is_string($binary) || $binary === '') {
+                    $fallback_target = 'word/media/' . basename($target);
+                    $binary = $zip->getFromName($fallback_target);
+                }
+
+                if (!is_string($binary) || $binary === '') {
+                    continue;
+                }
+
+                $image_url = self::store_docx_image_and_get_url($binary, basename($target));
+                if ($image_url === '') {
+                    continue;
+                }
+
+                $image_html = self::build_docx_image_html_fragment($image_url, $image_spec);
+                if ($image_html !== '') {
+                    $fragments[] = $image_html;
+                }
+            }
+
+            return $fragments;
+        }
+
+        /**
+         * @return array<int,array<string,mixed>>
+         */
+        private static function extract_docx_image_render_specs_from_xml(string $xml, string $paragraph_alignment = ''): array
+        {
+            $specs = [];
+            $dom = self::load_docx_fragment_dom_document($xml);
+            if (!$dom instanceof DOMDocument) {
+                return $specs;
+            }
+
+            $xpath = new DOMXPath($dom);
+            $drawing_nodes = $xpath->query('//*[local-name()="drawing"]/*[local-name()="inline" or local-name()="anchor"]');
+            if (!$drawing_nodes instanceof \DOMNodeList || $drawing_nodes->length === 0) {
+                return $specs;
+            }
+
+            foreach ($drawing_nodes as $drawing_node) {
+                if (!$drawing_node instanceof DOMElement) {
+                    continue;
+                }
+
+                $blip_node = $xpath->query('.//*[local-name()="blip"][1]', $drawing_node)->item(0);
+                if (!$blip_node instanceof DOMElement) {
+                    continue;
+                }
+
+                $rid = trim((string) $blip_node->getAttributeNS(
+                    'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+                    'embed'
+                ));
+                if ($rid === '') {
+                    $rid = trim((string) $blip_node->getAttribute('r:embed'));
+                }
+                if ($rid === '') {
+                    continue;
+                }
+
+                [$width_px, $height_px] = self::extract_docx_image_dimensions_from_container($drawing_node, $xpath);
+                $alignment = self::extract_docx_image_alignment_from_container($drawing_node, $xpath, $paragraph_alignment);
+                $alt_text = self::extract_docx_image_alt_text_from_container($drawing_node, $xpath);
+
+                $specs[] = [
+                    'rid' => $rid,
+                    'alignment' => $alignment,
+                    'alt' => $alt_text,
+                    'width_px' => $width_px,
+                    'height_px' => $height_px,
+                    'is_anchor' => strtolower((string) $drawing_node->localName) === 'anchor',
+                ];
+            }
+
+            return $specs;
+        }
+
+        private static function load_docx_fragment_dom_document(string $xml): ?DOMDocument
+        {
+            $xml = trim((string) preg_replace('/<\?xml[^>]*\?>/i', '', $xml));
+            if ($xml === '') {
+                return null;
+            }
+
+            $wrapped_xml = '<?xml version="1.0" encoding="UTF-8"?>'
+                . '<cbt:root'
+                . ' xmlns:cbt="https://coblax.test/cbt-import"'
+                . ' xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+                . ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+                . ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+                . ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"'
+                . ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+                . ' xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"'
+                . ' xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing"'
+                . ' xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"'
+                . ' xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"'
+                . ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"'
+                . ' xmlns:o="urn:schemas-microsoft-com:office:office"'
+                . ' xmlns:v="urn:schemas-microsoft-com:vml"'
+                . '>'
+                . $xml
+                . '</cbt:root>';
+
+            $previous_errors = libxml_use_internal_errors(true);
+            $dom = new DOMDocument();
+            $loaded = $dom->loadXML($wrapped_xml);
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous_errors);
+
+            return $loaded ? $dom : null;
+        }
+
+        /**
+         * @return array{0:int,1:int}
+         */
+        private static function extract_docx_image_dimensions_from_container(DOMElement $container, DOMXPath $xpath): array
+        {
+            $extent_node = $xpath->query('./*[local-name()="extent"][1]', $container)->item(0);
+            if (!$extent_node instanceof DOMElement) {
+                $extent_node = $xpath->query('.//*[local-name()="xfrm"]/*[local-name()="ext"][1]', $container)->item(0);
+            }
+
+            if (!$extent_node instanceof DOMElement) {
+                return [0, 0];
+            }
+
+            $cx = (int) $extent_node->getAttribute('cx');
+            $cy = (int) $extent_node->getAttribute('cy');
+
+            return [
+                self::convert_docx_emu_to_pixels($cx),
+                self::convert_docx_emu_to_pixels($cy),
+            ];
+        }
+
+        private static function extract_docx_image_alignment_from_container(
+            DOMElement $container,
+            DOMXPath $xpath,
+            string $paragraph_alignment = ''
+        ): string {
+            $alignment = '';
+            if (strtolower((string) $container->localName) === 'anchor') {
+                $align_node = $xpath->query('./*[local-name()="positionH"]/*[local-name()="align"][1]', $container)->item(0);
+                if ($align_node instanceof DOMElement) {
+                    $alignment = self::normalize_docx_text_alignment((string) $align_node->textContent);
+                }
+            }
+
+            if ($alignment === '') {
+                $alignment = self::normalize_docx_text_alignment($paragraph_alignment);
+            }
+
+            if ($alignment === 'justify') {
+                return 'left';
+            }
+
+            return $alignment;
+        }
+
+        private static function extract_docx_image_alt_text_from_container(DOMElement $container, DOMXPath $xpath): string
+        {
+            $doc_properties = $xpath->query('./*[local-name()="docPr"][1]', $container)->item(0);
+            if (!$doc_properties instanceof DOMElement) {
+                return '';
+            }
+
+            foreach (['descr', 'title', 'name'] as $attribute_name) {
+                $value = trim((string) $doc_properties->getAttribute($attribute_name));
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+
+            return '';
+        }
+
+        private static function convert_docx_emu_to_pixels(int $emu): int
+        {
+            if ($emu <= 0) {
+                return 0;
+            }
+
+            return max(1, (int) round($emu / 9525));
+        }
+
+        /**
+         * @param array<string,mixed> $image_spec
+         */
+        private static function build_docx_image_html_fragment(string $image_url, array $image_spec): string
+        {
+            $image_url = trim($image_url);
+            if ($image_url === '') {
+                return '';
+            }
+
+            $alignment = self::normalize_docx_text_alignment((string) ($image_spec['alignment'] ?? ''));
+            $width_px = max(0, (int) ($image_spec['width_px'] ?? 0));
+            $height_px = max(0, (int) ($image_spec['height_px'] ?? 0));
+            $alt_text = trim((string) ($image_spec['alt'] ?? ''));
+
+            $wrapper_style = self::build_docx_text_alignment_style($alignment);
+            $wrapper_style_attribute = $wrapper_style !== '' ? ' style="' . esc_attr($wrapper_style) . '"' : '';
+
+            $image_styles = [];
+            if ($width_px > 0) {
+                $image_styles[] = 'width:' . $width_px . 'px';
+            }
+            $image_styles[] = 'max-width:100%';
+            $image_styles[] = 'height:auto';
+            $image_styles[] = 'display:block';
+
+            if ($alignment === 'center') {
+                $image_styles[] = 'margin-left:auto';
+                $image_styles[] = 'margin-right:auto';
+            } elseif ($alignment === 'right') {
+                $image_styles[] = 'margin-left:auto';
+                $image_styles[] = 'margin-right:0';
+            }
+
+            $width_attribute = $width_px > 0 ? ' width="' . $width_px . '"' : '';
+            $height_attribute = $height_px > 0 ? ' height="' . $height_px . '"' : '';
+
+            return '<p' . $wrapper_style_attribute . '><img src="' . esc_url($image_url) . '" alt="'
+                . esc_attr($alt_text)
+                . '"'
+                . $width_attribute
+                . $height_attribute
+                . ' style="'
+                . esc_attr(implode(';', $image_styles) . ';')
+                . '" /></p>';
+        }
+
+        private static function extract_src_from_html_image_fragment(string $html): string
+        {
+            if (preg_match('/<img\b[^>]*\bsrc="([^"]+)"/i', $html, $matches) === 1) {
+                return trim((string) ($matches[1] ?? ''));
+            }
+
+            return '';
+        }
+
+        private static function create_docx_html_marker(string $html): string
+        {
+            return self::DOCX_HTML_MARKER_PREFIX . base64_encode($html);
+        }
+
+        /**
+         * @param array<string,mixed> $entry
+         */
+        private static function create_docx_diagnostic_marker(array $entry): string
+        {
+            $encoded = base64_encode((string) wp_json_encode($entry));
+            return self::DOCX_DIAGNOSTIC_MARKER_PREFIX . $encoded;
+        }
+
+        private static function decode_docx_html_marker(string $line): string
+        {
+            if (strpos($line, self::DOCX_HTML_MARKER_PREFIX) !== 0) {
+                return '';
+            }
+
+            $encoded = substr($line, strlen(self::DOCX_HTML_MARKER_PREFIX));
+            $decoded = base64_decode((string) $encoded, true);
+            if (!is_string($decoded) || trim($decoded) === '') {
+                return '';
+            }
+
+            return CBT_Admin_Questions_Helper::sanitize_editor_html($decoded);
+        }
+
+        private static function decode_docx_diagnostic_marker(string $line): ?array
+        {
+            if (strpos($line, self::DOCX_DIAGNOSTIC_MARKER_PREFIX) !== 0) {
+                return null;
+            }
+
+            $encoded = substr($line, strlen(self::DOCX_DIAGNOSTIC_MARKER_PREFIX));
+            $decoded = base64_decode((string) $encoded, true);
+            if (!is_string($decoded) || trim($decoded) === '') {
+                return null;
+            }
+
+            $entry = json_decode($decoded, true);
+            if (!is_array($entry)) {
+                return null;
+            }
+
+            return self::normalize_question_import_diagnostic_entry($entry);
+        }
+
+        /**
+         * @param array<string,mixed> $image_spec
+         * @return string[]
+         */
+        private static function build_docx_image_diagnostic_markers(array $image_spec): array
+        {
+            $markers = [
+                self::create_docx_diagnostic_marker([
+                    'kind' => 'preserved',
+                    'feature' => 'image_size_alignment',
+                    'message' => 'Gambar mempertahankan ukuran dan alignment dasar dari Word.',
+                ]),
+            ];
+
+            if (!empty($image_spec['is_anchor'])) {
+                $markers[] = self::create_docx_diagnostic_marker([
+                    'kind' => 'fallback',
+                    'feature' => 'image_wrap_normalized',
+                    'message' => 'Wrap atau floating gambar Word dinormalisasi ke layout block yang aman di CBT.',
+                ]);
+            }
+
+            return $markers;
+        }
+
+        /**
+         * @return string[]
+         */
+        private static function build_docx_table_diagnostic_markers(DOMElement $table): array
+        {
+            $markers = [
+                self::create_docx_diagnostic_marker([
+                    'kind' => 'preserved',
+                    'feature' => 'table_formatting',
+                    'message' => 'Struktur dan formatting dasar tabel Word dipertahankan.',
+                ]),
+            ];
+
+            $has_width_normalization = !empty(self::extract_docx_table_grid_column_widths($table))
+                || self::extract_docx_table_preferred_width_style($table) !== '';
+            if ($has_width_normalization) {
+                $markers[] = self::create_docx_diagnostic_marker([
+                    'kind' => 'fallback',
+                    'feature' => 'table_width_normalized',
+                    'message' => 'Lebar tabel atau kolom Word dinormalisasi ke layout tabel HTML yang stabil.',
+                ]);
+            }
+
+            return $markers;
+        }
+
+        /**
+         * @return string[]
+         */
+        private static function collect_docx_paragraph_diagnostic_markers(string $paragraph_alignment, array $tokens, string $xml): array
+        {
+            $markers = [];
+
+            if (self::normalize_docx_text_alignment($paragraph_alignment) !== '') {
+                $markers[] = self::create_docx_diagnostic_marker([
+                    'kind' => 'preserved',
+                    'feature' => 'paragraph_alignment',
+                    'message' => 'Alignment paragraf Word dipertahankan.',
+                ]);
+            }
+
+            $has_inline_formatting = false;
+            $has_font_size = false;
+
+            foreach ($tokens as $token) {
+                $styles = (array) ($token['styles'] ?? []);
+                if (!empty($styles['bold']) || !empty($styles['italic']) || !empty($styles['underline'])) {
+                    $has_inline_formatting = true;
+                }
+                $vert_align = (string) ($styles['vert_align'] ?? '');
+                if ($vert_align === 'superscript' || $vert_align === 'subscript') {
+                    $has_inline_formatting = true;
+                }
+                if (trim((string) ($token['href'] ?? '')) !== '') {
+                    $has_inline_formatting = true;
+                }
+                if (trim((string) ($styles['font_size'] ?? '')) !== '') {
+                    $has_font_size = true;
+                }
+
+                foreach ((array) ($token['diagnostics'] ?? []) as $diagnostic_entry) {
+                    if (!is_array($diagnostic_entry)) {
+                        continue;
+                    }
+                    $markers[] = self::create_docx_diagnostic_marker($diagnostic_entry);
+                }
+            }
+
+            if ($has_inline_formatting) {
+                $markers[] = self::create_docx_diagnostic_marker([
+                    'kind' => 'preserved',
+                    'feature' => 'inline_formatting',
+                    'message' => 'Format inline Word seperti bold, italic, underline, link, atau sup/sub dipertahankan.',
+                ]);
+            }
+
+            if ($has_font_size) {
+                $markers[] = self::create_docx_diagnostic_marker([
+                    'kind' => 'preserved',
+                    'feature' => 'font_size',
+                    'message' => 'Ukuran font Word dipertahankan ke HTML hasil import.',
+                ]);
+            }
+
+            if (strpos($xml, '<wps:wsp') !== false || strpos($xml, '<v:shape') !== false) {
+                $markers[] = self::create_docx_diagnostic_marker([
+                    'kind' => 'unsupported',
+                    'feature' => 'word_shape_ignored',
+                    'message' => 'Shape Word non-gambar belum dipertahankan dan diabaikan saat import.',
+                ]);
+            }
+
+            if (strpos($xml, '<wp:anchor') !== false && strpos($xml, '<a:blip') === false) {
+                $markers[] = self::create_docx_diagnostic_marker([
+                    'kind' => 'unsupported',
+                    'feature' => 'word_floating_object_ignored',
+                    'message' => 'Floating object Word yang bukan gambar belum dipertahankan saat import.',
+                ]);
+            }
+
+            return $markers;
+        }
+
+        private static function convert_docx_table_element_to_html(
+            DOMElement $table,
+            array $image_rel_map,
+            ZipArchive $zip,
+            array $hyperlink_rel_map = []
+        ): string
+        {
+            $table_grid_widths = self::extract_docx_table_grid_column_widths($table);
+            $table_preferred_width = self::extract_docx_table_preferred_width_style($table);
+            $parsed_rows = self::parse_docx_table_rows($table, $image_rel_map, $zip, $hyperlink_rel_map, $table_grid_widths);
+            $rows_html = self::render_docx_table_rows_to_html($parsed_rows);
+
+            if (empty($rows_html)) {
+                return '';
+            }
+
+            $table_style = self::build_docx_table_alignment_style(self::extract_docx_table_alignment($table));
+            if ($table_preferred_width !== '') {
+                $table_style .= $table_preferred_width;
+            }
+            if (!empty($table_grid_widths)) {
+                $table_style .= 'table-layout:fixed;';
+            }
+            $table_style_attribute = $table_style !== '' ? ' style="' . esc_attr($table_style) . '"' : '';
+            $table_html = '<table' . $table_style_attribute . '><tbody>' . implode('', $rows_html) . '</tbody></table>';
+            $caption = self::extract_docx_table_caption_text($table);
+            if ($caption !== '') {
+                $caption_style = self::build_docx_text_alignment_style(self::extract_docx_table_alignment($table));
+                $caption_style_attribute = $caption_style !== '' ? ' style="' . esc_attr($caption_style) . '"' : '';
+                return '<figure>' . $table_html . '<figcaption' . $caption_style_attribute . '>' . esc_html($caption) . '</figcaption></figure>';
+            }
+
+            return $table_html;
+        }
+
+        private static function parse_docx_table_rows(
+            DOMElement $table,
+            array $image_rel_map,
+            ZipArchive $zip,
+            array $hyperlink_rel_map = [],
+            array $table_grid_widths = []
+        ): array {
+            $parsed_rows = [];
+            $row_index = 0;
+
+            foreach ($table->childNodes as $row_node) {
+                if (!$row_node instanceof DOMElement || $row_node->localName !== 'tr') {
+                    continue;
+                }
+
+                $cells = [];
+                $column_index = 0;
+                $row_is_header = self::extract_docx_table_row_is_header($row_node);
+                foreach ($row_node->childNodes as $cell_node) {
+                    if (!$cell_node instanceof DOMElement || $cell_node->localName !== 'tc') {
+                        continue;
+                    }
+
+                    $cell_html = self::convert_docx_table_cell_element_to_html($cell_node, $image_rel_map, $zip, $hyperlink_rel_map);
+                    $colspan = self::extract_docx_table_cell_colspan($cell_node);
+                    $vmerge = self::extract_docx_table_cell_vertical_merge_state($cell_node);
+                    $cell_style = self::build_docx_table_cell_style(
+                        $cell_node,
+                        $column_index,
+                        max(1, $colspan),
+                        $table_grid_widths,
+                        $row_is_header || $row_index === 0
+                    );
+
+                    $cells[] = [
+                        'start_col' => $column_index,
+                        'colspan' => max(1, $colspan),
+                        'vmerge' => $vmerge,
+                        'is_header' => $row_is_header,
+                        'style' => $cell_style,
+                        'html' => $cell_html !== '' ? $cell_html : '&nbsp;',
+                    ];
+
+                    $column_index += max(1, $colspan);
+                }
+
+                if (!empty($cells)) {
+                    $parsed_rows[] = $cells;
+                }
+
+                $row_index++;
+            }
+
+            return $parsed_rows;
+        }
+
+        private static function render_docx_table_rows_to_html(array $parsed_rows): array
+        {
+            $rows_html = [];
+
+            foreach ($parsed_rows as $row_index => $cells) {
+                $cells_html = [];
+
+                foreach ($cells as $cell) {
+                    if (($cell['vmerge'] ?? '') === 'continue') {
+                        continue;
+                    }
+
+                    $attributes = '';
+                    $tag_name = !empty($cell['is_header']) ? 'th' : 'td';
+                    $colspan = max(1, (int) ($cell['colspan'] ?? 1));
+                    if ($colspan > 1) {
+                        $attributes .= ' colspan="' . $colspan . '"';
+                    }
+
+                    $rowspan = self::count_docx_table_rowspan($parsed_rows, $row_index, (int) ($cell['start_col'] ?? 0));
+                    if ($rowspan > 1) {
+                        $attributes .= ' rowspan="' . $rowspan . '"';
+                    }
+
+                    $cell_style = trim((string) ($cell['style'] ?? ''));
+                    if ($cell_style !== '') {
+                        $attributes .= ' style="' . esc_attr($cell_style) . '"';
+                    }
+
+                    $cells_html[] = '<' . $tag_name . $attributes . '>' . (string) ($cell['html'] ?? '&nbsp;') . '</' . $tag_name . '>';
+                }
+
+                if (!empty($cells_html)) {
+                    $rows_html[] = '<tr>' . implode('', $cells_html) . '</tr>';
+                }
+            }
+
+            return $rows_html;
+        }
+
+        private static function count_docx_table_rowspan(array $parsed_rows, int $row_index, int $start_col): int
+        {
+            $rowspan = 1;
+
+            for ($scan_index = $row_index + 1, $total = count($parsed_rows); $scan_index < $total; $scan_index++) {
+                $continuation_found = false;
+                foreach ((array) ($parsed_rows[$scan_index] ?? []) as $cell) {
+                    if (
+                        (int) ($cell['start_col'] ?? -1) === $start_col &&
+                        (string) ($cell['vmerge'] ?? '') === 'continue'
+                    ) {
+                        $continuation_found = true;
+                        break;
+                    }
+                }
+
+                if (!$continuation_found) {
+                    break;
+                }
+
+                $rowspan++;
+            }
+
+            return $rowspan;
+        }
+
+        private static function extract_docx_table_cell_colspan(DOMElement $cell): int
+        {
+            foreach ($cell->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $child->localName !== 'tcPr'
+                ) {
+                    continue;
+                }
+
+                foreach ($child->childNodes as $property) {
+                    if (
+                        $property instanceof DOMElement &&
+                        (string) $property->namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
+                        (string) $property->localName === 'gridSpan'
+                    ) {
+                        $value = (int) self::get_docx_attribute_value($property, 'val');
+                        return max(1, $value);
+                    }
+                }
+            }
+
+            return 1;
+        }
+
+        private static function extract_docx_table_cell_vertical_merge_state(DOMElement $cell): string
+        {
+            foreach ($cell->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $child->localName !== 'tcPr'
+                ) {
+                    continue;
+                }
+
+                foreach ($child->childNodes as $property) {
+                    if (
+                        !$property instanceof DOMElement ||
+                        (string) $property->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                        (string) $property->localName !== 'vMerge'
+                    ) {
+                        continue;
+                    }
+
+                    $value = strtolower(self::get_docx_attribute_value($property, 'val'));
+                    if ($value === 'restart') {
+                        return 'restart';
+                    }
+
+                    return 'continue';
+                }
+            }
+
+            return '';
+        }
+
+        private static function extract_docx_table_caption_text(DOMElement $table): string
+        {
+            foreach ($table->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $child->localName !== 'tblPr'
+                ) {
+                    continue;
+                }
+
+                foreach ($child->childNodes as $property) {
+                    if (
+                        !$property instanceof DOMElement ||
+                        (string) $property->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+                    ) {
+                        continue;
+                    }
+
+                    $property_name = (string) $property->localName;
+                    if (!in_array($property_name, ['tblCaption', 'tblDescription'], true)) {
+                        continue;
+                    }
+
+                    $value = trim(self::get_docx_attribute_value($property, 'val'));
+                    if ($value !== '') {
+                        return $value;
+                    }
+
+                    $text = trim((string) $property->textContent);
+                    if ($text !== '') {
+                        return $text;
+                    }
+                }
+            }
+
+            return '';
+        }
+
+        private static function find_docx_direct_child_element(DOMElement $parent, string $child_local_name): ?DOMElement
+        {
+            foreach ($parent->childNodes as $child) {
+                if (
+                    $child instanceof DOMElement &&
+                    (string) $child->namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
+                    (string) $child->localName === $child_local_name
+                ) {
+                    return $child;
+                }
+            }
+
+            return null;
+        }
+
+        private static function extract_docx_table_row_is_header(DOMElement $row): bool
+        {
+            foreach ($row->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $child->localName !== 'trPr'
+                ) {
+                    continue;
+                }
+
+                foreach ($child->childNodes as $property) {
+                    if (
+                        $property instanceof DOMElement &&
+                        (string) $property->namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
+                        (string) $property->localName === 'tblHeader'
+                    ) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static function extract_docx_table_grid_column_widths(DOMElement $table): array
+        {
+            $widths = [];
+
+            foreach ($table->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $child->localName !== 'tblGrid'
+                ) {
+                    continue;
+                }
+
+                foreach ($child->childNodes as $grid_column) {
+                    if (
+                        !$grid_column instanceof DOMElement ||
+                        (string) $grid_column->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                        (string) $grid_column->localName !== 'gridCol'
+                    ) {
+                        continue;
+                    }
+
+                    $width = absint(self::get_docx_attribute_value($grid_column, 'w'));
+                    if ($width > 0) {
+                        $widths[] = $width;
+                    }
+                }
+            }
+
+            return $widths;
+        }
+
+        private static function extract_docx_table_preferred_width_style(DOMElement $table): string
+        {
+            $table_properties = self::find_docx_direct_child_element($table, 'tblPr');
+            if (!$table_properties instanceof DOMElement) {
+                return '';
+            }
+
+            foreach ($table_properties->childNodes as $property) {
+                if (
+                    !$property instanceof DOMElement ||
+                    (string) $property->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $property->localName !== 'tblW'
+                ) {
+                    continue;
+                }
+
+                return self::normalize_docx_word_width_style(
+                    self::get_docx_attribute_value($property, 'w'),
+                    self::get_docx_attribute_value($property, 'type')
+                );
+            }
+
+            return '';
+        }
+
+        private static function build_docx_table_cell_style(
+            DOMElement $cell,
+            int $start_col,
+            int $colspan,
+            array $table_grid_widths,
+            bool $prefer_header_font_weight
+        ): string {
+            $styles = [];
+
+            $alignment = self::extract_docx_table_cell_alignment($cell);
+            if ($alignment !== '') {
+                $styles[] = 'text-align:' . $alignment . ';';
+            }
+
+            $vertical_align = self::extract_docx_table_cell_vertical_alignment($cell);
+            if ($vertical_align !== '') {
+                $styles[] = 'vertical-align:' . $vertical_align . ';';
+            }
+
+            $background_color = self::extract_docx_table_cell_background_color($cell);
+            if ($background_color !== '') {
+                $styles[] = 'background-color:' . $background_color . ';';
+            }
+
+            $width_style = self::extract_docx_table_cell_width_style($cell, $start_col, $colspan, $table_grid_widths);
+            if ($width_style !== '') {
+                $styles[] = $width_style;
+            }
+
+            if ($prefer_header_font_weight && self::docx_table_cell_looks_like_header($cell)) {
+                $styles[] = 'font-weight:700;';
+            }
+
+            return implode('', $styles);
+        }
+
+        private static function extract_docx_table_cell_alignment(DOMElement $cell): string
+        {
+            foreach ($cell->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $child->localName !== 'p'
+                ) {
+                    continue;
+                }
+
+                $alignment = self::extract_docx_paragraph_alignment($child);
+                if ($alignment !== '') {
+                    return $alignment;
+                }
+            }
+
+            return '';
+        }
+
+        private static function extract_docx_table_cell_vertical_alignment(DOMElement $cell): string
+        {
+            $cell_properties = self::find_docx_direct_child_element($cell, 'tcPr');
+            if (!$cell_properties instanceof DOMElement) {
+                return '';
+            }
+
+            foreach ($cell_properties->childNodes as $property) {
+                if (
+                    !$property instanceof DOMElement ||
+                    (string) $property->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $property->localName !== 'vAlign'
+                ) {
+                    continue;
+                }
+
+                $value = strtolower(trim(self::get_docx_attribute_value($property, 'val')));
+                if (in_array($value, ['top', 'center', 'bottom'], true)) {
+                    return $value === 'center' ? 'middle' : $value;
+                }
+            }
+
+            return '';
+        }
+
+        private static function extract_docx_table_cell_background_color(DOMElement $cell): string
+        {
+            $cell_properties = self::find_docx_direct_child_element($cell, 'tcPr');
+            if (!$cell_properties instanceof DOMElement) {
+                return '';
+            }
+
+            foreach ($cell_properties->childNodes as $property) {
+                if (
+                    !$property instanceof DOMElement ||
+                    (string) $property->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $property->localName !== 'shd'
+                ) {
+                    continue;
+                }
+
+                return self::normalize_docx_color_hex(self::get_docx_attribute_value($property, 'fill'));
+            }
+
+            return '';
+        }
+
+        private static function extract_docx_table_cell_width_style(
+            DOMElement $cell,
+            int $start_col,
+            int $colspan,
+            array $table_grid_widths
+        ): string {
+            $cell_properties = self::find_docx_direct_child_element($cell, 'tcPr');
+            if ($cell_properties instanceof DOMElement) {
+                foreach ($cell_properties->childNodes as $property) {
+                    if (
+                        !$property instanceof DOMElement ||
+                        (string) $property->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                        (string) $property->localName !== 'tcW'
+                    ) {
+                        continue;
+                    }
+
+                    $width_style = self::normalize_docx_word_width_style(
+                        self::get_docx_attribute_value($property, 'w'),
+                        self::get_docx_attribute_value($property, 'type')
+                    );
+                    if ($width_style !== '') {
+                        return $width_style;
+                    }
+                }
+            }
+
+            if (empty($table_grid_widths)) {
+                return '';
+            }
+
+            $width_slice = array_slice($table_grid_widths, $start_col, $colspan);
+            if (empty($width_slice)) {
+                return '';
+            }
+
+            $total_width = array_sum($table_grid_widths);
+            $cell_width = array_sum($width_slice);
+            if ($total_width <= 0 || $cell_width <= 0) {
+                return '';
+            }
+
+            $percentage = round(($cell_width / $total_width) * 100, 2);
+            $formatted = rtrim(rtrim(number_format($percentage, 2, '.', ''), '0'), '.');
+
+            return 'width:' . $formatted . '%;';
+        }
+
+        private static function docx_table_cell_looks_like_header(DOMElement $cell): bool
+        {
+            if (self::extract_docx_table_cell_background_color($cell) !== '') {
+                return true;
+            }
+
+            foreach ($cell->getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'b') as $bold_node) {
+                if ($bold_node instanceof DOMElement) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static function normalize_docx_color_hex(string $value): string
+        {
+            $value = strtoupper(trim($value));
+            $value = preg_replace('/[^0-9A-F]/', '', $value);
+            if (!is_string($value) || strlen($value) !== 6) {
+                return '';
+            }
+
+            if (in_array($value, ['AUTO', 'FFFFFF00'], true)) {
+                return '';
+            }
+
+            return '#' . $value;
+        }
+
+        private static function normalize_docx_word_width_style(string $raw_width, string $width_type): string
+        {
+            $width = trim($raw_width);
+            $type = strtolower(trim($width_type));
+            if ($width === '' || $type === '' || $type === 'auto') {
+                return '';
+            }
+
+            if (!preg_match('/^\d+(?:\.\d+)?$/', $width)) {
+                return '';
+            }
+
+            $numeric_width = (float) $width;
+            if ($numeric_width <= 0) {
+                return '';
+            }
+
+            if ($type === 'pct') {
+                $percentage = $numeric_width / 50;
+                $formatted = rtrim(rtrim(number_format($percentage, 2, '.', ''), '0'), '.');
+                return 'width:' . $formatted . '%;';
+            }
+
+            if ($type === 'dxa') {
+                return 'width:' . self::convert_docx_twips_to_pixels($numeric_width) . 'px;';
+            }
+
+            return '';
+        }
+
+        private static function convert_docx_twips_to_pixels(float $twips): string
+        {
+            $pixels = $twips / 15;
+            if ($pixels <= 0) {
+                return '0';
+            }
+
+            return rtrim(rtrim(number_format($pixels, 2, '.', ''), '0'), '.');
+        }
+
+        private static function convert_docx_table_cell_element_to_html(
+            DOMElement $cell,
+            array $image_rel_map,
+            ZipArchive $zip,
+            array $hyperlink_rel_map = []
+        ): string
+        {
+            $parts = [];
+
+            foreach ($cell->childNodes as $child) {
+                if (!$child instanceof DOMElement) {
+                    continue;
+                }
+
+                if ($child->localName === 'p') {
+                    $paragraph_html = self::convert_docx_paragraph_element_to_html($child, $image_rel_map, $zip, $hyperlink_rel_map);
+                    if ($paragraph_html !== '') {
+                        $parts[] = $paragraph_html;
+                    }
+                    continue;
+                }
+
+                if ($child->localName === 'tbl') {
+                    $nested_table_html = self::convert_docx_table_element_to_html($child, $image_rel_map, $zip, $hyperlink_rel_map);
+                    if ($nested_table_html !== '') {
+                        $parts[] = $nested_table_html;
+                    }
+                }
+            }
+
+            return implode('', $parts);
+        }
+
+        private static function convert_docx_paragraph_element_to_html(
+            DOMElement $paragraph,
+            array $image_rel_map,
+            ZipArchive $zip,
+            array $hyperlink_rel_map = []
+        ): string
+        {
+            $xml = $paragraph->ownerDocument instanceof DOMDocument
+                ? (string) $paragraph->ownerDocument->saveXML($paragraph)
+                : '';
+            if ($xml === '') {
+                return '';
+            }
+
+            $parts = [];
+            $paragraph_alignment = self::extract_docx_paragraph_alignment($paragraph);
+            $inline_html = self::render_docx_inline_tokens_to_html(
+                self::extract_docx_paragraph_inline_tokens($paragraph, $hyperlink_rel_map)
+            );
+            if ($inline_html !== '') {
+                $parts[] = self::wrap_docx_inline_html_fragment($inline_html, $paragraph_alignment);
+            } else {
+                $text = self::extract_docx_paragraph_text($xml);
+                if ($text !== '') {
+                    $safe_text = esc_html($text);
+                    $safe_text = str_replace(["\r\n", "\r"], "\n", $safe_text);
+                    $safe_text = str_replace("\n", '<br />', $safe_text);
+                    $parts[] = self::wrap_docx_inline_html_fragment($safe_text, $paragraph_alignment);
+                }
+            }
+
+            foreach (self::extract_docx_image_html_fragments_from_xml($xml, $image_rel_map, $zip, $paragraph_alignment) as $image_html) {
+                $parts[] = $image_html;
+            }
+
+            return implode('', $parts);
+        }
+
+        private static function extract_docx_paragraph_alignment(DOMElement $paragraph): string
+        {
+            foreach ($paragraph->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $child->localName !== 'pPr'
+                ) {
+                    continue;
+                }
+
+                foreach ($child->childNodes as $property) {
+                    if (
+                        !$property instanceof DOMElement ||
+                        (string) $property->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                        (string) $property->localName !== 'jc'
+                    ) {
+                        continue;
+                    }
+
+                    return self::normalize_docx_text_alignment(self::get_docx_attribute_value($property, 'val'));
+                }
+            }
+
+            return '';
+        }
+
+        private static function extract_docx_table_alignment(DOMElement $table): string
+        {
+            foreach ($table->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $child->localName !== 'tblPr'
+                ) {
+                    continue;
+                }
+
+                foreach ($child->childNodes as $property) {
+                    if (
+                        !$property instanceof DOMElement ||
+                        (string) $property->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                        (string) $property->localName !== 'jc'
+                    ) {
+                        continue;
+                    }
+
+                    return self::normalize_docx_text_alignment(self::get_docx_attribute_value($property, 'val'));
+                }
+            }
+
+            return '';
+        }
+
+        private static function normalize_docx_text_alignment(string $alignment): string
+        {
+            $normalized = strtolower(trim($alignment));
+            if ($normalized === 'both' || $normalized === 'distribute') {
+                return 'justify';
+            }
+
+            if (in_array($normalized, ['left', 'center', 'right', 'justify'], true)) {
+                return $normalized;
+            }
+
+            return '';
+        }
+
+        private static function build_docx_text_alignment_style(string $alignment): string
+        {
+            $normalized = self::normalize_docx_text_alignment($alignment);
+            if ($normalized === '') {
+                return '';
+            }
+
+            return 'text-align:' . $normalized . ';';
+        }
+
+        private static function build_docx_table_alignment_style(string $alignment): string
+        {
+            $normalized = self::normalize_docx_text_alignment($alignment);
+            if ($normalized === 'center') {
+                return 'margin-left:auto;margin-right:auto;';
+            }
+
+            if ($normalized === 'right') {
+                return 'margin-left:auto;margin-right:0;';
+            }
+
+            return '';
+        }
+
+        private static function extract_docx_paragraph_inline_tokens(DOMElement $paragraph, array $hyperlink_rel_map = []): array
+        {
+            $tokens = [];
+            foreach ($paragraph->childNodes as $child) {
+                $tokens = array_merge($tokens, self::extract_docx_inline_tokens_from_node($child, $hyperlink_rel_map));
+            }
+
+            return $tokens;
+        }
+
+        private static function extract_docx_inline_tokens_from_node(
+            DOMNode $node,
+            array $hyperlink_rel_map = [],
+            array $styles = [],
+            string $href = ''
+        ): array {
+            if ($node instanceof DOMText) {
+                $value = (string) $node->nodeValue;
+                return trim($value) === '' ? [] : [[
+                    'text' => $value,
+                    'styles' => $styles,
+                    'href' => $href,
+                    'kind' => 'text',
+                ]];
+            }
+
+            if (!$node instanceof DOMElement) {
+                return [];
+            }
+
+            $namespace = (string) $node->namespaceURI;
+            $local_name = (string) $node->localName;
+
+            if ($namespace === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main') {
+                if ($local_name === 'r') {
+                    $run_styles = self::resolve_docx_run_styles($node, $styles);
+                    $tokens = [];
+                    foreach ($node->childNodes as $child) {
+                        $tokens = array_merge($tokens, self::extract_docx_inline_tokens_from_node($child, $hyperlink_rel_map, $run_styles, $href));
+                    }
+                    return $tokens;
+                }
+
+                if ($local_name === 'hyperlink') {
+                    $link_href = '';
+                    $rel_id = self::get_docx_attribute_value($node, 'id');
+                    if ($rel_id !== '' && isset($hyperlink_rel_map[$rel_id])) {
+                        $link_href = trim((string) $hyperlink_rel_map[$rel_id]);
+                    }
+
+                    $tokens = [];
+                    foreach ($node->childNodes as $child) {
+                        $tokens = array_merge(
+                            $tokens,
+                            self::extract_docx_inline_tokens_from_node(
+                                $child,
+                                $hyperlink_rel_map,
+                                $styles,
+                                $link_href !== '' ? $link_href : $href
+                            )
+                        );
+                    }
+                    return $tokens;
+                }
+
+                if ($local_name === 't') {
+                    $value = html_entity_decode((string) $node->textContent, ENT_QUOTES | ENT_XML1, 'UTF-8');
+                    if ($value === '') {
+                        return [];
+                    }
+                    return [[
+                        'text' => $value,
+                        'styles' => $styles,
+                        'href' => $href,
+                        'kind' => 'text',
+                    ]];
+                }
+
+                if ($local_name === 'br' || $local_name === 'cr') {
+                    return [[
+                        'text' => "\n",
+                        'styles' => [],
+                        'href' => '',
+                        'kind' => 'break',
+                    ]];
+                }
+
+                if ($local_name === 'tab') {
+                    return [[
+                        'text' => "\t",
+                        'styles' => [],
+                        'href' => '',
+                        'kind' => 'tab',
+                    ]];
+                }
+
+                if ($local_name === 'drawing' || $local_name === 'pict') {
+                    return [];
+                }
+
+                if ($local_name === 'sym') {
+                    $value = self::decode_docx_symbol_element($node);
+                    if ($value === '') {
+                        return [];
+                    }
+
+                    return [[
+                        'text' => $value,
+                        'styles' => $styles,
+                        'href' => $href,
+                        'kind' => 'text',
+                    ]];
+                }
+            }
+
+            if ($namespace === 'http://schemas.openxmlformats.org/officeDocument/2006/math') {
+                $math_fallback = self::render_docx_math_node($node);
+                if ($math_fallback === '') {
+                    return [];
+                }
+
+                $math_source = self::render_docx_math_node_to_katex($node);
+                $math_styles = $styles;
+                if (trim((string) ($math_styles['font_size'] ?? '')) === '') {
+                    $math_styles['font_size'] = self::resolve_docx_math_node_font_size($node);
+                }
+                $math_diagnostics = self::collect_docx_math_diagnostic_entries($node, $math_source);
+                if ($math_source !== '') {
+                    return [[
+                        'text' => $math_fallback,
+                        'styles' => $math_styles,
+                        'href' => $href,
+                        'kind' => 'math',
+                        'math_source' => $math_source,
+                        'diagnostics' => $math_diagnostics,
+                    ]];
+                }
+
+                return [[
+                    'text' => $math_fallback,
+                    'styles' => $math_styles,
+                    'href' => $href,
+                    'kind' => 'text',
+                    'diagnostics' => $math_diagnostics,
+                ]];
+            }
+
+            $tokens = [];
+            foreach ($node->childNodes as $child) {
+                $tokens = array_merge($tokens, self::extract_docx_inline_tokens_from_node($child, $hyperlink_rel_map, $styles, $href));
+            }
+
+            return $tokens;
+        }
+
+        private static function resolve_docx_run_styles(DOMElement $run, array $base_styles = []): array
+        {
+            $styles = [
+                'bold' => !empty($base_styles['bold']),
+                'italic' => !empty($base_styles['italic']),
+                'underline' => !empty($base_styles['underline']),
+                'vert_align' => isset($base_styles['vert_align']) ? (string) $base_styles['vert_align'] : '',
+                'font_size' => isset($base_styles['font_size']) ? (string) $base_styles['font_size'] : '',
+            ];
+
+            foreach ($run->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' ||
+                    (string) $child->localName !== 'rPr'
+                ) {
+                    continue;
+                }
+
+                foreach ($child->childNodes as $property) {
+                    if (
+                        !$property instanceof DOMElement ||
+                        (string) $property->namespaceURI !== 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+                    ) {
+                        continue;
+                    }
+
+                    $property_name = (string) $property->localName;
+                    if ($property_name === 'b' || $property_name === 'bCs') {
+                        $styles['bold'] = self::docx_property_is_enabled($property);
+                    } elseif ($property_name === 'i' || $property_name === 'iCs') {
+                        $styles['italic'] = self::docx_property_is_enabled($property);
+                    } elseif ($property_name === 'u') {
+                        $underline_value = strtolower(self::get_docx_attribute_value($property, 'val'));
+                        $styles['underline'] = ($underline_value === '' || $underline_value !== 'none');
+                    } elseif ($property_name === 'sz' || $property_name === 'szCs') {
+                        $font_size = self::normalize_docx_font_size_property($property);
+                        if ($font_size !== '') {
+                            $styles['font_size'] = $font_size;
+                        }
+                    } elseif ($property_name === 'vertAlign') {
+                        $vert_align = strtolower(self::get_docx_attribute_value($property, 'val'));
+                        if (in_array($vert_align, ['superscript', 'subscript'], true)) {
+                            $styles['vert_align'] = $vert_align;
+                        }
+                    }
+                }
+            }
+
+            return $styles;
+        }
+
+        private static function normalize_docx_font_size_property(DOMElement $property): string
+        {
+            $raw_value = trim(self::get_docx_attribute_value($property, 'val'));
+            if ($raw_value === '' || preg_match('/^\d+(?:\.\d+)?$/', $raw_value) !== 1) {
+                return '';
+            }
+
+            $half_points = (float) $raw_value;
+            if ($half_points <= 0.0) {
+                return '';
+            }
+
+            $points = $half_points / 2;
+            if ($points < 4 || $points > 96) {
+                return '';
+            }
+
+            if (abs($points - floor($points)) < 0.001) {
+                return (string) (int) round($points) . 'pt';
+            }
+
+            return rtrim(rtrim(number_format($points, 1, '.', ''), '0'), '.') . 'pt';
+        }
+
+        private static function resolve_docx_math_node_font_size(DOMElement $node): string
+        {
+            $largest_points = 0.0;
+
+            foreach ($node->getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'sz') as $size_node) {
+                if (!$size_node instanceof DOMElement) {
+                    continue;
+                }
+
+                $font_size = self::normalize_docx_font_size_property($size_node);
+                $font_points = self::parse_docx_font_size_points($font_size);
+                if ($font_points > $largest_points) {
+                    $largest_points = $font_points;
+                }
+            }
+
+            foreach ($node->getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'szCs') as $size_node) {
+                if (!$size_node instanceof DOMElement) {
+                    continue;
+                }
+
+                $font_size = self::normalize_docx_font_size_property($size_node);
+                $font_points = self::parse_docx_font_size_points($font_size);
+                if ($font_points > $largest_points) {
+                    $largest_points = $font_points;
+                }
+            }
+
+            if ($largest_points <= 0.0) {
+                return '';
+            }
+
+            if (abs($largest_points - floor($largest_points)) < 0.001) {
+                return (string) (int) round($largest_points) . 'pt';
+            }
+
+            return rtrim(rtrim(number_format($largest_points, 1, '.', ''), '0'), '.') . 'pt';
+        }
+
+        private static function parse_docx_font_size_points(string $font_size): float
+        {
+            if (preg_match('/^(\d+(?:\.\d+)?)pt$/', trim($font_size), $matches) !== 1) {
+                return 0.0;
+            }
+
+            return (float) $matches[1];
+        }
+
+        private static function docx_property_is_enabled(DOMElement $property): bool
+        {
+            $value = strtolower(self::get_docx_attribute_value($property, 'val'));
+            if ($value === '' || in_array($value, ['1', 'true', 'on'], true)) {
+                return true;
+            }
+
+            return !in_array($value, ['0', 'false', 'off', 'none'], true);
+        }
+
+        private static function render_docx_inline_tokens_to_html(array $tokens): string
+        {
+            $html = '';
+            $prefer_block_math = self::docx_inline_tokens_prefer_block_math($tokens);
+
+            foreach ($tokens as $token) {
+                $kind = (string) ($token['kind'] ?? 'text');
+                if ($kind === 'break') {
+                    $html .= '<br />';
+                    continue;
+                }
+                if ($kind === 'tab') {
+                    $html .= '&nbsp;&nbsp;&nbsp;&nbsp;';
+                    continue;
+                }
+
+                $text = (string) ($token['text'] ?? '');
+                if ($text === '') {
+                    continue;
+                }
+
+                if ($kind === 'math') {
+                    $math_source = (string) ($token['math_source'] ?? '');
+                    if ($math_source !== '') {
+                        $html .= self::render_docx_math_fragment_html(
+                            $math_source,
+                            $text,
+                            $prefer_block_math ? 'block' : 'inline',
+                            (array) ($token['styles'] ?? [])
+                        );
+                        continue;
+                    }
+                }
+
+                $html .= self::render_docx_token_fragment_html($text, (array) ($token['styles'] ?? []), (string) ($token['href'] ?? ''));
+            }
+
+            return CBT_Admin_Questions_Helper::sanitize_editor_html($html);
+        }
+
+        private static function docx_inline_tokens_require_rich_html(array $tokens): bool
+        {
+            foreach ($tokens as $token) {
+                if ((string) ($token['kind'] ?? 'text') === 'math' && trim((string) ($token['math_source'] ?? '')) !== '') {
+                    return true;
+                }
+
+                $styles = (array) ($token['styles'] ?? []);
+                if (!empty($styles['bold']) || !empty($styles['italic']) || !empty($styles['underline'])) {
+                    return true;
+                }
+
+                $vert_align = isset($styles['vert_align']) ? (string) $styles['vert_align'] : '';
+                if ($vert_align === 'superscript' || $vert_align === 'subscript') {
+                    return true;
+                }
+
+                if (trim((string) ($styles['font_size'] ?? '')) !== '') {
+                    return true;
+                }
+
+                if (trim((string) ($token['href'] ?? '')) !== '') {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static function docx_inline_tokens_prefer_block_math(array $tokens): bool
+        {
+            $has_math = false;
+
+            foreach ($tokens as $token) {
+                $kind = (string) ($token['kind'] ?? 'text');
+                if ($kind === 'break') {
+                    continue;
+                }
+
+                if ($kind === 'tab') {
+                    continue;
+                }
+
+                $text = (string) ($token['text'] ?? '');
+                if ($kind === 'math' && trim((string) ($token['math_source'] ?? '')) !== '') {
+                    $has_math = true;
+                    continue;
+                }
+
+                if (trim($text) !== '') {
+                    return false;
+                }
+            }
+
+            return $has_math;
+        }
+
+        private static function render_docx_token_fragment_html(string $text, array $styles = [], string $href = ''): string
+        {
+            $html = esc_html($text);
+
+            $vert_align = isset($styles['vert_align']) ? (string) $styles['vert_align'] : '';
+            if ($vert_align === 'superscript') {
+                $html = '<sup>' . $html . '</sup>';
+            } elseif ($vert_align === 'subscript') {
+                $html = '<sub>' . $html . '</sub>';
+            }
+
+            if (!empty($styles['underline'])) {
+                $html = '<u>' . $html . '</u>';
+            }
+            if (!empty($styles['italic'])) {
+                $html = '<em>' . $html . '</em>';
+            }
+            if (!empty($styles['bold'])) {
+                $html = '<strong>' . $html . '</strong>';
+            }
+
+            $font_size = trim((string) ($styles['font_size'] ?? ''));
+            if ($font_size !== '') {
+                $html = '<span style="' . esc_attr('font-size:' . $font_size . ';') . '">' . $html . '</span>';
+            }
+
+            $href = trim($href);
+            if ($href !== '') {
+                $html = '<a href="' . esc_url($href) . '" target="_blank" rel="noopener noreferrer">' . $html . '</a>';
+            }
+
+            return $html;
+        }
+
+        private static function render_docx_math_fragment_html(string $source, string $fallback, string $display_mode, array $styles = []): string
+        {
+            $normalized_display_mode = strtolower(trim($display_mode)) === 'block' ? 'block' : 'inline';
+            $tag_name = $normalized_display_mode === 'block' ? 'div' : 'span';
+            $class_name = $normalized_display_mode === 'block' ? 'cbt-math cbt-math-block' : 'cbt-math';
+            $font_size = trim((string) ($styles['font_size'] ?? ''));
+            $style_attribute = $font_size !== '' ? ' style="' . esc_attr('font-size:' . $font_size . ';') . '"' : '';
+
+            return sprintf(
+                '<%1$s class="%2$s" data-cbt-math="%3$s" data-cbt-math-display="%4$s"%5$s>%6$s</%1$s>',
+                $tag_name,
+                esc_attr($class_name),
+                esc_attr($source),
+                esc_attr($normalized_display_mode),
+                $style_attribute,
+                esc_html($fallback)
+            );
+        }
+
+        /**
+         * @return array<int,array<string,string>>
+         */
+        private static function collect_docx_math_diagnostic_entries(DOMElement $node, string $math_source): array
+        {
+            $entries = [];
+
+            if ($math_source !== '') {
+                $entries[] = [
+                    'kind' => 'preserved',
+                    'feature' => 'equation_visual',
+                    'message' => 'Equation Word dipertahankan sebagai visual math berbasis KaTeX.',
+                ];
+
+                if (strpos($math_source, '\\begin{aligned}') !== false) {
+                    $entries[] = [
+                        'kind' => 'fallback',
+                        'feature' => 'multiline_equation_normalized',
+                        'message' => 'Equation multiline Word dinormalisasi ke aligned KaTeX yang stabil.',
+                    ];
+                }
+            }
+
+            if (self::docx_math_node_contains_unsupported_element($node)) {
+                $entries[] = [
+                    'kind' => 'unsupported',
+                    'feature' => 'unsupported_equation_node_dropped',
+                    'message' => 'Sebagian node Equation Word belum dipetakan penuh dan diturunkan ke bentuk aman.',
+                ];
+            }
+
+            return $entries;
+        }
+
+        private static function docx_math_node_contains_unsupported_element(DOMElement $node): bool
+        {
+            $supported_local_names = [
+                't', 'oMath', 'oMathPara', 'r', 'e', 'sub', 'sup', 'num', 'den', 'deg', 'fName', 'box', 'bar',
+                'borderBox', 'phant', 'sSup', 'sSub', 'sSubSup', 'sPre', 'f', 'rad', 'd', 'func', 'limLow',
+                'limUpp', 'nary', 'mr', 'm', 'eqArr', 'acc', 'groupChr', 'accPr', 'argPr', 'ctrlPr', 'dPr',
+                'funcPr', 'limLowPr', 'limUppPr', 'naryPr', 'radPr', 'rPr', 'sPrePr', 'sSubPr', 'sSupPr',
+                'sSubSupPr', 'brk', 'begChr', 'endChr', 'chr', 'pos', 'val', 'vertJc',
+            ];
+            $supported_lookup = array_fill_keys($supported_local_names, true);
+
+            foreach ($node->getElementsByTagNameNS('http://schemas.openxmlformats.org/officeDocument/2006/math', '*') as $math_child) {
+                if (!$math_child instanceof DOMElement) {
+                    continue;
+                }
+
+                if (!isset($supported_lookup[(string) $math_child->localName])) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static function build_docx_rich_lines_from_paragraph_tokens(array $tokens, string $plain_text, string $paragraph_alignment = ''): array
+        {
+            $plain_text = trim($plain_text);
+            if ($plain_text === '') {
+                return [];
+            }
+
+            $colon_position = strpos($plain_text, ':');
+            if ($colon_position !== false) {
+                $key = trim(substr($plain_text, 0, $colon_position));
+                if (self::is_docx_key_only_line($key)) {
+                    $value_tokens = self::slice_docx_inline_tokens_after_offset($tokens, $colon_position + 1);
+                    $value_html = trim(self::render_docx_inline_tokens_to_html($value_tokens));
+                    if ($value_html === '') {
+                        return [$key . ':'];
+                    }
+
+                    return [
+                        $key . ':',
+                        self::create_docx_html_marker(self::wrap_docx_inline_html_fragment($value_html, $paragraph_alignment)),
+                    ];
+                }
+            }
+
+            $html = trim(self::render_docx_inline_tokens_to_html($tokens));
+            if ($html === '') {
+                return [$plain_text];
+            }
+
+            return [self::create_docx_html_marker(self::wrap_docx_inline_html_fragment($html, $paragraph_alignment))];
+        }
+
+        private static function wrap_docx_inline_html_fragment(string $html, string $paragraph_alignment = ''): string
+        {
+            $html = trim($html);
+            if ($html === '') {
+                return '';
+            }
+
+            $alignment_style = self::build_docx_text_alignment_style($paragraph_alignment);
+            $style_attribute = $alignment_style !== '' ? ' style="' . esc_attr($alignment_style) . '"' : '';
+
+            if (preg_match('/^<(?:div|table|thead|tbody|tfoot|tr|td|th|figure|figcaption|img|ul|ol|li)\b/i', $html) === 1) {
+                if ($style_attribute === '') {
+                    return $html;
+                }
+
+                return '<div' . $style_attribute . '>' . $html . '</div>';
+            }
+
+            return '<p' . $style_attribute . '>' . $html . '</p>';
+        }
+
+        private static function slice_docx_inline_tokens_after_offset(array $tokens, int $offset): array
+        {
+            $remaining = max(0, $offset);
+            $result = [];
+
+            foreach ($tokens as $token) {
+                $text = (string) ($token['text'] ?? '');
+                $kind = (string) ($token['kind'] ?? 'text');
+
+                if ($kind === 'break' || $kind === 'tab') {
+                    if ($remaining <= 0) {
+                        $result[] = $token;
+                    }
+                    continue;
+                }
+
+                $length = function_exists('mb_strlen') ? mb_strlen($text, 'UTF-8') : strlen($text);
+                if ($remaining >= $length) {
+                    $remaining -= $length;
+                    continue;
+                }
+
+                if ($remaining > 0) {
+                    $text = function_exists('mb_substr')
+                        ? (string) mb_substr($text, $remaining, null, 'UTF-8')
+                        : (string) substr($text, $remaining);
+                    $remaining = 0;
+                }
+
+                $token['text'] = $text;
+                $result[] = $token;
+            }
+
+            return $result;
+        }
+
+        private static function docx_has_required_template_marker(array $lines): bool
+        {
+            foreach ($lines as $line) {
+                $line = trim((string) $line);
+                if ($line === '' || strpos($line, ':') === false) {
+                    continue;
+                }
+
+                $parts = explode(':', $line, 2);
+                $key = strtolower(trim((string) ($parts[0] ?? '')));
+                $key = str_replace([' ', '-'], '_', $key);
+                $value = strtolower(trim((string) ($parts[1] ?? '')));
+
+                if ($key === self::DOCX_TEMPLATE_MARKER_KEY && $value === self::DOCX_TEMPLATE_MARKER_VALUE) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static function extract_docx_question_blocks(array $lines): array
+        {
+            $blocks = [];
+            $current_block = [];
+            $seen_first_separator = false;
+
+            foreach ($lines as $line) {
+                $line = trim((string) $line);
+                if ($line === '---') {
+                    if ($seen_first_separator && !empty($current_block)) {
+                        $blocks[] = $current_block;
+                        $current_block = [];
+                    }
+
+                    $seen_first_separator = true;
+                    continue;
+                }
+
+                if (!$seen_first_separator || $line === '') {
+                    continue;
+                }
+
+                $current_block[] = $line;
+            }
+
+            if (!empty($current_block)) {
+                $blocks[] = $current_block;
+            }
+
+            return $blocks;
         }
 
         private static function import_single_question_row(array $row, int $default_exam_id, bool $is_admin_scope, int $current_user_id, array &$affected_exam_ids = []): array
@@ -736,7 +3142,7 @@ final class CBT_Admin_Questions_Import_Helper
                     'failure_entry' => $failure_entry,
                 ];
             }
-    
+
             $question_type = self::map_import_question_type((string) ($row['question_type'] ?? ''));
             $question_text = wp_kses_post((string) ($row['question_text'] ?? ''));
             $question_text = trim($question_text);
@@ -744,21 +3150,21 @@ final class CBT_Admin_Questions_Import_Helper
             if ($question_type === '' || $question_text === '') {
                 return self::failed_import_result($row, 'Jenis soal atau pertanyaan wajib diisi.');
             }
-    
+
             $exam_id = self::resolve_import_question_exam_id($row, $default_exam_id, $is_admin_scope, $current_user_id);
             if ($exam_id <= 0) {
                 return self::failed_import_result($row, 'Exam penampung untuk blok soal ini tidak valid.');
             }
             $affected_exam_ids[$exam_id] = $exam_id;
-    
+
             $points = isset($row['points']) && $row['points'] !== '' ? (float) $row['points'] : 1.0;
             $points = max(0, $points);
-    
+
             $options_input = (string) ($row['options'] ?? '');
             $correct_answer = (string) ($row['correct_answer'] ?? '');
             $correct_text = (string) ($row['correct_text'] ?? '');
             $options_raw = '';
-    
+
             if (in_array($question_type, ['multiple_choice', 'multiple_answer'], true)) {
                 $built = self::build_options_raw_from_import($options_input, $correct_answer, $question_type);
                 if ($built === '') {
@@ -801,7 +3207,7 @@ final class CBT_Admin_Questions_Import_Helper
                 $correct_text = '';
                 $options_raw = '';
             }
-    
+
             $inserted = $wpdb->insert(
                 $wpdb->prefix . 'cbt_questions',
                 [
@@ -819,10 +3225,10 @@ final class CBT_Admin_Questions_Import_Helper
             if (!$inserted) {
                 return self::failed_import_result($row, 'Gagal menyimpan soal ke database.');
             }
-    
+
             $question_id = (int) $wpdb->insert_id;
             $options_to_insert = CBT_Admin_Questions_Helper::parse_options($options_raw);
-    
+
             if ($question_type === 'true_false' && empty($options_to_insert)) {
                 $true_is_correct = (strtolower($correct_text) === 'true') ? 1 : 0;
                 $options_to_insert = [
@@ -830,7 +3236,7 @@ final class CBT_Admin_Questions_Import_Helper
                     ['option_text' => 'False', 'is_correct' => $true_is_correct ? 0 : 1],
                 ];
             }
-    
+
             foreach ($options_to_insert as $idx => $opt) {
                 $wpdb->insert(
                     $wpdb->prefix . 'cbt_options',
@@ -844,12 +3250,13 @@ final class CBT_Admin_Questions_Import_Helper
                     ['%d', '%s', '%s', '%d', '%s']
                 );
             }
-    
+
             CBT_Admin_Questions_Helper::save_question_type_detail($question_id, $question_type, $correct_text);
-    
+
             return [
                 'status' => 'created',
                 'message' => '',
+                'question_id' => $question_id,
             ];
         }
 
@@ -884,21 +3291,21 @@ final class CBT_Admin_Questions_Import_Helper
         private static function resolve_import_question_exam_id(array $row, int $default_exam_id, bool $is_admin_scope, int $current_user_id): int
         {
             global $wpdb;
-    
+
             $exam_table = $wpdb->prefix . 'cbt_exams';
             $subject_table = $wpdb->prefix . 'cbt_subjects';
-    
+
             $exam_id = isset($row['exam_id']) ? absint((string) $row['exam_id']) : 0;
             if ($exam_id <= 0 && !empty($row['exam_title'])) {
                 $exam_title = sanitize_text_field((string) $row['exam_title']);
                 $subject_id = isset($row['subject_id']) ? absint((string) $row['subject_id']) : 0;
-    
+
                 if ($subject_id <= 0 && !empty($row['subject_code'])) {
                     $subject_id = (int) $wpdb->get_var(
                         $wpdb->prepare("SELECT id FROM {$subject_table} WHERE code = %s LIMIT 1", sanitize_text_field((string) $row['subject_code']))
                     );
                 }
-    
+
                 if ($subject_id > 0) {
                     $exam_id = (int) $wpdb->get_var(
                         $wpdb->prepare(
@@ -916,17 +3323,17 @@ final class CBT_Admin_Questions_Import_Helper
                     );
                 }
             }
-    
+
             $fallback_exam_id = $default_exam_id;
-    
+
             if ($exam_id <= 0) {
                 $exam_id = $fallback_exam_id;
             }
-    
+
             if ($exam_id <= 0) {
                 return 0;
             }
-    
+
             if ($is_admin_scope) {
                 $exists = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$exam_table} WHERE id = %d", $exam_id));
                 if ($exists > 0) {
@@ -940,7 +3347,7 @@ final class CBT_Admin_Questions_Import_Helper
                 }
                 return 0;
             }
-    
+
             $owned = (int) $wpdb->get_var(
                 $wpdb->prepare(
                     "SELECT COUNT(*) FROM {$exam_table} WHERE id = %d AND created_by = %d",
@@ -948,11 +3355,11 @@ final class CBT_Admin_Questions_Import_Helper
                     $current_user_id
                 )
             );
-    
+
             if ($owned > 0) {
                 return $exam_id;
             }
-    
+
             if ($fallback_exam_id > 0 && $fallback_exam_id !== $exam_id) {
                 $fallback_owned = (int) $wpdb->get_var(
                     $wpdb->prepare(
@@ -965,7 +3372,7 @@ final class CBT_Admin_Questions_Import_Helper
                     return $fallback_exam_id;
                 }
             }
-    
+
             return 0;
         }
 
@@ -975,19 +3382,19 @@ final class CBT_Admin_Questions_Import_Helper
             if ($value === '') {
                 return [];
             }
-    
+
             $tokens = preg_split('/[,\;\|\/\s]+/', $value);
             if (!is_array($tokens)) {
                 $tokens = [$value];
             }
-    
+
             $indices = [];
             foreach ($tokens as $token) {
                 $token = trim((string) $token);
                 if ($token === '') {
                     continue;
                 }
-    
+
                 if (is_numeric($token)) {
                     $idx = (int) $token;
                     if ($idx >= 1 && $idx <= 12) {
@@ -995,12 +3402,12 @@ final class CBT_Admin_Questions_Import_Helper
                     }
                     continue;
                 }
-    
+
                 if (preg_match('/^[A-L]$/', $token)) {
                     $indices[] = ord($token) - ord('A') + 1;
                 }
             }
-    
+
             return $indices;
         }
 
@@ -1010,7 +3417,7 @@ final class CBT_Admin_Questions_Import_Helper
             if ($normalized === '') {
                 return 'true';
             }
-    
+
             if (in_array($normalized, ['false', '0', 'f', 'no', 'tidak', 'salah', 's'], true)) {
                 return 'false';
             }
@@ -1038,7 +3445,9 @@ final class CBT_Admin_Questions_Import_Helper
 
         public static function build_options_raw_from_import(string $options_input, string $correct_answer, string $question_type): string
         {
-            $parts = preg_split('/\|\||\r\n|\r|\n/', $options_input);
+            $parts = strpos($options_input, '||') !== false
+                ? explode('||', $options_input)
+                : preg_split('/\r\n|\r|\n/', $options_input);
             $options = [];
             foreach ((array) $parts as $part) {
                 $part = trim((string) $part);
@@ -1046,19 +3455,19 @@ final class CBT_Admin_Questions_Import_Helper
                     $options[] = $part;
                 }
             }
-    
+
             if (empty($options)) {
                 return '';
             }
-    
+
             $token_set = [];
             $tokens = array_filter(array_map('trim', explode(',', strtoupper($correct_answer))), static fn($v) => $v !== '');
             foreach ($tokens as $token) {
                 $token_set[$token] = true;
             }
-    
+
             $alpha = range('A', 'Z');
-            $lines = [];
+            $entries = [];
             $correct_count = 0;
             foreach ($options as $idx => $opt) {
                 $key = $alpha[$idx] ?? '';
@@ -1076,20 +3485,23 @@ final class CBT_Admin_Questions_Import_Helper
                 if ($correct) {
                     $correct_count++;
                 }
-                $lines[] = $opt . '|' . ($correct ? '1' : '0');
+                $entries[] = [
+                    'option_text' => $opt,
+                    'is_correct' => $correct ? 1 : 0,
+                ];
             }
-    
+
             if ($question_type === 'multiple_choice') {
-                if ($correct_count === 0 && !empty($lines)) {
-                    $lines[0] = preg_replace('/\|0$/', '|1', $lines[0]);
+                if ($correct_count === 0 && !empty($entries)) {
+                    $entries[0]['is_correct'] = 1;
                 } elseif ($correct_count > 1) {
                     $already = false;
-                    foreach ($lines as $idx => $line) {
-                        if (substr($line, -2) === '|1') {
+                    foreach ($entries as $idx => $entry) {
+                        if (!empty($entry['is_correct'])) {
                             if (!$already) {
                                 $already = true;
                             } else {
-                                $lines[$idx] = preg_replace('/\|1$/', '|0', $line);
+                                $entries[$idx]['is_correct'] = 0;
                             }
                         }
                     }
@@ -1097,8 +3509,10 @@ final class CBT_Admin_Questions_Import_Helper
             } elseif ($question_type === 'multiple_answer' && $correct_count === 0) {
                 return '';
             }
-    
-            return implode("\n", $lines);
+
+            $encoded = wp_json_encode($entries, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            return is_string($encoded) ? $encoded : '';
         }
 
         public static function map_import_question_type(string $raw): string
@@ -1129,41 +3543,16 @@ final class CBT_Admin_Questions_Import_Helper
             }
         }
 
-        private static function normalize_question_import_header(array $header): array
+        private static function validate_question_import_upload_extension(string $extension)
         {
-            return array_map(static function ($item) {
-                $clean = trim((string) $item);
-                $clean = preg_replace('/^\xEF\xBB\xBF/', '', $clean);
-                $clean = strtolower($clean);
-                return str_replace([' ', '-'], '_', $clean);
-            }, $header);
-        }
-
-        private static function validate_question_import_header(array $header, bool $require_question_type_column = true)
-        {
-            $required = ['question_text'];
-            if ($require_question_type_column) {
-                $required[] = 'question_type';
+            if ($extension === 'docx') {
+                return true;
             }
-            foreach ($required as $col) {
-                if (!in_array($col, $header, true)) {
-                    return new WP_Error('import_header_invalid', 'Header file tidak valid. Gunakan template import soal resmi.');
-                }
-            }
-            return true;
-        }
 
-        private static function question_template_rows(): array
-        {
-            return [
-                ['subject_code', 'exam_title', 'question_type', 'question_text', 'points', 'options', 'correct_answer', 'correct_text'],
-                ['MAT', 'Ujian Matematika X', 'multiple_choice', '2 + 2 = ?', '1', '1||2||3||4', 'D', ''],
-                ['MAT', 'Ujian Matematika X', 'multiple_choice', '5 - 2 = ?', '1', '1||2||3||4', 'C', ''],
-                ['MAT', 'Ujian Matematika X', 'multiple_answer', 'Bilangan genap adalah ...', '2', '2||3||4||5', 'A,C', ''],
-                ['MAT', 'Ujian Matematika X', 'true_false', '10 adalah bilangan genap.', '1', '', 'true', ''],
-                ['MAT', 'Ujian Matematika X', 'short_answer', 'Lengkapi warna bendera Indonesia: [INPUT_1] dan [INPUT_2].', '2', '', '', 'merah||putih'],
-                ['MAT', 'Ujian Matematika X', 'essay', 'Jelaskan langkah menyelesaikan persamaan kuadrat.', '5', '', '', ''],
-            ];
+            return new WP_Error(
+                'question_import_extension_invalid',
+                'Format file harus DOCX. Gunakan template Word resmi CBT terbaru.'
+            );
         }
 
         private static function build_minimal_docx_document_xml(array $lines): string
@@ -1171,25 +3560,25 @@ final class CBT_Admin_Questions_Import_Helper
             // Keep template as table layout, but lock widths within printable page area.
             $col_left = 2300;
             $col_right = 7000;
-    
+
             $build_cell = static function (string $text, int $width, array $options = []): string {
                 $is_header = !empty($options['header']);
                 $is_bold = $is_header || !empty($options['bold']);
                 $is_center = !empty($options['center']);
                 $fill_color = isset($options['fill']) ? strtoupper(trim((string) $options['fill'])) : '';
                 $text_color = isset($options['text_color']) ? strtoupper(trim((string) $options['text_color'])) : '';
-    
+
                 $safe = htmlspecialchars($text, ENT_QUOTES | ENT_XML1, 'UTF-8');
                 if ($fill_color === '' && $is_header) {
                     $fill_color = 'E9EEF5';
                 }
-    
+
                 $cell_fill_xml = $fill_color !== ''
                     ? '<w:shd w:val="clear" w:color="auto" w:fill="' . $fill_color . '"/>'
                     : '';
-    
+
                 $paragraph_align_xml = $is_center ? '<w:jc w:val="center"/>' : '';
-    
+
                 $run_prop = '';
                 if ($is_bold || $text_color !== '') {
                     $run_prop = '<w:rPr>';
@@ -1201,7 +3590,7 @@ final class CBT_Admin_Questions_Import_Helper
                     }
                     $run_prop .= '</w:rPr>';
                 }
-    
+
                 return
                     '<w:tc>'
                     . '<w:tcPr>'
@@ -1218,24 +3607,24 @@ final class CBT_Admin_Questions_Import_Helper
                     . '</w:p>'
                     . '</w:tc>';
             };
-    
+
             $table_rows = [];
             $table_rows[] =
                 '<w:tr>'
                 . $build_cell('FIELD', $col_left, ['header' => true])
                 . $build_cell('VALUE', $col_right, ['header' => true])
                 . '</w:tr>';
-    
+
             foreach ($lines as $line) {
                 $line = trim((string) $line);
                 $left = '';
                 $right = '';
-    
+
                 if ($line === '') {
                     $table_rows[] = '<w:tr>' . $build_cell('', $col_left) . $build_cell('', $col_right) . '</w:tr>';
                     continue;
                 }
-    
+
                 if ($line === '---') {
                     $table_rows[] =
                         '<w:tr>'
@@ -1244,7 +3633,7 @@ final class CBT_Admin_Questions_Import_Helper
                         . '</w:tr>';
                     continue;
                 }
-    
+
                 if (strpos($line, ':') !== false) {
                     $parts = explode(':', $line, 2);
                     $left = trim((string) ($parts[0] ?? ''));
@@ -1252,14 +3641,14 @@ final class CBT_Admin_Questions_Import_Helper
                 } else {
                     $right = $line;
                 }
-    
+
                 $table_rows[] =
                     '<w:tr>'
                     . $build_cell($left, $col_left)
                     . $build_cell($right, $col_right)
                     . '</w:tr>';
             }
-    
+
             $table =
                 '<w:tbl>'
                 . '<w:tblPr>'
@@ -1284,7 +3673,7 @@ final class CBT_Admin_Questions_Import_Helper
                 . '<w:tblGrid><w:gridCol w:w="' . (string) $col_left . '"/><w:gridCol w:w="' . (string) $col_right . '"/></w:tblGrid>'
                 . implode('', $table_rows)
                 . '</w:tbl>';
-    
+
             return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 . '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
                 . '<w:body>'
@@ -1309,22 +3698,489 @@ final class CBT_Admin_Questions_Import_Helper
             delete_transient(self::get_question_import_rows_key($token));
         }
 
+        private static function map_docx_active_context_to_diagnostic_field($active_context): string
+        {
+            if (is_array($active_context)) {
+                $context_type = (string) ($active_context[0] ?? '');
+                $context_index = (int) ($active_context[1] ?? 0);
+                if ($context_type === 'option' && $context_index > 0) {
+                    return 'PILIHAN_' . $context_index;
+                }
+                if ($context_type === 'matrix_statement' && $context_index > 0) {
+                    return 'PERNYATAAN_' . $context_index;
+                }
+            }
+
+            if ($active_context === 'explanation') {
+                return 'PEMBAHASAN';
+            }
+
+            if ($active_context === 'answer') {
+                return 'JAWABAN';
+            }
+
+            return 'SOAL';
+        }
+
+        private static function finalize_docx_row_import_diagnostics(array $entries, int $block_number, string $question_type): array
+        {
+            $normalized = [];
+            foreach (self::normalize_question_import_diagnostic_entries($entries) as $entry) {
+                $entry['block_number'] = $block_number > 0 ? $block_number : (int) ($entry['block_number'] ?? 0);
+                $entry['question_type'] = $question_type !== ''
+                    ? self::map_import_question_type($question_type)
+                    : (string) ($entry['question_type'] ?? '');
+                $entry['question_type_label'] = CBT_Admin_Questions_Helper::get_question_type_label((string) ($entry['question_type'] ?? ''));
+                if (trim((string) ($entry['field'] ?? '')) === '') {
+                    $entry['field'] = 'SOAL';
+                }
+                $normalized[] = $entry;
+            }
+
+            return $normalized;
+        }
+
+        /**
+         * @return array{diagnostic_counts: array<string,int>, diagnostic_entries: array<int,array<string,mixed>>, diagnostic_truncated: bool}
+         */
+        public static function aggregate_question_import_diagnostics(array $rows): array
+        {
+            $counts = [
+                'preserved' => 0,
+                'fallback' => 0,
+                'unsupported' => 0,
+            ];
+            $entries = [];
+            $seen = [];
+            $truncated = false;
+
+            foreach ($rows as $row) {
+                if (!is_array($row) || empty($row['__import_diagnostics']) || !is_array($row['__import_diagnostics'])) {
+                    continue;
+                }
+
+                foreach (self::normalize_question_import_diagnostic_entries($row['__import_diagnostics']) as $entry) {
+                    $signature = implode('|', [
+                        (string) ($entry['block_number'] ?? 0),
+                        (string) ($entry['field'] ?? ''),
+                        (string) ($entry['kind'] ?? ''),
+                        (string) ($entry['feature'] ?? ''),
+                    ]);
+                    if (isset($seen[$signature])) {
+                        continue;
+                    }
+                    $seen[$signature] = true;
+
+                    $kind = (string) ($entry['kind'] ?? '');
+                    if (isset($counts[$kind])) {
+                        $counts[$kind]++;
+                    }
+
+                    if (count($entries) < self::QUESTION_IMPORT_DIAGNOSTIC_ENTRY_LIMIT) {
+                        $entries[] = $entry;
+                    } else {
+                        $truncated = true;
+                    }
+                }
+            }
+
+            usort($entries, [self::class, 'compare_question_import_diagnostic_entries']);
+
+            return [
+                'diagnostic_counts' => $counts,
+                'diagnostic_entries' => $entries,
+                'diagnostic_truncated' => $truncated,
+            ];
+        }
+
+        public static function normalize_question_import_diagnostic_entry($entry): ?array
+        {
+            if (!is_array($entry)) {
+                return null;
+            }
+
+            $kind = strtolower(trim((string) ($entry['kind'] ?? '')));
+            if (!in_array($kind, ['preserved', 'fallback', 'unsupported'], true)) {
+                return null;
+            }
+
+            $feature = trim((string) ($entry['feature'] ?? ''));
+            $message = trim((string) ($entry['message'] ?? ''));
+            if ($feature === '' || $message === '') {
+                return null;
+            }
+
+            $field = strtoupper(trim((string) ($entry['field'] ?? '')));
+            $field = preg_replace('/[^A-Z0-9_]/', '_', $field);
+            $field = is_string($field) ? trim($field, '_') : '';
+            $question_type = self::map_import_question_type((string) ($entry['question_type'] ?? ''));
+
+            return [
+                'block_number' => max(0, (int) ($entry['block_number'] ?? 0)),
+                'question_type' => $question_type,
+                'question_type_label' => trim((string) ($entry['question_type_label'] ?? CBT_Admin_Questions_Helper::get_question_type_label($question_type))),
+                'field' => $field,
+                'kind' => $kind,
+                'feature' => $feature,
+                'message' => $message,
+            ];
+        }
+
+        public static function normalize_question_import_diagnostic_entries(array $entries): array
+        {
+            $normalized = [];
+            foreach ($entries as $entry) {
+                $entry = self::normalize_question_import_diagnostic_entry($entry);
+                if (!is_array($entry)) {
+                    continue;
+                }
+                $normalized[] = $entry;
+            }
+
+            return $normalized;
+        }
+
+        private static function compare_question_import_diagnostic_entries(array $left, array $right): int
+        {
+            $left_block = (int) ($left['block_number'] ?? 0);
+            $right_block = (int) ($right['block_number'] ?? 0);
+            if ($left_block !== $right_block) {
+                return $left_block <=> $right_block;
+            }
+
+            $left_field_priority = self::get_question_import_diagnostic_field_priority((string) ($left['field'] ?? ''));
+            $right_field_priority = self::get_question_import_diagnostic_field_priority((string) ($right['field'] ?? ''));
+            if ($left_field_priority !== $right_field_priority) {
+                return $left_field_priority <=> $right_field_priority;
+            }
+
+            $severity_order = [
+                'unsupported' => 0,
+                'fallback' => 1,
+                'preserved' => 2,
+            ];
+            $left_kind = (string) ($left['kind'] ?? '');
+            $right_kind = (string) ($right['kind'] ?? '');
+            $left_kind_priority = $severity_order[$left_kind] ?? 99;
+            $right_kind_priority = $severity_order[$right_kind] ?? 99;
+            if ($left_kind_priority !== $right_kind_priority) {
+                return $left_kind_priority <=> $right_kind_priority;
+            }
+
+            return strcmp((string) ($left['feature'] ?? ''), (string) ($right['feature'] ?? ''));
+        }
+
+        private static function get_question_import_diagnostic_field_priority(string $field): int
+        {
+            $field = strtoupper(trim($field));
+            if ($field === 'SOAL') {
+                return 0;
+            }
+            if (preg_match('/^PILIHAN_(\d+)$/', $field, $matches) === 1) {
+                return 10 + (int) $matches[1];
+            }
+            if ($field === 'PEMBAHASAN') {
+                return 200;
+            }
+            if ($field === 'JAWABAN') {
+                return 210;
+            }
+            if (preg_match('/^PERNYATAAN_(\d+)$/', $field, $matches) === 1) {
+                return 300 + (int) $matches[1];
+            }
+
+            return 999;
+        }
+
         public static function get_question_import_state_for_current_user(string $token): ?array
         {
             if ($token === '') {
                 return null;
             }
-    
+
             $state = get_transient(self::get_question_import_state_key($token));
             if (!is_array($state)) {
                 return null;
             }
-    
+
             $state_user_id = isset($state['user_id']) ? (int) $state['user_id'] : 0;
             if ($state_user_id <= 0 || $state_user_id !== get_current_user_id()) {
                 return null;
             }
-    
+
+            return $state;
+        }
+
+        /**
+         * @param array<int,mixed> $ids
+         * @return int[]
+         */
+        public static function normalize_question_import_created_question_ids(array $ids): array
+        {
+            $normalized = [];
+            foreach ($ids as $id) {
+                $id = absint($id);
+                if ($id <= 0 || isset($normalized[$id])) {
+                    continue;
+                }
+                $normalized[$id] = $id;
+            }
+
+            return array_values($normalized);
+        }
+
+        /**
+         * @return int[]
+         */
+        public static function get_question_import_created_question_ids_for_current_user(string $token): array
+        {
+            $state = self::get_question_import_state_for_current_user($token);
+            if (!is_array($state)) {
+                return [];
+            }
+
+            return self::normalize_question_import_created_question_ids(
+                isset($state['created_question_ids']) && is_array($state['created_question_ids'])
+                    ? $state['created_question_ids']
+                    : []
+            );
+        }
+
+        /**
+         * @return array<int,array<string,mixed>>
+         */
+        public static function get_question_import_created_question_items_for_current_user(string $token): array
+        {
+            $state = self::get_question_import_state_for_current_user($token);
+            if (!is_array($state)) {
+                return [];
+            }
+
+            return self::normalize_question_import_created_question_items(
+                isset($state['created_question_items']) && is_array($state['created_question_items'])
+                    ? $state['created_question_items']
+                    : []
+            );
+        }
+
+        /**
+         * @param array<int,mixed> $items
+         * @return array<int,array<string,mixed>>
+         */
+        public static function normalize_question_import_created_question_items(array $items): array
+        {
+            $normalized = [];
+            $seen_question_ids = [];
+
+            foreach ($items as $item) {
+                $item = self::normalize_question_import_created_question_item($item);
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $question_id = (int) ($item['question_id'] ?? 0);
+                if ($question_id <= 0 || isset($seen_question_ids[$question_id])) {
+                    continue;
+                }
+
+                $seen_question_ids[$question_id] = true;
+                $normalized[] = $item;
+            }
+
+            return $normalized;
+        }
+
+        public static function normalize_question_import_created_question_item($item): ?array
+        {
+            if (!is_array($item)) {
+                return null;
+            }
+
+            $question_id = absint($item['question_id'] ?? 0);
+            if ($question_id <= 0) {
+                return null;
+            }
+
+            $question_type = self::map_import_question_type((string) ($item['question_type'] ?? ''));
+            $diagnostic_entries = self::normalize_question_import_diagnostic_entries(
+                isset($item['diagnostic_entries']) && is_array($item['diagnostic_entries'])
+                    ? $item['diagnostic_entries']
+                    : []
+            );
+            $diagnostic_counts = self::normalize_question_import_created_item_diagnostic_counts(
+                isset($item['diagnostic_counts']) && is_array($item['diagnostic_counts'])
+                    ? $item['diagnostic_counts']
+                    : self::summarize_question_import_diagnostic_entries($diagnostic_entries)
+            );
+
+            $preview = trim((string) ($item['preview'] ?? ''));
+            $preview = preg_replace('/\s+/u', ' ', wp_strip_all_tags($preview));
+            $preview = is_string($preview) ? trim($preview) : '';
+            if ($preview !== '') {
+                $preview = function_exists('mb_substr')
+                    ? mb_substr($preview, 0, 140, 'UTF-8')
+                    : substr($preview, 0, 140);
+            }
+
+            return [
+                'question_id' => $question_id,
+                'block_number' => max(0, (int) ($item['block_number'] ?? 0)),
+                'question_type' => $question_type,
+                'question_type_label' => trim((string) ($item['question_type_label'] ?? CBT_Admin_Questions_Helper::get_question_type_label($question_type))),
+                'preview' => $preview,
+                'diagnostic_counts' => $diagnostic_counts,
+                'diagnostic_entries' => $diagnostic_entries,
+            ];
+        }
+
+        /**
+         * @param array<string,mixed> $row
+         * @return array<string,mixed>
+         */
+        private static function build_question_import_created_question_item(array $row, int $question_id): array
+        {
+            $question_type = self::map_import_question_type((string) ($row['question_type'] ?? ''));
+            $diagnostic_entries = self::normalize_question_import_diagnostic_entries(
+                isset($row['__import_diagnostics']) && is_array($row['__import_diagnostics'])
+                    ? $row['__import_diagnostics']
+                    : []
+            );
+
+            return self::normalize_question_import_created_question_item([
+                'question_id' => $question_id,
+                'block_number' => isset($row['__import_source_block']) ? (int) $row['__import_source_block'] : 0,
+                'question_type' => $question_type,
+                'question_type_label' => CBT_Admin_Questions_Helper::get_question_type_label($question_type),
+                'preview' => (string) ($row['question_text'] ?? ''),
+                'diagnostic_counts' => self::summarize_question_import_diagnostic_entries($diagnostic_entries),
+                'diagnostic_entries' => $diagnostic_entries,
+            ]) ?? [];
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $items
+         * @return array<string,int>
+         */
+        public static function summarize_question_import_created_question_items(array $items): array
+        {
+            $summary = [
+                'preserved' => 0,
+                'fallback' => 0,
+                'unsupported' => 0,
+            ];
+
+            foreach (self::normalize_question_import_created_question_items($items) as $item) {
+                $counts = self::normalize_question_import_created_item_diagnostic_counts(
+                    isset($item['diagnostic_counts']) && is_array($item['diagnostic_counts'])
+                        ? $item['diagnostic_counts']
+                        : []
+                );
+                foreach ($summary as $kind => $value) {
+                    $summary[$kind] += (int) ($counts[$kind] ?? 0);
+                }
+            }
+
+            return $summary;
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $items
+         */
+        public static function get_default_question_import_created_question_item_id(array $items): int
+        {
+            $normalized_items = self::normalize_question_import_created_question_items($items);
+            if (empty($normalized_items)) {
+                return 0;
+            }
+
+            foreach ($normalized_items as $item) {
+                $counts = self::normalize_question_import_created_item_diagnostic_counts(
+                    isset($item['diagnostic_counts']) && is_array($item['diagnostic_counts'])
+                        ? $item['diagnostic_counts']
+                        : []
+                );
+                if ((int) ($counts['fallback'] ?? 0) > 0 || (int) ($counts['unsupported'] ?? 0) > 0) {
+                    return (int) ($item['question_id'] ?? 0);
+                }
+            }
+
+            return (int) ($normalized_items[0]['question_id'] ?? 0);
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $entries
+         * @return array<string,int>
+         */
+        private static function summarize_question_import_diagnostic_entries(array $entries): array
+        {
+            $summary = [
+                'preserved' => 0,
+                'fallback' => 0,
+                'unsupported' => 0,
+            ];
+
+            foreach (self::normalize_question_import_diagnostic_entries($entries) as $entry) {
+                $kind = (string) ($entry['kind'] ?? '');
+                if (isset($summary[$kind])) {
+                    $summary[$kind]++;
+                }
+            }
+
+            return $summary;
+        }
+
+        /**
+         * @param array<string,mixed> $counts
+         * @return array<string,int>
+         */
+        private static function normalize_question_import_created_item_diagnostic_counts(array $counts): array
+        {
+            return [
+                'preserved' => max(0, (int) ($counts['preserved'] ?? 0)),
+                'fallback' => max(0, (int) ($counts['fallback'] ?? 0)),
+                'unsupported' => max(0, (int) ($counts['unsupported'] ?? 0)),
+            ];
+        }
+
+        public static function remove_question_import_created_question_ids_for_current_user(string $token, array $question_ids): ?array
+        {
+            $state = self::get_question_import_state_for_current_user($token);
+            if (!is_array($state)) {
+                return null;
+            }
+
+            $remaining_ids = self::normalize_question_import_created_question_ids(
+                isset($state['created_question_ids']) && is_array($state['created_question_ids'])
+                    ? $state['created_question_ids']
+                    : []
+            );
+            $remaining_items = self::normalize_question_import_created_question_items(
+                isset($state['created_question_items']) && is_array($state['created_question_items'])
+                    ? $state['created_question_items']
+                    : []
+            );
+            $remove_ids = self::normalize_question_import_created_question_ids($question_ids);
+            if (empty($remove_ids)) {
+                return $state;
+            }
+
+            $remove_lookup = array_fill_keys($remove_ids, true);
+            $remaining_ids = array_values(array_filter($remaining_ids, static function (int $question_id) use ($remove_lookup): bool {
+                return !isset($remove_lookup[$question_id]);
+            }));
+            $remaining_items = array_values(array_filter($remaining_items, static function (array $item) use ($remove_lookup): bool {
+                $question_id = (int) ($item['question_id'] ?? 0);
+                return $question_id > 0 && !isset($remove_lookup[$question_id]);
+            }));
+
+            $state['created_question_ids'] = $remaining_ids;
+            $state['created_question_items'] = $remaining_items;
+            $state['created'] = count($remaining_ids);
+            $state_saved = set_transient(self::get_question_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+            if (!$state_saved) {
+                return null;
+            }
+
             return $state;
         }
 
@@ -1420,7 +4276,7 @@ final class CBT_Admin_Questions_Import_Helper
             if ($batch_size > 500) {
                 return 500;
             }
-    
+
             return $batch_size;
         }
 
@@ -1433,7 +4289,7 @@ final class CBT_Admin_Questions_Import_Helper
             if ($seconds > 25.0) {
                 return 25.0;
             }
-    
+
             return $seconds;
         }
 
@@ -1454,7 +4310,7 @@ final class CBT_Admin_Questions_Import_Helper
             $raw_count = isset($_GET['question_count'])
                 ? (int) wp_unslash((string) $_GET['question_count'])
                 : 10;
-    
+
             $normalized_count = (int) floor($raw_count / 10) * 10;
             if ($normalized_count < 10) {
                 $normalized_count = 10;
@@ -1462,32 +4318,37 @@ final class CBT_Admin_Questions_Import_Helper
             if ($normalized_count > 100) {
                 $normalized_count = 100;
             }
-    
+
             return $normalized_count;
         }
 
         private static function build_word_template_lines(string $template_type, int $question_count): array
         {
             $question_count = max(10, min(100, $question_count));
-            $header_lines = [];
+            $header_lines = [
+                'CBT_TEMPLATE: ' . self::DOCX_TEMPLATE_MARKER_VALUE,
+                'CATATAN_VALIDATOR: Jangan hapus marker CBT_TEMPLATE dan field JENIS_SOAL pada tiap blok.',
+                '',
+            ];
             $blocks = [];
-    
+
             if ($template_type === 'multiple_answer') {
-                $header_lines = [
+                $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Multiple Answer (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: SOAL, PILIHAN_1..PILIHAN_minimal_3, JAWABAN.',
+                    'Field wajib: JENIS_SOAL, SOAL, PILIHAN_1..PILIHAN_minimal_3, JAWABAN.',
                     'JAWABAN diisi nomor pilihan (1-12) dan boleh lebih dari satu, contoh 2,4.',
                     'Isi pilihan tidak boleh duplikat.',
                     'POIN opsional, default 1.',
-                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
-                    'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
+                    'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
+                    'Boleh tempel gambar atau tabel langsung di bawah baris SOAL. Kontennya akan ikut masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
-                ];
-    
+                ]);
+
                 for ($idx = 1; $idx <= $question_count; $idx++) {
                     $block = [
+                        'JENIS_SOAL: multiple_answer',
                         'SOAL: [MA ' . $idx . '] Pilih semua pernyataan yang benar.',
                     ];
                     for ($opt_idx = 1; $opt_idx <= 12; $opt_idx++) {
@@ -1500,18 +4361,18 @@ final class CBT_Admin_Questions_Import_Helper
                     $blocks[] = $block;
                 }
             } elseif ($template_type === 'true_false') {
-                $header_lines = [
+                $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import True/False (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
                     'Field wajib: JENIS_SOAL, SOAL, JAWABAN.',
                     'JAWABAN diisi TRUE atau FALSE.',
                     'POIN opsional, default 1.',
-                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
-                    'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
+                    'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
+                    'Boleh tempel gambar atau tabel langsung di bawah baris SOAL. Kontennya akan ikut masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
-                ];
-    
+                ]);
+
                 for ($idx = 1; $idx <= $question_count; $idx++) {
                     $answer = ($idx % 2 === 0) ? 'false' : 'true';
                     $blocks[] = [
@@ -1523,7 +4384,7 @@ final class CBT_Admin_Questions_Import_Helper
                     ];
                 }
             } elseif ($template_type === 'true_false_matrix') {
-                $header_lines = [
+                $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import True/False Matrix (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
                     'Field wajib: JENIS_SOAL, SOAL, minimal 2 pernyataan + kunci.',
@@ -1531,12 +4392,12 @@ final class CBT_Admin_Questions_Import_Helper
                     'Isi KUNCI_1..KUNCI_10 dengan TRUE/FALSE (atau BENAR/SALAH) secara berurutan tanpa nomor loncat.',
                     'Pernyataan tidak boleh duplikat.',
                     'POIN opsional, default 1.',
-                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
-                    'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
+                    'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
+                    'Boleh tempel gambar atau tabel langsung di bawah baris SOAL. Kontennya akan ikut masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
-                ];
-    
+                ]);
+
                 for ($idx = 1; $idx <= $question_count; $idx++) {
                     $blocks[] = [
                         'JENIS_SOAL: true_false_matrix',
@@ -1556,7 +4417,7 @@ final class CBT_Admin_Questions_Import_Helper
                     ];
                 }
             } elseif ($template_type === 'short_answer') {
-                $header_lines = [
+                $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Short Answer (format tabel, maks 8 jawaban valid).',
                     'Setiap blok soal dipisahkan oleh ---',
                     'Field wajib: JENIS_SOAL, SOAL, minimal 1 jawaban.',
@@ -1565,12 +4426,12 @@ final class CBT_Admin_Questions_Import_Helper
                     'Format lama seperti [INPUT A] / [INPUT 1] tetap didukung.',
                     'Isi jawaban bisa pakai JAWABAN_A sampai JAWABAN_H, dan key-nya harus cocok dengan placeholder input.',
                     'POIN opsional, default 1.',
-                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
-                    'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
+                    'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
+                    'Boleh tempel gambar atau tabel langsung di bawah baris SOAL. Kontennya akan ikut masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
-                ];
-    
+                ]);
+
                 for ($idx = 1; $idx <= $question_count; $idx++) {
                     $blocks[] = [
                         'JENIS_SOAL: short_answer',
@@ -1588,18 +4449,18 @@ final class CBT_Admin_Questions_Import_Helper
                     ];
                 }
             } elseif ($template_type === 'essay') {
-                $header_lines = [
+                $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Essay (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
                     'Field wajib: JENIS_SOAL, SOAL, JAWABAN.',
                     'JAWABAN diisi acuan jawaban/rubrik.',
                     'POIN opsional, default 1.',
-                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
-                    'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
+                    'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
+                    'Boleh tempel gambar atau tabel langsung di bawah baris SOAL. Kontennya akan ikut masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
-                ];
-    
+                ]);
+
                 for ($idx = 1; $idx <= $question_count; $idx++) {
                     $blocks[] = [
                         'JENIS_SOAL: essay',
@@ -1610,35 +4471,37 @@ final class CBT_Admin_Questions_Import_Helper
                     ];
                 }
             } else {
-                $header_lines = [
+                $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Multiple Choice (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: SOAL, PILIHAN_1..PILIHAN_minimal_3, JAWABAN.',
+                    'Field wajib: JENIS_SOAL, SOAL, PILIHAN_1..PILIHAN_minimal_3, JAWABAN.',
                     'JAWABAN diisi nomor pilihan (1-5).',
                     'Untuk multiple_choice: hanya satu jawaban, contoh 2.',
                     'Isi pilihan tidak boleh duplikat.',
                     'POIN opsional, default 1.',
-                    'PEMBAHASAN opsional. Bisa diisi teks biasa atau gambar diletakkan setelah field PEMBAHASAN.',
-                    'Boleh tempel gambar langsung di bawah baris SOAL. Gambar otomatis masuk ke soal.',
+                    'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
+                    'Boleh tempel gambar atau tabel langsung di bawah baris SOAL. Kontennya akan ikut masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
                     '',
-                ];
-    
+                ]);
+
                 for ($idx = 1; $idx <= $question_count; $idx++) {
-                    $answer = (string) ((($idx - 1) % 4) + 1);
+                    $answer = (string) ((($idx - 1) % 5) + 1);
                     $blocks[] = [
+                        'JENIS_SOAL: multiple_choice',
                         'SOAL: [MC ' . $idx . '] Tulis pertanyaan pilihan ganda di sini.',
                         'PILIHAN_1: Opsi A',
                         'PILIHAN_2: Opsi B',
                         'PILIHAN_3: Opsi C',
                         'PILIHAN_4: Opsi D',
+                        'PILIHAN_5: Opsi E',
                         'JAWABAN: ' . $answer,
                         'POIN: 1',
                         'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
                 }
             }
-    
+
             $lines = $header_lines;
             foreach ($blocks as $block) {
                 $lines[] = '---';
@@ -1647,7 +4510,7 @@ final class CBT_Admin_Questions_Import_Helper
                 }
             }
             $lines[] = '---';
-    
+
             return $lines;
         }
 
@@ -1658,13 +4521,13 @@ final class CBT_Admin_Questions_Import_Helper
             if (!$tmp_file) {
                 wp_die('Gagal membuat file template sementara.');
             }
-    
+
             $zip = new ZipArchive();
             if ($zip->open($tmp_file, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
                 @unlink($tmp_file);
                 wp_die('Gagal membuat file docx.');
             }
-    
+
             $zip->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
       <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -1677,7 +4540,7 @@ final class CBT_Admin_Questions_Import_Helper
     </Relationships>');
             $zip->addFromString('word/document.xml', $doc_xml);
             $zip->close();
-    
+
             nocache_headers();
             header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
             header('Content-Disposition: attachment; filename="' . sanitize_file_name($download_name) . '"');
@@ -1691,20 +4554,22 @@ final class CBT_Admin_Questions_Import_Helper
         {
             $normalized = [];
             $total = count($lines);
-    
+
             for ($i = 0; $i < $total; $i++) {
                 $line = trim((string) ($lines[$i] ?? ''));
                 if ($line === '') {
                     continue;
                 }
-    
+
                 if (self::is_docx_key_only_line($line)) {
                     $next = trim((string) ($lines[$i + 1] ?? ''));
-    
+
                     if (
                         $next !== '' &&
                         $next !== '---' &&
                         strpos($next, '__IMG__:') !== 0 &&
+                        strpos($next, self::DOCX_HTML_MARKER_PREFIX) !== 0 &&
+                        strpos($next, self::DOCX_DIAGNOSTIC_MARKER_PREFIX) !== 0 &&
                         !self::is_docx_key_only_line($next) &&
                         !self::is_docx_key_value_line($next)
                     ) {
@@ -1712,15 +4577,15 @@ final class CBT_Admin_Questions_Import_Helper
                         $i++;
                         continue;
                     }
-    
+
                     // Keep key marker recognizable for parser even if value is empty or image-only.
                     $normalized[] = $line . ':';
                     continue;
                 }
-    
+
                 $normalized[] = $line;
             }
-    
+
             return $normalized;
         }
 
@@ -1739,50 +4604,64 @@ final class CBT_Admin_Questions_Import_Helper
             $exam_title = '';
             $forced_question_type = '';
             $answer_text = '';
+            $answer_parts = [];
             $short_answer_map = [];
             $tf_matrix_statement_map = [];
             $tf_matrix_answer_map = [];
+            $diagnostic_entries = [];
             $active_context = 'question';
-    
+
             foreach ($block as $raw_line) {
                 $line = trim((string) $raw_line);
                 if ($line === '') {
                     continue;
                 }
-    
+
+                if (strpos($line, self::DOCX_HTML_MARKER_PREFIX) === 0) {
+                    $html_fragment = self::decode_docx_html_marker($line);
+                    if ($html_fragment !== '') {
+                        self::append_docx_html_fragment_to_active_context(
+                            $html_fragment,
+                            $active_context,
+                            $question_parts,
+                            $explanation_parts,
+                            $answer_parts,
+                            $options_map,
+                            $tf_matrix_statement_map
+                        );
+                    }
+                    continue;
+                }
+
+                if (strpos($line, self::DOCX_DIAGNOSTIC_MARKER_PREFIX) === 0) {
+                    $diagnostic_entry = self::decode_docx_diagnostic_marker($line);
+                    if (is_array($diagnostic_entry)) {
+                        $field = trim((string) ($diagnostic_entry['field'] ?? ''));
+                        if ($field === '') {
+                            $diagnostic_entry['field'] = self::map_docx_active_context_to_diagnostic_field($active_context);
+                        }
+                        $diagnostic_entries[] = $diagnostic_entry;
+                    }
+                    continue;
+                }
+
                 if (strpos($line, '__IMG__:') === 0) {
                     $img_url = trim(substr($line, 8));
                     if ($img_url !== '') {
                         $img_html = '<p><img src="' . esc_url($img_url) . '" alt="" /></p>';
-                        if (is_array($active_context) && ($active_context[0] ?? '') === 'option') {
-                            $opt_idx = (int) ($active_context[1] ?? 0);
-                            if ($opt_idx >= 1 && $opt_idx <= $max_option_index) {
-                                $current = trim((string) ($options_map[$opt_idx] ?? ''));
-                                $options_map[$opt_idx] = ($current === '')
-                                    ? $img_html
-                                    : ($current . $img_html);
-                            } else {
-                                $question_parts[] = $img_html;
-                            }
-                        } elseif (is_array($active_context) && ($active_context[0] ?? '') === 'matrix_statement') {
-                            $statement_idx = (int) ($active_context[1] ?? 0);
-                            if ($statement_idx >= 1 && $statement_idx <= 10) {
-                                $current = trim((string) ($tf_matrix_statement_map[$statement_idx] ?? ''));
-                                $tf_matrix_statement_map[$statement_idx] = ($current === '')
-                                    ? $img_html
-                                    : ($current . $img_html);
-                            } else {
-                                $question_parts[] = $img_html;
-                            }
-                        } elseif ($active_context === 'explanation') {
-                            $explanation_parts[] = $img_html;
-                        } else {
-                            $question_parts[] = $img_html;
-                        }
+                        self::append_docx_html_fragment_to_active_context(
+                            $img_html,
+                            $active_context,
+                            $question_parts,
+                            $explanation_parts,
+                            $answer_parts,
+                            $options_map,
+                            $tf_matrix_statement_map
+                        );
                     }
                     continue;
                 }
-    
+
                 if (preg_match('/^([1-9]|1[0-2])[\.\)]\s*(.+)$/u', $line, $matches)) {
                     $opt_idx = (int) $matches[1];
                     if ($opt_idx >= 1 && $opt_idx <= $max_option_index) {
@@ -1791,7 +4670,7 @@ final class CBT_Admin_Questions_Import_Helper
                     }
                     continue;
                 }
-    
+
                 if (preg_match('/^([A-La-l])[\.\)]\s*(.+)$/u', $line, $matches)) {
                     $opt_idx = ord(strtoupper((string) $matches[1])) - ord('A') + 1;
                     if ($opt_idx >= 1 && $opt_idx <= $max_option_index) {
@@ -1800,13 +4679,13 @@ final class CBT_Admin_Questions_Import_Helper
                     }
                     continue;
                 }
-    
+
                 $parts = explode(':', $line, 2);
                 if (count($parts) === 2) {
                     $key = strtolower(trim((string) $parts[0]));
                     $key = str_replace([' ', '-'], '_', $key);
                     $value = trim((string) $parts[1]);
-    
+
                     if (in_array($key, ['soal', 'question', 'pertanyaan', 'question_text'], true)) {
                         if ($value !== '') {
                             $question_parts[] = $value;
@@ -1814,24 +4693,24 @@ final class CBT_Admin_Questions_Import_Helper
                         $active_context = 'question';
                         continue;
                     }
-    
+
                     if (in_array($key, ['subject_code', 'kode_mapel'], true)) {
                         $subject_code = $value;
                         continue;
                     }
-    
+
                     if (in_array($key, ['exam_title', 'judul_exam', 'ujian'], true)) {
                         $exam_title = $value;
                         continue;
                     }
-    
+
                     if (in_array($key, ['point', 'points', 'poin', 'nilai'], true)) {
                         if ($value !== '' && is_numeric($value)) {
                             $points = (float) $value;
                         }
                         continue;
                     }
-    
+
                     if (in_array($key, ['jenis_soal', 'question_type', 'type'], true)) {
                         $mapped = self::map_import_question_type($value);
                         if (in_array($mapped, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'essay', 'short_answer'], true)) {
@@ -1839,9 +4718,12 @@ final class CBT_Admin_Questions_Import_Helper
                         }
                         continue;
                     }
-    
+
                     if (in_array($key, ['jawaban', 'answer', 'correct_answer', 'jawaban_ke', 'answer_option', 'correct_text', 'rubrik', 'rubric', 'rubric_text'], true)) {
                         $answer_text = $value;
+                        if ($value !== '') {
+                            $answer_parts[] = $value;
+                        }
                         $answer_indices = self::normalize_docx_answer_indices($value);
                         $active_context = 'answer';
                         continue;
@@ -1854,7 +4736,7 @@ final class CBT_Admin_Questions_Import_Helper
                         $active_context = 'explanation';
                         continue;
                     }
-    
+
                     if (preg_match('/^(pernyataan|statement|item)_?([1-9]|10)$/', $key, $matches)) {
                         $statement_idx = (int) $matches[2];
                         if ($statement_idx >= 1 && $statement_idx <= 10) {
@@ -1863,7 +4745,7 @@ final class CBT_Admin_Questions_Import_Helper
                         $active_context = ['matrix_statement', $statement_idx];
                         continue;
                     }
-    
+
                     if (preg_match('/^(kunci|truth|tf)_?([1-9]|10)$/', $key, $matches)) {
                         $statement_idx = (int) $matches[2];
                         if ($statement_idx >= 1 && $statement_idx <= 10) {
@@ -1876,7 +4758,7 @@ final class CBT_Admin_Questions_Import_Helper
                         $active_context = ['matrix_answer', $statement_idx];
                         continue;
                     }
-    
+
                     if (preg_match('/^(jawaban|answer|correct)_?([1-9]|10)$/', $key, $matches)) {
                         $answer_idx = (int) $matches[2];
                         if ($forced_question_type === 'true_false_matrix' || !empty($tf_matrix_statement_map) || $answer_idx >= 9) {
@@ -1890,14 +4772,14 @@ final class CBT_Admin_Questions_Import_Helper
                             $active_context = ['matrix_answer', $answer_idx];
                             continue;
                         }
-    
+
                         if ($answer_idx >= 1 && $answer_idx <= 8) {
                             $short_answer_map[$answer_idx] = $value;
                         }
                         $active_context = ['short_answer', $answer_idx];
                         continue;
                     }
-    
+
                     if (preg_match('/^(jawaban|answer|correct)_?([a-h])$/', $key, $matches)) {
                         $sa_idx = ord(strtoupper((string) $matches[2])) - ord('A') + 1;
                         if ($sa_idx >= 1 && $sa_idx <= 8) {
@@ -1906,7 +4788,7 @@ final class CBT_Admin_Questions_Import_Helper
                         $active_context = ['short_answer', $sa_idx];
                         continue;
                     }
-    
+
                     if (preg_match('/^(pilihan|opsi|option)_?([1-9]|1[0-2])$/', $key, $matches)) {
                         $opt_idx = (int) $matches[2];
                         if ($opt_idx >= 1 && $opt_idx <= $max_option_index) {
@@ -1915,7 +4797,7 @@ final class CBT_Admin_Questions_Import_Helper
                         $active_context = ['option', $opt_idx];
                         continue;
                     }
-    
+
                     if (preg_match('/^[a-l]$/', $key)) {
                         if ($forced_question_type === 'short_answer' && preg_match('/^[a-h]$/', $key)) {
                             $sa_idx = ord(strtoupper($key)) - ord('A') + 1;
@@ -1925,7 +4807,7 @@ final class CBT_Admin_Questions_Import_Helper
                             $active_context = ['short_answer', $sa_idx];
                             continue;
                         }
-    
+
                         $opt_idx = ord(strtoupper($key)) - ord('A') + 1;
                         if ($opt_idx >= 1 && $opt_idx <= $max_option_index) {
                             $options_map[$opt_idx] = $value;
@@ -1934,7 +4816,7 @@ final class CBT_Admin_Questions_Import_Helper
                         continue;
                     }
                 }
-    
+
                 if (is_array($active_context) && ($active_context[0] ?? '') === 'option') {
                     $opt_idx = (int) ($active_context[1] ?? 0);
                     if ($opt_idx >= 1 && $opt_idx <= $max_option_index) {
@@ -1945,7 +4827,7 @@ final class CBT_Admin_Questions_Import_Helper
                         continue;
                     }
                 }
-    
+
                 if (is_array($active_context) && ($active_context[0] ?? '') === 'matrix_statement') {
                     $statement_idx = (int) ($active_context[1] ?? 0);
                     if ($statement_idx >= 1 && $statement_idx <= 10) {
@@ -1957,22 +4839,34 @@ final class CBT_Admin_Questions_Import_Helper
                     }
                 }
 
+                if ($active_context === 'answer') {
+                    $current_answer = trim((string) $answer_text);
+                    $answer_text = ($current_answer === '')
+                        ? $line
+                        : ($current_answer . "\n" . $line);
+                    $answer_parts[] = $line;
+                    continue;
+                }
+
                 if ($active_context === 'explanation') {
                     $explanation_parts[] = $line;
                     continue;
                 }
-    
+
                 // Any free-text line in the block is appended as question body.
                 $question_parts[] = $line;
                 $active_context = 'question';
             }
-    
+
             $question_text = self::build_docx_question_text($question_parts);
             $explanation_text = CBT_Admin_Questions_Helper::normalize_optional_rich_text(self::build_docx_question_text($explanation_parts));
             if ($question_text === '') {
                 return null;
             }
-    
+            if ($forced_question_type === '') {
+                return null;
+            }
+
             if ($forced_question_type === 'true_false') {
                 $tf_raw = strtolower(trim($answer_text));
                 if ($tf_raw === '') {
@@ -2004,11 +4898,15 @@ final class CBT_Admin_Questions_Import_Helper
                 if ($explanation_text !== null) {
                     $row['explanation'] = $explanation_text;
                 }
+                $row['__import_diagnostics'] = $diagnostic_entries;
                 return $row;
             }
-    
+
             if ($forced_question_type === 'essay') {
-                $essay_rubric = trim($answer_text);
+                $essay_rubric = CBT_Admin_Questions_Helper::normalize_optional_rich_text(self::build_docx_question_text($answer_parts));
+                if ($essay_rubric === null) {
+                    $essay_rubric = trim($answer_text);
+                }
                 if ($essay_rubric === '') {
                     return null;
                 }
@@ -2029,9 +4927,10 @@ final class CBT_Admin_Questions_Import_Helper
                 if ($explanation_text !== null) {
                     $row['explanation'] = $explanation_text;
                 }
+                $row['__import_diagnostics'] = $diagnostic_entries;
                 return $row;
             }
-    
+
             if ($forced_question_type === 'short_answer') {
                 ksort($short_answer_map);
                 $short_answer_input_keys = CBT_Admin_Questions_Helper::resolve_short_answer_input_keys($question_text);
@@ -2087,9 +4986,10 @@ final class CBT_Admin_Questions_Import_Helper
                 if ($explanation_text !== null) {
                     $row['explanation'] = $explanation_text;
                 }
+                $row['__import_diagnostics'] = $diagnostic_entries;
                 return $row;
             }
-    
+
             if ($forced_question_type === 'true_false_matrix' || !empty($tf_matrix_statement_map)) {
                 ksort($tf_matrix_statement_map);
                 ksort($tf_matrix_answer_map);
@@ -2125,15 +5025,15 @@ final class CBT_Admin_Questions_Import_Helper
                         return null;
                     }
                     $matrix_items[] = [
-                        'text' => sanitize_text_field($statement_text),
+                        'text' => CBT_Admin_Questions_Helper::sanitize_editor_html($statement_text),
                         'answer' => $answer_value,
                     ];
                 }
-    
+
                 if (count($matrix_items) < 2 && $answer_text !== '') {
                     $matrix_items = CBT_Admin_Questions_Helper::normalize_true_false_matrix_config($answer_text);
                 }
-    
+
                 $matrix_validation_error = CBT_Admin_Questions_Helper::validate_true_false_matrix_items(
                     $matrix_items,
                     [
@@ -2169,9 +5069,10 @@ final class CBT_Admin_Questions_Import_Helper
                 if ($explanation_text !== null) {
                     $row['explanation'] = $explanation_text;
                 }
+                $row['__import_diagnostics'] = $diagnostic_entries;
                 return $row;
             }
-    
+
             $options = [];
             foreach (range(1, $max_option_index) as $idx) {
                 $val = trim((string) ($options_map[$idx] ?? ''));
@@ -2187,7 +5088,7 @@ final class CBT_Admin_Questions_Import_Helper
             $filled_indices = array_keys($options);
             sort($filled_indices);
             $max_idx = (int) max($filled_indices);
-    
+
             $detected_question_type = count($answer_indices) > 1 ? 'multiple_answer' : 'multiple_choice';
             if ($forced_question_type !== '') {
                 $detected_question_type = $forced_question_type;
@@ -2197,18 +5098,18 @@ final class CBT_Admin_Questions_Import_Helper
             if (count($options) < $minimum_option_count) {
                 return null;
             }
-    
+
             $max_allowed_index = ($detected_question_type === 'multiple_answer') ? 12 : 5;
             if ($max_idx > $max_allowed_index) {
                 return null;
             }
-    
+
             for ($idx = 1; $idx <= $max_idx; $idx++) {
                 if (!isset($options[$idx])) {
                     return null;
                 }
             }
-    
+
             $raw_answer_indices = array_values(array_unique($answer_indices));
             sort($raw_answer_indices);
             $answer_indices = array_values(array_unique(array_filter(
@@ -2246,14 +5147,14 @@ final class CBT_Admin_Questions_Import_Helper
                 return null;
             }
             $correct_answer = implode(',', $correct_answer_tokens);
-    
+
             $ordered_options = [];
             for ($idx = 1; $idx <= $max_idx; $idx++) {
                 if (isset($options[$idx])) {
                     $ordered_options[] = $options[$idx];
                 }
             }
-    
+
             $row = [
                 'question_type' => $detected_question_type,
                 'question_text' => $question_text,
@@ -2262,7 +5163,7 @@ final class CBT_Admin_Questions_Import_Helper
                 'correct_answer' => $correct_answer,
                 'correct_text' => '',
             ];
-    
+
             if ($subject_code !== '') {
                 $row['subject_code'] = $subject_code;
             }
@@ -2272,7 +5173,8 @@ final class CBT_Admin_Questions_Import_Helper
             if ($explanation_text !== null) {
                 $row['explanation'] = $explanation_text;
             }
-    
+            $row['__import_diagnostics'] = $diagnostic_entries;
+
             return $row;
         }
 
@@ -2288,7 +5190,9 @@ final class CBT_Admin_Questions_Import_Helper
                     preg_match('/^([1-9]|1[0-2])[\.\)]\s*\S+/u', $line) === 1 ||
                     preg_match('/^([A-La-l])[\.\)]\s*\S+/u', $line) === 1 ||
                     preg_match('/^(soal|question|pertanyaan|question_text|jenis_soal|question_type|type|jawaban|answer|correct_answer|correct_text|rubrik|rubric|pernyataan|statement|kunci|truth|tf|pilihan|opsi|option)\b/i', $line) === 1 ||
-                    strpos($line, '__IMG__:') === 0
+                    strpos($line, '__IMG__:') === 0 ||
+                    strpos($line, self::DOCX_HTML_MARKER_PREFIX) === 0 ||
+                    strpos($line, self::DOCX_DIAGNOSTIC_MARKER_PREFIX) === 0
                 ) {
                     return true;
                 }
@@ -2301,7 +5205,13 @@ final class CBT_Admin_Questions_Import_Helper
         {
             foreach ($block as $raw_line) {
                 $line = trim((string) $raw_line);
-                if ($line === '' || $line === '---' || strpos($line, '__IMG__:') === 0) {
+                if (
+                    $line === '' ||
+                    $line === '---' ||
+                    strpos($line, '__IMG__:') === 0 ||
+                    strpos($line, self::DOCX_HTML_MARKER_PREFIX) === 0 ||
+                    strpos($line, self::DOCX_DIAGNOSTIC_MARKER_PREFIX) === 0
+                ) {
                     continue;
                 }
 
@@ -2473,6 +5383,10 @@ final class CBT_Admin_Questions_Import_Helper
                         $options_map[ord(strtoupper($key)) - ord('A') + 1] = $value;
                     }
                 }
+            }
+
+            if ($forced_question_type === '') {
+                return 'Setiap blok DOCX wajib mencantumkan JENIS_SOAL yang valid sesuai template resmi.';
             }
 
             if ($forced_question_type === 'essay') {
@@ -2668,23 +5582,23 @@ final class CBT_Admin_Questions_Import_Helper
             if ($binary === '') {
                 return '';
             }
-    
+
             $ext = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
             if ($ext === '') {
                 $ext = 'png';
             }
-    
+
             $safe_ext = preg_replace('/[^a-z0-9]/', '', $ext);
             if ($safe_ext === '') {
                 $safe_ext = 'png';
             }
-    
+
             $upload_name = 'cbt-question-' . wp_generate_password(10, false, false) . '.' . $safe_ext;
             $upload = wp_upload_bits($upload_name, null, $binary);
             if (is_array($upload) && empty($upload['error']) && !empty($upload['url'])) {
                 return esc_url_raw((string) $upload['url']);
             }
-    
+
             $mime = self::guess_mime_from_extension($safe_ext);
             return 'data:' . $mime . ';base64,' . base64_encode($binary);
         }
@@ -2692,10 +5606,16 @@ final class CBT_Admin_Questions_Import_Helper
         private static function is_docx_key_only_line(string $line): bool
         {
             $line = trim($line);
-            if ($line === '' || strpos($line, ':') !== false || strpos($line, '__IMG__:') === 0) {
+            if (
+                $line === '' ||
+                strpos($line, ':') !== false ||
+                strpos($line, '__IMG__:') === 0 ||
+                strpos($line, self::DOCX_HTML_MARKER_PREFIX) === 0 ||
+                strpos($line, self::DOCX_DIAGNOSTIC_MARKER_PREFIX) === 0
+            ) {
                 return false;
             }
-    
+
             return (bool) preg_match(
                 '/^(jenis_soal|question_type|type|soal|question|pertanyaan|subject_code|kode_mapel|exam_title|judul_exam|ujian|point|points|poin|nilai|pembahasan|explanation|jawaban|answer|correct_answer|jawaban_ke|answer_option|correct_text|rubrik|rubric|rubric_text|(pilihan|opsi|option)_?([1-9]|1[0-2])|(pernyataan|statement|item)_?([1-9]|10)|(kunci|truth|tf)_?([1-9]|10)|(jawaban|answer|correct)_?([1-9]|10|[a-h])|[a-l])$/i',
                 $line
@@ -2705,10 +5625,16 @@ final class CBT_Admin_Questions_Import_Helper
         private static function is_docx_key_value_line(string $line): bool
         {
             $line = trim($line);
-            if ($line === '' || strpos($line, ':') === false || strpos($line, '__IMG__:') === 0) {
+            if (
+                $line === '' ||
+                strpos($line, ':') === false ||
+                strpos($line, '__IMG__:') === 0 ||
+                strpos($line, self::DOCX_HTML_MARKER_PREFIX) === 0 ||
+                strpos($line, self::DOCX_DIAGNOSTIC_MARKER_PREFIX) === 0
+            ) {
                 return false;
             }
-    
+
             $parts = explode(':', $line, 2);
             return self::is_docx_key_only_line((string) ($parts[0] ?? ''));
         }
@@ -2716,22 +5642,1090 @@ final class CBT_Admin_Questions_Import_Helper
         private static function build_docx_question_text(array $parts): string
         {
             $html_parts = [];
-    
+
             foreach ($parts as $part) {
                 $part = trim((string) $part);
                 if ($part === '') {
                     continue;
                 }
-    
-                if (strpos($part, '<p><img ') === 0) {
+
+                if (self::is_docx_html_fragment($part)) {
                     $html_parts[] = $part;
                     continue;
                 }
-    
-                $html_parts[] = '<p>' . esc_html($part) . '</p>';
+
+                $safe_part = esc_html((string) $part);
+                $safe_part = str_replace(["\r\n", "\r"], "\n", $safe_part);
+                $safe_part = str_replace("\n", '<br />', $safe_part);
+
+                $html_parts[] = '<p>' . $safe_part . '</p>';
             }
-    
+
             return trim(implode('', $html_parts));
+        }
+
+        private static function is_docx_html_fragment(string $part): bool
+        {
+            return preg_match('/^<(?:p|table|thead|tbody|tfoot|tr|td|th|div|figure|figcaption|img|ul|ol|li)\b/i', trim($part)) === 1;
+        }
+
+        private static function append_docx_html_fragment_to_active_context(
+            string $html_fragment,
+            $active_context,
+            array &$question_parts,
+            array &$explanation_parts,
+            array &$answer_parts,
+            array &$options_map,
+            array &$tf_matrix_statement_map
+        ): void {
+            if ($html_fragment === '') {
+                return;
+            }
+
+            if (is_array($active_context) && ($active_context[0] ?? '') === 'option') {
+                $opt_idx = (int) ($active_context[1] ?? 0);
+                if ($opt_idx >= 1 && $opt_idx <= 12) {
+                    $options_map[$opt_idx] = self::append_docx_html_fragment_to_string((string) ($options_map[$opt_idx] ?? ''), $html_fragment);
+                    return;
+                }
+            }
+
+            if (is_array($active_context) && ($active_context[0] ?? '') === 'matrix_statement') {
+                $statement_idx = (int) ($active_context[1] ?? 0);
+                if ($statement_idx >= 1 && $statement_idx <= 10) {
+                    $tf_matrix_statement_map[$statement_idx] = self::append_docx_html_fragment_to_string((string) ($tf_matrix_statement_map[$statement_idx] ?? ''), $html_fragment);
+                    return;
+                }
+            }
+
+            if ($active_context === 'explanation') {
+                $explanation_parts[] = $html_fragment;
+                return;
+            }
+
+            if ($active_context === 'answer') {
+                $answer_parts[] = $html_fragment;
+                return;
+            }
+
+            $question_parts[] = $html_fragment;
+        }
+
+        private static function append_docx_html_fragment_to_string(string $current, string $html_fragment): string
+        {
+            $current = trim($current);
+            if ($current === '') {
+                return $html_fragment;
+            }
+
+            return $current . $html_fragment;
+        }
+
+        private static function extract_docx_paragraph_text(string $paragraph): string
+        {
+            if (
+                $paragraph !== '' &&
+                (strpos($paragraph, '<m:') !== false || strpos($paragraph, '<w:sym') !== false) &&
+                class_exists('DOMDocument')
+            ) {
+                $math_text = self::extract_docx_paragraph_text_with_math($paragraph);
+                if ($math_text !== '') {
+                    return $math_text;
+                }
+            }
+
+            $paragraph = (string) preg_replace('/<w:(?:br|cr)\b[^>]*\/>/i', '__CBT_DOCX_BREAK__', (string) $paragraph);
+            $paragraph = (string) preg_replace('/<w:tab\b[^>]*\/>/i', '__CBT_DOCX_TAB__', $paragraph);
+
+            if (!preg_match_all('/(__CBT_DOCX_BREAK__|__CBT_DOCX_TAB__|<w:t[^>]*>.*?<\/w:t>)/s', $paragraph, $tokens)) {
+                return '';
+            }
+
+            $text = '';
+            foreach ((array) ($tokens[1] ?? []) as $token) {
+                $token = (string) $token;
+                if ($token === '__CBT_DOCX_BREAK__') {
+                    $text .= "\n";
+                    continue;
+                }
+                if ($token === '__CBT_DOCX_TAB__') {
+                    $text .= "\t";
+                    continue;
+                }
+                if (preg_match('/<w:t[^>]*>(.*?)<\/w:t>/s', $token, $fragment_match) !== 1) {
+                    continue;
+                }
+
+                $text .= html_entity_decode(strip_tags((string) ($fragment_match[1] ?? '')), ENT_QUOTES | ENT_XML1, 'UTF-8');
+            }
+
+            $text = str_replace(["\r\n", "\r"], "\n", $text);
+            $text = (string) preg_replace("/[ \t]*\n[ \t]*/", "\n", $text);
+
+            return trim($text);
+        }
+
+        private static function extract_docx_paragraph_text_with_math(string $paragraph): string
+        {
+            $wrapped_xml = '<?xml version="1.0" encoding="UTF-8"?>'
+                . '<w:root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+                . ' xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">'
+                . $paragraph
+                . '</w:root>';
+
+            $previous_libxml_state = libxml_use_internal_errors(true);
+            $dom = new DOMDocument();
+            $loaded = @$dom->loadXML($wrapped_xml, LIBXML_NONET | LIBXML_COMPACT);
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous_libxml_state);
+
+            if (!$loaded || !$dom->documentElement instanceof DOMElement) {
+                return '';
+            }
+
+            $text = self::render_docx_text_like_children($dom->documentElement);
+            $text = str_replace(["\r\n", "\r"], "\n", $text);
+            $text = (string) preg_replace("/[ \t]*\n[ \t]*/", "\n", $text);
+
+            return trim($text);
+        }
+
+        private static function render_docx_text_like_children(DOMNode $node, string $separator = ''): string
+        {
+            $parts = [];
+
+            foreach ($node->childNodes as $child) {
+                $parts[] = self::render_docx_text_like_node($child);
+            }
+
+            if ($separator === '') {
+                return implode('', $parts);
+            }
+
+            $parts = array_values(array_filter(array_map(static function ($part): string {
+                return trim((string) $part);
+            }, $parts), static function (string $part): bool {
+                return $part !== '';
+            }));
+
+            return implode($separator, $parts);
+        }
+
+        private static function render_docx_text_like_node(DOMNode $node): string
+        {
+            if ($node instanceof DOMText) {
+                $value = (string) $node->nodeValue;
+                return trim($value) === '' ? '' : $value;
+            }
+
+            if (!$node instanceof DOMElement) {
+                return '';
+            }
+
+            $namespace = (string) $node->namespaceURI;
+            $local_name = (string) $node->localName;
+            if ($namespace === 'http://schemas.openxmlformats.org/officeDocument/2006/math') {
+                return self::render_docx_math_node($node);
+            }
+
+            if ($namespace === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main') {
+                if ($local_name === 't') {
+                    return html_entity_decode((string) $node->textContent, ENT_QUOTES | ENT_XML1, 'UTF-8');
+                }
+                if ($local_name === 'br' || $local_name === 'cr') {
+                    return "\n";
+                }
+                if ($local_name === 'tab') {
+                    return "\t";
+                }
+                if ($local_name === 'sym') {
+                    return self::decode_docx_symbol_element($node);
+                }
+            }
+
+            return self::render_docx_text_like_children($node);
+        }
+
+        private static function render_docx_math_node(DOMElement $node): string
+        {
+            $local_name = (string) $node->localName;
+
+            switch ($local_name) {
+                case 't':
+                    return html_entity_decode((string) $node->textContent, ENT_QUOTES | ENT_XML1, 'UTF-8');
+
+                case 'oMath':
+                    return self::render_docx_text_like_children($node);
+
+                case 'oMathPara':
+                    return self::format_docx_multiline_math_text(
+                        self::render_docx_text_like_children($node)
+                    );
+
+                case 'r':
+                    return self::render_docx_math_run_text($node);
+
+                case 'e':
+                case 'sub':
+                case 'sup':
+                case 'num':
+                case 'den':
+                case 'deg':
+                case 'fName':
+                case 'box':
+                case 'bar':
+                case 'borderBox':
+                case 'phant':
+                    return self::render_docx_text_like_children($node);
+
+                case 'sSup':
+                    $base = self::render_docx_math_direct_child_text($node, 'e');
+                    $sup = self::render_docx_math_direct_child_text($node, 'sup');
+                    if ($base === '' || $sup === '') {
+                        return self::render_docx_text_like_children($node);
+                    }
+                    return $base . '^(' . $sup . ')';
+
+                case 'sSub':
+                    $base = self::render_docx_math_direct_child_text($node, 'e');
+                    $sub = self::render_docx_math_direct_child_text($node, 'sub');
+                    if ($base === '' || $sub === '') {
+                        return self::render_docx_text_like_children($node);
+                    }
+                    return $base . '_(' . $sub . ')';
+
+                case 'sSubSup':
+                    $base = self::render_docx_math_direct_child_text($node, 'e');
+                    $sub = self::render_docx_math_direct_child_text($node, 'sub');
+                    $sup = self::render_docx_math_direct_child_text($node, 'sup');
+                    if ($base === '') {
+                        return self::render_docx_text_like_children($node);
+                    }
+                    $result = $base;
+                    if ($sub !== '') {
+                        $result .= '_(' . $sub . ')';
+                    }
+                    if ($sup !== '') {
+                        $result .= '^(' . $sup . ')';
+                    }
+                    return $result;
+
+                case 'sPre':
+                    $base = self::render_docx_math_direct_child_text($node, 'e');
+                    $sub = self::render_docx_math_direct_child_text($node, 'sub');
+                    $sup = self::render_docx_math_direct_child_text($node, 'sup');
+                    if ($base === '') {
+                        return self::render_docx_text_like_children($node);
+                    }
+
+                    $result = '';
+                    if ($sup !== '') {
+                        $result .= '^(' . $sup . ')';
+                    }
+                    if ($sub !== '') {
+                        $result .= '_(' . $sub . ')';
+                    }
+
+                    return $result . $base;
+
+                case 'f':
+                    $num = self::render_docx_math_direct_child_text($node, 'num');
+                    $den = self::render_docx_math_direct_child_text($node, 'den');
+                    if ($num === '' && $den === '') {
+                        return self::render_docx_text_like_children($node);
+                    }
+                    return '(' . $num . ')/(' . $den . ')';
+
+                case 'rad':
+                    $degree = self::render_docx_math_direct_child_text($node, 'deg');
+                    $expression = self::render_docx_math_direct_child_text($node, 'e');
+                    if ($expression === '') {
+                        return self::render_docx_text_like_children($node);
+                    }
+                    if ($degree !== '') {
+                        return 'root[' . $degree . '](' . $expression . ')';
+                    }
+                    return '√(' . $expression . ')';
+
+                case 'd':
+                    $binomial_parts = self::extract_docx_math_binomial_parts_text($node);
+                    if ($binomial_parts !== null) {
+                        return '(' . $binomial_parts[0] . ' choose ' . $binomial_parts[1] . ')';
+                    }
+
+                    $expression = self::render_docx_math_direct_child_text($node, 'e');
+                    if ($expression === '') {
+                        return self::render_docx_text_like_children($node);
+                    }
+                    $beg = self::extract_docx_math_property_value($node, 'dPr', 'begChr', '(');
+                    $end = self::extract_docx_math_property_value($node, 'dPr', 'endChr', ')');
+                    return $beg . $expression . $end;
+
+                case 'func':
+                    $function_name = self::render_docx_math_direct_child_text($node, 'fName');
+                    $expression = self::render_docx_math_direct_child_text($node, 'e');
+                    if ($function_name === '') {
+                        return self::render_docx_text_like_children($node);
+                    }
+                    if ($expression === '') {
+                        return $function_name;
+                    }
+                    return rtrim($function_name) . '(' . $expression . ')';
+
+                case 'limLow':
+                    $base = self::render_docx_math_direct_child_text($node, 'e');
+                    $limit = self::render_docx_math_direct_child_text($node, 'lim');
+                    if ($base === '' || $limit === '') {
+                        return self::render_docx_text_like_children($node);
+                    }
+                    return $base . '_(' . $limit . ')';
+
+                case 'limUpp':
+                    $base = self::render_docx_math_direct_child_text($node, 'e');
+                    $limit = self::render_docx_math_direct_child_text($node, 'lim');
+                    if ($base === '' || $limit === '') {
+                        return self::render_docx_text_like_children($node);
+                    }
+                    return $base . '^(' . $limit . ')';
+
+                case 'nary':
+                    $operator = self::resolve_docx_math_nary_operator($node);
+                    $sub = self::render_docx_math_direct_child_text($node, 'sub');
+                    $sup = self::render_docx_math_direct_child_text($node, 'sup');
+                    $expression = self::render_docx_math_direct_child_text($node, 'e');
+                    $result = $operator;
+                    if ($sub !== '') {
+                        $result .= '_(' . $sub . ')';
+                    }
+                    if ($sup !== '') {
+                        $result .= '^(' . $sup . ')';
+                    }
+                    if ($expression !== '') {
+                        $result .= ' ' . $expression;
+                    }
+                    return $result;
+
+                case 'mr':
+                    return self::render_docx_math_direct_children_text($node, 'e', ', ');
+
+                case 'm':
+                    $rows = self::render_docx_math_direct_children_text($node, 'mr', '; ');
+                    if ($rows === '') {
+                        return self::render_docx_text_like_children($node);
+                    }
+                    return '[' . $rows . ']';
+
+                case 'eqArr':
+                    $expressions = self::render_docx_math_direct_children_text($node, 'e', '; ');
+                    return $expressions !== '' ? $expressions : self::render_docx_text_like_children($node);
+
+                case 'acc':
+                case 'groupChr':
+                    $expression = self::render_docx_math_direct_child_text($node, 'e');
+                    return $expression !== '' ? $expression : self::render_docx_text_like_children($node);
+
+                case 'accPr':
+                case 'argPr':
+                case 'ctrlPr':
+                case 'dPr':
+                case 'funcPr':
+                case 'limLowPr':
+                case 'limUppPr':
+                case 'naryPr':
+                case 'radPr':
+                case 'rPr':
+                case 'sPrePr':
+                case 'sSubPr':
+                case 'sSupPr':
+                case 'sSubSupPr':
+                    return '';
+            }
+
+            return self::render_docx_text_like_children($node);
+        }
+
+        private static function render_docx_math_node_to_katex(DOMElement $node): string
+        {
+            $local_name = (string) $node->localName;
+
+            switch ($local_name) {
+                case 't':
+                    return self::normalize_docx_math_katex_text(
+                        html_entity_decode((string) $node->textContent, ENT_QUOTES | ENT_XML1, 'UTF-8')
+                    );
+
+                case 'oMath':
+                    return self::render_docx_math_text_like_children_to_katex($node);
+
+                case 'oMathPara':
+                    return self::format_docx_multiline_math_katex(
+                        self::render_docx_math_text_like_children_to_katex($node)
+                    );
+
+                case 'r':
+                    return self::render_docx_math_run_katex($node);
+
+                case 'e':
+                case 'sub':
+                case 'sup':
+                case 'num':
+                case 'den':
+                case 'deg':
+                case 'fName':
+                case 'box':
+                case 'bar':
+                case 'borderBox':
+                case 'phant':
+                    return self::render_docx_math_text_like_children_to_katex($node);
+
+                case 'sSup':
+                    $base = self::render_docx_math_direct_child_katex($node, 'e');
+                    $sup = self::render_docx_math_direct_child_katex($node, 'sup');
+                    if ($base === '' || $sup === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+                    return '{' . $base . '}^{' . $sup . '}';
+
+                case 'sSub':
+                    $base = self::render_docx_math_direct_child_katex($node, 'e');
+                    $sub = self::render_docx_math_direct_child_katex($node, 'sub');
+                    if ($base === '' || $sub === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+                    return '{' . $base . '}_{' . $sub . '}';
+
+                case 'sSubSup':
+                    $base = self::render_docx_math_direct_child_katex($node, 'e');
+                    $sub = self::render_docx_math_direct_child_katex($node, 'sub');
+                    $sup = self::render_docx_math_direct_child_katex($node, 'sup');
+                    if ($base === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+
+                    $result = '{' . $base . '}';
+                    if ($sub !== '') {
+                        $result .= '_{' . $sub . '}';
+                    }
+                    if ($sup !== '') {
+                        $result .= '^{' . $sup . '}';
+                    }
+
+                    return $result;
+
+                case 'sPre':
+                    $base = self::render_docx_math_direct_child_katex($node, 'e');
+                    $sub = self::render_docx_math_direct_child_katex($node, 'sub');
+                    $sup = self::render_docx_math_direct_child_katex($node, 'sup');
+                    if ($base === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+
+                    $result = '';
+                    if ($sub !== '') {
+                        $result .= '_{' . $sub . '}';
+                    }
+                    if ($sup !== '') {
+                        $result .= '^{' . $sup . '}';
+                    }
+
+                    return '{}' . $result . '{' . $base . '}';
+
+                case 'f':
+                    $num = self::render_docx_math_direct_child_katex($node, 'num');
+                    $den = self::render_docx_math_direct_child_katex($node, 'den');
+                    if ($num === '' && $den === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+                    return '\\frac{' . $num . '}{' . $den . '}';
+
+                case 'rad':
+                    $degree = self::render_docx_math_direct_child_katex($node, 'deg');
+                    $expression = self::render_docx_math_direct_child_katex($node, 'e');
+                    if ($expression === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+                    if ($degree !== '') {
+                        return '\\sqrt[' . $degree . ']{' . $expression . '}';
+                    }
+                    return '\\sqrt{' . $expression . '}';
+
+                case 'd':
+                    $binomial_parts = self::extract_docx_math_binomial_parts_katex($node);
+                    if ($binomial_parts !== null) {
+                        return '\\binom{' . $binomial_parts[0] . '}{' . $binomial_parts[1] . '}';
+                    }
+
+                    $expression = self::render_docx_math_direct_child_katex($node, 'e');
+                    if ($expression === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+                    $beg = self::extract_docx_math_property_value($node, 'dPr', 'begChr', '(');
+                    $end = self::extract_docx_math_property_value($node, 'dPr', 'endChr', ')');
+                    return self::normalize_docx_math_katex_text($beg) . $expression . self::normalize_docx_math_katex_text($end);
+
+                case 'func':
+                    $function_name = self::render_docx_math_direct_child_katex($node, 'fName');
+                    $expression = self::render_docx_math_direct_child_katex($node, 'e');
+                    if ($function_name === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+
+                    $normalized_function = self::normalize_docx_math_function_name($function_name);
+                    if ($expression === '') {
+                        return $normalized_function;
+                    }
+
+                    return $normalized_function . '(' . $expression . ')';
+
+                case 'limLow':
+                    $base = self::render_docx_math_direct_child_katex($node, 'e');
+                    $limit = self::render_docx_math_direct_child_katex($node, 'lim');
+                    if ($base === '' || $limit === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+                    return '{' . $base . '}_{' . $limit . '}';
+
+                case 'limUpp':
+                    $base = self::render_docx_math_direct_child_katex($node, 'e');
+                    $limit = self::render_docx_math_direct_child_katex($node, 'lim');
+                    if ($base === '' || $limit === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+                    return '{' . $base . '}^{' . $limit . '}';
+
+                case 'nary':
+                    $operator = self::normalize_docx_math_operator(self::resolve_docx_math_nary_operator($node));
+                    $sub = self::render_docx_math_direct_child_katex($node, 'sub');
+                    $sup = self::render_docx_math_direct_child_katex($node, 'sup');
+                    $expression = self::render_docx_math_direct_child_katex($node, 'e');
+
+                    $result = $operator;
+                    if ($sub !== '') {
+                        $result .= '_{' . $sub . '}';
+                    }
+                    if ($sup !== '') {
+                        $result .= '^{' . $sup . '}';
+                    }
+                    if ($expression !== '') {
+                        $result .= ' ' . $expression;
+                    }
+
+                    return $result;
+
+                case 'mr':
+                    return self::render_docx_math_direct_children_katex($node, 'e', ' & ');
+
+                case 'm':
+                    $rows = self::render_docx_math_direct_children_katex($node, 'mr', ' \\\\ ');
+                    if ($rows === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+                    return '\\begin{bmatrix}' . $rows . '\\end{bmatrix}';
+
+                case 'eqArr':
+                    $expressions = self::render_docx_math_direct_children_katex($node, 'e', ' \\\\ ');
+                    if ($expressions === '') {
+                        return self::render_docx_math_text_like_children_to_katex($node);
+                    }
+                    return '\\begin{aligned}' . $expressions . '\\end{aligned}';
+
+                case 'acc':
+                case 'groupChr':
+                    $expression = self::render_docx_math_direct_child_katex($node, 'e');
+                    return $expression !== '' ? $expression : self::render_docx_math_text_like_children_to_katex($node);
+
+                case 'accPr':
+                case 'argPr':
+                case 'ctrlPr':
+                case 'dPr':
+                case 'funcPr':
+                case 'limLowPr':
+                case 'limUppPr':
+                case 'naryPr':
+                case 'radPr':
+                case 'rPr':
+                case 'sPrePr':
+                case 'sSubPr':
+                case 'sSupPr':
+                case 'sSubSupPr':
+                    return '';
+            }
+
+            return self::render_docx_math_text_like_children_to_katex($node);
+        }
+
+        private static function render_docx_math_text_like_children_to_katex(DOMElement $node): string
+        {
+            $parts = [];
+            foreach ($node->childNodes as $child) {
+                if (!$child instanceof DOMNode) {
+                    continue;
+                }
+
+                if ($child instanceof DOMText) {
+                    $parts[] = self::normalize_docx_math_katex_text($child->wholeText);
+                    continue;
+                }
+
+                if ($child instanceof DOMElement) {
+                    $parts[] = self::render_docx_math_node_to_katex($child);
+                }
+            }
+
+            return trim(implode('', array_filter($parts, static function ($part): bool {
+                return (string) $part !== '';
+            })));
+        }
+
+        private static function render_docx_math_run_text(DOMElement $node): string
+        {
+            $text = self::render_docx_text_like_children($node);
+            if (!self::docx_math_run_has_break($node)) {
+                return $text;
+            }
+
+            return "\n" . ltrim($text);
+        }
+
+        private static function render_docx_math_run_katex(DOMElement $node): string
+        {
+            $text = self::render_docx_math_text_like_children_to_katex($node);
+            if (!self::docx_math_run_has_break($node)) {
+                return $text;
+            }
+
+            return "\n" . ltrim($text);
+        }
+
+        private static function docx_math_run_has_break(DOMElement $node): bool
+        {
+            if ((string) $node->localName !== 'r') {
+                return false;
+            }
+
+            $run_properties = self::find_docx_math_direct_child_element($node, 'rPr');
+            if (!$run_properties instanceof DOMElement) {
+                return false;
+            }
+
+            return self::find_docx_math_direct_child_element($run_properties, 'brk') instanceof DOMElement;
+        }
+
+        private static function format_docx_multiline_math_text(string $text): string
+        {
+            $text = str_replace(["\r\n", "\r"], "\n", $text);
+            $text = (string) preg_replace("/[ \t]*\n[ \t]*/u", "\n", $text);
+
+            return trim($text);
+        }
+
+        private static function format_docx_multiline_math_katex(string $source): string
+        {
+            $source = self::format_docx_multiline_math_text($source);
+            if ($source === '') {
+                return '';
+            }
+
+            $rows = array_values(array_filter(array_map(static function (string $row): string {
+                return trim($row);
+            }, explode("\n", $source)), static function (string $row): bool {
+                return $row !== '';
+            }));
+
+            if (count($rows) <= 1) {
+                return $rows[0] ?? '';
+            }
+
+            $rows = array_map([self::class, 'insert_docx_math_alignment_marker_into_katex_row'], $rows);
+
+            return '\\begin{aligned}' . implode(' \\\\ ', $rows) . '\\end{aligned}';
+        }
+
+        private static function insert_docx_math_alignment_marker_into_katex_row(string $row): string
+        {
+            $row = trim($row);
+            $equals_position = self::find_docx_math_top_level_equals_position($row);
+            if ($equals_position === null) {
+                return $row;
+            }
+
+            return substr($row, 0, $equals_position) . '&=' . substr($row, $equals_position + 1);
+        }
+
+        private static function find_docx_math_top_level_equals_position(string $row): ?int
+        {
+            $depth = 0;
+            $length = strlen($row);
+
+            for ($index = 0; $index < $length; $index++) {
+                $character = $row[$index];
+                if ($character === '{') {
+                    $depth++;
+                    continue;
+                }
+
+                if ($character === '}') {
+                    if ($depth > 0) {
+                        $depth--;
+                    }
+                    continue;
+                }
+
+                if ($character === '=' && $depth === 0) {
+                    return $index;
+                }
+            }
+
+            return null;
+        }
+
+        private static function resolve_docx_math_nary_operator(DOMElement $node): string
+        {
+            return self::extract_docx_math_property_value($node, 'naryPr', 'chr', '∫');
+        }
+
+        private static function render_docx_math_direct_child_katex(DOMElement $parent, string $child_local_name): string
+        {
+            foreach ($parent->childNodes as $child) {
+                if (
+                    $child instanceof DOMElement &&
+                    (string) $child->namespaceURI === 'http://schemas.openxmlformats.org/officeDocument/2006/math' &&
+                    (string) $child->localName === $child_local_name
+                ) {
+                    return trim(self::render_docx_math_node_to_katex($child));
+                }
+            }
+
+            return '';
+        }
+
+        private static function render_docx_math_direct_children_katex(DOMElement $parent, string $child_local_name, string $separator): string
+        {
+            $parts = [];
+            foreach ($parent->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/officeDocument/2006/math' ||
+                    (string) $child->localName !== $child_local_name
+                ) {
+                    continue;
+                }
+
+                $rendered = trim(self::render_docx_math_node_to_katex($child));
+                if ($rendered !== '') {
+                    $parts[] = $rendered;
+                }
+            }
+
+            return implode($separator, $parts);
+        }
+
+        /**
+         * @return array{0:string,1:string}|null
+         */
+        private static function extract_docx_math_binomial_parts_text(DOMElement $node): ?array
+        {
+            return self::extract_docx_math_binomial_parts(
+                $node,
+                static function (DOMElement $element): string {
+                    return self::render_docx_math_node($element);
+                }
+            );
+        }
+
+        /**
+         * @return array{0:string,1:string}|null
+         */
+        private static function extract_docx_math_binomial_parts_katex(DOMElement $node): ?array
+        {
+            return self::extract_docx_math_binomial_parts(
+                $node,
+                static function (DOMElement $element): string {
+                    return self::render_docx_math_node_to_katex($element);
+                }
+            );
+        }
+
+        /**
+         * @param callable(DOMElement):string $renderer
+         * @return array{0:string,1:string}|null
+         */
+        private static function extract_docx_math_binomial_parts(DOMElement $node, callable $renderer): ?array
+        {
+            $beg = self::extract_docx_math_property_value($node, 'dPr', 'begChr', '(');
+            $end = self::extract_docx_math_property_value($node, 'dPr', 'endChr', ')');
+            if ($beg !== '(' || $end !== ')') {
+                return null;
+            }
+
+            $expression = self::find_docx_math_direct_child_element($node, 'e');
+            if (!$expression instanceof DOMElement) {
+                return null;
+            }
+
+            $eq_array = self::find_docx_math_direct_child_element($expression, 'eqArr');
+            if (!$eq_array instanceof DOMElement) {
+                return null;
+            }
+
+            $rows = [];
+            foreach ($eq_array->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/officeDocument/2006/math' ||
+                    (string) $child->localName !== 'e'
+                ) {
+                    continue;
+                }
+
+                $rendered = trim((string) $renderer($child));
+                if ($rendered !== '') {
+                    $rows[] = $rendered;
+                }
+            }
+
+            if (count($rows) !== 2) {
+                return null;
+            }
+
+            return [$rows[0], $rows[1]];
+        }
+
+        private static function find_docx_math_direct_child_element(DOMElement $parent, string $child_local_name): ?DOMElement
+        {
+            foreach ($parent->childNodes as $child) {
+                if (
+                    $child instanceof DOMElement &&
+                    (string) $child->namespaceURI === 'http://schemas.openxmlformats.org/officeDocument/2006/math' &&
+                    (string) $child->localName === $child_local_name
+                ) {
+                    return $child;
+                }
+            }
+
+            return null;
+        }
+
+        private static function normalize_docx_math_katex_text(string $text): string
+        {
+            $text = html_entity_decode($text, ENT_QUOTES | ENT_XML1, 'UTF-8');
+            $text = str_replace(["\r\n", "\r"], "\n", $text);
+            $text = preg_replace('/\s+/u', ' ', $text);
+            $text = trim((string) $text);
+            if ($text === '') {
+                return '';
+            }
+
+            return strtr($text, [
+                '∝' => '\\propto ',
+                '∞' => '\\infty ',
+                '≤' => '\\le ',
+                '≥' => '\\ge ',
+                '≠' => '\\neq ',
+                '≈' => '\\approx ',
+                '±' => '\\pm ',
+                '×' => '\\times ',
+                '·' => '\\cdot ',
+                '→' => '\\rightarrow ',
+                '←' => '\\leftarrow ',
+                'α' => '\\alpha ',
+                'β' => '\\beta ',
+                'θ' => '\\theta ',
+                'π' => '\\pi ',
+                'μ' => '\\mu ',
+            ]);
+        }
+
+        private static function normalize_docx_math_function_name(string $function_name): string
+        {
+            $normalized = strtolower(trim($function_name));
+            $map = [
+                'sin' => '\\sin',
+                'cos' => '\\cos',
+                'tan' => '\\tan',
+                'cot' => '\\cot',
+                'sec' => '\\sec',
+                'csc' => '\\csc',
+                'log' => '\\log',
+                'ln' => '\\ln',
+                'lim' => '\\lim',
+                'max' => '\\max',
+                'min' => '\\min',
+            ];
+
+            if (isset($map[$normalized])) {
+                return $map[$normalized];
+            }
+
+            if ($normalized === '') {
+                return '';
+            }
+
+            return '\\operatorname{' . $normalized . '}';
+        }
+
+        private static function normalize_docx_math_operator(string $operator): string
+        {
+            $normalized = trim($operator);
+            $map = [
+                '∑' => '\\sum',
+                '∫' => '\\int',
+                '∏' => '\\prod',
+                '⋂' => '\\bigcap',
+                '⋃' => '\\bigcup',
+            ];
+
+            return $map[$normalized] ?? self::normalize_docx_math_katex_text($normalized);
+        }
+
+        private static function render_docx_math_direct_child_text(DOMElement $parent, string $child_local_name): string
+        {
+            foreach ($parent->childNodes as $child) {
+                if (
+                    $child instanceof DOMElement &&
+                    (string) $child->namespaceURI === 'http://schemas.openxmlformats.org/officeDocument/2006/math' &&
+                    (string) $child->localName === $child_local_name
+                ) {
+                    return trim(self::render_docx_math_node($child));
+                }
+            }
+
+            return '';
+        }
+
+        private static function render_docx_math_direct_children_text(DOMElement $parent, string $child_local_name, string $separator): string
+        {
+            $parts = [];
+
+            foreach ($parent->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/officeDocument/2006/math' ||
+                    (string) $child->localName !== $child_local_name
+                ) {
+                    continue;
+                }
+
+                $rendered = trim(self::render_docx_math_node($child));
+                if ($rendered !== '') {
+                    $parts[] = $rendered;
+                }
+            }
+
+            return implode($separator, $parts);
+        }
+
+        private static function extract_docx_math_property_value(
+            DOMElement $parent,
+            string $property_local_name,
+            string $value_local_name,
+            string $default = ''
+        ): string {
+            foreach ($parent->childNodes as $child) {
+                if (
+                    !$child instanceof DOMElement ||
+                    (string) $child->namespaceURI !== 'http://schemas.openxmlformats.org/officeDocument/2006/math' ||
+                    (string) $child->localName !== $property_local_name
+                ) {
+                    continue;
+                }
+
+                foreach ($child->childNodes as $property_value_node) {
+                    if (
+                        !$property_value_node instanceof DOMElement ||
+                        (string) $property_value_node->namespaceURI !== 'http://schemas.openxmlformats.org/officeDocument/2006/math' ||
+                        (string) $property_value_node->localName !== $value_local_name
+                    ) {
+                        continue;
+                    }
+
+                    $value = self::get_docx_attribute_value($property_value_node, 'val');
+                    if ($value !== '') {
+                        return $value;
+                    }
+
+                    $text_value = trim((string) $property_value_node->textContent);
+                    if ($text_value !== '') {
+                        return $text_value;
+                    }
+                }
+            }
+
+            return $default;
+        }
+
+        private static function decode_docx_symbol_element(DOMElement $symbol): string
+        {
+            $font = strtolower(trim(self::get_docx_attribute_value($symbol, 'font')));
+            $char_hex = strtoupper((string) preg_replace('/[^0-9A-F]/i', '', self::get_docx_attribute_value($symbol, 'char')));
+            if ($char_hex === '') {
+                return '';
+            }
+
+            $codepoint = hexdec($char_hex);
+            if ($codepoint > 0 && ($codepoint < 0xE000 || $codepoint > 0xF8FF)) {
+                return html_entity_decode('&#x' . dechex($codepoint) . ';', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            }
+
+            $low_byte = strtoupper(substr($char_hex, -2));
+            $mapped_symbol = self::map_docx_symbol_code_to_unicode($font, $low_byte);
+            if ($mapped_symbol !== '') {
+                return $mapped_symbol;
+            }
+
+            $fallback_codepoint = hexdec($low_byte);
+            if ($fallback_codepoint > 0) {
+                return html_entity_decode('&#x' . dechex($fallback_codepoint) . ';', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            }
+
+            return '';
+        }
+
+        private static function map_docx_symbol_code_to_unicode(string $font, string $low_byte): string
+        {
+            $font = strtolower(trim($font));
+            $low_byte = strtoupper(trim($low_byte));
+            if ($low_byte === '') {
+                return '';
+            }
+
+            if ($font === 'symbol') {
+                $direct_map = [
+                    'A3' => '≤',
+                    'B0' => '°',
+                    'B1' => '±',
+                    'B3' => '≥',
+                    'B9' => '≠',
+                    'C5' => '∅',
+                    'D6' => '∂',
+                    'E5' => '∞',
+                    'F2' => '∫',
+                    'F3' => '∑',
+                    'F4' => '√',
+                    'F5' => '∝',
+                ];
+                if (isset($direct_map[$low_byte])) {
+                    return $direct_map[$low_byte];
+                }
+
+                $ascii = chr(hexdec($low_byte));
+                $greek_map = [
+                    'A' => 'Α', 'B' => 'Β', 'G' => 'Γ', 'D' => 'Δ', 'E' => 'Ε', 'Z' => 'Ζ',
+                    'H' => 'Η', 'Q' => 'Θ', 'I' => 'Ι', 'K' => 'Κ', 'L' => 'Λ', 'M' => 'Μ',
+                    'N' => 'Ν', 'X' => 'Ξ', 'O' => 'Ο', 'P' => 'Π', 'R' => 'Ρ', 'S' => 'Σ',
+                    'T' => 'Τ', 'U' => 'Υ', 'F' => 'Φ', 'C' => 'Χ', 'Y' => 'Ψ', 'W' => 'Ω',
+                    'a' => 'α', 'b' => 'β', 'g' => 'γ', 'd' => 'δ', 'e' => 'ε', 'z' => 'ζ',
+                    'h' => 'η', 'q' => 'θ', 'i' => 'ι', 'k' => 'κ', 'l' => 'λ', 'm' => 'μ',
+                    'n' => 'ν', 'x' => 'ξ', 'o' => 'ο', 'p' => 'π', 'r' => 'ρ', 'V' => 'ς',
+                    's' => 'σ', 't' => 'τ', 'u' => 'υ', 'f' => 'φ', 'j' => 'ϕ', 'c' => 'χ',
+                    'y' => 'ψ', 'w' => 'ω',
+                ];
+                if (isset($greek_map[$ascii])) {
+                    return $greek_map[$ascii];
+                }
+            }
+
+            return '';
         }
 
         private static function guess_mime_from_extension(string $ext): string

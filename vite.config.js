@@ -22,7 +22,10 @@ export default defineConfig(({ command }) => ({
         sourcemap: command === 'serve',
         cssCodeSplit: true,
         rollupOptions: {
-            input: resolve(__dirname, 'src/frontend/main.js'),
+            input: {
+                frontend: resolve(__dirname, 'src/frontend/main.js'),
+                adminMath: resolve(__dirname, 'src/admin/math-main.js'),
+            },
             output: {
                 entryFileNames: 'assets/frontend-core-[hash].js',
                 chunkFileNames: 'assets/[name]-[hash].js',

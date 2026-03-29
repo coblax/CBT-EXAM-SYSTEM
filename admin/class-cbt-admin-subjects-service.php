@@ -251,6 +251,10 @@ final class CBT_Admin_Subjects_Service
         if (!is_array($rows) || empty($rows)) {
             return new WP_Error('subject_rows_empty', 'Tidak ada data subject yang bisa diproses.');
         }
+        $rows_validation = self::validate_subject_import_rows($rows);
+        if (is_wp_error($rows_validation)) {
+            return $rows_validation;
+        }
 
         $token = strtolower((string) wp_generate_password(24, false, false));
         $state = [
@@ -271,6 +275,72 @@ final class CBT_Admin_Subjects_Service
 
         return [
             'token' => $token,
+        ];
+    }
+
+    public static function save_subject_record(int $id, string $name_raw, string $code_raw, string $description_raw)
+    {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cbt_subjects';
+        $name = self::normalize_subject_name($name_raw);
+        $code = self::normalize_subject_code($code_raw);
+        $description = self::normalize_subject_description($description_raw);
+
+        if ($name === '') {
+            return new WP_Error('subject_name_required', 'Nama mapel wajib diisi.');
+        }
+
+        if ($id > 0) {
+            $existing_subject = self::find_subject_by_id($id);
+            if ($existing_subject === null) {
+                return new WP_Error('subject_not_found', 'Subject yang akan diupdate tidak ditemukan.');
+            }
+        }
+
+        $duplicate_error = self::validate_subject_uniqueness($name, $code, $id);
+        if ($duplicate_error !== '') {
+            return new WP_Error('subject_duplicate', $duplicate_error);
+        }
+
+        $data = [
+            'name' => $name,
+            'code' => $code,
+            'description' => $description,
+            'updated_at' => current_time('mysql'),
+        ];
+
+        if ($id > 0) {
+            $updated = $wpdb->update(
+                $table,
+                $data,
+                ['id' => $id],
+                ['%s', '%s', '%s', '%s'],
+                ['%d']
+            );
+            if ($updated === false) {
+                return new WP_Error('subject_update_failed', 'Gagal memperbarui subject.');
+            }
+
+            return [
+                'status' => 'updated',
+                'message' => 'Subject updated',
+            ];
+        }
+
+        $data['created_at'] = current_time('mysql');
+        $inserted = $wpdb->insert(
+            $table,
+            $data,
+            ['%s', '%s', '%s', '%s', '%s']
+        );
+        if (!$inserted) {
+            return new WP_Error('subject_create_failed', 'Gagal membuat subject.');
+        }
+
+        return [
+            'status' => 'created',
+            'message' => 'Subject created',
         ];
     }
 
@@ -537,33 +607,25 @@ final class CBT_Admin_Subjects_Service
         global $wpdb;
 
         $table = $wpdb->prefix . 'cbt_subjects';
-        $name = sanitize_text_field($row['name'] ?? '');
-        $code_raw = sanitize_text_field($row['code'] ?? '');
-        $description = sanitize_textarea_field($row['description'] ?? '');
+        $name = self::normalize_subject_name((string) ($row['name'] ?? ''));
+        $code = self::normalize_subject_code((string) ($row['code'] ?? ''));
+        $description = self::normalize_subject_description((string) ($row['description'] ?? ''));
 
         if ($name === '') {
             return 'failed';
         }
 
-        $code = strtoupper(sanitize_key($code_raw));
-        if (strlen($code) > 30) {
-            $code = substr($code, 0, 30);
-        }
-
-        $existing = null;
+        $existing_by_code = null;
         if ($code !== '') {
-            $existing = $wpdb->get_row(
-                $wpdb->prepare("SELECT id FROM {$table} WHERE code = %s ORDER BY id ASC LIMIT 1", $code),
-                ARRAY_A
-            );
+            $existing_by_code = self::find_subject_by_code($code);
+        }
+        $existing_by_name = self::find_subject_by_name($name);
+
+        if ($existing_by_code !== null && $existing_by_name !== null && (int) ($existing_by_code['id'] ?? 0) !== (int) ($existing_by_name['id'] ?? 0)) {
+            return 'failed';
         }
 
-        if (!$existing) {
-            $existing = $wpdb->get_row(
-                $wpdb->prepare("SELECT id FROM {$table} WHERE name = %s ORDER BY id ASC LIMIT 1", $name),
-                ARRAY_A
-            );
-        }
+        $existing = $existing_by_code ?? $existing_by_name;
 
         $data = [
             'name' => $name,
@@ -608,6 +670,165 @@ final class CBT_Admin_Subjects_Service
     {
         delete_transient(self::get_subject_import_state_key($token));
         delete_transient(self::get_subject_import_rows_key($token));
+    }
+
+    private static function normalize_subject_name(string $raw_name): string
+    {
+        $name = sanitize_text_field($raw_name);
+        $name = preg_replace('/\s+/', ' ', trim($name));
+        return is_string($name) ? $name : '';
+    }
+
+    private static function normalize_subject_code(string $raw_code): string
+    {
+        $code = strtoupper(sanitize_key($raw_code));
+        if (strlen($code) > 30) {
+            $code = substr($code, 0, 30);
+        }
+
+        return $code;
+    }
+
+    private static function normalize_subject_description(string $raw_description): string
+    {
+        return sanitize_textarea_field($raw_description);
+    }
+
+    /**
+     * @param array<int,array<string,string>> $rows
+     * @return true|WP_Error
+     */
+    private static function validate_subject_import_rows(array $rows)
+    {
+        $seen_names = [];
+        $seen_codes = [];
+
+        foreach ($rows as $index => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $row_number = $index + 2;
+            $name = self::normalize_subject_name((string) ($row['name'] ?? ''));
+            $code = self::normalize_subject_code((string) ($row['code'] ?? ''));
+
+            if ($name === '') {
+                return new WP_Error('subject_import_name_required', sprintf('Baris %d: kolom name wajib diisi.', $row_number));
+            }
+
+            $name_key = strtolower($name);
+            if (isset($seen_names[$name_key])) {
+                return new WP_Error(
+                    'subject_import_duplicate_name',
+                    sprintf('Baris %1$d: name `%2$s` duplikat dengan baris %3$d pada file import.', $row_number, $name, (int) $seen_names[$name_key])
+                );
+            }
+            $seen_names[$name_key] = $row_number;
+
+            if ($code === '') {
+                continue;
+            }
+
+            if (isset($seen_codes[$code])) {
+                return new WP_Error(
+                    'subject_import_duplicate_code',
+                    sprintf('Baris %1$d: code `%2$s` duplikat dengan baris %3$d pada file import.', $row_number, $code, (int) $seen_codes[$code])
+                );
+            }
+            $seen_codes[$code] = $row_number;
+        }
+
+        return true;
+    }
+
+    private static function validate_subject_uniqueness(string $name, string $code, int $exclude_id = 0): string
+    {
+        $duplicate_by_name = self::find_subject_by_name($name, $exclude_id);
+        if ($duplicate_by_name !== null) {
+            return 'Nama subject sudah terdaftar pada subject lain.';
+        }
+
+        if ($code === '') {
+            return '';
+        }
+
+        $duplicate_by_code = self::find_subject_by_code($code, $exclude_id);
+        if ($duplicate_by_code !== null) {
+            return 'Code subject sudah terdaftar pada subject lain.';
+        }
+
+        return '';
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function find_subject_by_id(int $id): ?array
+    {
+        if ($id <= 0) {
+            return null;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'cbt_subjects';
+        $row = $wpdb->get_row(
+            $wpdb->prepare("SELECT id, name, code, description FROM {$table} WHERE id = %d", $id),
+            ARRAY_A
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function find_subject_by_name(string $name, int $exclude_id = 0): ?array
+    {
+        if ($name === '') {
+            return null;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'cbt_subjects';
+        if ($exclude_id > 0) {
+            $row = $wpdb->get_row(
+                $wpdb->prepare("SELECT id, name, code, description FROM {$table} WHERE name = %s AND id <> %d ORDER BY id ASC LIMIT 1", $name, $exclude_id),
+                ARRAY_A
+            );
+        } else {
+            $row = $wpdb->get_row(
+                $wpdb->prepare("SELECT id, name, code, description FROM {$table} WHERE name = %s ORDER BY id ASC LIMIT 1", $name),
+                ARRAY_A
+            );
+        }
+
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function find_subject_by_code(string $code, int $exclude_id = 0): ?array
+    {
+        if ($code === '') {
+            return null;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'cbt_subjects';
+        if ($exclude_id > 0) {
+            $row = $wpdb->get_row(
+                $wpdb->prepare("SELECT id, name, code, description FROM {$table} WHERE code = %s AND id <> %d ORDER BY id ASC LIMIT 1", $code, $exclude_id),
+                ARRAY_A
+            );
+        } else {
+            $row = $wpdb->get_row(
+                $wpdb->prepare("SELECT id, name, code, description FROM {$table} WHERE code = %s ORDER BY id ASC LIMIT 1", $code),
+                ARRAY_A
+            );
+        }
+
+        return is_array($row) ? $row : null;
     }
 
     private static function get_subject_import_batch_size(): int

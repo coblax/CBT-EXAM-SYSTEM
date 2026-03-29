@@ -148,6 +148,15 @@ final class CBT_Admin_Menu
 
         add_submenu_page(
             'cbt-exams',
+            'CBT Update',
+            'CBT Update',
+            'manage_options',
+            'cbt-update',
+            [CBT_Admin_Update_Page::class, 'render']
+        );
+
+        add_submenu_page(
+            'cbt-exams',
             'CBT Maintenance',
             'CBT Maintenance',
             'manage_options',

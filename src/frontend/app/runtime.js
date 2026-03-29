@@ -90,6 +90,7 @@ import { createQuestionStateManager } from './exam/question-state';
 import { createQuestionFlags } from './exam/question-flags';
 import { createExamSecurityManager } from './exam/security';
 import { createQuestionWindowManager } from './exam/question-window';
+import { renderMathInContainer } from '../../shared/math-render';
 
 export function bootstrapFrontendApp() {
     'use strict';
@@ -1552,6 +1553,9 @@ export function bootstrapFrontendApp() {
     renderCycleManager = createRenderCycleManager({
         applyUiPreferences: applyUiPreferences,
         documentRef: document,
+        enhanceRichMath: function () {
+            renderMathInContainer(root);
+        },
         getEffectiveNavPanelPosition: getEffectiveNavPanelPosition,
         maybePrefetchExamRuntime: maybePrefetchExamRuntime,
         recordRenderPerformed: function (reason, meta, stage) {

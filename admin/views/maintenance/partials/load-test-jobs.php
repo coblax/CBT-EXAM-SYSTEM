@@ -4,7 +4,12 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-if (empty($jobs)) {
+$job_options = isset($job_options) && is_array($job_options) ? array_values($job_options) : [];
+$job_cards = isset($job_cards) && is_array($job_cards) ? array_values($job_cards) : [];
+$selected_job_id = isset($selected_job_id) ? (string) $selected_job_id : '';
+$running_job_count = isset($running_job_count) ? (int) $running_job_count : 0;
+
+if (empty($job_cards)) {
     ?>
     <div class="cbt-maintenance-alert" style="border-color:#dbe5ef;background:#f8fbff;color:#1e3a8a;">
         <strong>Belum ada job.</strong> Pilih exam aktif lalu tekan <code>Start Load Test</code> untuk membuat runner k6 pertama.
@@ -13,17 +18,9 @@ if (empty($jobs)) {
     return;
 }
 
-$jobs = array_values($jobs);
-$first_job = isset($jobs[0]) && is_array($jobs[0])
-    ? CBT_Admin_Maintenance_Service::normalize_load_test_job((array) $jobs[0])
-    : null;
-$first_job_id = is_array($first_job) ? (string) ($first_job['id'] ?? '') : '';
-$running_job_count = 0;
-foreach ($jobs as $job_row) {
-    $normalized_job = CBT_Admin_Maintenance_Service::normalize_load_test_job((array) $job_row);
-    if (in_array((string) ($normalized_job['status'] ?? ''), ['queued', 'running'], true)) {
-        $running_job_count++;
-    }
+if ($selected_job_id === '') {
+    $first_job = isset($job_cards[0]['job']) && is_array($job_cards[0]['job']) ? (array) $job_cards[0]['job'] : [];
+    $selected_job_id = (string) ($first_job['id'] ?? '');
 }
 ?>
 <div class="cbt-maintenance-load-jobs-toolbar">
@@ -31,10 +28,9 @@ foreach ($jobs as $job_row) {
         <label for="cbt-load-job-selector">Pilih hasil test</label>
         <div class="cbt-maintenance-select-wrap">
             <select id="cbt-load-job-selector" data-load-job-selector>
-                <?php foreach ($jobs as $index => $job): ?>
-                    <?php $job = CBT_Admin_Maintenance_Service::normalize_load_test_job((array) $job); ?>
-                    <option value="<?php echo esc_attr((string) ($job['id'] ?? '')); ?>" <?php selected($index === 0); ?>>
-                        <?php echo esc_html(CBT_Admin_Maintenance_Service::get_load_test_job_selection_label($job)); ?>
+                <?php foreach ($job_options as $index => $job_option): ?>
+                    <option value="<?php echo esc_attr((string) ($job_option['id'] ?? '')); ?>" <?php selected(($selected_job_id !== '' ? (string) ($job_option['id'] ?? '') === $selected_job_id : $index === 0)); ?>>
+                        <?php echo esc_html((string) ($job_option['label'] ?? '')); ?>
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -43,7 +39,7 @@ foreach ($jobs as $job_row) {
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end;">
         <span class="cbt-maintenance-chip cbt-maintenance-chip--<?php echo esc_attr($running_job_count > 0 ? 'running' : 'idle'); ?>">
-            <?php echo esc_html(count($jobs) . ' histori'); ?>
+            <?php echo esc_html(count($job_cards) . ' histori'); ?>
         </span>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Hapus semua histori load test? Job aktif akan dihentikan dan workspace runtime yang tersisa akan ikut dibersihkan.');">
             <?php wp_nonce_field('cbt_clear_load_test_jobs'); ?>
@@ -55,24 +51,37 @@ foreach ($jobs as $job_row) {
 </div>
 
 <div class="cbt-maintenance-load-job-list">
-<?php foreach ($jobs as $job): ?>
+<?php foreach ($job_cards as $job_card): ?>
     <?php
-    $job = CBT_Admin_Maintenance_Service::normalize_load_test_job((array) $job);
-    $status_meta = CBT_Admin_Maintenance_Service::get_load_test_status_meta((string) ($job['status'] ?? 'queued'));
-    $summary = CBT_Admin_Maintenance_Service::read_load_test_job_summary($job);
-    $stdout_tail = CBT_Admin_Maintenance_Service::read_load_test_log_tail($job, 'stdout');
-    $stderr_tail = CBT_Admin_Maintenance_Service::read_load_test_log_tail($job, 'stderr');
-    $artifacts = CBT_Admin_Maintenance_Service::get_load_test_job_artifacts($job);
-    $run_started = CBT_Admin_Maintenance_Service::format_load_test_datetime(
-        (string) (($job['started_at'] ?? '') !== '' ? $job['started_at'] : ($job['created_at'] ?? ''))
-    );
-    $run_finished = CBT_Admin_Maintenance_Service::format_load_test_datetime((string) ($job['finished_at'] ?? ''));
+    $job = isset($job_card['job']) && is_array($job_card['job']) ? (array) $job_card['job'] : [];
+    $status_meta = isset($job_card['status_meta']) && is_array($job_card['status_meta']) ? (array) $job_card['status_meta'] : ['tone' => 'idle', 'label' => 'Idle'];
+    $summary = isset($job_card['summary']) && is_array($job_card['summary']) ? (array) $job_card['summary'] : [];
+    $stdout_tail = isset($job_card['stdout_tail']) ? (string) $job_card['stdout_tail'] : '';
+    $stderr_tail = isset($job_card['stderr_tail']) ? (string) $job_card['stderr_tail'] : '';
+    $artifacts = isset($job_card['artifacts']) && is_array($job_card['artifacts']) ? (array) $job_card['artifacts'] : [];
+    $run_started = isset($job_card['run_started']) ? (string) $job_card['run_started'] : '-';
+    $run_finished = isset($job_card['run_finished']) ? (string) $job_card['run_finished'] : '-';
+    $scenario_label = sanitize_text_field((string) (($job['profile']['scenario_label'] ?? '')));
+    $load_shape = sanitize_key((string) (($job['profile']['load_shape'] ?? 'flat_iterations')));
+    $load_shape_label = sanitize_text_field((string) (($job['profile']['load_shape_label'] ?? '')));
+    $stage_summary_label = sanitize_text_field((string) (($job['profile']['stage_summary'] ?? '')));
+    $effective_vus = max(0, (int) (($job['profile']['effective_vus'] ?? ($load_shape === 'ramping_vus' ? ($job['profile']['peak_vus'] ?? 0) : ($job['profile']['vus'] ?? 0)))));
+    $reads_questions = !empty($job['profile']['scenario_reads_questions']);
+    $stage_summary = [
+        'Login' => $summary['login_success_rate'] ?? null,
+        'Exams' => $summary['get_exams_success_rate'] ?? null,
+        'Start' => $summary['start_attempt_success_rate'] ?? null,
+        'Questions' => $summary['get_questions_success_rate'] ?? null,
+        'Submit 1x1' => $summary['submit_single_success_rate'] ?? null,
+        'Submit Batch' => $summary['submit_batch_success_rate'] ?? null,
+        'Finish' => $summary['finish_exam_success_rate'] ?? null,
+    ];
     ?>
     <article
         class="cbt-maintenance-load-job-card"
         data-load-job-card
         data-load-job-id="<?php echo esc_attr((string) ($job['id'] ?? '')); ?>"
-        <?php echo (string) ($job['id'] ?? '') !== $first_job_id ? ' hidden' : ''; ?>
+        <?php echo (string) ($job['id'] ?? '') !== $selected_job_id ? ' hidden' : ''; ?>
     >
         <div class="cbt-maintenance-card-header" style="margin-bottom:12px;">
             <div>
@@ -81,6 +90,12 @@ foreach ($jobs as $job_row) {
                     <?php echo esc_html((string) ($job['subject_name'] ?? '')); ?>
                     <?php if (!empty($job['profile']['profile_label'])): ?>
                         · <?php echo esc_html((string) $job['profile']['profile_label']); ?>
+                    <?php endif; ?>
+                    <?php if ($scenario_label !== ''): ?>
+                        · <?php echo esc_html($scenario_label); ?>
+                    <?php endif; ?>
+                    <?php if ($load_shape_label !== ''): ?>
+                        · <?php echo esc_html($load_shape_label . ' ' . $effective_vus); ?>
                     <?php endif; ?>
                 </p>
                 <p class="cbt-maintenance-load-job-run-meta">
@@ -113,13 +128,13 @@ foreach ($jobs as $job_row) {
                 <strong><?php echo esc_html($job['exit_code'] === null ? '-' : (string) $job['exit_code']); ?></strong>
             </div>
             <div class="cbt-maintenance-stat">
-                <span class="cbt-maintenance-stat-label">Users / VUs</span>
+                <span class="cbt-maintenance-stat-label"><?php echo esc_html($load_shape === 'ramping_vus' ? 'Users / Peak VUs' : 'Users / VUs'); ?></span>
                 <strong>
                     <?php
                     echo esc_html(
                         (string) max(0, (int) ($job['student_count'] ?? 0))
                         . ' / '
-                        . (string) max(0, (int) (($job['profile']['vus'] ?? 0)))
+                        . (string) $effective_vus
                     );
                     ?>
                 </strong>
@@ -132,8 +147,28 @@ foreach ($jobs as $job_row) {
                 <strong><?php echo esc_html((string) max(0, (int) ($job['profile']['iterations'] ?? 0))); ?></strong>
             </div>
             <div class="cbt-maintenance-stat">
+                <span class="cbt-maintenance-stat-label">Load Shape</span>
+                <strong><?php echo esc_html($load_shape_label !== '' ? $load_shape_label : '-'); ?></strong>
+            </div>
+            <div class="cbt-maintenance-stat">
                 <span class="cbt-maintenance-stat-label">Q/User</span>
-                <strong><?php echo esc_html((string) max(0, (int) ($job['profile']['questions_per_user'] ?? 0))); ?></strong>
+                <strong>
+                    <?php
+                    if (!$reads_questions) {
+                        echo 'Ignored';
+                    } else {
+                        echo esc_html((string) max(0, (int) ($job['profile']['questions_per_user'] ?? 0)));
+                    }
+                    ?>
+                </strong>
+            </div>
+            <div class="cbt-maintenance-stat">
+                <span class="cbt-maintenance-stat-label">Scenario</span>
+                <strong><?php echo esc_html($scenario_label !== '' ? $scenario_label : '-'); ?></strong>
+            </div>
+            <div class="cbt-maintenance-stat">
+                <span class="cbt-maintenance-stat-label">Stage Summary</span>
+                <strong><?php echo esc_html($stage_summary_label !== '' ? $stage_summary_label : '-'); ?></strong>
             </div>
             <div class="cbt-maintenance-stat">
                 <span class="cbt-maintenance-stat-label">p95 Req</span>
@@ -166,6 +201,21 @@ foreach ($jobs as $job_row) {
                 </strong>
             </div>
         </div>
+
+        <?php $visible_stage_summary = array_filter($stage_summary, static fn($value) => $value !== null); ?>
+        <?php if (!empty($visible_stage_summary)): ?>
+            <div class="cbt-maintenance-load-selected-grid" style="margin-top:12px;">
+                <?php foreach ($visible_stage_summary as $stage_label => $stage_rate): ?>
+                    <article class="cbt-maintenance-load-selected-card">
+                        <div class="cbt-maintenance-load-exam-copy">
+                            <strong><?php echo esc_html($stage_label); ?></strong>
+                            <span>Stage success rate</span>
+                            <span><?php echo esc_html(number_format_i18n(((float) $stage_rate) * 100, 2) . '%'); ?></span>
+                        </div>
+                    </article>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
 
         <?php if ((string) ($job['notes'] ?? '') !== ''): ?>
             <p class="cbt-maintenance-progress-note" style="margin-top:14px;">

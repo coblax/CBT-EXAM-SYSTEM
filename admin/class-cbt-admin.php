@@ -14,6 +14,8 @@ class CBT_Admin
         add_action('admin_menu', [CBT_Admin_Menu::class, 'register_menu']);
         add_action('admin_init', [CBT_Admin_Menu::class, 'redirect_removed_admin_pages']);
         add_action('admin_head', [CBT_Admin_Menu::class, 'render_legacy_security_hash_redirect']);
+        add_action('admin_enqueue_scripts', [CBT_Admin_Assets::class, 'enqueue_admin_assets']);
+        add_filter('script_loader_tag', [CBT_Admin_Assets::class, 'filter_script_loader_tag'], 10, 3);
         add_action('admin_notices', [CBT_Admin_Cache_Page::class, 'render_runtime_notice']);
 
         add_action('admin_post_cbt_save_subject', [CBT_Admin_Subjects_Actions::class, 'handle_save_subject']);
@@ -42,6 +44,8 @@ class CBT_Admin
         add_action('wp_ajax_cbt_start_exam_save_progress', [CBT_Admin_Exams_Actions::class, 'handle_start_exam_save_progress']);
         add_action('wp_ajax_cbt_continue_exam_save_progress', [CBT_Admin_Exams_Actions::class, 'handle_continue_exam_save_progress']);
         add_action('admin_post_cbt_cache_action', [CBT_Admin_Cache_Actions::class, 'handle_cache_action']);
+        add_action('admin_post_cbt_check_update_now', [CBT_Admin_Update_Actions::class, 'handle_check_update_now']);
+        add_action('admin_post_cbt_install_update_now', [CBT_Admin_Update_Actions::class, 'handle_install_update_now']);
         add_action('admin_post_cbt_reset_database', [CBT_Admin_Maintenance_Actions::class, 'handle_reset_database']);
         add_action('admin_post_cbt_generate_test_dataset', [CBT_Admin_Maintenance_Actions::class, 'handle_generate_test_dataset']);
         add_action('admin_post_cbt_run_unit_test_suite', [CBT_Admin_Test_Hub_Actions::class, 'handle_run_unit_test_suite']);
@@ -57,9 +61,8 @@ class CBT_Admin
         add_action('admin_post_cbt_save_question', [CBT_Admin_Questions_Actions::class, 'handle_save_question']);
         add_action('admin_post_cbt_delete_question', [CBT_Admin_Questions_Actions::class, 'handle_delete_question']);
         add_action('admin_post_cbt_bulk_delete_questions', [CBT_Admin_Questions_Actions::class, 'handle_bulk_delete_questions']);
+        add_action('admin_post_cbt_delete_all_import_batch_questions', [CBT_Admin_Questions_Actions::class, 'handle_delete_all_import_batch_questions']);
         add_action('admin_post_cbt_import_questions', [CBT_Admin_Questions_Actions::class, 'handle_import_questions']);
-        add_action('admin_post_cbt_download_question_template', [CBT_Admin_Questions_Actions::class, 'handle_download_question_template']);
-        add_action('admin_post_cbt_download_question_template_xlsx', [CBT_Admin_Questions_Actions::class, 'handle_download_question_template_xlsx']);
         add_action('admin_post_cbt_download_question_template_word', [CBT_Admin_Questions_Actions::class, 'handle_download_question_template_word']);
         add_action('admin_post_cbt_download_question_template_word_mc', [CBT_Admin_Questions_Actions::class, 'handle_download_question_template_word_mc']);
         add_action('admin_post_cbt_download_question_template_word_ma', [CBT_Admin_Questions_Actions::class, 'handle_download_question_template_word_ma']);

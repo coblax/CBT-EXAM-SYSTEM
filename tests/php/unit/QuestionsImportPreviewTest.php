@@ -22,6 +22,325 @@ final class QuestionsImportPreviewTest extends TestCase
         self::assertSame('essay', \CBT_Admin_Questions_Import_Helper::map_import_question_type('essay'));
     }
 
+    public function test_normalize_question_import_created_question_ids_filters_invalid_values_and_duplicates(): void
+    {
+        self::assertSame(
+            [12, 4, 5, 88],
+            \CBT_Admin_Questions_Import_Helper::normalize_question_import_created_question_ids([12, '4', 0, -5, 12, 88, ''])
+        );
+    }
+
+    public function test_get_question_import_created_question_ids_for_current_user_reads_current_user_state_only(): void
+    {
+        set_transient('cbt_question_import_validtoken', [
+            'user_id' => 1,
+            'created_question_ids' => [31, '42', 31, 0],
+        ], HOUR_IN_SECONDS);
+        set_transient('cbt_question_import_otheruser', [
+            'user_id' => 77,
+            'created_question_ids' => [99],
+        ], HOUR_IN_SECONDS);
+
+        self::assertSame(
+            [31, 42],
+            \CBT_Admin_Questions_Import_Helper::get_question_import_created_question_ids_for_current_user('validtoken')
+        );
+        self::assertSame(
+            [],
+            \CBT_Admin_Questions_Import_Helper::get_question_import_created_question_ids_for_current_user('otheruser')
+        );
+    }
+
+    public function test_normalize_question_import_created_question_items_filters_invalid_values_and_duplicates(): void
+    {
+        $normalized = \CBT_Admin_Questions_Import_Helper::normalize_question_import_created_question_items([
+            [
+                'question_id' => 91,
+                'block_number' => 3,
+                'question_type' => 'multiple_choice',
+                'preview' => '  Preview   soal   pertama  ',
+                'diagnostic_entries' => [
+                    [
+                        'block_number' => 3,
+                        'question_type' => 'multiple_choice',
+                        'field' => 'SOAL',
+                        'kind' => 'fallback',
+                        'feature' => 'equation_simplified',
+                        'message' => 'Equation disederhanakan.',
+                    ],
+                ],
+            ],
+            [
+                'question_id' => '91',
+                'block_number' => 4,
+                'question_type' => 'essay',
+                'preview' => 'Duplikat harus diabaikan',
+            ],
+            [
+                'question_id' => 0,
+                'question_type' => 'essay',
+            ],
+            'invalid',
+        ]);
+
+        self::assertCount(1, $normalized);
+        self::assertSame(91, $normalized[0]['question_id']);
+        self::assertSame('multiple_choice', $normalized[0]['question_type']);
+        self::assertSame('Preview soal pertama', $normalized[0]['preview']);
+        self::assertSame(1, (int) ($normalized[0]['diagnostic_counts']['fallback'] ?? 0));
+    }
+
+    public function test_get_question_import_created_question_items_for_current_user_reads_current_user_state_only(): void
+    {
+        set_transient('cbt_question_import_analysisvalid', [
+            'user_id' => 1,
+            'created_question_items' => [
+                [
+                    'question_id' => 120,
+                    'block_number' => 1,
+                    'question_type' => 'multiple_choice',
+                    'preview' => 'Preview 120',
+                    'diagnostic_counts' => [
+                        'preserved' => 2,
+                        'fallback' => 1,
+                    ],
+                ],
+                [
+                    'question_id' => 120,
+                    'block_number' => 2,
+                    'question_type' => 'essay',
+                    'preview' => 'Duplikat harus diabaikan',
+                ],
+            ],
+        ], HOUR_IN_SECONDS);
+        set_transient('cbt_question_import_analysisother', [
+            'user_id' => 77,
+            'created_question_items' => [
+                [
+                    'question_id' => 999,
+                    'question_type' => 'multiple_choice',
+                ],
+            ],
+        ], HOUR_IN_SECONDS);
+
+        $items = \CBT_Admin_Questions_Import_Helper::get_question_import_created_question_items_for_current_user('analysisvalid');
+        self::assertCount(1, $items);
+        self::assertSame(120, $items[0]['question_id']);
+        self::assertSame('Preview 120', $items[0]['preview']);
+        self::assertSame(
+            [],
+            \CBT_Admin_Questions_Import_Helper::get_question_import_created_question_items_for_current_user('analysisother')
+        );
+    }
+
+    public function test_remove_question_import_created_question_ids_for_current_user_updates_transient_state(): void
+    {
+        set_transient('cbt_question_import_batchtoken', [
+            'user_id' => 1,
+            'created' => 3,
+            'created_question_ids' => [10, 11, 12],
+            'created_question_items' => [
+                [
+                    'question_id' => 10,
+                    'block_number' => 1,
+                    'question_type' => 'multiple_choice',
+                    'preview' => 'Soal 10',
+                ],
+                [
+                    'question_id' => 11,
+                    'block_number' => 2,
+                    'question_type' => 'multiple_choice',
+                    'preview' => 'Soal 11',
+                ],
+                [
+                    'question_id' => 12,
+                    'block_number' => 3,
+                    'question_type' => 'essay',
+                    'preview' => 'Soal 12',
+                ],
+            ],
+        ], HOUR_IN_SECONDS);
+
+        $updatedState = \CBT_Admin_Questions_Import_Helper::remove_question_import_created_question_ids_for_current_user('batchtoken', [11, 999]);
+
+        self::assertIsArray($updatedState);
+        self::assertSame([10, 12], $updatedState['created_question_ids']);
+        self::assertSame(2, $updatedState['created']);
+        self::assertSame([10, 12], array_values(array_map(static function (array $item): int {
+            return (int) ($item['question_id'] ?? 0);
+        }, $updatedState['created_question_items'] ?? [])));
+
+        $storedState = get_transient('cbt_question_import_batchtoken');
+        self::assertIsArray($storedState);
+        self::assertSame([10, 12], $storedState['created_question_ids']);
+        self::assertSame(2, $storedState['created']);
+        self::assertSame([10, 12], array_values(array_map(static function (array $item): int {
+            return (int) ($item['question_id'] ?? 0);
+        }, $storedState['created_question_items'] ?? [])));
+    }
+
+    public function test_remove_question_import_created_question_ids_returns_null_for_invalid_or_expired_token(): void
+    {
+        self::assertNull(
+            \CBT_Admin_Questions_Import_Helper::remove_question_import_created_question_ids_for_current_user('missingtoken', [1, 2])
+        );
+    }
+
+    public function test_parse_docx_block_maps_diagnostic_markers_to_active_fields(): void
+    {
+        $questionDiagnostic = $this->invokeImportHelper('create_docx_diagnostic_marker', [[
+            'kind' => 'preserved',
+            'feature' => 'paragraph_alignment',
+            'message' => 'Alignment paragraf Word dipertahankan.',
+        ]]);
+        $optionDiagnostic = $this->invokeImportHelper('create_docx_diagnostic_marker', [[
+            'kind' => 'fallback',
+            'feature' => 'multiline_equation_normalized',
+            'message' => 'Equation multiline Word dinormalisasi.',
+        ]]);
+        $explanationDiagnostic = $this->invokeImportHelper('create_docx_diagnostic_marker', [[
+            'kind' => 'unsupported',
+            'feature' => 'word_shape_ignored',
+            'message' => 'Shape Word non-gambar diabaikan.',
+        ]]);
+
+        $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION_TYPE: multiple_choice',
+            'SOAL: Marker diagnostics field mapping',
+            $questionDiagnostic,
+            'PILIHAN_1:',
+            $optionDiagnostic,
+            'PEMBAHASAN:',
+            $explanationDiagnostic,
+            'PILIHAN_1: Opsi A',
+            'PILIHAN_2: Opsi B',
+            'PILIHAN_3: Opsi C',
+            'JAWABAN: A',
+        ]]);
+
+        self::assertIsArray($row);
+        self::assertArrayHasKey('__import_diagnostics', $row);
+
+        $diagnostics = \CBT_Admin_Questions_Import_Helper::normalize_question_import_diagnostic_entries($row['__import_diagnostics']);
+        self::assertCount(3, $diagnostics);
+        self::assertSame('SOAL', $diagnostics[0]['field'] ?? '');
+        self::assertSame('PILIHAN_1', $diagnostics[1]['field'] ?? '');
+        self::assertSame('PEMBAHASAN', $diagnostics[2]['field'] ?? '');
+    }
+
+    public function test_aggregate_question_import_diagnostics_dedupes_and_truncates_detail_entries(): void
+    {
+        $rows = [
+            [
+                '__import_diagnostics' => [
+                    [
+                        'block_number' => 1,
+                        'question_type' => 'multiple_choice',
+                        'field' => 'SOAL',
+                        'kind' => 'preserved',
+                        'feature' => 'equation_visual',
+                        'message' => 'Equation dipertahankan.',
+                    ],
+                    [
+                        'block_number' => 1,
+                        'question_type' => 'multiple_choice',
+                        'field' => 'SOAL',
+                        'kind' => 'preserved',
+                        'feature' => 'equation_visual',
+                        'message' => 'Equation dipertahankan.',
+                    ],
+                ],
+            ],
+        ];
+
+        for ($index = 1; $index <= 205; $index++) {
+            $rows[] = [
+                '__import_diagnostics' => [
+                    [
+                        'block_number' => $index + 1,
+                        'question_type' => 'multiple_choice',
+                        'field' => 'PILIHAN_' . (($index % 5) + 1),
+                        'kind' => 'fallback',
+                        'feature' => 'feature_' . $index,
+                        'message' => 'Fallback #' . $index,
+                    ],
+                ],
+            ];
+        }
+
+        $summary = \CBT_Admin_Questions_Import_Helper::aggregate_question_import_diagnostics($rows);
+
+        self::assertSame(1, (int) ($summary['diagnostic_counts']['preserved'] ?? 0));
+        self::assertSame(205, (int) ($summary['diagnostic_counts']['fallback'] ?? 0));
+        self::assertCount(200, $summary['diagnostic_entries'] ?? []);
+        self::assertTrue((bool) ($summary['diagnostic_truncated'] ?? false));
+    }
+
+    public function test_summarize_created_question_items_and_default_selection_prioritize_questions_with_issues(): void
+    {
+        $items = [
+            [
+                'question_id' => 701,
+                'block_number' => 1,
+                'question_type' => 'multiple_choice',
+                'preview' => 'Soal aman',
+                'diagnostic_counts' => [
+                    'preserved' => 3,
+                    'fallback' => 0,
+                    'unsupported' => 0,
+                ],
+            ],
+            [
+                'question_id' => 702,
+                'block_number' => 2,
+                'question_type' => 'multiple_choice',
+                'preview' => 'Soal perlu dicek',
+                'diagnostic_counts' => [
+                    'preserved' => 1,
+                    'fallback' => 2,
+                    'unsupported' => 1,
+                ],
+            ],
+            [
+                'question_id' => 703,
+                'block_number' => 3,
+                'question_type' => 'essay',
+                'preview' => 'Soal lain',
+                'diagnostic_counts' => [
+                    'preserved' => 4,
+                    'fallback' => 0,
+                    'unsupported' => 0,
+                ],
+            ],
+        ];
+
+        self::assertSame(
+            [
+                'preserved' => 8,
+                'fallback' => 2,
+                'unsupported' => 1,
+            ],
+            \CBT_Admin_Questions_Import_Helper::summarize_question_import_created_question_items($items)
+        );
+        self::assertSame(
+            702,
+            \CBT_Admin_Questions_Import_Helper::get_default_question_import_created_question_item_id($items)
+        );
+        self::assertSame(
+            701,
+            \CBT_Admin_Questions_Import_Helper::get_default_question_import_created_question_item_id([
+                [
+                    'question_id' => 701,
+                    'diagnostic_counts' => ['preserved' => 1, 'fallback' => 0, 'unsupported' => 0],
+                ],
+                [
+                    'question_id' => 703,
+                    'diagnostic_counts' => ['preserved' => 2, 'fallback' => 0, 'unsupported' => 0],
+                ],
+            ])
+        );
+    }
+
     public function test_build_options_raw_from_import_normalizes_multiple_choice_and_multiple_answer_rules(): void
     {
         $multipleChoice = \CBT_Admin_Questions_Import_Helper::build_options_raw_from_import(
@@ -40,15 +359,49 @@ final class QuestionsImportPreviewTest extends TestCase
             'multiple_answer'
         );
 
-        self::assertSame("Satu|1\nDua|0\nTiga|0", $multipleChoice);
-        self::assertSame("Satu|1\nDua|0\nTiga|1", $multipleAnswer);
+        self::assertSame(
+            [
+                ['option_text' => 'Satu', 'is_correct' => 1],
+                ['option_text' => 'Dua', 'is_correct' => 0],
+                ['option_text' => 'Tiga', 'is_correct' => 0],
+            ],
+            json_decode($multipleChoice, true)
+        );
+        self::assertSame(
+            [
+                ['option_text' => 'Satu', 'is_correct' => 1],
+                ['option_text' => 'Dua', 'is_correct' => 0],
+                ['option_text' => 'Tiga', 'is_correct' => 1],
+            ],
+            json_decode($multipleAnswer, true)
+        );
         self::assertSame('', $multipleAnswerWithoutCorrect);
+    }
+
+    public function test_build_options_raw_from_import_preserves_multiline_rich_option_as_single_entry(): void
+    {
+        $multilineOption = '<div class="cbt-math cbt-math-block" data-cbt-math="\\begin{aligned}\\int_{-\\infty}^{\\infty} f(x)dx \\\\ &= \\sqrt{\\pi}\\end{aligned}" data-cbt-math-display="block">'
+            . "∫_(-∞)^(∞) f(x)dx\n=√(π)"
+            . '</div>';
+
+        $raw = \CBT_Admin_Questions_Import_Helper::build_options_raw_from_import(
+            'Opsi A||Opsi B||' . $multilineOption,
+            'C',
+            'multiple_choice'
+        );
+
+        $decoded = json_decode($raw, true);
+        self::assertIsArray($decoded);
+        self::assertCount(3, $decoded);
+        self::assertSame($multilineOption, $decoded[2]['option_text']);
+        self::assertSame(1, $decoded[2]['is_correct']);
     }
 
     public function test_parse_docx_block_moves_pembahasan_multiline_and_image_into_explanation(): void
     {
         $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
             'QUESTION: Apa warna langit?',
+            'QUESTION_TYPE: multiple_choice',
             'PEMBAHASAN:',
             'Langit terlihat biru saat siang.',
             'Pembahasan lanjutan.',
@@ -74,6 +427,8 @@ final class QuestionsImportPreviewTest extends TestCase
         $normalizedLines = $this->invokeImportHelper('normalize_docx_extracted_lines', [[
             'QUESTION',
             'Ibu kota Indonesia adalah?',
+            'QUESTION_TYPE',
+            'multiple_choice',
             'EXPLANATION',
             'Jakarta menjadi pusat pemerintahan.',
             'A',
@@ -87,12 +442,328 @@ final class QuestionsImportPreviewTest extends TestCase
         $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [$normalizedLines]);
 
         self::assertContains('QUESTION: Ibu kota Indonesia adalah?', $normalizedLines);
+        self::assertContains('QUESTION_TYPE: multiple_choice', $normalizedLines);
         self::assertContains('EXPLANATION: Jakarta menjadi pusat pemerintahan.', $normalizedLines);
         self::assertContains('ANSWER: A', $normalizedLines);
         self::assertIsArray($row);
         self::assertSame('multiple_choice', $row['question_type']);
         self::assertStringContainsString('Jakarta menjadi pusat pemerintahan.', (string) $row['explanation']);
         self::assertStringNotContainsString('Jakarta menjadi pusat pemerintahan.', (string) $row['question_text']);
+    }
+
+    public function test_extract_docx_paragraph_text_preserves_word_line_breaks(): void
+    {
+        $text = $this->invokeImportHelper('extract_docx_paragraph_text', [
+            '<w:r><w:t>FLOW IMPORT LINEBREAK 20260324 BARIS 1</w:t></w:r>'
+            . '<w:r><w:br/></w:r>'
+            . '<w:r><w:t>BARIS 2</w:t></w:r>',
+        ]);
+
+        self::assertSame("FLOW IMPORT LINEBREAK 20260324 BARIS 1\nBARIS 2", $text);
+    }
+
+    public function test_extract_docx_paragraph_text_preserves_common_word_equation_fragments(): void
+    {
+        $text = $this->invokeImportHelper('extract_docx_paragraph_text', [
+            '<w:r><w:t>QUESTION: Sederhanakan </w:t></w:r>'
+            . '<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">'
+            . '  <m:sSup>'
+            . '    <m:e><m:r><m:t>x</m:t></m:r></m:e>'
+            . '    <m:sup><m:r><m:t>2</m:t></m:r></m:sup>'
+            . '  </m:sSup>'
+            . '  <m:r><m:t> + </m:t></m:r>'
+            . '  <m:f>'
+            . '    <m:num><m:r><m:t>1</m:t></m:r></m:num>'
+            . '    <m:den><m:r><m:t>2</m:t></m:r></m:den>'
+            . '  </m:f>'
+            . '  <m:r><m:t> + </m:t></m:r>'
+            . '  <m:rad>'
+            . '    <m:e><m:r><m:t>9</m:t></m:r></m:e>'
+            . '  </m:rad>'
+            . '</m:oMath>',
+        ]);
+
+        self::assertSame('QUESTION: Sederhanakan x^(2) + (1)/(2) + √(9)', $text);
+    }
+
+    public function test_complex_word_equation_converter_supports_nth_root_summation_and_binomial(): void
+    {
+        $xml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<w:root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+  <m:oMath>
+    <m:r><m:t>∝ &lt; </m:t></m:r>
+    <m:rad>
+      <m:deg><m:r><m:t>4</m:t></m:r></m:deg>
+      <m:e>
+        <m:d>
+          <m:dPr><m:begChr m:val="("/><m:endChr m:val=")"/></m:dPr>
+          <m:e>
+            <m:sSup>
+              <m:e>
+                <m:d>
+                  <m:dPr><m:begChr m:val="("/><m:endChr m:val=")"/></m:dPr>
+                  <m:e><m:r><m:t>x + a</m:t></m:r></m:e>
+                </m:d>
+              </m:e>
+              <m:sup><m:r><m:t>n</m:t></m:r></m:sup>
+            </m:sSup>
+          </m:e>
+        </m:d>
+      </m:e>
+    </m:rad>
+    <m:r><m:t> = </m:t></m:r>
+    <m:nary>
+      <m:naryPr><m:chr m:val="∑"/></m:naryPr>
+      <m:sub><m:r><m:t>k = 0</m:t></m:r></m:sub>
+      <m:sup><m:r><m:t>n</m:t></m:r></m:sup>
+      <m:e>
+        <m:d>
+          <m:dPr><m:begChr m:val="("/><m:endChr m:val=")"/></m:dPr>
+          <m:e>
+            <m:eqArr>
+              <m:e><m:r><m:t>n</m:t></m:r></m:e>
+              <m:e><m:r><m:t>k</m:t></m:r></m:e>
+            </m:eqArr>
+          </m:e>
+        </m:d>
+        <m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:r><m:t>k</m:t></m:r></m:sup></m:sSup>
+        <m:sSup><m:e><m:r><m:t>a</m:t></m:r></m:e><m:sup><m:r><m:t>n-k</m:t></m:r></m:sup></m:sSup>
+      </m:e>
+    </m:nary>
+  </m:oMath>
+</w:root>
+XML;
+
+        $dom = new \DOMDocument();
+        self::assertTrue($dom->loadXML($xml));
+        $node = $dom->getElementsByTagNameNS('http://schemas.openxmlformats.org/officeDocument/2006/math', 'oMath')->item(0);
+        self::assertInstanceOf(\DOMElement::class, $node);
+
+        $fallback = $this->invokeImportHelper('render_docx_math_node', [$node]);
+        $katex = $this->invokeImportHelper('render_docx_math_node_to_katex', [$node]);
+
+        self::assertStringContainsString('root[4]', (string) $fallback);
+        self::assertStringContainsString('choose', (string) $fallback);
+        self::assertStringContainsString('∑_(k = 0)^(n)', (string) $fallback);
+
+        self::assertStringContainsString('\\propto', (string) $katex);
+        self::assertStringContainsString('\\sqrt[4]', (string) $katex);
+        self::assertStringContainsString('\\sum_{k = 0}^{n}', (string) $katex);
+        self::assertStringContainsString('\\binom{n}{k}', (string) $katex);
+        self::assertStringContainsString('{x}^{k}', (string) $katex);
+        self::assertStringContainsString('{a}^{n-k}', (string) $katex);
+    }
+
+    public function test_word_multiline_integral_equation_preserves_breaks_and_defaults_nary_to_integral(): void
+    {
+        $xml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<w:root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+  <m:oMathPara>
+    <m:oMath>
+      <m:nary>
+        <m:sub><m:r><m:t>-∞</m:t></m:r></m:sub>
+        <m:sup><m:r><m:t>∞</m:t></m:r></m:sup>
+        <m:e><m:r><m:t>f(x)dx</m:t></m:r></m:e>
+      </m:nary>
+      <m:r><m:t>=</m:t></m:r>
+      <m:d>
+        <m:dPr><m:begChr m:val="["/><m:endChr m:val="]"/></m:dPr>
+        <m:e><m:r><m:t>G(x)</m:t></m:r></m:e>
+      </m:d>
+      <m:sSup>
+        <m:e><m:r><m:t></m:t></m:r></m:e>
+        <m:sup><m:r><m:t>1/2</m:t></m:r></m:sup>
+      </m:sSup>
+      <m:r>
+        <m:rPr><m:brk m:alnAt="1"/></m:rPr>
+        <m:t>=</m:t>
+      </m:r>
+      <m:rad>
+        <m:e><m:r><m:t>π</m:t></m:r></m:e>
+      </m:rad>
+    </m:oMath>
+  </m:oMathPara>
+</w:root>
+XML;
+
+        $dom = new \DOMDocument();
+        self::assertTrue($dom->loadXML($xml));
+        $node = $dom->getElementsByTagNameNS('http://schemas.openxmlformats.org/officeDocument/2006/math', 'oMathPara')->item(0);
+        self::assertInstanceOf(\DOMElement::class, $node);
+
+        $fallback = $this->invokeImportHelper('render_docx_math_node', [$node]);
+        $katex = $this->invokeImportHelper('render_docx_math_node_to_katex', [$node]);
+
+        self::assertStringContainsString("∫_(-∞)^(∞)", (string) $fallback);
+        self::assertStringContainsString("\n=", (string) $fallback);
+
+        self::assertStringContainsString('\\begin{aligned}', (string) $katex);
+        self::assertStringContainsString('\\int_{-\\infty}^{\\infty}', (string) $katex);
+        self::assertStringContainsString('\\\\ &=', (string) $katex);
+        self::assertStringContainsString('\\sqrt{\\pi}', (string) $katex);
+    }
+
+    public function test_extract_docx_paragraph_text_preserves_common_word_symbols(): void
+    {
+        $text = $this->invokeImportHelper('extract_docx_paragraph_text', [
+            '<w:r><w:t>QUESTION: Simbol </w:t></w:r>'
+            . '<w:sym w:font="Symbol" w:char="F061"/>'
+            . '<w:r><w:t> dan </w:t></w:r>'
+            . '<w:sym w:font="Symbol" w:char="F0B1"/>',
+        ]);
+
+        self::assertSame('QUESTION: Simbol α dan ±', $text);
+    }
+
+    public function test_resolve_docx_run_styles_reads_word_font_size_in_points(): void
+    {
+        $dom = new \DOMDocument();
+        self::assertTrue($dom->loadXML(
+            '<w:r xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            . '<w:rPr><w:sz w:val="27"/></w:rPr>'
+            . '<w:t>Ukuran Font</w:t>'
+            . '</w:r>'
+        ));
+
+        $run = $dom->documentElement;
+        self::assertInstanceOf(\DOMElement::class, $run);
+
+        $styles = $this->invokeImportHelper('resolve_docx_run_styles', [$run, []]);
+
+        self::assertSame('13.5pt', $styles['font_size'] ?? '');
+    }
+
+    public function test_render_docx_inline_tokens_to_html_preserves_font_size_for_text_and_math(): void
+    {
+        $html = $this->invokeImportHelper('render_docx_inline_tokens_to_html', [[
+            [
+                'text' => 'Teks Besar',
+                'styles' => ['font_size' => '16pt'],
+                'href' => '',
+                'kind' => 'text',
+            ],
+            [
+                'text' => 'A=πr^(2)',
+                'styles' => ['font_size' => '18pt'],
+                'href' => '',
+                'kind' => 'math',
+                'math_source' => 'A=\\pi{r}^{2}',
+            ],
+        ]]);
+
+        self::assertStringContainsString('font-size:16pt;', $html);
+        self::assertStringContainsString('font-size:18pt;', $html);
+        self::assertStringContainsString('data-cbt-math="A=\\pi{r}^{2}"', $html);
+    }
+
+    public function test_extract_docx_image_render_specs_from_xml_reads_word_dimensions_alignment_and_alt_text(): void
+    {
+        $xml = <<<'XML'
+<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:pPr><w:jc w:val="center"/></w:pPr>
+  <w:r>
+    <w:drawing>
+      <wp:inline>
+        <wp:extent cx="2286000" cy="1143000"/>
+        <wp:docPr id="1" name="Diagram Tengah" descr="Diagram pusat"/>
+        <a:graphic>
+          <a:graphicData>
+            <pic:pic>
+              <pic:blipFill>
+                <a:blip r:embed="rId5"/>
+              </pic:blipFill>
+            </pic:pic>
+          </a:graphicData>
+        </a:graphic>
+      </wp:inline>
+    </w:drawing>
+  </w:r>
+</w:p>
+XML;
+
+        $specs = $this->invokeImportHelper('extract_docx_image_render_specs_from_xml', [$xml, 'center']);
+
+        self::assertCount(1, $specs);
+        self::assertSame('rId5', $specs[0]['rid'] ?? '');
+        self::assertSame('center', $specs[0]['alignment'] ?? '');
+        self::assertSame('Diagram pusat', $specs[0]['alt'] ?? '');
+        self::assertSame(240, $specs[0]['width_px'] ?? 0);
+        self::assertSame(120, $specs[0]['height_px'] ?? 0);
+    }
+
+    public function test_extract_docx_image_render_specs_prefers_anchor_alignment_for_positioned_images(): void
+    {
+        $xml = <<<'XML'
+<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:pPr><w:jc w:val="left"/></w:pPr>
+  <w:r>
+    <w:drawing>
+      <wp:anchor>
+        <wp:positionH relativeFrom="column"><wp:align>right</wp:align></wp:positionH>
+        <wp:extent cx="1905000" cy="952500"/>
+        <wp:docPr id="2" name="Diagram Kanan" descr="Diagram sisi kanan"/>
+        <a:graphic>
+          <a:graphicData>
+            <pic:pic>
+              <pic:blipFill>
+                <a:blip r:embed="rId9"/>
+              </pic:blipFill>
+            </pic:pic>
+          </a:graphicData>
+        </a:graphic>
+      </wp:anchor>
+    </w:drawing>
+  </w:r>
+</w:p>
+XML;
+
+        $specs = $this->invokeImportHelper('extract_docx_image_render_specs_from_xml', [$xml, 'left']);
+
+        self::assertCount(1, $specs);
+        self::assertSame('right', $specs[0]['alignment'] ?? '');
+        self::assertSame(200, $specs[0]['width_px'] ?? 0);
+        self::assertSame(100, $specs[0]['height_px'] ?? 0);
+    }
+
+    public function test_build_docx_image_html_fragment_preserves_size_and_alignment_styles(): void
+    {
+        $html = $this->invokeImportHelper('build_docx_image_html_fragment', [
+            'http://example.test/diagram.png',
+            [
+                'alignment' => 'right',
+                'alt' => 'Diagram kanan',
+                'width_px' => 320,
+                'height_px' => 180,
+            ],
+        ]);
+
+        self::assertStringContainsString('<p style="text-align:right;">', $html);
+        self::assertStringContainsString('alt="Diagram kanan"', $html);
+        self::assertStringContainsString('width="320"', $html);
+        self::assertStringContainsString('height="180"', $html);
+        self::assertStringContainsString('width:320px', $html);
+        self::assertStringContainsString('margin-left:auto', $html);
+        self::assertStringContainsString('margin-right:0', $html);
+    }
+
+    public function test_build_docx_question_text_renders_internal_newline_as_br(): void
+    {
+        $html = $this->invokeImportHelper('build_docx_question_text', [[
+            "FLOW IMPORT LINEBREAK 20260324 BARIS 1\nBARIS 2",
+        ]]);
+
+        self::assertSame('<p>FLOW IMPORT LINEBREAK 20260324 BARIS 1<br />BARIS 2</p>', $html);
+    }
+
+    public function test_build_docx_question_text_preserves_list_html_fragments(): void
+    {
+        $html = $this->invokeImportHelper('build_docx_question_text', [[
+            '<ul><li><p>Butir 1</p></li><li><p>Butir 2</p></li></ul>',
+        ]]);
+
+        self::assertSame('<ul><li><p>Butir 1</p></li><li><p>Butir 2</p></li></ul>', $html);
     }
 
     public function test_parse_docx_block_normalizes_true_false_answers_from_text_variants(): void
@@ -129,6 +800,7 @@ final class QuestionsImportPreviewTest extends TestCase
     {
         $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
             'QUESTION: Ibu kota Indonesia adalah?',
+            'QUESTION_TYPE: multiple_choice',
             'A. Jakarta',
             'B. Bandung',
             'ANSWER: A',
@@ -141,6 +813,7 @@ final class QuestionsImportPreviewTest extends TestCase
     {
         $missingAnswer = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
             'QUESTION: Planet terdekat dari Matahari?',
+            'QUESTION_TYPE: multiple_choice',
             'A. Merkurius',
             'B. Venus',
             'C. Bumi',
@@ -162,6 +835,7 @@ final class QuestionsImportPreviewTest extends TestCase
     {
         $duplicateMultipleChoice = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
             'QUESTION: Ibu kota Indonesia adalah?',
+            'QUESTION_TYPE: multiple_choice',
             'A. Jakarta',
             'B.  jakarta. ',
             'C. Bandung',
@@ -184,6 +858,7 @@ final class QuestionsImportPreviewTest extends TestCase
     {
         $multipleChoiceEmptyCorrect = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
             'QUESTION: Ibu kota Indonesia adalah?',
+            'QUESTION_TYPE: multiple_choice',
             'A. Jakarta',
             'C. Bandung',
             'D. Surabaya',
@@ -266,6 +941,28 @@ final class QuestionsImportPreviewTest extends TestCase
         self::assertSame('true_false_matrix', $validRow['question_type']);
         self::assertStringContainsString('"answer":"true"', (string) $validRow['correct_text']);
         self::assertStringContainsString('"answer":"false"', (string) $validRow['correct_text']);
+    }
+
+    public function test_parse_docx_true_false_matrix_preserves_rich_statement_html(): void
+    {
+        $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Tentukan Benar/Salah untuk tiap pernyataan.',
+            'QUESTION_TYPE: true_false_matrix',
+            'PERNYATAAN_1: Perhatikan poin berikut.',
+            '__HTML__:' . base64_encode('<ul><li>Butir A</li><li>Butir B</li></ul>'),
+            'KUNCI_1: benar',
+            'PERNYATAAN_2: Pernyataan kedua.',
+            'KUNCI_2: salah',
+        ]]);
+
+        self::assertIsArray($row);
+        self::assertSame('true_false_matrix', $row['question_type']);
+        $decoded = json_decode((string) $row['correct_text'], true);
+        self::assertIsArray($decoded);
+        self::assertSame(
+            'Perhatikan poin berikut.<ul><li>Butir A</li><li>Butir B</li></ul>',
+            $decoded['statements'][0]['text'] ?? ''
+        );
     }
 
     public function test_parse_docx_true_false_matrix_requires_contiguous_numbering_and_unique_statements(): void
@@ -375,6 +1072,7 @@ final class QuestionsImportPreviewTest extends TestCase
     {
         $message = $this->invokeImportHelper('describe_docx_block_failure', [[
             'QUESTION: Ibu kota Indonesia adalah?',
+            'QUESTION_TYPE: multiple_choice',
             'A. Jakarta',
             'C. Bandung',
             'D. Surabaya',
@@ -423,6 +1121,1039 @@ final class QuestionsImportPreviewTest extends TestCase
         self::assertStringContainsString('Jawaban benar menunjuk ke pilihan yang kosong atau tidak ada.', $entries[0]['formatted']);
         self::assertSame(0, $entries[1]['block_number']);
         self::assertSame('Legacy string failure', $entries[1]['formatted']);
+    }
+
+    public function test_validate_parsed_rows_for_requested_import_type_rejects_docx_type_mismatch(): void
+    {
+        $result = $this->invokeImportHelper('validate_parsed_rows_for_requested_import_type', [[
+            [
+                '__import_source_block' => 2,
+                'question_type' => 'multiple_choice',
+                'question_text' => '<p>Soal MC yang salah menu.</p>',
+            ],
+        ], 'multiple_answer', 'docx']);
+
+        self::assertInstanceOf(\WP_Error::class, $result);
+        self::assertSame('import_type_mismatch', $result->get_error_code());
+        self::assertStringContainsString('File DOCX terdeteksi berisi soal Multiple Choice', $result->get_error_message());
+        self::assertStringContainsString('menu import aktif adalah Multiple Answer', $result->get_error_message());
+        self::assertStringContainsString('#2 Multiple Choice', $result->get_error_message());
+    }
+
+    public function test_validate_parsed_rows_for_requested_import_type_rejects_docx_mismatch_for_all_supported_question_types(): void
+    {
+        $cases = [
+            ['multiple_choice', 'multiple_answer'],
+            ['multiple_answer', 'multiple_choice'],
+            ['true_false', 'essay'],
+            ['true_false_matrix', 'short_answer'],
+            ['short_answer', 'true_false'],
+            ['essay', 'multiple_choice'],
+        ];
+
+        foreach ($cases as [$detectedType, $requestedType]) {
+            $result = $this->invokeImportHelper('validate_parsed_rows_for_requested_import_type', [[
+                [
+                    '__import_source_block' => 1,
+                    'question_type' => $detectedType,
+                    'question_text' => '<p>Blok ' . $detectedType . ' salah menu.</p>',
+                ],
+            ], $requestedType, 'docx']);
+
+            self::assertInstanceOf(\WP_Error::class, $result);
+            self::assertSame('import_type_mismatch', $result->get_error_code());
+            self::assertStringContainsString(
+                \CBT_Admin_Questions_Helper::get_question_type_label($detectedType),
+                $result->get_error_message()
+            );
+            self::assertStringContainsString(
+                \CBT_Admin_Questions_Helper::get_question_type_label($requestedType),
+                $result->get_error_message()
+            );
+        }
+    }
+
+    public function test_parse_docx_multiple_choice_requires_explicit_question_type_marker(): void
+    {
+        $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Ibu kota Indonesia adalah?',
+            'A. Jakarta',
+            'B. Bandung',
+            'C. Surabaya',
+            'ANSWER: A',
+        ]]);
+        $message = $this->invokeImportHelper('describe_docx_block_failure', [[
+            'QUESTION: Ibu kota Indonesia adalah?',
+            'A. Jakarta',
+            'B. Bandung',
+            'C. Surabaya',
+            'ANSWER: A',
+        ]]);
+
+        self::assertNull($row);
+        self::assertSame('Setiap blok DOCX wajib mencantumkan JENIS_SOAL yang valid sesuai template resmi.', $message);
+    }
+
+    public function test_parse_docx_essay_preserves_rich_rubric_html_from_answer_context(): void
+    {
+        $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Jelaskan proses fotosintesis.',
+            'QUESTION_TYPE: essay',
+            'ANSWER:',
+            '__HTML__:' . base64_encode('<ol><li>Sebutkan bahan utama</li><li>Jelaskan hasil akhir</li></ol>'),
+        ]]);
+
+        self::assertIsArray($row);
+        self::assertSame('essay', $row['question_type']);
+        self::assertStringContainsString('<ol><li>Sebutkan bahan utama</li><li>Jelaskan hasil akhir</li></ol>', (string) $row['correct_text']);
+        self::assertStringNotContainsString('Sebutkan bahan utama', (string) $row['question_text']);
+    }
+
+    public function test_parse_docx_block_supports_html_table_markers_in_question_option_and_explanation(): void
+    {
+        $questionTable = '<table><tbody><tr><td>2</td><td>4</td></tr></tbody></table>';
+        $optionTable = '<table><tbody><tr><td>A</td><td>Benar</td></tr></tbody></table>';
+        $explanationTable = '<table><tbody><tr><td>Kunci</td><td>Pilihan A</td></tr></tbody></table>';
+
+        $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION_TYPE: multiple_choice',
+            'QUESTION: Perhatikan tabel berikut.',
+            '__HTML__:' . base64_encode($questionTable),
+            'A. Opsi dengan tabel',
+            '__HTML__:' . base64_encode($optionTable),
+            'B. Opsi dua',
+            'C. Opsi tiga',
+            'ANSWER: A',
+            'PEMBAHASAN:',
+            '__HTML__:' . base64_encode($explanationTable),
+        ]]);
+
+        self::assertIsArray($row);
+        self::assertStringContainsString($questionTable, (string) $row['question_text']);
+        self::assertStringContainsString($optionTable, (string) $row['options']);
+        self::assertStringContainsString($explanationTable, (string) $row['explanation']);
+    }
+
+    public function test_build_word_template_lines_include_template_marker_and_explicit_question_type_for_choice_templates(): void
+    {
+        $multipleChoiceLines = $this->invokeImportHelper('build_word_template_lines', ['multiple_choice', 10]);
+        $multipleAnswerLines = $this->invokeImportHelper('build_word_template_lines', ['multiple_answer', 10]);
+
+        self::assertContains('CBT_TEMPLATE: question_import_v2', $multipleChoiceLines);
+        self::assertContains('JENIS_SOAL: multiple_choice', $multipleChoiceLines);
+        self::assertContains('PILIHAN_5: Opsi E', $multipleChoiceLines);
+        self::assertContains('JAWABAN: 5', $multipleChoiceLines);
+        self::assertContains('CBT_TEMPLATE: question_import_v2', $multipleAnswerLines);
+        self::assertContains('JENIS_SOAL: multiple_answer', $multipleAnswerLines);
+    }
+
+    public function test_docx_template_marker_and_block_extraction_only_accept_official_header(): void
+    {
+        $officialLines = [
+            'CBT_TEMPLATE: question_import_v2',
+            'CATATAN_VALIDATOR: jangan hapus marker',
+            '---',
+            'JENIS_SOAL: multiple_choice',
+            'QUESTION: Contoh soal',
+            'A. Opsi 1',
+            'B. Opsi 2',
+            'C. Opsi 3',
+            'ANSWER: A',
+            '---',
+        ];
+
+        $hasMarker = $this->invokeImportHelper('docx_has_required_template_marker', [$officialLines]);
+        $missingMarker = $this->invokeImportHelper('docx_has_required_template_marker', [[
+            'CATATAN_VALIDATOR: tanpa marker resmi',
+            '---',
+            'JENIS_SOAL: multiple_choice',
+        ]]);
+        $blocks = $this->invokeImportHelper('extract_docx_question_blocks', [$officialLines]);
+
+        self::assertTrue($hasMarker);
+        self::assertFalse($missingMarker);
+        self::assertCount(1, $blocks);
+        self::assertSame('JENIS_SOAL: multiple_choice', $blocks[0][0]);
+    }
+
+    public function test_extract_docx_content_lines_preserves_table_nodes_as_html_markers(): void
+    {
+        $documentXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>CBT_TEMPLATE: question_import_v2</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JENIS_SOAL: multiple_choice</w:t></w:r></w:p>
+    <w:p><w:r><w:t>QUESTION: Soal dengan tabel</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Kolom 1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Kolom 2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>
+XML;
+
+        $lines = $this->invokeImportHelper('extract_docx_content_lines', [$documentXml, [], new \ZipArchive()]);
+        $tableMarker = null;
+        foreach ($lines as $line) {
+            if (str_starts_with((string) $line, '__HTML__:')) {
+                $tableMarker = (string) $line;
+                break;
+            }
+        }
+
+        self::assertContains('QUESTION: Soal dengan tabel', $lines);
+        self::assertNotNull($tableMarker);
+
+        $decodedTableHtml = $this->invokeImportHelper('decode_docx_html_marker', [$tableMarker]);
+        self::assertStringContainsString('<table>', $decodedTableHtml);
+        self::assertStringContainsString('Kolom 1', $decodedTableHtml);
+        self::assertStringContainsString('Kolom 2', $decodedTableHtml);
+    }
+
+    public function test_extract_docx_content_lines_reads_official_template_table_layout_as_key_value_lines(): void
+    {
+        $officialLines = $this->invokeImportHelper('build_word_template_lines', ['multiple_choice', 10]);
+        $documentXml = $this->invokeImportHelper('build_minimal_docx_document_xml', [$officialLines]);
+
+        $lines = $this->invokeImportHelper('extract_docx_content_lines', [$documentXml, [], new \ZipArchive()]);
+        $normalizedLines = $this->invokeImportHelper('normalize_docx_extracted_lines', [$lines]);
+
+        self::assertContains('CBT_TEMPLATE: question_import_v2', $normalizedLines);
+        self::assertContains('---', $normalizedLines);
+        self::assertContains('JENIS_SOAL: multiple_choice', $normalizedLines);
+        self::assertContains('SOAL: [MC 1] Tulis pertanyaan pilihan ganda di sini.', $normalizedLines);
+        self::assertContains('PILIHAN_1: Opsi A', $normalizedLines);
+        self::assertContains('JAWABAN: 1', $normalizedLines);
+    }
+
+    public function test_parse_question_docx_accepts_official_generated_template_without_modification(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $officialLines = $this->invokeImportHelper('build_word_template_lines', ['multiple_choice', 10]);
+        $documentXml = $this->invokeImportHelper('build_minimal_docx_document_xml', [$officialLines]);
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-official-template-roundtrip-');
+        self::assertIsString($tmpPath);
+        self::assertNotSame('', $tmpPath);
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        $zip->addFromString('word/document.xml', $documentXml);
+        $zip->close();
+
+        try {
+            $rows = $this->invokeImportHelper('parse_question_docx', [$tmpPath]);
+
+            self::assertFalse(is_wp_error($rows));
+            self::assertIsArray($rows);
+            self::assertCount(10, $rows);
+            self::assertSame('multiple_choice', $rows[0]['question_type']);
+            self::assertStringContainsString('[MC 1]', (string) $rows[0]['question_text']);
+            self::assertSame('A', $rows[0]['correct_answer']);
+        } finally {
+            @unlink($tmpPath);
+        }
+    }
+
+    public function test_extract_docx_content_lines_preserves_table_caption_colspan_and_rowspan(): void
+    {
+        $documentXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>CBT_TEMPLATE: question_import_v2</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JENIS_SOAL: multiple_choice</w:t></w:r></w:p>
+    <w:p><w:r><w:t>QUESTION: Soal dengan tabel merge</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tblPr>
+        <w:tblCaption w:val="Tabel gabungan penting"/>
+      </w:tblPr>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:gridSpan w:val="2"/></w:tcPr>
+          <w:p><w:r><w:t>Header gabung</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:vMerge w:val="restart"/></w:tcPr>
+          <w:p><w:r><w:t>Baris kiri</w:t></w:r></w:p>
+        </w:tc>
+        <w:tc>
+          <w:p><w:r><w:t>Baris kanan 1</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:vMerge/></w:tcPr>
+          <w:p/>
+        </w:tc>
+        <w:tc>
+          <w:p><w:r><w:t>Baris kanan 2</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>
+XML;
+
+        $lines = $this->invokeImportHelper('extract_docx_content_lines', [$documentXml, [], new \ZipArchive()]);
+        $tableMarker = null;
+        foreach ($lines as $line) {
+            if (str_starts_with((string) $line, '__HTML__:')) {
+                $tableMarker = (string) $line;
+                break;
+            }
+        }
+
+        self::assertNotNull($tableMarker);
+        $decodedTableHtml = $this->invokeImportHelper('decode_docx_html_marker', [$tableMarker]);
+        self::assertStringContainsString('<figure>', $decodedTableHtml);
+        self::assertStringContainsString('<figcaption>Tabel gabungan penting</figcaption>', $decodedTableHtml);
+        self::assertStringContainsString('colspan="2"', $decodedTableHtml);
+        self::assertStringContainsString('rowspan="2"', $decodedTableHtml);
+        self::assertStringContainsString('Header gabung', $decodedTableHtml);
+        self::assertStringContainsString('Baris kanan 2', $decodedTableHtml);
+    }
+
+    public function test_parse_question_docx_preserves_word_bullet_and_numbering_lists_in_question_option_and_explanation(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $documentXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>CBT_TEMPLATE: question_import_v2</w:t></w:r></w:p>
+    <w:p><w:r><w:t>CATATAN_VALIDATOR: jangan hapus marker.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JENIS_SOAL: multiple_choice</w:t></w:r></w:p>
+    <w:p><w:r><w:t>SOAL: Perhatikan poin penting berikut.</w:t></w:r></w:p>
+    <w:p>
+      <w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>
+      <w:r><w:t>Marker bullet pertama soal</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>
+      <w:r><w:t>Marker bullet kedua soal</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>PILIHAN_1: Opsi dengan langkah</w:t></w:r></w:p>
+    <w:p>
+      <w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr></w:pPr>
+      <w:r><w:t>Langkah satu opsi</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr></w:pPr>
+      <w:r><w:t>Langkah dua opsi</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>PILIHAN_2: Opsi dua</w:t></w:r></w:p>
+    <w:p><w:r><w:t>PILIHAN_3: Opsi tiga</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JAWABAN: 1</w:t></w:r></w:p>
+    <w:p><w:r><w:t>PEMBAHASAN:</w:t></w:r></w:p>
+    <w:p>
+      <w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>
+      <w:r><w:t>Bullet pembahasan pertama</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>
+      <w:r><w:t>Bullet pembahasan kedua</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+XML;
+
+        $numberingXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="1">
+    <w:lvl w:ilvl="0">
+      <w:numFmt w:val="bullet"/>
+    </w:lvl>
+  </w:abstractNum>
+  <w:abstractNum w:abstractNumId="2">
+    <w:lvl w:ilvl="0">
+      <w:numFmt w:val="decimal"/>
+    </w:lvl>
+  </w:abstractNum>
+  <w:num w:numId="1">
+    <w:abstractNumId w:val="1"/>
+  </w:num>
+  <w:num w:numId="2">
+    <w:abstractNumId w:val="2"/>
+  </w:num>
+</w:numbering>
+XML;
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-docx-list-import-test-');
+        self::assertIsString($tmpPath);
+        self::assertNotSame('', $tmpPath);
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        $zip->addFromString('word/document.xml', $documentXml);
+        $zip->addFromString('word/numbering.xml', $numberingXml);
+        $zip->close();
+
+        try {
+            $rows = $this->invokeImportHelper('parse_question_docx', [$tmpPath]);
+        } finally {
+            @unlink($tmpPath);
+        }
+
+        self::assertIsArray($rows);
+        self::assertCount(1, $rows);
+        self::assertSame('multiple_choice', $rows[0]['question_type']);
+        self::assertStringContainsString('<ul>', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('Marker bullet pertama soal', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('Marker bullet kedua soal', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('<ol>', (string) $rows[0]['options']);
+        self::assertStringContainsString('Langkah satu opsi', (string) $rows[0]['options']);
+        self::assertStringContainsString('Langkah dua opsi', (string) $rows[0]['options']);
+        self::assertStringContainsString('<ul>', (string) $rows[0]['explanation']);
+        self::assertStringContainsString('Bullet pembahasan pertama', (string) $rows[0]['explanation']);
+        self::assertStringContainsString('Bullet pembahasan kedua', (string) $rows[0]['explanation']);
+    }
+
+    public function test_parse_question_docx_preserves_common_word_equations_in_question_option_and_explanation(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $documentXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+  <w:body>
+    <w:p><w:r><w:t>CBT_TEMPLATE: question_import_v2</w:t></w:r></w:p>
+    <w:p><w:r><w:t>CATATAN_VALIDATOR: jangan hapus marker.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JENIS_SOAL: multiple_choice</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:t>SOAL: Sederhanakan </w:t></w:r>
+      <m:oMath>
+        <m:sSup>
+          <m:e><m:r><m:t>x</m:t></m:r></m:e>
+          <m:sup><m:r><m:t>2</m:t></m:r></m:sup>
+        </m:sSup>
+        <m:r><m:t> + </m:t></m:r>
+        <m:f>
+          <m:num><m:r><m:t>1</m:t></m:r></m:num>
+          <m:den><m:r><m:t>2</m:t></m:r></m:den>
+        </m:f>
+      </m:oMath>
+    </w:p>
+    <w:p>
+      <w:r><w:t>PILIHAN_1: Hasil </w:t></w:r>
+      <m:oMath>
+        <m:rad>
+          <m:e><m:r><m:t>9</m:t></m:r></m:e>
+        </m:rad>
+      </m:oMath>
+    </w:p>
+    <w:p><w:r><w:t>PILIHAN_2: Opsi dua</w:t></w:r></w:p>
+    <w:p><w:r><w:t>PILIHAN_3: Opsi tiga</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JAWABAN: 1</w:t></w:r></w:p>
+    <w:p><w:r><w:t>PEMBAHASAN: Gunakan bentuk </w:t></w:r>
+      <m:oMath>
+        <m:func>
+          <m:fName><m:r><m:t>sin</m:t></m:r></m:fName>
+          <m:e><m:r><m:t>x</m:t></m:r></m:e>
+        </m:func>
+      </m:oMath>
+    </w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+XML;
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-docx-math-import-test-');
+        self::assertIsString($tmpPath);
+        self::assertNotSame('', $tmpPath);
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        $zip->addFromString('word/document.xml', $documentXml);
+        $zip->close();
+
+        try {
+            $rows = $this->invokeImportHelper('parse_question_docx', [$tmpPath]);
+        } finally {
+            @unlink($tmpPath);
+        }
+
+        self::assertIsArray($rows);
+        self::assertCount(1, $rows);
+        self::assertSame('multiple_choice', $rows[0]['question_type']);
+        self::assertStringContainsString('class="cbt-math"', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('data-cbt-math-display="inline"', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('x^(2) + (1)/(2)', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('\\frac{1}{2}', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('class="cbt-math"', (string) $rows[0]['options']);
+        self::assertStringContainsString('√(9)', (string) $rows[0]['options']);
+        self::assertStringContainsString('\\sqrt{9}', (string) $rows[0]['options']);
+        self::assertStringContainsString('class="cbt-math"', (string) $rows[0]['explanation']);
+        self::assertStringContainsString('sin(x)', (string) $rows[0]['explanation']);
+        self::assertStringContainsString('\\sin(x)', (string) $rows[0]['explanation']);
+    }
+
+    public function test_parse_question_docx_uses_block_math_wrapper_for_equation_only_paragraphs(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $documentXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+  <w:body>
+    <w:p><w:r><w:t>CBT_TEMPLATE: question_import_v2</w:t></w:r></w:p>
+    <w:p><w:r><w:t>CATATAN_VALIDATOR: jangan hapus marker.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JENIS_SOAL: essay</w:t></w:r></w:p>
+    <w:p><w:r><w:t>SOAL: FLOW EQUATION BLOCK 20260328</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JAWABAN:</w:t></w:r></w:p>
+    <w:p>
+      <m:oMath>
+        <m:f>
+          <m:num><m:r><m:t>a+b</m:t></m:r></m:num>
+          <m:den><m:r><m:t>c</m:t></m:r></m:den>
+        </m:f>
+      </m:oMath>
+    </w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+XML;
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-docx-math-block-import-test-');
+        self::assertIsString($tmpPath);
+        self::assertNotSame('', $tmpPath);
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        $zip->addFromString('word/document.xml', $documentXml);
+        $zip->close();
+
+        try {
+            $rows = $this->invokeImportHelper('parse_question_docx', [$tmpPath]);
+        } finally {
+            @unlink($tmpPath);
+        }
+
+        self::assertIsArray($rows);
+        self::assertCount(1, $rows);
+        self::assertSame('essay', $rows[0]['question_type']);
+        self::assertStringContainsString('data-cbt-math-display="block"', (string) $rows[0]['correct_text']);
+        self::assertStringContainsString('cbt-math-block', (string) $rows[0]['correct_text']);
+        self::assertStringContainsString('\\frac{a+b}{c}', (string) $rows[0]['correct_text']);
+        self::assertStringContainsString('(a+b)/(c)', (string) $rows[0]['correct_text']);
+    }
+
+    public function test_parse_question_docx_preserves_inline_formatting_and_hyperlinks_in_question_option_and_explanation(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $documentXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:body>
+    <w:p><w:r><w:t>CBT_TEMPLATE: question_import_v2</w:t></w:r></w:p>
+    <w:p><w:r><w:t>CATATAN_VALIDATOR: jangan hapus marker.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JENIS_SOAL: multiple_choice</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:t>SOAL: Perhatikan </w:t></w:r>
+      <w:r><w:rPr><w:b/></w:rPr><w:t>teks penting</w:t></w:r>
+      <w:r><w:t>, </w:t></w:r>
+      <w:r><w:rPr><w:i/></w:rPr><w:t>catatan miring</w:t></w:r>
+      <w:r><w:t>, dan </w:t></w:r>
+      <w:hyperlink r:id="rId9">
+        <w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>link resmi</w:t></w:r>
+      </w:hyperlink>
+      <w:r><w:t>. Rumus kimia H</w:t></w:r>
+      <w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:t>2</w:t></w:r>
+      <w:r><w:t>O dan luas m</w:t></w:r>
+      <w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>2</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:r><w:t>PILIHAN_1: Opsi </w:t></w:r>
+      <w:r><w:rPr><w:b/></w:rPr><w:t>utama</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>PILIHAN_2: Opsi dua</w:t></w:r></w:p>
+    <w:p><w:r><w:t>PILIHAN_3: Opsi tiga</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JAWABAN: 1</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:t>PEMBAHASAN: Gunakan </w:t></w:r>
+      <w:r><w:rPr><w:i/></w:rPr><w:t>referensi</w:t></w:r>
+      <w:r><w:t> dan </w:t></w:r>
+      <w:hyperlink r:id="rId10">
+        <w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>buka sumber</w:t></w:r>
+      </w:hyperlink>
+    </w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+XML;
+
+        $relsXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.test/docs" TargetMode="External"/>
+  <Relationship Id="rId10" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.test/explanation" TargetMode="External"/>
+</Relationships>
+XML;
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-docx-inline-format-import-test-');
+        self::assertIsString($tmpPath);
+        self::assertNotSame('', $tmpPath);
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        $zip->addFromString('word/document.xml', $documentXml);
+        $zip->addFromString('word/_rels/document.xml.rels', $relsXml);
+        $zip->close();
+
+        try {
+            $rows = $this->invokeImportHelper('parse_question_docx', [$tmpPath]);
+        } finally {
+            @unlink($tmpPath);
+        }
+
+        self::assertIsArray($rows);
+        self::assertCount(1, $rows);
+        self::assertSame('multiple_choice', $rows[0]['question_type']);
+        self::assertStringContainsString('<strong>teks penting</strong>', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('<em>catatan miring</em>', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('<a href="https://example.test/docs"', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('H<sub>2</sub>O', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('m<sup>2</sup>', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('<strong>utama</strong>', (string) $rows[0]['options']);
+        self::assertStringContainsString('<em>referensi</em>', (string) $rows[0]['explanation']);
+        self::assertStringContainsString('<a href="https://example.test/explanation"', (string) $rows[0]['explanation']);
+    }
+
+    public function test_parse_question_docx_preserves_word_symbols_in_question_and_explanation(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $documentXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>CBT_TEMPLATE: question_import_v2</w:t></w:r></w:p>
+    <w:p><w:r><w:t>CATATAN_VALIDATOR: jangan hapus marker.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JENIS_SOAL: multiple_choice</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:t>SOAL: Simbol </w:t></w:r>
+      <w:sym w:font="Symbol" w:char="F061"/>
+      <w:r><w:t> dan </w:t></w:r>
+      <w:sym w:font="Symbol" w:char="F0B1"/>
+    </w:p>
+    <w:p><w:r><w:t>PILIHAN_1: Opsi A</w:t></w:r></w:p>
+    <w:p><w:r><w:t>PILIHAN_2: Opsi B</w:t></w:r></w:p>
+    <w:p><w:r><w:t>PILIHAN_3: Opsi C</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JAWABAN: 1</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:t>PEMBAHASAN: Gunakan simbol </w:t></w:r>
+      <w:sym w:font="Symbol" w:char="F06D"/>
+    </w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+XML;
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-docx-symbol-import-test-');
+        self::assertIsString($tmpPath);
+        self::assertNotSame('', $tmpPath);
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        $zip->addFromString('word/document.xml', $documentXml);
+        $zip->close();
+
+        try {
+            $rows = $this->invokeImportHelper('parse_question_docx', [$tmpPath]);
+        } finally {
+            @unlink($tmpPath);
+        }
+
+        self::assertIsArray($rows);
+        self::assertCount(1, $rows);
+        self::assertStringContainsString('Simbol α dan ±', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('Gunakan simbol μ', (string) $rows[0]['explanation']);
+    }
+
+    public function test_parse_question_docx_preserves_font_size_as_inline_style_markup(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $documentXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+  <w:body>
+    <w:p><w:r><w:t>CBT_TEMPLATE: question_import_v2</w:t></w:r></w:p>
+    <w:p><w:r><w:t>CATATAN_VALIDATOR: jangan hapus marker.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JENIS_SOAL: multiple_choice</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:t>SOAL: Teks </w:t></w:r>
+      <w:r><w:rPr><w:sz w:val="32"/></w:rPr><w:t>besar</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>PILIHAN_1: Opsi A</w:t></w:r></w:p>
+    <w:p><w:r><w:t>PILIHAN_2: Opsi B</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:t>PILIHAN_3: </w:t></w:r>
+      <m:oMathPara>
+        <m:oMathParaPr><m:jc m:val="left"/></m:oMathParaPr>
+        <m:oMath>
+          <m:r>
+            <w:rPr><w:rFonts w:ascii="Cambria Math" w:hAnsi="Cambria Math"/><w:sz w:val="36"/></w:rPr>
+            <m:t>A=π</m:t>
+          </m:r>
+          <m:sSup>
+            <m:e><m:r><m:t>r</m:t></m:r></m:e>
+            <m:sup><m:r><m:t>2</m:t></m:r></m:sup>
+          </m:sSup>
+        </m:oMath>
+      </m:oMathPara>
+    </w:p>
+    <w:p><w:r><w:t>JAWABAN: 1</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+XML;
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-docx-font-size-import-test-');
+        self::assertIsString($tmpPath);
+        self::assertNotSame('', $tmpPath);
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        $zip->addFromString('word/document.xml', $documentXml);
+        $zip->close();
+
+        try {
+            $rows = $this->invokeImportHelper('parse_question_docx', [$tmpPath]);
+        } finally {
+            @unlink($tmpPath);
+        }
+
+        self::assertIsArray($rows);
+        self::assertCount(1, $rows);
+        self::assertStringContainsString('font-size:16pt;', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('font-size:18pt;', (string) $rows[0]['options']);
+        self::assertStringContainsString('data-cbt-math="A=\\pi{r}^{2}"', (string) $rows[0]['options']);
+    }
+
+    public function test_parse_question_docx_preserves_paragraph_alignment_for_block_math_and_text(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $documentXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+  <w:body>
+    <w:p><w:r><w:t>CBT_TEMPLATE: question_import_v2</w:t></w:r></w:p>
+    <w:p><w:r><w:t>CATATAN_VALIDATOR: jangan hapus marker.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JENIS_SOAL: multiple_choice</w:t></w:r></w:p>
+    <w:p>
+      <w:pPr><w:jc w:val="center"/></w:pPr>
+      <w:r><w:t>SOAL: Rumus berikut berada di tengah </w:t></w:r>
+      <m:oMathPara>
+        <m:oMathParaPr><m:jc m:val="center"/></m:oMathParaPr>
+        <m:oMath>
+          <m:r><m:t>A=π</m:t></m:r>
+          <m:sSup><m:e><m:r><m:t>r</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup>
+        </m:oMath>
+      </m:oMathPara>
+    </w:p>
+    <w:p><w:r><w:t>PILIHAN_1: Opsi A</w:t></w:r></w:p>
+    <w:p><w:r><w:t>PILIHAN_2: Opsi B</w:t></w:r></w:p>
+    <w:p>
+      <w:pPr><w:jc w:val="right"/></w:pPr>
+      <w:r><w:t>PILIHAN_3: Opsi rata kanan</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>JAWABAN: 1</w:t></w:r></w:p>
+    <w:p>
+      <w:pPr><w:jc w:val="both"/></w:pPr>
+      <w:r><w:t>PEMBAHASAN: Pembahasan justify untuk uji render.</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+XML;
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-docx-align-import-test-');
+        self::assertIsString($tmpPath);
+        self::assertNotSame('', $tmpPath);
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        $zip->addFromString('word/document.xml', $documentXml);
+        $zip->close();
+
+        try {
+            $rows = $this->invokeImportHelper('parse_question_docx', [$tmpPath]);
+        } finally {
+            @unlink($tmpPath);
+        }
+
+        self::assertIsArray($rows);
+        self::assertCount(1, $rows);
+        self::assertStringContainsString('style="text-align:center;"', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('data-cbt-math="A=\\pi{r}^{2}"', (string) $rows[0]['question_text']);
+        self::assertStringContainsString('style="text-align:right;"', (string) $rows[0]['options']);
+        self::assertStringContainsString('style="text-align:justify;"', (string) $rows[0]['explanation']);
+    }
+
+    public function test_parse_question_docx_preserves_multiline_integral_equation_as_block_math_markup(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $documentXml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+  <w:body>
+    <w:p><w:r><w:t>CBT_TEMPLATE: question_import_v2</w:t></w:r></w:p>
+    <w:p><w:r><w:t>CATATAN_VALIDATOR: jangan hapus marker.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+    <w:p><w:r><w:t>JENIS_SOAL: multiple_choice</w:t></w:r></w:p>
+    <w:p><w:r><w:t>SOAL: Uji multiline integral</w:t></w:r></w:p>
+    <w:p><w:r><w:t>PILIHAN_1: Opsi A</w:t></w:r></w:p>
+    <w:p><w:r><w:t>PILIHAN_2: Opsi B</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:t>PILIHAN_3: </w:t></w:r>
+      <m:oMathPara>
+        <m:oMath>
+          <m:nary>
+            <m:sub><m:r><m:t>-∞</m:t></m:r></m:sub>
+            <m:sup><m:r><m:t>∞</m:t></m:r></m:sup>
+            <m:e><m:r><m:t>f(x)dx</m:t></m:r></m:e>
+          </m:nary>
+          <m:r><m:t>=</m:t></m:r>
+          <m:d>
+            <m:dPr><m:begChr m:val="["/><m:endChr m:val="]"/></m:dPr>
+            <m:e><m:r><m:t>G(x)</m:t></m:r></m:e>
+          </m:d>
+          <m:sSup>
+            <m:e><m:r><m:t></m:t></m:r></m:e>
+            <m:sup><m:r><m:t>1/2</m:t></m:r></m:sup>
+          </m:sSup>
+          <m:r>
+            <m:rPr><m:brk m:alnAt="1"/></m:rPr>
+            <m:t>=</m:t>
+          </m:r>
+          <m:rad>
+            <m:e><m:r><m:t>π</m:t></m:r></m:e>
+          </m:rad>
+        </m:oMath>
+      </m:oMathPara>
+    </w:p>
+    <w:p><w:r><w:t>JAWABAN: 1</w:t></w:r></w:p>
+    <w:p><w:r><w:t>---</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+XML;
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-docx-multiline-integral-');
+        self::assertIsString($tmpPath);
+        self::assertNotSame('', $tmpPath);
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        $zip->addFromString('word/document.xml', $documentXml);
+        $zip->close();
+
+        try {
+            $rows = $this->invokeImportHelper('parse_question_docx', [$tmpPath]);
+        } finally {
+            @unlink($tmpPath);
+        }
+
+        self::assertIsArray($rows);
+        self::assertCount(1, $rows);
+        self::assertStringContainsString('\\begin{aligned}', (string) $rows[0]['options']);
+        self::assertStringContainsString('\\int_{-\\infty}^{\\infty}', (string) $rows[0]['options']);
+        self::assertStringContainsString('data-cbt-math-display="block"', (string) $rows[0]['options']);
+    }
+
+    public function test_convert_docx_table_element_to_html_preserves_table_alignment_and_caption_alignment(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $dom = new \DOMDocument();
+        self::assertTrue($dom->loadXML(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<w:tbl xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            . '  <w:tblPr><w:jc w:val="center"/><w:tblCaption w:val="Caption Tengah"/></w:tblPr>'
+            . '  <w:tr>'
+            . '    <w:tc>'
+            . '      <w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Sel kanan</w:t></w:r></w:p>'
+            . '    </w:tc>'
+            . '  </w:tr>'
+            . '</w:tbl>'
+        ));
+
+        $table = $dom->documentElement;
+        self::assertInstanceOf(\DOMElement::class, $table);
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-docx-align-zip-');
+        self::assertIsString($tmpPath);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        self::assertTrue($zip->addFromString('dummy.txt', 'ok'));
+        $zip->close();
+        $zipRead = new \ZipArchive();
+        self::assertNotSame(false, $zipRead->open($tmpPath));
+
+        try {
+            $html = $this->invokeImportHelper('convert_docx_table_element_to_html', [$table, [], $zipRead, []]);
+        } finally {
+            $zipRead->close();
+            @unlink($tmpPath);
+        }
+
+        self::assertStringContainsString('<table style="margin-left:auto;margin-right:auto;">', $html);
+        self::assertStringContainsString('<figcaption style="text-align:center;">Caption Tengah</figcaption>', $html);
+        self::assertStringContainsString('<p style="text-align:right;">Sel kanan</p>', $html);
+    }
+
+    public function test_convert_docx_table_element_to_html_preserves_cell_alignment_background_width_and_vertical_align(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $dom = new \DOMDocument();
+        self::assertTrue($dom->loadXML(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<w:tbl xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            . '  <w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:jc w:val="center"/></w:tblPr>'
+            . '  <w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="4800"/></w:tblGrid>'
+            . '  <w:tr>'
+            . '    <w:trPr><w:tblHeader/></w:trPr>'
+            . '    <w:tc>'
+            . '      <w:tcPr><w:tcW w:w="2400" w:type="dxa"/><w:vAlign w:val="center"/><w:shd w:fill="D9EAF7"/></w:tcPr>'
+            . '      <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Header 1</w:t></w:r></w:p>'
+            . '    </w:tc>'
+            . '    <w:tc>'
+            . '      <w:tcPr><w:tcW w:w="4800" w:type="dxa"/><w:vAlign w:val="bottom"/><w:shd w:fill="D9EAF7"/></w:tcPr>'
+            . '      <w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Header 2</w:t></w:r></w:p>'
+            . '    </w:tc>'
+            . '  </w:tr>'
+            . '  <w:tr>'
+            . '    <w:tc>'
+            . '      <w:tcPr><w:tcW w:w="2400" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>'
+            . '      <w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>Isi kiri</w:t></w:r></w:p>'
+            . '    </w:tc>'
+            . '    <w:tc>'
+            . '      <w:tcPr><w:tcW w:w="4800" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>'
+            . '      <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Isi tengah</w:t></w:r></w:p>'
+            . '    </w:tc>'
+            . '  </w:tr>'
+            . '</w:tbl>'
+        ));
+
+        $table = $dom->documentElement;
+        self::assertInstanceOf(\DOMElement::class, $table);
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-docx-table-format-zip-');
+        self::assertIsString($tmpPath);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        self::assertTrue($zip->addFromString('dummy.txt', 'ok'));
+        $zip->close();
+        $zipRead = new \ZipArchive();
+        self::assertNotSame(false, $zipRead->open($tmpPath));
+
+        try {
+            $html = $this->invokeImportHelper('convert_docx_table_element_to_html', [$table, [], $zipRead, []]);
+        } finally {
+            $zipRead->close();
+            @unlink($tmpPath);
+        }
+
+        self::assertStringContainsString('table-layout:fixed;', $html);
+        self::assertStringContainsString('<th', $html);
+        self::assertStringContainsString('background-color:#D9EAF7;', $html);
+        self::assertStringContainsString('vertical-align:middle;', $html);
+        self::assertStringContainsString('vertical-align:bottom;', $html);
+        self::assertStringContainsString('width:160px;', $html);
+        self::assertStringContainsString('width:320px;', $html);
+        self::assertStringContainsString('font-weight:700;', $html);
+        self::assertStringContainsString('<p style="text-align:right;">Header 2</p>', $html);
+        self::assertStringContainsString('<p style="text-align:center;">Isi tengah</p>', $html);
+    }
+
+    public function test_validate_parsed_rows_for_requested_import_type_ignores_rows_without_explicit_type_metadata(): void
+    {
+        $result = $this->invokeImportHelper('validate_parsed_rows_for_requested_import_type', [[
+            [
+                'question_text' => 'Soal tanpa metadata type eksplisit.',
+            ],
+        ], 'multiple_answer', 'docx']);
+
+        self::assertTrue($result);
+    }
+
+    public function test_validate_question_import_upload_extension_accepts_only_docx(): void
+    {
+        self::assertTrue($this->invokeImportHelper('validate_question_import_upload_extension', ['docx']));
+
+        $csvError = $this->invokeImportHelper('validate_question_import_upload_extension', ['csv']);
+        self::assertInstanceOf(\WP_Error::class, $csvError);
+        self::assertSame('question_import_extension_invalid', $csvError->get_error_code());
+
+        $xlsxError = $this->invokeImportHelper('validate_question_import_upload_extension', ['xlsx']);
+        self::assertInstanceOf(\WP_Error::class, $xlsxError);
+        self::assertSame('question_import_extension_invalid', $xlsxError->get_error_code());
+    }
+
+    public function test_legacy_question_import_csv_xlsx_handlers_and_parsers_are_removed(): void
+    {
+        self::assertFalse(method_exists(\CBT_Admin_Questions_Actions::class, 'handle_download_question_template'));
+        self::assertFalse(method_exists(\CBT_Admin_Questions_Actions::class, 'handle_download_question_template_xlsx'));
+        self::assertFalse(method_exists(\CBT_Admin_Questions_Import_Helper::class, 'handle_download_question_template'));
+        self::assertFalse(method_exists(\CBT_Admin_Questions_Import_Helper::class, 'handle_download_question_template_xlsx'));
+
+        $helperReflection = new ReflectionClass(\CBT_Admin_Questions_Import_Helper::class);
+        self::assertFalse($helperReflection->hasMethod('parse_question_csv'));
+        self::assertFalse($helperReflection->hasMethod('parse_question_xlsx'));
+    }
+
+    public function test_admin_bootstrap_no_longer_registers_legacy_question_template_download_endpoints(): void
+    {
+        $bootstrapSource = file_get_contents(CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin.php');
+        self::assertIsString($bootstrapSource);
+        self::assertStringNotContainsString("add_action('admin_post_cbt_download_question_template',", $bootstrapSource);
+        self::assertStringNotContainsString("add_action('admin_post_cbt_download_question_template_xlsx',", $bootstrapSource);
     }
 
     private function invokeImportHelper(string $method, array $args): mixed

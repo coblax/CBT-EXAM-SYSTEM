@@ -14,50 +14,19 @@ final class CBT_Admin_Subjects_Actions
 
         check_admin_referer('cbt_save_subject');
 
-        global $wpdb;
-
-        $table = $wpdb->prefix . 'cbt_subjects';
         $id = isset($_POST['id']) ? absint($_POST['id']) : 0;
         $name = isset($_POST['name']) ? sanitize_text_field(wp_unslash((string) $_POST['name'])) : '';
         $code_raw = isset($_POST['code']) ? sanitize_text_field(wp_unslash((string) $_POST['code'])) : '';
         $description = isset($_POST['description']) ? sanitize_textarea_field(wp_unslash((string) $_POST['description'])) : '';
 
-        if ($name === '') {
+        $result = CBT_Admin_Subjects_Service::save_subject_record($id, $name, $code_raw, $description);
+        if (is_wp_error($result)) {
             self::redirect_subjects_page([
-                'cbt_msg' => 'Nama mapel wajib diisi.',
+                'cbt_err' => $result->get_error_message(),
             ]);
         }
 
-        $code = strtoupper(sanitize_key($code_raw));
-        if (strlen($code) > 30) {
-            $code = substr($code, 0, 30);
-        }
-
-        $data = [
-            'name' => $name,
-            'code' => $code,
-            'description' => $description,
-            'updated_at' => current_time('mysql'),
-        ];
-
-        if ($id > 0) {
-            $wpdb->update(
-                $table,
-                $data,
-                ['id' => $id],
-                ['%s', '%s', '%s', '%s'],
-                ['%d']
-            );
-            $msg = 'Subject updated';
-        } else {
-            $data['created_at'] = current_time('mysql');
-            $wpdb->insert(
-                $table,
-                $data,
-                ['%s', '%s', '%s', '%s', '%s']
-            );
-            $msg = 'Subject created';
-        }
+        $msg = (string) ($result['message'] ?? ($id > 0 ? 'Subject updated' : 'Subject created'));
 
         CBT_Cache::invalidate_catalog();
 

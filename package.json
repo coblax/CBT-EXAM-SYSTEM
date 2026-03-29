@@ -18,11 +18,12 @@
     "playwright:install:chromium": "PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers playwright install chromium"
   },
   "devDependencies": {
-    "@playwright/test": "^1.53.2",
     "@fontsource/lexend": "^5.2.11",
     "@fontsource/source-sans-3": "^5.2.9",
+    "@playwright/test": "^1.53.2",
     "@vitest/coverage-v8": "^3.2.4",
     "jsdom": "^26.1.0",
+    "katex": "^0.16.44",
     "vite": "^8.0.0",
     "vitest": "^3.2.4"
   }

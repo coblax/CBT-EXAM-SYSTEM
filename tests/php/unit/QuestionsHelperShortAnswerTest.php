@@ -79,6 +79,22 @@ final class QuestionsHelperShortAnswerTest extends TestCase
         self::assertSame([2], $duplicates);
     }
 
+    public function test_find_duplicate_true_false_matrix_statement_indexes_ignores_math_wrapper_markup(): void
+    {
+        $duplicates = \CBT_Admin_Questions_Helper::find_duplicate_true_false_matrix_statement_indexes([
+            [
+                'text' => 'Hitung <span class="cbt-math" data-cbt-math="x^{2}" data-cbt-math-display="inline">x^{2}</span> sekarang.',
+                'answer' => 'true',
+            ],
+            [
+                'text' => ' hitung x^{2} sekarang. ',
+                'answer' => 'false',
+            ],
+        ]);
+
+        self::assertSame([2], $duplicates);
+    }
+
     public function test_validate_choice_options_reports_empty_correct_reference_for_multiple_choice_and_multiple_answer(): void
     {
         $multipleChoiceMessage = \CBT_Admin_Questions_Helper::validate_choice_options(
@@ -140,5 +156,18 @@ final class QuestionsHelperShortAnswerTest extends TestCase
         );
 
         self::assertSame('', $message);
+    }
+
+    public function test_sanitize_lightweight_math_html_strips_non_math_markup_but_keeps_math_wrapper(): void
+    {
+        $sanitized = \CBT_Admin_Questions_Helper::sanitize_lightweight_math_html(
+            'Cocokkan <strong>nilai</strong> <span class="cbt-math" data-cbt-math="\\frac{1}{2}" data-cbt-math-display="inline">\\frac{1}{2}</span><img src="https://example.test/x.png" />'
+        );
+
+        self::assertStringContainsString('Cocokkan nilai', $sanitized);
+        self::assertStringContainsString('class="cbt-math"', $sanitized);
+        self::assertStringContainsString('data-cbt-math="\\frac{1}{2}"', $sanitized);
+        self::assertStringNotContainsString('<strong>', $sanitized);
+        self::assertStringNotContainsString('<img', $sanitized);
     }
 }

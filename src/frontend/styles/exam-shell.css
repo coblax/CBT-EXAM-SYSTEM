@@ -479,6 +479,7 @@
 
 .cbt-option-label {
     flex: 1;
+    min-width: 0;
     font-size: 14px;
     line-height: 1.5;
     color: #1f2937;

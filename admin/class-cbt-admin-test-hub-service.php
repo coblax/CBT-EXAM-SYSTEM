@@ -484,11 +484,15 @@ final class CBT_Admin_Test_Hub_Service
             'import_preview' => [
                 'unit_tests' => [
                     'label' => 'Run Checklist Unit Import & Preview',
-                    'description' => 'Menjalankan suite PHP yang saat ini dipetakan ke Checklist Unit Test untuk Import & Preview.',
+                    'description' => 'Menjalankan suite PHP dan JS yang saat ini dipetakan ke Checklist Unit Test untuk Import & Preview.',
                     'commands' => [
                         [
                             'label' => 'PHPUnit Import & Preview',
                             'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/QuestionsImportPreviewTest.php tests/php/unit/QuestionsHelperPreviewRenderingTest.php tests/php/unit/QuestionsHelperShortAnswerTest.php',
+                        ],
+                        [
+                            'label' => 'Vitest Import & Preview',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/math-render.test.js tests/js/unit/math-authoring.test.js tests/js/unit/review-stage.test.js --reporter=verbose',
                         ],
                     ],
                 ],
@@ -501,8 +505,8 @@ final class CBT_Admin_Test_Hub_Service
                             'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: rich DOCX import renders in admin preview"',
                         ],
                         [
-                            'label' => 'Playwright Import Legacy Compatible',
-                            'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: legacy DOCX without explanation still imports successfully"',
+                            'label' => 'Playwright Import No Explanation V2',
+                            'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: DOCX v2 without explanation still imports successfully"',
                         ],
                         [
                             'label' => 'Playwright Import Admin Review Parity',
@@ -521,6 +525,14 @@ final class CBT_Admin_Test_Hub_Service
                             'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: line-break review stays consistent after finish"',
                         ],
                         [
+                            'label' => 'Playwright Import Equation Math Parity',
+                            'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: DOCX equation multiple choice keeps the same math signature in admin preview, exam, and review"',
+                        ],
+                        [
+                            'label' => 'Playwright Import Essay Equation Parity',
+                            'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: DOCX equation essay rubric keeps the same math signature in admin preview and student review"',
+                        ],
+                        [
                             'label' => 'Playwright Import Invalid Failure List',
                             'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: invalid DOCX import shows precise failure list"',
                         ],
@@ -535,6 +547,18 @@ final class CBT_Admin_Test_Hub_Service
                         [
                             'label' => 'Playwright Authoring TFM Validation',
                             'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: manual TF matrix save blocks numbering gap and duplicate statement"',
+                        ],
+                        [
+                            'label' => 'Playwright Authoring Equation MC',
+                            'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: manual equation multiple choice stays consistent in preview, exam, and review"',
+                        ],
+                        [
+                            'label' => 'Playwright Authoring Equation Essay',
+                            'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: manual equation essay rubric supports quicktags path and stays consistent in preview and review"',
+                        ],
+                        [
+                            'label' => 'Playwright Authoring Equation TFM',
+                            'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: manual TF matrix equation and quick template stay consistent in preview and review"',
                         ],
                     ],
                 ],
@@ -3614,6 +3638,51 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['PHPUnit Import & Preview'],
                     ]),
+                    self::unit_test_checklist_item('Wrapper math import baru tetap lolos sanitizer preview dan review frontend sebelum dirender KaTeX.', 'ready', [
+                        'description' => 'Parity math butuh dua guard unit: admin preview tidak boleh membuang atribut data-cbt-math dari import baru, dan review frontend tetap mempertahankan wrapper math itu sebelum enhancer KaTeX dijalankan.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi render_editor_html() tetap mempertahankan class cbt-math, data-cbt-math, dan data-cbt-math-display pada payload rich HTML.',
+                            'Vitest merender review section dengan stem, opsi, dan pembahasan yang memuat wrapper math dari import baru.',
+                            'Assertion memastikan wrapper math tidak hilang sebelum tahap render KaTeX, sehingga surface admin dan frontend membaca kontrak HTML yang sama.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/QuestionsHelperPreviewRenderingTest.php',
+                            'tests/js/unit/review-stage.test.js',
+                            'tests/js/unit/math-render.test.js',
+                            'src/shared/math-render.js',
+                            'src/frontend/app/stages/review.js',
+                        ],
+                        'runner_commands' => ['PHPUnit Import & Preview', 'Vitest Import & Preview'],
+                    ]),
+                    self::unit_test_checklist_item('Equation editor manual membangun wrapper inline/block, membaca wrapper existing, dan memvalidasi preview KaTeX sebelum insert.', 'ready', [
+                        'description' => 'Unit authoring math mengunci kontrak markup manual agar modal Equation menghasilkan wrapper yang sama dengan jalur import, sekaligus menjaga mode edit existing dan preview invalid state sebelum tombol insert aktif.',
+                        'process_steps' => [
+                            'Vitest memanggil buildEquationHtml() untuk mode inline dan block lalu memverifikasi class cbt-math, data-cbt-math, dan data-cbt-math-display yang dihasilkan.',
+                            'Wrapper existing dibaca dari markup textarea lewat parseEquationWrapperMarkup() dan findEquationWrapperRange() untuk memastikan mode edit mengganti wrapper lama, bukan menyisipkan markup duplikat.',
+                            'renderEquationPreview() diuji dengan source valid dan invalid agar insert hanya aktif saat KaTeX bisa dirender dengan aman.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/math-authoring.test.js',
+                            'src/admin/math-authoring.js',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['Vitest Import & Preview'],
+                    ]),
+                    self::unit_test_checklist_item('TF Matrix manual tetap dibatasi ke text plus equation sambil menjaga duplicate compare berbasis plain text.', 'ready', [
+                        'description' => 'Phase 2 authoring TF Matrix perlu dua pagar: preview ringan hanya boleh menyisakan text dan wrapper math, dan helper backend tetap membandingkan signature duplicate dari plain text walau statement memuat markup equation.',
+                        'process_steps' => [
+                            'Vitest memanggil sanitizeTfMatrixPreviewHtml() untuk memastikan markup non-math tidak dipertahankan pada preview ringan statement.',
+                            'PHPUnit memverifikasi sanitize_lightweight_math_html() membuang HTML lain tetapi tetap mempertahankan wrapper cbt-math yang valid.',
+                            'PHPUnit juga memverifikasi duplicate statement tetap terdeteksi ketika salah satu row dibungkus wrapper math dengan markup berbeda tetapi plain text yang sama.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/math-authoring.test.js',
+                            'tests/php/unit/QuestionsHelperShortAnswerTest.php',
+                            'src/admin/math-authoring.js',
+                            'admin/class-cbt-admin-questions-helper.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Import & Preview', 'Vitest Import & Preview'],
+                    ]),
                 ],
                 'smoke_tests' => [
                     self::unit_test_checklist_item('Import satu DOCX dengan gambar, tabel, dan PEMBAHASAN lalu cek hasil preview.', 'ready', [
@@ -3630,18 +3699,18 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['Playwright Import Admin Preview'],
                     ]),
-                    self::unit_test_checklist_item('Import DOCX lama tanpa PEMBAHASAN tetap berhasil dan tidak merusak parsing.', 'ready', [
-                        'description' => 'Flow check ini menguji fixture DOCX legacy tanpa field explanation untuk memastikan jalur import admin tetap selesai dan preview masih memuat soal yang dihasilkan.',
+                    self::unit_test_checklist_item('Import DOCX v2 tanpa PEMBAHASAN tetap berhasil dan tidak merusak parsing.', 'ready', [
+                        'description' => 'Flow check ini menguji fixture DOCX v2 tanpa field explanation untuk memastikan jalur import admin tetap selesai dan preview masih memuat soal yang dihasilkan.',
                         'process_steps' => [
-                            'Admin mengunggah tests/e2e/fixtures/import-preview/legacy-no-pembahasan.docx lewat tab Import Questions.',
+                            'Admin mengunggah tests/e2e/fixtures/import-preview/essay-no-pembahasan-v2.docx lewat tab Import Questions.',
                             'Progress import ditunggu sampai selesai diproses tanpa notice error.',
-                            'Preview exam fixture setelah sync harus tetap memuat marker legacy yang baru diimpor.',
+                            'Preview exam fixture setelah sync harus tetap memuat marker soal tanpa PEMBAHASAN yang baru diimpor.',
                         ],
                         'evidence' => [
                             'tests/e2e/import-preview.spec.js',
-                            'tests/e2e/fixtures/import-preview/legacy-no-pembahasan.docx',
+                            'tests/e2e/fixtures/import-preview/essay-no-pembahasan-v2.docx',
                         ],
-                        'runner_commands' => ['Playwright Import Legacy Compatible'],
+                        'runner_commands' => ['Playwright Import No Explanation V2'],
                     ]),
                     self::unit_test_checklist_item('Bandingkan satu soal kaya gambar atau tabel di admin preview dan review siswa.', 'ready', [
                         'description' => 'Flow check ini mengambil marker soal impor yang sama dari preview admin dan review siswa untuk memastikan satu pertanyaan hasil import tetap terbaca konsisten pada dua jalur UI yang berbeda.',
@@ -3695,6 +3764,34 @@ final class CBT_Admin_Test_Hub_Service
                             'tests/e2e/fixtures/import-preview/image-linebreak.docx',
                         ],
                         'runner_commands' => ['Playwright Import Linebreak Review Parity'],
+                    ]),
+                    self::unit_test_checklist_item('Equation DOCX multiple choice menjaga signature math yang sama di admin preview, exam, dan review hasil.', 'ready', [
+                        'description' => 'Flow parity math ini tidak hanya mengecek ada KaTeX, tetapi juga membandingkan signature wrapper math yang sama antar-surface untuk stem soal, opsi, dan pembahasan hasil import DOCX.',
+                        'process_steps' => [
+                            'Admin mengimpor fixture native-equation-mc.docx lalu preview exam dibuka hingga wrapper math dan KaTeX muncul.',
+                            'Siswa membuka shell ujian, lompat ke soal equation terakhir, lalu runtime exam dibaca untuk mengambil signature data-cbt-math yang aktif.',
+                            'Setelah finish exam, review hasil dibandingkan lagi dengan signature admin preview untuk memastikan source math dan mode display tetap identik.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/import-preview.spec.js',
+                            'tests/e2e/fixtures/import-preview/native-equation-mc.docx',
+                            'src/shared/math-render.js',
+                        ],
+                        'runner_commands' => ['Playwright Import Equation Math Parity'],
+                    ]),
+                    self::unit_test_checklist_item('Equation DOCX essay menjaga signature math yang sama di admin preview dan review hasil siswa.', 'ready', [
+                        'description' => 'Flow parity ini menutup jalur rubrik essay agar wrapper math pada konten Acuan/Rubrik tetap identik antara preview admin dan review hasil siswa setelah import baru.',
+                        'process_steps' => [
+                            'Admin mengimpor fixture native-equation-essay.docx dan membuka preview card rubrik essay yang baru disinkronkan.',
+                            'Signature wrapper math pada preview admin dibaca dari atribut data-cbt-math dan data-cbt-math-display.',
+                            'Siswa menyelesaikan exam fixture, lalu review hasil dibandingkan dengan signature admin preview untuk memastikan rubrik essay memakai source math yang sama.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/import-preview.spec.js',
+                            'tests/e2e/fixtures/import-preview/native-equation-essay.docx',
+                            'src/shared/math-render.js',
+                        ],
+                        'runner_commands' => ['Playwright Import Essay Equation Parity'],
                     ]),
                     self::unit_test_checklist_item('Import DOCX invalid menampilkan daftar failure yang spesifik per blok.', 'ready', [
                         'description' => 'Flow check ini mengunggah fixture DOCX invalid campuran dan memastikan panel import admin menampilkan metadata blok, tipe soal, preview singkat, dan pesan error spesifik untuk tiap blok yang gagal.',
@@ -3751,6 +3848,51 @@ final class CBT_Admin_Test_Hub_Service
                             'admin/views/questions/page.php',
                         ],
                         'runner_commands' => ['Playwright Authoring TFM Validation'],
+                    ]),
+                    self::unit_test_checklist_item('Equation manual pada stem MC, opsi, dan pembahasan tetap konsisten dari admin preview ke exam dan review hasil.', 'ready', [
+                        'description' => 'Flow authoring ini menutup Phase 1 pada jalur multiple choice: admin menyisipkan equation lewat modal Visual editor, mengedit equation stem yang sudah ada, lalu memastikan KaTeX muncul konsisten di preview admin, runtime exam, dan review hasil.',
+                        'process_steps' => [
+                            'Admin membuka form question manual, membuat soal MC baru, lalu memakai tombol Equation pada stem, opsi benar, dan pembahasan.',
+                            'Equation stem yang sudah tersisip kemudian diedit ulang untuk memastikan mode update mengganti wrapper lama, bukan menambah duplikasi.',
+                            'Setelah sync ke fixture exam, preview admin, shell exam siswa, dan review hasil semuanya harus menampilkan KaTeX pada stem, opsi, dan pembahasan.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/import-preview.spec.js',
+                            'tests/e2e/helpers/admin-browser.js',
+                            'src/admin/math-authoring.js',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['Playwright Authoring Equation MC'],
+                    ]),
+                    self::unit_test_checklist_item('Equation manual pada rubrik essay mendukung jalur Text/Quicktags dan tetap konsisten di preview serta review.', 'ready', [
+                        'description' => 'Flow ini mengunci jalur manual equation untuk essay rubric di mode Text/Quicktags, supaya authoring yang tidak memakai Visual editor tetap bisa menyisipkan wrapper math dan dirender KaTeX di semua surface penting.',
+                        'process_steps' => [
+                            'Admin membuka form essay, berpindah ke mode Text pada rubric editor, lalu menyisipkan equation block lewat modal Equation.',
+                            'Soal yang tersimpan disinkronkan ke fixture exam dan preview admin harus menampilkan KaTeX pada rubrik.',
+                            'Siswa mengerjakan dan menyelesaikan exam, lalu review hasil harus tetap memuat KaTeX pada pasangan Acuan/Rubrik.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/import-preview.spec.js',
+                            'tests/e2e/helpers/admin-browser.js',
+                            'src/admin/math-authoring.js',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['Playwright Authoring Equation Essay'],
+                    ]),
+                    self::unit_test_checklist_item('Statement TF Matrix manual menerima equation dari template cepat dan tetap konsisten di preview serta review.', 'ready', [
+                        'description' => 'Flow ini menutup Phase 2 dan Phase 3 untuk TF Matrix: statement lightweight field memakai modal yang sama, template cepat mengisi source LaTeX, lalu hasilnya harus tetap muncul sebagai KaTeX di preview admin dan review hasil siswa.',
+                        'process_steps' => [
+                            'Admin membuka form TF Matrix, mengisi statement pertama, lalu memakai tombol Equation dan template Pecahan pada field lightweight tersebut.',
+                            'Statement kedua diisi teks biasa untuk memastikan matrix masih tervalidasi normal dan submit berhasil.',
+                            'Setelah sync dan finish exam, preview admin serta review hasil harus sama-sama memuat KaTeX pada statement matrix yang diberi equation.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/import-preview.spec.js',
+                            'tests/e2e/helpers/admin-browser.js',
+                            'src/admin/math-authoring.js',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['Playwright Authoring Equation TFM'],
                     ]),
                 ],
             ],

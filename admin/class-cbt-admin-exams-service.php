@@ -3020,6 +3020,15 @@ final class CBT_Admin_Exams_Service
                 }
             }
 
+            $duplicate_exam_id = self::find_duplicate_exam_id_by_subject_and_title(
+                (int) ($payload['subject_id'] ?? 0),
+                (string) ($payload['title'] ?? ''),
+                $id
+            );
+            if ($duplicate_exam_id > 0) {
+                return new WP_Error('exam_duplicate', 'Judul exam sudah terdaftar pada mapel ini.');
+            }
+
             $updated = $wpdb->update(
                 $table,
                 $data,
@@ -3031,6 +3040,14 @@ final class CBT_Admin_Exams_Service
                 return new WP_Error('update_failed', 'Gagal mengupdate exam.');
             }
         } else {
+            $duplicate_exam_id = self::find_duplicate_exam_id_by_subject_and_title(
+                (int) ($payload['subject_id'] ?? 0),
+                (string) ($payload['title'] ?? '')
+            );
+            if ($duplicate_exam_id > 0) {
+                return new WP_Error('exam_duplicate', 'Judul exam sudah terdaftar pada mapel ini.');
+            }
+
             $data['created_by'] = $current_user_id;
             $data['created_at'] = current_time('mysql');
 
@@ -3051,6 +3068,47 @@ final class CBT_Admin_Exams_Service
             'existing_question_count' => $existing_question_count,
             'is_update' => $id > 0,
         ];
+    }
+
+    private static function find_duplicate_exam_id_by_subject_and_title(int $subject_id, string $title, int $exclude_id = 0): int
+    {
+        global $wpdb;
+
+        $title = trim($title);
+        if ($subject_id <= 0 || $title === '') {
+            return 0;
+        }
+
+        $table = $wpdb->prefix . 'cbt_exams';
+        if ($exclude_id > 0) {
+            return (int) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT id
+                     FROM {$table}
+                     WHERE subject_id = %d
+                       AND title = %s
+                       AND id <> %d
+                     ORDER BY id ASC
+                     LIMIT 1",
+                    $subject_id,
+                    $title,
+                    $exclude_id
+                )
+            );
+        }
+
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT id
+                 FROM {$table}
+                 WHERE subject_id = %d
+                   AND title = %s
+                 ORDER BY id ASC
+                 LIMIT 1",
+                $subject_id,
+                $title
+            )
+        );
     }
 
     /**

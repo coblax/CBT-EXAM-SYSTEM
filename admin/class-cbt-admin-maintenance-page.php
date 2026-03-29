@@ -38,11 +38,12 @@ final class CBT_Admin_Maintenance_Page
         }
 
         $context = CBT_Admin_Maintenance_Service::build_page_context($_GET);
-        $context['load_test_jobs_html'] = self::render_load_test_jobs_markup(
-            isset($context['load_test_jobs']) && is_array($context['load_test_jobs'])
-                ? (array) $context['load_test_jobs']
-                : []
-        );
+        $active_maintenance_tab = isset($context['active_maintenance_tab']) ? (string) $context['active_maintenance_tab'] : 'reset';
+        $active_tab_context = isset($context['active_tab_context']) && is_array($context['active_tab_context'])
+            ? (array) $context['active_tab_context']
+            : [];
+        $context['active_tab_markup'] = self::render_tab_panel_markup($active_maintenance_tab, $active_tab_context);
+        $context['maintenance_tab_urls'] = self::build_tab_urls($_GET);
 
         extract($context, EXTR_SKIP);
 
@@ -54,10 +55,67 @@ final class CBT_Admin_Maintenance_Page
      */
     public static function render_load_test_jobs_markup(array $jobs): string
     {
+        return CBT_Admin_Maintenance_Load_Test_Presenter::render_jobs_markup($jobs);
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     */
+    public static function render_tab_panel_markup(string $tab, array $context): string
+    {
+        if (!in_array($tab, CBT_Admin_Maintenance_Context_Builder::allowed_maintenance_tabs(), true)) {
+            $tab = 'reset';
+        }
+
+        if ($tab === 'load') {
+            $context['load_test_jobs_html'] = self::render_load_test_jobs_markup(
+                isset($context['load_test_jobs']) && is_array($context['load_test_jobs'])
+                    ? (array) $context['load_test_jobs']
+                    : []
+            );
+        }
+
+        extract($context, EXTR_SKIP);
+
         ob_start();
-
-        require CBT_EXAM_SYSTEM_PATH . 'admin/views/maintenance/partials/load-test-jobs.php';
-
+        require CBT_EXAM_SYSTEM_PATH . 'admin/views/maintenance/partials/' . $tab . '-panel.php';
         return (string) ob_get_clean();
+    }
+
+    /**
+     * @param array<string,mixed> $query
+     * @return array<string,string>
+     */
+    private static function build_tab_urls(array $query): array
+    {
+        $args = [
+            'page' => 'cbt-maintenance',
+        ];
+
+        $query_map = [
+            'cbt_msg' => 'sanitize_text_field',
+            'cbt_err' => 'sanitize_text_field',
+            'cbt_reset_progress_token' => 'sanitize_key',
+            'cbt_seed_progress_token' => 'sanitize_key',
+            'cbt_seed_preset' => 'sanitize_key',
+        ];
+
+        foreach ($query_map as $key => $sanitizer) {
+            if (!isset($query[$key])) {
+                continue;
+            }
+
+            $args[$key] = $sanitizer((string) wp_unslash((string) $query[$key]));
+        }
+
+        $tab_urls = [];
+        foreach (CBT_Admin_Maintenance_Context_Builder::allowed_maintenance_tabs() as $tab) {
+            $tab_urls[$tab] = add_query_arg(
+                array_merge($args, ['cbt_maintenance_tab' => $tab]),
+                admin_url('admin.php')
+            );
+        }
+
+        return $tab_urls;
     }
 }

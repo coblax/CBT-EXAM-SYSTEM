@@ -4,14 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-$eligible_exams = isset($load_test_exam_catalog['eligible']) && is_array($load_test_exam_catalog['eligible'])
-    ? (array) $load_test_exam_catalog['eligible']
+$maintenance_tab_urls = isset($maintenance_tab_urls) && is_array($maintenance_tab_urls)
+    ? (array) $maintenance_tab_urls
     : [];
-$invalid_exams = isset($load_test_exam_catalog['invalid']) && is_array($load_test_exam_catalog['invalid'])
-    ? (array) $load_test_exam_catalog['invalid']
-    : [];
-$ajax_nonce = wp_create_nonce('cbt_load_test_jobs');
-$first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0)) : 0;
+$active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '';
 ?>
 <style>
     .cbt-maintenance-page {
@@ -270,6 +266,7 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
         font-size: 13px;
         font-weight: 700;
         line-height: 1;
+        text-decoration: none;
         cursor: pointer;
         transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease, color 140ms ease, transform 140ms ease;
     }
@@ -659,6 +656,9 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
         display: grid;
         gap: 8px;
     }
+    .cbt-maintenance-field[hidden] {
+        display: none !important;
+    }
     .cbt-maintenance-field label {
         font-weight: 600;
         color: #111827;
@@ -729,6 +729,24 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
     .cbt-maintenance-card--seed .cbt-maintenance-select-wrap:focus-within::after {
         border-color: #1d4ed8;
     }
+    .cbt-maintenance-card--load .cbt-maintenance-field input[type="text"],
+    .cbt-maintenance-card--load .cbt-maintenance-field input[type="number"],
+    .cbt-maintenance-card--load .cbt-maintenance-field select {
+        border-color: #d7e3f2;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+    .cbt-maintenance-card--load .cbt-maintenance-field input[type="text"]:focus,
+    .cbt-maintenance-card--load .cbt-maintenance-field input[type="number"]:focus,
+    .cbt-maintenance-card--load .cbt-maintenance-field select:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .cbt-maintenance-card--load .cbt-maintenance-select-wrap::after {
+        border-color: #2563eb;
+    }
+    .cbt-maintenance-card--load .cbt-maintenance-select-wrap:focus-within::after {
+        border-color: #1d4ed8;
+    }
     .cbt-maintenance-field .description,
     .cbt-maintenance-reset-copy {
         margin: 0;
@@ -740,6 +758,32 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
         color: #64748b;
         font-size: 12px;
         line-height: 1.6;
+    }
+    .cbt-maintenance-field-help--compact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: baseline;
+    }
+    .cbt-maintenance-field-help--compact strong {
+        color: #0f172a;
+        font-weight: 700;
+    }
+    .cbt-maintenance-load-mode-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 46px;
+        padding: 0 14px;
+        border: 1px solid #d7e3f2;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        color: #0f172a;
+    }
+    .cbt-maintenance-load-mode-card strong {
+        font-size: 14px;
+        font-weight: 700;
     }
     .cbt-maintenance-field-help code {
         font-size: 11px;
@@ -932,6 +976,10 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
     }
     .cbt-maintenance-field-grid--load {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .cbt-maintenance-field-grid--load > .cbt-maintenance-field {
+        align-self: start;
+        align-content: start;
     }
     .cbt-maintenance-load-checkbox {
         display: inline-flex;
@@ -1385,7 +1433,7 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
                     </div>
                     <div class="cbt-maintenance-live-meta-item">
                         <span>Load Test</span>
-                        <strong><?php echo esc_html($load_test_running_count > 0 ? $load_test_running_count . ' job aktif' : count($load_test_jobs) . ' job'); ?></strong>
+                        <strong><?php echo esc_html($load_test_running_count > 0 ? $load_test_running_count . ' job aktif' : $load_test_job_count . ' job'); ?></strong>
                     </div>
                     <div class="cbt-maintenance-live-meta-item">
                         <span>Tahap Aktif</span>
@@ -1471,6 +1519,912 @@ $first_exam_id = !empty($eligible_exams) ? (int) (($eligible_exams[0]['id'] ?? 0
             </section>
         <?php endif; ?>
 
+        <?php if ($active_tab_markup !== ''): ?>
+            <nav class="cbt-maintenance-tabs" role="tablist" aria-label="Maintenance sections">
+                <a
+                    href="<?php echo esc_url((string) ($maintenance_tab_urls['reset'] ?? add_query_arg(['page' => 'cbt-maintenance', 'cbt_maintenance_tab' => 'reset'], admin_url('admin.php')))); ?>"
+                    class="cbt-maintenance-tab<?php echo $active_maintenance_tab === 'reset' ? ' is-active' : ''; ?>"
+                    data-maintenance-tab-link="reset"
+                    role="tab"
+                    aria-selected="<?php echo $active_maintenance_tab === 'reset' ? 'true' : 'false'; ?>"
+                    <?php echo $active_maintenance_tab === 'reset' ? 'aria-current="page"' : ''; ?>
+                >
+                    Reset Database
+                    <span class="cbt-maintenance-tab-badge"><?php echo esc_html($reset_progress_is_running ? 'Aktif' : 'Form'); ?></span>
+                </a>
+                <a
+                    href="<?php echo esc_url((string) ($maintenance_tab_urls['seed'] ?? add_query_arg(['page' => 'cbt-maintenance', 'cbt_maintenance_tab' => 'seed'], admin_url('admin.php')))); ?>"
+                    class="cbt-maintenance-tab<?php echo $active_maintenance_tab === 'seed' ? ' is-active' : ''; ?>"
+                    data-maintenance-tab-link="seed"
+                    role="tab"
+                    aria-selected="<?php echo $active_maintenance_tab === 'seed' ? 'true' : 'false'; ?>"
+                    <?php echo $active_maintenance_tab === 'seed' ? 'aria-current="page"' : ''; ?>
+                >
+                    Bulk Test Data
+                    <span class="cbt-maintenance-tab-badge"><?php echo esc_html($seed_progress_is_running ? 'Aktif' : 'Form'); ?></span>
+                </a>
+                <a
+                    href="<?php echo esc_url((string) ($maintenance_tab_urls['load'] ?? add_query_arg(['page' => 'cbt-maintenance', 'cbt_maintenance_tab' => 'load'], admin_url('admin.php')))); ?>"
+                    class="cbt-maintenance-tab<?php echo $active_maintenance_tab === 'load' ? ' is-active' : ''; ?>"
+                    data-maintenance-tab-link="load"
+                    role="tab"
+                    aria-selected="<?php echo $active_maintenance_tab === 'load' ? 'true' : 'false'; ?>"
+                    <?php echo $active_maintenance_tab === 'load' ? 'aria-current="page"' : ''; ?>
+                >
+                    Load Test
+                    <span class="cbt-maintenance-tab-badge"><?php echo esc_html($load_test_running_count > 0 ? $load_test_running_count . ' Run' : 'Jobs'); ?></span>
+                </a>
+            </nav>
+
+            <div class="cbt-maintenance-panel is-active" data-maintenance-panel="<?php echo esc_attr($active_maintenance_tab); ?>" role="tabpanel">
+                <?php echo $active_tab_markup; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+            </div>
+
+        </div>
+    </div>
+    <script>
+        (function () {
+            document.querySelectorAll('[data-maintenance-banner-close]').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const banner = button.closest('[data-maintenance-banner]');
+                    if (banner) {
+                        banner.remove();
+                    }
+                });
+            });
+
+            const numberFormatter = window.Intl ? new Intl.NumberFormat('id-ID') : null;
+            const parseJson = function (value, fallbackValue) {
+                try {
+                    return JSON.parse(String(value || ''));
+                } catch (error) {
+                    return fallbackValue;
+                }
+            };
+
+            const initSeedPresetSummary = function (panel) {
+                const seedRoot = panel ? panel.querySelector('[data-seed-panel]') : null;
+                if (!seedRoot) {
+                    return;
+                }
+
+                const presets = parseJson(seedRoot.getAttribute('data-seed-presets'), {});
+                const questionTypeLabels = parseJson(seedRoot.getAttribute('data-seed-question-type-labels'), {});
+                const examProfileLabels = parseJson(seedRoot.getAttribute('data-seed-exam-profile-labels'), {});
+                const select = seedRoot.querySelector('#cbt-seed-preset');
+                if (!select) {
+                    return;
+                }
+
+                const breakdownContainer = seedRoot.querySelector('#cbt-seed-question-breakdown');
+                const questionSummaryTextNode = seedRoot.querySelector('[data-seed-question-summary-text]');
+                const examProfileBreakdownContainer = seedRoot.querySelector('#cbt-seed-exam-profile-breakdown');
+                const examProfileSummaryTextNode = seedRoot.querySelector('[data-seed-exam-profile-summary-text]');
+                const updateSummary = function () {
+                    const preset = presets[select.value] || presets.small || null;
+                    if (!preset) {
+                        return;
+                    }
+
+                    const keys = ['subjects', 'exams', 'questions', 'students', 'teachers', 'classes', 'rooms'];
+                    keys.forEach(function (key) {
+                        seedRoot.querySelectorAll('[data-seed-summary="' + key + '"]').forEach(function (node) {
+                            node.textContent = String(preset[key] || 0);
+                        });
+                    });
+
+                    const labelNode = seedRoot.querySelector('[data-seed-summary-label]');
+                    if (labelNode) {
+                        labelNode.textContent = preset.label || select.value;
+                    }
+
+                    if (questionSummaryTextNode) {
+                        questionSummaryTextNode.textContent = preset.question_type_summary || '';
+                    }
+                    if (examProfileSummaryTextNode) {
+                        examProfileSummaryTextNode.textContent = preset.exam_profile_summary || '';
+                    }
+
+                    if (breakdownContainer) {
+                        breakdownContainer.innerHTML = '';
+                        const counts = preset.question_type_counts || {};
+                        Object.keys(counts).forEach(function (typeKey) {
+                            const count = Number(counts[typeKey] || 0);
+                            if (!count) {
+                                return;
+                            }
+
+                            const chip = document.createElement('span');
+                            chip.className = 'cbt-maintenance-question-chip';
+                            chip.textContent = (questionTypeLabels[typeKey] || typeKey) + ': ' + (numberFormatter ? numberFormatter.format(count) : String(count));
+                            breakdownContainer.appendChild(chip);
+                        });
+                    }
+
+                    if (examProfileBreakdownContainer) {
+                        examProfileBreakdownContainer.innerHTML = '';
+                        const profileCounts = preset.exam_profile_counts || {};
+                        Object.keys(profileCounts).forEach(function (profileKey) {
+                            const count = Number(profileCounts[profileKey] || 0);
+                            if (!count) {
+                                return;
+                            }
+
+                            const chip = document.createElement('span');
+                            chip.className = 'cbt-maintenance-question-chip';
+                            chip.textContent = (examProfileLabels[profileKey] || profileKey) + ': ' + (numberFormatter ? numberFormatter.format(count) : String(count));
+                            examProfileBreakdownContainer.appendChild(chip);
+                        });
+                    }
+                };
+
+                select.addEventListener('change', updateSummary);
+                updateSummary();
+            };
+
+            const loadTestState = {
+                pollingTimer: null
+            };
+
+            const initLoadTestPanel = function (panel) {
+                const loadRoot = panel ? panel.querySelector('[data-load-panel]') : null;
+                const form = loadRoot ? loadRoot.querySelector('[data-load-test-form]') : null;
+                const jobsWrap = loadRoot ? loadRoot.querySelector('[data-load-jobs-wrap]') : null;
+                if (!form && !jobsWrap) {
+                    return;
+                }
+
+                const loadTestGlobalToken = loadRoot ? String(loadRoot.getAttribute('data-load-global-token') || '') : '';
+                const profiles = form ? parseJson(form.getAttribute('data-load-profiles'), {}) : {};
+                const scenarios = form ? parseJson(form.getAttribute('data-load-scenarios'), {}) : {};
+                const shapes = form ? parseJson(form.getAttribute('data-load-shapes'), {}) : {};
+                const exams = form ? parseJson(form.getAttribute('data-load-exams'), []) : [];
+                const k6Path = form ? String(form.getAttribute('data-load-k6-path') || 'k6') : 'k6';
+                const readyUsers = form ? Number(form.getAttribute('data-load-ready-users') || 0) : 0;
+                const presetSelect = form ? form.querySelector('[data-load-profile-preset]') : null;
+                const commandPreview = form ? form.querySelector('[data-load-command-preview]') : null;
+                const warningChip = form ? form.querySelector('[data-load-user-warning]') : null;
+                const durationChip = form ? form.querySelector('[data-load-duration-chip]') : null;
+                const concurrencyChip = form ? form.querySelector('[data-load-concurrency-chip]') : null;
+                const refreshButton = form ? form.querySelector('[data-load-refresh-jobs]') : null;
+                const examPickerLabel = form ? form.querySelector('[data-load-exam-picker-label]') : null;
+                const examPickerMeta = form ? form.querySelector('[data-load-exam-picker-meta]') : null;
+                const selectedSummary = form ? form.querySelector('[data-load-selected-summary]') : null;
+                const questionsField = form ? form.querySelector('[name="questions_per_user"]') : null;
+                const questionHelp = form ? form.querySelector('[data-load-question-help]') : null;
+                const questionOptionsWrap = form ? form.querySelector('[data-load-question-options]') : null;
+                const profileDescriptionNode = form ? form.querySelector('[data-load-profile-description]') : null;
+                const shapeLabelNode = form ? form.querySelector('[data-load-shape-label]') : null;
+                const shapeDescriptionNode = form ? form.querySelector('[data-load-shape-description]') : null;
+                const shapeMetaNode = form ? form.querySelector('[data-load-shape-meta]') : null;
+                const scenarioLabelNode = form ? form.querySelector('[data-load-scenario-label]') : null;
+                const scenarioDescriptionNode = form ? form.querySelector('[data-load-scenario-description]') : null;
+                const scenarioMetaNode = form ? form.querySelector('[data-load-scenario-meta]') : null;
+                const iterationsHelpNode = form ? form.querySelector('[data-load-iterations-help]') : null;
+                const sessionSpreadHelpNode = form ? form.querySelector('[data-load-session-spread-help]') : null;
+                const postSpreadHelpNode = form ? form.querySelector('[data-load-post-spread-help]') : null;
+                const stageSummaryNode = form ? form.querySelector('[data-load-stage-summary]') : null;
+                const concurrencyLabelNode = form ? form.querySelector('[data-load-concurrency-label]') : null;
+                const durationLabelNode = form ? form.querySelector('[data-load-duration-label]') : null;
+                const manualTokenField = form ? form.querySelector('[name="manual_exam_token"]') : null;
+                const tokenSourceChip = form ? form.querySelector('[data-load-token-source-chip]') : null;
+                const tokenValueNode = form ? form.querySelector('[data-load-token-value]') : null;
+                const tokenHelpNode = form ? form.querySelector('[data-load-token-help]') : null;
+                const runningChip = loadRoot ? loadRoot.querySelector('[data-load-running-chip]') : null;
+                const flatFields = form ? Array.prototype.slice.call(form.querySelectorAll('[data-load-flat-field]')) : [];
+                const rampingFields = form ? Array.prototype.slice.call(form.querySelectorAll('[data-load-ramping-field]')) : [];
+                const iterationsField = form ? form.querySelector('[name="iterations"]') : null;
+                const fieldNames = [
+                    'load_shape',
+                    'vus',
+                    'iterations',
+                    'peak_vus',
+                    'warmup_duration',
+                    'ramp_up_duration',
+                    'steady_duration',
+                    'ramp_down_duration',
+                    'ramp_steps',
+                    'questions_per_user',
+                    'session_start_spread_ms',
+                    'post_start_spread_ms',
+                    'scenario_key',
+                ];
+
+                const getScenario = function (scenarioKey) {
+                    const normalizedKey = String(scenarioKey || '').trim();
+                    if (normalizedKey && scenarios[normalizedKey]) {
+                        return scenarios[normalizedKey];
+                    }
+                    return scenarios.full_exam_finish_batch || {};
+                };
+
+                const getShape = function (shapeKey) {
+                    const normalizedKey = String(shapeKey || '').trim();
+                    if (normalizedKey && shapes[normalizedKey]) {
+                        return shapes[normalizedKey];
+                    }
+                    return shapes.flat_iterations || {};
+                };
+
+                const durationToSeconds = function (value) {
+                    const normalized = String(value || '').trim();
+                    const match = normalized.match(/^(\d+)([smh])$/);
+                    if (!match) {
+                        return -1;
+                    }
+                    const amount = Number(match[1] || 0);
+                    const unit = String(match[2] || 's');
+                    if (unit === 'h') {
+                        return amount * 3600;
+                    }
+                    if (unit === 'm') {
+                        return amount * 60;
+                    }
+                    return amount;
+                };
+
+                const secondsToToken = function (seconds) {
+                    return String(Math.max(0, Number(seconds || 0))) + 's';
+                };
+
+                const secondsToLabel = function (seconds) {
+                    const safeSeconds = Math.max(0, Number(seconds || 0));
+                    const hours = Math.floor(safeSeconds / 3600);
+                    const minutes = Math.floor((safeSeconds % 3600) / 60);
+                    const remainingSeconds = Math.floor(safeSeconds % 60);
+                    const parts = [];
+                    if (hours > 0) {
+                        parts.push(String(hours) + 'j');
+                    }
+                    if (minutes > 0) {
+                        parts.push(String(minutes) + 'm');
+                    }
+                    if (remainingSeconds > 0 || !parts.length) {
+                        parts.push(String(remainingSeconds) + 'd');
+                    }
+                    return parts.join(' ');
+                };
+
+                const normalizeDurationValue = function (value, fallback) {
+                    const normalized = String(value || '').trim();
+                    if (/^\d+[smh]$/.test(normalized)) {
+                        return normalized;
+                    }
+                    return String(fallback || '0s');
+                };
+
+                const compileRampingStages = function (peakVus, warmupDuration, rampUpDuration, steadyDuration, rampDownDuration, rampSteps) {
+                    const stages = [];
+                    const safePeakVus = Math.max(1, Number(peakVus || 1));
+                    const warmupSeconds = durationToSeconds(warmupDuration);
+                    if (warmupSeconds > 0) {
+                        stages.push({
+                            target: Math.max(1, Math.ceil(safePeakVus * 0.15)),
+                            duration: secondsToToken(warmupSeconds)
+                        });
+                    }
+
+                    const safeSteps = Math.max(1, Number(rampSteps || 1));
+                    const rampUpSeconds = durationToSeconds(rampUpDuration);
+                    if (rampUpSeconds > 0) {
+                        const baseSeconds = Math.floor(rampUpSeconds / safeSteps);
+                        const remainderSeconds = rampUpSeconds % safeSteps;
+                        for (let step = 1; step <= safeSteps; step += 1) {
+                            const durationSeconds = baseSeconds + (step <= remainderSeconds ? 1 : 0);
+                            if (durationSeconds <= 0) {
+                                continue;
+                            }
+                            stages.push({
+                                target: Math.max(1, Math.min(safePeakVus, Math.round((safePeakVus * step) / safeSteps))),
+                                duration: secondsToToken(durationSeconds)
+                            });
+                        }
+                    }
+
+                    const steadySeconds = durationToSeconds(steadyDuration);
+                    if (steadySeconds > 0) {
+                        stages.push({
+                            target: safePeakVus,
+                            duration: secondsToToken(steadySeconds)
+                        });
+                    }
+
+                    const rampDownSeconds = durationToSeconds(rampDownDuration);
+                    if (rampDownSeconds > 0) {
+                        stages.push({
+                            target: 0,
+                            duration: secondsToToken(rampDownSeconds)
+                        });
+                    }
+
+                    return stages;
+                };
+
+                const getCurrentPreset = function () {
+                    const presetKey = String(presetSelect && presetSelect.value ? presetSelect.value : '');
+                    return profiles[presetKey] || {};
+                };
+
+                const buildProfileState = function (rawState) {
+                    const preset = getCurrentPreset();
+                    const loadShape = String(preset.load_shape || 'flat_iterations');
+                    const vus = Math.max(1, Number(rawState.vus || preset.vus || 50));
+                    const iterations = Math.max(1, Number(rawState.iterations || preset.iterations || 1));
+                    const peakVus = Math.max(1, Number(rawState.peakVus || preset.peak_vus || vus));
+                    const warmupDuration = normalizeDurationValue(rawState.warmupDuration, preset.warmup_duration || '1m');
+                    const rampUpDuration = normalizeDurationValue(rawState.rampUpDuration, preset.ramp_up_duration || '2m');
+                    const steadyDuration = normalizeDurationValue(rawState.steadyDuration, preset.steady_duration || '5m');
+                    const rampDownDuration = normalizeDurationValue(rawState.rampDownDuration, preset.ramp_down_duration || '1m');
+                    const rampSteps = Math.max(1, Number(rawState.rampSteps || preset.ramp_steps || 2));
+                    const stages = loadShape === 'ramping_vus'
+                        ? compileRampingStages(peakVus, warmupDuration, rampUpDuration, steadyDuration, rampDownDuration, rampSteps)
+                        : [];
+                    const totalStageSeconds = stages.reduce(function (carry, stage) {
+                        return carry + Math.max(0, durationToSeconds(stage.duration));
+                    }, 0);
+                    const maxDuration = loadShape === 'ramping_vus'
+                        ? secondsToToken(Math.min(43320, totalStageSeconds + 120))
+                        : String(preset.max_duration || '45m');
+
+                    return {
+                        loadShape: loadShape,
+                        vus: vus,
+                        iterations: iterations,
+                        peakVus: peakVus,
+                        warmupDuration: warmupDuration,
+                        rampUpDuration: rampUpDuration,
+                        steadyDuration: steadyDuration,
+                        rampDownDuration: rampDownDuration,
+                        rampSteps: rampSteps,
+                        effectiveVus: loadShape === 'ramping_vus' ? peakVus : vus,
+                        stageSummary: loadShape === 'ramping_vus'
+                            ? 'Ramping: ' + warmupDuration + ' warmup · ' + rampUpDuration + ' ramp-up · ' + steadyDuration + ' steady · ' + rampDownDuration + ' ramp-down'
+                            : 'Flat: ' + String(vus) + ' VUs x ' + String(iterations) + ' iteration',
+                        estimatedDurationLabel: loadShape === 'ramping_vus'
+                            ? secondsToLabel(totalStageSeconds)
+                            : String(preset.max_duration || '45m'),
+                        maxDuration: maxDuration,
+                        compiledStages: stages
+                    };
+                };
+
+                const setFieldGroupVisibility = function (fields, isVisible) {
+                    fields.forEach(function (field) {
+                        field.hidden = !isVisible;
+                        Array.prototype.slice.call(field.querySelectorAll('input, select, textarea')).forEach(function (input) {
+                            input.disabled = !isVisible;
+                        });
+                    });
+                };
+
+                const buildCommand = function (exam, state, profileState) {
+                    const parts = [
+                        'cd ' + JSON.stringify('<workspace-for-' + String(exam.id || 0) + '>'),
+                        'BASE_URL=' + JSON.stringify(state.baseUrl),
+                        'EXAM_ID=' + String(exam.id || 0),
+                    ];
+                    if (state.examToken) {
+                        parts.push('EXAM_TOKEN=' + JSON.stringify(state.examToken));
+                    }
+                    parts.push('LOAD_SHAPE=' + JSON.stringify(profileState.loadShape));
+                    if (profileState.loadShape === 'ramping_vus') {
+                        parts.push('PEAK_VUS=' + String(profileState.peakVus));
+                        parts.push('WARMUP_DURATION=' + JSON.stringify(profileState.warmupDuration));
+                        parts.push('RAMP_UP_DURATION=' + JSON.stringify(profileState.rampUpDuration));
+                        parts.push('STEADY_DURATION=' + JSON.stringify(profileState.steadyDuration));
+                        parts.push('RAMP_DOWN_DURATION=' + JSON.stringify(profileState.rampDownDuration));
+                        parts.push('RAMP_STEPS=' + String(profileState.rampSteps));
+                    } else {
+                        parts.push('VUS=' + String(profileState.vus));
+                        parts.push('ITERATIONS=' + String(profileState.iterations));
+                    }
+                    parts.push('QUESTIONS_PER_USER=' + String(state.questionsPerUser));
+                    parts.push('SESSION_START_SPREAD_MS=' + String(state.sessionSpread));
+                    parts.push('POST_START_SPREAD_MS=' + String(state.postSpread));
+                    parts.push('SCENARIO_KEY=' + JSON.stringify(state.scenarioKey));
+                    parts.push('MAX_DURATION=' + JSON.stringify(profileState.maxDuration));
+                    parts.push(JSON.stringify(k6Path) + ' run --summary-export summary.json cbt_exam_1000_users.js');
+                    return parts.join(' \\\n  ');
+                };
+
+                const getState = function () {
+                    const baseUrlField = form ? form.querySelector('[name="base_url"]') : null;
+                    return {
+                        baseUrl: baseUrlField ? String(baseUrlField.value || '').trim() : '',
+                        examToken: manualTokenField && String(manualTokenField.value || '').trim() !== ''
+                            ? String(manualTokenField.value || '').trim().toUpperCase()
+                            : String(loadTestGlobalToken || ''),
+                        vus: Number(form && form.querySelector('[name="vus"]') ? form.querySelector('[name="vus"]').value : 0) || 0,
+                        iterations: Number(form && form.querySelector('[name="iterations"]') ? form.querySelector('[name="iterations"]').value : 1) || 1,
+                        loadShape: String(form && form.querySelector('[name="load_shape"]') ? form.querySelector('[name="load_shape"]').value : 'flat_iterations'),
+                        peakVus: Number(form && form.querySelector('[name="peak_vus"]') ? form.querySelector('[name="peak_vus"]').value : 0) || 0,
+                        warmupDuration: String(form && form.querySelector('[name="warmup_duration"]') ? form.querySelector('[name="warmup_duration"]').value : ''),
+                        rampUpDuration: String(form && form.querySelector('[name="ramp_up_duration"]') ? form.querySelector('[name="ramp_up_duration"]').value : ''),
+                        steadyDuration: String(form && form.querySelector('[name="steady_duration"]') ? form.querySelector('[name="steady_duration"]').value : ''),
+                        rampDownDuration: String(form && form.querySelector('[name="ramp_down_duration"]') ? form.querySelector('[name="ramp_down_duration"]').value : ''),
+                        rampSteps: Number(form && form.querySelector('[name="ramp_steps"]') ? form.querySelector('[name="ramp_steps"]').value : 0) || 0,
+                        questionsPerUser: Number(form && form.querySelector('[name="questions_per_user"]') ? form.querySelector('[name="questions_per_user"]').value : 0) || 0,
+                        sessionSpread: Number(form && form.querySelector('[name="session_start_spread_ms"]') ? form.querySelector('[name="session_start_spread_ms"]').value : 0) || 0,
+                        postSpread: Number(form && form.querySelector('[name="post_start_spread_ms"]') ? form.querySelector('[name="post_start_spread_ms"]').value : 0) || 0,
+                        scenarioKey: String(form && form.querySelector('[name="scenario_key"]') ? form.querySelector('[name="scenario_key"]').value : 'full_exam_finish_batch')
+                    };
+                };
+
+                const getSelectedExams = function () {
+                    if (!form) {
+                        return [];
+                    }
+                    const checkedIds = Array.prototype.slice.call(form.querySelectorAll('[data-load-exam-checkbox]:checked')).map(function (input) {
+                        return Number(input.value || 0);
+                    });
+                    return exams.filter(function (exam) {
+                        return checkedIds.indexOf(Number(exam.id || 0)) !== -1;
+                    });
+                };
+
+                const renderSelectedExams = function (selectedExams) {
+                    if (!selectedSummary) {
+                        return;
+                    }
+
+                    selectedSummary.innerHTML = '';
+                    if (!selectedExams.length) {
+                        const emptyState = document.createElement('div');
+                        emptyState.className = 'cbt-maintenance-load-selected-empty';
+                        emptyState.textContent = 'Belum ada exam dipilih. Buka dropdown di atas lalu centang exam yang ingin dijalankan untuk load test.';
+                        selectedSummary.appendChild(emptyState);
+                        return;
+                    }
+
+                    selectedExams.forEach(function (exam) {
+                        const card = document.createElement('article');
+                        card.className = 'cbt-maintenance-load-selected-card';
+
+                        const copy = document.createElement('div');
+                        copy.className = 'cbt-maintenance-load-exam-copy';
+
+                        const title = document.createElement('strong');
+                        title.textContent = String(exam.title || ('Exam #' + String(exam.id || 0)));
+                        copy.appendChild(title);
+
+                        const meta = document.createElement('span');
+                        const rawKkm = Number(exam.kkm_percentage);
+                        const safeKkm = Number.isFinite(rawKkm) ? rawKkm : 75;
+                        meta.textContent = String(exam.subject_name || '') + ' · ' + String(exam.question_count || 0) + ' soal · ' + String(exam.duration_minutes || 0) + ' menit · KKM ' + String(safeKkm) + '%';
+                        copy.appendChild(meta);
+
+                        const schedule = document.createElement('span');
+                        schedule.textContent = String(exam.schedule_label || 'Tanpa batas jadwal');
+                        copy.appendChild(schedule);
+
+                        const target = document.createElement('span');
+                        const classes = Array.isArray(exam.target_kelas_list) && exam.target_kelas_list.length
+                            ? exam.target_kelas_list.join(', ')
+                            : 'Semua kelas';
+                        target.textContent = 'Target kelas: ' + classes;
+                        copy.appendChild(target);
+
+                        card.appendChild(copy);
+                        selectedSummary.appendChild(card);
+                    });
+                };
+
+                const updateExamPickerSummary = function (selectedExams) {
+                    if (examPickerLabel) {
+                        if (!selectedExams.length) {
+                            examPickerLabel.textContent = 'Belum ada exam dipilih';
+                        } else if (selectedExams.length === 1) {
+                            examPickerLabel.textContent = String(selectedExams[0].title || '1 exam dipilih');
+                        } else {
+                            examPickerLabel.textContent = String(selectedExams.length) + ' exam dipilih';
+                        }
+                    }
+
+                    if (examPickerMeta) {
+                        if (!selectedExams.length) {
+                            examPickerMeta.textContent = 'Buka daftar exam aktif lalu centang exam yang ingin dijalankan.';
+                        } else if (selectedExams.length === 1) {
+                            examPickerMeta.textContent = '1 job k6 akan dibuat untuk exam ini.';
+                        } else {
+                            examPickerMeta.textContent = String(selectedExams.length) + ' job k6 akan dibuat dan dijalankan paralel.';
+                        }
+                    }
+                };
+
+                const updateTokenState = function () {
+                    if (!tokenSourceChip && !tokenValueNode && !tokenHelpNode) {
+                        return;
+                    }
+
+                    const manualToken = manualTokenField ? String(manualTokenField.value || '').trim().toUpperCase() : '';
+                    const globalToken = String(loadTestGlobalToken || '').trim().toUpperCase();
+
+                    if (manualToken !== '') {
+                        if (tokenSourceChip) {
+                            tokenSourceChip.textContent = 'Manual override';
+                            tokenSourceChip.className = 'cbt-maintenance-chip cbt-maintenance-chip--running';
+                        }
+                        if (tokenValueNode) {
+                            tokenValueNode.textContent = manualToken;
+                        }
+                        if (tokenHelpNode) {
+                            tokenHelpNode.textContent = 'Token manual ini akan dipakai untuk run sekarang dan mengoverride token global aktif.';
+                        }
+                        return;
+                    }
+
+                    if (globalToken !== '') {
+                        if (tokenSourceChip) {
+                            tokenSourceChip.textContent = 'Global aktif';
+                            tokenSourceChip.className = 'cbt-maintenance-chip cbt-maintenance-chip--done';
+                        }
+                        if (tokenValueNode) {
+                            tokenValueNode.textContent = globalToken;
+                        }
+                        if (tokenHelpNode) {
+                            tokenHelpNode.textContent = 'Token global aktif ini akan dipakai otomatis selama field override tetap kosong.';
+                        }
+                        return;
+                    }
+
+                    if (tokenSourceChip) {
+                        tokenSourceChip.textContent = 'Token belum ada';
+                        tokenSourceChip.className = 'cbt-maintenance-chip cbt-maintenance-chip--danger';
+                    }
+                    if (tokenValueNode) {
+                        tokenValueNode.textContent = '-';
+                    }
+                    if (tokenHelpNode) {
+                        tokenHelpNode.textContent = 'Belum ada token global aktif. Isi manual token override jika run ini tetap harus memakai token exam tertentu.';
+                    }
+                };
+
+                const buildQuestionOptionValues = function (minCount, maxCount) {
+                    const values = [0];
+                    [10, 20, 30, 40, 50].forEach(function (value) {
+                        if (value > 0 && value < minCount) {
+                            values.push(value);
+                        }
+                    });
+                    if (minCount > 0) {
+                        values.push(minCount);
+                    }
+                    if (maxCount > minCount) {
+                        values.push(maxCount);
+                    }
+
+                    return values.filter(function (value, index, array) {
+                        return array.indexOf(value) === index;
+                    }).sort(function (left, right) {
+                        return left - right;
+                    });
+                };
+
+                const formatNumber = function (value) {
+                    return numberFormatter ? numberFormatter.format(Number(value || 0)) : String(value || 0);
+                };
+
+                const updateScenarioSummary = function (scenarioKey) {
+                    const scenario = getScenario(scenarioKey);
+                    if (scenarioLabelNode) {
+                        scenarioLabelNode.textContent = String(scenario.label || scenarioKey || 'Scenario');
+                    }
+                    if (scenarioDescriptionNode) {
+                        scenarioDescriptionNode.textContent = String(scenario.description || 'Pilih alur load test yang ingin dijalankan.');
+                    }
+                    if (scenarioMetaNode) {
+                        scenarioMetaNode.textContent = String(scenario.endpoint_summary || '');
+                    }
+                };
+
+                const updateShapeSummary = function (shapeKey, profileState) {
+                    const shape = getShape(shapeKey);
+                    const isRamping = String(profileState.loadShape || '') === 'ramping_vus';
+
+                    if (shapeLabelNode) {
+                        shapeLabelNode.textContent = String(shape.label || shapeKey || 'Load Shape');
+                    }
+                    if (shapeDescriptionNode) {
+                        shapeDescriptionNode.textContent = String(shape.description || 'Pilih bentuk trafik yang ingin dipakai runner.');
+                    }
+                    if (shapeMetaNode) {
+                        shapeMetaNode.textContent = String(shape.endpoint_hint || '');
+                    }
+                    if (profileDescriptionNode) {
+                        const preset = getCurrentPreset();
+                        profileDescriptionNode.textContent = String(preset.description || '');
+                    }
+
+                    setFieldGroupVisibility(flatFields, !isRamping);
+                    setFieldGroupVisibility(rampingFields, isRamping);
+
+                    if (iterationsField) {
+                        iterationsField.disabled = isRamping;
+                    }
+                    if (iterationsHelpNode) {
+                        iterationsHelpNode.innerHTML = isRamping
+                            ? 'Mode <code>ramping_vus</code> mengabaikan field <code>iterations</code>. Durasi run dikendalikan oleh warmup, ramp-up, steady, dan ramp-down.'
+                            : 'Berapa kali satu skenario ujian dijalankan per virtual user. Nilai lebih tinggi berarti total request ikut bertambah.';
+                    }
+                    if (sessionSpreadHelpNode) {
+                        sessionSpreadHelpNode.innerHTML = isRamping
+                            ? 'Pada mode ramping, field ini hanya fine-tuning tambahan di atas stage ramping. Gunakan untuk menyebar login/start attempt lebih halus.'
+                            : 'Jeda penyebaran saat mulai sesi user, supaya login dan start attempt tidak menumpuk di milidetik yang sama.';
+                    }
+                    if (postSpreadHelpNode) {
+                        postSpreadHelpNode.innerHTML = isRamping
+                            ? 'Pada mode ramping, field ini hanya fine-tuning tambahan setelah <code>start_attempt</code>; bentuk trafik utama tetap berasal dari stages.'
+                            : 'Jeda tambahan setelah <code>start_attempt</code> berhasil, sebelum runner mulai request daftar soal exam.';
+                    }
+                    if (stageSummaryNode) {
+                        stageSummaryNode.textContent = String(profileState.stageSummary || '-');
+                    }
+                    if (concurrencyLabelNode) {
+                        concurrencyLabelNode.textContent = String(profileState.effectiveVus || 0) + ' user';
+                    }
+                    if (durationLabelNode) {
+                        durationLabelNode.textContent = String(profileState.estimatedDurationLabel || '-');
+                    }
+                    if (concurrencyChip) {
+                        concurrencyChip.textContent = String(shape.label || 'Load') + ' ' + String(profileState.effectiveVus || 0);
+                    }
+                    if (durationChip) {
+                        durationChip.textContent = String(profileState.estimatedDurationLabel || '-');
+                    }
+                };
+
+                const updateQuestionFieldMeta = function (selectedExams, scenarioKey) {
+                    if (!questionsField && !questionHelp && !questionOptionsWrap) {
+                        return;
+                    }
+
+                    const scenario = getScenario(scenarioKey);
+                    const readsQuestions = Number(scenario.reads_questions || 0) === 1;
+
+                    const counts = selectedExams.map(function (exam) {
+                        return Number(exam.question_count || 0) || 0;
+                    }).filter(function (count) {
+                        return count > 0;
+                    });
+
+                    if (questionOptionsWrap) {
+                        questionOptionsWrap.innerHTML = '';
+                    }
+
+                    if (!readsQuestions) {
+                        if (questionHelp) {
+                            questionHelp.innerHTML = 'Scenario ini tidak membaca daftar soal, jadi field <code>Questions per user</code> diabaikan untuk run ini.';
+                        }
+                        if (questionsField) {
+                            questionsField.setAttribute('max', '500');
+                        }
+                        return;
+                    }
+
+                    if (!counts.length) {
+                        if (questionHelp) {
+                            questionHelp.innerHTML = '<code>0</code> berarti semua soal exam akan dipakai. Pilih exam dulu untuk melihat saran jumlah soal berdasarkan exam yang dipilih.';
+                        }
+                        if (questionsField) {
+                            questionsField.setAttribute('max', '500');
+                        }
+                        return;
+                    }
+
+                    const minCount = Math.min.apply(null, counts);
+                    const maxCount = Math.max.apply(null, counts);
+                    const sameCount = minCount === maxCount;
+                    const currentValue = questionsField ? (Number(questionsField.value || 0) || 0) : 0;
+
+                    if (questionsField) {
+                        questionsField.setAttribute('max', String(Math.min(500, maxCount)));
+                    }
+
+                    if (questionHelp) {
+                        if (sameCount) {
+                            questionHelp.innerHTML = 'Exam terpilih punya <code>' + formatNumber(minCount) + '</code> soal. Gunakan <code>0</code> jika ingin memakai semua soal, atau pilih angka cepat di bawah.';
+                        } else {
+                            questionHelp.innerHTML = 'Exam terpilih punya <code>' + formatNumber(minCount) + '</code> sampai <code>' + formatNumber(maxCount) + '</code> soal. Nilai <code>' + formatNumber(minCount) + '</code> aman untuk semua exam, sedangkan <code>0</code> berarti semua soal tiap exam dipakai.';
+                        }
+                    }
+
+                    if (!questionOptionsWrap || !questionsField) {
+                        return;
+                    }
+
+                    buildQuestionOptionValues(minCount, maxCount).forEach(function (value) {
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = 'cbt-maintenance-load-quick-option' + (currentValue === value ? ' is-active' : '');
+                        button.setAttribute('data-load-question-option', String(value));
+
+                        if (value === 0) {
+                            button.textContent = sameCount ? 'Semua (' + formatNumber(minCount) + ')' : 'Semua per exam';
+                        } else if (!sameCount && value === minCount) {
+                            button.textContent = formatNumber(value) + ' aman semua';
+                        } else if (!sameCount && value === maxCount) {
+                            button.textContent = formatNumber(value) + ' maks';
+                        } else {
+                            button.textContent = formatNumber(value);
+                        }
+
+                        button.addEventListener('click', function () {
+                            questionsField.value = String(value);
+                            updateCommandPreview();
+                        });
+                        questionOptionsWrap.appendChild(button);
+                    });
+                };
+
+                const applyPreset = function () {
+                    if (!form || !presetSelect) {
+                        return;
+                    }
+                    const presetKey = String(presetSelect.value || '');
+                    const preset = profiles[presetKey] || null;
+                    if (!preset) {
+                        return;
+                    }
+                    fieldNames.forEach(function (fieldName) {
+                        const field = form.querySelector('[name="' + fieldName + '"]');
+                        if (field && preset[fieldName] !== undefined) {
+                            field.value = String(preset[fieldName]);
+                        }
+                    });
+                };
+
+                const updateCommandPreview = function () {
+                    if (!commandPreview) {
+                        return;
+                    }
+                    const selectedExams = getSelectedExams();
+                    updateExamPickerSummary(selectedExams);
+                    renderSelectedExams(selectedExams);
+                    const state = getState();
+                    const profileState = buildProfileState(state);
+                    updateScenarioSummary(state.scenarioKey);
+                    updateShapeSummary(state.loadShape, profileState);
+                    updateQuestionFieldMeta(selectedExams, state.scenarioKey);
+                    updateTokenState();
+                    if (warningChip) {
+                        const needsReuse = readyUsers > 0 && profileState.effectiveVus > readyUsers;
+                        warningChip.textContent = needsReuse ? 'User akan di-reuse' : 'User cukup';
+                        warningChip.className = 'cbt-maintenance-chip cbt-maintenance-chip--' + (needsReuse ? 'danger' : 'idle');
+                    }
+                    if (!selectedExams.length) {
+                        commandPreview.textContent = 'Belum ada exam dipilih.';
+                        return;
+                    }
+
+                    const blocks = selectedExams.map(function (exam) {
+                        return '# ' + String(exam.title || ('Exam #' + String(exam.id || 0))) + '\n' + buildCommand(exam, state, profileState);
+                    });
+                    commandPreview.textContent = blocks.join('\n\n');
+                };
+
+                const initLoadJobSelector = function (preferredJobId) {
+                    if (!jobsWrap) {
+                        return;
+                    }
+
+                    const selector = jobsWrap.querySelector('[data-load-job-selector]');
+                    const cards = Array.prototype.slice.call(jobsWrap.querySelectorAll('[data-load-job-card]'));
+                    if (!selector || !cards.length) {
+                        return;
+                    }
+
+                    const availableIds = cards.map(function (card) {
+                        return String(card.getAttribute('data-load-job-id') || '');
+                    });
+                    const applySelection = function (jobId) {
+                        let resolvedId = String(jobId || '').trim();
+                        if (availableIds.indexOf(resolvedId) === -1) {
+                            resolvedId = availableIds.length ? availableIds[0] : '';
+                        }
+                        selector.value = resolvedId;
+                        cards.forEach(function (card) {
+                            const active = String(card.getAttribute('data-load-job-id') || '') === resolvedId;
+                            card.hidden = !active;
+                        });
+                    };
+
+                    selector.addEventListener('change', function () {
+                        applySelection(String(selector.value || ''));
+                    });
+
+                    applySelection(String(preferredJobId || selector.value || ''));
+                };
+
+                const schedulePolling = function (runningCount) {
+                    if (loadTestState.pollingTimer) {
+                        window.clearTimeout(loadTestState.pollingTimer);
+                        loadTestState.pollingTimer = null;
+                    }
+                    if (Number(runningCount || 0) <= 0 || !jobsWrap) {
+                        return;
+                    }
+                    loadTestState.pollingTimer = window.setTimeout(function () {
+                        refreshJobs();
+                    }, 5000);
+                };
+
+                const refreshJobs = function () {
+                    if (!jobsWrap) {
+                        return;
+                    }
+                    const ajaxUrl = String(jobsWrap.getAttribute('data-load-jobs-ajax-url') || '');
+                    const ajaxNonce = String(jobsWrap.getAttribute('data-load-jobs-ajax-nonce') || '');
+                    if (ajaxUrl === '' || ajaxNonce === '' || typeof window.fetch !== 'function') {
+                        window.location.reload();
+                        return;
+                    }
+
+                    const currentJobSelector = jobsWrap.querySelector('[data-load-job-selector]');
+                    const currentJobId = currentJobSelector ? String(currentJobSelector.value || '') : '';
+                    const url = new URL(ajaxUrl, window.location.origin);
+                    url.searchParams.set('nonce', ajaxNonce);
+
+                    window.fetch(url.toString(), {
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json'
+                        }
+                    }).then(function (response) {
+                        return response.json();
+                    }).then(function (payload) {
+                        if (!payload || !payload.success || !payload.data) {
+                            return;
+                        }
+                        jobsWrap.innerHTML = String(payload.data.html || '');
+                        jobsWrap.setAttribute('data-load-running-count', String(payload.data.running_count || 0));
+                        initLoadJobSelector(currentJobId);
+                        if (runningChip) {
+                            runningChip.textContent = Number(payload.data.running_count || 0) > 0
+                                ? String(payload.data.running_count || 0) + ' running'
+                                : String(payload.data.job_count || 0) + ' total';
+                            runningChip.className = 'cbt-maintenance-chip cbt-maintenance-chip--' + (Number(payload.data.running_count || 0) > 0 ? 'running' : 'idle');
+                        }
+                        schedulePolling(Number(payload.data.running_count || 0));
+                    }).catch(function () {
+                        schedulePolling(0);
+                    });
+                };
+
+                if (presetSelect) {
+                    presetSelect.addEventListener('change', function () {
+                        applyPreset();
+                        updateCommandPreview();
+                    });
+                }
+                if (form) {
+                    Array.prototype.slice.call(form.querySelectorAll('input, select')).forEach(function (field) {
+                        field.addEventListener('change', updateCommandPreview);
+                        field.addEventListener('input', updateCommandPreview);
+                    });
+                }
+                if (form) {
+                    form.querySelectorAll('[data-load-exam-checkbox]').forEach(function (checkbox) {
+                        checkbox.addEventListener('change', updateCommandPreview);
+                    });
+                }
+                if (refreshButton) {
+                    refreshButton.addEventListener('click', function () {
+                        refreshJobs();
+                    });
+                }
+                updateCommandPreview();
+                initLoadJobSelector('');
+                schedulePolling(Number(jobsWrap && jobsWrap.getAttribute('data-load-running-count') ? jobsWrap.getAttribute('data-load-running-count') : 0));
+            };
+
+            const activePanel = document.querySelector('[data-maintenance-panel].is-active');
+            if (activePanel) {
+                initSeedPresetSummary(activePanel);
+                initLoadTestPanel(activePanel);
+            }
+        }());
+    </script>
+<?php else: ?>
         <nav class="cbt-maintenance-tabs" role="tablist" aria-label="Maintenance sections">
             <button
                 type="button"
@@ -2728,3 +3682,4 @@ k6 version</code></pre>
         initLoadTestPanel();
     }());
 </script>
+<?php endif; ?>

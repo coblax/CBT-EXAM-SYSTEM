@@ -249,7 +249,7 @@ export function createReviewRenderer(deps) {
                         var matchClass = isMatch ? ' is-match' : ' is-mismatch';
                         return [
                             '<tr>',
-                            '<td class="cbt-tf-matrix-statement"><span class="cbt-option-key">' + escapeHtml(index + 1) + '.</span> ' + escapeHtml(String(row && row.text ? row.text : '')) + '</td>',
+                            '<td class="cbt-tf-matrix-statement"><span class="cbt-option-key">' + escapeHtml(index + 1) + '.</span> ' + safeRichHtml(row && row.text ? row.text : '') + '</td>',
                             '<td class="cbt-tf-matrix-choice' + matchClass + '">' + escapeHtml(submitted) + '</td>',
                             '<td class="cbt-tf-matrix-choice">' + escapeHtml(correct) + '</td>',
                             '</tr>'
@@ -278,7 +278,7 @@ export function createReviewRenderer(deps) {
             answerMarkup = [
                 '<div class="cbt-review-essay-answer">',
                 '<div class="cbt-review-pair"><strong>Jawaban Anda:</strong><div class="cbt-review-text">' + renderReviewText(item && item.answer_text ? item.answer_text : '') + '</div></div>',
-                '<div class="cbt-review-pair"><strong>Acuan/Rubrik:</strong><div class="cbt-review-text">' + renderReviewText(rubricText) + '</div></div>',
+                '<div class="cbt-review-pair"><strong>Acuan/Rubrik:</strong><div class="cbt-review-text">' + (rubricText !== '' ? safeRichHtml(rubricText) : '<span class="cbt-review-empty">-</span>') + '</div></div>',
                 '</div>'
             ].join('');
         } else {

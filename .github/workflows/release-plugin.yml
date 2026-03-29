@@ -1,0 +1,120 @@
+name: Release Plugin
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+          coverage: none
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend assets
+        run: npm run build
+
+      - name: Install production PHP dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+
+      - name: Prepare release package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="${GITHUB_REF_NAME}"
+          PACKAGE_NAME="cbt-exam-system.zip"
+          MANIFEST_NAME="cbt-update-manifest.json"
+          DIST_ROOT="${RUNNER_TEMP}/release-dist"
+          PLUGIN_ROOT="${DIST_ROOT}/cbt-exam-system"
+
+          rm -rf "${DIST_ROOT}"
+          mkdir -p "${PLUGIN_ROOT}"
+
+          VERSION=$(php -r '$header=file_get_contents("cbt-exam-system.php"); if (!preg_match("/^\\s*Version:\\s*(.+)$/mi", $header, $m)) { fwrite(STDERR, "Unable to read plugin version\n"); exit(1); } echo trim($m[1]);')
+          REQUIRES_WP=$(php -r '$header=file_get_contents("cbt-exam-system.php"); if (!preg_match("/^\\s*Requires at least:\\s*(.+)$/mi", $header, $m)) { fwrite(STDERR, "Unable to read Requires at least\n"); exit(1); } echo trim($m[1]);')
+          REQUIRES_PHP=$(php -r '$header=file_get_contents("cbt-exam-system.php"); if (!preg_match("/^\\s*Requires PHP:\\s*(.+)$/mi", $header, $m)) { fwrite(STDERR, "Unable to read Requires PHP\n"); exit(1); } echo trim($m[1]);')
+          DOWNLOAD_URL="https://github.com/coblax/CBT-EXAM-SYSTEM/releases/download/${TAG_NAME}/${PACKAGE_NAME}"
+          PUBLISHED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          CHANGELOG=$(git tag -l --format='%(contents)' "${TAG_NAME}")
+          if [ -z "${CHANGELOG}" ]; then
+            CHANGELOG="Release ${VERSION}"
+          fi
+
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='node_modules' \
+            --exclude='tests' \
+            --exclude='performance' \
+            --exclude='coverage' \
+            --exclude='playwright-results' \
+            --exclude='test-results' \
+            --exclude='.phpunit.cache' \
+            --exclude='.playwright-browsers' \
+            --exclude='.scannerwork' \
+            --exclude='*.log' \
+            ./ "${PLUGIN_ROOT}/"
+
+          (
+            cd "${DIST_ROOT}"
+            zip -r "${PACKAGE_NAME}" "cbt-exam-system" >/dev/null
+          )
+
+          SHA256=$(sha256sum "${DIST_ROOT}/${PACKAGE_NAME}" | awk '{print $1}')
+
+          export PLUGIN_VERSION="${VERSION}"
+          export TAG_NAME="${TAG_NAME}"
+          export PUBLISHED_AT="${PUBLISHED_AT}"
+          export DOWNLOAD_URL="${DOWNLOAD_URL}"
+          export SHA256="${SHA256}"
+          export REQUIRES_PHP="${REQUIRES_PHP}"
+          export REQUIRES_WP="${REQUIRES_WP}"
+          export CHANGELOG="${CHANGELOG}"
+          export MANIFEST_PATH="${DIST_ROOT}/${MANIFEST_NAME}"
+
+          php -r '
+          $manifest = [
+              "version" => getenv("PLUGIN_VERSION"),
+              "tag" => getenv("TAG_NAME"),
+              "published_at" => getenv("PUBLISHED_AT"),
+              "download_url" => getenv("DOWNLOAD_URL"),
+              "sha256" => getenv("SHA256"),
+              "requires_php" => getenv("REQUIRES_PHP"),
+              "requires_wp" => getenv("REQUIRES_WP"),
+              "tested_up_to" => getenv("REQUIRES_WP"),
+              "changelog" => getenv("CHANGELOG"),
+          ];
+          file_put_contents(getenv("MANIFEST_PATH"), json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
+          '
+
+          echo "PACKAGE_PATH=${DIST_ROOT}/${PACKAGE_NAME}" >> "${GITHUB_ENV}"
+          echo "MANIFEST_PATH=${DIST_ROOT}/${MANIFEST_NAME}" >> "${GITHUB_ENV}"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.PACKAGE_PATH }}
+            ${{ env.MANIFEST_PATH }}

@@ -5340,8 +5340,8 @@ class CBT_REST
             }
 
             if (!is_array($candidate)) {
-                $text = sanitize_text_field(trim((string) $candidate));
-                if ($text === '') {
+                $text = CBT_Admin_Questions_Helper::sanitize_editor_html(trim((string) $candidate));
+                if (!CBT_Admin_Questions_Helper::has_non_empty_html_content($text)) {
                     continue;
                 }
                 $normalized[] = [
@@ -5351,10 +5351,10 @@ class CBT_REST
                 continue;
             }
 
-            $text = sanitize_text_field(
+            $text = CBT_Admin_Questions_Helper::sanitize_editor_html(
                 trim((string) ($candidate['text'] ?? $candidate['statement'] ?? $candidate['pernyataan'] ?? ''))
             );
-            if ($text === '') {
+            if (!CBT_Admin_Questions_Helper::has_non_empty_html_content($text)) {
                 continue;
             }
 

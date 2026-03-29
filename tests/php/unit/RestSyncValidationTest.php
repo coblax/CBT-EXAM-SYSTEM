@@ -212,6 +212,7 @@ final class RestSyncValidationTest extends TestCase
     public function test_short_answer_evaluation_is_case_insensitive_and_tolerates_spacing_and_edge_punctuation(): void
     {
         $this->bootstrapRestScaffold();
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-questions-helper.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
 
         $evaluator = new ReflectionMethod('CBT_REST', 'evaluate_answer');
@@ -233,6 +234,36 @@ final class RestSyncValidationTest extends TestCase
 
         self::assertSame(1, $result['is_correct']);
         self::assertSame(5.0, $result['score_awarded']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_true_false_matrix_rest_normalizer_preserves_rich_statement_html(): void
+    {
+        $this->bootstrapRestScaffold();
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-questions-helper.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        $normalizer = new ReflectionMethod('CBT_REST', 'normalize_true_false_matrix_config');
+        $normalizer->setAccessible(true);
+
+        $items = $normalizer->invoke(null, wp_json_encode([
+            'statements' => [
+                [
+                    'text' => '<ul><li>Butir 1</li><li>Butir 2</li></ul>',
+                    'answer' => 'true',
+                ],
+                [
+                    'text' => '<p>Pernyataan kedua</p>',
+                    'answer' => 'false',
+                ],
+            ],
+        ]));
+
+        self::assertIsArray($items);
+        self::assertSame('<ul><li>Butir 1</li><li>Butir 2</li></ul>', $items[0]['text']);
+        self::assertSame('true', $items[0]['answer']);
+        self::assertSame('<p>Pernyataan kedua</p>', $items[1]['text']);
+        self::assertSame('false', $items[1]['answer']);
     }
 
     private function bootstrapRestScaffold(): void

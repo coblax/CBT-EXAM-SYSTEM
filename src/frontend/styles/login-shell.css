@@ -239,6 +239,7 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
 }
 
 .cbt-login-panel .cbt-login-panel-title {
+    display: none;
     margin: 0 auto 10px;
     max-width: min(100%, 18ch);
     text-align: center;
@@ -287,6 +288,12 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
 
 .cbt-login-panel-brand-mobile {
     display: none;
+}
+
+@media (max-width: 1080px) {
+    .cbt-login-panel .cbt-login-panel-title {
+        display: block;
+    }
 }
 
 .cbt-grid-2 {

@@ -3,6 +3,7 @@ import { NAV_SIDE_LAYOUT_BREAKPOINT } from './config';
 export function createRenderCycleManager(deps) {
     var applyUiPreferences = deps.applyUiPreferences;
     var documentRef = deps.documentRef;
+    var enhanceRichMath = deps.enhanceRichMath;
     var getEffectiveNavPanelPosition = deps.getEffectiveNavPanelPosition;
     var maybePrefetchExamRuntime = deps.maybePrefetchExamRuntime;
     var recordRenderPerformed = deps.recordRenderPerformed;
@@ -257,6 +258,9 @@ export function createRenderCycleManager(deps) {
     }
 
     function runPostRenderEffects(currentStage, currentReason, currentMeta) {
+        if (typeof enhanceRichMath === 'function') {
+            enhanceRichMath();
+        }
         applyUiPreferences();
         syncBodyStageClass();
         updateTimerLabel();

@@ -672,13 +672,17 @@
                                 <th><label for="cbt-subject-import-file">File Import</label></th>
                                 <td>
                                     <input required type="file" id="cbt-subject-import-file" name="subject_file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-                                    <p class="description">
-                                        Kolom minimal: <code>name</code>.
-                                        Kolom opsional: <code>code</code>, <code>description</code>.
-                                        Format didukung: <code>.csv</code> dan <code>.xlsx</code>.
-                                        Import bersifat upsert berdasarkan <code>code</code> (jika code kosong, pakai <code>name</code>).
-                                        Progress import akan tampil otomatis (jumlah diproses, persentase, created/updated/failed).
-                                    </p>
+                                    <div class="description" style="margin-top:8px;">
+                                        <ul style="margin:0 0 0 18px; list-style:disc;">
+                                            <li>Kolom minimal: <code>name</code>.</li>
+                                            <li>Kolom opsional: <code>code</code>, <code>description</code>.</li>
+                                            <li>Format yang didukung: <code>.csv</code> dan <code>.xlsx</code>.</li>
+                                            <li>Import bersifat upsert berdasarkan <code>code</code>. Jika <code>code</code> kosong, sistem memakai <code>name</code>.</li>
+                                            <li>Nilai <code>name</code> dan <code>code</code> tidak boleh duplikat antarbaris dalam file import yang sama.</li>
+                                            <li>Jika <code>code</code> dan <code>name</code> mengarah ke dua subject berbeda, baris tersebut akan ditolak agar tidak merge salah.</li>
+                                            <li>Progress import tampil otomatis: jumlah diproses, persentase, <code>created</code>, <code>updated</code>, dan <code>failed</code>.</li>
+                                        </ul>
+                                    </div>
                                 </td>
                             </tr>
                         </table>
