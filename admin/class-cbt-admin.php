@@ -37,6 +37,7 @@ class CBT_Admin
         add_action('admin_post_cbt_check_developer_dev_server', [CBT_Admin_Developer_Actions::class, 'handle_check_dev_server']);
         add_action('admin_post_cbt_stop_developer_dev_server', [CBT_Admin_Developer_Actions::class, 'handle_stop_dev_server']);
         add_action('admin_post_cbt_run_all_unit_tests', [CBT_Admin_Test_Hub_Actions::class, 'handle_run_all_unit_tests']);
+        add_action('admin_post_cbt_clear_test_artifacts', [CBT_Admin_Test_Hub_Actions::class, 'handle_clear_test_artifacts']);
         add_action('admin_post_cbt_save_test_hub_settings', [CBT_Admin_Test_Hub_Actions::class, 'handle_save_settings']);
         add_action('admin_post_cbt_queue_flow_check_job', [CBT_Admin_Test_Hub_Actions::class, 'handle_queue_flow_check_job']);
         add_action('wp_ajax_cbt_sync_exam_builder_selection', [CBT_Admin_Exams_Actions::class, 'handle_sync_exam_builder_selection']);

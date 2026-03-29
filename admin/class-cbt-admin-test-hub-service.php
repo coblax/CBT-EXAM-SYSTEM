@@ -75,6 +75,7 @@ final class CBT_Admin_Test_Hub_Service
         self::maybe_start_next_flow_job();
         $flow_jobs = self::read_flow_check_jobs();
         $latest_flow_jobs = self::build_latest_flow_job_lookup($flow_jobs);
+        $test_artifact_cleanup = self::build_test_artifact_cleanup_context($latest_flow_jobs);
         if ($unit_test_run_token !== '') {
             $unit_test_run_result = get_transient(self::UNIT_TEST_RUN_RESULT_TRANSIENT_PREFIX . $unit_test_run_token);
             if (!is_array($unit_test_run_result)) {
@@ -146,6 +147,7 @@ final class CBT_Admin_Test_Hub_Service
             'unit_test_area_count' => $unit_test_area_count,
             'unit_test_total_checklist_items' => $unit_test_total_checklist_items,
             'has_active_flow_jobs' => self::has_active_flow_jobs($latest_flow_jobs),
+            'test_artifact_cleanup' => $test_artifact_cleanup,
         ];
     }
 
@@ -959,6 +961,70 @@ final class CBT_Admin_Test_Hub_Service
         exit;
     }
 
+    public static function handle_clear_test_artifacts(): void
+    {
+        if (!self::can_manage_test_hub()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_clear_test_artifacts');
+        $tab = self::normalize_unit_test_tab(isset($_POST['cbt_unit_test_tab']) ? wp_unslash((string) $_POST['cbt_unit_test_tab']) : '');
+        $scope = self::normalize_unit_test_scope(isset($_POST['cbt_checklist_scope']) ? wp_unslash((string) $_POST['cbt_checklist_scope']) : '');
+        $latest_flow_jobs = self::build_latest_flow_job_lookup(self::read_flow_check_jobs());
+
+        if (self::has_active_flow_jobs($latest_flow_jobs)) {
+            self::redirect_test_hub_with_notice(
+                $tab,
+                $scope,
+                '',
+                'Bersihkan artefak test diblokir sementara karena masih ada flow check background yang queued atau running.'
+            );
+        }
+
+        $cleanup = self::build_test_artifact_cleanup_context($latest_flow_jobs);
+        $targets = isset($cleanup['targets']) && is_array($cleanup['targets']) ? (array) $cleanup['targets'] : [];
+        $deleted_labels = [];
+        $failed_labels = [];
+
+        foreach ($targets as $target) {
+            if (!is_array($target) || empty($target['exists'])) {
+                continue;
+            }
+
+            $path = isset($target['absolute_path']) ? (string) $target['absolute_path'] : '';
+            $label = isset($target['label']) ? (string) $target['label'] : $path;
+            if ($path === '') {
+                continue;
+            }
+
+            if (self::remove_test_artifact_path($path)) {
+                $deleted_labels[] = $label;
+            } else {
+                $failed_labels[] = $label;
+            }
+        }
+
+        if (empty($deleted_labels) && empty($failed_labels)) {
+            self::redirect_test_hub_with_notice(
+                $tab,
+                $scope,
+                'Belum ada artefak test yang perlu dibersihkan.',
+                ''
+            );
+        }
+
+        $message = '';
+        $error = '';
+        if (!empty($deleted_labels)) {
+            $message = 'Artefak test berhasil dibersihkan: ' . implode(', ', $deleted_labels) . '.';
+        }
+        if (!empty($failed_labels)) {
+            $error = 'Sebagian artefak test belum bisa dihapus: ' . implode(', ', $failed_labels) . '. Periksa permission folder atau file yang sedang dipakai proses lain.';
+        }
+
+        self::redirect_test_hub_with_notice($tab, $scope, $message, $error);
+    }
+
     /**
      * @return array{label:string,command:string,success:bool,exit_code:int,stdout:string,stderr:string,failure_summary:string,test_case_counts:array{passed:int,failed:int,total:int}}
      */
@@ -1247,6 +1313,136 @@ final class CBT_Admin_Test_Hub_Service
 
         wp_safe_redirect(self::test_hub_page_url($args));
         exit;
+    }
+
+    private static function redirect_test_hub_with_notice(string $tab, string $scope, string $message, string $error): void
+    {
+        $args = [
+            'page' => 'cbt-test-hub',
+            'cbt_unit_test_tab' => self::normalize_unit_test_tab($tab),
+            'cbt_checklist_scope' => self::normalize_unit_test_scope($scope),
+        ];
+
+        if ($message !== '') {
+            $args['cbt_msg'] = $message;
+        }
+        if ($error !== '') {
+            $args['cbt_err'] = $error;
+        }
+
+        wp_safe_redirect(self::test_hub_page_url($args));
+        exit;
+    }
+
+    /**
+     * @param array<string,array<string,mixed>> $latest_flow_jobs
+     * @return array{targets:array<int,array<string,mixed>>,existing_count:int,has_existing:bool,has_active_jobs:bool}
+     */
+    private static function build_test_artifact_cleanup_context(array $latest_flow_jobs): array
+    {
+        $targets = [];
+        $existing_count = 0;
+
+        foreach (self::get_test_artifact_cleanup_targets() as $target) {
+            $relative_path = isset($target['relative_path']) ? (string) $target['relative_path'] : '';
+            $absolute_path = self::plugin_relative_path($relative_path);
+            $exists = $absolute_path !== '' && file_exists($absolute_path);
+            if ($exists) {
+                $existing_count += 1;
+            }
+
+            $target['absolute_path'] = $absolute_path;
+            $target['exists'] = $exists;
+            $targets[] = $target;
+        }
+
+        return [
+            'targets' => $targets,
+            'existing_count' => $existing_count,
+            'has_existing' => $existing_count > 0,
+            'has_active_jobs' => self::has_active_flow_jobs($latest_flow_jobs),
+        ];
+    }
+
+    /**
+     * @return array<int,array{label:string,relative_path:string,description:string}>
+     */
+    private static function get_test_artifact_cleanup_targets(): array
+    {
+        return [
+            [
+                'label' => 'Playwright Results',
+                'relative_path' => 'playwright-results',
+                'description' => 'Trace, screenshot, video, admin-jobs log, dan artefak run browser.',
+            ],
+            [
+                'label' => 'Test Results',
+                'relative_path' => 'test-results',
+                'description' => 'Ringkasan hasil runner tambahan yang dibuat saat QA atau smoke test.',
+            ],
+            [
+                'label' => 'Coverage Report',
+                'relative_path' => 'coverage',
+                'description' => 'HTML report dan file output coverage hasil run lokal.',
+            ],
+            [
+                'label' => 'PHPUnit Cache',
+                'relative_path' => '.phpunit.cache',
+                'description' => 'Cache run PHPUnit lokal untuk percepatan test developer.',
+            ],
+        ];
+    }
+
+    private static function plugin_relative_path(string $relative_path): string
+    {
+        $relative_path = trim(str_replace('\\', '/', $relative_path), '/');
+        if ($relative_path === '') {
+            return '';
+        }
+
+        return rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/' . $relative_path;
+    }
+
+    private static function remove_test_artifact_path(string $path): bool
+    {
+        $normalized_path = wp_normalize_path($path);
+        $plugin_root = wp_normalize_path(rtrim(CBT_EXAM_SYSTEM_PATH, '/\\'));
+        if ($normalized_path === '' || $plugin_root === '' || !str_starts_with($normalized_path, $plugin_root . '/')) {
+            return false;
+        }
+
+        if (!file_exists($path)) {
+            return true;
+        }
+
+        if (is_file($path) || is_link($path)) {
+            return @unlink($path);
+        }
+
+        if (!is_dir($path)) {
+            return false;
+        }
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+
+        foreach ($iterator as $item) {
+            $item_path = (string) $item->getPathname();
+            if ($item->isDir() && !$item->isLink()) {
+                if (!@rmdir($item_path)) {
+                    return false;
+                }
+                continue;
+            }
+
+            if (!@unlink($item_path)) {
+                return false;
+            }
+        }
+
+        return @rmdir($path);
     }
 
     private static function flow_job_directory_path(): string

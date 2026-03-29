@@ -6,6 +6,11 @@ if (!defined('ABSPATH')) {
 
 final class CBT_Admin_Test_Hub_Actions
 {
+    public static function handle_clear_test_artifacts(): void
+    {
+        CBT_Admin_Test_Hub_Service::handle_clear_test_artifacts();
+    }
+
     public static function handle_save_settings(): void
     {
         CBT_Admin_Test_Hub_Service::handle_save_settings();

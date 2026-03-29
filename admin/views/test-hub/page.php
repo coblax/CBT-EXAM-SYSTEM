@@ -12,6 +12,11 @@ if (!defined('ABSPATH')) {
     $global_failed_count = (int) ($global_unit_run_summary['failed_count'] ?? 0);
     $global_total_count = (int) ($global_unit_run_summary['total_count'] ?? 0);
     $global_executed_at = (int) ($global_unit_run_summary['executed_at'] ?? 0);
+    $test_artifact_cleanup = isset($test_artifact_cleanup) && is_array($test_artifact_cleanup) ? $test_artifact_cleanup : [];
+    $test_artifact_cleanup_targets = isset($test_artifact_cleanup['targets']) && is_array($test_artifact_cleanup['targets']) ? (array) $test_artifact_cleanup['targets'] : [];
+    $test_artifact_existing_count = (int) ($test_artifact_cleanup['existing_count'] ?? 0);
+    $test_artifact_has_existing = !empty($test_artifact_cleanup['has_existing']);
+    $test_artifact_has_active_jobs = !empty($test_artifact_cleanup['has_active_jobs']);
     ?>
     <style>
         .cbt-test-hub-page {
@@ -384,11 +389,92 @@ if (!defined('ABSPATH')) {
             gap: 12px;
             flex-wrap: wrap;
         }
+        .cbt-test-hub-settings-actions-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
         .cbt-test-hub-settings-actions p {
             margin: 0;
             color: #475569;
             font-size: 12px;
             line-height: 1.6;
+        }
+        .cbt-test-hub-artifact-box {
+            display: grid;
+            gap: 10px;
+            padding: 14px 16px;
+            border-radius: 16px;
+            border: 1px solid #dbe5ef;
+            background: #fff;
+        }
+        .cbt-test-hub-artifact-box strong {
+            display: block;
+            color: #0f172a;
+            font-size: 13px;
+        }
+        .cbt-test-hub-artifact-box p {
+            margin: 0;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .cbt-test-hub-artifact-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .cbt-test-hub-artifact-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 12px;
+            border-radius: 999px;
+            border: 1px solid #dbe5ef;
+            background: #f8fbff;
+            color: #1e293b;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .cbt-test-hub-artifact-item.is-missing {
+            opacity: 0.72;
+        }
+        .cbt-test-hub-artifact-item-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .cbt-test-hub-artifact-item.is-missing .cbt-test-hub-artifact-item-status {
+            background: #f8fafc;
+            color: #64748b;
+        }
+        .cbt-test-hub-danger-button {
+            min-height: 36px;
+            padding-inline: 16px;
+            border-radius: 999px !important;
+            border-color: #fecaca !important;
+            background: #fef2f2 !important;
+            color: #b91c1c !important;
+            font-weight: 700 !important;
+        }
+        .cbt-test-hub-danger-button:hover,
+        .cbt-test-hub-danger-button:focus {
+            border-color: #fca5a5 !important;
+            background: #fee2e2 !important;
+            color: #991b1b !important;
+        }
+        .cbt-test-hub-danger-button:disabled {
+            border-color: #e2e8f0 !important;
+            background: #f8fafc !important;
+            color: #94a3b8 !important;
         }
         .cbt-test-hub-subtabs {
             display: flex;
@@ -1049,9 +1135,50 @@ if (!defined('ABSPATH')) {
 
                 <div class="cbt-test-hub-settings-actions">
                     <p>Setelah disimpan, Anda tidak perlu lagi `export` manual sebelum menjalankan runner Playwright dari `CBT Test Hub`.</p>
-                    <button type="submit" class="button button-secondary">Simpan Playwright Settings</button>
+                    <div class="cbt-test-hub-settings-actions-group">
+                        <button type="submit" class="button button-secondary">Simpan Playwright Settings</button>
+                    </div>
                 </div>
             </form>
+
+            <div class="cbt-test-hub-artifact-box">
+                <div>
+                    <strong>Bersihkan Artefak Test</strong>
+                    <p>Membersihkan folder hasil run yang sering membesar seperti `playwright-results`, `test-results`, `coverage`, dan `.phpunit.cache`. Tombol ini tidak menyentuh `node_modules` maupun `.playwright-browsers`.</p>
+                </div>
+                <div class="cbt-test-hub-artifact-list">
+                    <?php foreach ($test_artifact_cleanup_targets as $artifact_target): ?>
+                        <?php
+                        $artifact_exists = !empty($artifact_target['exists']);
+                        $artifact_label = (string) ($artifact_target['label'] ?? '');
+                        ?>
+                        <span class="cbt-test-hub-artifact-item<?php echo $artifact_exists ? '' : ' is-missing'; ?>">
+                            <span><?php echo esc_html($artifact_label); ?></span>
+                            <span class="cbt-test-hub-artifact-item-status"><?php echo esc_html($artifact_exists ? 'Tersedia' : 'Kosong'); ?></span>
+                        </span>
+                    <?php endforeach; ?>
+                </div>
+                <div class="cbt-test-hub-settings-actions">
+                    <p>
+                        <?php if ($test_artifact_has_active_jobs): ?>
+                            Cleanup sementara dikunci karena masih ada flow check background yang queued atau running.
+                        <?php elseif ($test_artifact_has_existing): ?>
+                            Saat ini ada <?php echo esc_html((string) $test_artifact_existing_count); ?> target artefak yang bisa dibersihkan dari halaman ini.
+                        <?php else: ?>
+                            Belum ada artefak test yang perlu dibersihkan.
+                        <?php endif; ?>
+                    </p>
+                    <div class="cbt-test-hub-settings-actions-group">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return window.confirm('Bersihkan artefak test generated dari repo ini sekarang?');">
+                            <input type="hidden" name="action" value="cbt_clear_test_artifacts">
+                            <input type="hidden" name="cbt_unit_test_tab" value="<?php echo esc_attr((string) $active_unit_test_tab); ?>">
+                            <input type="hidden" name="cbt_checklist_scope" value="<?php echo esc_attr((string) ($active_checklist_scope ?? 'unit_tests')); ?>">
+                            <?php wp_nonce_field('cbt_clear_test_artifacts'); ?>
+                            <button type="submit" class="button cbt-test-hub-danger-button" <?php disabled($test_artifact_has_active_jobs || !$test_artifact_has_existing); ?>>Bersihkan Artefak Test</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
 
             <nav class="cbt-test-hub-subtabs" role="tablist" aria-label="Unit Test subsystems">
                 <?php foreach ((array) $unit_test_tabs as $unit_test_tab_key => $unit_test_tab): ?>
