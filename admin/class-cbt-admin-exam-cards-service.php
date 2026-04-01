@@ -7,7 +7,9 @@ if (!defined('ABSPATH')) {
 final class CBT_Admin_Exam_Cards_Service
 {
     private const USER_META_PLAIN_PASSWORD = 'cbt_plain_password';
-    private const DEFAULT_STUDENT_PHOTO_RELATIVE_PATH = 'public/images/default-student-avatar.svg';
+    private const DEFAULT_STUDENT_PHOTO_RELATIVE_PATH = 'public/images/default-student-avatar.png';
+    private const DISPLAY_FIELDS_PARAM = 'cbt_card_fields';
+    private const DISPLAY_FIELDS_CONFIGURED_PARAM = 'cbt_card_fields_configured';
 
     public static function can_manage_users(): bool
     {
@@ -25,6 +27,10 @@ final class CBT_Admin_Exam_Cards_Service
         $selected_kelas = isset($query['cbt_card_kelas']) ? sanitize_text_field(wp_unslash((string) $query['cbt_card_kelas'])) : '';
         $selected_ruang = isset($query['cbt_card_ruang']) ? sanitize_text_field(wp_unslash((string) $query['cbt_card_ruang'])) : '';
         $search = isset($query['cbt_card_q']) ? sanitize_text_field(wp_unslash((string) $query['cbt_card_q'])) : '';
+        $display_field_options = self::get_display_field_options();
+        $selected_display_fields = self::get_selected_display_fields_from_source($query);
+        $selected_display_field_labels = self::get_selected_display_field_labels($selected_display_fields);
+        $display_field_count = count($selected_display_fields);
 
         $kelas_options = self::get_distinct_user_meta_values('kode_kelas');
         $ruang_options = self::get_distinct_user_meta_values('kode_ruang');
@@ -49,6 +55,8 @@ final class CBT_Admin_Exam_Cards_Service
 
         return compact(
             'active_filter_count',
+            'display_field_count',
+            'display_field_options',
             'error',
             'kelas_options',
             'notice',
@@ -56,6 +64,8 @@ final class CBT_Admin_Exam_Cards_Service
             'ruang_options',
             'schedule_count',
             'search',
+            'selected_display_field_labels',
+            'selected_display_fields',
             'selected_kelas',
             'selected_ruang'
         );
@@ -70,12 +80,22 @@ final class CBT_Admin_Exam_Cards_Service
         $selected_kelas = isset($source['cbt_card_kelas']) ? trim(sanitize_text_field(wp_unslash((string) $source['cbt_card_kelas']))) : '';
         $selected_ruang = isset($source['cbt_card_ruang']) ? trim(sanitize_text_field(wp_unslash((string) $source['cbt_card_ruang']))) : '';
         $search = isset($source['cbt_card_q']) ? trim(sanitize_text_field(wp_unslash((string) $source['cbt_card_q']))) : '';
+        $selected_display_fields = self::get_selected_display_fields_from_source($source);
 
         $redirect_args = [
             'cbt_card_kelas' => $selected_kelas,
             'cbt_card_ruang' => $selected_ruang,
             'cbt_card_q' => $search,
+            self::DISPLAY_FIELDS_CONFIGURED_PARAM => '1',
+            self::DISPLAY_FIELDS_PARAM => $selected_display_fields,
         ];
+        if (empty($selected_display_fields)) {
+            return new WP_Error(
+                'exam_cards_display_fields_empty',
+                'Pilih minimal satu informasi yang akan ditampilkan pada kartu ujian.',
+                ['redirect_args' => $redirect_args]
+            );
+        }
 
         $students = self::get_exam_card_students($search, $selected_kelas, $selected_ruang);
         if (empty($students)) {
@@ -111,6 +131,13 @@ final class CBT_Admin_Exam_Cards_Service
         $school_name = trim((string) ($branding['school_name'] ?? ''));
         $school_motto = trim((string) ($branding['school_motto'] ?? ''));
         $school_npsn = trim((string) ($branding['school_npsn'] ?? ''));
+        $school_address = trim((string) ($branding['school_address'] ?? ''));
+        $school_village = trim((string) ($branding['school_village'] ?? ''));
+        $school_district_city_ln = trim((string) ($branding['school_district_city_ln'] ?? ''));
+        $school_regency_country_ln = trim((string) ($branding['school_regency_country_ln'] ?? ''));
+        $school_regency_country_ln_is_city = !empty($branding['school_regency_country_ln_is_city']);
+        $school_province_abroad_ln = trim((string) ($branding['school_province_abroad_ln'] ?? ''));
+        $school_province_abroad_ln_is_foreign = !empty($branding['school_province_abroad_ln_is_foreign']);
         if ($school_name === '') {
             $school_name = trim((string) get_bloginfo('name'));
         }
@@ -119,6 +146,15 @@ final class CBT_Admin_Exam_Cards_Service
         }
 
         $card_program_title = $exam_program_name !== '' ? $exam_program_name : 'Ujian CBT';
+        $card_header_address_line = self::build_card_header_address_line($school_address);
+        $card_header_region_line = self::build_card_header_region_line(
+            $school_village,
+            $school_district_city_ln,
+            $school_regency_country_ln,
+            $school_province_abroad_ln,
+            $school_regency_country_ln_is_city,
+            $school_province_abroad_ln_is_foreign
+        );
         $school_logo_1_url = (string) ($branding['logo_1_url'] ?? '');
         $school_logo_2_url = (string) ($branding['logo_2_url'] ?? '');
         $printed_at = current_time('d M Y H:i');
@@ -129,6 +165,8 @@ final class CBT_Admin_Exam_Cards_Service
         $back_args = [
             'page' => 'cbt-exam-cards',
             'cbt_card_kelas' => $selected_kelas,
+            self::DISPLAY_FIELDS_CONFIGURED_PARAM => '1',
+            self::DISPLAY_FIELDS_PARAM => $selected_display_fields,
         ];
         if ($selected_ruang !== '') {
             $back_args['cbt_card_ruang'] = $selected_ruang;
@@ -141,6 +179,8 @@ final class CBT_Admin_Exam_Cards_Service
         return compact(
             'back_url',
             'card_program_title',
+            'card_header_address_line',
+            'card_header_region_line',
             'kelas_label',
             'printed_at',
             'ruang_label',
@@ -150,13 +190,63 @@ final class CBT_Admin_Exam_Cards_Service
             'school_motto',
             'school_name',
             'school_npsn',
+            'selected_display_fields',
             'student_total',
             'students'
         );
     }
 
     /**
-     * @return array<int,array{id:int,username:string,name:string,nisn:string,kelas:string,agama:string,ruang:string,foto:string,password:string}>
+     * @return array<string,array{label:string,description:string}>
+     */
+    public static function get_display_field_options(): array
+    {
+        return [
+            'name' => [
+                'label' => 'Nama Peserta',
+                'description' => 'Nama utama peserta pada kartu.',
+            ],
+            'nisn' => [
+                'label' => 'NISN',
+                'description' => 'Nomor induk siswa nasional.',
+            ],
+            'username' => [
+                'label' => 'Username',
+                'description' => 'Akun login siswa untuk ujian.',
+            ],
+            'password' => [
+                'label' => 'Password',
+                'description' => 'Password login yang tercetak tebal.',
+            ],
+            'kelas' => [
+                'label' => 'Kelas',
+                'description' => 'Kelas siswa saat ini.',
+            ],
+            'jenis_kelamin' => [
+                'label' => 'Jenis Kelamin',
+                'description' => 'Laki-laki atau Perempuan.',
+            ],
+            'agama' => [
+                'label' => 'Agama',
+                'description' => 'Informasi agama peserta.',
+            ],
+            'ruang' => [
+                'label' => 'Ruangan',
+                'description' => 'Ruang ujian atau ruangan siswa.',
+            ],
+            'photo' => [
+                'label' => 'Foto',
+                'description' => 'Foto peserta di sisi kanan kartu.',
+            ],
+            'schedule' => [
+                'label' => 'Jadwal Ujian',
+                'description' => 'Tabel jadwal exam aktif pada kartu.',
+            ],
+        ];
+    }
+
+    /**
+     * @return array<int,array{id:int,username:string,name:string,nisn:string,kelas:string,jenis_kelamin:string,agama:string,ruang:string,foto:string,password:string}>
      */
     public static function get_exam_card_students(string $search, string $kode_kelas, string $kode_ruang): array
     {
@@ -217,7 +307,7 @@ final class CBT_Admin_Exam_Cards_Service
 
             $role = isset($user->roles[0]) ? (string) $user->roles[0] : '';
             $foto = esc_url_raw((string) get_user_meta($user_id, 'foto', true));
-            if ($foto === '' && self::is_student_role($role)) {
+            if (self::should_use_default_student_photo($role, $foto)) {
                 $foto = self::get_default_student_photo_url();
             }
 
@@ -227,12 +317,36 @@ final class CBT_Admin_Exam_Cards_Service
                 'name' => $display_name,
                 'nisn' => trim((string) get_user_meta($user_id, 'nisn', true)),
                 'kelas' => trim((string) get_user_meta($user_id, 'kode_kelas', true)),
+                'jenis_kelamin' => CBT_Admin_Users_Service::normalize_supported_jenis_kelamin((string) get_user_meta($user_id, 'jenis_kelamin', true)),
                 'agama' => trim((string) get_user_meta($user_id, 'agama', true)),
                 'ruang' => trim((string) get_user_meta($user_id, 'kode_ruang', true)),
                 'foto' => $foto,
                 'password' => trim((string) get_user_meta($user_id, self::USER_META_PLAIN_PASSWORD, true)),
             ];
         }
+
+        usort($rows, static function (array $left, array $right): int {
+            $left_kelas = trim((string) ($left['kelas'] ?? ''));
+            $right_kelas = trim((string) ($right['kelas'] ?? ''));
+            $left_has_kelas = $left_kelas !== '';
+            $right_has_kelas = $right_kelas !== '';
+
+            if ($left_has_kelas !== $right_has_kelas) {
+                return $left_has_kelas ? -1 : 1;
+            }
+
+            $kelas_compare = strnatcasecmp($left_kelas, $right_kelas);
+            if ($kelas_compare !== 0) {
+                return $kelas_compare;
+            }
+
+            $name_compare = strnatcasecmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+            if ($name_compare !== 0) {
+                return $name_compare;
+            }
+
+            return strnatcasecmp((string) ($left['username'] ?? ''), (string) ($right['username'] ?? ''));
+        });
 
         return $rows;
     }
@@ -502,9 +616,151 @@ final class CBT_Admin_Exam_Cards_Service
         return in_array($normalized, ['siswa', 'siswa_cbt', 'subscriber', 'student'], true);
     }
 
+    private static function build_card_header_address_line(string $school_address): string
+    {
+        if ($school_address === '') {
+            return '';
+        }
+
+        $raw_address_lines = preg_split('/\r\n|\r|\n/', $school_address);
+        if (!is_array($raw_address_lines)) {
+            return '';
+        }
+
+        $normalized_address_lines = [];
+        foreach ($raw_address_lines as $raw_address_line) {
+            $normalized_address_line = trim((string) $raw_address_line);
+            if ($normalized_address_line !== '') {
+                $normalized_address_lines[] = $normalized_address_line;
+            }
+        }
+
+        if (empty($normalized_address_lines)) {
+            return '';
+        }
+
+        return 'Alamat: ' . implode(', ', $normalized_address_lines);
+    }
+
+    private static function build_card_header_region_line(
+        string $school_village,
+        string $school_district_city_ln,
+        string $school_regency_country_ln,
+        string $school_province_abroad_ln,
+        bool $school_regency_country_ln_is_city,
+        bool $school_province_abroad_ln_is_foreign
+    ): string {
+        $segments = [];
+        if ($school_village !== '') {
+            $segments[] = 'Desa ' . $school_village;
+        }
+        if ($school_district_city_ln !== '') {
+            $segments[] = 'Kec. ' . $school_district_city_ln;
+        }
+        $normalizedRegencyCountry = CBT_Admin_Branding_Settings::normalize_regency_country_value($school_regency_country_ln);
+        if ($normalizedRegencyCountry !== '') {
+            $segments[] = ($school_regency_country_ln_is_city ? 'Kota ' : 'Kab. ') . $normalizedRegencyCountry;
+        }
+        $normalizedProvinceAbroad = CBT_Admin_Branding_Settings::normalize_province_abroad_value($school_province_abroad_ln);
+        if ($normalizedProvinceAbroad !== '') {
+            $segments[] = ($school_province_abroad_ln_is_foreign ? 'LN ' : 'Prov. ') . $normalizedProvinceAbroad;
+        }
+
+        return implode(', ', $segments);
+    }
+
+    /**
+     * @param array<string,mixed> $source
+     * @return string[]
+     */
+    private static function get_selected_display_fields_from_source(array $source): array
+    {
+        $use_defaults = !isset($source[self::DISPLAY_FIELDS_CONFIGURED_PARAM])
+            || sanitize_text_field(wp_unslash((string) $source[self::DISPLAY_FIELDS_CONFIGURED_PARAM])) !== '1';
+
+        return self::normalize_selected_display_fields($source[self::DISPLAY_FIELDS_PARAM] ?? [], $use_defaults);
+    }
+
+    /**
+     * @param mixed $raw
+     * @return string[]
+     */
+    private static function normalize_selected_display_fields($raw, bool $use_defaults_when_empty = true): array
+    {
+        $allowed_keys = array_keys(self::get_display_field_options());
+        $requested = [];
+
+        if (is_array($raw)) {
+            foreach ($raw as $value) {
+                if (!is_scalar($value)) {
+                    continue;
+                }
+                $normalized = sanitize_key(wp_unslash((string) $value));
+                if ($normalized !== '') {
+                    $requested[$normalized] = true;
+                }
+            }
+        } elseif (is_scalar($raw)) {
+            $normalized = sanitize_key(wp_unslash((string) $raw));
+            if ($normalized !== '') {
+                $requested[$normalized] = true;
+            }
+        }
+
+        $selected = [];
+        foreach ($allowed_keys as $allowed_key) {
+            if (isset($requested[$allowed_key])) {
+                $selected[] = $allowed_key;
+            }
+        }
+
+        if (!empty($selected)) {
+            return $selected;
+        }
+
+        return $use_defaults_when_empty ? $allowed_keys : [];
+    }
+
+    /**
+     * @param string[] $selected_display_fields
+     * @return string[]
+     */
+    private static function get_selected_display_field_labels(array $selected_display_fields): array
+    {
+        $options = self::get_display_field_options();
+        $labels = [];
+
+        foreach ($selected_display_fields as $field_key) {
+            if (isset($options[$field_key]['label'])) {
+                $labels[] = (string) $options[$field_key]['label'];
+            }
+        }
+
+        return $labels;
+    }
+
     private static function get_default_student_photo_url(): string
     {
         return esc_url_raw(CBT_EXAM_SYSTEM_URL . self::DEFAULT_STUDENT_PHOTO_RELATIVE_PATH);
+    }
+
+    private static function should_use_default_student_photo(string $role, string $foto): bool
+    {
+        if (!self::is_student_role($role)) {
+            return false;
+        }
+
+        $clean_foto = trim($foto);
+        if ($clean_foto === '') {
+            return true;
+        }
+
+        $photo_path = (string) wp_parse_url($clean_foto, PHP_URL_PATH);
+        if ($photo_path === '') {
+            return false;
+        }
+
+        return basename($photo_path) === 'default-student-avatar.svg';
     }
 
     private static function is_admin_scope(): bool

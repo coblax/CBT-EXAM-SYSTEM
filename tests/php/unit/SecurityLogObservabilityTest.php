@@ -242,10 +242,16 @@ final class SecurityLogObservabilityTest extends TestCase
         $definitions = \CBT_Security_Log::event_definitions();
         self::assertArrayHasKey('idle_detected', $definitions);
         self::assertArrayHasKey('page_refresh', $definitions);
+        self::assertArrayHasKey('print_attempt', $definitions);
+        self::assertArrayHasKey('context_menu_blocked', $definitions);
+        self::assertArrayHasKey('fullscreen_exit_repeat', $definitions);
         self::assertSame('Idle saat ujian', $definitions['idle_detected']['label']);
         self::assertSame('warning', $definitions['idle_detected']['severity']);
         self::assertSame('Refresh halaman', $definitions['page_refresh']['label']);
         self::assertSame('info', $definitions['page_refresh']['severity']);
+        self::assertSame('Percobaan print', $definitions['print_attempt']['label']);
+        self::assertSame('Context menu diblok', $definitions['context_menu_blocked']['label']);
+        self::assertSame('Keluar fullscreen berulang', $definitions['fullscreen_exit_repeat']['label']);
         self::assertSame(
             'Peserta tidak menunjukkan aktivitas pada halaman ujian selama ambang waktu yang ditentukan.',
             $definitions['idle_detected']['message']
@@ -255,6 +261,13 @@ final class SecurityLogObservabilityTest extends TestCase
         $nativeCatalog = \CBT_Security_Log::native_supported_event_definitions();
         $windowsCatalog = \CBT_Security_Log::windows_native_supported_event_definitions();
         self::assertArrayHasKey('page_refresh', $browserCatalog);
+        self::assertArrayHasKey('print_attempt', $browserCatalog);
+        self::assertArrayHasKey('context_menu_blocked', $browserCatalog);
+        self::assertArrayHasKey('devtools_shortcut_blocked', $browserCatalog);
+        self::assertArrayHasKey('view_source_blocked', $browserCatalog);
+        self::assertArrayHasKey('save_page_blocked', $browserCatalog);
+        self::assertArrayHasKey('heartbeat_lost', $browserCatalog);
+        self::assertArrayNotHasKey('fullscreen_exit_repeat', $browserCatalog);
         self::assertArrayHasKey('tab_hidden', $nativeCatalog);
         self::assertArrayHasKey('fullscreen_exit', $nativeCatalog);
         self::assertArrayHasKey('task_manager_blocked', $windowsCatalog);
@@ -270,6 +283,13 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertSame(2, $weights['idle_detected']);
         self::assertSame(3, $weights['tab_hidden']);
         self::assertSame(0.5, $weights['page_refresh']);
+        self::assertSame(3, $weights['print_attempt']);
+        self::assertSame(1, $weights['context_menu_blocked']);
+        self::assertSame(4, $weights['devtools_shortcut_blocked']);
+        self::assertSame(4, $weights['view_source_blocked']);
+        self::assertSame(3, $weights['save_page_blocked']);
+        self::assertSame(2, $weights['heartbeat_lost']);
+        self::assertSame(5, $weights['fullscreen_exit_repeat']);
         self::assertSame(4, $weights['task_manager_blocked']);
         self::assertSame(5, $weights['exit_blocked']);
 
@@ -278,6 +298,13 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertSame('Timer idle', $sourceLabelMethod->invoke(null, 'idle_timer', 'idle_detected'));
         self::assertSame('Windows CEFSharp Shell', $sourceLabelMethod->invoke(null, 'windows_cefsharp_shell', 'tab_hidden'));
         self::assertSame('Resume setelah refresh', $sourceLabelMethod->invoke(null, 'reload_resume', 'page_refresh'));
+        self::assertSame('Shortcut print', $sourceLabelMethod->invoke(null, 'print_shortcut', 'print_attempt'));
+        self::assertSame('Klik kanan / context menu', $sourceLabelMethod->invoke(null, 'contextmenu', 'context_menu_blocked'));
+        self::assertSame('Shortcut buka/tutup DevTools', $sourceLabelMethod->invoke(null, 'devtools_toggle_shortcut', 'devtools_shortcut_blocked'));
+        self::assertSame('Shortcut View Source', $sourceLabelMethod->invoke(null, 'view_source_shortcut', 'view_source_blocked'));
+        self::assertSame('Shortcut Save Page', $sourceLabelMethod->invoke(null, 'save_page_shortcut', 'save_page_blocked'));
+        self::assertSame('Session heartbeat', $sourceLabelMethod->invoke(null, 'session_heartbeat', 'heartbeat_lost'));
+        self::assertSame('Agregasi fullscreen berulang', $sourceLabelMethod->invoke(null, 'fullscreen_repeat_threshold', 'fullscreen_exit_repeat'));
     }
 
     #[RunInSeparateProcess]
@@ -328,6 +355,166 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertIsArray($updatedContext);
         self::assertSame('reload_resume', $updatedContext['source']);
         self::assertSame('beforeunload', $updatedContext['unload_source']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_fullscreen_exit_repeat_is_recorded_once_when_the_third_exit_is_reached(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        update_option('cbt_setup_security', ['log_security_events' => 1]);
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->attemptsById[10] = [
+            'id' => 10,
+            'exam_id' => 51,
+            'student_id' => 9,
+            'status' => 'in_progress',
+        ];
+
+        self::assertTrue(\CBT_Security_Log::record_attempt_event(10, 'fullscreen_exit', [
+            'source' => 'fullscreenchange',
+            'device_type' => 'desktop',
+        ]));
+        self::assertTrue(\CBT_Security_Log::record_attempt_event(10, 'fullscreen_exit', [
+            'source' => 'fullscreenchange',
+            'device_type' => 'desktop',
+        ]));
+        self::assertTrue(\CBT_Security_Log::record_attempt_event(10, 'fullscreen_exit', [
+            'source' => 'fullscreenchange',
+            'device_type' => 'desktop',
+        ]));
+        self::assertTrue(\CBT_Security_Log::record_attempt_event(10, 'fullscreen_exit', [
+            'source' => 'fullscreenchange',
+            'device_type' => 'desktop',
+        ]));
+
+        self::assertCount(5, $wpdb->insertedRows);
+        $repeatRows = array_values(array_filter($wpdb->insertedRows, static function (array $row): bool {
+            return (string) ($row['event_type'] ?? '') === 'fullscreen_exit_repeat';
+        }));
+
+        self::assertCount(1, $repeatRows);
+        self::assertSame('critical', $repeatRows[0]['severity']);
+        $repeatContext = json_decode((string) $repeatRows[0]['context_json'], true);
+        self::assertIsArray($repeatContext);
+        self::assertSame('fullscreen_repeat_threshold', $repeatContext['source']);
+        self::assertSame(3, $repeatContext['threshold']);
+        self::assertSame(3, $repeatContext['fullscreen_exit_count']);
+        self::assertSame('fullscreen_exit', $repeatContext['trigger_event']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_recent_logs_show_print_block_status_and_fullscreen_repeat_summary(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->recentLogs = [
+            [
+                'id' => 10,
+                'attempt_id' => 201,
+                'exam_id' => 501,
+                'student_id' => 71,
+                'event_type' => 'print_attempt',
+                'severity' => 'warning',
+                'message' => 'Peserta mencoba membuka dialog print atau mencetak halaman ujian saat attempt masih berlangsung.',
+                'context_json' => wp_json_encode([
+                    'source' => 'print_shortcut',
+                    'blocked' => 1,
+                    'device_type' => 'desktop',
+                    'device_platform' => 'windows',
+                ]),
+                'occurred_at' => '2026-03-27 08:00:00',
+                'created_at' => '2026-03-27 08:00:00',
+                'student_display_name' => 'Coblax Student',
+                'student_login' => 'coblax',
+                'student_kode_kelas' => 'X-A',
+                'student_kode_ruang' => 'R1',
+                'exam_title' => 'Security Fixture',
+            ],
+            [
+                'id' => 11,
+                'attempt_id' => 201,
+                'exam_id' => 501,
+                'student_id' => 71,
+                'event_type' => 'fullscreen_exit_repeat',
+                'severity' => 'critical',
+                'message' => 'Peserta berulang kali keluar dari mode fullscreen saat ujian berlangsung.',
+                'context_json' => wp_json_encode([
+                    'source' => 'fullscreen_repeat_threshold',
+                    'threshold' => 3,
+                    'fullscreen_exit_count' => 3,
+                    'device_type' => 'desktop',
+                    'device_platform' => 'windows',
+                ]),
+                'occurred_at' => '2026-03-27 08:01:00',
+                'created_at' => '2026-03-27 08:01:00',
+                'student_display_name' => 'Coblax Student',
+                'student_login' => 'coblax',
+                'student_kode_kelas' => 'X-A',
+                'student_kode_ruang' => 'R1',
+                'exam_title' => 'Security Fixture',
+            ],
+        ];
+
+        $logs = \CBT_Security_Log::get_recent_logs();
+
+        self::assertCount(2, $logs);
+        self::assertStringContainsString('Sumber deteksi: Shortcut print.', $logs[0]['message_display']);
+        self::assertStringContainsString('Diblokir: Ya.', $logs[0]['message_display']);
+        self::assertStringContainsString('Sumber deteksi: Agregasi fullscreen berulang.', $logs[1]['message_display']);
+        self::assertStringContainsString('Keluar fullscreen tercatat 3x (ambang 3).', $logs[1]['message_display']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_recent_logs_show_heartbeat_lost_context_cleanly(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->recentLogs = [
+            [
+                'id' => 12,
+                'attempt_id' => 201,
+                'exam_id' => 501,
+                'student_id' => 71,
+                'event_type' => 'heartbeat_lost',
+                'severity' => 'warning',
+                'message' => 'Frontend mendeteksi heartbeat session gagal berulang saat ujian berlangsung.',
+                'context_json' => wp_json_encode([
+                    'source' => 'session_heartbeat',
+                    'failure_count' => 3,
+                    'last_error_code' => 'network_error',
+                    'visibility_state' => 'visible',
+                    'has_focus' => 1,
+                    'device_type' => 'desktop',
+                    'device_platform' => 'windows',
+                ]),
+                'occurred_at' => '2026-03-27 08:02:00',
+                'created_at' => '2026-03-27 08:02:00',
+                'student_display_name' => 'Coblax Student',
+                'student_login' => 'coblax',
+                'student_kode_kelas' => 'X-A',
+                'student_kode_ruang' => 'R1',
+                'exam_title' => 'Security Fixture',
+            ],
+        ];
+
+        $logs = \CBT_Security_Log::get_recent_logs();
+
+        self::assertCount(1, $logs);
+        self::assertStringContainsString('Sumber deteksi: Session heartbeat.', $logs[0]['message_display']);
+        self::assertStringContainsString('Heartbeat gagal 3x berturut-turut.', $logs[0]['message_display']);
+        self::assertStringContainsString('Kode error terakhir: network_error.', $logs[0]['message_display']);
+        self::assertStringContainsString('Visibility: visible.', $logs[0]['message_display']);
+        self::assertStringContainsString('Fokus dokumen: Ya.', $logs[0]['message_display']);
     }
 
     #[RunInSeparateProcess]
@@ -475,7 +662,47 @@ class SecurityLogFakeWpdb extends \wpdb
             }
         }
 
+        if (
+            preg_match('/FROM ' . preg_quote($this->prefix . 'cbt_security_logs', '/') . '/', (string) $query)
+            && preg_match('/WHERE attempt_id = (\d+)/', (string) $query, $attemptMatches)
+            && preg_match("/event_type = '([^']+)'/", (string) $query, $eventMatches)
+        ) {
+            $attemptId = (int) $attemptMatches[1];
+            $eventType = (string) $eventMatches[1];
+            foreach ($this->allSecurityLogRows() as $row) {
+                if ((int) ($row['attempt_id'] ?? 0) === $attemptId && (string) ($row['event_type'] ?? '') === $eventType) {
+                    return [
+                        'id' => (int) ($row['id'] ?? 1),
+                        'context_json' => (string) ($row['context_json'] ?? ''),
+                    ];
+                }
+            }
+        }
+
         return null;
+    }
+
+    public function get_var($query)
+    {
+        if (
+            preg_match('/FROM ' . preg_quote($this->prefix . 'cbt_security_logs', '/') . '/', (string) $query)
+            && preg_match('/WHERE attempt_id = (\d+)/', (string) $query, $attemptMatches)
+            && preg_match("/event_type = '([^']+)'/", (string) $query, $eventMatches)
+        ) {
+            $attemptId = (int) $attemptMatches[1];
+            $eventType = (string) $eventMatches[1];
+            $count = 0;
+
+            foreach ($this->allSecurityLogRows() as $row) {
+                if ((int) ($row['attempt_id'] ?? 0) === $attemptId && (string) ($row['event_type'] ?? '') === $eventType) {
+                    $count++;
+                }
+            }
+
+            return $count;
+        }
+
+        return 0;
     }
 
     public function get_results($query, $output = ARRAY_A): array
@@ -490,5 +717,21 @@ class SecurityLogFakeWpdb extends \wpdb
     public function get_col($query): array
     {
         return [];
+    }
+
+    /** @return array<int,array<string,mixed>> */
+    private function allSecurityLogRows(): array
+    {
+        $rows = $this->recentLogs;
+
+        foreach ($this->insertedRows as $index => $row) {
+            $safeRow = is_array($row) ? $row : [];
+            if (!isset($safeRow['id'])) {
+                $safeRow['id'] = 1000 + $index;
+            }
+            $rows[] = $safeRow;
+        }
+
+        return $rows;
     }
 }

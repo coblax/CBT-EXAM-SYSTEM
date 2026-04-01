@@ -5,6 +5,11 @@ export function createExamSecurityManager(deps) {
     var windowRef = deps.windowRef;
     var escapeHtml = deps.escapeHtml;
     var clearMessages = deps.clearMessages;
+    var isBrowserInspectionShortcutBlockingEnabled = typeof deps.isBrowserInspectionShortcutBlockingEnabled === 'function'
+        ? deps.isBrowserInspectionShortcutBlockingEnabled
+        : function () {
+            return false;
+        };
     var isExamCopyPasteBlocked = deps.isExamCopyPasteBlocked;
     var isExamFullscreenRequired = deps.isExamFullscreenRequired;
     var isSecurityLoggingActiveForAttempt = deps.isSecurityLoggingActiveForAttempt;
@@ -82,6 +87,12 @@ export function createExamSecurityManager(deps) {
         return state.stage === 'exam' && isExamCopyPasteBlocked();
     }
 
+    function isExamBrowserInspectionShortcutBlockingActive() {
+        return state.stage === 'exam'
+            && (Number(state.attemptId) || 0) > 0
+            && isBrowserInspectionShortcutBlockingEnabled();
+    }
+
     function isExamAnswerEditingLocked() {
         return state.stage === 'exam' && (state.examLockedForPendingFinish || state.isFinishing);
     }
@@ -109,6 +120,110 @@ export function createExamSecurityManager(deps) {
             keepalive: true,
             debounceMs: 1500
         });
+
+        return true;
+    }
+
+    function handleBlockedPrintAction(source, sourceEvent, blocked) {
+        var safeSource = String(source || '').trim().toLowerCase();
+        var isBlocked = blocked === undefined ? true : !!blocked;
+
+        if (!isSecurityLoggingActiveForAttempt() || state.stage !== 'exam') {
+            return false;
+        }
+
+        if (sourceEvent && typeof sourceEvent.preventDefault === 'function' && isBlocked) {
+            sourceEvent.preventDefault();
+        }
+        if (sourceEvent && typeof sourceEvent.stopPropagation === 'function' && isBlocked) {
+            sourceEvent.stopPropagation();
+        }
+
+        sendSecurityEventSilently('print_attempt', {
+            source: safeSource || 'print_shortcut',
+            blocked: isBlocked ? 1 : 0
+        }, {
+            attemptId: Number(state.attemptId) || 0,
+            keepalive: true,
+            debounceMs: 1500
+        });
+
+        return isBlocked;
+    }
+
+    function handleBlockedBrowserInspectionShortcutAction(eventType, source, sourceEvent) {
+        var safeEventType = sanitizeEventType(eventType);
+        var safeSource = String(source || '').trim().toLowerCase();
+
+        if (!isExamBrowserInspectionShortcutBlockingActive()) {
+            return false;
+        }
+
+        if (sourceEvent && typeof sourceEvent.preventDefault === 'function') {
+            sourceEvent.preventDefault();
+        }
+        if (sourceEvent && typeof sourceEvent.stopPropagation === 'function') {
+            sourceEvent.stopPropagation();
+        }
+
+        if (safeEventType !== '' && isSecurityLoggingActiveForAttempt()) {
+            sendSecurityEventSilently(safeEventType, {
+                source: safeSource || 'devtools_toggle_shortcut',
+                blocked: 1
+            }, {
+                attemptId: Number(state.attemptId) || 0,
+                keepalive: true,
+                debounceMs: 1200
+            });
+        }
+
+        return true;
+    }
+
+    function sanitizeEventType(eventType) {
+        var safeEventType = String(eventType || '').trim().toLowerCase();
+        if (
+            safeEventType === 'devtools_shortcut_blocked'
+            || safeEventType === 'view_source_blocked'
+            || safeEventType === 'save_page_blocked'
+        ) {
+            return safeEventType;
+        }
+
+        return '';
+    }
+
+    function shouldGuardContextMenu(sourceEvent) {
+        if (!isSecurityLoggingActiveForAttempt() || state.stage !== 'exam') {
+            return false;
+        }
+
+        if (!sourceEvent || typeof sourceEvent !== 'object') {
+            return true;
+        }
+
+        if (typeof sourceEvent.button === 'number' && sourceEvent.button === 2) {
+            return true;
+        }
+
+        if (typeof sourceEvent.which === 'number' && sourceEvent.which === 3) {
+            return true;
+        }
+
+        return String(sourceEvent.type || '') === 'contextmenu';
+    }
+
+    function suppressContextMenuGesture(sourceEvent) {
+        if (!shouldGuardContextMenu(sourceEvent)) {
+            return false;
+        }
+
+        if (sourceEvent && typeof sourceEvent.preventDefault === 'function') {
+            sourceEvent.preventDefault();
+        }
+        if (sourceEvent && typeof sourceEvent.stopPropagation === 'function') {
+            sourceEvent.stopPropagation();
+        }
 
         return true;
     }
@@ -274,6 +389,34 @@ export function createExamSecurityManager(deps) {
             }, true);
         });
 
+        function handleContextMenuGuard(event) {
+            if (!suppressContextMenuGesture(event)) {
+                return;
+            }
+
+            sendSecurityEventSilently('context_menu_blocked', {
+                source: 'contextmenu',
+                blocked: 1
+            }, {
+                attemptId: Number(state.attemptId) || 0,
+                keepalive: true,
+                debounceMs: 1000
+            });
+        }
+
+        function handleContextMenuGestureStart(event) {
+            suppressContextMenuGesture(event);
+        }
+
+        documentRef.addEventListener('pointerdown', handleContextMenuGestureStart, true);
+        documentRef.addEventListener('mousedown', handleContextMenuGestureStart, true);
+        documentRef.addEventListener('contextmenu', handleContextMenuGuard, true);
+        windowRef.addEventListener('contextmenu', handleContextMenuGuard, true);
+
+        windowRef.addEventListener('beforeprint', function (event) {
+            handleBlockedPrintAction('beforeprint', event, false);
+        });
+
         documentRef.addEventListener('beforeinput', function (event) {
             var inputType = event && event.inputType ? String(event.inputType) : '';
 
@@ -289,8 +432,11 @@ export function createExamSecurityManager(deps) {
 
     return {
         exitFullscreenSilently: exitFullscreenSilently,
+        handleBlockedBrowserInspectionShortcutAction: handleBlockedBrowserInspectionShortcutAction,
         handleBlockedClipboardAction: handleBlockedClipboardAction,
+        handleBlockedPrintAction: handleBlockedPrintAction,
         isExamAnswerEditingLocked: isExamAnswerEditingLocked,
+        isExamBrowserInspectionShortcutBlockingActive: isExamBrowserInspectionShortcutBlockingActive,
         isExamClipboardBlockingActive: isExamClipboardBlockingActive,
         isExamFullscreenBlockingActive: isExamFullscreenBlockingActive,
         mountSecurityListeners: mountSecurityListeners,

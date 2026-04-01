@@ -181,12 +181,24 @@ final class CBT_Admin_Developer_Actions
         check_admin_referer('cbt_stop_developer_dev_server');
 
         $result = CBT_Admin_Developer_Service::stop_dev_server();
+        $settings = CBT_Admin_Developer_Service::get_settings();
+        $mode_switched = false;
+        if (!$result['attempted'] || !empty($result['stopped'])) {
+            if (!CBT_Admin_Developer_Service::has_constant_override() && $settings['mode'] === 'dev') {
+                $settings['mode'] = 'build';
+                CBT_Admin_Developer_Service::save_settings($settings);
+                $mode_switched = true;
+            }
+        }
         $query_key = (!empty($result['stopped']) || !empty($result['attempted'])) ? 'cbt_msg' : 'cbt_err';
         $query_value = (string) ($result['message'] ?? '');
         if ($query_value === '') {
             $query_value = !empty($result['stopped'])
                 ? 'Vite dev server berhasil dihentikan.'
                 : 'Vite dev server tidak bisa dihentikan.';
+        }
+        if ($mode_switched) {
+            $query_value .= ' Frontend dikembalikan ke Production Build.';
         }
 
         wp_safe_redirect(

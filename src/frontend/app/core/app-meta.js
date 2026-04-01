@@ -68,12 +68,20 @@ export function createAppMetaManager(deps) {
         return Number(config.securityBlockCopyPaste || 0) === 1;
     }
 
+    function isBrowserInspectionShortcutBlockingEnabled() {
+        return Number(config.securityBlockBrowserInspectionShortcuts || 0) === 1;
+    }
+
     function isSecurityLoggingEnabled() {
         return Number(config.securityLogEvents || 0) === 1;
     }
 
     function isIdleDetectionEnabled() {
         return Number(config.securityDetectIdle || 0) === 1;
+    }
+
+    function isHeartbeatLostDetectionEnabled() {
+        return Number(config.securityDetectHeartbeatLost || 0) === 1;
     }
 
     function getIdleDetectionThresholdSeconds() {
@@ -203,6 +211,8 @@ export function createAppMetaManager(deps) {
 
         var pendingCount = Math.max(0, Number(state.pendingSyncCount) || 0);
         var lastSyncError = String(state.lastSyncError || '').trim();
+        var heartbeatLostActive = !!state.heartbeatLostActive;
+        var heartbeatLostFailureCount = Math.max(0, Number(state.heartbeatLostFailureCount) || 0);
         var message = '';
 
         if (state.examLockedForPendingFinish) {
@@ -216,6 +226,11 @@ export function createAppMetaManager(deps) {
                 message = 'Waktu habis. Jawaban dikunci dan ' + String(pendingCount) + ' jawaban menunggu sinkronisasi sebelum ujian dikumpulkan.';
             } else {
                 message = 'Jawaban sudah sinkron. Ujian akan segera difinalkan.';
+            }
+        } else if (heartbeatLostActive && getNavigatorConnectionStatus() !== 'offline') {
+            message = 'Heartbeat sesi gagal ' + String(Math.max(heartbeatLostFailureCount, 3)) + 'x berturut-turut. Koneksi ke server sedang tidak stabil, tetapi ujian tetap berjalan.';
+            if (pendingCount > 0) {
+                message += ' ' + String(pendingCount) + ' jawaban masih menunggu sinkronisasi.';
             }
         } else if (state.connectionStatus === 'offline' && pendingCount > 0) {
             message = 'Offline, jawaban tersimpan di perangkat ini. ' + String(pendingCount) + ' jawaban menunggu koneksi.';
@@ -344,8 +359,10 @@ export function createAppMetaManager(deps) {
         getSyncStatusAlertMeta: getSyncStatusAlertMeta,
         getUserInitial: getUserInitial,
         isConnectionOffline: isConnectionOffline,
+        isBrowserInspectionShortcutBlockingEnabled: isBrowserInspectionShortcutBlockingEnabled,
         isExamCopyPasteBlocked: isExamCopyPasteBlocked,
         isExamFullscreenRequired: isExamFullscreenRequired,
+        isHeartbeatLostDetectionEnabled: isHeartbeatLostDetectionEnabled,
         isIdleDetectionEnabled: isIdleDetectionEnabled,
         isSecurityLoggingActiveForAttempt: isSecurityLoggingActiveForAttempt,
         isSecurityLoggingEnabled: isSecurityLoggingEnabled,

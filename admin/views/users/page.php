@@ -597,7 +597,7 @@
                     <div class="cbt-users-panel-header">
                         <div>
                             <h2><?php echo $is_editing_user ? 'Edit User' : 'Tambah User Manual'; ?></h2>
-                            <p><?php echo $is_editing_user ? 'Perbarui identitas, role, kelas, ruang, dan foto user tanpa pindah ke area daftar.' : 'Buat user baru secara manual untuk kebutuhan cepat tanpa harus upload file import.'; ?></p>
+                            <p><?php echo $is_editing_user ? 'Perbarui identitas, role, kelas, ruang, jenis kelamin, dan foto user tanpa pindah ke area daftar.' : 'Buat user baru secara manual untuk kebutuhan cepat tanpa harus upload file import.'; ?></p>
                         </div>
                         <?php if ($is_editing_user): ?>
                             <a href="<?php echo esc_url($user_clear_edit_url); ?>" class="button button-secondary" data-cbt-users-tab-link="list">Batal Edit</a>
@@ -668,6 +668,18 @@
                                                 <option value="<?php echo esc_attr($agama_option); ?>" <?php selected($editing_agama_form, $agama_option); ?>><?php echo esc_html($agama_option); ?></option>
                                             <?php endforeach; ?>
                                         </select>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th><label for="cbt-edit-user-jenis-kelamin">Jenis Kelamin</label></th>
+                                    <td>
+                                        <select id="cbt-edit-user-jenis-kelamin" name="jenis_kelamin" class="regular-text">
+                                            <option value="">Pilih Jenis Kelamin</option>
+                                            <?php foreach ($jenis_kelamin_options as $jenis_kelamin_option): ?>
+                                                <option value="<?php echo esc_attr($jenis_kelamin_option); ?>" <?php selected($editing_jenis_kelamin_form, $jenis_kelamin_option); ?>><?php echo esc_html($jenis_kelamin_option); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <p class="description">Wajib untuk role siswa. Boleh dikosongkan untuk guru atau admin.</p>
                                     </td>
                                 </tr>
                                 <tr>
@@ -761,6 +773,18 @@
                                     </td>
                                 </tr>
                                 <tr>
+                                    <th><label for="cbt-user-jenis-kelamin">Jenis Kelamin</label></th>
+                                    <td>
+                                        <select id="cbt-user-jenis-kelamin" name="jenis_kelamin" class="regular-text">
+                                            <option value="">Pilih Jenis Kelamin</option>
+                                            <?php foreach ($jenis_kelamin_options as $jenis_kelamin_option): ?>
+                                                <option value="<?php echo esc_attr($jenis_kelamin_option); ?>"><?php echo esc_html($jenis_kelamin_option); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <p class="description">Wajib untuk role siswa. Boleh dikosongkan untuk guru atau admin.</p>
+                                    </td>
+                                </tr>
+                                <tr>
                                     <th><label for="cbt-user-foto-file">Foto</label></th>
                                     <td>
                                         <input type="file" id="cbt-user-foto-file" name="foto_file" accept="image/*" />
@@ -833,12 +857,14 @@
                                 <input required type="file" id="cbt-user-file" name="user_file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
                                 <div class="description">
                                     <ul>
-                                        <li>Header template wajib lengkap: <code>name,email,nisn,username,password,role,kode_kelas,kode_ruang,agama,foto_file</code>.</li>
+                                        <li>Header template terbaru: <code>name,email,nisn,username,password,role,kode_kelas,kode_ruang,agama,jenis_kelamin,foto_file</code>.</li>
                                         <li>Role yang didukung: <code>admin</code>, <code>guru</code>, <code>siswa</code> dan juga kompatibel dengan <code>teacher</code>, <code>student</code>.</li>
                                         <li><code>username</code> dan <code>email</code> tidak boleh duplikat antarbaris dalam file import yang sama.</li>
                                         <li>Untuk baris <code>siswa</code>, <code>nisn</code> wajib diisi dan tidak boleh duplikat dengan siswa lain maupun antarbaris file import.</li>
                                         <li>Untuk <code>guru</code>/<code>admin</code>, <code>nisn</code> boleh kosong.</li>
-                                        <li>Kolom opsional per baris: <code>email</code>, <code>kode_kelas</code>, <code>kode_ruang</code>, <code>agama</code>, <code>foto_file</code>.</li>
+                                        <li>Kolom opsional per baris: <code>email</code>, <code>kode_kelas</code>, <code>kode_ruang</code>, <code>agama</code>, dan <code>foto_file</code>. Kolom <code>jenis_kelamin</code> wajib untuk <code>siswa</code>, tetapi boleh kosong untuk <code>guru</code>/<code>admin</code>.</li>
+                                        <li>Kolom <code>jenis_kelamin</code> menerima nilai seperti <code>Laki-laki</code>, <code>Perempuan</code>, <code>L</code>, atau <code>P</code>. Nilai lain akan ditolak saat import.</li>
+                                        <li>Jika <code>foto_file</code> kosong untuk user <code>siswa</code>, sistem otomatis memakai <code>Default Pria.png</code> atau <code>Default Wanita.png</code> sesuai <code>jenis_kelamin</code>.</li>
                                         <li>Jika <code>email</code> kosong atau tidak valid tetapi <code>nisn</code> ada, sistem otomatis membuat email <code>nisn@student.sch.id</code>.</li>
                                         <li>Format file yang didukung: <code>.csv</code> dan <code>.xlsx</code>. Untuk CSV, delimiter koma atau titik-koma sama-sama didukung.</li>
                                         <li>Gambar yang ditempel langsung di Excel tidak dibaca. Untuk foto massal, isi kolom <code>foto_file</code> lalu upload file <code>.zip</code> yang berisi foto-foto tersebut.</li>
@@ -873,7 +899,7 @@
                     <div class="cbt-users-panel-header">
                         <div>
                             <h2>Daftar User CBT</h2>
-                            <p>Filter user berdasarkan kata kunci, role, kelas, ruang, dan agama, lalu lakukan edit atau bulk delete dari panel khusus daftar.</p>
+                            <p>Filter user berdasarkan kata kunci, role, kelas, ruang, agama, dan jenis kelamin, lalu lakukan edit atau bulk delete dari panel khusus daftar.</p>
                         </div>
                         <span class="cbt-users-chip"><?php echo esc_html(sprintf('%d total', $total_users)); ?></span>
                     </div>
@@ -913,6 +939,14 @@
                                     </option>
                                 <?php endforeach; ?>
                             </select>
+                            <select id="cbt-users-filter-jenis-kelamin" name="cbt_user_jenis_kelamin">
+                                <option value="">Semua Jenis Kelamin</option>
+                                <?php foreach ($jenis_kelamin_options as $jenis_kelamin_option): ?>
+                                    <option value="<?php echo esc_attr($jenis_kelamin_option); ?>" <?php selected($filter_jenis_kelamin, $jenis_kelamin_option); ?>>
+                                        <?php echo esc_html($jenis_kelamin_option); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
                             <select id="cbt-users-filter-per-page" name="cbt_user_per_page">
                                 <?php foreach ($per_page_options as $per_page_option): ?>
                                     <option value="<?php echo (int) $per_page_option; ?>" <?php selected($per_page, $per_page_option); ?>>
@@ -932,6 +966,7 @@
                         <input type="hidden" name="cbt_user_kelas" value="<?php echo esc_attr($filter_kelas); ?>" />
                         <input type="hidden" name="cbt_user_ruang" value="<?php echo esc_attr($filter_ruang); ?>" />
                         <input type="hidden" name="cbt_user_agama" value="<?php echo esc_attr($filter_agama); ?>" />
+                        <input type="hidden" name="cbt_user_jenis_kelamin" value="<?php echo esc_attr($filter_jenis_kelamin); ?>" />
                         <input type="hidden" name="cbt_user_per_page" value="<?php echo (int) $per_page; ?>" />
                         <input type="hidden" name="cbt_user_paged" value="<?php echo (int) $current_page; ?>" />
                         <div class="cbt-users-bulk-actions">
@@ -953,6 +988,7 @@
                                 <th>Kode Kelas</th>
                                 <th>Kode Ruang</th>
                                 <th>Agama</th>
+                                <th>Jenis Kelamin</th>
                                 <th>Foto</th>
                                 <th>Registered</th>
                                 <th>Aksi</th>
@@ -960,7 +996,7 @@
                             </thead>
                             <tbody>
                             <?php if (empty($users)): ?>
-                                <tr><td colspan="13">Tidak ada user.</td></tr>
+                                <tr><td colspan="14">Tidak ada user.</td></tr>
                             <?php else: ?>
                                 <?php foreach ($users as $user): ?>
                                     <?php
@@ -969,6 +1005,7 @@
                                     $kelas = (string) get_user_meta((int) $user->ID, 'kode_kelas', true);
                                     $ruang = (string) get_user_meta((int) $user->ID, 'kode_ruang', true);
                                     $agama = (string) get_user_meta((int) $user->ID, 'agama', true);
+                                    $jenis_kelamin = CBT_Admin_Users_Service::normalize_supported_jenis_kelamin((string) get_user_meta((int) $user->ID, 'jenis_kelamin', true));
                                     $foto = (string) get_user_meta((int) $user->ID, 'foto', true);
                                     $edit_url = add_query_arg(
                                         [
@@ -979,6 +1016,7 @@
                                             'cbt_user_kelas' => $filter_kelas,
                                             'cbt_user_ruang' => $filter_ruang,
                                             'cbt_user_agama' => $filter_agama,
+                                            'cbt_user_jenis_kelamin' => $filter_jenis_kelamin,
                                             'cbt_user_per_page' => $per_page,
                                             'cbt_user_paged' => $current_page,
                                         ],
@@ -992,6 +1030,7 @@
                                                 'cbt_user_kelas' => $filter_kelas,
                                                 'cbt_user_ruang' => $filter_ruang,
                                                 'cbt_user_agama' => $filter_agama,
+                                                'cbt_user_jenis_kelamin' => $filter_jenis_kelamin,
                                                 'cbt_user_per_page' => $per_page,
                                                 'cbt_user_paged' => $current_page,
                                             ],
@@ -1016,6 +1055,7 @@
                                         <td><?php echo esc_html($kelas); ?></td>
                                         <td><?php echo esc_html($ruang); ?></td>
                                         <td><?php echo esc_html($agama !== '' ? $agama : '-'); ?></td>
+                                        <td><?php echo esc_html($jenis_kelamin !== '' ? $jenis_kelamin : '-'); ?></td>
                                         <td>
                                             <?php if ($foto !== ''): ?>
                                                 <a href="<?php echo esc_url($foto); ?>" target="_blank" rel="noopener noreferrer">
@@ -1120,6 +1160,27 @@
                         });
                     });
                 }
+
+                function bindRoleAwareJenisKelamin(roleSelector, jenisKelaminSelector) {
+                    const roleField = document.querySelector(roleSelector);
+                    const jenisKelaminField = document.querySelector(jenisKelaminSelector);
+                    if (!roleField || !jenisKelaminField) {
+                        return;
+                    }
+
+                    const syncState = function () {
+                        const roleValue = String(roleField.value || '').toLowerCase();
+                        const isStudent = roleValue === 'siswa';
+                        jenisKelaminField.required = isStudent;
+                        jenisKelaminField.setAttribute('aria-required', isStudent ? 'true' : 'false');
+                    };
+
+                    roleField.addEventListener('change', syncState);
+                    syncState();
+                }
+
+                bindRoleAwareJenisKelamin('#cbt-user-role', '#cbt-user-jenis-kelamin');
+                bindRoleAwareJenisKelamin('#cbt-edit-user-role', '#cbt-edit-user-jenis-kelamin');
 
                 const supportsPartialListRefresh = !!(window.fetch && window.DOMParser);
                 let userFilterTimer = 0;
@@ -1333,6 +1394,7 @@
                     const userFilterKelas = panel.querySelector('#cbt-users-filter-kelas');
                     const userFilterRuang = panel.querySelector('#cbt-users-filter-ruang');
                     const userFilterAgama = panel.querySelector('#cbt-users-filter-agama');
+                    const userFilterJenisKelamin = panel.querySelector('#cbt-users-filter-jenis-kelamin');
                     const userFilterPerPage = panel.querySelector('#cbt-users-filter-per-page');
                     const userFilterReset = panel.querySelector('.cbt-users-filter-reset');
                     const paginationLinks = Array.from(panel.querySelectorAll('.cbt-users-pagination-links a'));
@@ -1348,7 +1410,7 @@
                         }
                     }
 
-                    [userFilterRole, userFilterKelas, userFilterRuang, userFilterAgama, userFilterPerPage].forEach((field) => {
+                    [userFilterRole, userFilterKelas, userFilterRuang, userFilterAgama, userFilterJenisKelamin, userFilterPerPage].forEach((field) => {
                         if (!field || field.dataset.cbtAutoBound === '1') {
                             return;
                         }

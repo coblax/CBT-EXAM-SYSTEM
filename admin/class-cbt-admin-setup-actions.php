@@ -38,9 +38,11 @@ final class CBT_Admin_Setup_Actions
         $school_regency_country_ln = isset($_POST['school_regency_country_ln'])
             ? trim(sanitize_text_field(wp_unslash((string) $_POST['school_regency_country_ln'])))
             : '';
+        $school_regency_country_ln_is_city = isset($_POST['school_regency_country_ln_is_city']) ? 1 : 0;
         $school_province_abroad_ln = isset($_POST['school_province_abroad_ln'])
             ? trim(sanitize_text_field(wp_unslash((string) $_POST['school_province_abroad_ln'])))
             : '';
+        $school_province_abroad_ln_is_foreign = isset($_POST['school_province_abroad_ln_is_foreign']) ? 1 : 0;
         $logo_1_attachment_id = isset($_POST['logo_1_attachment_id'])
             ? absint($_POST['logo_1_attachment_id'])
             : (isset($_POST['logo_attachment_id']) ? absint($_POST['logo_attachment_id']) : 0);
@@ -63,7 +65,9 @@ final class CBT_Admin_Setup_Actions
                 'school_village' => $school_village,
                 'school_district_city_ln' => $school_district_city_ln,
                 'school_regency_country_ln' => $school_regency_country_ln,
+                'school_regency_country_ln_is_city' => $school_regency_country_ln_is_city,
                 'school_province_abroad_ln' => $school_province_abroad_ln,
+                'school_province_abroad_ln_is_foreign' => $school_province_abroad_ln_is_foreign,
                 'logo_attachment_id' => $logo_1_attachment_id,
                 'logo_1_attachment_id' => $logo_1_attachment_id,
                 'logo_2_attachment_id' => $logo_2_attachment_id,

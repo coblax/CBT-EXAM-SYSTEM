@@ -17,7 +17,9 @@ final class SetupSecurityConfigTest extends TestCase
 
         $settings = \CBT_Admin_Security_Service::get_security_settings();
 
+        self::assertSame(0, $settings['block_browser_inspection_shortcuts']);
         self::assertSame(1, $settings['detect_idle_during_exam']);
+        self::assertSame(0, $settings['detect_heartbeat_lost']);
         self::assertSame(5, $settings['idle_threshold_minutes']);
         self::assertSame($settings, \CBT_Admin_Setup_Service::get_security_settings());
     }
@@ -29,14 +31,18 @@ final class SetupSecurityConfigTest extends TestCase
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-security-service.php';
 
         update_option('cbt_setup_security', [
+            'block_browser_inspection_shortcuts' => 1,
             'detect_idle_during_exam' => 0,
+            'detect_heartbeat_lost' => 1,
             'idle_threshold_minutes' => '9',
             'log_security_events' => 1,
         ]);
 
         $settings = \CBT_Admin_Security_Service::get_security_settings();
 
+        self::assertSame(1, $settings['block_browser_inspection_shortcuts']);
         self::assertSame(0, $settings['detect_idle_during_exam']);
+        self::assertSame(1, $settings['detect_heartbeat_lost']);
         self::assertSame(9, $settings['idle_threshold_minutes']);
         self::assertSame(1, $settings['log_security_events']);
         self::assertSame($settings, \CBT_Admin_Setup_Service::get_security_settings());

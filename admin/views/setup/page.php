@@ -225,6 +225,28 @@
                 color: #6b7280;
                 line-height: 1.5;
             }
+            .cbt-setup-inline-checkbox {
+                display: inline-flex;
+                align-items: flex-start;
+                gap: 10px;
+                margin-top: 12px;
+                cursor: pointer;
+                color: #111827;
+                font-weight: 600;
+            }
+            .cbt-setup-inline-checkbox input[type="checkbox"] {
+                margin: 2px 0 0;
+            }
+            .cbt-setup-inline-checkbox span {
+                display: block;
+            }
+            .cbt-setup-inline-checkbox small {
+                display: block;
+                margin-top: 4px;
+                color: #5b6574;
+                font-weight: 400;
+                line-height: 1.5;
+            }
             .cbt-setup-logo-grid {
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1542,14 +1564,27 @@
                                         />
                                     </div>
                                     <div class="cbt-setup-field">
-                                        <label for="cbt-setup-school-regency-country-ln">Kab.-Kota/Negara (LN)</label>
+                                        <label for="cbt-setup-school-regency-country-ln">Kabupaten/Kota</label>
                                         <input
                                             type="text"
                                             id="cbt-setup-school-regency-country-ln"
                                             name="school_regency_country_ln"
                                             value="<?php echo esc_attr($school_regency_country_ln); ?>"
-                                            placeholder="Contoh: KAB. BELITUNG"
+                                            placeholder="Contoh: BELITUNG atau PANGKALPINANG"
                                         />
+                                        <label class="cbt-setup-inline-checkbox" for="cbt-setup-school-regency-country-ln-is-city">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-school-regency-country-ln-is-city"
+                                                name="school_regency_country_ln_is_city"
+                                                value="1"
+                                                <?php checked(!empty($school_regency_country_ln_is_city)); ?>
+                                            />
+                                            <span>
+                                                Wilayah ini adalah Kota
+                                                <small>Jika tidak dicentang, report exam dan exam card akan menampilkan Kabupaten. Prefix seperti Kab. atau Kota tidak perlu ditulis lagi.</small>
+                                            </span>
+                                        </label>
                                     </div>
                                     <div class="cbt-setup-field">
                                         <label for="cbt-setup-school-province-abroad-ln">Propinsi/Luar Negeri (LN)</label>
@@ -1558,8 +1593,21 @@
                                             id="cbt-setup-school-province-abroad-ln"
                                             name="school_province_abroad_ln"
                                             value="<?php echo esc_attr($school_province_abroad_ln); ?>"
-                                            placeholder="Contoh: PROV. KEPULAUAN BANGKA BELITUNG"
+                                            placeholder="Contoh: KEPULAUAN BANGKA BELITUNG atau SINGAPURA"
                                         />
+                                        <label class="cbt-setup-inline-checkbox" for="cbt-setup-school-province-abroad-ln-is-foreign">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-school-province-abroad-ln-is-foreign"
+                                                name="school_province_abroad_ln_is_foreign"
+                                                value="1"
+                                                <?php checked(!empty($school_province_abroad_ln_is_foreign)); ?>
+                                            />
+                                            <span>
+                                                Wilayah ini adalah Luar Negeri
+                                                <small>Jika dicentang, report exam dan exam card akan menampilkan Luar Negeri. Prefix seperti Prov., Propinsi, atau Luar Negeri tidak perlu ditulis lagi.</small>
+                                            </span>
+                                        </label>
                                     </div>
                                 </div>
                             </section>
@@ -1687,7 +1735,22 @@
                                             />
                                             <span>
                                                 <strong>Aktifkan Logging Security</strong>
-                                                <span>Catat event inti seperti keluar fullscreen, pindah tab, refresh/tutup halaman, sesi dicabut, dan reset login admin. Histori log bisa dipantau di tab Security Log selama 30 hari terakhir.</span>
+                                                <span>Catat event inti seperti keluar fullscreen, pindah tab, refresh/tutup halaman, percobaan print, context menu, sesi dicabut, dan reset login admin. Histori log bisa dipantau di tab Security Log selama 30 hari terakhir.</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div class="cbt-setup-security-option">
+                                        <label class="cbt-setup-security-checkbox" for="cbt-setup-security-detect-heartbeat-lost">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-security-detect-heartbeat-lost"
+                                                name="detect_heartbeat_lost"
+                                                value="1"
+                                                <?php checked($security_detect_heartbeat_lost); ?>
+                                            />
+                                            <span>
+                                                <strong>Deteksi Heartbeat Lost</strong>
+                                                <span>Tambahkan warning ringan di UI ujian dan security log saat heartbeat session gagal berulang, tetapi browser masih terlihat online. V1 hanya observability dan tidak memblokir pengerjaan ujian.</span>
                                             </span>
                                         </label>
                                     </div>
@@ -1730,6 +1793,21 @@
                                             <span>
                                                 <strong>Blok Copy / Paste Saat Ujian</strong>
                                                 <span>Jika diaktifkan, aksi copy, cut, dan paste diblok selama peserta berada di halaman ujian. Cocok untuk meminimalkan pemindahan jawaban lewat clipboard.</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div class="cbt-setup-security-option">
+                                        <label class="cbt-setup-security-checkbox" for="cbt-setup-security-block-browser-shortcuts">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-security-block-browser-shortcuts"
+                                                name="block_browser_inspection_shortcuts"
+                                                value="1"
+                                                <?php checked($security_block_browser_inspection_shortcuts); ?>
+                                            />
+                                            <span>
+                                                <strong>Blok Shortcut DevTools / View Source / Save Page</strong>
+                                                <span>Jika diaktifkan, shortcut seperti <code>F12</code>, <code>Ctrl+Shift+I/J/C</code>, <code>Ctrl+U</code>, dan <code>Ctrl+S</code> diblok selama ujian. Event-nya ikut tercatat ke security log jika logging aktif.</span>
                                             </span>
                                         </label>
                                     </div>

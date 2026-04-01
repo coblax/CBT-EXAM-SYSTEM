@@ -158,6 +158,9 @@ export function createSessionLifecycleManager(deps) {
         state.calculatorError = '';
         state.isFullscreenActive = false;
         state.pendingFinishAutoSubmit = false;
+        state.heartbeatLostActive = false;
+        state.heartbeatLostFailureCount = 0;
+        state.heartbeatLostLastErrorCode = '';
         if (previousAttemptId > 0 && state.stage !== 'exam') {
             clearPersistedAttemptUiState(previousAttemptId);
             clearPersistedQuestionCache(previousAttemptId);
@@ -209,6 +212,9 @@ export function createSessionLifecycleManager(deps) {
         state.calculatorError = '';
         state.isFullscreenActive = false;
         state.pendingFinishAutoSubmit = false;
+        state.heartbeatLostActive = false;
+        state.heartbeatLostFailureCount = 0;
+        state.heartbeatLostLastErrorCode = '';
         if (previousAttemptId > 0) {
             clearPersistedAttemptUiState(previousAttemptId);
             clearPersistedQuestionCache(previousAttemptId);

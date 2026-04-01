@@ -25,10 +25,12 @@ function createHeartbeatFixture(overrides = {}) {
         recordTimeline: [],
         refreshAttemptQuestionRevision: [],
         render: [],
+        sendSecurityEventSilently: [],
         setQuestionRevision: []
     };
     var state = Object.assign({
         attemptId: 55,
+        connectionStatus: 'online',
         currentIndex: 1,
         exams: [
             {
@@ -36,6 +38,9 @@ function createHeartbeatFixture(overrides = {}) {
                 id: 9
             }
         ],
+        heartbeatLostActive: false,
+        heartbeatLostFailureCount: 0,
+        heartbeatLostLastErrorCode: '',
         notice: '',
         questionOrderSignature: 'order-1',
         questionRevision: null,
@@ -43,6 +48,13 @@ function createHeartbeatFixture(overrides = {}) {
         stage: 'exam',
         token: 'token-123'
     }, overrides.state || {});
+    var documentRef = {
+        hasFocus: function () {
+            return overrides.hasDocumentFocus !== false;
+        },
+        visibilityState: overrides.visibilityState || 'visible'
+    };
+    var windowRef = overrides.windowRef || globalThis;
 
     var manager = createSessionHeartbeatManager({
         apiRequest: async function (path, options) {
@@ -68,8 +80,12 @@ function createHeartbeatFixture(overrides = {}) {
             calls.clearCalculatorRuntimeState += 1;
         },
         diagnosticsManager: overrides.diagnosticsManager || null,
+        documentRef: documentRef,
         getQuestionCount: function () {
             return overrides.localQuestionCount !== undefined ? overrides.localQuestionCount : 3;
+        },
+        isHeartbeatLostDetectionEnabled: function () {
+            return overrides.heartbeatLostDetectionEnabled !== false;
         },
         normalizeQuestionRevision: function (payload) {
             return payload || null;
@@ -107,6 +123,14 @@ function createHeartbeatFixture(overrides = {}) {
                 reason: reason || ''
             });
         },
+        sendSecurityEventSilently: function (eventType, context, options) {
+            calls.sendSecurityEventSilently.push({
+                context: context || {},
+                eventType,
+                options: options || {}
+            });
+            return true;
+        },
         sessionHeartbeatIntervalMs: overrides.sessionHeartbeatIntervalMs || 5000,
         setQuestionRevision: function (revision, examId) {
             calls.setQuestionRevision.push({
@@ -116,13 +140,15 @@ function createHeartbeatFixture(overrides = {}) {
             state.questionRevision = revision;
         },
         state,
-        windowRef: globalThis
+        windowRef: windowRef
     });
 
     return {
         calls,
+        documentRef: documentRef,
         manager,
-        state
+        state,
+        windowRef: windowRef
     };
 }
 
@@ -279,5 +305,153 @@ describe('createSessionHeartbeatManager', function () {
 
         fixture.manager.stop();
         expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('marks heartbeat lost after three online failures, renders warning once, and logs a security event', async function () {
+        var fixture = createHeartbeatFixture({
+            apiRequest: async function () {
+                var error = new Error('Heartbeat timeout.');
+                error.status = 0;
+                error.code = 'network_error';
+                error.isNetworkError = true;
+                throw error;
+            }
+        });
+
+        await fixture.manager.run();
+        await fixture.manager.run();
+        await fixture.manager.run();
+
+        expect(fixture.state.heartbeatLostActive).toBe(true);
+        expect(fixture.state.heartbeatLostFailureCount).toBe(3);
+        expect(fixture.state.heartbeatLostLastErrorCode).toBe('network_error');
+        expect(fixture.calls.render).toEqual([
+            {
+                meta: {
+                    active: true,
+                    attemptId: 55,
+                    failureCount: 3
+                },
+                reason: 'heartbeat-lost-state'
+            }
+        ]);
+        expect(fixture.calls.sendSecurityEventSilently).toEqual([
+            {
+                context: {
+                    connection_status: 'online',
+                    failure_count: 3,
+                    has_focus: 1,
+                    last_error_code: 'network_error',
+                    source: 'session_heartbeat',
+                    visibility_state: 'visible'
+                },
+                eventType: 'heartbeat_lost',
+                options: {
+                    attemptId: 55,
+                    keepalive: true
+                }
+            }
+        ]);
+    });
+
+    it('clears heartbeat lost warning after the next successful heartbeat', async function () {
+        var shouldFail = true;
+        var fixture = createHeartbeatFixture({
+            apiRequest: async function () {
+                if (shouldFail) {
+                    var error = new Error('Heartbeat timeout.');
+                    error.status = 0;
+                    error.code = 'network_error';
+                    error.isNetworkError = true;
+                    throw error;
+                }
+
+                return {
+                    attempt_timer: {
+                        attempt_id: 55,
+                        remaining_seconds: 180
+                    },
+                    question_count: 3,
+                    question_order_signature: 'order-1'
+                };
+            }
+        });
+
+        await fixture.manager.run();
+        await fixture.manager.run();
+        await fixture.manager.run();
+        shouldFail = false;
+
+        await fixture.manager.run();
+
+        expect(fixture.state.heartbeatLostActive).toBe(false);
+        expect(fixture.state.heartbeatLostFailureCount).toBe(0);
+        expect(fixture.state.heartbeatLostLastErrorCode).toBe('');
+        expect(fixture.calls.render).toEqual([
+            {
+                meta: {
+                    active: true,
+                    attemptId: 55,
+                    failureCount: 3
+                },
+                reason: 'heartbeat-lost-state'
+            },
+            {
+                meta: {
+                    active: false,
+                    attemptId: 55,
+                    failureCount: 0
+                },
+                reason: 'heartbeat-lost-state'
+            }
+        ]);
+    });
+
+    it('does not activate heartbeat lost while the browser is offline', async function () {
+        var fixture = createHeartbeatFixture({
+            apiRequest: async function () {
+                var error = new Error('Koneksi terputus.');
+                error.status = 0;
+                error.code = 'network_error';
+                error.isNetworkError = true;
+                throw error;
+            },
+            windowRef: {
+                clearInterval: globalThis.clearInterval,
+                navigator: {
+                    onLine: false
+                },
+                setInterval: globalThis.setInterval,
+                setTimeout: globalThis.setTimeout
+            }
+        });
+
+        await fixture.manager.run();
+        await fixture.manager.run();
+        await fixture.manager.run();
+
+        expect(fixture.state.heartbeatLostActive).toBe(false);
+        expect(fixture.state.heartbeatLostFailureCount).toBe(0);
+        expect(fixture.calls.sendSecurityEventSilently).toEqual([]);
+        expect(fixture.calls.render).toEqual([]);
+    });
+
+    it('ignores non-network heartbeat failures for heartbeat lost tracking', async function () {
+        var fixture = createHeartbeatFixture({
+            apiRequest: async function () {
+                var error = new Error('Server validation error.');
+                error.status = 500;
+                error.code = 'server_error';
+                throw error;
+            }
+        });
+
+        await fixture.manager.run();
+        await fixture.manager.run();
+        await fixture.manager.run();
+
+        expect(fixture.state.heartbeatLostActive).toBe(false);
+        expect(fixture.state.heartbeatLostFailureCount).toBe(0);
+        expect(fixture.calls.sendSecurityEventSilently).toEqual([]);
     });
 });

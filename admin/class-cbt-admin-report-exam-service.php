@@ -269,7 +269,9 @@ final class CBT_Admin_Report_Exam_Service
         $site_village = trim((string) ($branding['school_village'] ?? ''));
         $site_district_city_ln = trim((string) ($branding['school_district_city_ln'] ?? ''));
         $site_regency_country_ln = trim((string) ($branding['school_regency_country_ln'] ?? ''));
+        $site_regency_country_ln_is_city = !empty($branding['school_regency_country_ln_is_city']);
         $site_province_abroad_ln = trim((string) ($branding['school_province_abroad_ln'] ?? ''));
+        $site_province_abroad_ln_is_foreign = !empty($branding['school_province_abroad_ln_is_foreign']);
         if ($site_name === '') {
             $site_name = trim((string) get_bloginfo('name'));
         }
@@ -282,12 +284,13 @@ final class CBT_Admin_Report_Exam_Service
         $report_logo_1_url = (string) ($branding['logo_1_url'] ?? '');
         $report_logo_2_url = (string) ($branding['logo_2_url'] ?? '');
         $report_header_address_line = self::build_report_header_address_line($site_address);
-        $report_header_region_line = sprintf(
-            'Desa: %s, Kecamatan: %s, Kabupaten: %s, Provinsi: %s',
-            $site_village !== '' ? $site_village : '-',
-            $site_district_city_ln !== '' ? $site_district_city_ln : '-',
-            $site_regency_country_ln !== '' ? $site_regency_country_ln : '-',
-            $site_province_abroad_ln !== '' ? $site_province_abroad_ln : '-'
+        $report_header_region_line = self::build_report_header_region_line(
+            $site_village,
+            $site_district_city_ln,
+            $site_regency_country_ln,
+            $site_province_abroad_ln,
+            $site_regency_country_ln_is_city,
+            $site_province_abroad_ln_is_foreign
         );
 
         $subject_label = trim((string) ($exam['subject_name'] ?? ''));
@@ -1230,6 +1233,30 @@ final class CBT_Admin_Report_Exam_Service
         }
 
         return 'Alamat: ' . implode(', ', $normalized_address_lines);
+    }
+
+    private static function build_report_header_region_line(
+        string $site_village,
+        string $site_district_city_ln,
+        string $site_regency_country_ln,
+        string $site_province_abroad_ln,
+        bool $site_regency_country_ln_is_city,
+        bool $site_province_abroad_ln_is_foreign
+    ): string {
+        $regencyCountryLabel = $site_regency_country_ln_is_city ? 'Kota' : 'Kabupaten';
+        $normalizedRegencyCountry = CBT_Admin_Branding_Settings::normalize_regency_country_value($site_regency_country_ln);
+        $provinceAbroadLabel = $site_province_abroad_ln_is_foreign ? 'Luar Negeri' : 'Provinsi';
+        $normalizedProvinceAbroad = CBT_Admin_Branding_Settings::normalize_province_abroad_value($site_province_abroad_ln);
+
+        return sprintf(
+            'Desa: %s, Kecamatan: %s, %s: %s, %s: %s',
+            $site_village !== '' ? $site_village : '-',
+            $site_district_city_ln !== '' ? $site_district_city_ln : '-',
+            $regencyCountryLabel,
+            $normalizedRegencyCountry !== '' ? $normalizedRegencyCountry : '-',
+            $provinceAbroadLabel,
+            $normalizedProvinceAbroad !== '' ? $normalizedProvinceAbroad : '-'
+        );
     }
 
     private static function is_student_role(string $role): bool

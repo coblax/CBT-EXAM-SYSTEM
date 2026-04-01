@@ -7,7 +7,9 @@ export function createAppEventManager(deps) {
     var handleAnswerChangeTarget = deps.handleAnswerChangeTarget;
     var handleAnswerInputTarget = deps.handleAnswerInputTarget;
     var handleArrowNavigationKey = deps.handleArrowNavigationKey;
+    var handleBlockedBrowserInspectionShortcutAction = deps.handleBlockedBrowserInspectionShortcutAction;
     var handleBlockedClipboardAction = deps.handleBlockedClipboardAction;
+    var handleBlockedPrintAction = deps.handleBlockedPrintAction;
     var handleFinish = deps.handleFinish;
     var handleLogin = deps.handleLogin;
     var handleNavigationAction = deps.handleNavigationAction;
@@ -598,6 +600,28 @@ export function createAppEventManager(deps) {
             return false;
         }
 
+        var browserInspectionShortcut = state.stage === 'exam'
+            ? resolveBrowserInspectionShortcut(event)
+            : null;
+        if (browserInspectionShortcut) {
+            if (
+                typeof handleBlockedBrowserInspectionShortcutAction === 'function'
+                && handleBlockedBrowserInspectionShortcutAction(
+                    browserInspectionShortcut.eventType,
+                    browserInspectionShortcut.source,
+                    event
+                )
+            ) {
+                return true;
+            }
+        }
+
+        if (state.stage === 'exam' && (event.ctrlKey || event.metaKey) && String(event.key || '').toLowerCase() === 'p') {
+            if (typeof handleBlockedPrintAction === 'function' && handleBlockedPrintAction('print_shortcut', event, true)) {
+                return true;
+            }
+        }
+
         if ((event.ctrlKey || event.metaKey || event.shiftKey) && isExamClipboardBlockingActive()) {
             var key = String(event.key || '').toLowerCase();
             var shouldBlockClipboardShortcut = false;
@@ -671,6 +695,65 @@ export function createAppEventManager(deps) {
         }
 
         return false;
+    }
+
+    function resolveBrowserInspectionShortcut(event) {
+        var key = String(event && event.key || '').toLowerCase();
+
+        if (key === 'f12') {
+            return {
+                eventType: 'devtools_shortcut_blocked',
+                source: 'devtools_toggle_shortcut'
+            };
+        }
+
+        if ((event.ctrlKey && event.shiftKey) || (event.metaKey && event.altKey)) {
+            if (key === 'i') {
+                return {
+                    eventType: 'devtools_shortcut_blocked',
+                    source: 'devtools_toggle_shortcut'
+                };
+            }
+
+            if (key === 'j') {
+                return {
+                    eventType: 'devtools_shortcut_blocked',
+                    source: 'devtools_console_shortcut'
+                };
+            }
+
+            if (key === 'c') {
+                return {
+                    eventType: 'devtools_shortcut_blocked',
+                    source: 'devtools_inspect_shortcut'
+                };
+            }
+        }
+
+        if ((event.ctrlKey && !event.shiftKey && !event.altKey) || (event.metaKey && !event.shiftKey && !event.altKey)) {
+            if (key === 's') {
+                return {
+                    eventType: 'save_page_blocked',
+                    source: 'save_page_shortcut'
+                };
+            }
+        }
+
+        if (event.ctrlKey && !event.shiftKey && !event.altKey && key === 'u') {
+            return {
+                eventType: 'view_source_blocked',
+                source: 'view_source_shortcut'
+            };
+        }
+
+        if (event.metaKey && event.altKey && !event.shiftKey && key === 'u') {
+            return {
+                eventType: 'view_source_blocked',
+                source: 'view_source_shortcut'
+            };
+        }
+
+        return null;
     }
 
     return {

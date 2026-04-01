@@ -824,6 +824,7 @@ final class CBT_Admin_Maintenance_Load_Test_Service
                 'kode_kelas' => sanitize_text_field((string) get_user_meta($user->ID, 'kode_kelas', true)),
                 'kode_ruang' => sanitize_text_field((string) get_user_meta($user->ID, 'kode_ruang', true)),
                 'agama' => sanitize_text_field((string) get_user_meta($user->ID, 'agama', true)),
+                'jenis_kelamin' => CBT_Admin_Users_Service::normalize_supported_jenis_kelamin((string) get_user_meta($user->ID, 'jenis_kelamin', true)),
                 'foto' => esc_url_raw((string) get_user_meta($user->ID, 'foto', true)),
                 'identifier' => sanitize_user((string) $user->user_login, true),
             ];
@@ -2265,7 +2266,7 @@ final class CBT_Admin_Maintenance_Load_Test_Service
             wp_die('Gagal menulis file CSV.');
         }
 
-        fputcsv($output, ['name', 'email', 'nisn', 'username', 'password', 'role', 'kode_kelas', 'kode_ruang', 'agama', 'foto']);
+        fputcsv($output, ['name', 'email', 'nisn', 'username', 'password', 'role', 'kode_kelas', 'kode_ruang', 'agama', 'jenis_kelamin', 'foto']);
         foreach ((array) $student_pool['rows'] as $row) {
             fputcsv($output, [
                 (string) ($row['name'] ?? ''),
@@ -2277,6 +2278,7 @@ final class CBT_Admin_Maintenance_Load_Test_Service
                 (string) ($row['kode_kelas'] ?? ''),
                 (string) ($row['kode_ruang'] ?? ''),
                 (string) ($row['agama'] ?? ''),
+                (string) ($row['jenis_kelamin'] ?? ''),
                 (string) ($row['foto'] ?? ''),
             ]);
         }
@@ -2302,7 +2304,7 @@ final class CBT_Admin_Maintenance_Load_Test_Service
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $rows = [
-            ['name', 'email', 'nisn', 'username', 'password', 'role', 'kode_kelas', 'kode_ruang', 'agama', 'foto'],
+            ['name', 'email', 'nisn', 'username', 'password', 'role', 'kode_kelas', 'kode_ruang', 'agama', 'jenis_kelamin', 'foto'],
         ];
         foreach ((array) $student_pool['rows'] as $row) {
             $rows[] = [
@@ -2315,6 +2317,7 @@ final class CBT_Admin_Maintenance_Load_Test_Service
                 (string) ($row['kode_kelas'] ?? ''),
                 (string) ($row['kode_ruang'] ?? ''),
                 (string) ($row['agama'] ?? ''),
+                (string) ($row['jenis_kelamin'] ?? ''),
                 (string) ($row['foto'] ?? ''),
             ];
         }

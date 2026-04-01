@@ -17,6 +17,7 @@ class CBT_Security_Log
     private const MUST_WATCH_MAX_LIMIT = 10;
     private const MUST_WATCH_SCORE_THRESHOLD = 6;
     private const MUST_WATCH_HIGH_RISK_THRESHOLD = 10;
+    private const FULLSCREEN_EXIT_REPEAT_THRESHOLD = 3;
 
     /**
      * @return array<string,array{label:string,severity:string,message:string}>
@@ -84,10 +85,45 @@ class CBT_Security_Log
                 'severity' => 'warning',
                 'message' => 'Peserta mencoba melakukan copy, cut, atau paste saat ujian berlangsung.',
             ],
+            'print_attempt' => [
+                'label' => 'Percobaan print',
+                'severity' => 'warning',
+                'message' => 'Peserta mencoba membuka dialog print atau mencetak halaman ujian saat attempt masih berlangsung.',
+            ],
+            'context_menu_blocked' => [
+                'label' => 'Context menu diblok',
+                'severity' => 'warning',
+                'message' => 'Peserta mencoba membuka context menu atau klik kanan saat ujian berlangsung.',
+            ],
+            'devtools_shortcut_blocked' => [
+                'label' => 'Shortcut DevTools diblok',
+                'severity' => 'warning',
+                'message' => 'Peserta mencoba membuka DevTools atau Inspect lewat shortcut keyboard saat ujian berlangsung.',
+            ],
+            'view_source_blocked' => [
+                'label' => 'View source diblok',
+                'severity' => 'warning',
+                'message' => 'Peserta mencoba membuka source halaman ujian lewat shortcut keyboard saat attempt masih berlangsung.',
+            ],
+            'save_page_blocked' => [
+                'label' => 'Simpan halaman diblok',
+                'severity' => 'warning',
+                'message' => 'Peserta mencoba menyimpan halaman ujian lewat shortcut keyboard saat attempt masih berlangsung.',
+            ],
             'idle_detected' => [
                 'label' => 'Idle saat ujian',
                 'severity' => 'warning',
                 'message' => 'Peserta tidak menunjukkan aktivitas pada halaman ujian selama ambang waktu yang ditentukan.',
+            ],
+            'heartbeat_lost' => [
+                'label' => 'Heartbeat session hilang',
+                'severity' => 'warning',
+                'message' => 'Frontend mendeteksi heartbeat session gagal berulang saat ujian berlangsung.',
+            ],
+            'fullscreen_exit_repeat' => [
+                'label' => 'Keluar fullscreen berulang',
+                'severity' => 'critical',
+                'message' => 'Peserta berulang kali keluar dari mode fullscreen saat ujian berlangsung.',
             ],
             'admin_reset_login' => [
                 'label' => 'Reset login admin',
@@ -202,7 +238,13 @@ class CBT_Security_Log
             'page_refresh',
             'fullscreen_exit',
             'clipboard_blocked',
+            'print_attempt',
+            'context_menu_blocked',
+            'devtools_shortcut_blocked',
+            'view_source_blocked',
+            'save_page_blocked',
             'idle_detected',
+            'heartbeat_lost',
         ];
         $supported = [];
 
@@ -838,7 +880,16 @@ class CBT_Security_Log
             return true;
         }
 
-        return self::insert_log($attempt, $event_type, $context);
+        $inserted = self::insert_log($attempt, $event_type, $context);
+        if (!$inserted) {
+            return false;
+        }
+
+        if ($event_type === 'fullscreen_exit') {
+            self::maybe_record_fullscreen_exit_repeat($attempt, $context);
+        }
+
+        return true;
     }
 
     private static function insert_log(array $attempt, string $event_type, array $context = []): bool
@@ -883,6 +934,105 @@ class CBT_Security_Log
         self::maybe_prune_expired_logs();
 
         return true;
+    }
+
+    private static function maybe_record_fullscreen_exit_repeat(array $attempt, array $context = []): void
+    {
+        $attempt_id = absint($attempt['id'] ?? 0);
+        if ($attempt_id <= 0) {
+            return;
+        }
+
+        if (self::attempt_has_event_type($attempt_id, 'fullscreen_exit_repeat')) {
+            return;
+        }
+
+        $fullscreen_exit_count = self::count_attempt_event_type($attempt_id, 'fullscreen_exit');
+        if ($fullscreen_exit_count < self::FULLSCREEN_EXIT_REPEAT_THRESHOLD) {
+            return;
+        }
+
+        $repeat_context = self::normalize_context(array_merge(
+            $context,
+            [
+                'source' => 'fullscreen_repeat_threshold',
+                'threshold' => self::FULLSCREEN_EXIT_REPEAT_THRESHOLD,
+                'fullscreen_exit_count' => $fullscreen_exit_count,
+                'trigger_event' => 'fullscreen_exit',
+            ]
+        ));
+
+        self::insert_log($attempt, 'fullscreen_exit_repeat', $repeat_context);
+    }
+
+    private static function count_attempt_event_type(int $attempt_id, string $event_type): int
+    {
+        $attempt_id = absint($attempt_id);
+        $event_type = sanitize_key($event_type);
+        if ($attempt_id <= 0 || $event_type === '') {
+            return 0;
+        }
+
+        global $wpdb;
+
+        if (!method_exists($wpdb, 'get_var')) {
+            return 0;
+        }
+
+        $table = self::get_table_name($wpdb);
+        try {
+            $count = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT COUNT(*)
+                     FROM {$table}
+                     WHERE attempt_id = %d
+                       AND event_type = %s",
+                    $attempt_id,
+                    $event_type
+                )
+            );
+        } catch (Throwable $exception) {
+            return 0;
+        }
+
+        return max(0, (int) $count);
+    }
+
+    private static function attempt_has_event_type(int $attempt_id, string $event_type): bool
+    {
+        $attempt_id = absint($attempt_id);
+        $event_type = sanitize_key($event_type);
+        if ($attempt_id <= 0 || $event_type === '') {
+            return false;
+        }
+
+        global $wpdb;
+
+        if (!method_exists($wpdb, 'get_row')) {
+            return false;
+        }
+
+        $table = self::get_table_name($wpdb);
+
+        try {
+            $row = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT id
+                     FROM {$table}
+                     WHERE attempt_id = %d
+                       AND event_type = %s
+                     ORDER BY occurred_at DESC, id DESC
+                     LIMIT 1",
+                    $attempt_id,
+                    $event_type
+                ),
+                ARRAY_A
+            );
+        } catch (Throwable $exception) {
+            return false;
+        }
+
+        return is_array($row) && (int) ($row['id'] ?? 0) > 0;
     }
 
     private static function maybe_promote_recent_page_leave_to_refresh(array $attempt, array $context = []): bool
@@ -1114,9 +1264,16 @@ class CBT_Security_Log
             'page_leave' => 5,
             'page_refresh' => 0.5,
             'fullscreen_exit' => 4,
+            'fullscreen_exit_repeat' => 5,
             'tab_hidden' => 3,
             'idle_detected' => 2,
             'clipboard_blocked' => 2,
+            'print_attempt' => 3,
+            'context_menu_blocked' => 1,
+            'devtools_shortcut_blocked' => 4,
+            'view_source_blocked' => 4,
+            'save_page_blocked' => 3,
+            'heartbeat_lost' => 2,
             'window_blur' => 2,
             'forbidden_process_detected' => 3,
             'forbidden_process_terminated' => 3,
@@ -1332,6 +1489,43 @@ class CBT_Security_Log
             $parts[] = 'Waktu client: ' . $occurred_at_client . '.';
         }
 
+        if ($event_type === 'print_attempt') {
+            $print_blocked = array_key_exists('blocked', $context) ? ((int) ($context['blocked'] ?? 0) === 1) : null;
+            if ($print_blocked !== null) {
+                $parts[] = 'Diblokir: ' . ($print_blocked ? 'Ya' : 'Tidak') . '.';
+            }
+        }
+
+        if ($event_type === 'heartbeat_lost') {
+            $failure_count = max(0, absint($context['failure_count'] ?? 0));
+            $last_error_code = trim((string) ($context['last_error_code'] ?? ''));
+            $visibility_state = trim((string) ($context['visibility_state'] ?? ''));
+            $has_focus = array_key_exists('has_focus', $context)
+                ? ((int) ($context['has_focus'] ?? 0) === 1)
+                : null;
+
+            if ($failure_count > 0) {
+                $parts[] = sprintf('Heartbeat gagal %dx berturut-turut.', $failure_count);
+            }
+            if ($last_error_code !== '') {
+                $parts[] = 'Kode error terakhir: ' . sanitize_key($last_error_code) . '.';
+            }
+            if ($visibility_state !== '') {
+                $parts[] = 'Visibility: ' . sanitize_key($visibility_state) . '.';
+            }
+            if ($has_focus !== null) {
+                $parts[] = 'Fokus dokumen: ' . ($has_focus ? 'Ya' : 'Tidak') . '.';
+            }
+        }
+
+        if ($event_type === 'fullscreen_exit_repeat') {
+            $fullscreen_exit_count = max(0, absint($context['fullscreen_exit_count'] ?? 0));
+            $threshold = max(0, absint($context['threshold'] ?? 0));
+            if ($fullscreen_exit_count > 0 && $threshold > 0) {
+                $parts[] = sprintf('Keluar fullscreen tercatat %dx (ambang %d).', $fullscreen_exit_count, $threshold);
+            }
+        }
+
         return implode(' ', $parts);
     }
 
@@ -1359,6 +1553,16 @@ class CBT_Security_Log
             'copy' => 'Shortcut atau menu copy',
             'cut' => 'Shortcut atau menu cut',
             'paste' => 'Shortcut atau menu paste',
+            'print_shortcut' => 'Shortcut print',
+            'beforeprint' => 'Browser print lifecycle',
+            'contextmenu' => 'Klik kanan / context menu',
+            'devtools_toggle_shortcut' => 'Shortcut buka/tutup DevTools',
+            'devtools_console_shortcut' => 'Shortcut Console DevTools',
+            'devtools_inspect_shortcut' => 'Shortcut Inspect Element',
+            'view_source_shortcut' => 'Shortcut View Source',
+            'save_page_shortcut' => 'Shortcut Save Page',
+            'session_heartbeat' => 'Session heartbeat',
+            'fullscreen_repeat_threshold' => 'Agregasi fullscreen berulang',
             'insertfrompaste' => 'Paste ke input',
             'insertfrompasteasquotation' => 'Paste kutipan ke input',
             'deletebycut' => 'Cut dari input',

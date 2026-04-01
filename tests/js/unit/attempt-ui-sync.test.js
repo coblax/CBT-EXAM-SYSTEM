@@ -145,6 +145,78 @@ describe('createAttemptUiSyncManager', function () {
         ]);
     });
 
+    it('does not re-sync when only updated_at changes in the local snapshot', async function () {
+        vi.useFakeTimers();
+        var apiCalls = 0;
+        var fixture = createAttemptUiSyncFixture({
+            apiRequest: async function () {
+                apiCalls += 1;
+                return null;
+            }
+        });
+
+        fixture.manager.syncSignatureToCurrentState();
+        fixture.setCurrentSnapshot({
+            attempt_id: 55,
+            current_index: 0,
+            current_question_id: 101,
+            updated_at: 200
+        });
+
+        fixture.manager.scheduleSync(50);
+        await vi.advanceTimersByTimeAsync(60);
+
+        expect(apiCalls).toBe(0);
+
+        vi.useRealTimers();
+    });
+
+    it('re-syncs when attempt ui content changes even if updated_at is also refreshed', async function () {
+        var apiCalls = 0;
+        var fixture = createAttemptUiSyncFixture({
+            apiRequest: async function () {
+                apiCalls += 1;
+                return null;
+            }
+        });
+
+        fixture.manager.syncSignatureToCurrentState();
+        fixture.setCurrentSnapshot({
+            attempt_id: 55,
+            current_index: 1,
+            current_question_id: 102,
+            updated_at: 200
+        });
+
+        await fixture.manager.flush();
+
+        expect(apiCalls).toBe(1);
+    });
+
+    it('still allows force flush when only updated_at changes', async function () {
+        var apiCalls = 0;
+        var fixture = createAttemptUiSyncFixture({
+            apiRequest: async function () {
+                apiCalls += 1;
+                return null;
+            }
+        });
+
+        fixture.manager.syncSignatureToCurrentState();
+        fixture.setCurrentSnapshot({
+            attempt_id: 55,
+            current_index: 0,
+            current_question_id: 101,
+            updated_at: 200
+        });
+
+        await fixture.manager.flush({
+            force: true
+        });
+
+        expect(apiCalls).toBe(1);
+    });
+
     it('does not send ui_state when the auth token is already empty', async function () {
         var apiCalls = 0;
         var fixture = createAttemptUiSyncFixture({

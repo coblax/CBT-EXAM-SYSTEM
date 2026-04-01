@@ -2763,6 +2763,7 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                     <div>
                         <h2>Load Test Runner</h2>
                         <p>Gunakan bulk students yang sudah ada untuk export dataset load test, lalu jalankan satu job <code>k6</code> per exam siswa secara paralel dari panel admin. Exam Bank Soal tidak pernah masuk katalog ini.</p>
+                        <p style="margin:6px 0 0;color:#64748b;">Export <code>CSV</code> dan <code>XLSX</code> sekarang ikut membawa kolom <code>jenis_kelamin</code>, sedangkan <code>JSON</code> tetap ringkas untuk runner <code>k6</code> dengan <code>identifier</code> dan <code>password</code> saja.</p>
                     </div>
                     <span class="cbt-maintenance-chip cbt-maintenance-chip--<?php echo esc_attr($load_test_running_count > 0 ? 'running' : 'idle'); ?>">
                         <?php echo esc_html($load_test_running_count > 0 ? $load_test_running_count . ' job aktif' : 'Siap dijalankan'); ?>

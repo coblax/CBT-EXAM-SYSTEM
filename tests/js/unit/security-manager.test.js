@@ -48,6 +48,9 @@ function createManager(overrides = {}) {
             return String(value || '');
         },
         clearMessages: function () {},
+        isBrowserInspectionShortcutBlockingEnabled: function () {
+            return overrides.browserInspectionShortcutBlocking !== false;
+        },
         isExamCopyPasteBlocked: function () {
             return overrides.copyPasteBlocked !== false;
         },
@@ -154,6 +157,118 @@ describe('createExamSecurityManager', function () {
         });
     });
 
+    it('blocks context menu interactions and logs the browser signal', function () {
+        var setup = createManager();
+        var event = {
+            type: 'contextmenu',
+            defaultPrevented: false,
+            propagationStopped: false,
+            preventDefault: function () {
+                this.defaultPrevented = true;
+            },
+            stopPropagation: function () {
+                this.propagationStopped = true;
+            }
+        };
+
+        setup.manager.mountSecurityListeners();
+        setup.documentRef.dispatchEvent('contextmenu', event);
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(event.propagationStopped).toBe(true);
+        expect(setup.calls).toHaveLength(1);
+        expect(setup.calls[0]).toMatchObject({
+            eventType: 'context_menu_blocked',
+            context: {
+                source: 'contextmenu',
+                blocked: 1
+            },
+            options: {
+                attemptId: 77,
+                keepalive: true,
+                debounceMs: 1000
+            }
+        });
+    });
+
+    it('suppresses right-click from pointerdown before the browser context menu is opened', function () {
+        var setup = createManager();
+        var event = {
+            type: 'pointerdown',
+            button: 2,
+            defaultPrevented: false,
+            propagationStopped: false,
+            preventDefault: function () {
+                this.defaultPrevented = true;
+            },
+            stopPropagation: function () {
+                this.propagationStopped = true;
+            }
+        };
+
+        setup.manager.mountSecurityListeners();
+        setup.documentRef.dispatchEvent('pointerdown', event);
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(event.propagationStopped).toBe(true);
+        expect(setup.calls).toHaveLength(0);
+    });
+
+    it('logs beforeprint as a best-effort print attempt without blocking the browser lifecycle event', function () {
+        var setup = createManager();
+        var event = {
+            defaultPrevented: false,
+            preventDefault: function () {
+                this.defaultPrevented = true;
+            }
+        };
+
+        setup.manager.mountSecurityListeners();
+        setup.windowRef.dispatchEvent('beforeprint', event);
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(setup.calls).toHaveLength(1);
+        expect(setup.calls[0]).toMatchObject({
+            eventType: 'print_attempt',
+            context: {
+                source: 'beforeprint',
+                blocked: 0
+            },
+            options: {
+                attemptId: 77,
+                keepalive: true,
+                debounceMs: 1500
+            }
+        });
+    });
+
+    it('blocks browser inspection shortcuts even when security logging is off', function () {
+        var setup = createManager({
+            loggingActive: false
+        });
+        var event = {
+            defaultPrevented: false,
+            propagationStopped: false,
+            preventDefault: function () {
+                this.defaultPrevented = true;
+            },
+            stopPropagation: function () {
+                this.propagationStopped = true;
+            }
+        };
+
+        var handled = setup.manager.handleBlockedBrowserInspectionShortcutAction(
+            'view_source_blocked',
+            'view_source_shortcut',
+            event
+        );
+
+        expect(handled).toBe(true);
+        expect(event.defaultPrevented).toBe(true);
+        expect(event.propagationStopped).toBe(true);
+        expect(setup.calls).toHaveLength(0);
+    });
+
     it('does not throw when the security logger callback is missing', function () {
         var setup = createManager();
         var event = {
@@ -170,6 +285,9 @@ describe('createExamSecurityManager', function () {
                 return String(value || '');
             },
             clearMessages: function () {},
+            isBrowserInspectionShortcutBlockingEnabled: function () {
+                return true;
+            },
             isExamCopyPasteBlocked: function () {
                 return true;
             },

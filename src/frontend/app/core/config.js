@@ -64,8 +64,10 @@ export function getFrontendConfig(win) {
     return Object.assign({}, raw, {
         securityForceFullscreen: normalizeBooleanFlag(raw.securityForceFullscreen),
         securityBlockCopyPaste: normalizeBooleanFlag(raw.securityBlockCopyPaste),
+        securityBlockBrowserInspectionShortcuts: normalizeBooleanFlag(raw.securityBlockBrowserInspectionShortcuts),
         securityLogEvents: normalizeBooleanFlag(raw.securityLogEvents),
         securityDetectIdle: normalizeBooleanFlag(raw.securityDetectIdle !== undefined ? raw.securityDetectIdle : 1),
+        securityDetectHeartbeatLost: normalizeBooleanFlag(raw.securityDetectHeartbeatLost),
         securityIdleThresholdMinutes: normalizeIntegerFlag(raw.securityIdleThresholdMinutes, 5),
         securityIdleThresholdSeconds: normalizeIntegerFlag(
             raw.securityIdleThresholdSeconds,
@@ -149,6 +151,9 @@ export function createInitialState(win) {
         syncBlockingReason: '',
         examLockedForPendingFinish: false,
         lastSyncError: '',
+        heartbeatLostActive: false,
+        heartbeatLostFailureCount: 0,
+        heartbeatLostLastErrorCode: '',
         pendingFinishAutoSubmit: false
     };
 }

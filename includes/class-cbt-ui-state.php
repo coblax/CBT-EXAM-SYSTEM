@@ -117,6 +117,10 @@ class CBT_UI_State
             $question_ids
         );
 
+        if (is_array($current) && self::attempt_state_equals($current, $normalized)) {
+            return $current;
+        }
+
         CBT_Cache::set(
             self::attempt_cache_key($user_id, $attempt_id),
             $normalized,
@@ -356,6 +360,33 @@ class CBT_UI_State
             'current_index' => $current_index,
             'doubtful_question_ids' => array_values($doubtful_question_ids),
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $left
+     * @param array<string,mixed> $right
+     */
+    private static function attempt_state_equals(array $left, array $right): bool
+    {
+        $normalize_for_compare = static function (array $state): array {
+            $doubtful_question_ids = [];
+            foreach ((array) ($state['doubtful_question_ids'] ?? []) as $question_id) {
+                $safe_question_id = (int) $question_id;
+                if ($safe_question_id > 0) {
+                    $doubtful_question_ids[$safe_question_id] = $safe_question_id;
+                }
+            }
+
+            sort($doubtful_question_ids, SORT_NUMERIC);
+
+            return [
+                'attempt_id' => (int) ($state['attempt_id'] ?? 0),
+                'current_index' => (int) ($state['current_index'] ?? 0),
+                'doubtful_question_ids' => array_values($doubtful_question_ids),
+            ];
+        };
+
+        return $normalize_for_compare($left) === $normalize_for_compare($right);
     }
 
     /**

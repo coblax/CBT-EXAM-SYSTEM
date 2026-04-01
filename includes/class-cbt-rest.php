@@ -1158,8 +1158,23 @@ class CBT_REST
         }
 
         $event_type = sanitize_key((string) self::get_request_payload_value($request, 'event_type'));
-        if ($event_type === '' || !isset(CBT_Security_Log::event_definitions()[$event_type])) {
+        if ($event_type === '') {
             return new WP_Error('invalid_event_type', 'Event type is not allowed', ['status' => 400]);
+        }
+
+        if ($native_mode) {
+            if (!isset(CBT_Security_Log::event_definitions()[$event_type])) {
+                return new WP_Error('invalid_event_type', 'Event type is not allowed', ['status' => 400]);
+            }
+        } else {
+            $browser_supported_event_definitions = CBT_Security_Log::browser_supported_event_definitions();
+            if (!isset($browser_supported_event_definitions[$event_type])) {
+                if (isset(CBT_Security_Log::native_supported_event_definitions()[$event_type])) {
+                    return new WP_Error('native_event_requires_native_endpoint', 'Native event type must use native_security_event endpoint', ['status' => 400]);
+                }
+
+                return new WP_Error('invalid_event_type', 'Event type is not allowed', ['status' => 400]);
+            }
         }
 
         $native_app = '';
@@ -1173,10 +1188,6 @@ class CBT_REST
             if (!isset(CBT_Security_Log::native_supported_event_definitions_for_app($native_app)[$event_type])) {
                 return new WP_Error('invalid_native_event_type', 'Native endpoint only accepts supported CBT security events', ['status' => 400]);
             }
-        }
-
-        if (!$native_mode && CBT_Security_Log::is_native_event_type($event_type)) {
-            return new WP_Error('native_event_requires_native_endpoint', 'Native event type must use native_security_event endpoint', ['status' => 400]);
         }
 
         $attempt = self::get_attempt_for_submission($attempt_id, $user_id);

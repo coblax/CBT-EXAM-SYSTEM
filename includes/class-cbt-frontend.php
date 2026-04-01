@@ -647,8 +647,10 @@ class CBT_Frontend
             'pluginVersion' => CBT_EXAM_SYSTEM_VERSION,
             'securityForceFullscreen' => $security['force_fullscreen'],
             'securityBlockCopyPaste' => $security['block_copy_paste'],
+            'securityBlockBrowserInspectionShortcuts' => $security['block_browser_inspection_shortcuts'],
             'securityLogEvents' => $security['log_security_events'],
             'securityDetectIdle' => $security['detect_idle_during_exam'],
+            'securityDetectHeartbeatLost' => $security['detect_heartbeat_lost'],
             'securityIdleThresholdMinutes' => $security['idle_threshold_minutes'],
             'securityIdleThresholdSeconds' => $security['idle_threshold_minutes'] * MINUTE_IN_SECONDS,
             'homeUrl' => (string) home_url('/'),
@@ -947,7 +949,15 @@ class CBT_Frontend
     }
 
     /**
-     * @return array{force_fullscreen:int,block_copy_paste:int,log_security_events:int,detect_idle_during_exam:int,idle_threshold_minutes:int}
+     * @return array{
+     *     force_fullscreen:int,
+     *     block_copy_paste:int,
+     *     block_browser_inspection_shortcuts:int,
+     *     log_security_events:int,
+     *     detect_idle_during_exam:int,
+     *     detect_heartbeat_lost:int,
+     *     idle_threshold_minutes:int
+     * }
      */
     private static function get_setup_security_config(): array
     {
@@ -959,8 +969,10 @@ class CBT_Frontend
         return [
             'force_fullscreen' => !empty($raw['force_fullscreen']) ? 1 : 0,
             'block_copy_paste' => !empty($raw['block_copy_paste']) ? 1 : 0,
+            'block_browser_inspection_shortcuts' => !empty($raw['block_browser_inspection_shortcuts']) ? 1 : 0,
             'log_security_events' => !empty($raw['log_security_events']) ? 1 : 0,
             'detect_idle_during_exam' => !array_key_exists('detect_idle_during_exam', $raw) || !empty($raw['detect_idle_during_exam']) ? 1 : 0,
+            'detect_heartbeat_lost' => !empty($raw['detect_heartbeat_lost']) ? 1 : 0,
             'idle_threshold_minutes' => max(1, absint($raw['idle_threshold_minutes'] ?? 5)),
         ];
     }

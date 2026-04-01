@@ -7,7 +7,9 @@ if (!defined('ABSPATH')) {
 final class CBT_Admin_Users_Service
 {
     private const USER_META_PLAIN_PASSWORD = 'cbt_plain_password';
-    private const DEFAULT_STUDENT_PHOTO_RELATIVE_PATH = 'public/images/default-student-avatar.svg';
+    private const DEFAULT_STUDENT_PHOTO_RELATIVE_PATH = 'public/Default Pria.png';
+    private const DEFAULT_STUDENT_PHOTO_MALE_RELATIVE_PATH = 'public/Default Pria.png';
+    private const DEFAULT_STUDENT_PHOTO_FEMALE_RELATIVE_PATH = 'public/Default Wanita.png';
     private const USER_IMPORT_PHOTO_RUNTIME_DIR = 'cbt-runtime/user-import-photo-workspaces';
     private const USER_IMPORT_PHOTO_UPLOAD_DIR = 'cbt-user-import-photos';
     private const USER_IMPORT_ALLOWED_PHOTO_MIMES = [
@@ -42,6 +44,7 @@ final class CBT_Admin_Users_Service
         $filter_kelas = isset($query['cbt_user_kelas']) ? sanitize_text_field(wp_unslash((string) $query['cbt_user_kelas'])) : '';
         $filter_ruang = isset($query['cbt_user_ruang']) ? sanitize_text_field(wp_unslash((string) $query['cbt_user_ruang'])) : '';
         $filter_agama = isset($query['cbt_user_agama']) ? self::normalize_supported_agama((string) wp_unslash((string) $query['cbt_user_agama'])) : '';
+        $filter_jenis_kelamin = isset($query['cbt_user_jenis_kelamin']) ? self::normalize_supported_jenis_kelamin((string) wp_unslash((string) $query['cbt_user_jenis_kelamin'])) : '';
         $per_page = isset($query['cbt_user_per_page'])
             ? self::normalize_user_list_per_page(absint(wp_unslash((string) $query['cbt_user_per_page'])))
             : 20;
@@ -57,9 +60,10 @@ final class CBT_Admin_Users_Service
         $kelas_options = self::get_distinct_user_meta_values('kode_kelas');
         $ruang_options = self::get_distinct_user_meta_values('kode_ruang');
         $agama_options = self::get_supported_agama_options();
+        $jenis_kelamin_options = self::get_supported_jenis_kelamin_options();
         $per_page_options = [20, 50, 100, 150, 200];
         $import_batch_size = self::get_user_import_batch_size();
-        $users_page_data = self::get_cbt_users_paginated($search, $filter_role, $filter_kelas, $filter_ruang, $filter_agama, $per_page, $current_page);
+        $users_page_data = self::get_cbt_users_paginated($search, $filter_role, $filter_kelas, $filter_ruang, $filter_agama, $filter_jenis_kelamin, $per_page, $current_page);
         $users = $users_page_data['items'];
         $current_page = $users_page_data['page'];
         $total_pages = $users_page_data['total_pages'];
@@ -132,6 +136,9 @@ final class CBT_Admin_Users_Service
         if ($filter_agama !== '') {
             $user_clear_edit_args['cbt_user_agama'] = $filter_agama;
         }
+        if ($filter_jenis_kelamin !== '') {
+            $user_clear_edit_args['cbt_user_jenis_kelamin'] = $filter_jenis_kelamin;
+        }
         $user_clear_edit_url = add_query_arg($user_clear_edit_args, admin_url('admin.php'));
         $pagination_args = [
             'page' => 'cbt-user-import',
@@ -152,6 +159,9 @@ final class CBT_Admin_Users_Service
         if ($filter_agama !== '') {
             $pagination_args['cbt_user_agama'] = $filter_agama;
         }
+        if ($filter_jenis_kelamin !== '') {
+            $pagination_args['cbt_user_jenis_kelamin'] = $filter_jenis_kelamin;
+        }
         $pagination_links = [];
         if ($total_pages > 1) {
             $pagination_links = paginate_links([
@@ -171,6 +181,7 @@ final class CBT_Admin_Users_Service
         $editing_kelas = '';
         $editing_ruang = '';
         $editing_agama_form = '';
+        $editing_jenis_kelamin_form = '';
         $editing_foto = '';
         if ($is_editing_user) {
             $editing_role_raw = isset($editing_user->roles[0]) ? (string) $editing_user->roles[0] : '';
@@ -180,6 +191,8 @@ final class CBT_Admin_Users_Service
             $editing_ruang = (string) get_user_meta((int) $editing_user->ID, 'kode_ruang', true);
             $editing_agama = (string) get_user_meta((int) $editing_user->ID, 'agama', true);
             $editing_agama_form = self::normalize_supported_agama($editing_agama);
+            $editing_jenis_kelamin = (string) get_user_meta((int) $editing_user->ID, 'jenis_kelamin', true);
+            $editing_jenis_kelamin_form = self::normalize_supported_jenis_kelamin($editing_jenis_kelamin);
             $editing_foto = (string) get_user_meta((int) $editing_user->ID, 'foto', true);
         }
         $is_admin_scope = self::is_admin_scope();
@@ -190,6 +203,7 @@ final class CBT_Admin_Users_Service
             'default_user_tab',
             'editing_agama_form',
             'editing_foto',
+            'editing_jenis_kelamin_form',
             'editing_kelas',
             'editing_nisn',
             'editing_role',
@@ -198,6 +212,7 @@ final class CBT_Admin_Users_Service
             'editing_user_id',
             'error',
             'filter_agama',
+            'filter_jenis_kelamin',
             'filter_kelas',
             'filter_role',
             'filter_ruang',
@@ -214,6 +229,7 @@ final class CBT_Admin_Users_Service
             'import_updated',
             'is_admin_scope',
             'is_editing_user',
+            'jenis_kelamin_options',
             'kelas_options',
             'notice',
             'pagination_links',
@@ -247,8 +263,14 @@ final class CBT_Admin_Users_Service
         $kode_kelas = isset($_POST['kode_kelas']) ? sanitize_text_field(wp_unslash($_POST['kode_kelas'])) : '';
         $kode_ruang = isset($_POST['kode_ruang']) ? sanitize_text_field(wp_unslash($_POST['kode_ruang'])) : '';
         $agama = isset($_POST['agama']) ? self::normalize_supported_agama((string) wp_unslash($_POST['agama'])) : '';
+        $raw_jenis_kelamin = isset($_POST['jenis_kelamin']) ? (string) wp_unslash($_POST['jenis_kelamin']) : '';
+        $jenis_kelamin = self::normalize_supported_jenis_kelamin($raw_jenis_kelamin);
         if ($name === '' || $username === '' || !is_email($email)) {
             self::redirect_user_import_with_error('Nama, username, dan email valid wajib diisi.');
+        }
+        $jenis_kelamin_validation_error = self::validate_user_jenis_kelamin_for_role($raw_jenis_kelamin, $role_input, $jenis_kelamin);
+        if ($jenis_kelamin_validation_error !== '') {
+            self::redirect_user_import_with_error($jenis_kelamin_validation_error);
         }
 
         if (username_exists($username)) {
@@ -270,7 +292,7 @@ final class CBT_Admin_Users_Service
         if ($foto_upload['status'] === 'error') {
             self::redirect_user_import_with_error('Gagal upload foto: ' . (string) $foto_upload['error']);
         }
-        $foto = self::resolve_manual_create_user_photo($role, $foto_upload);
+        $foto = self::resolve_manual_create_user_photo($role, $foto_upload, $jenis_kelamin);
 
         $generated_password = false;
         $password = $raw_password;
@@ -299,6 +321,9 @@ final class CBT_Admin_Users_Service
         }
         if ($agama !== '') {
             update_user_meta((int) $user_id, 'agama', $agama);
+        }
+        if ($jenis_kelamin !== '') {
+            update_user_meta((int) $user_id, 'jenis_kelamin', $jenis_kelamin);
         }
         if ($nisn !== '') {
             update_user_meta((int) $user_id, 'nisn', $nisn);
@@ -335,6 +360,8 @@ final class CBT_Admin_Users_Service
         $kode_kelas = isset($_POST['kode_kelas']) ? sanitize_text_field(wp_unslash($_POST['kode_kelas'])) : '';
         $kode_ruang = isset($_POST['kode_ruang']) ? sanitize_text_field(wp_unslash($_POST['kode_ruang'])) : '';
         $agama = isset($_POST['agama']) ? self::normalize_supported_agama((string) wp_unslash($_POST['agama'])) : '';
+        $raw_jenis_kelamin = isset($_POST['jenis_kelamin']) ? (string) wp_unslash($_POST['jenis_kelamin']) : '';
+        $jenis_kelamin = self::normalize_supported_jenis_kelamin($raw_jenis_kelamin);
         $hapus_foto = isset($_POST['hapus_foto']) && sanitize_text_field(wp_unslash($_POST['hapus_foto'])) === '1';
 
         if ($user_id <= 0) {
@@ -342,6 +369,10 @@ final class CBT_Admin_Users_Service
         }
         if ($name === '' || $username === '' || !is_email($email)) {
             self::redirect_user_import_with_error('Nama, username, dan email valid wajib diisi.');
+        }
+        $jenis_kelamin_validation_error = self::validate_user_jenis_kelamin_for_role($raw_jenis_kelamin, $role_input, $jenis_kelamin);
+        if ($jenis_kelamin_validation_error !== '') {
+            self::redirect_user_import_with_error($jenis_kelamin_validation_error);
         }
 
         $user = get_user_by('id', $user_id);
@@ -421,6 +452,11 @@ final class CBT_Admin_Users_Service
         } else {
             delete_user_meta($user_id, 'agama');
         }
+        if ($jenis_kelamin !== '') {
+            update_user_meta($user_id, 'jenis_kelamin', $jenis_kelamin);
+        } else {
+            delete_user_meta($user_id, 'jenis_kelamin');
+        }
         if ($nisn !== '') {
             update_user_meta($user_id, 'nisn', $nisn);
         } else {
@@ -431,8 +467,8 @@ final class CBT_Admin_Users_Service
 
         if (self::is_student_role($role)) {
             $current_foto = trim((string) get_user_meta($user_id, 'foto', true));
-            if ($current_foto === '') {
-                update_user_meta($user_id, 'foto', self::get_default_student_photo_url());
+            if (self::should_refresh_default_student_photo($current_foto)) {
+                update_user_meta($user_id, 'foto', self::get_default_student_photo_url($jenis_kelamin));
             }
         }
 
@@ -453,6 +489,7 @@ final class CBT_Admin_Users_Service
         $filter_kelas = isset($_GET['cbt_user_kelas']) ? sanitize_text_field(wp_unslash($_GET['cbt_user_kelas'])) : '';
         $filter_ruang = isset($_GET['cbt_user_ruang']) ? sanitize_text_field(wp_unslash($_GET['cbt_user_ruang'])) : '';
         $filter_agama = isset($_GET['cbt_user_agama']) ? self::normalize_supported_agama((string) wp_unslash($_GET['cbt_user_agama'])) : '';
+        $filter_jenis_kelamin = isset($_GET['cbt_user_jenis_kelamin']) ? self::normalize_supported_jenis_kelamin((string) wp_unslash($_GET['cbt_user_jenis_kelamin'])) : '';
         $per_page = isset($_GET['cbt_user_per_page'])
             ? self::normalize_user_list_per_page(absint(wp_unslash($_GET['cbt_user_per_page'])))
             : 20;
@@ -477,6 +514,9 @@ final class CBT_Admin_Users_Service
         }
         if ($filter_agama !== '') {
             $redirect_args['cbt_user_agama'] = $filter_agama;
+        }
+        if ($filter_jenis_kelamin !== '') {
+            $redirect_args['cbt_user_jenis_kelamin'] = $filter_jenis_kelamin;
         }
 
         if ($user_id <= 0) {
@@ -515,6 +555,7 @@ final class CBT_Admin_Users_Service
         $filter_kelas = isset($_POST['cbt_user_kelas']) ? sanitize_text_field(wp_unslash($_POST['cbt_user_kelas'])) : '';
         $filter_ruang = isset($_POST['cbt_user_ruang']) ? sanitize_text_field(wp_unslash($_POST['cbt_user_ruang'])) : '';
         $filter_agama = isset($_POST['cbt_user_agama']) ? self::normalize_supported_agama((string) wp_unslash($_POST['cbt_user_agama'])) : '';
+        $filter_jenis_kelamin = isset($_POST['cbt_user_jenis_kelamin']) ? self::normalize_supported_jenis_kelamin((string) wp_unslash($_POST['cbt_user_jenis_kelamin'])) : '';
         $per_page = isset($_POST['cbt_user_per_page'])
             ? self::normalize_user_list_per_page(absint(wp_unslash($_POST['cbt_user_per_page'])))
             : 20;
@@ -539,12 +580,15 @@ final class CBT_Admin_Users_Service
         if ($filter_agama !== '') {
             $redirect_args['cbt_user_agama'] = $filter_agama;
         }
+        if ($filter_jenis_kelamin !== '') {
+            $redirect_args['cbt_user_jenis_kelamin'] = $filter_jenis_kelamin;
+        }
         $redirect_args['cbt_user_per_page'] = $per_page;
         $redirect_args['cbt_user_paged'] = $current_page;
 
         $target_user_ids = [];
         if ($bulk_mode === 'all_filtered') {
-            $target_user_ids = self::get_cbt_user_ids($search, $filter_role, $filter_kelas, $filter_ruang, $filter_agama);
+            $target_user_ids = self::get_cbt_user_ids($search, $filter_role, $filter_kelas, $filter_ruang, $filter_agama, $filter_jenis_kelamin);
         } else {
             $raw_user_ids = isset($_POST['user_ids']) && is_array($_POST['user_ids']) ? wp_unslash($_POST['user_ids']) : [];
             $target_user_ids = array_map('absint', $raw_user_ids);
@@ -703,10 +747,10 @@ final class CBT_Admin_Users_Service
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->fromArray(
             [
-                ['name', 'email', 'nisn', 'username', 'password', 'role', 'kode_kelas', 'kode_ruang', 'agama', 'foto_file'],
-                ['Budi Santoso', '', '1000000001', 'budi.santoso', 'Password123', 'siswa', 'X-IPA-1', 'LAB-1', 'Islam', '1000000001.jpg'],
-                ['Siti Aminah', 'siti@student.sch.id', '1000000002', 'siti.aminah', 'Password123', 'siswa', 'X-IPA-1', 'LAB-1', 'Islam', '1000000002.jpg'],
-                ['Pak Andi', 'andi@school.sch.id', '', 'andi.guru', 'Password123', 'guru', '', '', '', ''],
+                ['name', 'email', 'nisn', 'username', 'password', 'role', 'kode_kelas', 'kode_ruang', 'agama', 'jenis_kelamin', 'foto_file'],
+                ['Budi Santoso', '', '1000000001', 'budi.santoso', 'Password123', 'siswa', 'X-IPA-1', 'LAB-1', 'Islam', 'Laki-laki', '1000000001.jpg'],
+                ['Siti Aminah', 'siti@student.sch.id', '1000000002', 'siti.aminah', 'Password123', 'siswa', 'X-IPA-1', 'LAB-1', 'Islam', 'Perempuan', '1000000002.jpg'],
+                ['Pak Andi', 'andi@school.sch.id', '', 'andi.guru', 'Password123', 'guru', '', '', '', 'Laki-laki', ''],
             ],
             null,
             'A1'
@@ -868,6 +912,8 @@ final class CBT_Admin_Users_Service
                 $key = 'kode_kelas';
             } elseif ($key === 'ruang') {
                 $key = 'kode_ruang';
+            } elseif ($key === 'gender' || $key === 'jk' || $key === 'kelamin') {
+                $key = 'jenis_kelamin';
             } elseif ($key === 'photo_file') {
                 $key = 'foto_file';
             }
@@ -915,6 +961,8 @@ final class CBT_Admin_Users_Service
         $kode_kelas = sanitize_text_field((string) ($row['kode_kelas'] ?? ''));
         $kode_ruang = sanitize_text_field((string) ($row['kode_ruang'] ?? ''));
         $agama = self::normalize_supported_agama((string) ($row['agama'] ?? ''));
+        $raw_jenis_kelamin = (string) ($row['jenis_kelamin'] ?? '');
+        $jenis_kelamin = self::normalize_supported_jenis_kelamin($raw_jenis_kelamin);
         $foto_file = self::normalize_user_import_photo_reference((string) ($row['foto_file'] ?? ''));
         $role = self::map_import_role($role_raw);
 
@@ -927,6 +975,9 @@ final class CBT_Admin_Users_Service
         }
 
         if ($username === '' || (!is_email($email) && $nisn === '')) {
+            return 'failed';
+        }
+        if (self::validate_user_jenis_kelamin_for_role($raw_jenis_kelamin, $role_raw, $jenis_kelamin) !== '') {
             return 'failed';
         }
 
@@ -985,6 +1036,11 @@ final class CBT_Admin_Users_Service
             } else {
                 delete_user_meta($user_id, 'agama');
             }
+            if ($jenis_kelamin !== '') {
+                update_user_meta($user_id, 'jenis_kelamin', $jenis_kelamin);
+            } else {
+                delete_user_meta($user_id, 'jenis_kelamin');
+            }
             if ($nisn !== '') {
                 update_user_meta($user_id, 'nisn', $nisn);
             } else {
@@ -993,8 +1049,11 @@ final class CBT_Admin_Users_Service
 
             if ($foto !== '') {
                 update_user_meta($user_id, 'foto', $foto);
-            } elseif (self::is_student_role($role) && trim((string) get_user_meta($user_id, 'foto', true)) === '') {
-                update_user_meta($user_id, 'foto', self::get_default_student_photo_url());
+            } elseif (self::is_student_role($role)) {
+                $current_foto = trim((string) get_user_meta($user_id, 'foto', true));
+                if (self::should_refresh_default_student_photo($current_foto)) {
+                    update_user_meta($user_id, 'foto', self::get_default_student_photo_url($jenis_kelamin));
+                }
             }
 
             self::register_user_import_lookup($import_lookup, $user_id, $email, $username, $nisn, $name !== '' ? $name : $username);
@@ -1005,7 +1064,7 @@ final class CBT_Admin_Users_Service
             $password = wp_generate_password(12, true, true);
         }
 
-        $foto = self::resolve_student_default_photo($role, $foto);
+        $foto = self::resolve_student_default_photo($role, $foto, $jenis_kelamin);
 
         $user_id = wp_insert_user([
             'user_login' => $username,
@@ -1027,6 +1086,9 @@ final class CBT_Admin_Users_Service
         }
         if ($agama !== '') {
             update_user_meta((int) $user_id, 'agama', $agama);
+        }
+        if ($jenis_kelamin !== '') {
+            update_user_meta((int) $user_id, 'jenis_kelamin', $jenis_kelamin);
         }
         if ($nisn !== '') {
             update_user_meta((int) $user_id, 'nisn', $nisn);
@@ -1292,6 +1354,62 @@ final class CBT_Admin_Users_Service
         return in_array($clean, self::get_supported_agama_options(), true) ? $clean : '';
     }
 
+    /**
+     * @return array<int,string>
+     */
+    public static function get_supported_jenis_kelamin_options(): array
+    {
+        return [
+            'Laki-laki',
+            'Perempuan',
+        ];
+    }
+
+    public static function normalize_supported_jenis_kelamin(string $jenis_kelamin): string
+    {
+        $clean = sanitize_text_field($jenis_kelamin);
+        if ($clean === '') {
+            return '';
+        }
+
+        $normalized = preg_replace('/\s+/', ' ', strtolower(trim($clean)));
+        if (!is_string($normalized)) {
+            $normalized = strtolower(trim($clean));
+        }
+
+        $aliases = [
+            'l' => 'Laki-laki',
+            'laki' => 'Laki-laki',
+            'laki laki' => 'Laki-laki',
+            'laki-laki' => 'Laki-laki',
+            'pria' => 'Laki-laki',
+            'male' => 'Laki-laki',
+            'p' => 'Perempuan',
+            'perempuan' => 'Perempuan',
+            'wanita' => 'Perempuan',
+            'female' => 'Perempuan',
+        ];
+        if (isset($aliases[$normalized])) {
+            return $aliases[$normalized];
+        }
+
+        return in_array($clean, self::get_supported_jenis_kelamin_options(), true) ? $clean : '';
+    }
+
+    private static function has_invalid_supported_jenis_kelamin_input(string $raw_jenis_kelamin, string $normalized_jenis_kelamin = ''): bool
+    {
+        $clean = sanitize_text_field($raw_jenis_kelamin);
+        if ($clean === '') {
+            return false;
+        }
+
+        if ($normalized_jenis_kelamin === '') {
+            $normalized_jenis_kelamin = self::normalize_supported_jenis_kelamin($clean);
+        }
+
+        return $normalized_jenis_kelamin === '';
+    }
+
     private static function normalize_user_nisn(string $raw): string
     {
         $normalized = preg_replace('/\D+/', '', (string) $raw);
@@ -1337,6 +1455,23 @@ final class CBT_Admin_Users_Service
         return '';
     }
 
+    private static function validate_user_jenis_kelamin_for_role(string $raw_jenis_kelamin, string $role, string $normalized_jenis_kelamin = ''): string
+    {
+        if ($normalized_jenis_kelamin === '') {
+            $normalized_jenis_kelamin = self::normalize_supported_jenis_kelamin($raw_jenis_kelamin);
+        }
+
+        if (self::has_invalid_supported_jenis_kelamin_input($raw_jenis_kelamin, $normalized_jenis_kelamin)) {
+            return 'Jenis kelamin tidak valid. Gunakan Laki-laki, Perempuan, L, atau P.';
+        }
+
+        if (self::is_student_role(self::map_import_role(strtolower(trim($role)))) && $normalized_jenis_kelamin === '') {
+            return 'Jenis kelamin wajib diisi untuk user siswa.';
+        }
+
+        return '';
+    }
+
     /**
      * @param array<int,array<string,string>> $rows
      * @return bool|WP_Error
@@ -1355,6 +1490,8 @@ final class CBT_Admin_Users_Service
             $row_number = $index + 2;
             $role = self::map_import_role(strtolower(trim((string) ($row['role'] ?? 'siswa'))));
             $nisn = self::normalize_user_nisn((string) ($row['nisn'] ?? ''));
+            $raw_jenis_kelamin = (string) ($row['jenis_kelamin'] ?? '');
+            $jenis_kelamin = self::normalize_supported_jenis_kelamin($raw_jenis_kelamin);
             $username = sanitize_user((string) ($row['username'] ?? ''), true);
             $email = sanitize_email((string) ($row['email'] ?? ''));
 
@@ -1381,6 +1518,10 @@ final class CBT_Admin_Users_Service
 
             if (self::is_student_role($role) && $nisn === '') {
                 return new WP_Error('import_row_invalid', sprintf('Baris %d: NISN wajib diisi untuk user siswa.', $row_number));
+            }
+            $jenis_kelamin_validation_error = self::validate_user_jenis_kelamin_for_role($raw_jenis_kelamin, $role, $jenis_kelamin);
+            if ($jenis_kelamin_validation_error !== '') {
+                return new WP_Error('import_row_invalid', sprintf('Baris %1$d: %2$s', $row_number, $jenis_kelamin_validation_error));
             }
 
             if ($nisn === '') {
@@ -2107,12 +2248,68 @@ final class CBT_Admin_Users_Service
         return in_array($normalized, ['siswa', 'siswa_cbt', 'subscriber', 'student'], true);
     }
 
-    private static function get_default_student_photo_url(): string
+    private static function get_default_student_photo_relative_path(string $jenis_kelamin = ''): string
     {
-        return esc_url_raw(CBT_EXAM_SYSTEM_URL . self::DEFAULT_STUDENT_PHOTO_RELATIVE_PATH);
+        $normalized_jenis_kelamin = self::normalize_supported_jenis_kelamin($jenis_kelamin);
+        if ($normalized_jenis_kelamin === 'Perempuan') {
+            return self::DEFAULT_STUDENT_PHOTO_FEMALE_RELATIVE_PATH;
+        }
+
+        if ($normalized_jenis_kelamin === 'Laki-laki') {
+            return self::DEFAULT_STUDENT_PHOTO_MALE_RELATIVE_PATH;
+        }
+
+        return self::DEFAULT_STUDENT_PHOTO_RELATIVE_PATH;
     }
 
-    private static function resolve_student_default_photo(string $role, string $foto): string
+    private static function build_plugin_asset_url(string $relative_path): string
+    {
+        $segments = array_filter(explode('/', ltrim($relative_path, '/')), static function ($segment): bool {
+            return $segment !== '';
+        });
+        $encoded_segments = array_map('rawurlencode', $segments);
+
+        return esc_url_raw(CBT_EXAM_SYSTEM_URL . implode('/', $encoded_segments));
+    }
+
+    private static function get_default_student_photo_url(string $jenis_kelamin = ''): string
+    {
+        return self::build_plugin_asset_url(self::get_default_student_photo_relative_path($jenis_kelamin));
+    }
+
+    private static function is_known_default_student_photo(string $foto): bool
+    {
+        $clean_foto = trim($foto);
+        if ($clean_foto === '') {
+            return false;
+        }
+
+        $photo_path = (string) wp_parse_url($clean_foto, PHP_URL_PATH);
+        if ($photo_path === '') {
+            return false;
+        }
+
+        $photo_basename = rawurldecode((string) basename($photo_path));
+
+        return in_array($photo_basename, [
+            'default-student-avatar.svg',
+            'default-student-avatar.png',
+            'Default Pria.png',
+            'Default Wanita.png',
+        ], true);
+    }
+
+    private static function should_refresh_default_student_photo(string $foto): bool
+    {
+        $clean_foto = trim($foto);
+        if ($clean_foto === '') {
+            return true;
+        }
+
+        return self::is_known_default_student_photo($clean_foto);
+    }
+
+    private static function resolve_student_default_photo(string $role, string $foto, string $jenis_kelamin = ''): string
     {
         $clean_foto = esc_url_raw(trim($foto));
         if ($clean_foto !== '') {
@@ -2122,7 +2319,7 @@ final class CBT_Admin_Users_Service
             return '';
         }
 
-        return self::get_default_student_photo_url();
+        return self::get_default_student_photo_url($jenis_kelamin);
     }
 
     private static function normalize_user_list_per_page(int $requested): int
@@ -2143,7 +2340,8 @@ final class CBT_Admin_Users_Service
         string $role_filter = '',
         string $kode_kelas = '',
         string $kode_ruang = '',
-        string $agama = ''
+        string $agama = '',
+        string $jenis_kelamin = ''
     ): array {
         $args = [
             'orderby' => 'registered',
@@ -2170,6 +2368,7 @@ final class CBT_Admin_Users_Service
         $kode_kelas = trim($kode_kelas);
         $kode_ruang = trim($kode_ruang);
         $agama = self::normalize_supported_agama($agama);
+        $jenis_kelamin = self::normalize_supported_jenis_kelamin($jenis_kelamin);
         if ($kode_kelas !== '') {
             $meta_query[] = [
                 'key' => 'kode_kelas',
@@ -2191,6 +2390,13 @@ final class CBT_Admin_Users_Service
                 'compare' => '=',
             ];
         }
+        if ($jenis_kelamin !== '') {
+            $meta_query[] = [
+                'key' => 'jenis_kelamin',
+                'value' => $jenis_kelamin,
+                'compare' => '=',
+            ];
+        }
         if (!empty($meta_query)) {
             $args['meta_query'] = $meta_query;
         }
@@ -2207,13 +2413,14 @@ final class CBT_Admin_Users_Service
         string $kode_kelas = '',
         string $kode_ruang = '',
         string $agama = '',
+        string $jenis_kelamin = '',
         int $per_page = 20,
         int $page = 1
     ): array {
         $per_page = self::normalize_user_list_per_page($per_page);
         $page = max(1, $page);
 
-        $args = self::build_cbt_user_query_args($search, $role_filter, $kode_kelas, $kode_ruang, $agama);
+        $args = self::build_cbt_user_query_args($search, $role_filter, $kode_kelas, $kode_ruang, $agama, $jenis_kelamin);
         $args['number'] = $per_page;
         $args['offset'] = ($page - 1) * $per_page;
         $args['count_total'] = true;
@@ -2247,9 +2454,10 @@ final class CBT_Admin_Users_Service
         string $role_filter = '',
         string $kode_kelas = '',
         string $kode_ruang = '',
-        string $agama = ''
+        string $agama = '',
+        string $jenis_kelamin = ''
     ): array {
-        $args = self::build_cbt_user_query_args($search, $role_filter, $kode_kelas, $kode_ruang, $agama);
+        $args = self::build_cbt_user_query_args($search, $role_filter, $kode_kelas, $kode_ruang, $agama, $jenis_kelamin);
         $args['fields'] = 'ids';
         $user_ids = get_users($args);
         if (!is_array($user_ids)) {
@@ -2364,14 +2572,14 @@ final class CBT_Admin_Users_Service
     /**
      * @param array{status:string,url?:string,error?:string} $foto_upload
      */
-    private static function resolve_manual_create_user_photo(string $role, array $foto_upload): string
+    private static function resolve_manual_create_user_photo(string $role, array $foto_upload, string $jenis_kelamin = ''): string
     {
         $foto = '';
         if (($foto_upload['status'] ?? '') === 'uploaded') {
             $foto = esc_url_raw((string) ($foto_upload['url'] ?? ''));
         }
 
-        return self::resolve_student_default_photo($role, $foto);
+        return self::resolve_student_default_photo($role, $foto, $jenis_kelamin);
     }
 
     /**

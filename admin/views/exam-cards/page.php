@@ -149,6 +149,39 @@
                 background-position: right 16px center;
                 background-size: 16px 16px;
             }
+            .cbt-exam-cards-field-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 12px;
+                max-width: 720px;
+            }
+            .cbt-exam-cards-field-option {
+                position: relative;
+                display: flex;
+                gap: 12px;
+                align-items: flex-start;
+                padding: 14px 16px;
+                border: 1px solid #d7e4f5;
+                border-radius: 18px;
+                background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+                box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+            }
+            .cbt-exam-cards-field-option input[type="checkbox"] {
+                margin: 2px 0 0;
+            }
+            .cbt-exam-cards-field-option strong {
+                display: block;
+                margin-bottom: 3px;
+                color: #0f172a;
+                font-size: 13px;
+                line-height: 1.35;
+            }
+            .cbt-exam-cards-field-option span {
+                display: block;
+                color: #64748b;
+                font-size: 12px;
+                line-height: 1.5;
+            }
             .cbt-exam-cards-panel .description {
                 margin-top: 10px;
                 color: #64748b;
@@ -283,6 +316,9 @@
                     min-width: 0;
                     width: 100%;
                 }
+                .cbt-exam-cards-field-grid {
+                    grid-template-columns: 1fr;
+                }
             }
         </style>
         <div class="wrap cbt-exam-cards-page">
@@ -291,12 +327,13 @@
                     <div class="cbt-exam-cards-hero-copy">
                         <span class="cbt-exam-cards-kicker">Print</span>
                         <h1>CBT Exam Cards</h1>
-                        <p>Generate kartu peserta ujian berdasarkan filter siswa dengan output siap cetak untuk PDF A4. Alurnya dibuat ringkas agar operator bisa langsung pilih filter lalu cetak.</p>
+                        <p>Generate kartu peserta ujian berdasarkan filter siswa dengan output siap cetak untuk PDF A4. Operator bisa pilih filter lalu atur informasi apa saja yang mau ikut tercetak di kartu.</p>
                     </div>
                     <div class="cbt-exam-cards-overview" aria-hidden="true">
                         <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d kelas tersedia', count($kelas_options))); ?></span>
                         <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d ruang tersedia', count($ruang_options))); ?></span>
                         <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d filter aktif', $active_filter_count)); ?></span>
+                        <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d info tampil', $display_field_count)); ?></span>
                     </div>
                 </section>
 
@@ -304,7 +341,7 @@
                     <div class="cbt-exam-cards-panel-header">
                         <div>
                             <h2>Filter & Generate Cards</h2>
-                            <p>Pilih kelas, ruang, atau kata kunci siswa untuk membatasi kartu yang akan digenerate. Jika filter dikosongkan, sistem akan mengambil seluruh siswa sesuai data CBT.</p>
+                            <p>Pilih kelas, ruang, atau kata kunci siswa untuk membatasi kartu yang akan digenerate. Setelah itu, tentukan juga informasi mana yang ingin ditampilkan pada kartu.</p>
                         </div>
                         <span class="cbt-exam-cards-chip">PDF A4 • 6 kartu / halaman</span>
                     </div>
@@ -321,11 +358,13 @@
                         <span class="cbt-exam-cards-summary-item"><?php echo esc_html('Kelas: ' . ($selected_kelas !== '' ? $selected_kelas : 'Semua kelas')); ?></span>
                         <span class="cbt-exam-cards-summary-item"><?php echo esc_html('Ruang: ' . ($selected_ruang !== '' ? $selected_ruang : 'Semua ruang')); ?></span>
                         <span class="cbt-exam-cards-summary-item"><?php echo esc_html(sprintf('Jadwal publish: %d exam', $schedule_count)); ?></span>
+                        <span class="cbt-exam-cards-summary-item"><?php echo esc_html(sprintf('Info kartu: %d item', $display_field_count)); ?></span>
                     </div>
 
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php wp_nonce_field('cbt_print_exam_cards'); ?>
                         <input type="hidden" name="action" value="cbt_print_exam_cards" />
+                        <input type="hidden" name="cbt_card_fields_configured" value="1" />
                         <table class="form-table" role="presentation">
                             <tbody>
                             <tr>
@@ -363,10 +402,38 @@
                                     <p class="description">Opsional untuk mempersempit hasil siswa yang akan masuk ke kartu.</p>
                                 </td>
                             </tr>
+                            <tr>
+                                <th>Informasi Kartu</th>
+                                <td>
+                                    <div class="cbt-exam-cards-field-grid">
+                                        <?php foreach ($display_field_options as $field_key => $field_option): ?>
+                                            <label class="cbt-exam-cards-field-option" for="<?php echo esc_attr('cbt-card-field-' . $field_key); ?>">
+                                                <input
+                                                    type="checkbox"
+                                                    id="<?php echo esc_attr('cbt-card-field-' . $field_key); ?>"
+                                                    name="cbt_card_fields[]"
+                                                    value="<?php echo esc_attr($field_key); ?>"
+                                                    <?php checked(in_array($field_key, $selected_display_fields, true)); ?>
+                                                />
+                                                <span>
+                                                    <strong><?php echo esc_html((string) ($field_option['label'] ?? '')); ?></strong>
+                                                    <span><?php echo esc_html((string) ($field_option['description'] ?? '')); ?></span>
+                                                </span>
+                                            </label>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <p class="description">
+                                        Pilih informasi yang ingin ditampilkan pada kartu. Default-nya semua aktif, dan minimal satu item harus dipilih.
+                                        <?php if (!empty($selected_display_field_labels)): ?>
+                                            <?php echo esc_html('Saat ini: ' . implode(', ', $selected_display_field_labels) . '.'); ?>
+                                        <?php endif; ?>
+                                    </p>
+                                </td>
+                            </tr>
                             </tbody>
                         </table>
                         <p class="cbt-exam-cards-note">
-                            Password pada kartu akan memakai nilai tersimpan. Jika masih kosong, sistem akan membuat password 6 digit otomatis untuk siswa tersebut saat proses generate berjalan.
+                            Password pada kartu akan memakai nilai tersimpan. Jika masih kosong, sistem akan membuat password 6 digit otomatis untuk siswa tersebut saat proses generate berjalan. Opsi tampilan di atas hanya mengatur field yang dicetak, bukan mengubah data siswa.
                         </p>
                         <div class="cbt-exam-cards-form-actions">
                             <button class="button button-primary" type="submit">Generate &amp; Print Cards</button>
@@ -385,8 +452,8 @@
                         <p>Anda bisa cetak per kelas, per ruang, atau gabungkan dengan pencarian siswa tertentu tanpa mengubah data user.</p>
                     </div>
                     <div class="cbt-exam-cards-insight">
-                        <strong>Jadwal ikut tampil</strong>
-                        <p>Kartu akan memuat ringkasan jadwal exam yang aktif untuk kelas terkait agar informasi peserta lebih lengkap saat dibagikan.</p>
+                        <strong>Tampilan fleksibel</strong>
+                        <p>Foto, identitas login, kelas, jenis kelamin, agama, ruangan, sampai jadwal ujian sekarang bisa dipilih sesuai kebutuhan kartu yang ingin dibagikan.</p>
                     </div>
                 </section>
             </div>

@@ -336,7 +336,7 @@
                 <div class="cbt-update-card-header">
                     <div class="cbt-update-card-header-copy">
                         <h2>Preflight Checklist</h2>
-                        <p>Checklist ini bersifat read-only guard. Install hanya aktif jika tidak ada item blocked.</p>
+                        <p>Checklist ini bersifat read-only guard. Cek update hanya membaca manifest release; unduh ZIP penuh dan validasi checksum dijalankan saat INSTALL UPDATE.</p>
                     </div>
                     <a class="cbt-update-pill" href="<?php echo esc_url($repo_url); ?>" target="_blank" rel="noopener noreferrer">Buka Repo</a>
                 </div>
@@ -344,7 +344,7 @@
                 <?php if ($status === 'no_release'): ?>
                     <div class="cbt-update-empty">Preflight baru dijalankan setelah release resmi tersedia. Untuk saat ini updater belum punya package release yang bisa divalidasi.</div>
                 <?php elseif (!$has_checked_state || empty($preflight['items'])): ?>
-                    <div class="cbt-update-empty">Belum ada hasil preflight. Jalankan cek update untuk memvalidasi manifest dan package release.</div>
+                    <div class="cbt-update-empty">Belum ada hasil preflight. Jalankan cek update untuk memvalidasi manifest release terlebih dahulu.</div>
                 <?php else: ?>
                     <div class="cbt-update-checklist">
                         <?php foreach ((array) $preflight['items'] as $preflight_item): ?>

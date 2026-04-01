@@ -167,6 +167,38 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login::-webkit-s
     height: 0;
 }
 
+@media print {
+    body.cbt-exam-page.cbt-security-print-guard.cbt-stage-exam,
+    body.cbt-exam-page.cbt-security-print-guard.cbt-stage-exam #page,
+    body.cbt-exam-page.cbt-security-print-guard.cbt-stage-exam .site,
+    body.cbt-exam-page.cbt-security-print-guard.cbt-stage-exam .wp-site-blocks,
+    body.cbt-exam-page.cbt-security-print-guard.cbt-stage-exam .site-main,
+    body.cbt-exam-page.cbt-security-print-guard.cbt-stage-exam .entry-content,
+    body.cbt-exam-page.cbt-security-print-guard.cbt-stage-exam .wp-block-post-content {
+        background: #ffffff !important;
+        overflow: visible !important;
+    }
+
+    body.cbt-exam-page.cbt-security-print-guard.cbt-stage-exam #cbt-exam-app.cbt-web-shell {
+        display: none !important;
+    }
+
+    body.cbt-exam-page.cbt-security-print-guard.cbt-stage-exam::before {
+        content: "Printing is disabled during an active CBT exam.\A Return to the exam window to continue.";
+        white-space: pre-wrap;
+        display: block;
+        max-width: 720px;
+        margin: 32px auto;
+        padding: 28px 32px;
+        border: 2px solid #16324f;
+        border-radius: 18px;
+        background: #fff8e8;
+        color: #16324f;
+        font: 700 18px/1.6 "Source Sans 3", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        box-shadow: none;
+    }
+}
+
 .cbt-topbar {
     display: flex;
     align-items: center;

@@ -230,7 +230,7 @@ final class CBT_Admin_Developer_Service
     public static function get_dev_server_launcher_status(?string $url = null): array
     {
         $wrapper_path = CBT_EXAM_SYSTEM_PATH . self::VITE_DEV_WRAPPER_RELATIVE;
-        $tmp_dir = self::get_tmp_dir();
+        $paths = self::get_dev_server_launcher_paths();
 
         $normalized_url = self::normalize_dev_server_url((string) ($url ?? ''));
         $available = file_exists($wrapper_path) && is_file($wrapper_path) && is_executable($wrapper_path);
@@ -251,8 +251,8 @@ final class CBT_Admin_Developer_Service
             'can_autostart' => $can_autostart,
             'reason' => $reason,
             'wrapper_path' => $wrapper_path,
-            'log_file' => $tmp_dir . '/cbt-vite-dev.log',
-            'pid_file' => $tmp_dir . '/cbt-vite-dev.pid',
+            'log_file' => $paths['log_file'],
+            'pid_file' => $paths['pid_file'],
             'running' => $running,
         ];
     }
@@ -263,17 +263,24 @@ final class CBT_Admin_Developer_Service
     public static function get_build_watch_launcher_status(): array
     {
         $wrapper_path = CBT_EXAM_SYSTEM_PATH . self::BUILD_WATCH_WRAPPER_RELATIVE;
-        $tmp_dir = self::get_tmp_dir();
+        $paths = self::get_build_watch_launcher_paths();
         $available = file_exists($wrapper_path) && is_file($wrapper_path) && is_executable($wrapper_path);
         $running = $available ? self::is_wrapper_running($wrapper_path) : false;
+        $reason = $available ? 'Wrapper script build watch siap dipakai.' : 'Wrapper script build watch belum tersedia atau belum executable.';
+        $can_autostart = $available;
+        if ($available) {
+            $build_output_access = self::get_build_output_access_status();
+            $reason = $build_output_access['message'];
+            $can_autostart = $build_output_access['status'] !== 'blocked';
+        }
 
         return [
             'available' => $available,
-            'can_autostart' => $available,
-            'reason' => $available ? 'Wrapper script build watch siap dipakai.' : 'Wrapper script build watch belum tersedia atau belum executable.',
+            'can_autostart' => $can_autostart,
+            'reason' => $reason,
             'wrapper_path' => $wrapper_path,
-            'log_file' => $tmp_dir . '/cbt-vite-build-watch.log',
-            'pid_file' => $tmp_dir . '/cbt-vite-build-watch.pid',
+            'log_file' => $paths['log_file'],
+            'pid_file' => $paths['pid_file'],
             'running' => $running,
         ];
     }
@@ -355,6 +362,7 @@ final class CBT_Admin_Developer_Service
         }
 
         if (strpos($stdout, 'STOPPED:') === 0) {
+            self::reset_dev_server_health_snapshot('Vite dev server dihentikan.');
             return [
                 'attempted' => true,
                 'stopped' => true,
@@ -363,6 +371,7 @@ final class CBT_Admin_Developer_Service
         }
 
         if ($stdout === 'STOPPED') {
+            self::reset_dev_server_health_snapshot('Vite dev server sudah tidak berjalan.');
             return [
                 'attempted' => true,
                 'stopped' => true,
@@ -389,6 +398,26 @@ final class CBT_Admin_Developer_Service
                 'started' => false,
                 'message' => $launcher['reason'],
             ];
+        }
+
+        $build_output_access = self::get_build_output_access_status();
+        if ($build_output_access['status'] === 'blocked') {
+            return [
+                'attempted' => false,
+                'started' => false,
+                'message' => $build_output_access['message'],
+            ];
+        }
+
+        if ($build_output_access['status'] === 'preparable') {
+            $prepare_result = self::prepare_build_output_for_runtime();
+            if (!$prepare_result['ok']) {
+                return [
+                    'attempted' => false,
+                    'started' => false,
+                    'message' => $prepare_result['message'],
+                ];
+            }
         }
 
         $command = escapeshellarg($launcher['wrapper_path']) . ' start';
@@ -814,6 +843,59 @@ final class CBT_Admin_Developer_Service
         return $tmp_dir !== '' ? $tmp_dir : '/tmp';
     }
 
+    /**
+     * @return array{log_file:string,pid_file:string,cache_dir:string}
+     */
+    private static function get_dev_server_launcher_paths(): array
+    {
+        $tmp_dir = self::get_tmp_dir();
+        $user_label = self::get_runtime_user_label();
+
+        return [
+            'log_file' => $tmp_dir . '/cbt-vite-dev-' . $user_label . '.log',
+            'pid_file' => $tmp_dir . '/cbt-vite-dev-' . $user_label . '.pid',
+            'cache_dir' => $tmp_dir . '/cbt-vite-cache-' . $user_label . '/dev',
+        ];
+    }
+
+    /**
+     * @return array{log_file:string,pid_file:string,cache_dir:string}
+     */
+    private static function get_build_watch_launcher_paths(): array
+    {
+        $tmp_dir = self::get_tmp_dir();
+        $user_label = self::get_runtime_user_label();
+
+        return [
+            'log_file' => $tmp_dir . '/cbt-vite-build-watch-' . $user_label . '.log',
+            'pid_file' => $tmp_dir . '/cbt-vite-build-watch-' . $user_label . '.pid',
+            'cache_dir' => $tmp_dir . '/cbt-vite-cache-' . $user_label . '/build-watch',
+        ];
+    }
+
+    private static function get_runtime_user_label(): string
+    {
+        $label = '';
+        if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+            $user_info = posix_getpwuid(posix_geteuid());
+            if (is_array($user_info) && !empty($user_info['name']) && is_string($user_info['name'])) {
+                $label = $user_info['name'];
+            }
+        }
+
+        if ($label === '') {
+            $env_user = getenv('USER');
+            if (is_string($env_user) && trim($env_user) !== '') {
+                $label = trim($env_user);
+            }
+        }
+
+        $sanitized = preg_replace('/[^A-Za-z0-9._-]+/', '-', $label);
+        $sanitized = is_string($sanitized) ? trim($sanitized, '-') : '';
+
+        return $sanitized !== '' ? $sanitized : 'process';
+    }
+
     private static function normalize_dev_server_url(string $url): string
     {
         $normalized = trim($url);
@@ -849,6 +931,112 @@ final class CBT_Admin_Developer_Service
     private static function health_transient_key(string $url): string
     {
         return self::DEV_SERVER_HEALTH_TRANSIENT_PREFIX . md5($url);
+    }
+
+    /**
+     * @return array{status:string,message:string}
+     */
+    private static function get_build_output_access_status(): array
+    {
+        $public_dir = CBT_EXAM_SYSTEM_PATH . 'public';
+        $build_dir = CBT_EXAM_SYSTEM_PATH . 'public/build';
+        $runtime_user = self::get_runtime_user_label();
+
+        return self::inspect_build_output_access($public_dir, $build_dir, $runtime_user);
+    }
+
+    /**
+     * @return array{status:string,message:string}
+     */
+    private static function inspect_build_output_access(string $public_dir, string $build_dir, string $runtime_user): array
+    {
+        if (!is_dir($public_dir)) {
+            return [
+                'status' => 'blocked',
+                'message' => 'Folder public belum tersedia untuk stable build.',
+            ];
+        }
+
+        if (!is_dir($build_dir)) {
+            if (is_writable($public_dir)) {
+                return [
+                    'status' => 'preparable',
+                    'message' => 'Folder public/build akan dibuat saat start oleh proses ' . $runtime_user . '.',
+                ];
+            }
+
+            return [
+                'status' => 'blocked',
+                'message' => 'Folder public/build belum tersedia dan parent folder public tidak writable oleh proses ' . $runtime_user . '.',
+            ];
+        }
+
+        $assets_dir = $build_dir . '/assets';
+        if (is_writable($build_dir) && (!is_dir($assets_dir) || is_writable($assets_dir))) {
+            return [
+                'status' => 'ok',
+                'message' => 'Folder build writable.',
+            ];
+        }
+
+        if (is_writable($public_dir)) {
+            return [
+                'status' => 'preparable',
+                'message' => 'Folder public/build akan disiapkan ulang saat start oleh proses ' . $runtime_user . '.',
+            ];
+        }
+
+        return [
+            'status' => 'blocked',
+            'message' => 'Folder public/build belum writable oleh proses ' . $runtime_user . ' dan parent folder public juga tidak writable.',
+        ];
+    }
+
+    /**
+     * @return array{ok:bool,message:string}
+     */
+    private static function prepare_build_output_for_runtime(?string $public_dir = null, ?string $build_dir = null, ?string $runtime_user = null): array
+    {
+        $public_dir = is_string($public_dir) && $public_dir !== '' ? $public_dir : (CBT_EXAM_SYSTEM_PATH . 'public');
+        $build_dir = is_string($build_dir) && $build_dir !== '' ? $build_dir : (CBT_EXAM_SYSTEM_PATH . 'public/build');
+        $runtime_user = is_string($runtime_user) && $runtime_user !== '' ? $runtime_user : self::get_runtime_user_label();
+        $access = self::inspect_build_output_access($public_dir, $build_dir, $runtime_user);
+
+        if ($access['status'] === 'ok') {
+            return [
+                'ok' => true,
+                'message' => 'Folder build sudah writable.',
+            ];
+        }
+
+        if ($access['status'] === 'blocked') {
+            return [
+                'ok' => false,
+                'message' => $access['message'],
+            ];
+        }
+
+        if (is_dir($build_dir)) {
+            $backup_dir = $public_dir . '/.cbt-build-backup-' . $runtime_user . '-' . gmdate('YmdHis');
+            if (!@rename($build_dir, $backup_dir)) {
+                return [
+                    'ok' => false,
+                    'message' => 'Folder public/build tidak bisa disiapkan ulang otomatis oleh proses ' . $runtime_user . '.',
+                ];
+            }
+        }
+
+        if (!is_dir($build_dir) && !wp_mkdir_p($build_dir)) {
+            return [
+                'ok' => false,
+                'message' => 'Folder public/build gagal dibuat ulang untuk stable build.',
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'message' => 'Folder public/build berhasil disiapkan ulang untuk proses ' . $runtime_user . '.',
+        ];
     }
 
     /**
@@ -958,6 +1146,20 @@ final class CBT_Admin_Developer_Service
         $settings['last_health_status'] = $snapshot['status'];
         $settings['last_health_message'] = $snapshot['message'];
         $settings['last_health_checked_at'] = $snapshot['checked_at'];
+        update_option(self::OPTION_KEY, $settings, false);
+    }
+
+    public static function reset_dev_server_health_snapshot(string $message = ''): void
+    {
+        $settings = self::get_settings();
+        if ($settings['dev_server_url'] !== '') {
+            delete_transient(self::health_transient_key($settings['dev_server_url']));
+        }
+
+        $settings['last_health_status'] = 'unknown';
+        $settings['last_health_message'] = trim($message);
+        $settings['last_health_checked_at'] = time();
+
         update_option(self::OPTION_KEY, $settings, false);
     }
 

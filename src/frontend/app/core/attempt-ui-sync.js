@@ -18,8 +18,23 @@ export function createAttemptUiSyncManager(deps) {
         syncTimer = 0;
     }
 
+    function signaturePayload(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') {
+            return snapshot;
+        }
+
+        if (Array.isArray(snapshot)) {
+            return snapshot.slice();
+        }
+
+        var normalized = Object.assign({}, snapshot);
+        delete normalized.updated_at;
+        delete normalized.updatedAt;
+        return normalized;
+    }
+
     function signature(snapshot) {
-        return payloadSignature(snapshot);
+        return payloadSignature(signaturePayload(snapshot));
     }
 
     function numericUpdatedAt(snapshot) {

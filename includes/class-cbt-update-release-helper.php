@@ -254,22 +254,14 @@ final class CBT_Update_Release_Helper
             ];
         }
 
-        $package_validation = self::validate_release_package($manifest);
-        if (is_wp_error($package_validation)) {
-            $items[] = [
-                'key' => 'package_validation',
-                'label' => 'Validasi package',
-                'status' => 'blocked',
-                'message' => $package_validation->get_error_message(),
-            ];
-        } else {
-            $items[] = [
-                'key' => 'package_validation',
-                'label' => 'Validasi package',
-                'status' => 'ok',
-                'message' => 'Checksum dan struktur zip release valid.',
-            ];
-        }
+        $items[] = [
+            'key' => 'package_validation',
+            'label' => 'Validasi package',
+            'status' => $package_meta_ok ? 'ok' : 'blocked',
+            'message' => $package_meta_ok
+                ? 'Checksum dan struktur zip akan diverifikasi saat INSTALL UPDATE agar cek update tidak perlu mengunduh package penuh.'
+                : 'Manifest release harus menyediakan download_url dan sha256 sebelum validasi package bisa dijalankan.',
+        ];
 
         $overall_status = 'ok';
         foreach ($items as $item) {

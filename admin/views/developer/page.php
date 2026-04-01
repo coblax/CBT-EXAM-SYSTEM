@@ -45,6 +45,7 @@ $launcher_log_file = (string) ($dev_server_launcher['log_file'] ?? '');
 $launcher_pid_file = (string) ($dev_server_launcher['pid_file'] ?? '');
 
 $build_watch_available = !empty($build_watch_launcher['available']);
+$build_watch_can_autostart = !empty($build_watch_launcher['can_autostart']);
 $build_watch_running = !empty($build_watch_launcher['running']);
 $build_watch_reason = (string) ($build_watch_launcher['reason'] ?? '');
 $build_watch_wrapper_path = (string) ($build_watch_launcher['wrapper_path'] ?? '');
@@ -66,7 +67,7 @@ $hero_live_value = $is_constant_override
 $live_health_label = $is_dev_mode ? strtoupper($health_status) : 'STATIC BUILD';
 $live_launcher_label = 'OFF';
 if ($is_stable_mode) {
-    $live_launcher_label = $build_watch_available ? ($build_watch_running ? 'RUNNING' : 'READY') : 'UNAVAILABLE';
+    $live_launcher_label = $build_watch_available ? ($build_watch_running ? 'RUNNING' : ($build_watch_can_autostart ? 'READY' : 'BLOCKED')) : 'UNAVAILABLE';
 } elseif ($is_dev_mode) {
     $live_launcher_label = $launcher_available ? ($launcher_running ? 'RUNNING' : ($launcher_can_autostart ? 'READY' : 'SKIPPED')) : 'UNAVAILABLE';
 }
@@ -352,7 +353,7 @@ if ($is_stable_mode) {
                             <button type="submit" class="button" <?php disabled(!$launcher_available); ?>>Matikan Dev Server</button>
                         </form>
                     </div>
-                    <p class="description" style="margin-top:10px;">Saat source aktif = <strong>Vite Dev Server</strong> dan host URL lokal, tombol ini akan mencoba menyalakan <code>npm run dev</code> di background bila server belum hidup. Untuk <strong>Stable Test Mode</strong>, frontend tetap memakai build statis dan watcher dibantu oleh launcher terpisah di bawah.</p>
+                    <p class="description" style="margin-top:10px;">Saat source aktif = <strong>Vite Dev Server</strong> dan host URL lokal, tombol ini akan mencoba menyalakan <code>npm run dev</code> di background bila server belum hidup. Tombol <strong>Matikan Dev Server</strong> akan menghentikan proses Vite dan, bila mode aktif saat ini adalah Dev Mode, frontend dikembalikan ke <strong>Production Build</strong>. Untuk <strong>Stable Test Mode</strong>, frontend tetap memakai build statis dan watcher dibantu oleh launcher terpisah di bawah.</p>
                 </div>
 
                 <div class="cbt-dev-status-item">
@@ -393,7 +394,7 @@ if ($is_stable_mode) {
                 <div class="cbt-dev-status-item">
                     <strong>Stable Test Launcher</strong>
                     <div class="cbt-dev-kv">
-                        <span>Status: <strong><?php echo esc_html($build_watch_available ? ($build_watch_running ? 'RUNNING' : 'READY') : 'UNAVAILABLE'); ?></strong></span>
+                        <span>Status: <strong><?php echo esc_html($build_watch_available ? ($build_watch_running ? 'RUNNING' : ($build_watch_can_autostart ? 'READY' : 'BLOCKED')) : 'UNAVAILABLE'); ?></strong></span>
                         <span><?php echo esc_html($build_watch_reason !== '' ? $build_watch_reason : 'Wrapper script build watch siap dipakai.'); ?></span>
                         <?php if ($build_watch_wrapper_path !== ''): ?>
                             <code>Wrapper: <?php echo esc_html($build_watch_wrapper_path); ?></code>

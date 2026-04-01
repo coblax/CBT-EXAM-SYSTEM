@@ -101,6 +101,9 @@ export function bootstrapFrontendApp() {
     }
 
     var config = getFrontendConfig(window);
+    if (document.body) {
+        document.body.classList.toggle('cbt-security-print-guard', Number(config.securityLogEvents || 0) === 1);
+    }
     var browserStorage = createBrowserStorageAccess(window);
     var state = createInitialState(window);
     var debugManager = createFrontendDebugManagerBridge();
@@ -484,8 +487,10 @@ export function bootstrapFrontendApp() {
     var getSyncStatusAlertMeta = appMetaManager.getSyncStatusAlertMeta;
     var getUserInitial = appMetaManager.getUserInitial;
     var isConnectionOffline = appMetaManager.isConnectionOffline;
+    var isBrowserInspectionShortcutBlockingEnabled = appMetaManager.isBrowserInspectionShortcutBlockingEnabled;
     var isExamCopyPasteBlocked = appMetaManager.isExamCopyPasteBlocked;
     var isExamFullscreenRequired = appMetaManager.isExamFullscreenRequired;
+    var isHeartbeatLostDetectionEnabled = appMetaManager.isHeartbeatLostDetectionEnabled;
     var isIdleDetectionEnabled = appMetaManager.isIdleDetectionEnabled;
     var isSecurityLoggingActiveForAttempt = appMetaManager.isSecurityLoggingActiveForAttempt;
     var isSecurityLoggingEnabled = appMetaManager.isSecurityLoggingEnabled;
@@ -598,6 +603,7 @@ export function bootstrapFrontendApp() {
             }
             return Promise.resolve(false);
         },
+        isBrowserInspectionShortcutBlockingEnabled: isBrowserInspectionShortcutBlockingEnabled,
         isExamCopyPasteBlocked: isExamCopyPasteBlocked,
         isExamFullscreenRequired: isExamFullscreenRequired,
         isSecurityLoggingActiveForAttempt: isSecurityLoggingActiveForAttempt,
@@ -885,7 +891,9 @@ export function bootstrapFrontendApp() {
     var sendLogoutRequestSilently = securityLoggingManager.sendLogoutRequestSilently;
     var sendSecurityEventSilently = securityLoggingManager.sendSecurityEventSilently;
     var exitFullscreenSilently = examSecurityManager.exitFullscreenSilently;
+    var handleBlockedBrowserInspectionShortcutAction = examSecurityManager.handleBlockedBrowserInspectionShortcutAction;
     var handleBlockedClipboardAction = examSecurityManager.handleBlockedClipboardAction;
+    var handleBlockedPrintAction = examSecurityManager.handleBlockedPrintAction;
     var isExamAnswerEditingLocked = examSecurityManager.isExamAnswerEditingLocked;
     var isExamClipboardBlockingActive = examSecurityManager.isExamClipboardBlockingActive;
     var isExamFullscreenBlockingActive = examSecurityManager.isExamFullscreenBlockingActive;
@@ -1115,7 +1123,9 @@ export function bootstrapFrontendApp() {
             return undefined;
         },
         diagnosticsManager: diagnosticsManager,
+        documentRef: document,
         getQuestionCount: getQuestionCount,
+        isHeartbeatLostDetectionEnabled: isHeartbeatLostDetectionEnabled,
         normalizeQuestionRevision: normalizeQuestionRevision,
         questionOrderSignatureEquals: questionOrderSignatureEquals,
         questionRevisionEquals: questionRevisionEquals,
@@ -1123,6 +1133,7 @@ export function bootstrapFrontendApp() {
         recordActionTrail: recordActionTrail,
         recordTimeline: recordTimeline,
         render: render,
+        sendSecurityEventSilently: sendSecurityEventSilently,
         sessionHeartbeatIntervalMs: SESSION_HEARTBEAT_INTERVAL_MS,
         setQuestionRevision: setQuestionRevision,
         state: state,
@@ -1612,7 +1623,9 @@ export function bootstrapFrontendApp() {
         handleAnswerChangeTarget: handleAnswerChangeTarget,
         handleAnswerInputTarget: handleAnswerInputTarget,
         handleArrowNavigationKey: handleArrowNavigationKey,
+        handleBlockedBrowserInspectionShortcutAction: handleBlockedBrowserInspectionShortcutAction,
         handleBlockedClipboardAction: handleBlockedClipboardAction,
+        handleBlockedPrintAction: handleBlockedPrintAction,
         handleFinish: handleFinish,
         handleLogin: handleLogin,
         handleNavigationAction: handleNavigationAction,

@@ -3,19 +3,24 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="${TMPDIR:-/tmp}"
-LOG_FILE="${TMP_DIR}/cbt-vite-dev.log"
-PID_FILE="${TMP_DIR}/cbt-vite-dev.pid"
+USER_LABEL="$(id -un 2>/dev/null || printf 'process')"
+USER_LABEL="$(printf '%s' "${USER_LABEL}" | tr -c 'A-Za-z0-9._-' '-')"
+LOG_FILE="${TMP_DIR}/cbt-vite-dev-${USER_LABEL}.log"
+PID_FILE="${TMP_DIR}/cbt-vite-dev-${USER_LABEL}.pid"
 HOME_DIR="${TMP_DIR}/cbt-vite-home"
 NPM_CACHE_DIR="${TMP_DIR}/cbt-vite-npm-cache"
+VITE_CACHE_DIR_DEFAULT="${TMP_DIR}/cbt-vite-cache-${USER_LABEL}/dev"
+VITE_CACHE_DIR="${CBT_VITE_CACHE_DIR:-${VITE_CACHE_DIR_DEFAULT}}"
 NODE_BIN="${CBT_VITE_NODE_BIN:-/usr/bin/node}"
 NPM_BIN="${CBT_VITE_NPM_BIN:-/usr/bin/npm}"
 
-mkdir -p "${HOME_DIR}" "${NPM_CACHE_DIR}"
+mkdir -p "${HOME_DIR}" "${NPM_CACHE_DIR}" "${VITE_CACHE_DIR}"
 
 export HOME="${HOME_DIR}"
 export NPM_CONFIG_CACHE="${NPM_CACHE_DIR}"
 export npm_config_cache="${NPM_CACHE_DIR}"
 export npm_config_update_notifier=false
+export CBT_VITE_CACHE_DIR="${VITE_CACHE_DIR}"
 export CI=1
 
 read_pid() {
@@ -38,6 +43,11 @@ is_running() {
     local pid
     if ! pid="$(read_pid)"; then
         return 1
+    fi
+
+    if kill -0 "-${pid}" 2>/dev/null; then
+        printf '%s' "${pid}"
+        return 0
     fi
 
     if kill -0 "${pid}" 2>/dev/null; then
@@ -77,7 +87,7 @@ start_server() {
 
     cd "${ROOT_DIR}"
     : > "${LOG_FILE}"
-    setsid /bin/bash -lc "cd ${ROOT_DIR@Q} && export HOME=${HOME_DIR@Q} NPM_CONFIG_CACHE=${NPM_CACHE_DIR@Q} npm_config_cache=${NPM_CACHE_DIR@Q} npm_config_update_notifier=false CI=1 && exec ${NPM_BIN@Q} run dev" >>"${LOG_FILE}" 2>&1 < /dev/null &
+    setsid /bin/bash -lc "cd ${ROOT_DIR@Q} && export HOME=${HOME_DIR@Q} NPM_CONFIG_CACHE=${NPM_CACHE_DIR@Q} npm_config_cache=${NPM_CACHE_DIR@Q} npm_config_update_notifier=false CBT_VITE_CACHE_DIR=${VITE_CACHE_DIR@Q} CI=1 && exec ${NPM_BIN@Q} run dev" >>"${LOG_FILE}" 2>&1 < /dev/null &
     pid="$!"
     echo "${pid}" > "${PID_FILE}"
     printf 'STARTED:%s\n' "${pid}"
@@ -100,7 +110,9 @@ stop_server() {
         exit 0
     fi
 
-    kill "${pid}" 2>/dev/null || true
+    kill "-${pid}" 2>/dev/null || kill "${pid}" 2>/dev/null || true
+    sleep 1
+    kill -9 "-${pid}" 2>/dev/null || kill -9 "${pid}" 2>/dev/null || true
     rm -f "${PID_FILE}"
     printf 'STOPPED:%s\n' "${pid}"
 }

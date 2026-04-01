@@ -595,12 +595,18 @@ function e2e_fixture_set_security_config(array $payload): array
         'block_copy_paste' => array_key_exists('block_copy_paste', $payload)
             ? (!empty($payload['block_copy_paste']) ? 1 : 0)
             : (int) ($settings['block_copy_paste'] ?? 0),
+        'block_browser_inspection_shortcuts' => array_key_exists('block_browser_inspection_shortcuts', $payload)
+            ? (!empty($payload['block_browser_inspection_shortcuts']) ? 1 : 0)
+            : (int) ($settings['block_browser_inspection_shortcuts'] ?? 0),
         'log_security_events' => array_key_exists('log_security_events', $payload)
             ? (!empty($payload['log_security_events']) ? 1 : 0)
             : (int) ($settings['log_security_events'] ?? 0),
         'detect_idle_during_exam' => array_key_exists('detect_idle_during_exam', $payload)
             ? (!empty($payload['detect_idle_during_exam']) ? 1 : 0)
             : (int) ($settings['detect_idle_during_exam'] ?? 1),
+        'detect_heartbeat_lost' => array_key_exists('detect_heartbeat_lost', $payload)
+            ? (!empty($payload['detect_heartbeat_lost']) ? 1 : 0)
+            : (int) ($settings['detect_heartbeat_lost'] ?? 0),
         'idle_threshold_minutes' => array_key_exists('idle_threshold_minutes', $payload)
             ? max(1, (int) $payload['idle_threshold_minutes'])
             : max(1, (int) ($settings['idle_threshold_minutes'] ?? 5)),

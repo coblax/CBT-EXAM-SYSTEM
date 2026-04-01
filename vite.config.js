@@ -1,9 +1,14 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
 
+const runtimeCacheDir = process.env.CBT_VITE_CACHE_DIR && process.env.CBT_VITE_CACHE_DIR !== ''
+    ? resolve(process.env.CBT_VITE_CACHE_DIR)
+    : resolve(__dirname, 'node_modules/.vite');
+
 export default defineConfig(({ command }) => ({
     base: './',
     publicDir: false,
+    cacheDir: runtimeCacheDir,
     test: {
         environment: 'jsdom',
         globals: true,

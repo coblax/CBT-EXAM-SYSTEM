@@ -26,7 +26,15 @@ final class CBT_Admin_Setup_Service
     }
 
     /**
-     * @return array{force_fullscreen:int,block_copy_paste:int,log_security_events:int,detect_idle_during_exam:int,idle_threshold_minutes:int}
+     * @return array{
+     *     force_fullscreen:int,
+     *     block_copy_paste:int,
+     *     block_browser_inspection_shortcuts:int,
+     *     log_security_events:int,
+     *     detect_idle_during_exam:int,
+     *     detect_heartbeat_lost:int,
+     *     idle_threshold_minutes:int
+     * }
      */
     public static function get_security_settings(): array
     {
@@ -55,7 +63,9 @@ final class CBT_Admin_Setup_Service
         $school_village = (string) ($branding['school_village'] ?? '');
         $school_district_city_ln = (string) ($branding['school_district_city_ln'] ?? '');
         $school_regency_country_ln = (string) ($branding['school_regency_country_ln'] ?? '');
+        $school_regency_country_ln_is_city = !empty($branding['school_regency_country_ln_is_city']);
         $school_province_abroad_ln = (string) ($branding['school_province_abroad_ln'] ?? '');
+        $school_province_abroad_ln_is_foreign = !empty($branding['school_province_abroad_ln_is_foreign']);
 
         $logo_1_attachment_id = (int) ($branding['logo_1_attachment_id'] ?? 0);
         $logo_1_url = self::resolve_logo_url($logo_1_attachment_id);
@@ -76,7 +86,9 @@ final class CBT_Admin_Setup_Service
             'school_name',
             'school_npsn',
             'school_province_abroad_ln',
+            'school_province_abroad_ln_is_foreign',
             'school_regency_country_ln',
+            'school_regency_country_ln_is_city',
             'school_village'
         );
     }

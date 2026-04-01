@@ -157,6 +157,242 @@ final class RestNativeSecurityEventTest extends TestCase
         self::assertSame('task_manager_blocked', CBT_Security_Log::$recordedEvents[0]['event_type']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_browser_security_event_accepts_browser_supported_signals_and_enriches_context(): void
+    {
+        $this->bootstrapNativeRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new RestNativeSecurityEventFakeWpdb([
+            114 => [
+                'id' => 114,
+                'exam_id' => 16,
+                'student_id' => 7,
+                'status' => 'in_progress',
+                'started_at' => '2026-03-26 21:00:00',
+                'extra_time_minutes' => 0,
+            ],
+        ]);
+
+        $response = \CBT_REST::security_event(new \WP_REST_Request(
+            [],
+            [
+                'attempt_id' => 114,
+                'event_type' => 'print_attempt',
+                'context' => [
+                    'source' => 'print_shortcut',
+                    'blocked' => 1,
+                ],
+            ],
+            [
+                'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            ]
+        ));
+
+        self::assertIsArray($response);
+        self::assertSame(1, $response['logged']);
+        self::assertSame('print_attempt', $response['event_type']);
+        self::assertCount(1, CBT_Security_Log::$recordedEvents);
+        self::assertSame('print_attempt', CBT_Security_Log::$recordedEvents[0]['event_type']);
+        self::assertSame('print_shortcut', CBT_Security_Log::$recordedEvents[0]['context']['source']);
+        self::assertSame(1, CBT_Security_Log::$recordedEvents[0]['context']['blocked']);
+        self::assertSame('desktop', CBT_Security_Log::$recordedEvents[0]['context']['device_type']);
+        self::assertSame('windows', CBT_Security_Log::$recordedEvents[0]['context']['device_platform']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_browser_security_event_accepts_shared_window_blur_signal(): void
+    {
+        $this->bootstrapNativeRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new RestNativeSecurityEventFakeWpdb([
+            114 => [
+                'id' => 114,
+                'exam_id' => 16,
+                'student_id' => 7,
+                'status' => 'in_progress',
+                'started_at' => '2026-03-26 21:00:00',
+                'extra_time_minutes' => 0,
+            ],
+        ]);
+
+        $response = \CBT_REST::security_event(new \WP_REST_Request(
+            [],
+            [
+                'attempt_id' => 114,
+                'event_type' => 'window_blur',
+                'context' => [
+                    'source' => 'blur',
+                ],
+            ],
+            [
+                'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            ]
+        ));
+
+        self::assertIsArray($response);
+        self::assertSame(1, $response['logged']);
+        self::assertSame('window_blur', $response['event_type']);
+        self::assertCount(1, CBT_Security_Log::$recordedEvents);
+        self::assertSame('window_blur', CBT_Security_Log::$recordedEvents[0]['event_type']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_browser_security_event_accepts_new_browser_only_signals(): void
+    {
+        $this->bootstrapNativeRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        $eventTypes = [
+            'devtools_shortcut_blocked',
+            'view_source_blocked',
+            'save_page_blocked',
+            'heartbeat_lost',
+        ];
+
+        foreach ($eventTypes as $eventType) {
+            global $wpdb;
+            $wpdb = new RestNativeSecurityEventFakeWpdb([
+                114 => [
+                    'id' => 114,
+                    'exam_id' => 16,
+                    'student_id' => 7,
+                    'status' => 'in_progress',
+                    'started_at' => '2026-03-26 21:00:00',
+                    'extra_time_minutes' => 0,
+                ],
+            ]);
+            CBT_Security_Log::$recordedEvents = [];
+
+            $response = \CBT_REST::security_event(new \WP_REST_Request(
+                [],
+                [
+                    'attempt_id' => 114,
+                    'event_type' => $eventType,
+                    'context' => [
+                        'source' => 'session_heartbeat',
+                    ],
+                ],
+                [
+                    'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                ]
+            ));
+
+            self::assertIsArray($response);
+            self::assertSame(1, $response['logged']);
+            self::assertSame($eventType, $response['event_type']);
+            self::assertCount(1, CBT_Security_Log::$recordedEvents);
+            self::assertSame($eventType, CBT_Security_Log::$recordedEvents[0]['event_type']);
+        }
+    }
+
+    #[RunInSeparateProcess]
+    public function test_browser_security_event_rejects_native_only_signal_with_native_endpoint_error(): void
+    {
+        $this->bootstrapNativeRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new RestNativeSecurityEventFakeWpdb([
+            114 => [
+                'id' => 114,
+                'exam_id' => 16,
+                'student_id' => 7,
+                'status' => 'in_progress',
+                'started_at' => '2026-03-26 21:00:00',
+                'extra_time_minutes' => 0,
+            ],
+        ]);
+
+        $response = \CBT_REST::security_event(new \WP_REST_Request(
+            [],
+            [
+                'attempt_id' => 114,
+                'event_type' => 'task_manager_blocked',
+            ]
+        ));
+
+        self::assertTrue(is_wp_error($response));
+        self::assertSame('native_event_requires_native_endpoint', $response->get_error_code());
+        self::assertSame([], CBT_Security_Log::$recordedEvents);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_browser_security_event_rejects_server_derived_repeat_signal(): void
+    {
+        $this->bootstrapNativeRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new RestNativeSecurityEventFakeWpdb([
+            114 => [
+                'id' => 114,
+                'exam_id' => 16,
+                'student_id' => 7,
+                'status' => 'in_progress',
+                'started_at' => '2026-03-26 21:00:00',
+                'extra_time_minutes' => 0,
+            ],
+        ]);
+
+        $response = \CBT_REST::security_event(new \WP_REST_Request(
+            [],
+            [
+                'attempt_id' => 114,
+                'event_type' => 'fullscreen_exit_repeat',
+            ]
+        ));
+
+        self::assertTrue(is_wp_error($response));
+        self::assertSame('invalid_event_type', $response->get_error_code());
+        self::assertSame([], CBT_Security_Log::$recordedEvents);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_native_security_event_rejects_browser_only_signals(): void
+    {
+        $this->bootstrapNativeRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        $eventTypes = [
+            'devtools_shortcut_blocked',
+            'view_source_blocked',
+            'save_page_blocked',
+            'heartbeat_lost',
+        ];
+
+        foreach ($eventTypes as $eventType) {
+            global $wpdb;
+            $wpdb = new RestNativeSecurityEventFakeWpdb([
+                114 => [
+                    'id' => 114,
+                    'exam_id' => 16,
+                    'student_id' => 7,
+                    'status' => 'in_progress',
+                    'started_at' => '2026-03-26 21:00:00',
+                    'extra_time_minutes' => 0,
+                ],
+            ]);
+            CBT_Security_Log::$recordedEvents = [];
+
+            $response = \CBT_REST::native_security_event(new \WP_REST_Request(
+                [],
+                [
+                    'attempt_id' => 114,
+                    'event_type' => $eventType,
+                    'native_app' => 'windows_cefsharp',
+                ]
+            ));
+
+            self::assertTrue(is_wp_error($response));
+            self::assertSame('invalid_native_event_type', $response->get_error_code());
+            self::assertSame([], CBT_Security_Log::$recordedEvents);
+        }
+    }
+
     private function bootstrapNativeRestScaffold(): void
     {
         if (!class_exists('CBT_Auth')) {
@@ -191,8 +427,30 @@ class CBT_Security_Log
     {
         return [
             'tab_hidden' => ['label' => 'Pindah tab / aplikasi', 'severity' => 'warning', 'message' => ''],
+            'window_blur' => ['label' => 'Fokus window berpindah', 'severity' => 'warning', 'message' => ''],
+            'print_attempt' => ['label' => 'Percobaan print', 'severity' => 'warning', 'message' => ''],
+            'context_menu_blocked' => ['label' => 'Context menu diblok', 'severity' => 'warning', 'message' => ''],
+            'devtools_shortcut_blocked' => ['label' => 'Shortcut DevTools diblok', 'severity' => 'warning', 'message' => ''],
+            'view_source_blocked' => ['label' => 'View source diblok', 'severity' => 'warning', 'message' => ''],
+            'save_page_blocked' => ['label' => 'Simpan halaman diblok', 'severity' => 'warning', 'message' => ''],
+            'heartbeat_lost' => ['label' => 'Heartbeat session hilang', 'severity' => 'warning', 'message' => ''],
+            'fullscreen_exit_repeat' => ['label' => 'Keluar fullscreen berulang', 'severity' => 'critical', 'message' => ''],
             'task_manager_blocked' => ['label' => 'Task Manager diblok', 'severity' => 'warning', 'message' => ''],
             'session_revoked' => ['label' => 'Sesi dicabut', 'severity' => 'critical', 'message' => ''],
+        ];
+    }
+
+    public static function browser_supported_event_definitions(): array
+    {
+        return [
+            'tab_hidden' => ['label' => 'Pindah tab / aplikasi', 'severity' => 'warning', 'message' => ''],
+            'window_blur' => ['label' => 'Fokus window berpindah', 'severity' => 'warning', 'message' => ''],
+            'print_attempt' => ['label' => 'Percobaan print', 'severity' => 'warning', 'message' => ''],
+            'context_menu_blocked' => ['label' => 'Context menu diblok', 'severity' => 'warning', 'message' => ''],
+            'devtools_shortcut_blocked' => ['label' => 'Shortcut DevTools diblok', 'severity' => 'warning', 'message' => ''],
+            'view_source_blocked' => ['label' => 'View source diblok', 'severity' => 'warning', 'message' => ''],
+            'save_page_blocked' => ['label' => 'Simpan halaman diblok', 'severity' => 'warning', 'message' => ''],
+            'heartbeat_lost' => ['label' => 'Heartbeat session hilang', 'severity' => 'warning', 'message' => ''],
         ];
     }
 
@@ -200,6 +458,7 @@ class CBT_Security_Log
     {
         return [
             'tab_hidden' => ['label' => 'Pindah tab / aplikasi', 'severity' => 'warning', 'message' => ''],
+            'window_blur' => ['label' => 'Fokus window berpindah', 'severity' => 'warning', 'message' => ''],
             'task_manager_blocked' => ['label' => 'Task Manager diblok', 'severity' => 'warning', 'message' => ''],
         ];
     }
@@ -209,12 +468,14 @@ class CBT_Security_Log
         if ($native_app === 'windows_cefsharp') {
             return [
                 'tab_hidden' => ['label' => 'Pindah tab / aplikasi', 'severity' => 'warning', 'message' => ''],
+                'window_blur' => ['label' => 'Fokus window berpindah', 'severity' => 'warning', 'message' => ''],
                 'task_manager_blocked' => ['label' => 'Task Manager diblok', 'severity' => 'warning', 'message' => ''],
             ];
         }
 
         return [
             'tab_hidden' => ['label' => 'Pindah tab / aplikasi', 'severity' => 'warning', 'message' => ''],
+            'window_blur' => ['label' => 'Fokus window berpindah', 'severity' => 'warning', 'message' => ''],
         ];
     }
 

@@ -80,9 +80,7 @@ export function createLifecycleManager(deps) {
                         runSessionHeartbeat();
                     }
                 }
-                flushAttemptUiStateSilently({
-                    force: true
-                });
+                flushAttemptUiStateSilently();
             }
 
             if (documentRef.visibilityState === 'hidden') {
@@ -115,7 +113,6 @@ export function createLifecycleManager(deps) {
                 keepalive: true
             });
             flushAttemptUiStateSilently({
-                force: true,
                 keepalive: true
             });
         });
@@ -134,9 +131,7 @@ export function createLifecycleManager(deps) {
                     runSessionHeartbeat();
                 }
             }
-            flushAttemptUiStateSilently({
-                force: true
-            });
+            flushAttemptUiStateSilently();
         });
 
         windowRef.addEventListener('online', function () {
@@ -156,9 +151,7 @@ export function createLifecycleManager(deps) {
             if (!skipDuplicateRetry && typeof runSessionHeartbeat === 'function') {
                 runSessionHeartbeat();
             }
-            flushAttemptUiStateSilently({
-                force: true
-            });
+            flushAttemptUiStateSilently();
         });
 
         windowRef.addEventListener('offline', function () {

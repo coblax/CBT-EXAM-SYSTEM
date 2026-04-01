@@ -2685,6 +2685,7 @@ public static function handle_generate_test_dataset(): void
         $student_total = max(0, (int) ($preset['students'] ?? 0));
         $total = $teacher_total + $student_total;
         $agama_options = self::get_supported_agama_options();
+        $jenis_kelamin_options = self::get_supported_jenis_kelamin_options();
         if ($limit <= 0 || $offset >= $total) {
             return $rows;
         }
@@ -2694,11 +2695,14 @@ public static function handle_generate_test_dataset(): void
             $agama = !empty($agama_options)
                 ? (string) $agama_options[$index % count($agama_options)]
                 : '';
+            $jenis_kelamin = !empty($jenis_kelamin_options)
+                ? (string) $jenis_kelamin_options[$index % count($jenis_kelamin_options)]
+                : '';
 
             if ($index < $teacher_total) {
                 $number = $index + 1;
                 if ($number === 1) {
-                    $rows[] = self::build_test_data_seed_special_admin_row($ruang_codes, $agama_options);
+                    $rows[] = self::build_test_data_seed_special_admin_row($ruang_codes, $agama_options, $jenis_kelamin_options);
                     continue;
                 }
                 $username = sprintf('test_guru_%04d', $number);
@@ -2711,6 +2715,7 @@ public static function handle_generate_test_dataset(): void
                     'kode_kelas' => '',
                     'kode_ruang' => !empty($ruang_codes) ? (string) $ruang_codes[($number - 1) % count($ruang_codes)] : '',
                     'agama' => $agama,
+                    'jenis_kelamin' => $jenis_kelamin,
                     'foto' => '',
                     '__seed_kind' => 'teacher',
                 ];
@@ -2719,7 +2724,7 @@ public static function handle_generate_test_dataset(): void
 
             $number = ($index - $teacher_total) + 1;
             if ($number === 1) {
-                $rows[] = self::build_test_data_seed_special_student_row($kelas_codes, $ruang_codes, $agama_options);
+                $rows[] = self::build_test_data_seed_special_student_row($kelas_codes, $ruang_codes, $agama_options, $jenis_kelamin_options);
                 continue;
             }
 
@@ -2734,6 +2739,7 @@ public static function handle_generate_test_dataset(): void
                 'kode_kelas' => !empty($kelas_codes) ? (string) $kelas_codes[($number - 1) % count($kelas_codes)] : '',
                 'kode_ruang' => !empty($ruang_codes) ? (string) $ruang_codes[($number - 1) % count($ruang_codes)] : '',
                 'agama' => $agama,
+                'jenis_kelamin' => $jenis_kelamin,
                 'foto' => '',
                 '__seed_kind' => 'student',
             ];
@@ -2756,11 +2762,13 @@ public static function handle_generate_test_dataset(): void
     /**
      * @param string[] $ruang_codes
      * @param string[] $agama_options
+     * @param string[] $jenis_kelamin_options
      * @return array<string,string>
      */
-    private static function build_test_data_seed_special_admin_row(array $ruang_codes, array $agama_options): array
+    private static function build_test_data_seed_special_admin_row(array $ruang_codes, array $agama_options, array $jenis_kelamin_options): array
     {
         $agama = !empty($agama_options) ? (string) reset($agama_options) : '';
+        $jenis_kelamin = !empty($jenis_kelamin_options) ? (string) reset($jenis_kelamin_options) : '';
 
         return [
             'name' => 'CBT ADMIN',
@@ -2771,6 +2779,7 @@ public static function handle_generate_test_dataset(): void
             'kode_kelas' => '',
             'kode_ruang' => !empty($ruang_codes) ? (string) $ruang_codes[0] : '',
             'agama' => $agama,
+            'jenis_kelamin' => $jenis_kelamin,
             'foto' => '',
             '__seed_kind' => 'teacher',
         ];
@@ -2780,13 +2789,15 @@ public static function handle_generate_test_dataset(): void
      * @param string[] $kelas_codes
      * @param string[] $ruang_codes
      * @param string[] $agama_options
+     * @param string[] $jenis_kelamin_options
      * @return array<string,string>
      */
-    private static function build_test_data_seed_special_student_row(array $kelas_codes, array $ruang_codes, array $agama_options): array
+    private static function build_test_data_seed_special_student_row(array $kelas_codes, array $ruang_codes, array $agama_options, array $jenis_kelamin_options): array
     {
         $agama = in_array('Islam', $agama_options, true)
             ? 'Islam'
             : (!empty($agama_options) ? (string) reset($agama_options) : '');
+        $jenis_kelamin = !empty($jenis_kelamin_options) ? (string) reset($jenis_kelamin_options) : '';
         $special_kelas = self::get_test_data_seed_special_student_kelas_code($kelas_codes);
 
         return [
@@ -2799,6 +2810,7 @@ public static function handle_generate_test_dataset(): void
             'kode_kelas' => $special_kelas,
             'kode_ruang' => !empty($ruang_codes) ? (string) $ruang_codes[0] : '',
             'agama' => $agama,
+            'jenis_kelamin' => $jenis_kelamin,
             'foto' => '',
             '__seed_kind' => 'student',
         ];
@@ -3773,6 +3785,11 @@ public static function handle_generate_test_dataset(): void
     private static function get_supported_agama_options(): array
     {
         return CBT_Admin_Users_Service::get_supported_agama_options();
+    }
+
+    private static function get_supported_jenis_kelamin_options(): array
+    {
+        return CBT_Admin_Users_Service::get_supported_jenis_kelamin_options();
     }
 
     private static function split_target_kelas_csv($raw): array
