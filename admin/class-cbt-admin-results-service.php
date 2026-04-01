@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
 
 final class CBT_Admin_Results_Service
 {
+    private const TEST_REDIRECT_SIGNAL = '__cbt_admin_results_redirect__';
+
     public static function can_view_results(): bool
     {
         return current_user_can('cbt_view_results');
@@ -471,8 +473,7 @@ final class CBT_Admin_Results_Service
                 $redirect_url .= $hash;
             }
 
-            wp_safe_redirect($redirect_url);
-            exit;
+            self::dispatch_redirect($redirect_url);
         }
 
         $args = ['page' => 'cbt-results'];
@@ -498,7 +499,16 @@ final class CBT_Admin_Results_Service
             $args['cbt_err'] = $error;
         }
 
-        wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
+        self::dispatch_redirect(add_query_arg($args, admin_url('admin.php')));
+    }
+
+    private static function dispatch_redirect(string $url): void
+    {
+        wp_safe_redirect($url);
+        if (defined('PHPUNIT_COMPOSER_INSTALL')) {
+            throw new RuntimeException(self::TEST_REDIRECT_SIGNAL);
+        }
+
         exit;
     }
 
@@ -558,8 +568,7 @@ final class CBT_Admin_Results_Service
                 $args['cbt_err'] = $error;
             }
 
-            wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
-            exit;
+            self::dispatch_redirect(add_query_arg($args, admin_url('admin.php')));
         };
 
         if ($attempt_id <= 0) {
@@ -706,8 +715,7 @@ final class CBT_Admin_Results_Service
                 $args['cbt_err'] = $error;
             }
 
-            wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
-            exit;
+            self::dispatch_redirect(add_query_arg($args, admin_url('admin.php')));
         };
 
         if ($attempt_id <= 0) {
@@ -755,6 +763,20 @@ final class CBT_Admin_Results_Service
         }
 
         $now = current_time('mysql');
+        $abandoned_attempt_ids = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT id
+                 FROM {$attempt_table}
+                 WHERE exam_id = %d
+                   AND student_id = %d
+                   AND status = 'in_progress'
+                   AND id <> %d",
+                (int) $attempt['exam_id'],
+                (int) $attempt['student_id'],
+                $attempt_id
+            )
+        );
+        $abandoned_attempt_ids = array_values(array_filter(array_map('absint', is_array($abandoned_attempt_ids) ? $abandoned_attempt_ids : [])));
 
         $wpdb->query(
             $wpdb->prepare(
@@ -791,6 +813,16 @@ final class CBT_Admin_Results_Service
             $redirect_with(null, 'Gagal melakukan reset attempt.');
         }
 
+        if (class_exists('CBT_Runtime')) {
+            foreach ($abandoned_attempt_ids as $abandoned_attempt_id) {
+                CBT_Runtime::clear_attempt_runtime($abandoned_attempt_id);
+            }
+            CBT_Runtime::clear_attempt_runtime($attempt_id);
+        }
+        if (!empty($abandoned_attempt_ids)) {
+            CBT_Cache::invalidate_attempts($abandoned_attempt_ids);
+            CBT_UI_State::clear_attempt_states_by_attempt_ids($abandoned_attempt_ids);
+        }
         CBT_Cache::invalidate_attempt($attempt_id);
         CBT_Cache::invalidate_user((int) ($attempt['student_id'] ?? 0));
         CBT_Cache::invalidate_analytics();
@@ -987,8 +1019,7 @@ final class CBT_Admin_Results_Service
                 $args['cbt_err'] = $error;
             }
 
-            wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
-            exit;
+            self::dispatch_redirect(add_query_arg($args, admin_url('admin.php')));
         };
 
         if ($return_status === 'in_progress') {
@@ -1079,7 +1110,28 @@ final class CBT_Admin_Results_Service
 
         $now = current_time('mysql');
         $abandoned_total = 0;
+        $abandoned_attempt_ids = [];
         foreach ($target_pairs as $pair) {
+            $pair_attempt_ids = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT id
+                     FROM {$attempt_table}
+                     WHERE exam_id = %d
+                       AND student_id = %d
+                       AND status = 'in_progress'",
+                    (int) ($pair['exam_id'] ?? 0),
+                    (int) ($pair['student_id'] ?? 0)
+                )
+            );
+            if (is_array($pair_attempt_ids)) {
+                foreach ($pair_attempt_ids as $pair_attempt_id) {
+                    $safe_attempt_id = absint($pair_attempt_id);
+                    if ($safe_attempt_id > 0) {
+                        $abandoned_attempt_ids[$safe_attempt_id] = $safe_attempt_id;
+                    }
+                }
+            }
+
             $affected = $wpdb->query(
                 $wpdb->prepare(
                     "UPDATE {$attempt_table}
@@ -1133,13 +1185,25 @@ final class CBT_Admin_Results_Service
             $redirect_with(null, 'Tidak ada attempt yang berhasil di-reset.');
         }
 
-        CBT_Cache::invalidate_attempts(array_values($target_attempt_ids));
+        if (class_exists('CBT_Runtime')) {
+            foreach (array_values($abandoned_attempt_ids) as $abandoned_attempt_id) {
+                CBT_Runtime::clear_attempt_runtime((int) $abandoned_attempt_id);
+            }
+            foreach (array_values($target_attempt_ids) as $target_attempt_id) {
+                CBT_Runtime::clear_attempt_runtime((int) $target_attempt_id);
+            }
+        }
+        $affected_attempt_ids = array_values(array_unique(array_merge(
+            array_values($target_attempt_ids),
+            array_values($abandoned_attempt_ids)
+        )));
+        CBT_Cache::invalidate_attempts($affected_attempt_ids);
         CBT_Cache::invalidate_users(array_values($affected_user_ids));
         CBT_Cache::invalidate_analytics();
         CBT_Cache::invalidate_analytics_exams(array_values(array_unique(array_map(static function (array $pair): int {
             return (int) ($pair['exam_id'] ?? 0);
         }, array_values($target_pairs)))));
-        CBT_UI_State::clear_attempt_states_by_attempt_ids(array_values($target_attempt_ids));
+        CBT_UI_State::clear_attempt_states_by_attempt_ids($affected_attempt_ids);
 
         $message = sprintf('Berhasil reset %d attempt sesuai filter.', $reset_total);
         if ($abandoned_total > 0) {

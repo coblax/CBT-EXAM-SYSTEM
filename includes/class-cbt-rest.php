@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Student_Profile_Cache')) {
+    require_once __DIR__ . '/class-cbt-student-profile-cache.php';
+}
+
 class CBT_REST
 {
     private const PRIORITY_WINDOW_TRANSIENT_KEY = 'cbt_exam_priority_window_until';
@@ -428,14 +432,12 @@ class CBT_REST
         $attempt = null;
 
         if ($attempt_id > 0) {
-            $attempt = $wpdb->get_row(
-                $wpdb->prepare(
-                    "SELECT id, exam_id, student_id, status, question_order, option_order, score, max_score, started_at, extra_time_minutes
-                     FROM {$attempt_table}
-                     WHERE id = %d",
-                    $attempt_id
-                ),
-                ARRAY_A
+            $attempt = self::get_attempt_for_question_payload(
+                $attempt_id,
+                $user_id,
+                $role,
+                $attempt_table,
+                (int) ($exam['duration_minutes'] ?? 0)
             );
             if (!$attempt || (int) $attempt['exam_id'] !== $exam_id) {
                 return new WP_Error('not_found', 'Attempt not found', ['status' => 404]);
@@ -447,7 +449,7 @@ class CBT_REST
         }
 
         if ($role === 'siswa' || $role === 'student') {
-            $student_kelas = self::normalize_kelas_code((string) get_user_meta($user_id, 'kode_kelas', true));
+            $student_kelas = self::get_live_user_kelas($user_id);
             if (!self::exam_allows_student_class($exam, $student_kelas)) {
                 return new WP_Error('forbidden', 'Exam is not available for your class', ['status' => 403]);
             }
@@ -704,7 +706,7 @@ class CBT_REST
             return new WP_Error('not_found', 'Exam not found', ['status' => 404]);
         }
 
-        $student_kelas = self::normalize_kelas_code((string) get_user_meta($user_id, 'kode_kelas', true));
+        $student_kelas = self::get_live_user_kelas($user_id);
         if (!self::exam_allows_student_class($exam, $student_kelas)) {
             return new WP_Error('forbidden', 'Exam is not available for your class', ['status' => 403]);
         }
@@ -1443,6 +1445,11 @@ class CBT_REST
     {
         global $wpdb;
 
+        $runtime_attempt = self::get_live_runtime_attempt_envelope($attempt_id, $user_id);
+        if (is_array($runtime_attempt)) {
+            return $runtime_attempt;
+        }
+
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
         $attempt = $wpdb->get_row(
             $wpdb->prepare(
@@ -1464,6 +1471,14 @@ class CBT_REST
 
         if ((string) ($attempt['status'] ?? '') !== 'in_progress') {
             return new WP_Error('attempt_closed', 'Attempt already finished', ['status' => 400]);
+        }
+
+        $duration_minutes = self::resolve_attempt_duration_minutes(
+            $attempt,
+            self::get_exam_duration_minutes((int) ($attempt['exam_id'] ?? 0))
+        );
+        if ($duration_minutes > 0) {
+            self::ensure_runtime_attempt_state($attempt, $duration_minutes);
         }
 
         return $attempt;
@@ -1897,7 +1912,7 @@ class CBT_REST
             $where .= ' AND created_by = %d';
             $params[] = $user_id;
         } elseif ($role === 'siswa' || $role === 'student') {
-            $student_kelas = self::normalize_kelas_code((string) get_user_meta($user_id, 'kode_kelas', true));
+            $student_kelas = self::get_live_user_kelas($user_id);
             $student_now = current_time('mysql');
             $where .= " AND status = 'published'";
         }
@@ -2051,16 +2066,17 @@ class CBT_REST
         $current_user_payload = null;
         $current_user = get_user_by('id', $user_id);
         if ($current_user instanceof WP_User) {
+            $profile_snapshot = self::get_live_user_profile($user_id);
             $current_user_payload = [
                 'user_id' => $user_id,
                 'role' => $role,
                 'display_name' => (string) $current_user->display_name,
                 'username' => (string) $current_user->user_login,
                 'email' => (string) $current_user->user_email,
-                'kode_kelas' => (string) get_user_meta($user_id, 'kode_kelas', true),
-                'kode_ruang' => (string) get_user_meta($user_id, 'kode_ruang', true),
-                'agama' => (string) get_user_meta($user_id, 'agama', true),
-                'foto' => esc_url_raw((string) get_user_meta($user_id, 'foto', true)),
+                'kode_kelas' => (string) ($profile_snapshot['kode_kelas'] ?? ''),
+                'kode_ruang' => (string) ($profile_snapshot['kode_ruang'] ?? ''),
+                'agama' => (string) ($profile_snapshot['agama'] ?? ''),
+                'foto' => (string) ($profile_snapshot['foto'] ?? ''),
             ];
         }
 
@@ -2068,6 +2084,20 @@ class CBT_REST
             'items' => $rows ?: [],
             'current_user' => $current_user_payload,
         ];
+    }
+
+    /**
+     * @return array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string}
+     */
+    private static function get_live_user_profile(int $user_id): array
+    {
+        return CBT_Student_Profile_Cache::get_snapshot($user_id);
+    }
+
+    private static function get_live_user_kelas(int $user_id): string
+    {
+        $profile = self::get_live_user_profile($user_id);
+        return self::normalize_kelas_code((string) ($profile['kode_kelas'] ?? ''));
     }
 
     /**
@@ -4238,6 +4268,13 @@ class CBT_REST
             return new WP_Error('invalid_attempt_id', 'Attempt tidak valid.', ['status' => 400]);
         }
 
+        if (in_array($role, ['siswa', 'student'], true)) {
+            $runtime_attempt = self::get_live_runtime_attempt_envelope($attempt_id, $user_id);
+            if (is_array($runtime_attempt)) {
+                return $runtime_attempt;
+            }
+        }
+
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
         $exam_table = $wpdb->prefix . 'cbt_exams';
         $attempt = $wpdb->get_row(
@@ -4258,11 +4295,102 @@ class CBT_REST
             if ((int) ($attempt['student_id'] ?? 0) !== $user_id) {
                 return new WP_Error('forbidden', 'Anda tidak dapat mengakses attempt ini.', ['status' => 403]);
             }
+
+            if ((string) ($attempt['status'] ?? '') === 'in_progress') {
+                $duration_minutes = self::resolve_attempt_duration_minutes(
+                    $attempt,
+                    (int) ($attempt['exam_duration_minutes'] ?? 0)
+                );
+                if ($duration_minutes > 0) {
+                    self::ensure_runtime_attempt_state($attempt, $duration_minutes);
+                }
+            }
+
             return $attempt;
         }
 
         if (in_array($role, ['guru', 'teacher'], true) && (int) ($attempt['created_by'] ?? 0) !== $user_id) {
             return new WP_Error('forbidden', 'Anda tidak dapat mengakses attempt ini.', ['status' => 403]);
+        }
+
+        return $attempt;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_live_runtime_attempt_envelope(int $attempt_id, int $user_id): ?array
+    {
+        if ($attempt_id <= 0 || $user_id <= 0 || !CBT_Runtime::is_ready()) {
+            return null;
+        }
+
+        $runtime_attempt = CBT_Runtime::get_attempt_meta($attempt_id, $state_found);
+        if (!$state_found || !is_array($runtime_attempt) || empty($runtime_attempt)) {
+            return null;
+        }
+
+        if ((int) ($runtime_attempt['student_id'] ?? 0) !== $user_id) {
+            return null;
+        }
+
+        if ((string) ($runtime_attempt['status'] ?? '') !== 'in_progress') {
+            return null;
+        }
+
+        return [
+            'id' => (int) ($runtime_attempt['attempt_id'] ?? $attempt_id),
+            'attempt_id' => (int) ($runtime_attempt['attempt_id'] ?? $attempt_id),
+            'exam_id' => (int) ($runtime_attempt['exam_id'] ?? 0),
+            'student_id' => (int) ($runtime_attempt['student_id'] ?? 0),
+            'status' => (string) ($runtime_attempt['status'] ?? 'in_progress'),
+            'started_at' => (string) ($runtime_attempt['started_at'] ?? ''),
+            'extra_time_minutes' => max(0, (int) ($runtime_attempt['extra_time_minutes'] ?? 0)),
+            'duration_minutes' => max(1, (int) ($runtime_attempt['duration_minutes'] ?? 60)),
+            'exam_duration_minutes' => max(1, (int) ($runtime_attempt['duration_minutes'] ?? 60)),
+            'question_order' => '',
+            'option_order' => '',
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_attempt_for_question_payload(int $attempt_id, int $user_id, string $role, string $attempt_table, int $exam_duration_minutes): ?array
+    {
+        global $wpdb;
+
+        if ($attempt_id <= 0) {
+            return null;
+        }
+
+        if (in_array($role, ['siswa', 'student'], true)) {
+            $runtime_attempt = self::get_live_runtime_attempt_envelope($attempt_id, $user_id);
+            if (is_array($runtime_attempt)) {
+                return $runtime_attempt;
+            }
+        }
+
+        $attempt = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, exam_id, student_id, status, question_order, option_order, score, max_score, started_at, extra_time_minutes
+                 FROM {$attempt_table}
+                 WHERE id = %d",
+                $attempt_id
+            ),
+            ARRAY_A
+        );
+
+        if (
+            is_array($attempt)
+            && in_array($role, ['siswa', 'student'], true)
+            && (int) ($attempt['student_id'] ?? 0) === $user_id
+            && (string) ($attempt['status'] ?? '') === 'in_progress'
+        ) {
+            $duration_minutes = self::resolve_attempt_duration_minutes($attempt, $exam_duration_minutes);
+            if ($duration_minutes > 0) {
+                self::ensure_runtime_attempt_state($attempt, $duration_minutes);
+            }
         }
 
         return $attempt;

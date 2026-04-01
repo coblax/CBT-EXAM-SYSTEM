@@ -181,6 +181,9 @@ class CBT_Cache
     {
         if ($user_id > 0) {
             self::invalidate_namespace(self::namespace_user($user_id));
+            if (class_exists('CBT_Student_Profile_Cache')) {
+                CBT_Student_Profile_Cache::invalidate($user_id);
+            }
         }
     }
 

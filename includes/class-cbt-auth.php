@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Student_Profile_Cache')) {
+    require_once __DIR__ . '/class-cbt-student-profile-cache.php';
+}
+
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
@@ -15,6 +19,13 @@ class CBT_Auth
     private const OPTION_GLOBAL_EXAM_TOKEN_FRONTEND_AUTO_APPLY = 'cbt_global_exam_token_frontend_auto_apply';
     private const USER_META_ACTIVE_LOGIN_SESSION = 'cbt_active_login_session';
     private const USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT = 'cbt_active_login_session_touched_at';
+    private const LOGIN_TOKEN_TTL_SECONDS = 43200;
+    private const AUTH_REDIS_TTL_SECONDS = 44100;
+    private const AUTH_REDIS_DEFAULT_HOST = '127.0.0.1';
+    private const AUTH_REDIS_DEFAULT_PORT = 6379;
+    private const AUTH_REDIS_DEFAULT_DATABASE = 2;
+    private const AUTH_REDIS_PREFIX = 'cbt_auth:';
+    private const AUTH_REDIS_TIMEOUT = 1.5;
     private const DEFAULT_TOKEN_REFRESH_MINUTES = 15;
     private const EXAM_TOKEN_LENGTH = 6;
     private const EXAM_TOKEN_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ123456789';
@@ -26,6 +37,12 @@ class CBT_Auth
      * @var array<string,array|WP_Error>
      */
     private static $decoded_token_cache = [];
+    /** @var Redis|false|null */
+    private static $auth_redis = null;
+    /** @var bool */
+    private static $auth_redis_connection_attempted = false;
+    /** @var string */
+    private static $auth_redis_last_connection_error = '';
 
     public static function login(string $identifier, string $password)
     {
@@ -53,11 +70,7 @@ class CBT_Auth
 
         $session_key = self::reset_login_session($user_id);
         $token = self::generate_token($user_id, $role, $session_key);
-        $user_meta_all = get_user_meta($user_id);
-        $kode_kelas = isset($user_meta_all['kode_kelas'][0]) ? (string) $user_meta_all['kode_kelas'][0] : '';
-        $kode_ruang = isset($user_meta_all['kode_ruang'][0]) ? (string) $user_meta_all['kode_ruang'][0] : '';
-        $agama = isset($user_meta_all['agama'][0]) ? (string) $user_meta_all['agama'][0] : '';
-        $foto = isset($user_meta_all['foto'][0]) ? esc_url_raw((string) $user_meta_all['foto'][0]) : '';
+        $profile_snapshot = CBT_Student_Profile_Cache::get_snapshot($user_id);
 
         return [
             'token' => $token,
@@ -66,10 +79,10 @@ class CBT_Auth
             'display_name' => (string) $user->display_name,
             'username' => (string) $user->user_login,
             'email' => (string) $user->user_email,
-            'kode_kelas' => $kode_kelas,
-            'kode_ruang' => $kode_ruang,
-            'agama' => $agama,
-            'foto' => $foto,
+            'kode_kelas' => (string) ($profile_snapshot['kode_kelas'] ?? ''),
+            'kode_ruang' => (string) ($profile_snapshot['kode_ruang'] ?? ''),
+            'agama' => (string) ($profile_snapshot['agama'] ?? ''),
+            'foto' => (string) ($profile_snapshot['foto'] ?? ''),
         ];
     }
 
@@ -80,7 +93,7 @@ class CBT_Auth
         $payload = [
             'iss' => site_url(),
             'iat' => $issued_at,
-            'exp' => $issued_at + (12 * HOUR_IN_SECONDS),
+            'exp' => $issued_at + self::LOGIN_TOKEN_TTL_SECONDS,
             'data' => [
                 'user_id' => $user_id,
                 'role' => $role,
@@ -99,8 +112,13 @@ class CBT_Auth
         }
 
         $session_key = self::generate_login_session_key();
-        update_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION, $session_key);
-        update_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT, time());
+        $issued_at = time();
+        $payload = [
+            'session_key' => $session_key,
+            'touched_at' => $issued_at,
+            'issued_at' => $issued_at,
+        ];
+        self::write_active_login_state($user_id, $payload);
         return $session_key;
     }
 
@@ -111,13 +129,13 @@ class CBT_Auth
             return false;
         }
 
-        $active_session_key = self::get_active_login_session($user_id);
+        $active_state = self::read_active_login_state($user_id);
+        $active_session_key = (string) ($active_state['session_key'] ?? '');
         if ($session_key !== null && $session_key !== '' && $active_session_key !== '' && !hash_equals($active_session_key, $session_key)) {
             return false;
         }
 
-        delete_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION);
-        delete_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT);
+        self::delete_active_login_state($user_id);
         return true;
     }
 
@@ -162,7 +180,8 @@ class CBT_Auth
             $payload = (array) $decoded;
             $user_id = (int) (self::decoded_token_value($payload, 'user_id') ?? 0);
             $session_key = (string) (self::decoded_token_value($payload, 'session_key') ?? '');
-            $active_session_key = self::get_active_login_session($user_id);
+            $active_state = self::read_active_login_state($user_id);
+            $active_session_key = (string) ($active_state['session_key'] ?? '');
 
             if ($user_id <= 0 || $session_key === '' || $active_session_key === '' || !hash_equals($active_session_key, $session_key)) {
                 CBT_Security_Log::record_latest_student_attempt_event($user_id, 'session_revoked', [
@@ -517,22 +536,14 @@ class CBT_Auth
 
     private static function get_active_login_session(int $user_id): string
     {
-        $user_id = absint($user_id);
-        if ($user_id <= 0) {
-            return '';
-        }
-
-        return trim((string) get_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION, true));
+        $state = self::read_active_login_state($user_id);
+        return trim((string) ($state['session_key'] ?? ''));
     }
 
     private static function get_active_login_session_touched_at(int $user_id): int
     {
-        $user_id = absint($user_id);
-        if ($user_id <= 0) {
-            return 0;
-        }
-
-        return max(0, (int) get_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT, true));
+        $state = self::read_active_login_state($user_id);
+        return max(0, (int) ($state['touched_at'] ?? 0));
     }
 
     private static function has_recent_active_login_session(int $user_id): bool
@@ -558,18 +569,392 @@ class CBT_Auth
             return;
         }
 
-        $active_session_key = self::get_active_login_session($user_id);
+        $redis = self::auth_redis();
+        if ($redis instanceof Redis) {
+            $payload = self::read_auth_redis_session($user_id, $redis_available);
+            if (!$redis_available || !is_array($payload)) {
+                return;
+            }
+
+            $active_session_key = trim((string) ($payload['session_key'] ?? ''));
+            if ($active_session_key === '' || !hash_equals($active_session_key, $session_key)) {
+                return;
+            }
+
+            $now = time();
+            $last_touched_at = max(0, (int) ($payload['touched_at'] ?? 0));
+            if ($last_touched_at > 0 && ($last_touched_at + self::ACTIVE_LOGIN_TOUCH_DEBOUNCE_SECONDS) > $now) {
+                return;
+            }
+
+            $payload['touched_at'] = $now;
+            self::write_auth_redis_session($user_id, $payload);
+            return;
+        }
+
+        $legacy_state = self::read_legacy_active_login_state($user_id);
+        $active_session_key = trim((string) ($legacy_state['session_key'] ?? ''));
         if ($active_session_key === '' || !hash_equals($active_session_key, $session_key)) {
             return;
         }
 
         $now = time();
-        $last_touched_at = self::get_active_login_session_touched_at($user_id);
+        $last_touched_at = max(0, (int) ($legacy_state['touched_at'] ?? 0));
         if ($last_touched_at > 0 && ($last_touched_at + self::ACTIVE_LOGIN_TOUCH_DEBOUNCE_SECONDS) > $now) {
             return;
         }
 
-        update_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT, $now);
+        self::write_legacy_active_login_state($user_id, [
+            'session_key' => $active_session_key,
+            'touched_at' => $now,
+            'issued_at' => max(0, (int) ($legacy_state['issued_at'] ?? 0)),
+        ]);
+    }
+
+    /**
+     * @return array{session_key:string,touched_at:int,issued_at:int,source:string,redis_available:int}
+     */
+    private static function read_active_login_state(int $user_id): array
+    {
+        $default_state = [
+            'session_key' => '',
+            'touched_at' => 0,
+            'issued_at' => 0,
+            'source' => 'none',
+            'redis_available' => 0,
+        ];
+
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return $default_state;
+        }
+
+        $redis_state = self::read_auth_redis_session($user_id, $redis_available);
+        if ($redis_available) {
+            if (is_array($redis_state)) {
+                $redis_state['source'] = 'redis';
+                $redis_state['redis_available'] = 1;
+                return array_merge($default_state, $redis_state);
+            }
+
+            $legacy_state = self::read_legacy_active_login_state($user_id);
+            if (is_array($legacy_state)) {
+                self::hydrate_auth_redis_from_legacy($user_id, $legacy_state);
+                $legacy_state['source'] = 'legacy';
+                $legacy_state['redis_available'] = 1;
+                return array_merge($default_state, $legacy_state);
+            }
+
+            $default_state['redis_available'] = 1;
+            return $default_state;
+        }
+
+        $legacy_state = self::read_legacy_active_login_state($user_id);
+        if (is_array($legacy_state)) {
+            $legacy_state['source'] = 'legacy';
+            return array_merge($default_state, $legacy_state);
+        }
+
+        return $default_state;
+    }
+
+    /**
+     * @param array{session_key:string,touched_at:int,issued_at:int} $payload
+     */
+    private static function write_active_login_state(int $user_id, array $payload): void
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return;
+        }
+
+        self::write_auth_redis_session($user_id, $payload);
+        self::write_legacy_active_login_state($user_id, $payload);
+    }
+
+    private static function delete_active_login_state(int $user_id): void
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return;
+        }
+
+        self::delete_auth_redis_session($user_id);
+        self::delete_legacy_active_login_state($user_id);
+    }
+
+    /**
+     * @return array{session_key:string,touched_at:int,issued_at:int}|null
+     */
+    private static function read_legacy_active_login_state(int $user_id): ?array
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return null;
+        }
+
+        $meta = get_user_meta($user_id);
+        $session_key = isset($meta[self::USER_META_ACTIVE_LOGIN_SESSION][0])
+            ? trim((string) $meta[self::USER_META_ACTIVE_LOGIN_SESSION][0])
+            : '';
+        if ($session_key === '') {
+            return null;
+        }
+
+        $touched_at = isset($meta[self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT][0])
+            ? max(0, (int) $meta[self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT][0])
+            : 0;
+
+        return [
+            'session_key' => $session_key,
+            'touched_at' => $touched_at,
+            'issued_at' => $touched_at,
+        ];
+    }
+
+    /**
+     * @param array{session_key:string,touched_at:int,issued_at:int} $payload
+     */
+    private static function write_legacy_active_login_state(int $user_id, array $payload): void
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return;
+        }
+
+        update_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION, (string) ($payload['session_key'] ?? ''));
+        update_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT, max(0, (int) ($payload['touched_at'] ?? 0)));
+    }
+
+    private static function delete_legacy_active_login_state(int $user_id): void
+    {
+        delete_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION);
+        delete_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT);
+    }
+
+    /**
+     * @return array{session_key:string,touched_at:int,issued_at:int}|null
+     */
+    private static function read_auth_redis_session(int $user_id, ?bool &$redis_available = null): ?array
+    {
+        $redis_available = false;
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return null;
+        }
+
+        $redis = self::auth_redis();
+        if (!$redis instanceof Redis) {
+            return null;
+        }
+
+        $redis_available = true;
+        $raw_payload = $redis->get(self::auth_session_storage_key($user_id));
+        if (!is_string($raw_payload) || trim($raw_payload) === '') {
+            return null;
+        }
+
+        $decoded = json_decode($raw_payload, true);
+        if (!is_array($decoded)) {
+            self::delete_auth_redis_session($user_id);
+            return null;
+        }
+
+        $session_key = trim((string) ($decoded['session_key'] ?? ''));
+        if ($session_key === '') {
+            self::delete_auth_redis_session($user_id);
+            return null;
+        }
+
+        return [
+            'session_key' => $session_key,
+            'touched_at' => max(0, (int) ($decoded['touched_at'] ?? 0)),
+            'issued_at' => max(0, (int) ($decoded['issued_at'] ?? 0)),
+        ];
+    }
+
+    /**
+     * @param array{session_key:string,touched_at:int,issued_at:int} $payload
+     */
+    private static function write_auth_redis_session(int $user_id, array $payload): void
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return;
+        }
+
+        $redis = self::auth_redis();
+        if (!$redis instanceof Redis) {
+            return;
+        }
+
+        $session_key = trim((string) ($payload['session_key'] ?? ''));
+        if ($session_key === '') {
+            return;
+        }
+
+        $stored_payload = [
+            'session_key' => $session_key,
+            'touched_at' => max(0, (int) ($payload['touched_at'] ?? 0)),
+            'issued_at' => max(0, (int) ($payload['issued_at'] ?? 0)),
+        ];
+        $encoded = wp_json_encode($stored_payload);
+        if (!is_string($encoded) || $encoded === '') {
+            return;
+        }
+
+        $redis->setEx(self::auth_session_storage_key($user_id), self::AUTH_REDIS_TTL_SECONDS, $encoded);
+    }
+
+    private static function delete_auth_redis_session(int $user_id): void
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return;
+        }
+
+        $redis = self::auth_redis();
+        if (!$redis instanceof Redis) {
+            return;
+        }
+
+        $redis->del(self::auth_session_storage_key($user_id));
+    }
+
+    /**
+     * @param array{session_key:string,touched_at:int,issued_at:int} $legacy_state
+     */
+    private static function hydrate_auth_redis_from_legacy(int $user_id, array $legacy_state): void
+    {
+        $session_key = trim((string) ($legacy_state['session_key'] ?? ''));
+        if ($session_key === '') {
+            return;
+        }
+
+        $payload = [
+            'session_key' => $session_key,
+            'touched_at' => max(0, (int) ($legacy_state['touched_at'] ?? 0)),
+            'issued_at' => max(0, (int) ($legacy_state['issued_at'] ?? 0)),
+        ];
+        if ((int) $payload['issued_at'] <= 0) {
+            $payload['issued_at'] = (int) ($payload['touched_at'] > 0 ? $payload['touched_at'] : time());
+        }
+
+        self::write_auth_redis_session($user_id, $payload);
+    }
+
+    /**
+     * @return Redis|null
+     */
+    private static function auth_redis(): ?Redis
+    {
+        if (self::$auth_redis_connection_attempted) {
+            return (self::$auth_redis instanceof Redis) ? self::$auth_redis : null;
+        }
+
+        self::$auth_redis_connection_attempted = true;
+        self::$auth_redis = false;
+        self::$auth_redis_last_connection_error = '';
+
+        if (!class_exists('Redis')) {
+            self::$auth_redis_last_connection_error = 'Redis extension not loaded.';
+            return null;
+        }
+
+        $config = self::auth_redis_settings();
+
+        try {
+            $redis = new Redis();
+            if ((string) ($config['scheme'] ?? '') === 'unix') {
+                $redis->connect((string) ($config['host'] ?? ''), 0, (float) ($config['timeout'] ?? self::AUTH_REDIS_TIMEOUT));
+            } else {
+                $redis->connect(
+                    (string) ($config['host'] ?? self::AUTH_REDIS_DEFAULT_HOST),
+                    (int) ($config['port'] ?? self::AUTH_REDIS_DEFAULT_PORT),
+                    (float) ($config['timeout'] ?? self::AUTH_REDIS_TIMEOUT)
+                );
+            }
+
+            $password = (string) ($config['password'] ?? '');
+            if ($password !== '') {
+                $redis->auth($password);
+            }
+
+            $database = (int) ($config['database'] ?? self::AUTH_REDIS_DEFAULT_DATABASE);
+            if ($database >= 0) {
+                $redis->select($database);
+            }
+
+            $ping = $redis->ping();
+            if ($ping === false) {
+                throw new RuntimeException('PING ke Redis auth gagal.');
+            }
+
+            self::$auth_redis = $redis;
+            return $redis;
+        } catch (Throwable $throwable) {
+            self::$auth_redis_last_connection_error = 'Koneksi auth Redis gagal: ' . $throwable->getMessage();
+            self::$auth_redis = false;
+            return null;
+        }
+    }
+
+    /**
+     * @return array{host:string,port:int,database:int,password:string,timeout:float,scheme:string}
+     */
+    private static function auth_redis_settings(): array
+    {
+        $host = trim((string) self::constant_scalar('CBT_RUNTIME_REDIS_HOST', ''));
+        if ($host === '') {
+            $host = trim((string) self::constant_scalar('WP_REDIS_HOST', self::AUTH_REDIS_DEFAULT_HOST));
+        }
+
+        $port = (int) self::constant_scalar('CBT_RUNTIME_REDIS_PORT', 0);
+        if ($port <= 0) {
+            $port = (int) self::constant_scalar('WP_REDIS_PORT', self::AUTH_REDIS_DEFAULT_PORT);
+        }
+        if ($port <= 0) {
+            $port = self::AUTH_REDIS_DEFAULT_PORT;
+        }
+
+        $database = self::constant_scalar('CBT_RUNTIME_REDIS_DATABASE', null);
+        if ($database === null || $database === '') {
+            $wp_database = (int) self::constant_scalar('WP_REDIS_DATABASE', self::AUTH_REDIS_DEFAULT_DATABASE - 1);
+            $database = max(0, $wp_database + 1);
+        }
+
+        $password = trim((string) self::constant_scalar('CBT_RUNTIME_REDIS_PASSWORD', ''));
+        if ($password === '') {
+            $password = trim((string) self::constant_scalar('WP_REDIS_PASSWORD', ''));
+        }
+
+        $scheme = 'tcp';
+        if ($host !== '' && strpos($host, '/') === 0) {
+            $scheme = 'unix';
+        }
+
+        return [
+            'host' => $host !== '' ? $host : self::AUTH_REDIS_DEFAULT_HOST,
+            'port' => $port,
+            'database' => (int) $database,
+            'password' => $password,
+            'timeout' => self::AUTH_REDIS_TIMEOUT,
+            'scheme' => $scheme,
+        ];
+    }
+
+    private static function auth_session_storage_key(int $user_id): string
+    {
+        return self::AUTH_REDIS_PREFIX . 'user:' . max(0, $user_id) . ':session';
+    }
+
+    /**
+     * @param mixed $default
+     * @return mixed
+     */
+    private static function constant_scalar(string $constant_name, $default)
+    {
+        return defined($constant_name) ? constant($constant_name) : $default;
     }
 
     private static function generate_login_session_key(): string

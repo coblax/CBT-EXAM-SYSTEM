@@ -154,6 +154,7 @@ class CBT_Runtime
             'student_id' => (int) ($attempt['student_id'] ?? 0),
             'status' => (string) ($attempt['status'] ?? 'in_progress'),
             'started_at' => (string) ($attempt['started_at'] ?? ''),
+            'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? 0)),
             'duration_minutes' => max(1, $duration_minutes),
             'last_touch_at' => max(time(), $last_touch_at),
             'last_flushed_at' => $last_flushed_at,
@@ -209,6 +210,45 @@ class CBT_Runtime
         }
 
         return true;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public static function get_attempt_meta(int $attempt_id, ?bool &$state_found = null): array
+    {
+        $state_found = false;
+        $attempt_id = absint($attempt_id);
+        if ($attempt_id <= 0) {
+            return [];
+        }
+
+        $redis = self::redis();
+        if (!$redis instanceof Redis) {
+            return [];
+        }
+
+        $meta_key = self::attempt_meta_key($attempt_id);
+        $meta = self::decode_json_string((string) $redis->get($meta_key));
+        if (!is_array($meta)) {
+            return [];
+        }
+
+        $state_found = true;
+        $duration_minutes = max(1, (int) ($meta['duration_minutes'] ?? 60));
+        self::update_meta_touch($redis, $attempt_id, $duration_minutes, $meta, (int) ($meta['last_flushed_at'] ?? 0));
+
+        return [
+            'attempt_id' => $attempt_id,
+            'exam_id' => (int) ($meta['exam_id'] ?? 0),
+            'student_id' => (int) ($meta['student_id'] ?? 0),
+            'status' => (string) ($meta['status'] ?? 'in_progress'),
+            'started_at' => (string) ($meta['started_at'] ?? ''),
+            'extra_time_minutes' => max(0, (int) ($meta['extra_time_minutes'] ?? 0)),
+            'duration_minutes' => $duration_minutes,
+            'last_touch_at' => max(0, (int) ($meta['last_touch_at'] ?? 0)),
+            'last_flushed_at' => max(0, (int) ($meta['last_flushed_at'] ?? 0)),
+        ];
     }
 
     /**
@@ -563,6 +603,7 @@ class CBT_Runtime
                 'student_id' => is_array($meta) ? (int) ($meta['student_id'] ?? 0) : 0,
                 'status' => is_array($meta) ? (string) ($meta['status'] ?? 'in_progress') : 'in_progress',
                 'started_at' => is_array($meta) ? (string) ($meta['started_at'] ?? '') : '',
+                'extra_time_minutes' => is_array($meta) ? (int) ($meta['extra_time_minutes'] ?? 0) : 0,
             ];
             self::update_meta_touch($redis, $attempt_id, $duration_minutes, $attempt_meta, time());
             CBT_Cache::invalidate_attempt($attempt_id);
@@ -1130,6 +1171,7 @@ class CBT_Runtime
             'student_id' => (int) ($attempt['student_id'] ?? (is_array($meta) ? (int) ($meta['student_id'] ?? 0) : 0)),
             'status' => (string) ($attempt['status'] ?? (is_array($meta) ? (string) ($meta['status'] ?? 'in_progress') : 'in_progress')),
             'started_at' => (string) ($attempt['started_at'] ?? (is_array($meta) ? (string) ($meta['started_at'] ?? '') : '')),
+            'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? (is_array($meta) ? (int) ($meta['extra_time_minutes'] ?? 0) : 0))),
             'duration_minutes' => max(1, $duration_minutes > 0 ? $duration_minutes : (is_array($meta) ? (int) ($meta['duration_minutes'] ?? 60) : 60)),
             'last_touch_at' => time(),
             'last_flushed_at' => $last_flushed_at > 0

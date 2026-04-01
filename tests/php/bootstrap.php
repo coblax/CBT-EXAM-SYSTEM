@@ -312,6 +312,13 @@ if (!function_exists('wp_timezone')) {
     }
 }
 
+if (!function_exists('wp_timezone_string')) {
+    function wp_timezone_string(): string
+    {
+        return 'Asia/Jakarta';
+    }
+}
+
 if (!function_exists('wp_date')) {
     function wp_date($format, $timestamp = null, $timezone = null): string
     {
@@ -376,6 +383,8 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
             'manage_options' => true,
         ];
         $GLOBALS['cbt_test_last_redirect'] = '';
+        $GLOBALS['cbt_test_redis_storage'] = [];
+        $GLOBALS['cbt_test_redis_should_fail_connect'] = false;
 
         if (class_exists('CBT_Cache')) {
             $reflection = new ReflectionClass('CBT_Cache');
@@ -393,11 +402,165 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
                 $cache->setAccessible(true);
                 $cache->setValue(null, []);
             }
+            foreach (['auth_redis', 'auth_redis_connection_attempted', 'auth_redis_last_connection_error'] as $property_name) {
+                if ($reflection->hasProperty($property_name)) {
+                    $property = $reflection->getProperty($property_name);
+                    $property->setAccessible(true);
+                    if ($property_name === 'auth_redis_connection_attempted') {
+                        $property->setValue(null, false);
+                    } elseif ($property_name === 'auth_redis_last_connection_error') {
+                        $property->setValue(null, '');
+                    } else {
+                        $property->setValue(null, null);
+                    }
+                }
+            }
+        }
+
+        if (class_exists('CBT_Student_Profile_Cache')) {
+            $reflection = new ReflectionClass('CBT_Student_Profile_Cache');
+            foreach (['profile_redis', 'profile_redis_connection_attempted', 'profile_redis_last_connection_error'] as $property_name) {
+                if ($reflection->hasProperty($property_name)) {
+                    $property = $reflection->getProperty($property_name);
+                    $property->setAccessible(true);
+                    if ($property_name === 'profile_redis_connection_attempted') {
+                        $property->setValue(null, false);
+                    } elseif ($property_name === 'profile_redis_last_connection_error') {
+                        $property->setValue(null, '');
+                    } else {
+                        $property->setValue(null, null);
+                    }
+                }
+            }
         }
     }
 }
 
 cbt_test_reset_wordpress_storage();
+
+if (!class_exists('Redis')) {
+    class Redis
+    {
+        public function connect($host, $port = 6379, $timeout = 0.0): bool
+        {
+            if (!empty($GLOBALS['cbt_test_redis_should_fail_connect'])) {
+                throw new RuntimeException('Redis test connection disabled.');
+            }
+
+            return true;
+        }
+
+        public function auth($password): bool
+        {
+            return true;
+        }
+
+        public function select($database): bool
+        {
+            return true;
+        }
+
+        public function ping()
+        {
+            return 'PONG';
+        }
+
+        public function get($key)
+        {
+            $key = (string) $key;
+            return array_key_exists($key, $GLOBALS['cbt_test_redis_storage'])
+                ? $GLOBALS['cbt_test_redis_storage'][$key]
+                : false;
+        }
+
+        public function setEx($key, $ttl, $value): bool
+        {
+            $GLOBALS['cbt_test_redis_storage'][(string) $key] = (string) $value;
+            return true;
+        }
+
+        public function del(...$keys): int
+        {
+            $deleted = 0;
+            foreach ($keys as $key) {
+                $safe_key = (string) $key;
+                if (array_key_exists($safe_key, $GLOBALS['cbt_test_redis_storage'])) {
+                    unset($GLOBALS['cbt_test_redis_storage'][$safe_key]);
+                    $deleted++;
+                }
+            }
+
+            return $deleted;
+        }
+
+        public function expire($key, $ttl): bool
+        {
+            return true;
+        }
+    }
+}
+
+if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
+    class CBT_Test_Redis_Client extends Redis
+    {
+        public function connect($host, $port = null, $timeout = null, $retry_interval = null)
+        {
+            if (!empty($GLOBALS['cbt_test_redis_should_fail_connect'])) {
+                throw new RuntimeException('Redis test connection disabled.');
+            }
+
+            return true;
+        }
+
+        public function auth($credentials)
+        {
+            return true;
+        }
+
+        public function select($database)
+        {
+            return true;
+        }
+
+        public function ping()
+        {
+            return 'PONG';
+        }
+
+        public function get($key)
+        {
+            $key = (string) $key;
+            return array_key_exists($key, $GLOBALS['cbt_test_redis_storage'])
+                ? $GLOBALS['cbt_test_redis_storage'][$key]
+                : false;
+        }
+
+        public function setEx($key, $ttl, $value)
+        {
+            $GLOBALS['cbt_test_redis_storage'][(string) $key] = (string) $value;
+            return true;
+        }
+
+        public function del(...$keys)
+        {
+            $deleted = 0;
+            foreach ($keys as $key) {
+                $safe_key = (string) $key;
+                if (array_key_exists($safe_key, $GLOBALS['cbt_test_redis_storage'])) {
+                    unset($GLOBALS['cbt_test_redis_storage'][$safe_key]);
+                    $deleted++;
+                }
+            }
+
+            return $deleted;
+        }
+
+        public function expire($key, $ttl)
+        {
+            return true;
+        }
+    }
+}
 
 if (!function_exists('get_option')) {
     function get_option($option, $default = false)
