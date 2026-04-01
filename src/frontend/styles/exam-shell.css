@@ -83,6 +83,13 @@
     padding: 20px 18px;
 }
 
+[data-cbt-exam-question-region="questionHead"],
+[data-cbt-exam-question-region="questionInput"],
+[data-cbt-exam-question-region="questionFooterProgress"],
+[data-cbt-exam-question-region="questionFooterSync"] {
+    display: contents;
+}
+
 .cbt-card-inline-loading {
     border: 1px dashed #bfd3e9;
     border-radius: 16px;

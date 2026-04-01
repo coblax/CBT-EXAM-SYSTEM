@@ -26,6 +26,9 @@ export function createSessionHeartbeatManager(deps) {
     var recordTimeline = deps.recordTimeline;
     var recordActionTrail = deps.recordActionTrail;
     var render = deps.render;
+    var renderExamPartial = typeof deps.renderExamPartial === 'function'
+        ? deps.renderExamPartial
+        : null;
 
     var heartbeatTimer = 0;
     var heartbeatInFlight = null;
@@ -49,6 +52,19 @@ export function createSessionHeartbeatManager(deps) {
         return new Promise(function (resolve) {
             windowRef.setTimeout(resolve, waitMs);
         });
+    }
+
+    function renderHeartbeatLostUi(reason, meta) {
+        if (state.stage === 'exam' && renderExamPartial) {
+            if (renderExamPartial({
+                notice: true,
+                questionFooterSync: true
+            }, reason, meta || {})) {
+                return;
+            }
+        }
+
+        render(reason, meta);
     }
 
     function buildHeartbeatScenarioError(mode) {
@@ -108,7 +124,7 @@ export function createSessionHeartbeatManager(deps) {
         state.heartbeatLostLastErrorCode = normalizedLastErrorCode;
 
         if (hasChanged && options.render === true && typeof render === 'function') {
-            render('heartbeat-lost-state', {
+            renderHeartbeatLostUi('heartbeat-lost-state', {
                 active: normalizedActive,
                 attemptId: Number(state.attemptId) || 0,
                 failureCount: normalizedFailureCount

@@ -4,6 +4,7 @@ import { createAnswerInputManager } from '../../../src/frontend/app/exam/answer-
 function createFixture(overrides = {}) {
     var calls = {
         clearMessages: 0,
+        renderExamPartial: [],
         render: [],
         scheduleAutoSave: [],
         scheduleQuestionCachePersist: [],
@@ -33,6 +34,17 @@ function createFixture(overrides = {}) {
                 meta: meta || null,
                 reason: String(reason || '')
             });
+        },
+        renderExamPartial: function (regions, reason, meta) {
+            calls.renderExamPartial.push({
+                meta: meta || null,
+                reason: String(reason || ''),
+                regions: regions || {}
+            });
+            if (typeof overrides.renderExamPartial === 'function') {
+                return overrides.renderExamPartial(regions, reason, meta);
+            }
+            return false;
         },
         root,
         scheduleAutoSave: function (questionId, delayMs) {
@@ -179,5 +191,44 @@ describe('createAnswerInputManager', function () {
         expect(fixture.state.answers[72]).toBe('tetap');
         expect(fixture.state.answeredQuestionLookup[71]).toBe(true);
         expect(fixture.state.answeredQuestionLookup[72]).toBe(true);
+    });
+
+    it('uses partial question patch for single choice changes without remounting the full question region', function () {
+        var fixture = createFixture({
+            renderExamPartial: function () {
+                return true;
+            },
+            state: {
+                answers: {},
+                answeredQuestionLookup: {},
+                error: '',
+                notice: '',
+                success: ''
+            }
+        });
+        var input = document.createElement('input');
+        input.type = 'radio';
+        input.setAttribute('data-action', 'answer-single');
+        input.setAttribute('data-qid', '41');
+        input.setAttribute('data-option-id', '501');
+
+        fixture.manager.handleChangeTarget(input);
+
+        expect(fixture.calls.renderExamPartial).toEqual([
+            {
+                meta: {
+                    inputType: 'single',
+                    questionId: 41
+                },
+                reason: 'answer-change',
+                regions: {
+                    navigation: true,
+                    questionFooterProgress: true,
+                    questionHead: true,
+                    questionInput: true
+                }
+            }
+        ]);
+        expect(fixture.calls.render).toEqual([]);
     });
 });

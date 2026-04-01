@@ -431,39 +431,75 @@ export function createExamStageRenderer(deps) {
         ].join('');
     }
 
-    function renderExamQuestionRegion(viewModel) {
+    function buildExamQuestionSubregionMarkup(viewModel) {
+        var currentQuestion = viewModel.currentQuestion;
+        if (!currentQuestion) {
+            return null;
+        }
+
+        return {
+            questionHead: [
+                '<div class="' + viewModel.questionHeadClasses.join(' ') + '">',
+                '<div class="cbt-question-head-main">',
+                '<div class="cbt-chip cbt-chip-question-index" aria-label="Soal ' + escapeHtml(viewModel.currentQuestionDisplayNumber) + '"><span class="cbt-chip-mobile-icon" aria-hidden="true">#</span><span class="cbt-chip-label">Soal</span><span class="cbt-chip-value">' + escapeHtml(viewModel.currentQuestionDisplayNumber) + '</span></div>',
+                '<div class="cbt-chip cbt-chip-question-meta" title="' + escapeHtml(viewModel.currentQuestionMetaLabel) + '" aria-label="' + escapeHtml(viewModel.currentQuestionMetaLabel) + '"><span class="cbt-chip-mobile-meta" aria-hidden="true">' + escapeHtml(viewModel.currentQuestionMetaCompact) + '</span><span class="cbt-chip-type">' + escapeHtml(viewModel.currentQuestionTypeLabel) + '</span><span class="cbt-chip-separator" aria-hidden="true"></span><span class="cbt-chip-points">Poin ' + escapeHtml(viewModel.currentQuestionPoints) + '</span></div>',
+                renderQuestionPrefetchIndicator(),
+                (viewModel.currentQuestionIsChanged ? '<div class="cbt-chip cbt-chip-danger">Soal baru / berubah</div>' : ''),
+                (viewModel.currentQuestionIsDoubtful ? '<div class="cbt-chip cbt-chip-warning cbt-chip-warning-icon" aria-label="Ragu-ragu"><span class="cbt-chip-warning-symbol" aria-hidden="true">!</span><span class="cbt-visually-hidden">Ragu-ragu</span></div>' : ''),
+                renderQuestionFontControls(),
+                '</div>',
+                '<div class="cbt-question-head-tools">',
+                (viewModel.calculatorEnabled ? renderCalculatorToggleButton(state.calculatorVisible) : ''),
+                renderNavToggleButton(state.navPanelVisible, 'cbt-nav-toggle-head'),
+                '</div>',
+                '</div>'
+            ].join(''),
+            questionQuickNav: viewModel.quickNavigationMarkup,
+            questionStem: renderQuestionStem(currentQuestion),
+            questionInput: [
+                renderQuestionInput(currentQuestion),
+                (viewModel.isLastQuestion
+                    ? ('<div class="cbt-question-actions cbt-question-actions-main"><button class="cbt-button cbt-button-primary" data-action="finish" type="button"' + (state.busy || state.isFinishing ? ' disabled' : '') + '>' + (state.isFinishing ? 'Mengirim...' : 'Kumpulkan Jawaban') + '</button></div>')
+                    : '')
+            ].join(''),
+            questionFooterProgress: [
+                '<div class="cbt-question-exam-footer-meta" aria-label="Progress ' + escapeHtml(viewModel.examFooterProgressValue) + ', ' + escapeHtml(viewModel.examFooterProgressNote) + ' terjawab">',
+                '<span class="cbt-question-exam-footer-meta-label">Progress</span>',
+                '<strong class="cbt-question-exam-footer-meta-value">' + escapeHtml(viewModel.examFooterProgressValue) + '</strong>',
+                '<small class="cbt-question-exam-footer-meta-note">' + escapeHtml(viewModel.examFooterProgressNote) + '</small>',
+                '</div>'
+            ].join(''),
+            questionFooterSync: [
+                '<div class="cbt-question-exam-footer-meta cbt-question-exam-footer-meta-sync ' + escapeHtml(viewModel.examFooterSyncMeta.tone || '') + '" title="' + escapeHtml(viewModel.examFooterSyncMeta.title || '') + '" aria-label="' + escapeHtml(viewModel.examFooterSyncMeta.title || '') + '">',
+                '<span class="cbt-question-exam-footer-meta-label">' + escapeHtml(viewModel.examFooterSyncMeta.label || 'Sinkron') + '</span>',
+                '<strong class="cbt-question-exam-footer-meta-value">' + escapeHtml(viewModel.examFooterSyncMeta.value || '-') + '</strong>',
+                '<small class="cbt-question-exam-footer-meta-note">' + escapeHtml(viewModel.examFooterSyncMeta.note || '') + '</small>',
+                '</div>'
+            ].join('')
+        };
+    }
+
+    function renderExamQuestionRegion(viewModel, questionSubregions) {
         var currentQuestion = viewModel.currentQuestion;
         if (!currentQuestion) {
             return renderQuestionRegionLoadingMarkup(viewModel);
         }
 
+        if (!questionSubregions || typeof questionSubregions !== 'object') {
+            questionSubregions = buildExamQuestionSubregionMarkup(viewModel);
+        }
+
         return [
             '<section class="cbt-question-card">',
-            '<div class="' + viewModel.questionHeadClasses.join(' ') + '">',
-            '<div class="cbt-question-head-main">',
-            '<div class="cbt-chip cbt-chip-question-index" aria-label="Soal ' + escapeHtml(viewModel.currentQuestionDisplayNumber) + '"><span class="cbt-chip-mobile-icon" aria-hidden="true">#</span><span class="cbt-chip-label">Soal</span><span class="cbt-chip-value">' + escapeHtml(viewModel.currentQuestionDisplayNumber) + '</span></div>',
-            '<div class="cbt-chip cbt-chip-question-meta" title="' + escapeHtml(viewModel.currentQuestionMetaLabel) + '" aria-label="' + escapeHtml(viewModel.currentQuestionMetaLabel) + '"><span class="cbt-chip-mobile-meta" aria-hidden="true">' + escapeHtml(viewModel.currentQuestionMetaCompact) + '</span><span class="cbt-chip-type">' + escapeHtml(viewModel.currentQuestionTypeLabel) + '</span><span class="cbt-chip-separator" aria-hidden="true"></span><span class="cbt-chip-points">Poin ' + escapeHtml(viewModel.currentQuestionPoints) + '</span></div>',
-            renderQuestionPrefetchIndicator(),
-            (viewModel.currentQuestionIsChanged ? '<div class="cbt-chip cbt-chip-danger">Soal baru / berubah</div>' : ''),
-            (viewModel.currentQuestionIsDoubtful ? '<div class="cbt-chip cbt-chip-warning cbt-chip-warning-icon" aria-label="Ragu-ragu"><span class="cbt-chip-warning-symbol" aria-hidden="true">!</span><span class="cbt-visually-hidden">Ragu-ragu</span></div>' : ''),
-            renderQuestionFontControls(),
-            '</div>',
-            '<div class="cbt-question-head-tools">',
-            (viewModel.calculatorEnabled ? renderCalculatorToggleButton(state.calculatorVisible) : ''),
-            renderNavToggleButton(state.navPanelVisible, 'cbt-nav-toggle-head'),
-            '</div>',
-            '</div>',
+            '<div data-cbt-exam-question-region="questionHead">' + questionSubregions.questionHead + '</div>',
             '<div class="cbt-question-body">',
-            '<div class="cbt-question-quick-nav cbt-question-quick-nav-top" role="group" aria-label="Navigasi Cepat Soal">',
-            viewModel.quickNavigationMarkup,
+            '<div class="cbt-question-quick-nav cbt-question-quick-nav-top" data-cbt-exam-question-region="questionQuickNav" role="group" aria-label="Navigasi Cepat Soal">',
+            questionSubregions.questionQuickNav,
             '</div>',
-            '<div class="cbt-question-stem' + (currentQuestion.question_type === 'short_answer' ? ' is-short-answer' : '') + '">' + renderQuestionStem(currentQuestion) + '</div>',
-            renderQuestionInput(currentQuestion),
-            (viewModel.isLastQuestion
-                ? ('<div class="cbt-question-actions cbt-question-actions-main"><button class="cbt-button cbt-button-primary" data-action="finish" type="button"' + (state.busy || state.isFinishing ? ' disabled' : '') + '>' + (state.isFinishing ? 'Mengirim...' : 'Kumpulkan Jawaban') + '</button></div>')
-                : ''),
-            '<div class="cbt-question-quick-nav cbt-question-quick-nav-bottom" role="group" aria-label="Navigasi Cepat Soal">',
-            viewModel.quickNavigationMarkup,
+            '<div class="cbt-question-stem' + (currentQuestion.question_type === 'short_answer' ? ' is-short-answer' : '') + '" data-cbt-exam-question-region="questionStem">' + questionSubregions.questionStem + '</div>',
+            '<div data-cbt-exam-question-region="questionInput">' + questionSubregions.questionInput + '</div>',
+            '<div class="cbt-question-quick-nav cbt-question-quick-nav-bottom" data-cbt-exam-question-region="questionQuickNav" role="group" aria-label="Navigasi Cepat Soal">',
+            questionSubregions.questionQuickNav,
             '</div>',
             '<div class="cbt-question-exam-footer" title="' + escapeHtml(viewModel.activeExamTitle) + '">',
             '<span class="cbt-question-exam-footer-badge" aria-hidden="true"><span class="cbt-question-exam-footer-badge-core"></span></span>',
@@ -472,16 +508,8 @@ export function createExamStageRenderer(deps) {
             '<strong class="cbt-question-exam-footer-value">' + escapeHtml(viewModel.activeExamTitle) + '</strong>',
             '</div>',
             '<div class="cbt-question-exam-footer-side">',
-            '<div class="cbt-question-exam-footer-meta" aria-label="Progress ' + escapeHtml(viewModel.examFooterProgressValue) + ', ' + escapeHtml(viewModel.examFooterProgressNote) + ' terjawab">',
-            '<span class="cbt-question-exam-footer-meta-label">Progress</span>',
-            '<strong class="cbt-question-exam-footer-meta-value">' + escapeHtml(viewModel.examFooterProgressValue) + '</strong>',
-            '<small class="cbt-question-exam-footer-meta-note">' + escapeHtml(viewModel.examFooterProgressNote) + '</small>',
-            '</div>',
-            '<div class="cbt-question-exam-footer-meta cbt-question-exam-footer-meta-sync ' + escapeHtml(viewModel.examFooterSyncMeta.tone || '') + '" title="' + escapeHtml(viewModel.examFooterSyncMeta.title || '') + '" aria-label="' + escapeHtml(viewModel.examFooterSyncMeta.title || '') + '">',
-            '<span class="cbt-question-exam-footer-meta-label">' + escapeHtml(viewModel.examFooterSyncMeta.label || 'Sinkron') + '</span>',
-            '<strong class="cbt-question-exam-footer-meta-value">' + escapeHtml(viewModel.examFooterSyncMeta.value || '-') + '</strong>',
-            '<small class="cbt-question-exam-footer-meta-note">' + escapeHtml(viewModel.examFooterSyncMeta.note || '') + '</small>',
-            '</div>',
+            '<div data-cbt-exam-question-region="questionFooterProgress">' + questionSubregions.questionFooterProgress + '</div>',
+            '<div data-cbt-exam-question-region="questionFooterSync">' + questionSubregions.questionFooterSync + '</div>',
             '</div>',
             '</div>',
             '</div>',
@@ -495,10 +523,13 @@ export function createExamStageRenderer(deps) {
             return null;
         }
 
+        var questionSubregions = buildExamQuestionSubregionMarkup(viewModel);
+
         return {
             navigation: renderExamNavigationRegion(viewModel),
             notice: renderExamRevisionNoticeRegion(),
-            question: renderExamQuestionRegion(viewModel)
+            question: renderExamQuestionRegion(viewModel, questionSubregions),
+            questionSubregions: questionSubregions
         };
     }
 

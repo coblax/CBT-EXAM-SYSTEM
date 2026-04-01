@@ -24,6 +24,9 @@ export function createAnswerSyncManager(deps) {
     var recordActionTrail = deps.recordActionTrail;
     var recordTimeline = deps.recordTimeline;
     var render = deps.render;
+    var renderExamPartial = typeof deps.renderExamPartial === 'function'
+        ? deps.renderExamPartial
+        : null;
     var scheduleQuestionCachePersist = deps.scheduleQuestionCachePersist;
 
     var autoSaveTimersByQuestion = {};
@@ -192,6 +195,19 @@ export function createAnswerSyncManager(deps) {
         return '';
     }
 
+    function renderSyncUi(reason, meta) {
+        if (state.stage === 'exam' && renderExamPartial) {
+            if (renderExamPartial({
+                notice: true,
+                questionFooterSync: true
+            }, reason, meta || {})) {
+                return;
+            }
+        }
+
+        render(reason, meta);
+    }
+
     function syncPendingAnswerRuntimeState(options) {
         options = options || {};
 
@@ -214,7 +230,10 @@ export function createAnswerSyncManager(deps) {
         publishSyncSnapshot(options.reason || 'sync-runtime');
 
         if (options.render && state.stage === 'exam') {
-            render();
+            renderSyncUi(options.reason || 'sync-runtime', {
+                pendingSyncCount: Number(state.pendingSyncCount) || 0,
+                syncBlockingReason: String(state.syncBlockingReason || '')
+            });
         }
     }
 
@@ -239,7 +258,10 @@ export function createAnswerSyncManager(deps) {
         }
 
         if ((hasChanged || options.forceRender) && options.render !== false && state.stage === 'exam') {
-            render();
+            renderSyncUi(options.reason || ('connection:' + normalizedStatus), {
+                connectionStatus: normalizedStatus,
+                pendingSyncCount: Number(state.pendingSyncCount) || 0
+            });
         }
     }
 
@@ -469,7 +491,7 @@ export function createAnswerSyncManager(deps) {
                 reason: String(reason || '')
             });
             if (options.render && state.stage === 'exam') {
-                render('sync-forced-pending', {
+                renderSyncUi('sync-forced-pending', {
                     reason: String(reason || '')
                 });
             }
@@ -493,7 +515,7 @@ export function createAnswerSyncManager(deps) {
                 reason: String(reason || '')
             });
             if (options.render && state.stage === 'exam') {
-                render('sync-retry-skipped', {
+                renderSyncUi('sync-retry-skipped', {
                     reason: String(reason || '')
                 });
             }
@@ -546,7 +568,10 @@ export function createAnswerSyncManager(deps) {
         });
 
         if (options.render !== false && state.stage === 'exam') {
-            render();
+            renderSyncUi(options.reason || 'sync-failure', {
+                lastSyncError: String(state.lastSyncError || ''),
+                pendingSyncCount: Number(state.pendingSyncCount) || 0
+            });
         }
     }
 
@@ -574,7 +599,9 @@ export function createAnswerSyncManager(deps) {
             && state.pendingSyncCount <= 0
             && !state.examLockedForPendingFinish
         ) {
-            render();
+            renderSyncUi(options.reason || 'sync-success', {
+                pendingSyncCount: Number(state.pendingSyncCount) || 0
+            });
         }
     }
 
@@ -979,7 +1006,10 @@ export function createAnswerSyncManager(deps) {
                             clearLastSyncError: false,
                             reason: 'flush-error'
                         });
-                        render();
+                        renderSyncUi('flush-error', {
+                            lastSyncError: String(state.lastSyncError || ''),
+                            pendingSyncCount: Number(state.pendingSyncCount) || 0
+                        });
                     }
                 }
                 throw error;
@@ -1118,7 +1148,7 @@ export function createAnswerSyncManager(deps) {
                 persist: false
             });
         } else if (state.stage === 'exam') {
-            render('scenario-state-change', {
+            renderSyncUi('scenario-state-change', {
                 pendingSyncCount: Number(state.pendingSyncCount) || 0
             });
         }

@@ -511,6 +511,7 @@ export function createExamNavigationManager(deps) {
 
             var doubtfulQid = Number(actionNode.getAttribute('data-qid')) || 0;
             if (doubtfulQid > 0) {
+                var hadVisibleMessages = !!(state.error || state.notice || state.success);
                 state.doubtful[doubtfulQid] = !state.doubtful[doubtfulQid];
                 if (!state.doubtful[doubtfulQid]) {
                     delete state.doubtful[doubtfulQid];
@@ -518,11 +519,15 @@ export function createExamNavigationManager(deps) {
                 persistCurrentAttemptUiStateLocally();
                 scheduleAttemptUiStateSync(attemptUiStateSyncDelayMs);
                 clearMessages();
-                renderNavigationPatch({
+                var patchRegions = {
                     navigation: true,
-                    question: true,
-                    notice: true
-                }, 'navigation:toggle-doubtful', {
+                    questionHead: true,
+                    questionQuickNav: true
+                };
+                if (hadVisibleMessages) {
+                    patchRegions.notice = true;
+                }
+                renderNavigationPatch(patchRegions, 'navigation:toggle-doubtful', {
                     questionId: doubtfulQid
                 });
             }

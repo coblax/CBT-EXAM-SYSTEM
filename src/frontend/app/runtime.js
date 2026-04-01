@@ -567,6 +567,13 @@ export function bootstrapFrontendApp() {
         recordActionTrail: recordActionTrail,
         recordTimeline: recordTimeline,
         render: render,
+        renderExamPartial: function (regions, reason, meta) {
+            if (renderCycleManager && typeof renderCycleManager.patchExamRegions === 'function') {
+                return renderCycleManager.patchExamRegions(regions, reason, meta);
+            }
+            render(reason, meta);
+            return false;
+        },
         scheduleQuestionCachePersist: function () {
             if (questionRuntimeManager && typeof questionRuntimeManager.scheduleQuestionCachePersist === 'function') {
                 return questionRuntimeManager.scheduleQuestionCachePersist.apply(questionRuntimeManager, arguments);
@@ -1133,6 +1140,13 @@ export function bootstrapFrontendApp() {
         recordActionTrail: recordActionTrail,
         recordTimeline: recordTimeline,
         render: render,
+        renderExamPartial: function (regions, reason, meta) {
+            if (renderCycleManager && typeof renderCycleManager.patchExamRegions === 'function') {
+                return renderCycleManager.patchExamRegions(regions, reason, meta);
+            }
+            render(reason, meta);
+            return false;
+        },
         sendSecurityEventSilently: sendSecurityEventSilently,
         sessionHeartbeatIntervalMs: SESSION_HEARTBEAT_INTERVAL_MS,
         setQuestionRevision: setQuestionRevision,
@@ -1371,6 +1385,13 @@ export function bootstrapFrontendApp() {
         clearMessages: clearMessages,
         normalizeExamToken: normalizeExamToken,
         render: render,
+        renderExamPartial: function (regions, reason, meta) {
+            if (renderCycleManager && typeof renderCycleManager.patchExamRegions === 'function') {
+                return renderCycleManager.patchExamRegions(regions, reason, meta);
+            }
+            render(reason, meta);
+            return false;
+        },
         root: root,
         scheduleAutoSave: scheduleAutoSave,
         scheduleQuestionCachePersist: function () {

@@ -25,6 +25,7 @@ function createHeartbeatFixture(overrides = {}) {
         recordTimeline: [],
         refreshAttemptQuestionRevision: [],
         render: [],
+        renderExamPartial: [],
         sendSecurityEventSilently: [],
         setQuestionRevision: []
     };
@@ -109,6 +110,17 @@ function createHeartbeatFixture(overrides = {}) {
                 meta: meta || {},
                 summary
             });
+        },
+        renderExamPartial: function (regions, reason, meta) {
+            calls.renderExamPartial.push({
+                meta: meta || {},
+                reason: reason || '',
+                regions: regions || {}
+            });
+            if (typeof overrides.renderExamPartial === 'function') {
+                return overrides.renderExamPartial(regions, reason, meta);
+            }
+            return false;
         },
         refreshAttemptQuestionRevision: async function (revision, options) {
             calls.refreshAttemptQuestionRevision.push({
@@ -352,6 +364,41 @@ describe('createSessionHeartbeatManager', function () {
                 }
             }
         ]);
+    });
+
+    it('uses partial notice and sync patch when heartbeat lost warning becomes active', async function () {
+        var fixture = createHeartbeatFixture({
+            apiRequest: async function () {
+                var error = new Error('Heartbeat timeout.');
+                error.status = 0;
+                error.code = 'network_error';
+                error.isNetworkError = true;
+                throw error;
+            },
+            renderExamPartial: function () {
+                return true;
+            }
+        });
+
+        await fixture.manager.run();
+        await fixture.manager.run();
+        await fixture.manager.run();
+
+        expect(fixture.calls.renderExamPartial).toEqual([
+            {
+                meta: {
+                    active: true,
+                    attemptId: 55,
+                    failureCount: 3
+                },
+                reason: 'heartbeat-lost-state',
+                regions: {
+                    notice: true,
+                    questionFooterSync: true
+                }
+            }
+        ]);
+        expect(fixture.calls.render).toEqual([]);
     });
 
     it('clears heartbeat lost warning after the next successful heartbeat', async function () {

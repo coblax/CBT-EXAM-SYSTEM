@@ -29,6 +29,14 @@ export function createRenderCycleManager(deps) {
     var renderFrameId = 0;
     var pendingRenderReason = 'bootstrap';
     var pendingRenderMeta = {};
+    var QUESTION_SUBREGION_NAMES = [
+        'questionHead',
+        'questionQuickNav',
+        'questionStem',
+        'questionInput',
+        'questionFooterProgress',
+        'questionFooterSync'
+    ];
 
     function ensureCurrentNavigationItemVisible() {
         if (state.stage !== 'exam' || !state.navPanelVisible) {
@@ -367,7 +375,7 @@ export function createRenderCycleManager(deps) {
         }
 
         var patched = false;
-        ['notice', 'navigation', 'question'].forEach(function (regionName) {
+        ['notice', 'navigation'].forEach(function (regionName) {
             if (!safeRegions[regionName] || typeof regionMarkup[regionName] !== 'string') {
                 return;
             }
@@ -380,6 +388,60 @@ export function createRenderCycleManager(deps) {
             regionNode.innerHTML = regionMarkup[regionName];
             patched = true;
         });
+
+        var questionRequested = !!safeRegions.question;
+        var requestedQuestionSubregions = QUESTION_SUBREGION_NAMES.filter(function (regionName) {
+            return !!safeRegions[regionName];
+        });
+        var shouldFallbackToFullQuestionPatch = questionRequested;
+
+        if (!shouldFallbackToFullQuestionPatch && requestedQuestionSubregions.length > 0) {
+            var questionSubregions = regionMarkup.questionSubregions && typeof regionMarkup.questionSubregions === 'object'
+                ? regionMarkup.questionSubregions
+                : null;
+
+            if (!questionSubregions) {
+                shouldFallbackToFullQuestionPatch = true;
+            } else {
+                requestedQuestionSubregions.forEach(function (regionName) {
+                    if (shouldFallbackToFullQuestionPatch) {
+                        return;
+                    }
+
+                    if (typeof questionSubregions[regionName] !== 'string') {
+                        shouldFallbackToFullQuestionPatch = true;
+                        return;
+                    }
+
+                    var regionNodes = root.querySelectorAll('[data-cbt-exam-question-region="' + regionName + '"]');
+                    if (!regionNodes.length) {
+                        shouldFallbackToFullQuestionPatch = true;
+                        return;
+                    }
+
+                    regionNodes.forEach(function (regionNode) {
+                        if (regionNode instanceof HTMLElement) {
+                            regionNode.innerHTML = questionSubregions[regionName];
+                            patched = true;
+                        }
+                    });
+                });
+            }
+        }
+
+        if (shouldFallbackToFullQuestionPatch) {
+            if (typeof regionMarkup.question !== 'string') {
+                return false;
+            }
+
+            var questionRegionNode = root.querySelector('[data-cbt-exam-region="question"]');
+            if (!(questionRegionNode instanceof HTMLElement)) {
+                return false;
+            }
+
+            questionRegionNode.innerHTML = regionMarkup.question;
+            patched = true;
+        }
 
         if (!patched) {
             return false;
