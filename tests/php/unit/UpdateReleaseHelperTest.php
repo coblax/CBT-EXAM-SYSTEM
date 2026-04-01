@@ -51,15 +51,15 @@ final class UpdateReleaseHelperTest extends TestCase
     public function test_fetch_latest_release_state_marks_available_when_release_is_valid(): void
     {
         $releaseUrl = \CBT_Update_Release_Helper::latest_release_api_url();
-        $manifestUrl = 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/download/v1.8.4/cbt-update-manifest.json';
-        $packageUrl = 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/download/v1.8.4/cbt-exam-system.zip';
+        $manifestUrl = 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/download/v1.8.5/cbt-update-manifest.json';
+        $packageUrl = 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/download/v1.8.5/cbt-exam-system.zip';
 
         $GLOBALS['cbt_test_wp_remote_get_map'][$releaseUrl] = [
             'response' => ['code' => 200],
             'body' => wp_json_encode([
-                'tag_name' => 'v1.8.4',
-                'name' => 'CBT 1.8.4',
-                'html_url' => 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/tag/v1.8.4',
+                'tag_name' => 'v1.8.5',
+                'name' => 'CBT 1.8.5',
+                'html_url' => 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/tag/v1.8.5',
                 'published_at' => '2026-03-29T12:00:00Z',
                 'assets' => [
                     [
@@ -76,8 +76,8 @@ final class UpdateReleaseHelperTest extends TestCase
         $GLOBALS['cbt_test_wp_remote_get_map'][$manifestUrl] = [
             'response' => ['code' => 200],
             'body' => wp_json_encode([
-                'version' => '1.8.4',
-                'tag' => 'v1.8.4',
+                'version' => '1.8.5',
+                'tag' => 'v1.8.5',
                 'published_at' => '2026-03-29T12:00:00Z',
                 'download_url' => $packageUrl,
                 'sha256' => str_repeat('a', 64),
@@ -91,9 +91,9 @@ final class UpdateReleaseHelperTest extends TestCase
         $state = \CBT_Update_Release_Helper::fetch_latest_release_state();
 
         self::assertSame('available', $state['status']);
-        self::assertSame('1.8.4', $state['manifest']['version']);
+        self::assertSame('1.8.5', $state['manifest']['version']);
         self::assertSame('ok', $state['preflight']['status']);
-        self::assertSame('v1.8.4', $state['release']['tag']);
+        self::assertSame('v1.8.5', $state['release']['tag']);
         self::assertSame(
             'Checksum dan struktur zip akan diverifikasi saat INSTALL UPDATE agar cek update tidak perlu mengunduh package penuh.',
             $state['preflight']['items'][5]['message']
@@ -203,10 +203,10 @@ final class UpdateReleaseHelperTest extends TestCase
             'status' => 'available',
             'error_message' => '',
             'manifest' => [
-                'version' => '1.8.4',
-                'tag' => 'v1.8.4',
+                'version' => '1.8.5',
+                'tag' => 'v1.8.5',
                 'published_at' => '2026-03-29T12:00:00Z',
-                'download_url' => 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/download/v1.8.4/cbt-exam-system.zip',
+                'download_url' => 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/download/v1.8.5/cbt-exam-system.zip',
                 'sha256' => str_repeat('a', 64),
                 'requires_php' => '8.0',
                 'requires_wp' => '6.0',
@@ -214,9 +214,9 @@ final class UpdateReleaseHelperTest extends TestCase
                 'changelog' => 'Fix updater',
             ],
             'release' => [
-                'tag' => 'v1.8.4',
-                'name' => 'CBT 1.8.4',
-                'html_url' => 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/tag/v1.8.4',
+                'tag' => 'v1.8.5',
+                'name' => 'CBT 1.8.5',
+                'html_url' => 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/tag/v1.8.5',
                 'published_at' => '2026-03-29T12:00:00Z',
             ],
             'preflight' => [
