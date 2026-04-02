@@ -298,10 +298,14 @@ if (!function_exists('current_time')) {
     function current_time($type, $gmt = 0): int|string
     {
         if ((string) $type === 'timestamp') {
-            return 1774353600;
+            return isset($GLOBALS['cbt_test_current_time_timestamp'])
+                ? (int) $GLOBALS['cbt_test_current_time_timestamp']
+                : 1774353600;
         }
 
-        return '2026-03-24 12:00:00';
+        return isset($GLOBALS['cbt_test_current_time_mysql'])
+            ? (string) $GLOBALS['cbt_test_current_time_mysql']
+            : '2026-03-24 12:00:00';
     }
 }
 
@@ -384,7 +388,10 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
         ];
         $GLOBALS['cbt_test_last_redirect'] = '';
         $GLOBALS['cbt_test_redis_storage'] = [];
+        $GLOBALS['cbt_test_redis_zsets'] = [];
         $GLOBALS['cbt_test_redis_should_fail_connect'] = false;
+        $GLOBALS['cbt_test_current_time_timestamp'] = 1774353600;
+        $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:00:00';
 
         if (class_exists('CBT_Cache')) {
             $reflection = new ReflectionClass('CBT_Cache');
@@ -426,6 +433,57 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
                     if ($property_name === 'profile_redis_connection_attempted') {
                         $property->setValue(null, false);
                     } elseif ($property_name === 'profile_redis_last_connection_error') {
+                        $property->setValue(null, '');
+                    } else {
+                        $property->setValue(null, null);
+                    }
+                }
+            }
+        }
+
+        if (class_exists('CBT_Exam_Availability_Cache')) {
+            $reflection = new ReflectionClass('CBT_Exam_Availability_Cache');
+            foreach (['snapshot_redis', 'snapshot_redis_connection_attempted', 'snapshot_redis_last_connection_error'] as $property_name) {
+                if ($reflection->hasProperty($property_name)) {
+                    $property = $reflection->getProperty($property_name);
+                    $property->setAccessible(true);
+                    if ($property_name === 'snapshot_redis_connection_attempted') {
+                        $property->setValue(null, false);
+                    } elseif ($property_name === 'snapshot_redis_last_connection_error') {
+                        $property->setValue(null, '');
+                    } else {
+                        $property->setValue(null, null);
+                    }
+                }
+            }
+        }
+
+        if (class_exists('CBT_Active_Attempt_Index')) {
+            $reflection = new ReflectionClass('CBT_Active_Attempt_Index');
+            foreach (['active_attempt_redis', 'active_attempt_redis_connection_attempted', 'active_attempt_redis_last_connection_error'] as $property_name) {
+                if ($reflection->hasProperty($property_name)) {
+                    $property = $reflection->getProperty($property_name);
+                    $property->setAccessible(true);
+                    if ($property_name === 'active_attempt_redis_connection_attempted') {
+                        $property->setValue(null, false);
+                    } elseif ($property_name === 'active_attempt_redis_last_connection_error') {
+                        $property->setValue(null, '');
+                    } else {
+                        $property->setValue(null, null);
+                    }
+                }
+            }
+        }
+
+        if (class_exists('CBT_Security_Live_Counters')) {
+            $reflection = new ReflectionClass('CBT_Security_Live_Counters');
+            foreach (['live_redis', 'live_redis_connection_attempted', 'live_redis_last_connection_error'] as $property_name) {
+                if ($reflection->hasProperty($property_name)) {
+                    $property = $reflection->getProperty($property_name);
+                    $property->setAccessible(true);
+                    if ($property_name === 'live_redis_connection_attempted') {
+                        $property->setValue(null, false);
+                    } elseif ($property_name === 'live_redis_last_connection_error') {
                         $property->setValue(null, '');
                     } else {
                         $property->setValue(null, null);
@@ -488,6 +546,10 @@ if (!class_exists('Redis')) {
                     unset($GLOBALS['cbt_test_redis_storage'][$safe_key]);
                     $deleted++;
                 }
+                if (array_key_exists($safe_key, $GLOBALS['cbt_test_redis_zsets'])) {
+                    unset($GLOBALS['cbt_test_redis_zsets'][$safe_key]);
+                    $deleted++;
+                }
             }
 
             return $deleted;
@@ -496,6 +558,51 @@ if (!class_exists('Redis')) {
         public function expire($key, $ttl): bool
         {
             return true;
+        }
+
+        public function zAdd($key, $score, $member, ...$extra_args): int
+        {
+            $key = (string) $key;
+            if (!isset($GLOBALS['cbt_test_redis_zsets'][$key]) || !is_array($GLOBALS['cbt_test_redis_zsets'][$key])) {
+                $GLOBALS['cbt_test_redis_zsets'][$key] = [];
+            }
+
+            $GLOBALS['cbt_test_redis_zsets'][$key][(string) $member] = (float) $score;
+            return 1;
+        }
+
+        public function zRange($key, $start, $end, $scores = false): array
+        {
+            $key = (string) $key;
+            $items = $GLOBALS['cbt_test_redis_zsets'][$key] ?? [];
+            if (!is_array($items) || empty($items)) {
+                return [];
+            }
+
+            asort($items, SORT_NUMERIC);
+            $members = array_keys($items);
+            if ((int) $end < 0) {
+                $slice = array_slice($members, (int) $start);
+            } else {
+                $slice = array_slice($members, (int) $start, ((int) $end - (int) $start) + 1);
+            }
+
+            return array_values($slice);
+        }
+
+        public function zRem($key, ...$members): int
+        {
+            $key = (string) $key;
+            $deleted = 0;
+            foreach ($members as $member) {
+                $safe_member = (string) $member;
+                if (isset($GLOBALS['cbt_test_redis_zsets'][$key][$safe_member])) {
+                    unset($GLOBALS['cbt_test_redis_zsets'][$key][$safe_member]);
+                    $deleted++;
+                }
+            }
+
+            return $deleted;
         }
     }
 }
@@ -550,6 +657,10 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
                     unset($GLOBALS['cbt_test_redis_storage'][$safe_key]);
                     $deleted++;
                 }
+                if (array_key_exists($safe_key, $GLOBALS['cbt_test_redis_zsets'])) {
+                    unset($GLOBALS['cbt_test_redis_zsets'][$safe_key]);
+                    $deleted++;
+                }
             }
 
             return $deleted;
@@ -558,6 +669,51 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
         public function expire($key, $ttl)
         {
             return true;
+        }
+
+        public function zAdd($key, $score, $member, ...$extra_args)
+        {
+            $key = (string) $key;
+            if (!isset($GLOBALS['cbt_test_redis_zsets'][$key]) || !is_array($GLOBALS['cbt_test_redis_zsets'][$key])) {
+                $GLOBALS['cbt_test_redis_zsets'][$key] = [];
+            }
+
+            $GLOBALS['cbt_test_redis_zsets'][$key][(string) $member] = (float) $score;
+            return 1;
+        }
+
+        public function zRange($key, $start, $end, $scores = false)
+        {
+            $key = (string) $key;
+            $items = $GLOBALS['cbt_test_redis_zsets'][$key] ?? [];
+            if (!is_array($items) || empty($items)) {
+                return [];
+            }
+
+            asort($items, SORT_NUMERIC);
+            $members = array_keys($items);
+            if ((int) $end < 0) {
+                $slice = array_slice($members, (int) $start);
+            } else {
+                $slice = array_slice($members, (int) $start, ((int) $end - (int) $start) + 1);
+            }
+
+            return array_values($slice);
+        }
+
+        public function zRem($key, ...$members)
+        {
+            $key = (string) $key;
+            $deleted = 0;
+            foreach ($members as $member) {
+                $safe_member = (string) $member;
+                if (isset($GLOBALS['cbt_test_redis_zsets'][$key][$safe_member])) {
+                    unset($GLOBALS['cbt_test_redis_zsets'][$key][$safe_member]);
+                    $deleted++;
+                }
+            }
+
+            return $deleted;
         }
     }
 }

@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Active_Attempt_Index')) {
+    require_once __DIR__ . '/class-cbt-active-attempt-index.php';
+}
+
 class CBT_Runtime
 {
     public const CRON_HOOK = 'cbt_runtime_flush_pending';
@@ -785,6 +789,7 @@ class CBT_Runtime
             return;
         }
 
+        $attempt_meta = self::decode_json_string((string) $redis->get(self::attempt_meta_key($attempt_id)));
         $redis->del(
             self::attempt_meta_key($attempt_id),
             self::attempt_answers_key($attempt_id),
@@ -795,6 +800,23 @@ class CBT_Runtime
         $redis->zRem(self::flush_due_key(), (string) $attempt_id);
         $redis->zRem(self::active_attempts_key(), (string) $attempt_id);
         $redis->del(self::flush_lock_key($attempt_id), self::finish_lock_key($attempt_id));
+
+        if (
+            class_exists('CBT_Active_Attempt_Index')
+            && is_array($attempt_meta)
+            && (int) ($attempt_meta['student_id'] ?? 0) > 0
+            && (int) ($attempt_meta['exam_id'] ?? 0) > 0
+        ) {
+            CBT_Active_Attempt_Index::clear_active_attempt(
+                (int) ($attempt_meta['student_id'] ?? 0),
+                (int) ($attempt_meta['exam_id'] ?? 0),
+                $attempt_id
+            );
+        }
+
+        if (class_exists('CBT_Security_Live_Counters')) {
+            CBT_Security_Live_Counters::clear_attempt($attempt_id);
+        }
     }
 
     /**

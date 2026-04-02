@@ -508,15 +508,26 @@ class CBT_Security_Log
 
         return true;
     }
+
+    public static function record_attempt_event_for_context(array $attempt, string $event_type, array $context = []): bool
+    {
+        return self::record_attempt_event((int) ($attempt['id'] ?? 0), $event_type, $context);
+    }
 }
 PHP);
         }
 
-        if (!class_exists('CBT_Runtime')) {
-            eval(<<<'PHP'
-class CBT_Runtime {}
+if (!class_exists('CBT_Runtime')) {
+    eval(<<<'PHP'
+class CBT_Runtime
+{
+    public static function is_ready(): bool
+    {
+        return false;
+    }
+}
 PHP);
-        }
+}
 
         if (!class_exists('CBT_Cache')) {
             eval(<<<'PHP'
@@ -552,6 +563,15 @@ if (!class_exists('RestNativeSecurityEventFakeWpdb')) {
             }
 
             return null;
+        }
+
+        public function get_var(string $query)
+        {
+            if (str_contains($query, 'duration_minutes')) {
+                return 60;
+            }
+
+            return 0;
         }
     }
 }

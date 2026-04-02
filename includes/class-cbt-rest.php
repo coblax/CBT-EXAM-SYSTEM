@@ -8,6 +8,14 @@ if (!class_exists('CBT_Student_Profile_Cache')) {
     require_once __DIR__ . '/class-cbt-student-profile-cache.php';
 }
 
+if (!class_exists('CBT_Exam_Availability_Cache')) {
+    require_once __DIR__ . '/class-cbt-exam-availability-cache.php';
+}
+
+if (!class_exists('CBT_Active_Attempt_Index')) {
+    require_once __DIR__ . '/class-cbt-active-attempt-index.php';
+}
+
 class CBT_REST
 {
     private const PRIORITY_WINDOW_TRANSIENT_KEY = 'cbt_exam_priority_window_until';
@@ -349,14 +357,7 @@ class CBT_REST
             return new WP_Error('unauthorized', 'Unauthorized', ['status' => 401]);
         }
 
-        $payload = CBT_Cache::remember(
-            'rest:exams:user:' . $user_id . ':role:' . strtolower((string) $role),
-            15,
-            [CBT_Cache::namespace_catalog(), CBT_Cache::namespace_user($user_id)],
-            static function () use ($user_id, $role): array {
-                return self::build_exams_payload($user_id, $role);
-            }
-        );
+        $payload = self::get_exams_payload($user_id, $role);
 
         if (!is_array($payload)) {
             $payload = [
@@ -370,6 +371,35 @@ class CBT_REST
         );
 
         return rest_ensure_response($payload);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function get_exams_payload(int $user_id, string $role): array
+    {
+        if (self::is_student_role($role) && CBT_Exam_Availability_Cache::is_available()) {
+            return CBT_Exam_Availability_Cache::get_student_snapshot(
+                $user_id,
+                static function () use ($user_id, $role): array {
+                    return self::build_exams_payload($user_id, $role);
+                }
+            );
+        }
+
+        return CBT_Cache::remember(
+            'rest:exams:user:' . $user_id . ':role:' . strtolower((string) $role),
+            15,
+            [CBT_Cache::namespace_catalog(), CBT_Cache::namespace_user($user_id)],
+            static function () use ($user_id, $role): array {
+                return self::build_exams_payload($user_id, $role);
+            }
+        );
+    }
+
+    private static function is_student_role(string $role): bool
+    {
+        return in_array(strtolower(trim($role)), ['siswa', 'student'], true);
     }
 
     public static function get_subjects(WP_REST_Request $request)
@@ -725,19 +755,6 @@ class CBT_REST
         }
 
         try {
-            $latest_attempt = $wpdb->get_row(
-                $wpdb->prepare(
-                    "SELECT id, status, started_at, finished_at, question_order, option_order, extra_time_minutes
-                     FROM {$attempt_table}
-                     WHERE exam_id = %d AND student_id = %d AND status IN ('in_progress', 'completed')
-                     ORDER BY FIELD(status, 'in_progress', 'completed'), id DESC
-                     LIMIT 1",
-                    $exam_id,
-                    $user_id
-                ),
-                ARRAY_A
-            );
-
             $expected_token = null;
             $resolve_expected_token = static function () use (&$expected_token): string {
                 if (is_string($expected_token)) {
@@ -761,56 +778,47 @@ class CBT_REST
                 return self::validate_exam_token_or_error($expected_token, $submitted_token);
             };
 
-            if ($latest_attempt && (string) ($latest_attempt['status'] ?? '') === 'in_progress') {
-                if (!$resume_only) {
-                    $token_check = $validate_token_submission($exam_token_input);
-                    if (is_wp_error($token_check)) {
-                        return $token_check;
-                    }
-                }
-
-                $resolved_duration_minutes = self::resolve_attempt_duration_minutes(
-                    is_array($latest_attempt) ? $latest_attempt : null,
-                    (int) ($exam['duration_minutes'] ?? 0)
+            $indexed_attempt = self::get_active_attempt_from_index($user_id, $exam_id, $attempt_table);
+            if (is_array($indexed_attempt)) {
+                return self::build_resumed_attempt_response(
+                    $indexed_attempt,
+                    $exam,
+                    $exam_id,
+                    $user_id,
+                    $attempt_table,
+                    $resume_only,
+                    $exam_token_input,
+                    $validate_token_submission
                 );
-                self::ensure_runtime_attempt_state([
-                    'id' => (int) ($latest_attempt['id'] ?? 0),
-                    'exam_id' => $exam_id,
-                    'student_id' => $user_id,
-                    'status' => (string) ($latest_attempt['status'] ?? 'in_progress'),
-                    'started_at' => (string) ($latest_attempt['started_at'] ?? ''),
-                    'question_order' => (string) ($latest_attempt['question_order'] ?? ''),
-                    'option_order' => (string) ($latest_attempt['option_order'] ?? ''),
-                    'extra_time_minutes' => (int) ($latest_attempt['extra_time_minutes'] ?? 0),
-                ], $resolved_duration_minutes);
-                $attempt_timer = self::build_attempt_timer_payload([
-                    'id' => (int) ($latest_attempt['id'] ?? 0),
-                    'status' => (string) ($latest_attempt['status'] ?? 'in_progress'),
-                    'started_at' => (string) ($latest_attempt['started_at'] ?? ''),
-                    'extra_time_minutes' => (int) ($latest_attempt['extra_time_minutes'] ?? 0),
-                ], (int) ($exam['duration_minutes'] ?? 0));
-                $attempt_sync_meta = self::build_attempt_question_sync_meta([
-                    'id' => (int) ($latest_attempt['id'] ?? 0),
-                    'exam_id' => $exam_id,
-                    'student_id' => $user_id,
-                    'status' => (string) ($latest_attempt['status'] ?? 'in_progress'),
-                    'started_at' => (string) ($latest_attempt['started_at'] ?? ''),
-                    'question_order' => (string) ($latest_attempt['question_order'] ?? ''),
-                    'option_order' => (string) ($latest_attempt['option_order'] ?? ''),
-                    'extra_time_minutes' => (int) ($latest_attempt['extra_time_minutes'] ?? 0),
-                ], $exam, $attempt_table);
+            }
 
-                return rest_ensure_response([
-                    'attempt_id' => (int) $latest_attempt['id'],
-                    'status' => 'resumed',
-                    'duration_minutes' => $resolved_duration_minutes,
-                    'extra_time_minutes' => max(0, (int) ($latest_attempt['extra_time_minutes'] ?? 0)),
-                    'started_at' => $latest_attempt['started_at'],
-                    'remaining_seconds' => (int) ($attempt_timer['remaining_seconds'] ?? max(0, $resolved_duration_minutes * MINUTE_IN_SECONDS)),
-                    'server_now' => (string) ($attempt_timer['server_now'] ?? current_time('mysql')),
-                    'question_revision' => CBT_Cache::get_exam_revision_meta($exam_id),
-                    'question_order_signature' => (string) ($attempt_sync_meta['question_order_signature'] ?? ''),
-                ]);
+            $latest_attempt = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT id, status, started_at, finished_at, question_order, option_order, extra_time_minutes
+                     FROM {$attempt_table}
+                     WHERE exam_id = %d AND student_id = %d AND status IN ('in_progress', 'completed')
+                     ORDER BY FIELD(status, 'in_progress', 'completed'), id DESC
+                     LIMIT 1",
+                    $exam_id,
+                    $user_id
+                ),
+                ARRAY_A
+            );
+
+            if ($latest_attempt && (string) ($latest_attempt['status'] ?? '') === 'in_progress') {
+                $latest_attempt['exam_id'] = $exam_id;
+                $latest_attempt['student_id'] = $user_id;
+
+                return self::build_resumed_attempt_response(
+                    $latest_attempt,
+                    $exam,
+                    $exam_id,
+                    $user_id,
+                    $attempt_table,
+                    $resume_only,
+                    $exam_token_input,
+                    $validate_token_submission
+                );
             }
 
             if ($latest_attempt && (string) ($latest_attempt['status'] ?? '') === 'completed') {
@@ -894,6 +902,12 @@ class CBT_REST
                 'question_order' => $question_order,
                 'option_order' => $option_order,
             ], (int) ($exam['duration_minutes'] ?? 0));
+            self::sync_active_attempt_index([
+                'id' => $created_attempt_id,
+                'exam_id' => $exam_id,
+                'student_id' => $user_id,
+                'status' => 'in_progress',
+            ]);
             $attempt_timer = self::build_attempt_timer_payload([
                 'id' => $created_attempt_id,
                 'status' => 'in_progress',
@@ -939,6 +953,138 @@ class CBT_REST
         }
 
         return true;
+    }
+
+    /**
+     * @param callable(string):mixed $validate_token_submission
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function build_resumed_attempt_response(
+        array $attempt,
+        array $exam,
+        int $exam_id,
+        int $user_id,
+        string $attempt_table,
+        bool $resume_only,
+        string $exam_token_input,
+        callable $validate_token_submission
+    ) {
+        if (!$resume_only) {
+            $token_check = $validate_token_submission($exam_token_input);
+            if (is_wp_error($token_check)) {
+                return $token_check;
+            }
+        }
+
+        $attempt_id = (int) ($attempt['id'] ?? $attempt['attempt_id'] ?? 0);
+        if ($attempt_id <= 0) {
+            return new WP_Error('attempt_not_found', 'Tidak ada attempt ujian aktif untuk dilanjutkan.', ['status' => 404]);
+        }
+
+        $resolved_duration_minutes = self::resolve_attempt_duration_minutes(
+            $attempt,
+            (int) ($exam['duration_minutes'] ?? 0)
+        );
+        $runtime_attempt = [
+            'id' => $attempt_id,
+            'exam_id' => $exam_id,
+            'student_id' => $user_id,
+            'status' => (string) ($attempt['status'] ?? 'in_progress'),
+            'started_at' => (string) ($attempt['started_at'] ?? ''),
+            'question_order' => (string) ($attempt['question_order'] ?? ''),
+            'option_order' => (string) ($attempt['option_order'] ?? ''),
+            'extra_time_minutes' => (int) ($attempt['extra_time_minutes'] ?? 0),
+        ];
+
+        self::ensure_runtime_attempt_state($runtime_attempt, $resolved_duration_minutes);
+        self::sync_active_attempt_index($runtime_attempt);
+
+        $attempt_timer = self::build_attempt_timer_payload([
+            'id' => $attempt_id,
+            'status' => (string) ($attempt['status'] ?? 'in_progress'),
+            'started_at' => (string) ($attempt['started_at'] ?? ''),
+            'extra_time_minutes' => (int) ($attempt['extra_time_minutes'] ?? 0),
+        ], (int) ($exam['duration_minutes'] ?? 0));
+        $attempt_sync_meta = self::build_attempt_question_sync_meta($runtime_attempt, $exam, $attempt_table);
+
+        return rest_ensure_response([
+            'attempt_id' => $attempt_id,
+            'status' => 'resumed',
+            'duration_minutes' => $resolved_duration_minutes,
+            'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? 0)),
+            'started_at' => (string) ($attempt['started_at'] ?? ''),
+            'remaining_seconds' => (int) ($attempt_timer['remaining_seconds'] ?? max(0, $resolved_duration_minutes * MINUTE_IN_SECONDS)),
+            'server_now' => (string) ($attempt_timer['server_now'] ?? current_time('mysql')),
+            'question_revision' => CBT_Cache::get_exam_revision_meta($exam_id),
+            'question_order_signature' => (string) ($attempt_sync_meta['question_order_signature'] ?? ''),
+        ]);
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_active_attempt_from_index(int $user_id, int $exam_id, string $attempt_table): ?array
+    {
+        global $wpdb;
+
+        if (
+            $user_id <= 0
+            || $exam_id <= 0
+            || !class_exists('CBT_Active_Attempt_Index')
+        ) {
+            return null;
+        }
+
+        $attempt_id = CBT_Active_Attempt_Index::get_active_attempt_id($user_id, $exam_id);
+        if ($attempt_id <= 0) {
+            return null;
+        }
+
+        $runtime_attempt = self::get_live_runtime_attempt_envelope($attempt_id, $user_id);
+        if (
+            is_array($runtime_attempt)
+            && (int) ($runtime_attempt['exam_id'] ?? 0) === $exam_id
+            && (string) ($runtime_attempt['status'] ?? '') === 'in_progress'
+        ) {
+            CBT_Active_Attempt_Index::set_active_attempt($runtime_attempt);
+            return $runtime_attempt;
+        }
+
+        $attempt = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, exam_id, student_id, status, started_at, finished_at, question_order, option_order, extra_time_minutes
+                 FROM {$attempt_table}
+                 WHERE id = %d
+                 LIMIT 1",
+                $attempt_id
+            ),
+            ARRAY_A
+        );
+
+        if (
+            !is_array($attempt)
+            || (int) ($attempt['student_id'] ?? 0) !== $user_id
+            || (int) ($attempt['exam_id'] ?? 0) !== $exam_id
+            || (string) ($attempt['status'] ?? '') !== 'in_progress'
+        ) {
+            CBT_Active_Attempt_Index::clear_active_attempt($user_id, $exam_id, $attempt_id);
+            return null;
+        }
+
+        CBT_Active_Attempt_Index::set_active_attempt($attempt);
+        return $attempt;
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     */
+    private static function sync_active_attempt_index(array $attempt): void
+    {
+        if (!class_exists('CBT_Active_Attempt_Index')) {
+            return;
+        }
+
+        CBT_Active_Attempt_Index::set_active_attempt($attempt);
     }
 
     public static function submit_answer(WP_REST_Request $request)
@@ -1214,7 +1360,7 @@ class CBT_REST
             $context = self::enrich_security_event_context($request, $context);
         }
 
-        $logged = CBT_Security_Log::record_attempt_event((int) ($attempt['id'] ?? 0), $event_type, $context);
+        $logged = CBT_Security_Log::record_attempt_event_for_context($attempt, $event_type, $context);
 
         return rest_ensure_response([
             'ok' => true,
@@ -3936,6 +4082,13 @@ class CBT_REST
 
         $student_id = (int) ($attempt['student_id'] ?? 0);
         CBT_Runtime::clear_attempt_runtime($attempt_id);
+        if (class_exists('CBT_Active_Attempt_Index')) {
+            CBT_Active_Attempt_Index::clear_active_attempt(
+                $student_id,
+                (int) ($attempt['exam_id'] ?? 0),
+                $attempt_id
+            );
+        }
         CBT_Cache::invalidate_attempt($attempt_id);
         CBT_Cache::invalidate_analytics();
         CBT_Cache::invalidate_analytics_exam((int) ($attempt['exam_id'] ?? 0));

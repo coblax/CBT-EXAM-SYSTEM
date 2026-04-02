@@ -4,6 +4,14 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Security_Live_Counters')) {
+    require_once __DIR__ . '/class-cbt-security-live-counters.php';
+}
+
+if (!class_exists('CBT_Student_Profile_Cache')) {
+    require_once __DIR__ . '/class-cbt-student-profile-cache.php';
+}
+
 class CBT_Security_Log
 {
     private const SETUP_SECURITY_OPTION = 'cbt_setup_security';
@@ -18,6 +26,8 @@ class CBT_Security_Log
     private const MUST_WATCH_SCORE_THRESHOLD = 6;
     private const MUST_WATCH_HIGH_RISK_THRESHOLD = 10;
     private const FULLSCREEN_EXIT_REPEAT_THRESHOLD = 3;
+    private const TAB_HIDDEN_REPEAT_THRESHOLD = 3;
+    private const WINDOW_BLUR_REPEAT_THRESHOLD = 3;
 
     /**
      * @return array<string,array{label:string,severity:string,message:string}>
@@ -124,6 +134,16 @@ class CBT_Security_Log
                 'label' => 'Keluar fullscreen berulang',
                 'severity' => 'critical',
                 'message' => 'Peserta berulang kali keluar dari mode fullscreen saat ujian berlangsung.',
+            ],
+            'tab_hidden_repeat' => [
+                'label' => 'Pindah tab berulang',
+                'severity' => 'warning',
+                'message' => 'Peserta berulang kali berpindah tab atau aplikasi saat ujian berlangsung.',
+            ],
+            'window_blur_repeat' => [
+                'label' => 'Blur window berulang',
+                'severity' => 'warning',
+                'message' => 'Window ujian berulang kali kehilangan fokus saat attempt masih berlangsung.',
             ],
             'admin_reset_login' => [
                 'label' => 'Reset login admin',
@@ -455,6 +475,22 @@ class CBT_Security_Log
             return false;
         }
 
+        return self::record_attempt_event_for_context($attempt, $event_type, $context);
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     */
+    public static function record_attempt_event_for_context(array $attempt, string $event_type, array $context = []): bool
+    {
+        if (!self::is_logging_enabled()) {
+            return false;
+        }
+
+        if ((int) ($attempt['id'] ?? 0) <= 0) {
+            return false;
+        }
+
         return self::record_event_for_attempt_context($attempt, $event_type, $context);
     }
 
@@ -469,7 +505,7 @@ class CBT_Security_Log
             return false;
         }
 
-        return self::record_event_for_attempt_context($attempt, $event_type, $context);
+        return self::record_attempt_event_for_context($attempt, $event_type, $context);
     }
 
     /**
@@ -613,10 +649,88 @@ class CBT_Security_Log
     public static function get_must_watch_attempts(int $limit = self::MUST_WATCH_DEFAULT_LIMIT, array $filters = []): array
     {
         self::maybe_prune_expired_logs();
+        $limit = max(1, min(self::MUST_WATCH_MAX_LIMIT, absint($limit)));
+        $redis_attempts = self::get_must_watch_attempts_from_live_counters($limit, $filters);
+        if (count($redis_attempts) >= $limit) {
+            return array_slice($redis_attempts, 0, $limit);
+        }
 
+        $mysql_attempts = self::get_must_watch_attempts_from_logs($limit, $filters);
+        if (empty($redis_attempts)) {
+            return $mysql_attempts;
+        }
+
+        $merged = [];
+        foreach ($redis_attempts as $attempt) {
+            $attempt_id = (int) ($attempt['attempt_id'] ?? 0);
+            if ($attempt_id > 0) {
+                $merged[$attempt_id] = $attempt;
+            }
+        }
+
+        foreach ($mysql_attempts as $attempt) {
+            $attempt_id = (int) ($attempt['attempt_id'] ?? 0);
+            if ($attempt_id <= 0 || isset($merged[$attempt_id])) {
+                continue;
+            }
+
+            $merged[$attempt_id] = $attempt;
+        }
+
+        $must_watch_attempts = array_values($merged);
+        self::sort_must_watch_attempt_rows($must_watch_attempts);
+
+        return array_slice($must_watch_attempts, 0, $limit);
+    }
+
+    /**
+     * @param array{teacher_id?:int} $filters
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_must_watch_attempts_from_live_counters(int $limit, array $filters): array
+    {
+        if (!class_exists('CBT_Security_Live_Counters') || !CBT_Security_Live_Counters::is_available()) {
+            return [];
+        }
+
+        $aggregated = [];
+        foreach (CBT_Security_Live_Counters::get_active_attempt_payloads($filters) as $attempt) {
+            $attempt_id = (int) ($attempt['attempt_id'] ?? 0);
+            if ($attempt_id <= 0) {
+                continue;
+            }
+
+            $aggregated[$attempt_id] = [
+                'attempt_id' => $attempt_id,
+                'exam_id' => (int) ($attempt['exam_id'] ?? 0),
+                'student_id' => (int) ($attempt['student_id'] ?? 0),
+                'student_name' => sanitize_text_field((string) ($attempt['student_name'] ?? '')),
+                'student_login' => sanitize_user((string) ($attempt['student_login'] ?? ''), true),
+                'student_kode_kelas' => sanitize_text_field((string) ($attempt['student_kode_kelas'] ?? '')),
+                'student_kode_ruang' => sanitize_text_field((string) ($attempt['student_kode_ruang'] ?? '')),
+                'exam_title' => sanitize_text_field((string) ($attempt['exam_title'] ?? '')),
+                'risk_score' => max(0.0, (float) ($attempt['risk_score'] ?? 0.0)),
+                'event_total' => max(0, (int) ($attempt['event_total'] ?? 0)),
+                'session_revoked_count' => max(0, (int) ($attempt['session_revoked_count'] ?? 0)),
+                'last_event_at' => trim((string) ($attempt['last_event_at'] ?? '')),
+                'last_device_type' => sanitize_key((string) ($attempt['last_device_type'] ?? 'unknown')),
+                'last_device_label' => sanitize_text_field((string) ($attempt['last_device_label'] ?? 'Unknown')),
+                'last_device_summary' => sanitize_text_field((string) ($attempt['last_device_summary'] ?? 'Unknown')),
+                'event_counts' => is_array($attempt['event_counts'] ?? null) ? $attempt['event_counts'] : [],
+            ];
+        }
+
+        return self::finalize_must_watch_attempts($aggregated, $limit);
+    }
+
+    /**
+     * @param array{teacher_id?:int} $filters
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_must_watch_attempts_from_logs(int $limit, array $filters): array
+    {
         global $wpdb;
 
-        $limit = max(1, min(self::MUST_WATCH_MAX_LIMIT, absint($limit)));
         $teacher_id = isset($filters['teacher_id']) ? absint($filters['teacher_id']) : 0;
         $risk_weights = self::must_watch_event_weights();
         $tracked_events = array_keys(array_filter($risk_weights, static function ($weight): bool {
@@ -707,23 +821,7 @@ class CBT_Security_Log
                 : ($student_login !== '' ? $student_login : ('User #' . (int) ($row['student_id'] ?? 0)));
             $student_kode_kelas = trim(sanitize_text_field((string) ($row['student_kode_kelas'] ?? '')));
             $student_kode_ruang = trim(sanitize_text_field((string) ($row['student_kode_ruang'] ?? '')));
-            $device_type = self::normalize_device_type((string) ($context['device_type'] ?? ''));
-            $device_platform = self::normalize_device_platform((string) ($context['device_platform'] ?? ''));
-            if ($device_type === '') {
-                $device_type = 'unknown';
-            }
-
-            $device_label = self::device_type_label($device_type);
-            $device_platform_label = self::device_platform_label($device_platform);
-            $viewport_width = isset($context['viewport_width']) ? absint($context['viewport_width']) : 0;
-            $viewport_height = isset($context['viewport_height']) ? absint($context['viewport_height']) : 0;
-            $device_summary_parts = [$device_label];
-            if ($device_platform_label !== '') {
-                $device_summary_parts[] = $device_platform_label;
-            }
-            if ($viewport_width > 0 && $viewport_height > 0) {
-                $device_summary_parts[] = $viewport_width . 'x' . $viewport_height;
-            }
+            $device_summary = self::build_device_summary_from_context($context, $event_type);
 
             if (!isset($aggregated[$attempt_id])) {
                 $aggregated[$attempt_id] = [
@@ -741,9 +839,9 @@ class CBT_Security_Log
                     'event_total' => 0,
                     'session_revoked_count' => 0,
                     'last_event_at' => '',
-                    'last_device_type' => 'unknown',
-                    'last_device_label' => 'Unknown',
-                    'last_device_summary' => 'Unknown',
+                    'last_device_type' => (string) ($device_summary['device_type'] ?? 'unknown'),
+                    'last_device_label' => (string) ($device_summary['device_label'] ?? 'Unknown'),
+                    'last_device_summary' => (string) ($device_summary['device_summary'] ?? 'Unknown'),
                     'event_counts' => [],
                 ];
             }
@@ -760,9 +858,9 @@ class CBT_Security_Log
                 || strcmp((string) $row['occurred_at'], (string) $aggregated[$attempt_id]['last_event_at']) > 0
             ) {
                 $aggregated[$attempt_id]['last_event_at'] = (string) ($row['occurred_at'] ?? '');
-                $aggregated[$attempt_id]['last_device_type'] = $device_type;
-                $aggregated[$attempt_id]['last_device_label'] = $device_label !== '' ? $device_label : 'Unknown';
-                $aggregated[$attempt_id]['last_device_summary'] = implode(' • ', $device_summary_parts);
+                $aggregated[$attempt_id]['last_device_type'] = (string) ($device_summary['device_type'] ?? 'unknown');
+                $aggregated[$attempt_id]['last_device_label'] = (string) ($device_summary['device_label'] ?? 'Unknown');
+                $aggregated[$attempt_id]['last_device_summary'] = (string) ($device_summary['device_summary'] ?? 'Unknown');
             }
 
             if (!isset($aggregated[$attempt_id]['event_counts'][$event_type])) {
@@ -785,6 +883,15 @@ class CBT_Security_Log
             }
         }
 
+        return self::finalize_must_watch_attempts($aggregated, $limit);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $aggregated
+     * @return array<int,array<string,mixed>>
+     */
+    private static function finalize_must_watch_attempts(array $aggregated, int $limit): array
+    {
         $must_watch_attempts = [];
 
         foreach ($aggregated as $attempt) {
@@ -806,11 +913,17 @@ class CBT_Security_Log
             $must_watch_attempts[] = $attempt;
         }
 
-        if (empty($must_watch_attempts)) {
-            return [];
-        }
+        self::sort_must_watch_attempt_rows($must_watch_attempts);
 
-        usort($must_watch_attempts, static function (array $left, array $right): int {
+        return array_slice($must_watch_attempts, 0, $limit);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $attempts
+     */
+    private static function sort_must_watch_attempt_rows(array &$attempts): void
+    {
+        usort($attempts, static function (array $left, array $right): int {
             $left_score = (float) ($left['risk_score'] ?? 0.0);
             $right_score = (float) ($right['risk_score'] ?? 0.0);
             if (abs($left_score - $right_score) > 0.0001) {
@@ -819,8 +932,6 @@ class CBT_Security_Log
 
             return strcmp((string) ($right['last_event_at'] ?? ''), (string) ($left['last_event_at'] ?? ''));
         });
-
-        return array_slice($must_watch_attempts, 0, $limit);
     }
 
     /**
@@ -880,19 +991,19 @@ class CBT_Security_Log
             return true;
         }
 
-        $inserted = self::insert_log($attempt, $event_type, $context);
+        $occurred_at = '';
+        $inserted = self::insert_log($attempt, $event_type, $context, $occurred_at);
         if (!$inserted) {
             return false;
         }
 
-        if ($event_type === 'fullscreen_exit') {
-            self::maybe_record_fullscreen_exit_repeat($attempt, $context);
-        }
+        $live_event_count = self::record_live_counter_event($attempt, $event_type, $context, $occurred_at);
+        self::maybe_record_repeat_event($attempt, $event_type, $context, $live_event_count);
 
         return true;
     }
 
-    private static function insert_log(array $attempt, string $event_type, array $context = []): bool
+    private static function insert_log(array $attempt, string $event_type, array $context = [], ?string &$occurred_at = null): bool
     {
         $event_type = sanitize_key($event_type);
         $definition = self::event_definitions()[$event_type] ?? null;
@@ -936,33 +1047,127 @@ class CBT_Security_Log
         return true;
     }
 
-    private static function maybe_record_fullscreen_exit_repeat(array $attempt, array $context = []): void
+    private static function record_live_counter_event(array $attempt, string $event_type, array $context, string $occurred_at): int
     {
+        if (!class_exists('CBT_Security_Live_Counters') || !CBT_Security_Live_Counters::is_available()) {
+            return 0;
+        }
+
+        if (strtolower((string) ($attempt['status'] ?? '')) !== 'in_progress') {
+            return 0;
+        }
+
+        $event_weight = self::get_event_risk_weight($event_type);
+        if ($event_weight <= 0) {
+            return 0;
+        }
+
+        $definition = self::event_definitions()[$event_type] ?? null;
+        if (!is_array($definition)) {
+            return 0;
+        }
+
+        $result = CBT_Security_Live_Counters::record_event(
+            $attempt,
+            $event_type,
+            $event_weight,
+            (string) ($definition['label'] ?? ucwords(str_replace('_', ' ', $event_type))),
+            $occurred_at,
+            self::build_live_counter_summary_snapshot($attempt, $context)
+        );
+
+        return max(0, (int) ($result['count'] ?? 0));
+    }
+
+    private static function maybe_record_repeat_event(array $attempt, string $event_type, array $context = [], int $live_event_count = 0): void
+    {
+        $repeat_config = self::repeat_threshold_config($event_type);
+        if ($repeat_config === null) {
+            return;
+        }
+
         $attempt_id = absint($attempt['id'] ?? 0);
         if ($attempt_id <= 0) {
             return;
         }
 
-        if (self::attempt_has_event_type($attempt_id, 'fullscreen_exit_repeat')) {
-            return;
+        $derived_event = (string) $repeat_config['derived_event'];
+        $count_context_key = (string) $repeat_config['count_context_key'];
+        $threshold = (int) ($repeat_config['threshold'] ?? 0);
+        $source = (string) ($repeat_config['source'] ?? '');
+
+        $use_live_counter = class_exists('CBT_Security_Live_Counters') && CBT_Security_Live_Counters::is_available();
+        if ($use_live_counter) {
+            if (CBT_Security_Live_Counters::has_derived_event($attempt_id, $derived_event)) {
+                return;
+            }
+
+            $event_count = $live_event_count;
+        } else {
+            if (self::attempt_has_event_type($attempt_id, $derived_event)) {
+                return;
+            }
+
+            $event_count = self::count_attempt_event_type($attempt_id, $event_type);
         }
 
-        $fullscreen_exit_count = self::count_attempt_event_type($attempt_id, 'fullscreen_exit');
-        if ($fullscreen_exit_count < self::FULLSCREEN_EXIT_REPEAT_THRESHOLD) {
+        if ($event_count < $threshold) {
             return;
         }
 
         $repeat_context = self::normalize_context(array_merge(
             $context,
             [
-                'source' => 'fullscreen_repeat_threshold',
-                'threshold' => self::FULLSCREEN_EXIT_REPEAT_THRESHOLD,
-                'fullscreen_exit_count' => $fullscreen_exit_count,
-                'trigger_event' => 'fullscreen_exit',
+                'source' => $source,
+                'threshold' => $threshold,
+                $count_context_key => $event_count,
+                'trigger_event' => $event_type,
             ]
         ));
 
-        self::insert_log($attempt, 'fullscreen_exit_repeat', $repeat_context);
+        $occurred_at = '';
+        if (!self::insert_log($attempt, $derived_event, $repeat_context, $occurred_at)) {
+            return;
+        }
+
+        if ($use_live_counter) {
+            CBT_Security_Live_Counters::mark_derived_event($attempt_id, $derived_event);
+            self::record_live_counter_event($attempt, $derived_event, $repeat_context, $occurred_at);
+        }
+    }
+
+    /**
+     * @return array{derived_event:string,threshold:int,source:string,count_context_key:string}|null
+     */
+    private static function repeat_threshold_config(string $event_type): ?array
+    {
+        $event_type = sanitize_key($event_type);
+
+        switch ($event_type) {
+            case 'fullscreen_exit':
+                return [
+                    'derived_event' => 'fullscreen_exit_repeat',
+                    'threshold' => self::FULLSCREEN_EXIT_REPEAT_THRESHOLD,
+                    'source' => 'fullscreen_repeat_threshold',
+                    'count_context_key' => 'fullscreen_exit_count',
+                ];
+            case 'tab_hidden':
+                return [
+                    'derived_event' => 'tab_hidden_repeat',
+                    'threshold' => self::TAB_HIDDEN_REPEAT_THRESHOLD,
+                    'source' => 'tab_hidden_repeat_threshold',
+                    'count_context_key' => 'tab_hidden_count',
+                ];
+            case 'window_blur':
+                return [
+                    'derived_event' => 'window_blur_repeat',
+                    'threshold' => self::WINDOW_BLUR_REPEAT_THRESHOLD,
+                    'source' => 'window_blur_repeat_threshold',
+                    'count_context_key' => 'window_blur_count',
+                ];
+        }
+
+        return null;
     }
 
     private static function count_attempt_event_type(int $attempt_id, string $event_type): int
@@ -1118,7 +1323,22 @@ class CBT_Security_Log
             return false;
         }
 
-        return $updated !== false;
+        if ($updated === false) {
+            return false;
+        }
+
+        if (class_exists('CBT_Security_Live_Counters') && CBT_Security_Live_Counters::is_available()) {
+            CBT_Security_Live_Counters::promote_event(
+                (int) ($attempt['id'] ?? 0),
+                'page_leave',
+                self::get_event_risk_weight('page_leave'),
+                'page_refresh',
+                self::get_event_risk_weight('page_refresh'),
+                (string) ($definition['label'] ?? 'Refresh halaman')
+            );
+        }
+
+        return true;
     }
 
     /**
@@ -1255,6 +1475,117 @@ class CBT_Security_Log
     }
 
     /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $context
+     * @return array<string,mixed>
+     */
+    private static function build_live_counter_summary_snapshot(array $attempt, array $context = []): array
+    {
+        $student_id = absint($attempt['student_id'] ?? 0);
+        $user = $student_id > 0 ? get_user_by('id', $student_id) : false;
+        $profile = class_exists('CBT_Student_Profile_Cache')
+            ? CBT_Student_Profile_Cache::get_snapshot($student_id)
+            : [
+                'kode_kelas' => '',
+                'kode_ruang' => '',
+            ];
+        $exam_meta = self::get_exam_live_meta((int) ($attempt['exam_id'] ?? 0));
+        $device_summary = self::build_device_summary_from_context($context, sanitize_key((string) ($context['event_type'] ?? '')));
+
+        return [
+            'teacher_id' => (int) ($attempt['teacher_id'] ?? ($exam_meta['teacher_id'] ?? 0)),
+            'student_name' => $user instanceof WP_User
+                ? ($user->display_name !== '' ? (string) $user->display_name : (string) $user->user_login)
+                : '',
+            'student_login' => $user instanceof WP_User ? (string) $user->user_login : '',
+            'student_kode_kelas' => sanitize_text_field((string) ($profile['kode_kelas'] ?? '')),
+            'student_kode_ruang' => sanitize_text_field((string) ($profile['kode_ruang'] ?? '')),
+            'exam_title' => sanitize_text_field((string) ($attempt['exam_title'] ?? ($exam_meta['exam_title'] ?? ''))),
+            'last_device_type' => (string) ($device_summary['device_type'] ?? 'unknown'),
+            'last_device_label' => (string) ($device_summary['device_label'] ?? 'Unknown'),
+            'last_device_summary' => (string) ($device_summary['device_summary'] ?? 'Unknown'),
+        ];
+    }
+
+    /**
+     * @return array{teacher_id:int,exam_title:string}
+     */
+    private static function get_exam_live_meta(int $exam_id): array
+    {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0) {
+            return [
+                'teacher_id' => 0,
+                'exam_title' => '',
+            ];
+        }
+
+        static $cache = [];
+        if (isset($cache[$exam_id])) {
+            return $cache[$exam_id];
+        }
+
+        global $wpdb;
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        try {
+            $row = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT id, title, created_by
+                     FROM {$exam_table}
+                     WHERE id = %d
+                     LIMIT 1",
+                    $exam_id
+                ),
+                ARRAY_A
+            );
+        } catch (Throwable $exception) {
+            $row = null;
+        }
+
+        $cache[$exam_id] = [
+            'teacher_id' => is_array($row) ? absint($row['created_by'] ?? 0) : 0,
+            'exam_title' => is_array($row) ? sanitize_text_field((string) ($row['title'] ?? '')) : '',
+        ];
+
+        return $cache[$exam_id];
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     * @return array{device_type:string,device_label:string,device_summary:string}
+     */
+    private static function build_device_summary_from_context(array $context, string $event_type = ''): array
+    {
+        $device_type = self::normalize_device_type((string) ($context['device_type'] ?? ''));
+        $device_platform = self::normalize_device_platform((string) ($context['device_platform'] ?? ''));
+        if ($device_type === '' && self::is_admin_event_type($event_type)) {
+            $device_type = 'server';
+        }
+        if ($device_type === '') {
+            $device_type = 'unknown';
+        }
+
+        $device_label = self::device_type_label($device_type);
+        $device_platform_label = self::device_platform_label($device_platform);
+        $viewport_width = isset($context['viewport_width']) ? absint($context['viewport_width']) : 0;
+        $viewport_height = isset($context['viewport_height']) ? absint($context['viewport_height']) : 0;
+        $device_summary_parts = [$device_label];
+        if ($device_platform_label !== '') {
+            $device_summary_parts[] = $device_platform_label;
+        }
+        if ($viewport_width > 0 && $viewport_height > 0) {
+            $device_summary_parts[] = $viewport_width . 'x' . $viewport_height;
+        }
+
+        return [
+            'device_type' => $device_type,
+            'device_label' => $device_label !== '' ? $device_label : 'Unknown',
+            'device_summary' => implode(' • ', $device_summary_parts),
+        ];
+    }
+
+    /**
      * @return array<string,float>
      */
     private static function must_watch_event_weights(): array
@@ -1265,6 +1596,7 @@ class CBT_Security_Log
             'page_refresh' => 0.5,
             'fullscreen_exit' => 4,
             'fullscreen_exit_repeat' => 5,
+            'tab_hidden_repeat' => 4,
             'tab_hidden' => 3,
             'idle_detected' => 2,
             'clipboard_blocked' => 2,
@@ -1274,6 +1606,7 @@ class CBT_Security_Log
             'view_source_blocked' => 4,
             'save_page_blocked' => 3,
             'heartbeat_lost' => 2,
+            'window_blur_repeat' => 3,
             'window_blur' => 2,
             'forbidden_process_detected' => 3,
             'forbidden_process_terminated' => 3,
@@ -1526,6 +1859,22 @@ class CBT_Security_Log
             }
         }
 
+        if ($event_type === 'tab_hidden_repeat') {
+            $tab_hidden_count = max(0, absint($context['tab_hidden_count'] ?? 0));
+            $threshold = max(0, absint($context['threshold'] ?? 0));
+            if ($tab_hidden_count > 0 && $threshold > 0) {
+                $parts[] = sprintf('Pindah tab tercatat %dx (ambang %d).', $tab_hidden_count, $threshold);
+            }
+        }
+
+        if ($event_type === 'window_blur_repeat') {
+            $window_blur_count = max(0, absint($context['window_blur_count'] ?? 0));
+            $threshold = max(0, absint($context['threshold'] ?? 0));
+            if ($window_blur_count > 0 && $threshold > 0) {
+                $parts[] = sprintf('Blur window tercatat %dx (ambang %d).', $window_blur_count, $threshold);
+            }
+        }
+
         return implode(' ', $parts);
     }
 
@@ -1563,6 +1912,8 @@ class CBT_Security_Log
             'save_page_shortcut' => 'Shortcut Save Page',
             'session_heartbeat' => 'Session heartbeat',
             'fullscreen_repeat_threshold' => 'Agregasi fullscreen berulang',
+            'tab_hidden_repeat_threshold' => 'Agregasi pindah tab berulang',
+            'window_blur_repeat_threshold' => 'Agregasi blur berulang',
             'insertfrompaste' => 'Paste ke input',
             'insertfrompasteasquotation' => 'Paste kutipan ke input',
             'deletebycut' => 'Cut dari input',

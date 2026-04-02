@@ -51,6 +51,7 @@ final class AdminResultsResetRuntimeCleanupTest extends TestCase
         self::assertSame([9], CBT_Cache::$invalidatedAnalyticsExamIds);
         self::assertSame([[31, 32]], CBT_UI_State::$clearedAttemptStatesByAttemptIds);
         self::assertSame([[7, 44]], CBT_UI_State::$clearedAttemptStates);
+        self::assertSame(44, CBT_Active_Attempt_Index::get_active_attempt_id(7, 9));
         self::assertStringContainsString('cbt_msg=Attempt+berhasil+di-reset.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
@@ -94,6 +95,8 @@ final class AdminResultsResetRuntimeCleanupTest extends TestCase
         self::assertSame([[7, 8]], CBT_Cache::$invalidatedUsersBatches);
         self::assertSame([9, 10], CBT_Cache::$invalidatedAnalyticsExamIdsBatch);
         self::assertSame([[44, 45, 31, 32, 33]], CBT_UI_State::$clearedAttemptStatesByAttemptIds);
+        self::assertSame(44, CBT_Active_Attempt_Index::get_active_attempt_id(7, 9));
+        self::assertSame(45, CBT_Active_Attempt_Index::get_active_attempt_id(8, 10));
         self::assertStringContainsString('cbt_msg=Berhasil+reset+2+attempt+sesuai+filter.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
@@ -194,7 +197,26 @@ PHP);
         CBT_UI_State::$clearedAttemptStates = [];
         CBT_UI_State::$clearedAttemptStatesByAttemptIds = [];
 
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-active-attempt-index.php';
+        $this->useFakeActiveAttemptRedisClient();
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-results-service.php';
+    }
+
+    private function useFakeActiveAttemptRedisClient(): void
+    {
+        $reflection = new ReflectionClass(CBT_Active_Attempt_Index::class);
+
+        $redisProperty = $reflection->getProperty('active_attempt_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('active_attempt_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('active_attempt_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
     }
 }
 

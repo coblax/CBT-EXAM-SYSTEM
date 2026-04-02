@@ -84,6 +84,82 @@ final class SecurityLogObservabilityTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_record_attempt_event_updates_live_summary_after_mysql_insert(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        update_option('cbt_setup_security', ['log_security_events' => 1]);
+        cbt_test_register_user([
+            'ID' => 71,
+            'user_login' => 'coblax',
+            'display_name' => 'Coblax Student',
+        ]);
+        update_user_meta(71, 'kode_kelas', 'X-A');
+        update_user_meta(71, 'kode_ruang', 'R1');
+        $this->useFakeLiveSecurityRedis();
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->attemptsById[10] = [
+            'id' => 10,
+            'exam_id' => 501,
+            'student_id' => 71,
+            'status' => 'in_progress',
+        ];
+        $wpdb->examRows[501] = [
+            'id' => 501,
+            'title' => 'Security Fixture',
+            'created_by' => 9,
+        ];
+
+        self::assertTrue(\CBT_Security_Log::record_attempt_event(10, 'window_blur', [
+            'source' => 'blur',
+            'device_type' => 'desktop',
+            'device_platform' => 'windows',
+        ]));
+
+        $payloads = \CBT_Security_Live_Counters::get_active_attempt_payloads();
+        self::assertCount(1, $payloads);
+        self::assertSame(10, $payloads[0]['attempt_id']);
+        self::assertEquals(2.0, $payloads[0]['risk_score']);
+        self::assertSame(1, $payloads[0]['event_total']);
+        self::assertSame('Coblax Student', $payloads[0]['student_name']);
+        self::assertSame('coblax', $payloads[0]['student_login']);
+        self::assertSame('X-A', $payloads[0]['student_kode_kelas']);
+        self::assertSame('R1', $payloads[0]['student_kode_ruang']);
+        self::assertSame('Security Fixture', $payloads[0]['exam_title']);
+        self::assertArrayHasKey('window_blur', $payloads[0]['event_counts']);
+        self::assertSame(1, $payloads[0]['event_counts']['window_blur']['count']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_insert_failure_does_not_touch_live_summary(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        update_option('cbt_setup_security', ['log_security_events' => 1]);
+        $this->useFakeLiveSecurityRedis();
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->insertShouldFail = true;
+        $wpdb->attemptsById[10] = [
+            'id' => 10,
+            'exam_id' => 501,
+            'student_id' => 71,
+            'status' => 'in_progress',
+        ];
+
+        self::assertFalse(\CBT_Security_Log::record_attempt_event(10, 'window_blur', [
+            'source' => 'blur',
+            'device_type' => 'desktop',
+        ]));
+        self::assertSame([], \CBT_Security_Live_Counters::get_active_attempt_payloads());
+    }
+
+    #[RunInSeparateProcess]
     public function test_get_recent_logs_builds_observability_message_display_and_server_context(): void
     {
         $this->bootstrapSecurityLogScaffold();
@@ -151,6 +227,7 @@ final class SecurityLogObservabilityTest extends TestCase
     {
         $this->bootstrapSecurityLogScaffold();
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+        $this->setLiveSecurityRedisUnavailable();
 
         global $wpdb;
         $wpdb = new SecurityLogFakeWpdb();
@@ -234,6 +311,172 @@ final class SecurityLogObservabilityTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_get_must_watch_attempts_prefers_live_counters_when_available(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        update_option('cbt_setup_security', ['log_security_events' => 1]);
+        cbt_test_register_user([
+            'ID' => 71,
+            'user_login' => 'alpha',
+            'display_name' => 'Alpha Student',
+        ]);
+        cbt_test_register_user([
+            'ID' => 72,
+            'user_login' => 'beta',
+            'display_name' => 'Beta Student',
+        ]);
+        update_user_meta(71, 'kode_kelas', 'X-A');
+        update_user_meta(71, 'kode_ruang', 'R1');
+        update_user_meta(72, 'kode_kelas', 'X-B');
+        update_user_meta(72, 'kode_ruang', 'R2');
+        $this->useFakeLiveSecurityRedis();
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->attemptsById[21] = [
+            'id' => 21,
+            'exam_id' => 501,
+            'student_id' => 71,
+            'status' => 'in_progress',
+        ];
+        $wpdb->attemptsById[22] = [
+            'id' => 22,
+            'exam_id' => 502,
+            'student_id' => 72,
+            'status' => 'in_progress',
+        ];
+        $wpdb->examRows[501] = [
+            'id' => 501,
+            'title' => 'Exam A',
+            'created_by' => 99,
+        ];
+        $wpdb->examRows[502] = [
+            'id' => 502,
+            'title' => 'Exam B',
+            'created_by' => 99,
+        ];
+
+        $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:00:00';
+        $GLOBALS['cbt_test_current_time_timestamp'] = 1774353600;
+        \CBT_Security_Log::record_attempt_event(21, 'session_revoked', ['device_type' => 'desktop']);
+        $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:01:00';
+        $GLOBALS['cbt_test_current_time_timestamp'] = 1774353660;
+        \CBT_Security_Log::record_attempt_event(21, 'clipboard_blocked', ['device_type' => 'desktop']);
+        $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:02:00';
+        $GLOBALS['cbt_test_current_time_timestamp'] = 1774353720;
+        \CBT_Security_Log::record_attempt_event(22, 'session_revoked', ['device_type' => 'mobile']);
+        $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:03:00';
+        $GLOBALS['cbt_test_current_time_timestamp'] = 1774353780;
+        \CBT_Security_Log::record_attempt_event(22, 'clipboard_blocked', ['device_type' => 'mobile']);
+
+        $attempts = \CBT_Security_Log::get_must_watch_attempts(2, ['teacher_id' => 99]);
+
+        self::assertCount(2, $attempts);
+        self::assertSame(22, $attempts[0]['attempt_id']);
+        self::assertSame(21, $attempts[1]['attempt_id']);
+        self::assertSame(0, $wpdb->mustWatchQueryCount);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_get_must_watch_attempts_supplements_live_counters_with_mysql_and_dedupes_attempt_id(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        update_option('cbt_setup_security', ['log_security_events' => 1]);
+        cbt_test_register_user([
+            'ID' => 71,
+            'user_login' => 'alpha',
+            'display_name' => 'Alpha Student',
+        ]);
+        update_user_meta(71, 'kode_kelas', 'X-A');
+        update_user_meta(71, 'kode_ruang', 'R1');
+        $this->useFakeLiveSecurityRedis();
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->attemptsById[21] = [
+            'id' => 21,
+            'exam_id' => 501,
+            'student_id' => 71,
+            'status' => 'in_progress',
+        ];
+        $wpdb->examRows[501] = [
+            'id' => 501,
+            'title' => 'Exam A',
+            'created_by' => 77,
+        ];
+
+        $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:00:00';
+        $GLOBALS['cbt_test_current_time_timestamp'] = 1774353600;
+        \CBT_Security_Log::record_attempt_event(21, 'session_revoked', ['device_type' => 'desktop']);
+        $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:01:00';
+        $GLOBALS['cbt_test_current_time_timestamp'] = 1774353660;
+        \CBT_Security_Log::record_attempt_event(21, 'clipboard_blocked', ['device_type' => 'desktop']);
+
+        $wpdb->mustWatchRows = [
+            [
+                'id' => 1,
+                'attempt_id' => 21,
+                'exam_id' => 501,
+                'student_id' => 71,
+                'event_type' => 'session_revoked',
+                'severity' => 'critical',
+                'message' => '',
+                'context_json' => wp_json_encode(['device_type' => 'desktop']),
+                'occurred_at' => '2026-03-24 12:01:00',
+                'student_display_name' => 'Shadow Row',
+                'student_login' => 'shadow',
+                'student_kode_kelas' => 'X-Z',
+                'student_kode_ruang' => 'R9',
+                'exam_title' => 'Shadow Exam',
+            ],
+            [
+                'id' => 2,
+                'attempt_id' => 22,
+                'exam_id' => 502,
+                'student_id' => 72,
+                'event_type' => 'session_revoked',
+                'severity' => 'critical',
+                'message' => '',
+                'context_json' => wp_json_encode(['device_type' => 'mobile']),
+                'occurred_at' => '2026-03-24 12:03:00',
+                'student_display_name' => 'B',
+                'student_login' => 'b',
+                'student_kode_kelas' => 'X-B',
+                'student_kode_ruang' => 'R2',
+                'exam_title' => 'Exam B',
+            ],
+            [
+                'id' => 3,
+                'attempt_id' => 22,
+                'exam_id' => 502,
+                'student_id' => 72,
+                'event_type' => 'clipboard_blocked',
+                'severity' => 'warning',
+                'message' => '',
+                'context_json' => wp_json_encode(['device_type' => 'mobile']),
+                'occurred_at' => '2026-03-24 12:04:00',
+                'student_display_name' => 'B',
+                'student_login' => 'b',
+                'student_kode_kelas' => 'X-B',
+                'student_kode_ruang' => 'R2',
+                'exam_title' => 'Exam B',
+            ],
+        ];
+
+        $attempts = \CBT_Security_Log::get_must_watch_attempts(2, ['teacher_id' => 77]);
+
+        self::assertCount(2, $attempts);
+        self::assertSame(22, $attempts[0]['attempt_id']);
+        self::assertSame(21, $attempts[1]['attempt_id']);
+        self::assertSame('Alpha Student', $attempts[1]['student_name']);
+        self::assertSame(1, $wpdb->mustWatchQueryCount);
+    }
+
+    #[RunInSeparateProcess]
     public function test_idle_detected_native_supported_catalog_and_source_label_are_registered(): void
     {
         $this->bootstrapSecurityLogScaffold();
@@ -268,12 +511,16 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertArrayHasKey('save_page_blocked', $browserCatalog);
         self::assertArrayHasKey('heartbeat_lost', $browserCatalog);
         self::assertArrayNotHasKey('fullscreen_exit_repeat', $browserCatalog);
+        self::assertArrayNotHasKey('tab_hidden_repeat', $browserCatalog);
+        self::assertArrayNotHasKey('window_blur_repeat', $browserCatalog);
         self::assertArrayHasKey('tab_hidden', $nativeCatalog);
         self::assertArrayHasKey('fullscreen_exit', $nativeCatalog);
         self::assertArrayHasKey('task_manager_blocked', $windowsCatalog);
         self::assertSame('Task Manager diblok', $windowsCatalog['task_manager_blocked']['label']);
         self::assertArrayNotHasKey('page_refresh', $nativeCatalog);
         self::assertSame('Pindah tab / aplikasi', $nativeCatalog['tab_hidden']['label']);
+        self::assertSame('Pindah tab berulang', $definitions['tab_hidden_repeat']['label']);
+        self::assertSame('Blur window berulang', $definitions['window_blur_repeat']['label']);
 
         $reflection = new \ReflectionClass(\CBT_Security_Log::class);
         $weightsMethod = $reflection->getMethod('must_watch_event_weights');
@@ -290,6 +537,8 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertSame(3, $weights['save_page_blocked']);
         self::assertSame(2, $weights['heartbeat_lost']);
         self::assertSame(5, $weights['fullscreen_exit_repeat']);
+        self::assertSame(4, $weights['tab_hidden_repeat']);
+        self::assertSame(3, $weights['window_blur_repeat']);
         self::assertSame(4, $weights['task_manager_blocked']);
         self::assertSame(5, $weights['exit_blocked']);
 
@@ -305,6 +554,8 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertSame('Shortcut Save Page', $sourceLabelMethod->invoke(null, 'save_page_shortcut', 'save_page_blocked'));
         self::assertSame('Session heartbeat', $sourceLabelMethod->invoke(null, 'session_heartbeat', 'heartbeat_lost'));
         self::assertSame('Agregasi fullscreen berulang', $sourceLabelMethod->invoke(null, 'fullscreen_repeat_threshold', 'fullscreen_exit_repeat'));
+        self::assertSame('Agregasi pindah tab berulang', $sourceLabelMethod->invoke(null, 'tab_hidden_repeat_threshold', 'tab_hidden_repeat'));
+        self::assertSame('Agregasi blur berulang', $sourceLabelMethod->invoke(null, 'window_blur_repeat_threshold', 'window_blur_repeat'));
     }
 
     #[RunInSeparateProcess]
@@ -364,6 +615,7 @@ final class SecurityLogObservabilityTest extends TestCase
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
 
         update_option('cbt_setup_security', ['log_security_events' => 1]);
+        $this->useFakeLiveSecurityRedis();
 
         global $wpdb;
         $wpdb = new SecurityLogFakeWpdb();
@@ -404,6 +656,57 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertSame(3, $repeatContext['threshold']);
         self::assertSame(3, $repeatContext['fullscreen_exit_count']);
         self::assertSame('fullscreen_exit', $repeatContext['trigger_event']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_tab_hidden_and_window_blur_repeat_are_recorded_once_when_threshold_is_reached(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        update_option('cbt_setup_security', ['log_security_events' => 1]);
+        $this->useFakeLiveSecurityRedis();
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->attemptsById[10] = [
+            'id' => 10,
+            'exam_id' => 51,
+            'student_id' => 9,
+            'status' => 'in_progress',
+        ];
+
+        for ($i = 0; $i < 4; $i++) {
+            \CBT_Security_Log::record_attempt_event(10, 'tab_hidden', [
+                'source' => 'visibilitychange',
+                'device_type' => 'desktop',
+            ]);
+            \CBT_Security_Log::record_attempt_event(10, 'window_blur', [
+                'source' => 'blur',
+                'device_type' => 'desktop',
+            ]);
+        }
+
+        $tabHiddenRepeatRows = array_values(array_filter($wpdb->insertedRows, static function (array $row): bool {
+            return (string) ($row['event_type'] ?? '') === 'tab_hidden_repeat';
+        }));
+        $windowBlurRepeatRows = array_values(array_filter($wpdb->insertedRows, static function (array $row): bool {
+            return (string) ($row['event_type'] ?? '') === 'window_blur_repeat';
+        }));
+
+        self::assertCount(1, $tabHiddenRepeatRows);
+        self::assertCount(1, $windowBlurRepeatRows);
+        self::assertSame('warning', $tabHiddenRepeatRows[0]['severity']);
+        self::assertSame('warning', $windowBlurRepeatRows[0]['severity']);
+
+        $tabHiddenContext = json_decode((string) $tabHiddenRepeatRows[0]['context_json'], true);
+        $windowBlurContext = json_decode((string) $windowBlurRepeatRows[0]['context_json'], true);
+        self::assertIsArray($tabHiddenContext);
+        self::assertIsArray($windowBlurContext);
+        self::assertSame('tab_hidden_repeat_threshold', $tabHiddenContext['source']);
+        self::assertSame(3, $tabHiddenContext['tab_hidden_count']);
+        self::assertSame('window_blur_repeat_threshold', $windowBlurContext['source']);
+        self::assertSame(3, $windowBlurContext['window_blur_count']);
     }
 
     #[RunInSeparateProcess]
@@ -565,6 +868,40 @@ final class SecurityLogObservabilityTest extends TestCase
     private function bootstrapSecurityLogScaffold(): void
     {
     }
+
+    private function useFakeLiveSecurityRedis(): void
+    {
+        $reflection = new \ReflectionClass(\CBT_Security_Live_Counters::class);
+
+        $redisProperty = $reflection->getProperty('live_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new \CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('live_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('live_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function setLiveSecurityRedisUnavailable(): void
+    {
+        $reflection = new \ReflectionClass(\CBT_Security_Live_Counters::class);
+
+        $redisProperty = $reflection->getProperty('live_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, false);
+
+        $attemptedProperty = $reflection->getProperty('live_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('live_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, 'disabled in mysql-only test');
+    }
 }
 
 class SecurityLogFakeWpdb extends \wpdb
@@ -587,6 +924,13 @@ class SecurityLogFakeWpdb extends \wpdb
     /** @var array<int,array<string,mixed>> */
     public array $updatedRows = [];
 
+    /** @var array<int,array<string,mixed>> */
+    public array $examRows = [];
+
+    public bool $insertShouldFail = false;
+
+    public int $mustWatchQueryCount = 0;
+
     public function prepare($query, ...$args): string
     {
         if (count($args) === 1 && is_array($args[0])) {
@@ -603,6 +947,10 @@ class SecurityLogFakeWpdb extends \wpdb
 
     public function insert($table, $data, $format = null): int|false
     {
+        if ($this->insertShouldFail) {
+            return false;
+        }
+
         $this->insertedRows[] = is_array($data) ? $data : [];
         return 1;
     }
@@ -636,6 +984,14 @@ class SecurityLogFakeWpdb extends \wpdb
 
     public function get_row($query, $output = ARRAY_A): ?array
     {
+        if (
+            preg_match('/FROM ' . preg_quote($this->prefix . 'cbt_exams', '/') . '/', (string) $query)
+            && preg_match('/WHERE id = (\d+)/', (string) $query, $matches)
+        ) {
+            $examId = (int) $matches[1];
+            return $this->examRows[$examId] ?? null;
+        }
+
         if (preg_match('/WHERE id = (\d+)/', (string) $query, $matches)) {
             $attemptId = (int) $matches[1];
             return $this->attemptsById[$attemptId] ?? null;
@@ -708,6 +1064,7 @@ class SecurityLogFakeWpdb extends \wpdb
     public function get_results($query, $output = ARRAY_A): array
     {
         if (str_contains((string) $query, "INNER JOIN {$this->prefix}cbt_attempts a ON a.id = l.attempt_id")) {
+            $this->mustWatchQueryCount++;
             return $this->mustWatchRows;
         }
 

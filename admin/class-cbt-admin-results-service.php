@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Active_Attempt_Index')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-active-attempt-index.php';
+}
+
 final class CBT_Admin_Results_Service
 {
     private const TEST_REDIRECT_SIGNAL = '__cbt_admin_results_redirect__';
@@ -823,6 +827,14 @@ final class CBT_Admin_Results_Service
             CBT_Cache::invalidate_attempts($abandoned_attempt_ids);
             CBT_UI_State::clear_attempt_states_by_attempt_ids($abandoned_attempt_ids);
         }
+        if (class_exists('CBT_Active_Attempt_Index')) {
+            CBT_Active_Attempt_Index::set_active_attempt([
+                'id' => $attempt_id,
+                'exam_id' => (int) ($attempt['exam_id'] ?? 0),
+                'student_id' => (int) ($attempt['student_id'] ?? 0),
+                'status' => 'in_progress',
+            ]);
+        }
         CBT_Cache::invalidate_attempt($attempt_id);
         CBT_Cache::invalidate_user((int) ($attempt['student_id'] ?? 0));
         CBT_Cache::invalidate_analytics();
@@ -1099,9 +1111,13 @@ final class CBT_Admin_Results_Service
             $target_attempt_ids[$attempt_id] = $attempt_id;
             $affected_user_ids[$student_id] = $student_id;
             $pair_key = $exam_id . ':' . $student_id;
+            $existing_target_attempt_id = isset($target_pairs[$pair_key]['target_attempt_id'])
+                ? (int) ($target_pairs[$pair_key]['target_attempt_id'] ?? 0)
+                : 0;
             $target_pairs[$pair_key] = [
                 'exam_id' => $exam_id,
                 'student_id' => $student_id,
+                'target_attempt_id' => max($attempt_id, $existing_target_attempt_id),
             ];
         }
         if (empty($target_attempt_ids)) {
@@ -1191,6 +1207,16 @@ final class CBT_Admin_Results_Service
             }
             foreach (array_values($target_attempt_ids) as $target_attempt_id) {
                 CBT_Runtime::clear_attempt_runtime((int) $target_attempt_id);
+            }
+        }
+        if (class_exists('CBT_Active_Attempt_Index')) {
+            foreach ($target_pairs as $pair) {
+                CBT_Active_Attempt_Index::set_active_attempt([
+                    'id' => (int) ($pair['target_attempt_id'] ?? 0),
+                    'exam_id' => (int) ($pair['exam_id'] ?? 0),
+                    'student_id' => (int) ($pair['student_id'] ?? 0),
+                    'status' => 'in_progress',
+                ]);
             }
         }
         $affected_attempt_ids = array_values(array_unique(array_merge(
