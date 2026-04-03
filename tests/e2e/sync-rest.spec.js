@@ -47,6 +47,11 @@ async function waitForAttemptAnswerCount(attemptId, expectedMinimum) {
 test.describe('Sync & REST flow check', () => {
     test.setTimeout(150000);
 
+    test.beforeEach(() => {
+        resetE2EFixture('sync_rest', 'primary_student');
+        resetE2EFixture('sync_rest', 'secondary_student');
+    });
+
     test('Sync Flow: start load submit finish result end to end', async ({ page, baseURL }) => {
         test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');
 
@@ -173,7 +178,7 @@ test.describe('Sync & REST flow check', () => {
             const normalAttempt = await prepareSyncAttempt(page, fixture);
             await answerCurrentSingleChoice(page, 0);
             await clickNextQuestion(page);
-            await answerCurrentSingleChoice(page, 1);
+            await answerCurrentSingleChoice(page, 0);
             const normalAnswers = await waitForAttemptAnswerCount(Number(normalAttempt.id), 2);
             expect(normalAnswers.length).toBe(2);
         });
@@ -200,7 +205,7 @@ test.describe('Sync & REST flow check', () => {
 
             await answerCurrentSingleChoice(page, 0);
             await clickNextQuestion(page);
-            await answerCurrentSingleChoice(page, 1);
+            await answerCurrentSingleChoice(page, 0);
             await waitForCondition(() => {
                 const answers = getE2EAttemptAnswers('sync_rest', Number(fallbackAttempt.id), 'primary_student');
                 if (Array.isArray(answers) && answers.length === 2) {
@@ -254,7 +259,32 @@ test.describe('Sync & REST flow check', () => {
 
             if (postRetryStage === 'exam') {
                 await page.locator('[data-action="collect"], [data-action="finish"]').first().click({ force: true });
-                await page.locator('[data-action="finish-confirm-submit"]').first().click({ force: true });
+                const postCollectStage = await waitForCondition(async () => {
+                    const resultShellVisible = await page.locator('.cbt-result-wrap').first().isVisible().catch(() => false);
+                    if (resultShellVisible) {
+                        return 'result';
+                    }
+
+                    const finishConfirmVisible = await page.locator('[data-action="finish-confirm-submit"]').first().isVisible().catch(() => false);
+                    if (finishConfirmVisible) {
+                        return 'confirm';
+                    }
+
+                    const examShellVisible = await page.locator('[data-cbt-exam-shell="1"]').first().isVisible().catch(() => false);
+                    if (examShellVisible) {
+                        return 'exam';
+                    }
+
+                    return null;
+                }, {
+                    timeoutMs: 20000,
+                    intervalMs: 250,
+                    errorMessage: 'Exam tidak kembali ke modal confirm atau result setelah retry finish.',
+                });
+
+                if (postCollectStage === 'confirm') {
+                    await page.locator('[data-action="finish-confirm-submit"]').first().click({ force: true });
+                }
             }
 
             await waitForCondition(async () => {

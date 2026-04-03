@@ -28,7 +28,7 @@ class CBT_Security_Live_Counters
     /**
      * @param array<string,mixed> $attempt
      * @param array<string,mixed> $summary_meta
-     * @return array{count:int}
+     * @return array{count:int,risk_score:float}
      */
     public static function record_event(
         array $attempt,
@@ -40,12 +40,12 @@ class CBT_Security_Live_Counters
     ): array {
         $attempt_id = absint($attempt['id'] ?? $attempt['attempt_id'] ?? 0);
         if ($attempt_id <= 0) {
-            return ['count' => 0];
+            return ['count' => 0, 'risk_score' => 0.0];
         }
 
         $redis = self::live_redis();
         if (!$redis instanceof Redis) {
-            return ['count' => 0];
+            return ['count' => 0, 'risk_score' => 0.0];
         }
 
         $summary = self::read_summary($redis, $attempt_id);
@@ -96,7 +96,10 @@ class CBT_Security_Live_Counters
         }
         $redis->zAdd(self::active_attempts_key(), self::datetime_to_score($summary['last_event_at']), (string) $attempt_id);
 
-        return ['count' => (int) $event['count']];
+        return [
+            'count' => (int) $event['count'],
+            'risk_score' => max(0.0, (float) ($summary['risk_score'] ?? 0.0)),
+        ];
     }
 
     public static function promote_event(
@@ -268,6 +271,32 @@ class CBT_Security_Live_Counters
             self::flags_storage_key($attempt_id)
         );
         $redis->zRem(self::active_attempts_key(), (string) $attempt_id);
+    }
+
+    public static function clear_all(): void
+    {
+        $redis = self::live_redis();
+        if (!$redis instanceof Redis) {
+            return;
+        }
+
+        $attempt_ids = $redis->zRange(self::active_attempts_key(), 0, -1);
+        if (is_array($attempt_ids)) {
+            foreach ($attempt_ids as $attempt_id_raw) {
+                $attempt_id = absint($attempt_id_raw);
+                if ($attempt_id <= 0) {
+                    continue;
+                }
+
+                $redis->del(
+                    self::summary_storage_key($attempt_id),
+                    self::events_storage_key($attempt_id),
+                    self::flags_storage_key($attempt_id)
+                );
+            }
+        }
+
+        $redis->del(self::active_attempts_key());
     }
 
     /**

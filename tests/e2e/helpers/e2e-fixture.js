@@ -135,6 +135,10 @@ function clearE2ESecurityLogs(payload = {}) {
     return runE2EFixtureAction('clear_security_logs', payload);
 }
 
+function clearE2ESecurityLiveState(payload = {}) {
+    return runE2EFixtureAction('clear_security_live_state', payload);
+}
+
 function syncE2ESubjectBankQuestionsToFixture(fixtureKey, payload = {}, userKey) {
     return runE2EFixtureAction('sync_subject_bank_questions_to_fixture', {
         fixture_key: fixtureKey,
@@ -160,6 +164,7 @@ function ageE2ELoginSession(userKey, secondsAgo) {
 module.exports = {
     ageE2ELoginSession,
     clearE2ESecurityLogs,
+    clearE2ESecurityLiveState,
     getE2EAttemptAnswers,
     getE2ECatalog,
     getE2EExamQuestions,

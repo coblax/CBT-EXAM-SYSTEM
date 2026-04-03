@@ -95,6 +95,61 @@ final class SecurityLiveCountersTest extends TestCase
         self::assertSame([], CBT_Security_Live_Counters::get_active_attempt_payloads());
     }
 
+    #[RunInSeparateProcess]
+    public function test_clear_all_clears_every_active_live_counter_attempt(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-live-counters.php';
+        $this->useFakeLiveRedis();
+
+        CBT_Security_Live_Counters::record_event(
+            [
+                'id' => 114,
+                'exam_id' => 501,
+                'student_id' => 71,
+                'status' => 'in_progress',
+            ],
+            'window_blur',
+            2.0,
+            'Fokus window berpindah',
+            '2026-03-24 12:00:00',
+            [
+                'teacher_id' => 7,
+                'student_name' => 'Student One',
+                'student_login' => 'student_one',
+                'student_kode_kelas' => 'X-A',
+                'student_kode_ruang' => 'R1',
+                'exam_title' => 'Security Fixture',
+            ]
+        );
+
+        CBT_Security_Live_Counters::record_event(
+            [
+                'id' => 115,
+                'exam_id' => 501,
+                'student_id' => 72,
+                'status' => 'in_progress',
+            ],
+            'clipboard_blocked',
+            8.0,
+            'Clipboard diblokir',
+            '2026-03-24 12:01:00',
+            [
+                'teacher_id' => 7,
+                'student_name' => 'Student Two',
+                'student_login' => 'student_two',
+                'student_kode_kelas' => 'X-B',
+                'student_kode_ruang' => 'R2',
+                'exam_title' => 'Security Fixture',
+            ]
+        );
+
+        self::assertCount(2, CBT_Security_Live_Counters::get_active_attempt_payloads());
+
+        CBT_Security_Live_Counters::clear_all();
+
+        self::assertSame([], CBT_Security_Live_Counters::get_active_attempt_payloads());
+    }
+
     private function useFakeLiveRedis(): void
     {
         $reflection = new ReflectionClass(CBT_Security_Live_Counters::class);

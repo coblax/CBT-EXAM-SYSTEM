@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const {
     getE2EFixture,
+    resetE2EFixture,
     shiftLatestE2EAttemptStart,
 } = require('./helpers/e2e-fixture');
 const {
@@ -25,6 +26,10 @@ async function prepareTimerAttempt(page, fixture) {
 
 test.describe('Timer & Lifecycle flow check', () => {
     test.setTimeout(180000);
+
+    test.beforeEach(() => {
+        resetE2EFixture('timer_lifecycle', 'primary_student');
+    });
 
     test('Timer Flow: near-timeout countdown transitions cleanly to result', async ({ page, baseURL }) => {
         test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');

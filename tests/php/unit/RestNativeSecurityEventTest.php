@@ -241,6 +241,51 @@ final class RestNativeSecurityEventTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_browser_security_event_updates_live_presence_when_context_contains_focus_signals(): void
+    {
+        $this->bootstrapNativeRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new RestNativeSecurityEventFakeWpdb([
+            114 => [
+                'id' => 114,
+                'exam_id' => 16,
+                'student_id' => 7,
+                'status' => 'in_progress',
+                'started_at' => '2026-03-26 21:00:00',
+                'extra_time_minutes' => 0,
+            ],
+        ]);
+        CBT_Live_Proctoring_Presence::$updates = [];
+
+        $response = \CBT_REST::security_event(new \WP_REST_Request(
+            [],
+            [
+                'attempt_id' => 114,
+                'event_type' => 'window_blur',
+                'context' => [
+                    'connection_status' => 'online',
+                    'has_focus' => 0,
+                    'heartbeat_lost_active' => 1,
+                    'pending_sync_count' => 2,
+                    'visibility_state' => 'hidden',
+                ],
+            ]
+        ));
+
+        self::assertIsArray($response);
+        self::assertSame(1, $response['logged']);
+        self::assertCount(1, CBT_Live_Proctoring_Presence::$updates);
+        self::assertSame(114, CBT_Live_Proctoring_Presence::$updates[0]['attempt']['id']);
+        self::assertSame('online', CBT_Live_Proctoring_Presence::$updates[0]['presence']['connection_status']);
+        self::assertSame('hidden', CBT_Live_Proctoring_Presence::$updates[0]['presence']['visibility_state']);
+        self::assertSame(0, CBT_Live_Proctoring_Presence::$updates[0]['presence']['has_focus']);
+        self::assertSame(2, CBT_Live_Proctoring_Presence::$updates[0]['presence']['pending_sync_count']);
+        self::assertSame(1, CBT_Live_Proctoring_Presence::$updates[0]['presence']['heartbeat_lost_active']);
+    }
+
+    #[RunInSeparateProcess]
     public function test_browser_security_event_accepts_new_browser_only_signals(): void
     {
         $this->bootstrapNativeRestScaffold();
@@ -512,6 +557,28 @@ class CBT_Security_Log
     public static function record_attempt_event_for_context(array $attempt, string $event_type, array $context = []): bool
     {
         return self::record_attempt_event((int) ($attempt['id'] ?? 0), $event_type, $context);
+    }
+}
+PHP);
+        }
+
+        if (!class_exists('CBT_Live_Proctoring_Presence')) {
+            eval(<<<'PHP'
+class CBT_Live_Proctoring_Presence
+{
+    public static array $updates = [];
+
+    public static function is_available(): bool
+    {
+        return true;
+    }
+
+    public static function update_attempt_presence(array $attempt, array $presence): void
+    {
+        self::$updates[] = [
+            'attempt' => $attempt,
+            'presence' => $presence,
+        ];
     }
 }
 PHP);

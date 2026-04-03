@@ -68,6 +68,48 @@ final class ViteAssetManifestCssTest extends TestCase
         );
     }
 
+    public function test_built_frontend_manifest_keeps_math_renderer_lazy(): void
+    {
+        $manifest_path = dirname(__DIR__, 3) . '/public/build/manifest.json';
+        self::assertFileExists($manifest_path);
+
+        $manifest = json_decode((string) file_get_contents($manifest_path), true);
+        self::assertIsArray($manifest);
+        self::assertArrayHasKey('src/frontend/main.js', $manifest);
+
+        $entry = $manifest['src/frontend/main.js'];
+        self::assertIsArray($entry);
+
+        $static_import_names = array_map(
+            static function ($import_key) use ($manifest): string {
+                if (!is_string($import_key) || !isset($manifest[$import_key]) || !is_array($manifest[$import_key])) {
+                    return '';
+                }
+
+                return (string) ($manifest[$import_key]['name'] ?? '');
+            },
+            is_array($entry['imports'] ?? null) ? $entry['imports'] : []
+        );
+
+        self::assertNotContains('math-render', $static_import_names);
+        self::assertNotContains('frontend-exam-runtime', $static_import_names);
+
+        $dynamic_import_names = array_map(
+            static function ($import_key) use ($manifest): string {
+                if (!is_string($import_key) || !isset($manifest[$import_key]) || !is_array($manifest[$import_key])) {
+                    return '';
+                }
+
+                return (string) ($manifest[$import_key]['name'] ?? '');
+            },
+            is_array($entry['dynamicImports'] ?? null) ? $entry['dynamicImports'] : []
+        );
+
+        self::assertContains('frontend-exam-runtime', $dynamic_import_names);
+        self::assertContains('frontend-stage-exam', $dynamic_import_names);
+        self::assertContains('frontend-stage-result', $dynamic_import_names);
+    }
+
     /**
      * @param array<int,mixed> $arguments
      */

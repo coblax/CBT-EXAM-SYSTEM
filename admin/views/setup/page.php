@@ -789,10 +789,174 @@
                 color: #5b6574;
                 line-height: 1.6;
             }
+            .cbt-setup-security-log-roster-region,
             .cbt-setup-security-log-watch-region,
             .cbt-setup-security-log-table-region {
                 display: grid;
                 gap: 16px;
+            }
+            .cbt-setup-security-log-roster {
+                display: grid;
+                gap: 14px;
+                padding: 18px;
+                border: 1px solid #d7e5f4;
+                border-radius: 18px;
+                background:
+                    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 34%),
+                    linear-gradient(180deg, #fbfdff 0%, #f4f8fd 100%);
+            }
+            .cbt-setup-security-log-roster-header {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 12px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-roster-header h3 {
+                margin: 0 0 4px;
+                font-size: 16px;
+                line-height: 1.2;
+                color: #111827;
+            }
+            .cbt-setup-security-log-roster-header p {
+                margin: 0;
+                color: #5b6574;
+                line-height: 1.55;
+            }
+            .cbt-setup-security-log-roster-empty {
+                padding: 14px 16px;
+                border: 1px dashed #b7cde6;
+                border-radius: 14px;
+                background: rgba(255, 255, 255, 0.7);
+                color: #38506a;
+                line-height: 1.55;
+            }
+            .cbt-setup-security-log-roster-groups {
+                display: grid;
+                gap: 14px;
+            }
+            .cbt-setup-security-log-roster-group {
+                display: grid;
+                gap: 12px;
+                padding: 16px;
+                border: 1px solid #d9e4f0;
+                border-radius: 16px;
+                background: rgba(255, 255, 255, 0.92);
+                box-shadow: 0 10px 24px rgba(15, 23, 42, 0.03);
+            }
+            .cbt-setup-security-log-roster-group-top {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 10px 12px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-roster-group-copy {
+                display: grid;
+                gap: 6px;
+                min-width: 0;
+            }
+            .cbt-setup-security-log-roster-group-title {
+                font-size: 14px;
+                font-weight: 700;
+                line-height: 1.35;
+                color: #0f172a;
+            }
+            .cbt-setup-security-log-roster-group-meta {
+                display: flex;
+                align-items: center;
+                gap: 6px 12px;
+                flex-wrap: wrap;
+                color: #475569;
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .cbt-setup-security-log-roster-group-counters {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+            }
+            .cbt-setup-security-log-roster-list {
+                display: grid;
+                gap: 10px;
+            }
+            .cbt-setup-security-log-roster-row {
+                display: grid;
+                gap: 8px;
+                padding: 12px 14px;
+                border: 1px solid #e2e8f0;
+                border-radius: 14px;
+                background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+            }
+            .cbt-setup-security-log-roster-row-top {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 8px 10px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-roster-row-copy {
+                display: grid;
+                gap: 2px;
+                min-width: 0;
+            }
+            .cbt-setup-security-log-roster-row-copy strong {
+                font-size: 13px;
+                line-height: 1.35;
+                color: #0f172a;
+            }
+            .cbt-setup-security-log-roster-row-copy span {
+                font-size: 12px;
+                color: #64748b;
+                line-height: 1.45;
+            }
+            .cbt-setup-security-log-roster-row-side {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+            }
+            .cbt-setup-security-log-roster-row-meta {
+                display: flex;
+                align-items: center;
+                gap: 6px 12px;
+                flex-wrap: wrap;
+                color: #475569;
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .cbt-setup-security-log-roster-row-indicators {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-roster-row-actions {
+                display: flex;
+                justify-content: flex-start;
+            }
+            .cbt-setup-security-log-watch-indicator.is-roster-stale {
+                border-color: #f6db9a;
+                background: #fff8e7;
+                color: #9a6700;
+            }
+            .cbt-setup-security-log-watch-indicator.is-roster-offline {
+                border-color: #d7dee9;
+                background: #f4f7fb;
+                color: #475569;
+            }
+            .cbt-setup-security-log-watch-indicator.is-roster-watch {
+                border-color: #f6db9a;
+                background: #fff6e2;
+                color: #9a6700;
+            }
+            .cbt-setup-security-log-watch-indicator.is-roster-risk {
+                border-color: #f3c0c0;
+                background: #fff1f1;
+                color: #b42318;
             }
             .cbt-setup-security-log-watch {
                 display: grid;
@@ -931,6 +1095,10 @@
                 gap: 7px;
                 min-width: 0;
             }
+            .cbt-setup-security-log-watch-item-groups {
+                display: grid;
+                gap: 10px;
+            }
             .cbt-setup-security-log-watch-item-student {
                 min-width: 0;
             }
@@ -965,12 +1133,55 @@
                 flex-wrap: wrap;
                 justify-content: flex-end;
             }
+            .cbt-setup-security-log-watch-item-group {
+                display: grid;
+                gap: 8px;
+                padding: 12px;
+                border: 1px solid #e2e8f0;
+                border-radius: 14px;
+                background: #ffffff;
+            }
+            .cbt-setup-security-log-watch-item-group.is-live {
+                border-color: #cfe2f8;
+                background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+            }
+            .cbt-setup-security-log-watch-item-group.is-history {
+                border-color: #e2e8f0;
+                background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            }
+            .cbt-setup-security-log-watch-item-group-label {
+                font-size: 11px;
+                font-weight: 700;
+                line-height: 1.2;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+            }
+            .cbt-setup-security-log-watch-item-group.is-live .cbt-setup-security-log-watch-item-group-label {
+                color: #1d4ed8;
+            }
+            .cbt-setup-security-log-watch-item-group.is-history .cbt-setup-security-log-watch-item-group-label {
+                color: #475569;
+            }
+            .cbt-setup-security-log-watch-item-group-meta {
+                display: flex;
+                align-items: center;
+                gap: 6px 12px;
+                flex-wrap: wrap;
+                color: #475569;
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .cbt-setup-security-log-watch-item-presence-indicators {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
             .cbt-setup-security-log-watch-item-indicators {
                 display: flex;
                 align-items: center;
                 gap: 8px;
                 flex-wrap: wrap;
-                margin-top: 2px;
             }
             .cbt-setup-security-log-watch-indicator {
                 display: inline-flex;
@@ -978,13 +1189,18 @@
                 flex: 0 0 auto;
                 min-height: 28px;
                 padding: 0 10px;
-                border: 1px solid #d7e4f5;
+                border: 1px solid #d7dee9;
                 border-radius: 999px;
-                background: #f8fbff;
-                color: #334155;
+                background: #f8fafc;
+                color: #475569;
                 font-size: 12px;
                 font-weight: 600;
                 white-space: nowrap;
+            }
+            .cbt-setup-security-log-watch-indicator.is-presence {
+                border-color: #cfe2f8;
+                background: #eef6ff;
+                color: #1d4ed8;
             }
             .cbt-setup-security-log-watch-item-actions {
                 display: grid;
@@ -1314,6 +1530,18 @@
                 background: #f8fafc;
                 color: #64748b;
             }
+            .cbt-setup-security-log-badge.is-presence-online {
+                background: #ecfdf5;
+                color: #15803d;
+            }
+            .cbt-setup-security-log-badge.is-presence-stale {
+                background: #fff7ed;
+                color: #c2410c;
+            }
+            .cbt-setup-security-log-badge.is-presence-offline {
+                background: #f1f5f9;
+                color: #475569;
+            }
             .cbt-setup-security-log-event-meta {
                 font-size: 12px;
                 color: #64748b;
@@ -1384,7 +1612,10 @@
                 .cbt-setup-security-log-toolbar-live,
                 .cbt-setup-security-log-toolbar-footer,
                 .cbt-setup-security-log-toolbar-actions,
-                .cbt-setup-security-log-watch-header {
+                .cbt-setup-security-log-watch-header,
+                .cbt-setup-security-log-roster-header,
+                .cbt-setup-security-log-roster-group-top,
+                .cbt-setup-security-log-roster-row-top {
                     flex-direction: column;
                     align-items: stretch;
                 }
@@ -1401,6 +1632,10 @@
                     padding-right: 0;
                 }
                 .cbt-setup-security-log-watch-item-side {
+                    justify-content: flex-start;
+                }
+                .cbt-setup-security-log-roster-group-counters,
+                .cbt-setup-security-log-roster-row-side {
                     justify-content: flex-start;
                 }
                 .cbt-setup-security-log-watch-item-actions {
@@ -1831,6 +2066,9 @@
                                     <span class="cbt-setup-card-chip" data-security-log-status-chip><?php echo $security_log_events_enabled ? 'Logging On' : 'Logging Off'; ?></span>
                                 </div>
                                 <div class="cbt-setup-security-log-body">
+                                    <div class="cbt-setup-security-log-roster-region" data-security-log-roster-region>
+                                        <?php CBT_Admin_Security_Page::render_security_log_live_roster_panel($security_live_roster_groups); ?>
+                                    </div>
                                     <div class="cbt-setup-security-log-watch-region" data-security-log-watch-region>
                                         <?php CBT_Admin_Security_Page::render_security_log_must_watch_panel($security_log_must_watch_attempts); ?>
                                     </div>
@@ -3141,6 +3379,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                     var focusLabel = document.getElementById('cbt-setup-security-log-focus-label');
                     var focusClearButton = document.getElementById('cbt-setup-security-log-focus-clear');
                     var securityLogPanel = document.getElementById('cbt-setup-panel-security-log');
+                    var rosterRegion = card ? card.querySelector('[data-security-log-roster-region]') : null;
                     var watchRegion = card ? card.querySelector('[data-security-log-watch-region]') : null;
                     var tableRegion = card ? card.querySelector('[data-security-log-table-region]') : null;
                     var deleteScopeInput = card ? card.querySelector('[data-security-log-delete-scope]') : null;
@@ -3652,6 +3891,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                             .then(function (html) {
                                 var parser = new window.DOMParser();
                                 var nextDocument = parser.parseFromString(html, 'text/html');
+                                var nextRosterRegion = nextDocument.querySelector('[data-security-log-roster-region]');
                                 var nextWatchRegion = nextDocument.querySelector('[data-security-log-watch-region]');
                                 var nextTableRegion = nextDocument.querySelector('[data-security-log-table-region]');
                                 var nextStatusChip = nextDocument.querySelector('[data-security-log-status-chip]');
@@ -3659,6 +3899,10 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
 
                                 if (!nextTableRegion) {
                                     throw new Error('Blok log tidak ditemukan.');
+                                }
+
+                                if (rosterRegion && nextRosterRegion) {
+                                    rosterRegion.innerHTML = nextRosterRegion.innerHTML;
                                 }
 
                                 if (watchRegion && nextWatchRegion) {

@@ -235,6 +235,35 @@ describe('createSessionHeartbeatManager', function () {
         expect(fixture.calls.refreshAttemptQuestionRevision).toEqual([]);
     });
 
+    it('sends live presence fields on exam heartbeat requests', async function () {
+        var fixture = createHeartbeatFixture({
+            hasDocumentFocus: false,
+            state: {
+                connectionStatus: 'degraded',
+                heartbeatLostActive: true,
+                pendingSyncCount: 3
+            },
+            visibilityState: 'hidden'
+        });
+
+        await fixture.manager.run();
+
+        expect(fixture.calls.apiRequest).toHaveLength(1);
+        expect(fixture.calls.apiRequest[0]).toEqual({
+            options: {
+                query: {
+                    attempt_id: 55,
+                    presence_connection_status: 'degraded',
+                    presence_has_focus: 0,
+                    presence_heartbeat_lost_active: 1,
+                    presence_pending_sync_count: 3,
+                    presence_visibility_state: 'hidden'
+                }
+            },
+            path: 'session'
+        });
+    });
+
     it('refreshes question runtime when heartbeat detects question count drift', async function () {
         var fixture = createHeartbeatFixture({
             apiRequest: async function () {

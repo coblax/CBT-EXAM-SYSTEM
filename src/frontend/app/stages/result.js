@@ -21,11 +21,12 @@ export function createResultStageRenderer(deps) {
         return clampPercent(value).toFixed(2).replace(/\.00$/, '');
     }
 
-    function buildResultBreakdown(totalQuestions, correctQuestions, wrongQuestions, unansweredQuestions, manualQuestions) {
+    function buildResultBreakdown(totalQuestions, correctQuestions, wrongQuestions, unansweredQuestions, manualQuestions, gradedQuestions) {
         var normalizedTotal = Math.max(
             Number(totalQuestions) || 0,
             (Number(correctQuestions) || 0) +
             (Number(wrongQuestions) || 0) +
+            (Number(gradedQuestions) || 0) +
             (Number(unansweredQuestions) || 0) +
             (Number(manualQuestions) || 0),
             1
@@ -47,6 +48,15 @@ export function createResultStageRenderer(deps) {
                 label: 'Salah',
                 value: Number(wrongQuestions) || 0,
                 className: 'is-wrong'
+            });
+        }
+
+        if ((Number(gradedQuestions) || 0) > 0) {
+            segments.push({
+                key: 'graded',
+                label: 'Dinilai',
+                value: Number(gradedQuestions) || 0,
+                className: 'is-graded'
             });
         }
 
@@ -189,6 +199,7 @@ export function createResultStageRenderer(deps) {
             : (reviewItems.length || Number(resultExam && resultExam.total_questions !== undefined ? resultExam.total_questions : 0));
         var correctQuestions = reviewSummary ? Number(reviewSummary.correct_questions) || 0 : 0;
         var wrongQuestions = reviewSummary ? Number(reviewSummary.wrong_questions) || 0 : 0;
+        var gradedQuestions = reviewSummary ? Number(reviewSummary.graded_questions) || 0 : 0;
         var unansweredQuestions = reviewSummary ? Number(reviewSummary.unanswered_questions) || 0 : 0;
         var manualQuestions = reviewSummary ? Number(reviewSummary.manual_questions) || 0 : 0;
         var pendingEssayQuestions = 0;
@@ -210,7 +221,8 @@ export function createResultStageRenderer(deps) {
             correctQuestions,
             wrongQuestions,
             unansweredQuestions,
-            manualQuestions
+            manualQuestions,
+            gradedQuestions
         );
         var progressSegmentsMarkup = breakdown.segments.map(function (segment) {
             return '<span class="cbt-result-progress-segment ' +

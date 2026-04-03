@@ -380,6 +380,73 @@ final class SecurityLogObservabilityTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_get_must_watch_attempts_overlays_live_presence_snapshot(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        update_option('cbt_setup_security', ['log_security_events' => 1]);
+        cbt_test_register_user([
+            'ID' => 71,
+            'user_login' => 'alpha',
+            'display_name' => 'Alpha Student',
+        ]);
+        update_user_meta(71, 'kode_kelas', 'X-A');
+        update_user_meta(71, 'kode_ruang', 'R1');
+        $this->useFakeLiveSecurityRedis();
+        $this->useFakePresenceRedis();
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->attemptsById[21] = [
+            'id' => 21,
+            'exam_id' => 501,
+            'student_id' => 71,
+            'status' => 'in_progress',
+        ];
+        $wpdb->examRows[501] = [
+            'id' => 501,
+            'title' => 'Exam A',
+            'created_by' => 99,
+        ];
+
+        $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:00:00';
+        $GLOBALS['cbt_test_current_time_timestamp'] = strtotime('2026-03-24 12:00:00');
+        \CBT_Security_Log::record_attempt_event(21, 'session_revoked', ['device_type' => 'desktop']);
+        $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:01:00';
+        $GLOBALS['cbt_test_current_time_timestamp'] = strtotime('2026-03-24 12:01:00');
+        \CBT_Security_Log::record_attempt_event(21, 'clipboard_blocked', ['device_type' => 'desktop']);
+
+        \CBT_Live_Proctoring_Presence::update_attempt_presence(
+            [
+                'id' => 21,
+                'exam_id' => 501,
+                'student_id' => 71,
+                'status' => 'in_progress',
+            ],
+            [
+                'last_seen_at' => '2026-03-24 12:00:40',
+                'connection_status' => 'degraded',
+                'visibility_state' => 'hidden',
+                'has_focus' => 0,
+                'pending_sync_count' => 2,
+                'heartbeat_lost_active' => 1,
+            ]
+        );
+
+        $attempts = \CBT_Security_Log::get_must_watch_attempts(1, ['teacher_id' => 99]);
+
+        self::assertCount(1, $attempts);
+        self::assertSame('online', $attempts[0]['presence_status']);
+        self::assertSame('2026-03-24 12:00:40', $attempts[0]['presence_last_seen_at']);
+        self::assertSame('degraded', $attempts[0]['presence_connection_status']);
+        self::assertSame('hidden', $attempts[0]['presence_visibility_state']);
+        self::assertSame(0, $attempts[0]['presence_has_focus']);
+        self::assertSame(2, $attempts[0]['presence_pending_sync_count']);
+        self::assertSame(1, $attempts[0]['presence_heartbeat_lost_active']);
+    }
+
+    #[RunInSeparateProcess]
     public function test_get_must_watch_attempts_supplements_live_counters_with_mysql_and_dedupes_attempt_id(): void
     {
         $this->bootstrapSecurityLogScaffold();
@@ -515,6 +582,8 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertArrayNotHasKey('window_blur_repeat', $browserCatalog);
         self::assertArrayHasKey('tab_hidden', $nativeCatalog);
         self::assertArrayHasKey('fullscreen_exit', $nativeCatalog);
+        self::assertArrayHasKey('tab_hidden', $windowsCatalog);
+        self::assertArrayHasKey('fullscreen_exit', $windowsCatalog);
         self::assertArrayHasKey('task_manager_blocked', $windowsCatalog);
         self::assertSame('Task Manager diblok', $windowsCatalog['task_manager_blocked']['label']);
         self::assertArrayNotHasKey('page_refresh', $nativeCatalog);
@@ -882,6 +951,23 @@ final class SecurityLogObservabilityTest extends TestCase
         $attemptedProperty->setValue(null, true);
 
         $errorProperty = $reflection->getProperty('live_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakePresenceRedis(): void
+    {
+        $reflection = new \ReflectionClass(\CBT_Live_Proctoring_Presence::class);
+
+        $redisProperty = $reflection->getProperty('presence_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new \CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('presence_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('presence_redis_last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, '');
     }

@@ -8,6 +8,10 @@ if (!class_exists('CBT_Active_Attempt_Index')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-active-attempt-index.php';
 }
 
+if (!class_exists('CBT_Live_Proctoring_Presence')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-live-proctoring-presence.php';
+}
+
 final class CBT_Admin_Results_Service
 {
     private const TEST_REDIRECT_SIGNAL = '__cbt_admin_results_redirect__';
@@ -194,6 +198,7 @@ final class CBT_Admin_Results_Service
         $attempt_sql_params = array_merge($attempt_where_params, [$results_per_page, $offset]);
         $attempt_sql = $wpdb->prepare($attempt_sql, $attempt_sql_params);
         $attempts = $wpdb->get_results($attempt_sql, ARRAY_A);
+        $attempts = self::overlay_attempt_presence_payloads((array) $attempts);
         $attempt_answer_progress_map = CBT_Admin_Results_Helper::build_attempt_answer_progress_map(
             $attempts,
             $question_table,
@@ -308,6 +313,133 @@ final class CBT_Admin_Results_Service
         return get_defined_vars();
     }
 
+    /**
+     * @param array<int,array<string,mixed>> $attempts
+     * @return array<int,array<string,mixed>>
+     */
+    private static function overlay_attempt_presence_payloads(array $attempts): array
+    {
+        if (empty($attempts) || !class_exists('CBT_Live_Proctoring_Presence')) {
+            return $attempts;
+        }
+
+        $in_progress_attempt_ids = [];
+        foreach ($attempts as $attempt) {
+            if (!is_array($attempt) || strtolower(trim((string) ($attempt['status'] ?? ''))) !== 'in_progress') {
+                continue;
+            }
+
+            $attempt_id = absint($attempt['id'] ?? 0);
+            if ($attempt_id > 0) {
+                $in_progress_attempt_ids[$attempt_id] = $attempt_id;
+            }
+        }
+
+        if (empty($in_progress_attempt_ids)) {
+            return $attempts;
+        }
+
+        $presence_payloads = CBT_Live_Proctoring_Presence::get_attempt_payloads(array_values($in_progress_attempt_ids));
+        if (!is_array($presence_payloads) || empty($presence_payloads)) {
+            return $attempts;
+        }
+
+        foreach ($attempts as $index => $attempt) {
+            if (!is_array($attempt) || strtolower(trim((string) ($attempt['status'] ?? ''))) !== 'in_progress') {
+                continue;
+            }
+
+            $attempt_id = absint($attempt['id'] ?? 0);
+            if ($attempt_id <= 0 || !isset($presence_payloads[$attempt_id]) || !is_array($presence_payloads[$attempt_id])) {
+                continue;
+            }
+
+            $payload = $presence_payloads[$attempt_id];
+            $attempts[$index]['presence_status'] = sanitize_key((string) ($payload['presence_status'] ?? ''));
+            $attempts[$index]['presence_last_seen_at'] = trim((string) ($payload['last_seen_at'] ?? ''));
+            $attempts[$index]['presence_connection_status'] = strtolower(trim((string) ($payload['connection_status'] ?? '')));
+            $attempts[$index]['presence_visibility_state'] = strtolower(trim((string) ($payload['visibility_state'] ?? '')));
+            $attempts[$index]['presence_has_focus'] = array_key_exists('has_focus', $payload) && $payload['has_focus'] !== null
+                ? (int) $payload['has_focus']
+                : null;
+            $attempts[$index]['presence_pending_sync_count'] = max(0, (int) ($payload['pending_sync_count'] ?? 0));
+            $attempts[$index]['presence_heartbeat_lost_active'] = !empty($payload['heartbeat_lost_active']) ? 1 : 0;
+        }
+
+        return $attempts;
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     */
+    public static function render_attempt_student_presence_monitor(array $attempt): string
+    {
+        $presence_status = sanitize_key((string) ($attempt['presence_status'] ?? ''));
+        if (!in_array($presence_status, ['online', 'stale', 'offline'], true)) {
+            $presence_status = '';
+        }
+
+        $attempt_status = strtolower(trim((string) ($attempt['status'] ?? '')));
+        $presence_last_seen_at = trim((string) ($attempt['presence_last_seen_at'] ?? ''));
+        $presence_connection_status = strtolower(trim((string) ($attempt['presence_connection_status'] ?? '')));
+        $presence_visibility_state = strtolower(trim((string) ($attempt['presence_visibility_state'] ?? '')));
+        $presence_has_focus = array_key_exists('presence_has_focus', $attempt) && $attempt['presence_has_focus'] !== null
+            ? (int) $attempt['presence_has_focus']
+            : -1;
+        $presence_pending_sync_count = max(0, (int) ($attempt['presence_pending_sync_count'] ?? 0));
+        $presence_heartbeat_lost_active = !empty($attempt['presence_heartbeat_lost_active']);
+        $presence_indicators = [];
+
+        if ($presence_pending_sync_count > 0) {
+            $presence_indicators[] = 'Sync ' . $presence_pending_sync_count;
+        }
+        if ($presence_visibility_state === 'hidden') {
+            $presence_indicators[] = 'Hidden';
+        }
+        if ($presence_has_focus === 0) {
+            $presence_indicators[] = 'Focus Off';
+        }
+        if ($presence_heartbeat_lost_active) {
+            $presence_indicators[] = 'Heartbeat';
+        }
+        if ($presence_connection_status !== '' && $presence_connection_status !== 'online') {
+            $presence_indicators[] = 'Conn ' . strtoupper(str_replace('_', ' ', $presence_connection_status));
+        }
+
+        $has_presence_monitor = $attempt_status === 'in_progress'
+            && ($presence_status !== '' || $presence_last_seen_at !== '' || !empty($presence_indicators));
+        if (!$has_presence_monitor) {
+            return '';
+        }
+
+        $presence_status_label = $presence_status === 'online'
+            ? 'Online'
+            : ($presence_status === 'stale' ? 'Stale' : ($presence_status === 'offline' ? 'Offline' : ''));
+
+        ob_start();
+        ?>
+        <div class="cbt-results-student-monitor" aria-label="Monitoring live siswa">
+            <?php if ($presence_status !== ''): ?>
+                <span class="cbt-results-student-monitor-badge is-<?php echo esc_attr($presence_status); ?>"><?php echo esc_html($presence_status_label); ?></span>
+            <?php endif; ?>
+            <?php if ($presence_last_seen_at !== ''): ?>
+                <span class="cbt-results-student-monitor-meta">
+                    <strong>Seen:</strong> <?php echo esc_html($presence_last_seen_at); ?>
+                </span>
+            <?php endif; ?>
+            <?php if (!empty($presence_indicators)): ?>
+                <div class="cbt-results-student-monitor-chips">
+                    <?php foreach ($presence_indicators as $presence_indicator): ?>
+                        <span class="cbt-results-student-monitor-chip"><?php echo esc_html($presence_indicator); ?></span>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        <?php
+
+        return (string) ob_get_clean();
+    }
+
     public static function handle_grade_essay(): void
     {
         if (!current_user_can('cbt_grade_essay')) {
@@ -364,11 +496,12 @@ final class CBT_Admin_Results_Service
                 $wpdb->update(
                     $answer_table,
                     [
+                        'is_correct' => 0,
                         'score_awarded' => $score_awarded,
                         'updated_at' => current_time('mysql'),
                     ],
                     ['id' => $answer_id],
-                    ['%f', '%s'],
+                    ['%d', '%f', '%s'],
                     ['%d']
                 );
 

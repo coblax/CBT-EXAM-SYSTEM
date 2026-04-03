@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Live_Attempt_Roster_Index')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-live-attempt-roster-index.php';
+}
+
 final class CBT_Admin_Security_Service
 {
     private const SECURITY_OPTION_KEY = 'cbt_setup_security';
@@ -80,6 +84,11 @@ final class CBT_Admin_Security_Service
         $security_log_event_definitions = CBT_Security_Log::event_definitions();
 
         $teacher_scope = self::is_admin_scope() ? 0 : get_current_user_id();
+        $security_live_roster_groups = class_exists('CBT_Live_Attempt_Roster_Index')
+            ? CBT_Live_Attempt_Roster_Index::get_grouped_payloads([
+                'teacher_id' => $teacher_scope,
+            ])
+            : [];
         $security_log_must_watch_attempts = CBT_Security_Log::get_must_watch_attempts(5, [
             'teacher_id' => $teacher_scope,
         ]);
@@ -124,6 +133,7 @@ final class CBT_Admin_Security_Service
             'security_log_events_enabled',
             'security_must_watch_high_risk_threshold',
             'security_must_watch_score_threshold',
+            'security_live_roster_groups',
             'security_log_must_watch_attempts',
             'security_logs'
         );

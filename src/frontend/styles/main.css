@@ -7,8 +7,5 @@
 @import './responsive.css';
 @import './shell-tuning.css';
 @import './login-stage-tuning.css';
-@import './exam-result-tuning.css';
 @import './theme-dark.css';
-@import './editor-theme-core.css';
-@import './editor-theme-responsive.css';
 @import './confirm-card.css';

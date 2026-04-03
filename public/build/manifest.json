@@ -1,6 +1,17 @@
 {
-  "_frontend-feature-calculator-7YQ2590S.js": {
-    "file": "assets/frontend-feature-calculator-7YQ2590S.js",
+  "_frontend-exam-runtime-DTUYrg-5.js": {
+    "file": "assets/frontend-exam-runtime-DTUYrg-5.js",
+    "name": "frontend-exam-runtime",
+    "imports": [
+      "_rolldown-runtime-WNZMJCWm.js"
+    ]
+  },
+  "_frontend-feature-calculator-BzSqRsRa.css": {
+    "file": "assets/frontend-feature-calculator-BzSqRsRa.css",
+    "src": "_frontend-feature-calculator-BzSqRsRa.css"
+  },
+  "_frontend-feature-calculator-CuFD8t3I.js": {
+    "file": "assets/frontend-feature-calculator-CuFD8t3I.js",
     "name": "frontend-feature-calculator",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js"
@@ -9,47 +20,50 @@
       "assets/frontend-feature-calculator-BzSqRsRa.css"
     ]
   },
-  "_frontend-feature-calculator-BzSqRsRa.css": {
-    "file": "assets/frontend-feature-calculator-BzSqRsRa.css",
-    "src": "_frontend-feature-calculator-BzSqRsRa.css"
-  },
-  "_frontend-shared-review-B5HYgP-S.js": {
-    "file": "assets/frontend-shared-review-B5HYgP-S.js",
+  "_frontend-shared-review-nUDeat-X.js": {
+    "file": "assets/frontend-shared-review-nUDeat-X.js",
     "name": "frontend-shared-review"
   },
-  "_frontend-stage-exam-CtQIwcHV.css": {
-    "file": "assets/frontend-stage-exam-CtQIwcHV.css",
-    "src": "_frontend-stage-exam-CtQIwcHV.css"
-  },
-  "_frontend-stage-exam-WuCp5DIX.js": {
-    "file": "assets/frontend-stage-exam-WuCp5DIX.js",
+  "_frontend-stage-exam-CEfGu-DF.js": {
+    "file": "assets/frontend-stage-exam-CEfGu-DF.js",
     "name": "frontend-stage-exam",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
-      "_frontend-shared-review-B5HYgP-S.js"
+      "_frontend-shared-review-nUDeat-X.js"
     ],
     "css": [
-      "assets/frontend-stage-exam-CtQIwcHV.css"
+      "assets/frontend-stage-exam-DmHxA_Qt.css"
     ]
   },
-  "_frontend-stage-result-DM-sYiqP.js": {
-    "file": "assets/frontend-stage-result-DM-sYiqP.js",
+  "_frontend-stage-exam-DmHxA_Qt.css": {
+    "file": "assets/frontend-stage-exam-DmHxA_Qt.css",
+    "src": "_frontend-stage-exam-DmHxA_Qt.css"
+  },
+  "_frontend-stage-result-BZConbjg.js": {
+    "file": "assets/frontend-stage-result-BZConbjg.js",
     "name": "frontend-stage-result",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
-      "_frontend-shared-review-B5HYgP-S.js"
+      "_frontend-shared-review-nUDeat-X.js"
     ],
     "css": [
-      "assets/frontend-stage-result-GDNP2xWi.css"
+      "assets/frontend-stage-result-DnwzfkFw.css"
     ]
   },
-  "_frontend-stage-result-GDNP2xWi.css": {
-    "file": "assets/frontend-stage-result-GDNP2xWi.css",
-    "src": "_frontend-stage-result-GDNP2xWi.css"
+  "_frontend-stage-result-DnwzfkFw.css": {
+    "file": "assets/frontend-stage-result-DnwzfkFw.css",
+    "src": "_frontend-stage-result-DnwzfkFw.css"
   },
-  "_math-render-DuLmCooL.js": {
-    "file": "assets/math-render-DuLmCooL.js",
+  "_math-render-DvP1Qxaf.css": {
+    "file": "assets/math-render-DvP1Qxaf.css",
+    "src": "_math-render-DvP1Qxaf.css"
+  },
+  "_math-render-z4EJh76n.js": {
+    "file": "assets/math-render-z4EJh76n.js",
     "name": "math-render",
+    "imports": [
+      "_rolldown-runtime-WNZMJCWm.js"
+    ],
     "css": [
       "assets/math-render-DvP1Qxaf.css"
     ],
@@ -115,141 +129,37 @@
       "assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf"
     ]
   },
-  "_math-render-DvP1Qxaf.css": {
-    "file": "assets/math-render-DvP1Qxaf.css",
-    "src": "_math-render-DvP1Qxaf.css"
-  },
   "_rolldown-runtime-WNZMJCWm.js": {
     "file": "assets/rolldown-runtime-WNZMJCWm.js",
     "name": "rolldown-runtime"
-  },
-  "node_modules/@fontsource/lexend/files/lexend-latin-500-normal.woff": {
-    "file": "assets/lexend-latin-500-normal-D9x1QWTH.woff",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-500-normal.woff"
-  },
-  "node_modules/@fontsource/lexend/files/lexend-latin-500-normal.woff2": {
-    "file": "assets/lexend-latin-500-normal-Dl-X5nog.woff2",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-500-normal.woff2"
-  },
-  "node_modules/@fontsource/lexend/files/lexend-latin-600-normal.woff": {
-    "file": "assets/lexend-latin-600-normal-DSBzZxpA.woff",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-600-normal.woff"
   },
   "node_modules/@fontsource/lexend/files/lexend-latin-600-normal.woff2": {
     "file": "assets/lexend-latin-600-normal-DdvlkEkX.woff2",
     "src": "node_modules/@fontsource/lexend/files/lexend-latin-600-normal.woff2"
   },
-  "node_modules/@fontsource/lexend/files/lexend-latin-700-normal.woff": {
-    "file": "assets/lexend-latin-700-normal-DVyJlN8t.woff",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-700-normal.woff"
-  },
   "node_modules/@fontsource/lexend/files/lexend-latin-700-normal.woff2": {
     "file": "assets/lexend-latin-700-normal-DqO8md6r.woff2",
     "src": "node_modules/@fontsource/lexend/files/lexend-latin-700-normal.woff2"
-  },
-  "node_modules/@fontsource/lexend/files/lexend-latin-800-normal.woff": {
-    "file": "assets/lexend-latin-800-normal-BcJVUnx_.woff",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-800-normal.woff"
   },
   "node_modules/@fontsource/lexend/files/lexend-latin-800-normal.woff2": {
     "file": "assets/lexend-latin-800-normal-sVzxf3WX.woff2",
     "src": "node_modules/@fontsource/lexend/files/lexend-latin-800-normal.woff2"
   },
-  "node_modules/@fontsource/lexend/files/lexend-latin-ext-500-normal.woff": {
-    "file": "assets/lexend-latin-ext-500-normal-DbCmXT_D.woff",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-ext-500-normal.woff"
-  },
-  "node_modules/@fontsource/lexend/files/lexend-latin-ext-500-normal.woff2": {
-    "file": "assets/lexend-latin-ext-500-normal-Bo17xs96.woff2",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-ext-500-normal.woff2"
-  },
-  "node_modules/@fontsource/lexend/files/lexend-latin-ext-600-normal.woff": {
-    "file": "assets/lexend-latin-ext-600-normal-BXtyp5LP.woff",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-ext-600-normal.woff"
-  },
-  "node_modules/@fontsource/lexend/files/lexend-latin-ext-600-normal.woff2": {
-    "file": "assets/lexend-latin-ext-600-normal-hDcqLAH9.woff2",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-ext-600-normal.woff2"
-  },
-  "node_modules/@fontsource/lexend/files/lexend-latin-ext-700-normal.woff": {
-    "file": "assets/lexend-latin-ext-700-normal-iR1cPiNX.woff",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-ext-700-normal.woff"
-  },
-  "node_modules/@fontsource/lexend/files/lexend-latin-ext-700-normal.woff2": {
-    "file": "assets/lexend-latin-ext-700-normal-CcWyeg4T.woff2",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-ext-700-normal.woff2"
-  },
-  "node_modules/@fontsource/lexend/files/lexend-latin-ext-800-normal.woff": {
-    "file": "assets/lexend-latin-ext-800-normal-r3QZLne4.woff",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-ext-800-normal.woff"
-  },
-  "node_modules/@fontsource/lexend/files/lexend-latin-ext-800-normal.woff2": {
-    "file": "assets/lexend-latin-ext-800-normal-B0JWHALI.woff2",
-    "src": "node_modules/@fontsource/lexend/files/lexend-latin-ext-800-normal.woff2"
-  },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-400-normal.woff": {
-    "file": "assets/source-sans-3-latin-400-normal-AFMiCETP.woff",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-400-normal.woff"
-  },
   "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-400-normal.woff2": {
     "file": "assets/source-sans-3-latin-400-normal-DQi5PRDE.woff2",
     "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-400-normal.woff2"
-  },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-500-normal.woff": {
-    "file": "assets/source-sans-3-latin-500-normal-BtDzq-z9.woff",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-500-normal.woff"
   },
   "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-500-normal.woff2": {
     "file": "assets/source-sans-3-latin-500-normal-DiWS0tcR.woff2",
     "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-500-normal.woff2"
   },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-600-normal.woff": {
-    "file": "assets/source-sans-3-latin-600-normal-BvDVuF-j.woff",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-600-normal.woff"
-  },
   "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-600-normal.woff2": {
     "file": "assets/source-sans-3-latin-600-normal-DeckBYAU.woff2",
     "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-600-normal.woff2"
   },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-700-normal.woff": {
-    "file": "assets/source-sans-3-latin-700-normal-BBbVrHF_.woff",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-700-normal.woff"
-  },
   "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-700-normal.woff2": {
     "file": "assets/source-sans-3-latin-700-normal-CkzU-mV9.woff2",
     "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-700-normal.woff2"
-  },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-400-normal.woff": {
-    "file": "assets/source-sans-3-latin-ext-400-normal-BGPHfnm_.woff",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-400-normal.woff"
-  },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-400-normal.woff2": {
-    "file": "assets/source-sans-3-latin-ext-400-normal-UNsKFIBq.woff2",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-400-normal.woff2"
-  },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-500-normal.woff": {
-    "file": "assets/source-sans-3-latin-ext-500-normal-DYiJOyLu.woff",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-500-normal.woff"
-  },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-500-normal.woff2": {
-    "file": "assets/source-sans-3-latin-ext-500-normal-tzH6xoxH.woff2",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-500-normal.woff2"
-  },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-600-normal.woff": {
-    "file": "assets/source-sans-3-latin-ext-600-normal-Wy7HIzqC.woff",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-600-normal.woff"
-  },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-600-normal.woff2": {
-    "file": "assets/source-sans-3-latin-ext-600-normal-AEyhgUpm.woff2",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-600-normal.woff2"
-  },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-700-normal.woff": {
-    "file": "assets/source-sans-3-latin-ext-700-normal-ChH_v7nA.woff",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-700-normal.woff"
-  },
-  "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-700-normal.woff2": {
-    "file": "assets/source-sans-3-latin-ext-700-normal-6Xi0A2be.woff2",
-    "src": "node_modules/@fontsource/source-sans-3/files/source-sans-3-latin-ext-700-normal.woff2"
   },
   "node_modules/katex/dist/fonts/KaTeX_AMS-Regular.ttf": {
     "file": "assets/KaTeX_AMS-Regular-DRggAlZN.ttf",
@@ -488,12 +398,12 @@
     "src": "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.woff2"
   },
   "src/admin/math-main.js": {
-    "file": "assets/frontend-core-BsQGEcw5.js",
+    "file": "assets/frontend-core-Bx9fC0Yy.js",
     "name": "adminMath",
     "src": "src/admin/math-main.js",
     "isEntry": true,
     "imports": [
-      "_math-render-DuLmCooL.js"
+      "_math-render-z4EJh76n.js"
     ],
     "css": [
       "assets/adminMath-DrAZLtIT.css"
@@ -506,55 +416,29 @@
     "isDynamicEntry": true
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-lmiaBmzT.js",
+    "file": "assets/frontend-core-CqINe92o.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
-    "imports": [
-      "_math-render-DuLmCooL.js"
-    ],
     "dynamicImports": [
-      "_frontend-stage-exam-WuCp5DIX.js",
-      "_frontend-stage-result-DM-sYiqP.js",
-      "_frontend-feature-calculator-7YQ2590S.js",
+      "_frontend-exam-runtime-DTUYrg-5.js",
+      "_math-render-z4EJh76n.js",
+      "_frontend-stage-exam-CEfGu-DF.js",
+      "_frontend-stage-result-BZConbjg.js",
+      "_frontend-feature-calculator-CuFD8t3I.js",
       "src/frontend/app/core/debug-panel.js"
     ],
     "css": [
-      "assets/frontend-DP-JmgM2.css"
+      "assets/frontend-CCl1hOus.css"
     ],
     "assets": [
-      "assets/lexend-latin-500-normal-Dl-X5nog.woff2",
-      "assets/lexend-latin-500-normal-D9x1QWTH.woff",
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",
-      "assets/lexend-latin-600-normal-DSBzZxpA.woff",
       "assets/lexend-latin-700-normal-DqO8md6r.woff2",
-      "assets/lexend-latin-700-normal-DVyJlN8t.woff",
       "assets/lexend-latin-800-normal-sVzxf3WX.woff2",
-      "assets/lexend-latin-800-normal-BcJVUnx_.woff",
-      "assets/lexend-latin-ext-500-normal-Bo17xs96.woff2",
-      "assets/lexend-latin-ext-500-normal-DbCmXT_D.woff",
-      "assets/lexend-latin-ext-600-normal-hDcqLAH9.woff2",
-      "assets/lexend-latin-ext-600-normal-BXtyp5LP.woff",
-      "assets/lexend-latin-ext-700-normal-CcWyeg4T.woff2",
-      "assets/lexend-latin-ext-700-normal-iR1cPiNX.woff",
-      "assets/lexend-latin-ext-800-normal-B0JWHALI.woff2",
-      "assets/lexend-latin-ext-800-normal-r3QZLne4.woff",
       "assets/source-sans-3-latin-400-normal-DQi5PRDE.woff2",
-      "assets/source-sans-3-latin-400-normal-AFMiCETP.woff",
       "assets/source-sans-3-latin-500-normal-DiWS0tcR.woff2",
-      "assets/source-sans-3-latin-500-normal-BtDzq-z9.woff",
       "assets/source-sans-3-latin-600-normal-DeckBYAU.woff2",
-      "assets/source-sans-3-latin-600-normal-BvDVuF-j.woff",
-      "assets/source-sans-3-latin-700-normal-CkzU-mV9.woff2",
-      "assets/source-sans-3-latin-700-normal-BBbVrHF_.woff",
-      "assets/source-sans-3-latin-ext-400-normal-UNsKFIBq.woff2",
-      "assets/source-sans-3-latin-ext-400-normal-BGPHfnm_.woff",
-      "assets/source-sans-3-latin-ext-500-normal-tzH6xoxH.woff2",
-      "assets/source-sans-3-latin-ext-500-normal-DYiJOyLu.woff",
-      "assets/source-sans-3-latin-ext-600-normal-AEyhgUpm.woff2",
-      "assets/source-sans-3-latin-ext-600-normal-Wy7HIzqC.woff",
-      "assets/source-sans-3-latin-ext-700-normal-6Xi0A2be.woff2",
-      "assets/source-sans-3-latin-ext-700-normal-ChH_v7nA.woff"
+      "assets/source-sans-3-latin-700-normal-CkzU-mV9.woff2"
     ]
   }
 }

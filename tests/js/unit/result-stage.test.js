@@ -184,4 +184,61 @@ describe('createResultStageRenderer', function () {
         expect(markup).toContain('MAX POIN TAMBAHAN : 30 POIN');
         expect(markup).toContain('Hasil ini masih sementara');
     });
+
+    it('treats graded essay as finalized instead of pending manual review', function () {
+        var fixture = createFixture({
+            state: {
+                result: {
+                    exam: {
+                        id: 9,
+                        kkm_percentage: 75,
+                        title: 'Essay Graded Fixture',
+                        total_questions: 2
+                    },
+                    max_score: 10,
+                    pass_label: 'LULUS',
+                    percentage: 50,
+                    review_items: [
+                        {
+                            points: 5,
+                            question_number: 1,
+                            question_text: 'Esai 1',
+                            question_type: 'essay',
+                            score_awarded: 5,
+                            status: 'graded'
+                        },
+                        {
+                            points: 5,
+                            question_number: 2,
+                            question_text: 'Esai 2',
+                            question_type: 'essay',
+                            score_awarded: 0,
+                            status: 'unanswered'
+                        }
+                    ],
+                    review_summary: {
+                        answered_questions: 1,
+                        correct_questions: 0,
+                        graded_questions: 1,
+                        manual_questions: 0,
+                        total_questions: 2,
+                        unanswered_questions: 1,
+                        wrong_questions: 0
+                    },
+                    score: 5,
+                    show_student_result: 1,
+                    submission_summary: {
+                        answered_questions: 1,
+                        pending_manual_questions: 0,
+                        total_questions: 2
+                    }
+                }
+            }
+        });
+
+        var markup = fixture.renderer.renderResultStage();
+
+        expect(markup).not.toContain('Menunggu Koreksi');
+        expect(markup).toContain('DINILAI');
+    });
 });

@@ -1,10 +1,12 @@
 const { test, expect } = require('@playwright/test');
 const {
     clearE2ESecurityLogs,
+    clearE2ESecurityLiveState,
     getE2ECatalog,
     getE2EFixture,
     resetE2EFixture,
     setE2ESecurityConfig,
+    updateE2EExamFixture,
 } = require('./helpers/e2e-fixture');
 const {
     loginAsStudent,
@@ -144,17 +146,40 @@ async function waitForMustWatchCard(page, studentName) {
     });
 }
 
+async function waitForLiveRosterRow(page, studentName) {
+    return waitForCondition(async () => {
+        const row = page.locator('[data-security-log-roster-row]').filter({ hasText: String(studentName || '') }).first();
+        if (await row.count()) {
+            const visible = await row.isVisible().catch(() => false);
+            if (visible) {
+                return row;
+            }
+        }
+
+        await page.reload({ waitUntil: 'networkidle' });
+        return null;
+    }, {
+        timeoutMs: 20000,
+        intervalMs: 800,
+        errorMessage: `Live roster row untuk "${studentName}" tidak muncul.`,
+    });
+}
+
 test.describe('Security Log & Observability flow check', () => {
     test.setTimeout(150000);
 
     test.beforeEach(() => {
         clearE2ESecurityLogs();
+        clearE2ESecurityLiveState();
         setE2ESecurityConfig({
             block_copy_paste: 1,
             detect_idle_during_exam: 1,
             force_fullscreen: 0,
             idle_threshold_minutes: 5,
             log_security_events: 1,
+        });
+        updateE2EExamFixture('security_log_observability', {
+            target_kelas: 'KELAS_TEST_01,KELAS_TEST_02',
         });
     });
 
@@ -244,9 +269,15 @@ test.describe('Security Log & Observability flow check', () => {
                 await openAdminSecurityPanel(adminPage, catalog.users.admin_seed);
                 await waitForMustWatchCard(adminPage, primaryFixture.user.display_name || primaryFixture.user.username);
                 await adminPage.locator('[data-security-log-watch-sort="score"]').click({ force: true });
-                const firstCard = adminPage.locator('[data-security-log-focus-card]').first();
+                const mustWatchCards = adminPage.locator('[data-security-log-focus-card]');
+                const firstCard = mustWatchCards.first();
+                const secondCard = mustWatchCards.nth(1);
                 await expect(firstCard).toContainText(primaryFixture.user.display_name || primaryFixture.user.username);
-                await expect(firstCard).toContainText('Skor 8');
+                await expect(secondCard).toContainText(secondaryFixture.user.display_name || secondaryFixture.user.username);
+
+                const firstScore = Number(await firstCard.getAttribute('data-sort-score') || '0');
+                const secondScore = Number(await secondCard.getAttribute('data-sort-score') || '0');
+                expect(firstScore).toBeGreaterThan(secondScore);
             });
         } finally {
             await adminContext.close();
@@ -270,8 +301,40 @@ test.describe('Security Log & Observability flow check', () => {
             await test.step('Must Watch card menampilkan agregasi indikator yang stabil untuk attempt yang sama', async () => {
                 await openAdminSecurityPanel(adminPage, catalog.users.admin_seed);
                 const card = await waitForMustWatchCard(adminPage, fixture.user.display_name || fixture.user.username);
-                await expect(card).toContainText('4x Clipboard diblokir');
+                await expect(card).toContainText('Status Live');
+                await expect(card).toContainText('Pelanggaran Dominan');
+                await expect(card).toContainText(/Clipboard diblokir/);
                 await expect(card).toContainText(fixture.exam.title);
+            });
+        } finally {
+            await adminContext.close();
+        }
+    });
+
+    test('Security Flow: live roster shows active attempt grouped by exam kelas dan ruang', async ({ browser, page, baseURL }) => {
+        test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');
+
+        const fixture = getE2EFixture('security_log_observability', 'primary_student');
+        const catalog = getE2ECatalog();
+
+        await test.step('Siswa memulai attempt aktif agar masuk ke live roster', async () => {
+            await prepareSecurityAttempt(page, fixture);
+        });
+
+        const adminContext = await browser.newContext();
+        const adminPage = await adminContext.newPage();
+        try {
+            await test.step('Admin melihat section Live Roster di atas Must Watch dengan row attempt aktif', async () => {
+                await openAdminSecurityPanel(adminPage, catalog.users.admin_seed);
+                await expect(adminPage.locator('[data-security-log-live-roster]')).toContainText('Live Roster');
+                await expect(adminPage.locator('[data-security-log-live-roster]')).toContainText(fixture.exam.title);
+                await expect(adminPage.locator('[data-security-log-live-roster]')).toContainText(fixture.user.kode_kelas || '');
+                await expect(adminPage.locator('[data-security-log-live-roster]')).toContainText(fixture.user.kode_ruang || '');
+
+                const row = await waitForLiveRosterRow(adminPage, fixture.user.display_name || fixture.user.username);
+                await expect(row).toContainText('Online');
+                await expect(row).toContainText('Seen:');
+                await expect(row).toContainText('Buka Results');
             });
         } finally {
             await adminContext.close();

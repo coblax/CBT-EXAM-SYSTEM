@@ -12,6 +12,14 @@ if (!class_exists('CBT_Student_Profile_Cache')) {
     require_once __DIR__ . '/class-cbt-student-profile-cache.php';
 }
 
+if (!class_exists('CBT_Live_Proctoring_Presence')) {
+    require_once __DIR__ . '/class-cbt-live-proctoring-presence.php';
+}
+
+if (!class_exists('CBT_Live_Attempt_Roster_Index')) {
+    require_once __DIR__ . '/class-cbt-live-attempt-roster-index.php';
+}
+
 class CBT_Security_Log
 {
     private const SETUP_SECURITY_OPTION = 'cbt_setup_security';
@@ -354,14 +362,16 @@ class CBT_Security_Log
      */
     public static function windows_native_event_type_names(): array
     {
-        return [
-            'window_blur',
-            'forbidden_process_detected',
-            'forbidden_process_terminated',
-            'forbidden_process_active',
-            'task_manager_blocked',
-            'exit_blocked',
-        ];
+        return array_values(array_unique(array_merge(
+            self::android_native_event_type_names(),
+            [
+                'forbidden_process_detected',
+                'forbidden_process_terminated',
+                'forbidden_process_active',
+                'task_manager_blocked',
+                'exit_blocked',
+            ]
+        )));
     }
 
     public static function get_event_risk_weight(string $event_type): float
@@ -652,12 +662,12 @@ class CBT_Security_Log
         $limit = max(1, min(self::MUST_WATCH_MAX_LIMIT, absint($limit)));
         $redis_attempts = self::get_must_watch_attempts_from_live_counters($limit, $filters);
         if (count($redis_attempts) >= $limit) {
-            return array_slice($redis_attempts, 0, $limit);
+            return self::overlay_presence_on_must_watch_attempts(array_slice($redis_attempts, 0, $limit));
         }
 
         $mysql_attempts = self::get_must_watch_attempts_from_logs($limit, $filters);
         if (empty($redis_attempts)) {
-            return $mysql_attempts;
+            return self::overlay_presence_on_must_watch_attempts($mysql_attempts);
         }
 
         $merged = [];
@@ -680,7 +690,7 @@ class CBT_Security_Log
         $must_watch_attempts = array_values($merged);
         self::sort_must_watch_attempt_rows($must_watch_attempts);
 
-        return array_slice($must_watch_attempts, 0, $limit);
+        return self::overlay_presence_on_must_watch_attempts(array_slice($must_watch_attempts, 0, $limit));
     }
 
     /**
@@ -935,6 +945,85 @@ class CBT_Security_Log
     }
 
     /**
+     * @param array<int,array<string,mixed>> $attempts
+     * @return array<int,array<string,mixed>>
+     */
+    private static function overlay_presence_on_must_watch_attempts(array $attempts): array
+    {
+        if (empty($attempts)) {
+            return [];
+        }
+
+        $attempt_ids = [];
+        foreach ($attempts as $index => $attempt) {
+            $attempts[$index] = array_merge(self::must_watch_presence_defaults(), $attempt);
+            $attempt_id = (int) ($attempt['attempt_id'] ?? 0);
+            if ($attempt_id > 0) {
+                $attempt_ids[] = $attempt_id;
+            }
+
+            if (
+                class_exists('CBT_Live_Proctoring_Presence')
+                && isset($attempt['risk_tone'])
+                && (string) ($attempt['risk_tone'] ?? '') !== ''
+            ) {
+                CBT_Live_Proctoring_Presence::sync_risk_tone($attempt_id, (string) $attempt['risk_tone']);
+            }
+
+            if (
+                class_exists('CBT_Live_Attempt_Roster_Index')
+                && $attempt_id > 0
+                && isset($attempt['risk_tone'])
+            ) {
+                CBT_Live_Attempt_Roster_Index::sync_risk_summary(
+                    $attempt_id,
+                    (string) ($attempt['risk_tone'] ?? ''),
+                    isset($attempt['risk_score']) ? (float) $attempt['risk_score'] : null
+                );
+            }
+        }
+
+        if (!class_exists('CBT_Live_Proctoring_Presence') || !CBT_Live_Proctoring_Presence::is_available()) {
+            return $attempts;
+        }
+
+        $presence_payloads = CBT_Live_Proctoring_Presence::get_attempt_payloads($attempt_ids);
+        foreach ($attempts as $index => $attempt) {
+            $attempt_id = (int) ($attempt['attempt_id'] ?? 0);
+            $presence = $presence_payloads[$attempt_id] ?? null;
+            if (!is_array($presence)) {
+                continue;
+            }
+
+            $attempts[$index]['presence_status'] = (string) ($presence['presence_status'] ?? '');
+            $attempts[$index]['presence_last_seen_at'] = (string) ($presence['last_seen_at'] ?? '');
+            $attempts[$index]['presence_connection_status'] = (string) ($presence['connection_status'] ?? '');
+            $attempts[$index]['presence_visibility_state'] = (string) ($presence['visibility_state'] ?? '');
+            $attempts[$index]['presence_has_focus'] = (int) ($presence['has_focus'] ?? 0);
+            $attempts[$index]['presence_pending_sync_count'] = max(0, (int) ($presence['pending_sync_count'] ?? 0));
+            $attempts[$index]['presence_heartbeat_lost_active'] = (int) ($presence['heartbeat_lost_active'] ?? 0);
+        }
+
+        return $attempts;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function must_watch_presence_defaults(): array
+    {
+        return [
+            'presence_status' => '',
+            'presence_last_seen_at' => '',
+            'presence_connection_status' => '',
+            'presence_visibility_state' => '',
+            'presence_has_focus' => null,
+            'presence_pending_sync_count' => 0,
+            'presence_heartbeat_lost_active' => 0,
+        ];
+    }
+
+    /**
      * @param int[] $log_ids
      * @param array{teacher_id?:int} $filters
      */
@@ -1076,7 +1165,42 @@ class CBT_Security_Log
             self::build_live_counter_summary_snapshot($attempt, $context)
         );
 
+        self::sync_presence_risk_tone_from_score(
+            (int) ($attempt['id'] ?? 0),
+            (float) ($result['risk_score'] ?? 0.0)
+        );
+
         return max(0, (int) ($result['count'] ?? 0));
+    }
+
+    private static function sync_presence_risk_tone_from_score(int $attempt_id, float $risk_score): void
+    {
+        if ($attempt_id <= 0) {
+            return;
+        }
+
+        $risk_tone = self::presence_risk_tone_from_score($risk_score);
+
+        if (class_exists('CBT_Live_Proctoring_Presence')) {
+            CBT_Live_Proctoring_Presence::sync_risk_tone($attempt_id, $risk_tone);
+        }
+
+        if (class_exists('CBT_Live_Attempt_Roster_Index')) {
+            CBT_Live_Attempt_Roster_Index::sync_risk_summary($attempt_id, $risk_tone, $risk_score);
+        }
+    }
+
+    private static function presence_risk_tone_from_score(float $risk_score): string
+    {
+        if ($risk_score >= self::MUST_WATCH_HIGH_RISK_THRESHOLD) {
+            return 'high-risk';
+        }
+
+        if ($risk_score > 0.0) {
+            return 'watch';
+        }
+
+        return '';
     }
 
     private static function maybe_record_repeat_event(array $attempt, string $event_type, array $context = [], int $live_event_count = 0): void

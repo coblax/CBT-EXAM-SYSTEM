@@ -578,6 +578,12 @@
     border: 1px solid #f5c2c2;
 }
 
+.cbt-review-status.is-graded {
+    background: #eef6ff;
+    color: #145ea8;
+    border: 1px solid #b7d7f5;
+}
+
 .cbt-review-status.is-unanswered {
     background: #f6f8fb;
     color: #475569;

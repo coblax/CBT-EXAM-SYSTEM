@@ -50,6 +50,8 @@ export function createStageRuntimeManager(deps) {
     var calculatorFeature = null;
     var calculatorFeaturePromise = null;
     var calculatorFeatureLoading = false;
+    var examStagePrefetched = false;
+    var calculatorFeaturePrefetched = false;
 
     function formatLazyChunkErrorMessage(error, fallback) {
         var message = error instanceof Error && error.message ? error.message : '';
@@ -278,9 +280,16 @@ export function createStageRuntimeManager(deps) {
     }
 
     function prefetchExamStageRenderer() {
+        if (examStageRenderer || examStageRendererPromise || examStagePrefetched) {
+            return;
+        }
+
+        examStagePrefetched = true;
         ensureExamStageRenderer({
             prefetchOnly: true
-        }).catch(function () {});
+        }).catch(function () {
+            examStagePrefetched = false;
+        });
     }
 
     function ensureResultStageRenderer(options) {
@@ -415,17 +424,24 @@ export function createStageRuntimeManager(deps) {
     }
 
     function prefetchCalculatorFeature() {
-        if (!isCalculatorEnabledForCurrentExam()) {
+        if (!isCalculatorEnabledForCurrentExam() || calculatorFeature || calculatorFeaturePromise || calculatorFeaturePrefetched) {
             return;
         }
 
+        calculatorFeaturePrefetched = true;
         ensureCalculatorFeature({
             prefetchOnly: true
-        }).catch(function () {});
+        }).catch(function () {
+            calculatorFeaturePrefetched = false;
+        });
     }
 
     function maybePrefetchExamRuntime() {
-        if (state.stage !== 'confirm') {
+        if (state.stage !== 'confirm' || state.busy) {
+            return;
+        }
+
+        if ((Number(state.selectedExamId) || 0) <= 0 && !getSelectedExam()) {
             return;
         }
 

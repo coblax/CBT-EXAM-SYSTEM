@@ -267,7 +267,10 @@ export function createRenderCycleManager(deps) {
 
     function runPostRenderEffects(currentStage, currentReason, currentMeta) {
         if (typeof enhanceRichMath === 'function') {
-            enhanceRichMath();
+            var mathEnhancementResult = enhanceRichMath();
+            if (mathEnhancementResult && typeof mathEnhancementResult.catch === 'function') {
+                mathEnhancementResult.catch(function () {});
+            }
         }
         applyUiPreferences();
         syncBodyStageClass();

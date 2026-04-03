@@ -8,6 +8,7 @@ const {
     answerCurrentSingleChoice,
     captureBrowserStorage,
     fillCurrentEssay,
+    jumpToLastQuestion,
     loginAsStudent,
     openRehydratedPage,
     openResultFromConfirm,
@@ -16,19 +17,31 @@ const {
 } = require('./helpers/frontend-browser');
 const {
     loginToWpAdmin,
+    openResultsPage,
     openResultsEssayTab,
 } = require('./helpers/admin-browser');
 
 test.describe.configure({ mode: 'serial' });
 
 async function finishCurrentExam(page) {
-    await page.locator('[data-action="collect"], [data-action="finish"]').first().click({ force: true });
+    const finishButton = page.locator('[data-action="collect"], [data-action="finish"]').first();
+    if (!(await finishButton.isVisible().catch(() => false))) {
+        await jumpToLastQuestion(page);
+    }
+    await finishButton.click({ force: true });
     await page.locator('[data-action="finish-confirm-submit"]').first().click({ force: true });
     await waitForResultShell(page);
 }
 
 test.describe('Result & Scoring flow check', () => {
     test.setTimeout(150000);
+
+    test.beforeEach(() => {
+        resetE2EFixture('result_full', 'primary_student');
+        resetE2EFixture('result_essay', 'primary_student');
+        resetE2EFixture('result_restricted', 'primary_student');
+        resetE2EFixture('security_log_observability', 'primary_student');
+    });
 
     test('Result Flow: objective exam shows score percentage and pass label', async ({ page, baseURL }) => {
         test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');
@@ -144,6 +157,50 @@ test.describe('Result & Scoring flow check', () => {
             await expect(page.locator('.cbt-result-pending-card')).toBeVisible({ timeout: 20000 });
             await expect(page.locator('.cbt-result-pending-card')).toContainText(/sementara/i, { timeout: 20000 });
         });
+    });
+
+    test('Result Flow: in-progress row shows live monitoring in student column', async ({ browser, page, baseURL }) => {
+        test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');
+
+        const fixture = getE2EFixture('security_log_observability', 'primary_student');
+        const catalog = getE2ECatalog();
+
+        await test.step('Siswa membuka ujian hingga session heartbeat menulis presence snapshot', async () => {
+            resetE2EFixture('security_log_observability', 'primary_student');
+            await loginAsStudent(page, fixture.user);
+            const sessionResponsePromise = page.waitForResponse((response) => {
+                return response.url().includes('/wp-json/cbt/v1/session');
+            }, {
+                timeout: 25000,
+            }).catch(() => null);
+            await startOrResumeAttempt(page, fixture);
+
+            const sessionResponse = await sessionResponsePromise;
+
+            expect(sessionResponse).not.toBeNull();
+            if (sessionResponse) {
+                expect(sessionResponse.ok()).toBeTruthy();
+            }
+        });
+
+        const adminContext = await browser.newContext();
+        const adminPage = await adminContext.newPage();
+        try {
+            await test.step('Admin melihat monitoring live compact di kolom Student pada Results', async () => {
+                await loginToWpAdmin(adminPage, catalog.users.admin_seed);
+                await openResultsPage(adminPage, fixture.exam.exam_id);
+
+                const row = adminPage.locator('.cbt-results-attempt-row').filter({ hasText: String(fixture.user.display_name || fixture.user.username) }).first();
+                await expect(row).toBeVisible({ timeout: 20000 });
+
+                const studentCell = row.locator('.cbt-results-student-cell').first();
+                await expect(studentCell).toContainText(/Online|Stale|Offline/, { timeout: 20000 });
+                await expect(studentCell).toContainText('Seen:', { timeout: 20000 });
+                await expect(studentCell).not.toContainText(/Clipboard diblokir|Pindah tab \/ aplikasi|High Risk/i);
+            });
+        } finally {
+            await adminContext.close();
+        }
     });
 
     test('Result Flow: full and restricted result stay consistent after refresh and reopen', async ({ browser, page, baseURL }) => {

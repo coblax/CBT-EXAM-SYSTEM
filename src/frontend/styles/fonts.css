@@ -1,16 +1,55 @@
-@import '@fontsource/lexend/latin-500.css';
-@import '@fontsource/lexend/latin-600.css';
-@import '@fontsource/lexend/latin-700.css';
-@import '@fontsource/lexend/latin-800.css';
-@import '@fontsource/lexend/latin-ext-500.css';
-@import '@fontsource/lexend/latin-ext-600.css';
-@import '@fontsource/lexend/latin-ext-700.css';
-@import '@fontsource/lexend/latin-ext-800.css';
-@import '@fontsource/source-sans-3/latin-400.css';
-@import '@fontsource/source-sans-3/latin-500.css';
-@import '@fontsource/source-sans-3/latin-600.css';
-@import '@fontsource/source-sans-3/latin-700.css';
-@import '@fontsource/source-sans-3/latin-ext-400.css';
-@import '@fontsource/source-sans-3/latin-ext-500.css';
-@import '@fontsource/source-sans-3/latin-ext-600.css';
-@import '@fontsource/source-sans-3/latin-ext-700.css';
+@font-face {
+    font-display: swap;
+    font-family: 'Lexend';
+    font-style: normal;
+    font-weight: 600;
+    src: url('@fontsource/lexend/files/lexend-latin-600-normal.woff2') format('woff2');
+}
+
+@font-face {
+    font-display: swap;
+    font-family: 'Lexend';
+    font-style: normal;
+    font-weight: 700;
+    src: url('@fontsource/lexend/files/lexend-latin-700-normal.woff2') format('woff2');
+}
+
+@font-face {
+    font-display: swap;
+    font-family: 'Lexend';
+    font-style: normal;
+    font-weight: 800;
+    src: url('@fontsource/lexend/files/lexend-latin-800-normal.woff2') format('woff2');
+}
+
+@font-face {
+    font-display: swap;
+    font-family: 'Source Sans 3';
+    font-style: normal;
+    font-weight: 400;
+    src: url('@fontsource/source-sans-3/files/source-sans-3-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+    font-display: swap;
+    font-family: 'Source Sans 3';
+    font-style: normal;
+    font-weight: 500;
+    src: url('@fontsource/source-sans-3/files/source-sans-3-latin-500-normal.woff2') format('woff2');
+}
+
+@font-face {
+    font-display: swap;
+    font-family: 'Source Sans 3';
+    font-style: normal;
+    font-weight: 600;
+    src: url('@fontsource/source-sans-3/files/source-sans-3-latin-600-normal.woff2') format('woff2');
+}
+
+@font-face {
+    font-display: swap;
+    font-family: 'Source Sans 3';
+    font-style: normal;
+    font-weight: 700;
+    src: url('@fontsource/source-sans-3/files/source-sans-3-latin-700-normal.woff2') format('woff2');
+}

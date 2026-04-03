@@ -3,6 +3,7 @@ const {
     ageE2ELoginSession,
     getE2EFixture,
     getLatestE2EAttempt,
+    resetE2EFixture,
 } = require('./helpers/e2e-fixture');
 const {
     answerCurrentSingleChoice,
@@ -52,6 +53,11 @@ async function prepareAuthAttempt(page, fixture) {
 
 test.describe('Auth & Session flow check', () => {
     test.setTimeout(120000);
+
+    test.beforeEach(() => {
+        resetE2EFixture('auth_session', 'primary_student');
+        resetE2EFixture('auth_session', 'secondary_student');
+    });
 
     test('Auth Flow: second browser login revokes previous session', async ({ browser, page, baseURL }) => {
         test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');

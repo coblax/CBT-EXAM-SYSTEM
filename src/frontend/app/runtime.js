@@ -51,7 +51,9 @@ import { createAttemptUiSyncManager } from './core/attempt-ui-sync';
 import { createAuthStageManager } from './core/auth-stages';
 import { createBrowserStorageAccess } from './core/browser-storage';
 import { createBootstrapSessionManager } from './core/bootstrap-session';
+import { createExamRuntimeLoader } from './core/exam-runtime-loader';
 import { createLifecycleManager } from './core/lifecycle';
+import { createLazyMathEnhancer } from './core/lazy-math';
 import { createIdleDetectionManager } from './core/idle-detection';
 import { createNativeBridgeManager } from './core/native-bridge';
 import { createRenderCycleManager } from './core/render-cycle';
@@ -68,29 +70,8 @@ import { createApiClient } from './core/api';
 import { escapeHtml } from './core/html';
 import { createFullscreenStateManager } from './core/fullscreen-state';
 import { createDoubtfulStateStorage } from './storage/doubtful-state';
-import { createAttemptUiStateStorage } from './storage/attempt-ui-state';
-import { createQuestionCacheStorage } from './storage/question-cache';
-import { createAnswerSyncManager } from './exam/answer-sync';
-import { createAnswerInputManager } from './exam/answer-inputs';
-import { createFinishFlowManager } from './exam/finish-flow';
-import { createExamNavigationManager } from './exam/navigation';
-import { createQuestionRuntimeManager } from './exam/question-runtime';
-import {
-    findQuestionOptionById,
-    findQuestionOptionByKey,
-    findQuestionOptionKeyById,
-    getShortAnswerKeys,
-    getTrueFalseMatrixItems,
-    normalizeAnswerValueForQuestion,
-    normalizeTrueFalseMatrixAnswer,
-    questionOptionKey
-} from './exam/question-helpers';
 import { createQuestionRenderManager } from './exam/question-render';
-import { createQuestionStateManager } from './exam/question-state';
-import { createQuestionFlags } from './exam/question-flags';
 import { createExamSecurityManager } from './exam/security';
-import { createQuestionWindowManager } from './exam/question-window';
-import { renderMathInContainer } from '../../shared/math-render';
 
 export function bootstrapFrontendApp() {
     'use strict';
@@ -112,6 +93,10 @@ export function bootstrapFrontendApp() {
         windowRef: window
     });
     var bootProgressValue = 0;
+    var enhanceRichMath = createLazyMathEnhancer({
+        recordTimeline: recordTimeline,
+        root: root
+    });
 
     function setBootProgress(percent, label, status) {
         var nextValue = Number(percent);
@@ -190,6 +175,7 @@ export function bootstrapFrontendApp() {
     var appEventManager = null;
     var appMetaManager = null;
     var attemptUiSyncManager = null;
+    var answerSyncManager = null;
     var authStageManager = null;
     var answerInputManager = null;
     var appShellManager = null;
@@ -199,12 +185,192 @@ export function bootstrapFrontendApp() {
     var questionRenderManager = null;
     var questionRuntimeManager = null;
     var questionStateManager = null;
+    var questionWindowManager = null;
+    var questionCacheStorage = null;
+    var attemptUiStateStorage = null;
+    var questionFlags = null;
     var renderCycleManager = null;
     var securityLoggingManager = null;
     var sessionHeartbeatManager = null;
     var sessionLifecycleManager = null;
     var stageRuntimeManager = null;
     var startupManager = null;
+    var examRuntimeLoader = null;
+    var examRuntimeLoadError = '';
+
+    function buildFallbackQuestionRevision(revision, fallbackExamId) {
+        var safeRevision = revision && typeof revision === 'object' ? revision : {};
+        var examId = Number(safeRevision.exam_id !== undefined ? safeRevision.exam_id : fallbackExamId) || 0;
+        var namespace = String(safeRevision.namespace || '');
+        var version = Math.max(0, Number(safeRevision.version) || 0);
+        var invalidatedAt = Math.max(0, Number(safeRevision.invalidated_at) || 0);
+        var signature = String(safeRevision.signature || '');
+
+        if (namespace === '' && examId > 0) {
+            namespace = 'exam:' + String(examId);
+        }
+        if (signature === '' && namespace !== '' && version > 0) {
+            signature = namespace + '|v:' + String(version) + '|t:' + String(invalidatedAt);
+        }
+
+        if (examId <= 0 || namespace === '' || version <= 0 || signature === '') {
+            return null;
+        }
+
+        return {
+            examId: examId,
+            namespace: namespace,
+            version: version,
+            invalidatedAt: invalidatedAt,
+            signature: signature
+        };
+    }
+
+    function questionRevisionSignature(revision, fallbackExamId) {
+        var normalized = buildFallbackQuestionRevision(revision, fallbackExamId);
+        return normalized ? String(normalized.signature || '') : '';
+    }
+
+    function questionOptionKey(option, index) {
+        var key = String(option && option.option_key ? option.option_key : '').trim();
+        if (key !== '') {
+            return key;
+        }
+
+        var code = 65 + Number(index || 0);
+        if (code >= 65 && code <= 90) {
+            return String.fromCharCode(code);
+        }
+
+        return String((Number(index) || 0) + 1);
+    }
+
+    function resetQuestionDataStateFallback(options) {
+        options = options || {};
+
+        state.questions = [];
+        state.questionOrderIds = [];
+        state.questionManifest = [];
+        state.questionManifestById = {};
+        state.questionPayloadById = {};
+        state.archivedReviewItems = [];
+        state.existingAnswerRawByQuestionId = {};
+        state.answeredQuestionLookup = {};
+        state.changedQuestionLookup = {};
+        state.questionRevisionMarkerLookup = {};
+        state.acknowledgedRevisionQuestionIds = {};
+        state.loadedQuestionWindowOffsets = {};
+        state.windowOffset = 0;
+        state.windowLimit = 0;
+        state.totalQuestions = 0;
+        state.questionOrderSignature = '';
+        state.answers = {};
+        state.questionRevisionToastTimerId = 0;
+        state.questionRevisionNotice = null;
+
+        if (!options.preserveDoubtful) {
+            state.doubtful = {};
+        }
+        if (!options.preserveCurrentIndex) {
+            state.currentIndex = 0;
+        }
+        if (!options.preserveNavFilter) {
+            state.navQuestionFilter = NAV_QUESTION_FILTER_ALL;
+        }
+        if (!options.preserveQuestionRevision) {
+            state.questionRevision = null;
+        }
+    }
+
+    function maybeRejectExamRuntimeLoadByScenario() {
+        if (
+            diagnosticsManager
+            && diagnosticsManager.enabled
+            && typeof diagnosticsManager.consumeFailNextChunkLoad === 'function'
+            && diagnosticsManager.consumeFailNextChunkLoad('exam-runtime')
+        ) {
+            var error = new Error('Scenario aktif: fail next chunk load (exam-runtime).');
+            error.code = 'scenario_fail_next_chunk_load';
+            error.isScenarioError = true;
+            throw error;
+        }
+    }
+
+    function formatExamRuntimeLoadErrorMessage(error, fallback) {
+        var message = error instanceof Error && error.message ? error.message : '';
+        if (message === '') {
+            return fallback;
+        }
+
+        if (
+            message.indexOf('Failed to fetch dynamically imported module') >= 0
+            || message.indexOf('Importing a module script failed') >= 0
+            || message.indexOf('fetch dynamically imported') >= 0
+        ) {
+            return fallback;
+        }
+
+        return message;
+    }
+
+    function getExamRuntimeBundle() {
+        return examRuntimeLoader ? examRuntimeLoader.getBundle() : null;
+    }
+
+    function ensureExamRuntimeBundle(options) {
+        if (!examRuntimeLoader) {
+            return Promise.reject(new Error('Runtime ujian belum siap.'));
+        }
+
+        return examRuntimeLoader.ensure(options);
+    }
+
+    function prefetchExamRuntimeBundle() {
+        if (!examRuntimeLoader) {
+            return;
+        }
+
+        examRuntimeLoader.prefetch();
+    }
+
+    function getExamRuntimeManager(managerName) {
+        var runtimeBundle = getExamRuntimeBundle();
+        if (!runtimeBundle || typeof runtimeBundle !== 'object') {
+            return null;
+        }
+
+        return runtimeBundle[managerName] && typeof runtimeBundle[managerName] === 'object'
+            ? runtimeBundle[managerName]
+            : null;
+    }
+
+    function bindExamRuntimeMethod(managerName, methodName, fallbackValue) {
+        return function () {
+            var manager = getExamRuntimeManager(managerName);
+            if (manager && typeof manager[methodName] === 'function') {
+                return manager[methodName].apply(manager, arguments);
+            }
+
+            if (typeof fallbackValue === 'function') {
+                return fallbackValue.apply(null, arguments);
+            }
+
+            return fallbackValue;
+        };
+    }
+
+    function syncExamRuntimeManagers(runtimeBundle) {
+        questionWindowManager = runtimeBundle && runtimeBundle.questionWindowManager ? runtimeBundle.questionWindowManager : null;
+        questionStateManager = runtimeBundle && runtimeBundle.questionStateManager ? runtimeBundle.questionStateManager : null;
+        answerSyncManager = runtimeBundle && runtimeBundle.answerSyncManager ? runtimeBundle.answerSyncManager : null;
+        questionCacheStorage = runtimeBundle && runtimeBundle.questionCacheStorage ? runtimeBundle.questionCacheStorage : null;
+        attemptUiStateStorage = runtimeBundle && runtimeBundle.attemptUiStateStorage ? runtimeBundle.attemptUiStateStorage : null;
+        questionRuntimeManager = runtimeBundle && runtimeBundle.questionRuntimeManager ? runtimeBundle.questionRuntimeManager : null;
+        answerInputManager = runtimeBundle && runtimeBundle.answerInputManager ? runtimeBundle.answerInputManager : null;
+        navigationManager = runtimeBundle && runtimeBundle.navigationManager ? runtimeBundle.navigationManager : null;
+        finishFlowManager = runtimeBundle && runtimeBundle.finishFlowManager ? runtimeBundle.finishFlowManager : null;
+        questionFlags = runtimeBundle && runtimeBundle.questionFlags ? runtimeBundle.questionFlags : null;
+    }
 
     function initializeFrontendDebug() {
         if (!config.frontendDebugUi) {
@@ -506,100 +672,6 @@ export function bootstrapFrontendApp() {
         state: state,
         storageKeyPrefix: DOUBTFUL_SESSION_STORAGE_KEY_PREFIX
     });
-    var questionWindowManager = createQuestionWindowManager({
-        escapeHtml: escapeHtml,
-        getLoadQuestionWindow: function () {
-            return loadQuestionWindow;
-        },
-        isQuestionRevisionRefreshActive: function () {
-            if (typeof isQuestionRevisionRefreshActive === 'function') {
-                return isQuestionRevisionRefreshActive.apply(null, arguments);
-            }
-            return false;
-        },
-        questionPrefetchBatchSize: QUESTION_PREFETCH_BATCH_SIZE,
-        questionPrefetchIdleDelayMs: QUESTION_PREFETCH_IDLE_DELAY_MS,
-        questionWindowSize: QUESTION_WINDOW_SIZE,
-        root: root,
-        state: state,
-        windowRef: window
-    });
-    questionStateManager = createQuestionStateManager({
-        getQuestionById: questionWindowManager.getQuestionById,
-        state: state
-    });
-    var answerSyncManager = createAnswerSyncManager({
-        answerSyncRetryBaseDelayMs: ANSWER_SYNC_RETRY_BASE_DELAY_MS,
-        answerSyncRetryMaxDelayMs: ANSWER_SYNC_RETRY_MAX_DELAY_MS,
-        apiRequest: function () {
-            return api.apply(null, arguments);
-        },
-        autoSaveBatchMaxItems: AUTO_SAVE_BATCH_MAX_ITEMS,
-        autoSaveChoiceDelayCongestedMs: AUTO_SAVE_CHOICE_DELAY_CONGESTED_MS,
-        autoSaveChoiceDelayMs: AUTO_SAVE_CHOICE_DELAY_MS,
-        autoSaveCongestedWindowMs: AUTO_SAVE_CONGESTED_WINDOW_MS,
-        autoSaveTextDelayCongestedMs: AUTO_SAVE_TEXT_DELAY_CONGESTED_MS,
-        autoSaveTextDelayMs: AUTO_SAVE_TEXT_DELAY_MS,
-        getNavigatorConnectionStatus: getNavigatorConnectionStatus,
-        getQuestionById: questionWindowManager.getQuestionById,
-        getQuestionDataGeneration: function () {
-            return questionRuntimeManager ? questionRuntimeManager.getQuestionDataGeneration() : 0;
-        },
-        getQuestionPayloadById: questionWindowManager.getQuestionPayloadById,
-        diagnosticsManager: diagnosticsManager,
-        isQuestionRevisionRefreshActive: function () {
-            if (typeof isQuestionRevisionRefreshActive === 'function') {
-                return isQuestionRevisionRefreshActive.apply(null, arguments);
-            }
-            return false;
-        },
-        maybeFinalizeLockedExam: function (reason) {
-            if (finishFlowManager) {
-                finishFlowManager.maybeFinalizeLockedExam(reason);
-            }
-        },
-        normalizeExistingAnswerForQuestion: questionStateManager.normalizeExistingAnswerForQuestion,
-        normalizeStoredAutoSaveState: function (snapshot) {
-            return normalizeStoredAutoSaveState(snapshot);
-        },
-        payloadSignature: questionStateManager.payloadSignature,
-        questionAnswerPayload: questionStateManager.questionAnswerPayload,
-        recordActionTrail: recordActionTrail,
-        recordTimeline: recordTimeline,
-        render: render,
-        renderExamPartial: function (regions, reason, meta) {
-            if (renderCycleManager && typeof renderCycleManager.patchExamRegions === 'function') {
-                return renderCycleManager.patchExamRegions(regions, reason, meta);
-            }
-            render(reason, meta);
-            return false;
-        },
-        scheduleQuestionCachePersist: function () {
-            if (questionRuntimeManager && typeof questionRuntimeManager.scheduleQuestionCachePersist === 'function') {
-                return questionRuntimeManager.scheduleQuestionCachePersist.apply(questionRuntimeManager, arguments);
-            }
-            return undefined;
-        },
-        state: state,
-        windowRef: window
-    });
-    var questionCacheStorage = createQuestionCacheStorage({
-        getAutoSaveState: answerSyncManager.getAutoSaveState,
-        getIndexedDb: getIndexedDb,
-        getLocalStorage: getLocalStorage,
-        getQuestionPayloadById: questionWindowManager.getQuestionPayloadById,
-        getSessionStorage: getSessionStorage,
-        indexedDbName: QUESTION_CACHE_INDEXED_DB_NAME,
-        indexedDbStore: QUESTION_CACHE_INDEXED_DB_STORE,
-        itemLocalStorageKeyPrefix: QUESTION_CACHE_ITEM_LOCAL_STORAGE_KEY_PREFIX,
-        metaLocalStorageKeyPrefix: QUESTION_CACHE_META_LOCAL_STORAGE_KEY_PREFIX,
-        normalizeExistingAnswerForQuestion: questionStateManager.normalizeExistingAnswerForQuestion,
-        now: Date.now,
-        payloadSignature: questionStateManager.payloadSignature,
-        sessionStorageKeyPrefix: QUESTION_CACHE_SESSION_STORAGE_KEY_PREFIX,
-        state: state,
-        windowRef: window
-    });
     var examSecurityManager = createExamSecurityManager({
         clearMessages: clearMessages,
         documentRef: document,
@@ -642,19 +714,203 @@ export function bootstrapFrontendApp() {
         },
         windowRef: window
     });
-    var attemptUiStateStorage = createAttemptUiStateStorage({
-        buildDoubtfulSessionStorageKey: doubtfulStateStorage.buildDoubtfulSessionStorageKey,
-        clearPersistedDoubtfulState: doubtfulStateStorage.clearPersistedDoubtfulState,
-        getQuestionCount: questionWindowManager.getQuestionCount,
-        getQuestionIdAtIndex: questionWindowManager.getQuestionIdAtIndex,
-        getSessionStorage: getSessionStorage,
-        normalizeOrUseQuestionCacheSnapshot: questionCacheStorage.normalizeOrUseQuestionCacheSnapshot,
-        normalizeQuestionCacheSnapshot: questionCacheStorage.normalizeQuestionCacheSnapshot,
-        readPersistedDoubtfulState: doubtfulStateStorage.readPersistedDoubtfulState,
-        state: state,
-        storageKeyPrefix: ATTEMPT_UI_SESSION_STORAGE_KEY_PREFIX,
-        validAttemptQuestionIds: questionWindowManager.validAttemptQuestionIds
+    var applyUiPreferences = uiPreferencesManager.applyUiPreferences;
+    var formatFontScaleLabel = uiPreferencesManager.formatFontScaleLabel;
+    var getEffectiveCalculatorPanelPosition = uiPreferencesManager.getEffectiveCalculatorPanelPosition;
+    var getEffectiveNavPanelPosition = uiPreferencesManager.getEffectiveNavPanelPosition;
+    var isCompactNavViewport = uiPreferencesManager.isCompactNavViewport;
+    var isCompactViewport = uiPreferencesManager.isCompactViewport;
+    var normalizeCalculatorPanelPosition = uiPreferencesManager.normalizeCalculatorPanelPosition;
+    var normalizeFontScale = uiPreferencesManager.normalizeFontScale;
+    var normalizeNavPanelPosition = uiPreferencesManager.normalizeNavPanelPosition;
+    var normalizeTheme = uiPreferencesManager.normalizeTheme;
+    var persistUiPreferences = uiPreferencesManager.persistUiPreferences;
+    var readPersistedUiPreferences = uiPreferencesManager.readPersistedUiPreferences;
+    var toggleTheme = uiPreferencesManager.toggleTheme;
+    var updateCalculatorPanelPosition = uiPreferencesManager.updateCalculatorPanelPosition;
+    var updateFontScale = uiPreferencesManager.updateFontScale;
+    var updateNavPanelPosition = uiPreferencesManager.updateNavPanelPosition;
+    var clearMessages = appMetaManager.clearMessages;
+    var findExamById = appMetaManager.findExamById;
+    var clearPersistedAuthSession = authSessionManager.clearPersistedAuthSession;
+    var persistAuthSession = authSessionManager.persistAuthSession;
+    var readPersistedAuthSession = authSessionManager.readPersistedAuthSession;
+    var buildDoubtfulSessionStorageKey = doubtfulStateStorage.buildDoubtfulSessionStorageKey;
+    var clearPersistedDoubtfulState = doubtfulStateStorage.clearPersistedDoubtfulState;
+    var readPersistedDoubtfulState = doubtfulStateStorage.readPersistedDoubtfulState;
+    var getQuestionById = bindExamRuntimeMethod('questionWindowManager', 'getQuestionById', null);
+    var getQuestionAtIndex = bindExamRuntimeMethod('questionWindowManager', 'getQuestionAtIndex', null);
+    var buildQuestionWindowItems = bindExamRuntimeMethod('questionWindowManager', 'buildQuestionWindowItems', function () {
+        return [];
     });
+    var clampQuestionIndex = bindExamRuntimeMethod('questionWindowManager', 'clampQuestionIndex', 0);
+    var getQuestionCount = bindExamRuntimeMethod('questionWindowManager', 'getQuestionCount', 0);
+    var getQuestionDisplayNumber = bindExamRuntimeMethod('questionWindowManager', 'getQuestionDisplayNumber', function (question, fallbackIndex) {
+        var safeFallbackIndex = Math.floor(Number(fallbackIndex) || 0);
+        return Math.max(1, safeFallbackIndex + 1);
+    });
+    var getQuestionDisplayNumberById = bindExamRuntimeMethod('questionWindowManager', 'getQuestionDisplayNumberById', function (questionId, fallbackIndex) {
+        return getQuestionDisplayNumber({
+            id: questionId
+        }, fallbackIndex);
+    });
+    var getQuestionIdAtIndex = bindExamRuntimeMethod('questionWindowManager', 'getQuestionIdAtIndex', 0);
+    var getQuestionManifestById = bindExamRuntimeMethod('questionWindowManager', 'getQuestionManifestById', null);
+    var getQuestionPayloadById = bindExamRuntimeMethod('questionWindowManager', 'getQuestionPayloadById', null);
+    var clearQuestionPrefetchRuntimeState = bindExamRuntimeMethod('questionWindowManager', 'clearQuestionPrefetchRuntimeState', undefined);
+    var isIndexInCurrentWindow = bindExamRuntimeMethod('questionWindowManager', 'isIndexInCurrentWindow', false);
+    var isQuestionPayloadLoaded = bindExamRuntimeMethod('questionWindowManager', 'isQuestionPayloadLoaded', false);
+    var isQuestionWindowLoaded = bindExamRuntimeMethod('questionWindowManager', 'isQuestionWindowLoaded', false);
+    var markQuestionWindowLoaded = bindExamRuntimeMethod('questionWindowManager', 'markQuestionWindowLoaded', undefined);
+    var noteQuestionPrefetchActivity = bindExamRuntimeMethod('questionWindowManager', 'noteQuestionPrefetchActivity', undefined);
+    var prefetchNextQuestionBatch = bindExamRuntimeMethod('questionWindowManager', 'prefetchNextQuestionBatch', undefined);
+    var questionWindowOffsetForIndex = bindExamRuntimeMethod('questionWindowManager', 'questionWindowOffsetForIndex', function (index, windowSize) {
+        var safeWindowSize = Math.max(1, Number(windowSize) || QUESTION_WINDOW_SIZE);
+        var safeIndex = Math.max(0, Math.floor(Number(index) || 0));
+        return Math.floor(safeIndex / safeWindowSize) * safeWindowSize;
+    });
+    var renderQuestionPrefetchIndicator = bindExamRuntimeMethod('questionWindowManager', 'renderQuestionPrefetchIndicator', '');
+    var resetQuestionPrefetchIdleTimer = bindExamRuntimeMethod('questionWindowManager', 'resetQuestionPrefetchIdleTimer', undefined);
+    var setActiveQuestionWindowForIndex = bindExamRuntimeMethod('questionWindowManager', 'setActiveQuestionWindowForIndex', undefined);
+    var setQuestionWindowFromLoadedPayloads = bindExamRuntimeMethod('questionWindowManager', 'setQuestionWindowFromLoadedPayloads', false);
+    var updateQuestionPrefetchIndicator = bindExamRuntimeMethod('questionWindowManager', 'updateQuestionPrefetchIndicator', undefined);
+    var validAttemptQuestionIds = bindExamRuntimeMethod('questionWindowManager', 'validAttemptQuestionIds', function () {
+        return {};
+    });
+
+    var clearPersistedQuestionCache = bindExamRuntimeMethod('questionCacheStorage', 'clearPersistedQuestionCache', undefined);
+    var normalizeQuestionRevision = bindExamRuntimeMethod('questionCacheStorage', 'normalizeQuestionRevision', function (revision, fallbackExamId) {
+        return buildFallbackQuestionRevision(revision, fallbackExamId || state.selectedExamId || 0);
+    });
+    var questionOrderSignatureEquals = bindExamRuntimeMethod('questionCacheStorage', 'questionOrderSignatureEquals', function (leftSignature, rightSignature) {
+        return String(leftSignature || '').trim() === String(rightSignature || '').trim();
+    });
+    var questionRevisionEquals = bindExamRuntimeMethod('questionCacheStorage', 'questionRevisionEquals', function (leftRevision, rightRevision, fallbackExamId) {
+        return questionRevisionSignature(leftRevision, fallbackExamId) === questionRevisionSignature(rightRevision, fallbackExamId);
+    });
+    var readPersistedQuestionCache = bindExamRuntimeMethod('questionCacheStorage', 'readPersistedQuestionCache', function () {
+        return Promise.resolve(null);
+    });
+    var persistCurrentQuestionCacheLocally = bindExamRuntimeMethod('questionCacheStorage', 'persistCurrentQuestionCacheLocally', undefined);
+
+    var applyAttemptUiState = bindExamRuntimeMethod('attemptUiStateStorage', 'applyAttemptUiState', undefined);
+    var buildAttemptUiStateSnapshot = bindExamRuntimeMethod('attemptUiStateStorage', 'buildAttemptUiStateSnapshot', null);
+    var choosePreferredAttemptUiState = bindExamRuntimeMethod('attemptUiStateStorage', 'choosePreferredAttemptUiState', function (remoteSnapshot, localSnapshot) {
+        return localSnapshot || remoteSnapshot || null;
+    });
+    var clearPersistedAttemptUiState = bindExamRuntimeMethod('attemptUiStateStorage', 'clearPersistedAttemptUiState', undefined);
+    var persistAttemptUiStateLocally = bindExamRuntimeMethod('attemptUiStateStorage', 'persistAttemptUiStateLocally', undefined);
+    var persistCurrentAttemptUiStateLocally = bindExamRuntimeMethod('attemptUiStateStorage', 'persistCurrentAttemptUiStateLocally', undefined);
+    var readPersistedAttemptUiState = bindExamRuntimeMethod('attemptUiStateStorage', 'readPersistedAttemptUiState', null);
+
+    var clearAutoSaveRuntimeState = bindExamRuntimeMethod('answerSyncManager', 'clearAutoSaveRuntimeState', undefined);
+    var flushPendingAnswerBatch = bindExamRuntimeMethod('answerSyncManager', 'flushPendingAnswerBatch', function () {
+        return Promise.resolve(null);
+    });
+    var handleRecoverableAnswerSyncFailure = bindExamRuntimeMethod('answerSyncManager', 'handleRecoverableAnswerSyncFailure', undefined);
+    var hasAnswerBatchFlushInFlight = bindExamRuntimeMethod('answerSyncManager', 'hasFlushInFlight', false);
+    var initializeSubmittedPayloadCache = bindExamRuntimeMethod('answerSyncManager', 'initializeSubmittedPayloadCache', undefined);
+    var isNetworkConnectivityError = bindExamRuntimeMethod('answerSyncManager', 'isNetworkConnectivityError', false);
+    var isRetryableAnswerSyncError = bindExamRuntimeMethod('answerSyncManager', 'isRetryableAnswerSyncError', false);
+    var queueLoadedQuestionAnswersForFlush = bindExamRuntimeMethod('answerSyncManager', 'queueLoadedQuestionAnswersForFlush', 0);
+    var schedulePendingAnswerRetry = bindExamRuntimeMethod('answerSyncManager', 'schedulePendingAnswerRetry', undefined);
+    var setConnectionStatus = bindExamRuntimeMethod('answerSyncManager', 'setConnectionStatus', undefined);
+    var syncPendingAnswerRuntimeState = bindExamRuntimeMethod('answerSyncManager', 'syncPendingAnswerRuntimeState', undefined);
+    var isAnswerSubmitPath = bindExamRuntimeMethod('answerSyncManager', 'isAnswerSubmitPath', false);
+
+    var clearPendingRevisionSafeAnswerRestoreState = bindExamRuntimeMethod('questionStateManager', 'clearPendingRevisionSafeAnswerRestoreState', undefined);
+    var applyPendingRevisionSafeAnswersForLoadedQuestions = bindExamRuntimeMethod('questionStateManager', 'applyPendingRevisionSafeAnswersForLoadedQuestions', undefined);
+    var captureRevisionSafeLocalAnswers = bindExamRuntimeMethod('questionStateManager', 'captureRevisionSafeLocalAnswers', function () {
+        return {};
+    });
+    var hasUsableLocalAnswerForQuestion = bindExamRuntimeMethod('questionStateManager', 'hasUsableLocalAnswerForQuestion', false);
+    var mergeExistingAnswersFromQuestionItems = bindExamRuntimeMethod('questionStateManager', 'mergeExistingAnswersFromQuestionItems', function () {
+        return {};
+    });
+    var mergeExistingAnswersMap = bindExamRuntimeMethod('questionStateManager', 'mergeExistingAnswersMap', function () {
+        return {};
+    });
+    var normalizeExistingAnswerForQuestion = bindExamRuntimeMethod('questionStateManager', 'normalizeExistingAnswerForQuestion', null);
+    var resolveStoredAnswerValueForQuestion = bindExamRuntimeMethod('questionStateManager', 'resolveStoredAnswerValueForQuestion', null);
+    var payloadSignature = bindExamRuntimeMethod('questionStateManager', 'payloadSignature', '');
+    var prunePendingRevisionSafeAnswerRestoreState = bindExamRuntimeMethod('questionStateManager', 'prunePendingRevisionSafeAnswerRestoreState', undefined);
+    var questionAnswerPayload = bindExamRuntimeMethod('questionStateManager', 'questionAnswerPayload', null);
+    var restoreLocalAnswerFromQuestion = bindExamRuntimeMethod('questionStateManager', 'restoreLocalAnswerFromQuestion', null);
+    var restoreRevisionSafeLocalAnswers = bindExamRuntimeMethod('questionStateManager', 'restoreRevisionSafeLocalAnswers', undefined);
+
+    var clearQuestionCachePersistTimer = bindExamRuntimeMethod('questionRuntimeManager', 'clearQuestionCachePersistTimer', undefined);
+    var ensureQuestionWindowForIndex = bindExamRuntimeMethod('questionRuntimeManager', 'ensureQuestionWindowForIndex', function () {
+        return Promise.resolve(false);
+    });
+    var getChangedQuestionCount = bindExamRuntimeMethod('questionRuntimeManager', 'getChangedQuestionCount', function () {
+        return Object.keys(state.changedQuestionLookup || {}).length;
+    });
+    var getQuestionRevisionMarkerCount = bindExamRuntimeMethod('questionRuntimeManager', 'getQuestionRevisionMarkerCount', function () {
+        return Object.keys(state.questionRevisionMarkerLookup || {}).length;
+    });
+    var isQuestionRevisionRefreshActive = bindExamRuntimeMethod('questionRuntimeManager', 'isQuestionRevisionRefreshActive', false);
+    var loadQuestionWindow = bindExamRuntimeMethod('questionRuntimeManager', 'loadQuestionWindow', function () {
+        return Promise.reject(new Error('Runtime ujian belum siap.'));
+    });
+    var refreshAttemptQuestionRevision = bindExamRuntimeMethod('questionRuntimeManager', 'refreshAttemptQuestionRevision', function () {
+        return Promise.resolve(null);
+    });
+    var resetQuestionDataState = bindExamRuntimeMethod('questionRuntimeManager', 'resetQuestionDataState', resetQuestionDataStateFallback);
+    var setQuestionRevision = bindExamRuntimeMethod('questionRuntimeManager', 'setQuestionRevision', function (revision, fallbackExamId) {
+        state.questionRevision = normalizeQuestionRevision(revision, fallbackExamId || state.selectedExamId || 0);
+        return state.questionRevision;
+    });
+
+    var closeFinishConfirmModal = bindExamRuntimeMethod('finishFlowManager', 'closeFinishConfirmModal', undefined);
+    var handleFinish = bindExamRuntimeMethod('finishFlowManager', 'handleFinish', undefined);
+    var maybeFinalizeLockedExam = bindExamRuntimeMethod('finishFlowManager', 'maybeFinalizeLockedExam', undefined);
+    var openFinishConfirmModal = bindExamRuntimeMethod('finishFlowManager', 'openFinishConfirmModal', undefined);
+
+    var getExamProgressSummary = bindExamRuntimeMethod('navigationManager', 'getExamProgressSummary', function () {
+        var totalQuestions = Math.max(
+            Array.isArray(state.questionOrderIds) ? state.questionOrderIds.length : 0,
+            Number(state.totalQuestions) || 0
+        );
+        var doubtfulCount = Object.keys(state.doubtful || {}).reduce(function (count, key) {
+            return count + (((Number(key) || 0) > 0 && state.doubtful[key]) ? 1 : 0);
+        }, 0);
+        return {
+            answeredCount: 0,
+            doubtfulCount: doubtfulCount,
+            totalQuestions: totalQuestions,
+            unansweredCount: Math.max(0, totalQuestions)
+        };
+    });
+    var getNavigationQuestionEntries = bindExamRuntimeMethod('navigationManager', 'getNavigationQuestionEntries', function () {
+        return [];
+    });
+    var goToQuestion = bindExamRuntimeMethod('navigationManager', 'goToQuestion', undefined);
+    var handleNavigationAction = bindExamRuntimeMethod('navigationManager', 'handleAction', undefined);
+    var handleArrowNavigationKey = bindExamRuntimeMethod('navigationManager', 'handleArrowNavigationKey', undefined);
+    var isQuestionAnswered = bindExamRuntimeMethod('navigationManager', 'isQuestionAnswered', false);
+    var navigationQuestionFilterEmptyMessage = bindExamRuntimeMethod('navigationManager', 'navigationQuestionFilterEmptyMessage', '');
+    var normalizeNavigationQuestionFilter = bindExamRuntimeMethod('navigationManager', 'normalizeNavigationQuestionFilter', function () {
+        return NAV_QUESTION_FILTER_ALL;
+    });
+    var renderNavigationAnswerBadges = bindExamRuntimeMethod('navigationManager', 'renderNavigationAnswerBadges', '');
+    var renderNavigationQuestionTypeBadge = bindExamRuntimeMethod('navigationManager', 'renderNavigationQuestionTypeBadge', '');
+
+    var handleAnswerChangeTarget = bindExamRuntimeMethod('answerInputManager', 'handleChangeTarget', undefined);
+    var handleAnswerInputTarget = bindExamRuntimeMethod('answerInputManager', 'handleInputTarget', undefined);
+
+    var isQuestionChanged = bindExamRuntimeMethod('questionFlags', 'isQuestionChanged', function (questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        return safeQuestionId > 0 && !!(state.changedQuestionLookup && state.changedQuestionLookup[safeQuestionId]);
+    });
+    var isQuestionRevisionMarked = bindExamRuntimeMethod('questionFlags', 'isQuestionRevisionMarked', function (questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        return safeQuestionId > 0 && !!(state.questionRevisionMarkerLookup && state.questionRevisionMarkerLookup[safeQuestionId]);
+    });
+    var isQuestionDoubtful = bindExamRuntimeMethod('questionFlags', 'isQuestionDoubtful', function (questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        return safeQuestionId > 0 && !!(state.doubtful && state.doubtful[safeQuestionId]);
+    });
+
     var apiClient = createApiClient({
         config: config,
         diagnosticsManager: diagnosticsManager,
@@ -670,9 +926,9 @@ export function bootstrapFrontendApp() {
             }
             return (window.navigator && window.navigator.onLine === false) ? 'offline' : 'online';
         },
-        isAnswerSubmitPath: answerSyncManager.isAnswerSubmitPath,
-        schedulePendingAnswerRetry: answerSyncManager.schedulePendingAnswerRetry,
-        setConnectionStatus: answerSyncManager.setConnectionStatus,
+        isAnswerSubmitPath: isAnswerSubmitPath,
+        schedulePendingAnswerRetry: schedulePendingAnswerRetry,
+        setConnectionStatus: setConnectionStatus,
         state: state,
         windowRef: window
     });
@@ -719,7 +975,7 @@ export function bootstrapFrontendApp() {
             }
             return undefined;
         },
-        persistCurrentQuestionCacheLocally: questionCacheStorage.persistCurrentQuestionCacheLocally,
+        persistCurrentQuestionCacheLocally: persistCurrentQuestionCacheLocally,
         recordActionTrail: recordActionTrail,
         render: render,
         runSessionHeartbeat: function () {
@@ -744,7 +1000,7 @@ export function bootstrapFrontendApp() {
         setCompactViewportState: function (nextState) {
             compactViewportState = !!nextState;
         },
-        setConnectionStatus: answerSyncManager.setConnectionStatus,
+        setConnectionStatus: setConnectionStatus,
         state: state,
         triggerPendingSyncLifecycleRetry: function () {
             if (typeof triggerPendingSyncLifecycleRetry === 'function') {
@@ -754,94 +1010,6 @@ export function bootstrapFrontendApp() {
         },
         windowRef: window
     });
-    var applyUiPreferences = uiPreferencesManager.applyUiPreferences;
-    var formatFontScaleLabel = uiPreferencesManager.formatFontScaleLabel;
-    var getEffectiveCalculatorPanelPosition = uiPreferencesManager.getEffectiveCalculatorPanelPosition;
-    var getEffectiveNavPanelPosition = uiPreferencesManager.getEffectiveNavPanelPosition;
-    var isCompactNavViewport = uiPreferencesManager.isCompactNavViewport;
-    var isCompactViewport = uiPreferencesManager.isCompactViewport;
-    var normalizeCalculatorPanelPosition = uiPreferencesManager.normalizeCalculatorPanelPosition;
-    var normalizeFontScale = uiPreferencesManager.normalizeFontScale;
-    var normalizeNavPanelPosition = uiPreferencesManager.normalizeNavPanelPosition;
-    var normalizeTheme = uiPreferencesManager.normalizeTheme;
-    var persistUiPreferences = uiPreferencesManager.persistUiPreferences;
-    var readPersistedUiPreferences = uiPreferencesManager.readPersistedUiPreferences;
-    var toggleTheme = uiPreferencesManager.toggleTheme;
-    var updateCalculatorPanelPosition = uiPreferencesManager.updateCalculatorPanelPosition;
-    var updateFontScale = uiPreferencesManager.updateFontScale;
-    var updateNavPanelPosition = uiPreferencesManager.updateNavPanelPosition;
-    var clearMessages = appMetaManager.clearMessages;
-    var findExamById = appMetaManager.findExamById;
-    var clearPersistedAuthSession = authSessionManager.clearPersistedAuthSession;
-    var getConfiguredPluginAuthor = appMetaManager.getConfiguredPluginAuthor;
-    var getConfiguredPluginVersion = appMetaManager.getConfiguredPluginVersion;
-    var getConfiguredSchoolLogoUrl = appMetaManager.getConfiguredSchoolLogoUrl;
-    var getConfiguredSchoolMotto = appMetaManager.getConfiguredSchoolMotto;
-    var getConfiguredSchoolName = appMetaManager.getConfiguredSchoolName;
-    var getCurrentUserName = appMetaManager.getCurrentUserName;
-    var getCurrentUserPhoto = appMetaManager.getCurrentUserPhoto;
-    var getCurrentUserRole = appMetaManager.getCurrentUserRole;
-    var getExamFooterSyncMeta = appMetaManager.getExamFooterSyncMeta;
-    var getLoginHeroSchoolBranding = appMetaManager.getLoginHeroSchoolBranding;
-    var getNavigatorConnectionStatus = appMetaManager.getNavigatorConnectionStatus;
-    var getSelectedExam = appMetaManager.getSelectedExam;
-    var getSyncStatusAlertMeta = appMetaManager.getSyncStatusAlertMeta;
-    var getUserInitial = appMetaManager.getUserInitial;
-    var isConnectionOffline = appMetaManager.isConnectionOffline;
-    var isExamCopyPasteBlocked = appMetaManager.isExamCopyPasteBlocked;
-    var isExamFullscreenRequired = appMetaManager.isExamFullscreenRequired;
-    var isSecurityLoggingActiveForAttempt = appMetaManager.isSecurityLoggingActiveForAttempt;
-    var isSecurityLoggingEnabled = appMetaManager.isSecurityLoggingEnabled;
-    var renderAlert = appMetaManager.renderAlert;
-    var normalizePersistedUser = authSessionManager.normalizePersistedUser;
-    var persistAuthSession = authSessionManager.persistAuthSession;
-    var readPersistedAuthSession = authSessionManager.readPersistedAuthSession;
-    var buildDoubtfulSessionStorageKey = doubtfulStateStorage.buildDoubtfulSessionStorageKey;
-    var clearPersistedDoubtfulState = doubtfulStateStorage.clearPersistedDoubtfulState;
-    var readPersistedDoubtfulState = doubtfulStateStorage.readPersistedDoubtfulState;
-    var buildAutoSaveStateSnapshot = questionCacheStorage.buildAutoSaveStateSnapshot;
-    var buildChangedQuestionLookup = questionCacheStorage.buildChangedQuestionLookup;
-    var buildQuestionOrderSignature = questionCacheStorage.buildQuestionOrderSignature;
-    var buildQuestionCacheSessionStorageKey = questionCacheStorage.buildQuestionCacheSessionStorageKey;
-    var buildQuestionCacheSnapshot = questionCacheStorage.buildQuestionCacheSnapshot;
-    var buildQuestionManifestById = questionCacheStorage.buildQuestionManifestById;
-    var buildQuestionManifestFromQuestions = questionCacheStorage.buildQuestionManifestFromQuestions;
-    var clearPersistedQuestionCache = questionCacheStorage.clearPersistedQuestionCache;
-    var compareQuestionRevisionFreshness = questionCacheStorage.compareQuestionRevisionFreshness;
-    var clearAllAutoSaveTimers = answerSyncManager.clearAllAutoSaveTimers;
-    var normalizeOrUseQuestionCacheSnapshot = questionCacheStorage.normalizeOrUseQuestionCacheSnapshot;
-    var normalizeQuestionCacheSnapshot = questionCacheStorage.normalizeQuestionCacheSnapshot;
-    var normalizeQuestionIdList = questionCacheStorage.normalizeQuestionIdList;
-    var normalizeQuestionManifestItem = questionCacheStorage.normalizeQuestionManifestItem;
-    var normalizeQuestionRevision = questionCacheStorage.normalizeQuestionRevision;
-    var normalizeStoredAutoSaveState = questionCacheStorage.normalizeStoredAutoSaveState;
-    var persistCurrentQuestionCacheLocally = questionCacheStorage.persistCurrentQuestionCacheLocally;
-    var persistQuestionCacheLocally = questionCacheStorage.persistQuestionCacheLocally;
-    var questionManifestContentSignature = questionCacheStorage.questionManifestContentSignature;
-    var questionManifestUpdatedAt = questionCacheStorage.questionManifestUpdatedAt;
-    var questionOrderSignatureEquals = questionCacheStorage.questionOrderSignatureEquals;
-    var questionRevisionEquals = questionCacheStorage.questionRevisionEquals;
-    var questionRevisionSignature = questionCacheStorage.questionRevisionSignature;
-    var readPersistedQuestionCache = questionCacheStorage.readPersistedQuestionCache;
-    var serializeQuestionRevision = questionCacheStorage.serializeQuestionRevision;
-    var clearAutoSaveRuntimeState = answerSyncManager.clearAutoSaveRuntimeState;
-    var flushPendingAnswerBatch = answerSyncManager.flushPendingAnswerBatch;
-    var handleRecoverableAnswerSyncFailure = answerSyncManager.handleRecoverableAnswerSyncFailure;
-    var hasAnswerBatchFlushInFlight = answerSyncManager.hasFlushInFlight;
-    var hasPendingQueuedAnswerBatchItems = answerSyncManager.hasPendingBatchItems;
-    var initializeSubmittedPayloadCache = answerSyncManager.initializeSubmittedPayloadCache;
-    var isNetworkConnectivityError = answerSyncManager.isNetworkConnectivityError;
-    var isRetryableAnswerSyncError = answerSyncManager.isRetryableAnswerSyncError;
-    var primeSubmittedPayloadCacheFromQuestionItems = answerSyncManager.primeSubmittedPayloadCacheFromQuestionItems;
-    var pruneAnswerSyncState = answerSyncManager.pruneQuestionAnswerState;
-    var queueLoadedQuestionAnswersForFlush = answerSyncManager.queueLoadedQuestionAnswersForFlush;
-    var queueQuestionAnswer = answerSyncManager.queueQuestionAnswer;
-    var queueQuestionAnswersByIds = answerSyncManager.queueQuestionAnswersByIds;
-    var restoreQuestionAutoSaveState = answerSyncManager.restoreQuestionAutoSaveState;
-    var scheduleAutoSave = answerSyncManager.scheduleAutoSave;
-    var schedulePendingAnswerRetry = answerSyncManager.schedulePendingAnswerRetry;
-    var setConnectionStatus = answerSyncManager.setConnectionStatus;
-    var syncPendingAnswerRuntimeState = answerSyncManager.syncPendingAnswerRuntimeState;
     var api = apiClient.api;
     var apiErrorMessage = apiClient.apiErrorMessage;
     var buildUrl = apiClient.buildUrl;
@@ -870,7 +1038,7 @@ export function bootstrapFrontendApp() {
     var idleDetectionManager = createIdleDetectionManager({
         documentRef: document,
         getIdleThresholdSeconds: getIdleDetectionThresholdSeconds,
-        getQuestionDisplayNumber: questionWindowManager.getQuestionDisplayNumber,
+        getQuestionDisplayNumber: getQuestionDisplayNumber,
         isExamFullscreenBlockingActive: function () {
             return typeof isExamFullscreenBlockingActive === 'function'
                 ? isExamFullscreenBlockingActive()
@@ -906,52 +1074,6 @@ export function bootstrapFrontendApp() {
     var isExamFullscreenBlockingActive = examSecurityManager.isExamFullscreenBlockingActive;
     var renderExamFullscreenPrompt = examSecurityManager.renderExamFullscreenPrompt;
     var requestExamFullscreen = examSecurityManager.requestExamFullscreen;
-    var buildQuestionWindowItems = questionWindowManager.buildQuestionWindowItems;
-    var clampQuestionIndex = questionWindowManager.clampQuestionIndex;
-    var clearQuestionPrefetchRuntimeState = questionWindowManager.clearQuestionPrefetchRuntimeState;
-    var getQuestionAtIndex = questionWindowManager.getQuestionAtIndex;
-    var getQuestionById = questionWindowManager.getQuestionById;
-    var getQuestionCount = questionWindowManager.getQuestionCount;
-    var getQuestionDisplayNumber = questionWindowManager.getQuestionDisplayNumber;
-    var getQuestionDisplayNumberById = questionWindowManager.getQuestionDisplayNumberById;
-    var getQuestionIdAtIndex = questionWindowManager.getQuestionIdAtIndex;
-    var getQuestionManifestById = questionWindowManager.getQuestionManifestById;
-    var getQuestionPayloadById = questionWindowManager.getQuestionPayloadById;
-    var isIndexInCurrentWindow = questionWindowManager.isIndexInCurrentWindow;
-    var isQuestionPayloadLoaded = questionWindowManager.isQuestionPayloadLoaded;
-    var isQuestionWindowLoaded = questionWindowManager.isQuestionWindowLoaded;
-    var markQuestionWindowLoaded = questionWindowManager.markQuestionWindowLoaded;
-    var noteQuestionPrefetchActivity = questionWindowManager.noteQuestionPrefetchActivity;
-    var prefetchNextQuestionBatch = questionWindowManager.prefetchNextQuestionBatch;
-    var questionWindowOffsetForIndex = questionWindowManager.questionWindowOffsetForIndex;
-    var renderQuestionPrefetchIndicator = questionWindowManager.renderQuestionPrefetchIndicator;
-    var resetQuestionPrefetchIdleTimer = questionWindowManager.resetQuestionPrefetchIdleTimer;
-    var setActiveQuestionWindowForIndex = questionWindowManager.setActiveQuestionWindowForIndex;
-    var setQuestionWindowFromLoadedPayloads = questionWindowManager.setQuestionWindowFromLoadedPayloads;
-    var updateQuestionPrefetchIndicator = questionWindowManager.updateQuestionPrefetchIndicator;
-    var validAttemptQuestionIds = questionWindowManager.validAttemptQuestionIds;
-    var applyAttemptUiState = attemptUiStateStorage.applyAttemptUiState;
-    var buildAttemptUiSessionStorageKey = attemptUiStateStorage.buildAttemptUiSessionStorageKey;
-    var buildAttemptUiStateSnapshot = attemptUiStateStorage.buildAttemptUiStateSnapshot;
-    var choosePreferredAttemptUiState = attemptUiStateStorage.choosePreferredAttemptUiState;
-    var clearPersistedAttemptUiState = attemptUiStateStorage.clearPersistedAttemptUiState;
-    var normalizeAttemptUiState = attemptUiStateStorage.normalizeAttemptUiState;
-    var persistAttemptUiStateLocally = attemptUiStateStorage.persistAttemptUiStateLocally;
-    var persistCurrentAttemptUiStateLocally = attemptUiStateStorage.persistCurrentAttemptUiStateLocally;
-    var readPersistedAttemptUiState = attemptUiStateStorage.readPersistedAttemptUiState;
-    var applyPendingRevisionSafeAnswersForLoadedQuestions = questionStateManager.applyPendingRevisionSafeAnswersForLoadedQuestions;
-    var captureRevisionSafeLocalAnswers = questionStateManager.captureRevisionSafeLocalAnswers;
-    var clearPendingRevisionSafeAnswerRestoreState = questionStateManager.clearPendingRevisionSafeAnswerRestoreState;
-    var hasUsableLocalAnswerForQuestion = questionStateManager.hasUsableLocalAnswerForQuestion;
-    var mergeExistingAnswersFromQuestionItems = questionStateManager.mergeExistingAnswersFromQuestionItems;
-    var mergeExistingAnswersMap = questionStateManager.mergeExistingAnswersMap;
-    var normalizeExistingAnswerForQuestion = questionStateManager.normalizeExistingAnswerForQuestion;
-    var payloadSignature = questionStateManager.payloadSignature;
-    var prunePendingRevisionSafeAnswerRestoreState = questionStateManager.prunePendingRevisionSafeAnswerRestoreState;
-    var questionAnswerPayload = questionStateManager.questionAnswerPayload;
-    var resolveStoredAnswerValueForQuestion = questionStateManager.resolveStoredAnswerValueForQuestion;
-    var restoreLocalAnswerFromQuestion = questionStateManager.restoreLocalAnswerFromQuestion;
-    var restoreRevisionSafeLocalAnswers = questionStateManager.restoreRevisionSafeLocalAnswers;
     var safeRichHtml = appMetaManager.safeRichHtml;
     attemptUiSyncManager = createAttemptUiSyncManager({
         apiRequest: function () {
@@ -968,104 +1090,12 @@ export function bootstrapFrontendApp() {
     var flushAttemptUiState = attemptUiSyncManager.flush;
     var scheduleAttemptUiStateSync = attemptUiSyncManager.scheduleSync;
     var syncAttemptUiStateSignatureToCurrentState = attemptUiSyncManager.syncSignatureToCurrentState;
-    questionRuntimeManager = createQuestionRuntimeManager({
-        apiRequest: function () {
-            return api.apply(null, arguments);
-        },
-        applyAttemptUiState: applyAttemptUiState,
-        applyPendingRevisionSafeAnswersForLoadedQuestions: applyPendingRevisionSafeAnswersForLoadedQuestions,
-        attemptUiStateSyncDelayMs: ATTEMPT_UI_STATE_SYNC_DELAY_MS,
-        buildAttemptUiStateSnapshot: buildAttemptUiStateSnapshot,
-        buildAutoSaveStateSnapshot: buildAutoSaveStateSnapshot,
-        buildChangedQuestionLookup: buildChangedQuestionLookup,
-        buildQuestionManifestById: buildQuestionManifestById,
-        buildQuestionManifestFromQuestions: buildQuestionManifestFromQuestions,
-        buildQuestionOrderSignature: buildQuestionOrderSignature,
-        captureRevisionSafeLocalAnswers: captureRevisionSafeLocalAnswers,
-        clearAttemptUiStateSyncTimer: clearAttemptUiStateSyncTimer,
-        clearAutoSaveRuntimeState: clearAutoSaveRuntimeState,
-        clearPendingRevisionSafeAnswerRestoreState: clearPendingRevisionSafeAnswerRestoreState,
-        clearPersistedAttemptUiState: clearPersistedAttemptUiState,
-        clearPersistedQuestionCache: clearPersistedQuestionCache,
-        clearQuestionPrefetchRuntimeState: clearQuestionPrefetchRuntimeState,
-        clampQuestionIndex: clampQuestionIndex,
-        diagnosticsManager: diagnosticsManager,
-        getQuestionCount: getQuestionCount,
-        getQuestionIdAtIndex: getQuestionIdAtIndex,
-        getQuestionManifestById: getQuestionManifestById,
-        getQuestionPayloadById: getQuestionPayloadById,
-        hasPendingQueuedAnswerBatchItems: hasPendingQueuedAnswerBatchItems,
-        hasUsableLocalAnswerForQuestion: hasUsableLocalAnswerForQuestion,
-        initializeSubmittedPayloadCache: initializeSubmittedPayloadCache,
-        isIndexInCurrentWindow: isIndexInCurrentWindow,
-        isQuestionPayloadLoaded: isQuestionPayloadLoaded,
-        markQuestionWindowLoaded: markQuestionWindowLoaded,
-        mergeExistingAnswersFromQuestionItems: mergeExistingAnswersFromQuestionItems,
-        mergeExistingAnswersMap: mergeExistingAnswersMap,
-        navQuestionFilterAll: NAV_QUESTION_FILTER_ALL,
-        normalizeNavigationQuestionFilter: function (value) {
-            if (typeof normalizeNavigationQuestionFilter === 'function') {
-                return normalizeNavigationQuestionFilter(value);
-            }
-            return NAV_QUESTION_FILTER_ALL;
-        },
-        normalizeOrUseQuestionCacheSnapshot: normalizeOrUseQuestionCacheSnapshot,
-        normalizeQuestionCacheSnapshot: normalizeQuestionCacheSnapshot,
-        normalizeQuestionIdList: normalizeQuestionIdList,
-        normalizeQuestionRevision: normalizeQuestionRevision,
-        persistCurrentAttemptUiStateLocally: persistCurrentAttemptUiStateLocally,
-        persistCurrentQuestionCacheLocally: persistCurrentQuestionCacheLocally,
-        primeSubmittedPayloadCacheFromQuestionItems: primeSubmittedPayloadCacheFromQuestionItems,
-        pruneAnswerSyncState: pruneAnswerSyncState,
-        prunePendingRevisionSafeAnswerRestoreState: prunePendingRevisionSafeAnswerRestoreState,
-        questionOrderSignatureEquals: questionOrderSignatureEquals,
-        questionRevisionEquals: questionRevisionEquals,
-        questionWindowOffsetForIndex: questionWindowOffsetForIndex,
-        questionWindowSize: QUESTION_WINDOW_SIZE,
-        queueLoadedQuestionAnswersForFlush: queueLoadedQuestionAnswersForFlush,
-        queueQuestionAnswersByIds: queueQuestionAnswersByIds,
-        recordActionTrail: recordActionTrail,
-        recordTimeline: recordTimeline,
-        render: render,
-        renderExamPartial: function (regions, reason, meta) {
-            if (renderCycleManager && typeof renderCycleManager.patchExamRegions === 'function') {
-                return renderCycleManager.patchExamRegions(regions, reason, meta);
-            }
-            render(reason, meta);
-            return false;
-        },
-        resetQuestionPrefetchIdleTimer: resetQuestionPrefetchIdleTimer,
-        restoreLocalAnswerFromQuestion: restoreLocalAnswerFromQuestion,
-        restoreQuestionAutoSaveState: restoreQuestionAutoSaveState,
-        restoreRevisionSafeLocalAnswers: restoreRevisionSafeLocalAnswers,
-        scheduleAttemptUiStateSync: scheduleAttemptUiStateSync,
-        schedulePendingAnswerRetry: schedulePendingAnswerRetry,
-        serializeQuestionRevision: serializeQuestionRevision,
-        setQuestionWindowFromLoadedPayloads: setQuestionWindowFromLoadedPayloads,
-        state: state,
-        syncAttemptUiStateSignatureToCurrentState: syncAttemptUiStateSignatureToCurrentState,
-        updateQuestionPrefetchIndicator: updateQuestionPrefetchIndicator,
-        validAttemptQuestionIds: validAttemptQuestionIds,
-        windowRef: window
+    var applyPersistedQuestionCache = bindExamRuntimeMethod('questionRuntimeManager', 'applyPersistedQuestionCache', false);
+    var bumpQuestionDataGeneration = bindExamRuntimeMethod('questionRuntimeManager', 'bumpQuestionDataGeneration', function () {
+        return 1;
     });
-    var applyPersistedQuestionCache = questionRuntimeManager.applyPersistedQuestionCache;
-    var applyQuestionsResponse = questionRuntimeManager.applyQuestionsResponse;
-    var bumpQuestionDataGeneration = questionRuntimeManager.bumpQuestionDataGeneration;
-    var clearQuestionCachePersistTimer = questionRuntimeManager.clearQuestionCachePersistTimer;
-    var clearStickyQuestionRevisionNotice = questionRuntimeManager.clearStickyQuestionRevisionNotice;
-    var ensureQuestionWindowForIndex = questionRuntimeManager.ensureQuestionWindowForIndex;
-    var getChangedQuestionCount = questionRuntimeManager.getChangedQuestionCount;
-    var getQuestionRevisionMarkerCount = questionRuntimeManager.getQuestionRevisionMarkerCount;
-    var isQuestionRevisionRefreshActive = questionRuntimeManager.isQuestionRevisionRefreshActive;
-    var loadQuestionWindow = questionRuntimeManager.loadQuestionWindow;
-    var mergeAttemptUiStateDoubtfulIds = questionRuntimeManager.mergeAttemptUiStateDoubtfulIds;
-    var pruneQuestionScopedState = questionRuntimeManager.pruneQuestionScopedState;
-    var questionCacheHasPayloadForIndex = questionRuntimeManager.questionCacheHasPayloadForIndex;
-    var refreshAttemptQuestionRevision = questionRuntimeManager.refreshAttemptQuestionRevision;
-    var resetQuestionDataState = questionRuntimeManager.resetQuestionDataState;
-    var acknowledgeQuestionRevisionMarker = questionRuntimeManager.acknowledgeQuestionRevisionMarker;
-    var scheduleQuestionCachePersist = questionRuntimeManager.scheduleQuestionCachePersist;
-    var setQuestionRevision = questionRuntimeManager.setQuestionRevision;
+    var clearStickyQuestionRevisionNotice = bindExamRuntimeMethod('questionRuntimeManager', 'clearStickyQuestionRevisionNotice', undefined);
+    var acknowledgeQuestionRevisionMarker = bindExamRuntimeMethod('questionRuntimeManager', 'acknowledgeQuestionRevisionMarker', undefined);
     sessionLifecycleManager = createSessionLifecycleManager({
         bumpQuestionDataGeneration: bumpQuestionDataGeneration,
         clearAttemptUiStateSyncTimer: clearAttemptUiStateSyncTimer,
@@ -1081,7 +1111,9 @@ export function bootstrapFrontendApp() {
         clearQuestionCachePersistTimer: clearQuestionCachePersistTimer,
         clearQuestionPrefetchRuntimeState: clearQuestionPrefetchRuntimeState,
         clearQuestionRevisionRefreshState: function () {
-            questionRuntimeManager.clearQuestionRevisionRefreshState();
+            if (questionRuntimeManager && typeof questionRuntimeManager.clearQuestionRevisionRefreshState === 'function') {
+                questionRuntimeManager.clearQuestionRevisionRefreshState();
+            }
         },
         clearSecurityLoggingRuntimeState: clearSecurityRuntimeState,
         exitFullscreenSilently: exitFullscreenSilently,
@@ -1156,62 +1188,128 @@ export function bootstrapFrontendApp() {
     var runSessionHeartbeat = sessionHeartbeatManager.run;
     var startSessionHeartbeat = sessionHeartbeatManager.start;
     var stopSessionHeartbeat = sessionHeartbeatManager.stop;
-    finishFlowManager = createFinishFlowManager({
-        apiRequest: function () {
-            return api.apply(null, arguments);
+    examRuntimeLoader = createExamRuntimeLoader({
+        formatErrorMessage: formatExamRuntimeLoadErrorMessage,
+        importRuntimeBundle: function () {
+            maybeRejectExamRuntimeLoadByScenario();
+            return import('./exam/runtime-bundle.js');
         },
-        clearAllAutoSaveTimers: clearAllAutoSaveTimers,
-        clearAttemptUiStateSyncTimer: clearAttemptUiStateSyncTimer,
-        clearAutoSaveRuntimeState: clearAutoSaveRuntimeState,
-        clearMessages: clearMessages,
-        clearPersistedAttemptUiState: clearPersistedAttemptUiState,
-        clearPersistedQuestionCache: clearPersistedQuestionCache,
-        clearQuestionCachePersistTimer: clearQuestionCachePersistTimer,
-        clearQuestionPrefetchRuntimeState: clearQuestionPrefetchRuntimeState,
-        diagnosticsManager: diagnosticsManager,
-        exitFullscreenSilently: exitFullscreenSilently,
-        flushAttemptUiState: flushAttemptUiState,
-        flushPendingAnswerBatch: flushPendingAnswerBatch,
-        getExamProgressSummary: function () {
-            return navigationManager.getExamProgressSummary();
-        },
-        getNavigatorConnectionStatus: getNavigatorConnectionStatus,
-        getQuestionAtIndex: getQuestionAtIndex,
-        getQuestionCount: getQuestionCount,
-        handleRecoverableAnswerSyncFailure: handleRecoverableAnswerSyncFailure,
-        hasAnswerBatchFlushInFlight: hasAnswerBatchFlushInFlight,
-        isNetworkConnectivityError: isNetworkConnectivityError,
-        isQuestionAnswered: function (question) {
-            return navigationManager.isQuestionAnswered(question);
-        },
-        isRetryableAnswerSyncError: isRetryableAnswerSyncError,
-        persistCurrentQuestionCacheLocally: persistCurrentQuestionCacheLocally,
-        prefetchResultStageRenderer: function () {
-            if (stageRuntimeManager) {
-                stageRuntimeManager.prefetchResultStageRenderer();
+        instantiateBundle: function (module) {
+            if (!module || typeof module.createExamRuntimeBundle !== 'function') {
+                throw new Error('Bundle runtime ujian tidak valid.');
             }
+
+            var runtimeBundle = module.createExamRuntimeBundle({
+                answerSyncRetryBaseDelayMs: ANSWER_SYNC_RETRY_BASE_DELAY_MS,
+                answerSyncRetryMaxDelayMs: ANSWER_SYNC_RETRY_MAX_DELAY_MS,
+                apiRequest: function () {
+                    return api.apply(null, arguments);
+                },
+                attemptUiSessionStorageKeyPrefix: ATTEMPT_UI_SESSION_STORAGE_KEY_PREFIX,
+                attemptUiStateNavigationSyncDelayMs: ATTEMPT_UI_STATE_NAVIGATION_SYNC_DELAY_MS,
+                attemptUiStateSyncDelayMs: ATTEMPT_UI_STATE_SYNC_DELAY_MS,
+                autoSaveBatchMaxItems: AUTO_SAVE_BATCH_MAX_ITEMS,
+                autoSaveChoiceDelayCongestedMs: AUTO_SAVE_CHOICE_DELAY_CONGESTED_MS,
+                autoSaveChoiceDelayMs: AUTO_SAVE_CHOICE_DELAY_MS,
+                autoSaveCongestedWindowMs: AUTO_SAVE_CONGESTED_WINDOW_MS,
+                autoSaveTextDelayCongestedMs: AUTO_SAVE_TEXT_DELAY_CONGESTED_MS,
+                autoSaveTextDelayMs: AUTO_SAVE_TEXT_DELAY_MS,
+                buildDoubtfulSessionStorageKey: buildDoubtfulSessionStorageKey,
+                clearMessages: clearMessages,
+                clearPersistedDoubtfulState: clearPersistedDoubtfulState,
+                clearAttemptUiStateSyncTimer: clearAttemptUiStateSyncTimer,
+                diagnosticsManager: diagnosticsManager,
+                documentRef: document,
+                escapeHtml: escapeHtml,
+                exitFullscreenSilently: exitFullscreenSilently,
+                flushAttemptUiState: flushAttemptUiState,
+                getIndexedDb: getIndexedDb,
+                getLocalStorage: getLocalStorage,
+                getNavigatorConnectionStatus: getNavigatorConnectionStatus,
+                getSessionStorage: getSessionStorage,
+                isExamAnswerEditingLocked: isExamAnswerEditingLocked,
+                navQuestionFilterAll: NAV_QUESTION_FILTER_ALL,
+                navQuestionFilterAnswered: NAV_QUESTION_FILTER_ANSWERED,
+                navQuestionFilterDoubtful: NAV_QUESTION_FILTER_DOUBTFUL,
+                navQuestionFilterUnanswered: NAV_QUESTION_FILTER_UNANSWERED,
+                navigationQuestionTypeBadgeConfig: navigationQuestionTypeBadgeConfig,
+                normalizeExamToken: normalizeExamToken,
+                prefetchResultStageRenderer: function () {
+                    if (stageRuntimeManager) {
+                        stageRuntimeManager.prefetchResultStageRenderer();
+                    }
+                },
+                questionCacheIndexedDbName: QUESTION_CACHE_INDEXED_DB_NAME,
+                questionCacheIndexedDbStore: QUESTION_CACHE_INDEXED_DB_STORE,
+                questionCacheItemLocalStorageKeyPrefix: QUESTION_CACHE_ITEM_LOCAL_STORAGE_KEY_PREFIX,
+                questionCacheMetaLocalStorageKeyPrefix: QUESTION_CACHE_META_LOCAL_STORAGE_KEY_PREFIX,
+                questionCacheSessionStorageKeyPrefix: QUESTION_CACHE_SESSION_STORAGE_KEY_PREFIX,
+                questionPrefetchBatchSize: QUESTION_PREFETCH_BATCH_SIZE,
+                questionPrefetchIdleDelayMs: QUESTION_PREFETCH_IDLE_DELAY_MS,
+                questionWindowSize: QUESTION_WINDOW_SIZE,
+                readPersistedDoubtfulState: readPersistedDoubtfulState,
+                recordActionTrail: recordActionTrail,
+                recordTimeline: recordTimeline,
+                render: render,
+                renderExamPartial: function (regions, reason, meta) {
+                    if (renderCycleManager && typeof renderCycleManager.patchExamRegions === 'function') {
+                        return renderCycleManager.patchExamRegions(regions, reason, meta);
+                    }
+                    render(reason, meta);
+                    return false;
+                },
+                root: root,
+                scheduleAttemptUiStateSync: scheduleAttemptUiStateSync,
+                startTimer: startTimer,
+                state: state,
+                stopTimer: stopTimer,
+                syncFullscreenState: function () {
+                    if (typeof syncFullscreenState === 'function') {
+                        return syncFullscreenState.apply(null, arguments);
+                    }
+                    return undefined;
+                },
+                syncAttemptUiStateSignatureToCurrentState: syncAttemptUiStateSignatureToCurrentState,
+                updateSelectedExam: function () {
+                    if (typeof updateSelectedExam === 'function') {
+                        return updateSelectedExam.apply(null, arguments);
+                    }
+                    return undefined;
+                },
+                windowRef: window
+            });
+
+            syncExamRuntimeManagers(runtimeBundle);
+            return runtimeBundle;
         },
-        queueQuestionAnswer: queueQuestionAnswer,
-        recordActionTrail: recordActionTrail,
-        recordTimeline: recordTimeline,
-        render: render,
-        schedulePendingAnswerRetry: schedulePendingAnswerRetry,
-        setConnectionStatus: setConnectionStatus,
-        startTimer: startTimer,
-        state: state,
-        stopTimer: stopTimer,
-        syncFullscreenState: function () {
-            if (typeof syncFullscreenState === 'function') {
-                return syncFullscreenState.apply(null, arguments);
-            }
-            return undefined;
+        onLoadError: function (error, message) {
+            examRuntimeLoadError = String(message || '');
+            recordTimeline('chunk:exam-runtime:load:error', examRuntimeLoadError || 'Runtime ujian gagal dimuat.', {
+                attemptId: Number(state.attemptId) || 0,
+                stage: String(state.stage || ''),
+                target: 'exam-runtime',
+                error: error instanceof Error ? {
+                    message: String(error.message || ''),
+                    code: String(error.code || '')
+                } : null
+            });
         },
-        syncPendingAnswerRuntimeState: syncPendingAnswerRuntimeState
+        onLoadStart: function () {
+            recordTimeline('chunk:exam-runtime:load:start', 'Memuat runtime ujian.', {
+                attemptId: Number(state.attemptId) || 0,
+                stage: String(state.stage || ''),
+                target: 'exam-runtime'
+            });
+        },
+        onLoadSuccess: function () {
+            examRuntimeLoadError = '';
+            recordTimeline('chunk:exam-runtime:load:success', 'Runtime ujian siap.', {
+                attemptId: Number(state.attemptId) || 0,
+                stage: String(state.stage || ''),
+                target: 'exam-runtime'
+            });
+        }
     });
-    var closeFinishConfirmModal = finishFlowManager.closeFinishConfirmModal;
-    var handleFinish = finishFlowManager.handleFinish;
-    var maybeFinalizeLockedExam = finishFlowManager.maybeFinalizeLockedExam;
-    var openFinishConfirmModal = finishFlowManager.openFinishConfirmModal;
     var syncLifecycleBridge = createSyncLifecycleBridge({
         flushAttemptUiState: flushAttemptUiState,
         flushPendingAnswerBatch: flushPendingAnswerBatch,
@@ -1244,9 +1342,14 @@ export function bootstrapFrontendApp() {
         clearPersistedQuestionCache: clearPersistedQuestionCache,
         clearQuestionPrefetchRuntimeState: clearQuestionPrefetchRuntimeState,
         clearQuestionRevisionRefreshState: function () {
-            questionRuntimeManager.clearQuestionRevisionRefreshState();
+            if (questionRuntimeManager && typeof questionRuntimeManager.clearQuestionRevisionRefreshState === 'function') {
+                questionRuntimeManager.clearQuestionRevisionRefreshState();
+            }
         },
         clearSecurityLoggingRuntimeState: clearSecurityLoggingRuntimeState,
+        ensureExamRuntimeBundle: function (options) {
+            return ensureExamRuntimeBundle(options);
+        },
         ensureExamStageRenderer: function (options) {
             if (!stageRuntimeManager) {
                 return Promise.reject(new Error('Runtime ujian belum siap.'));
@@ -1349,9 +1452,7 @@ export function bootstrapFrontendApp() {
         getConfiguredSchoolName: getConfiguredSchoolName,
         getCurrentUserName: getCurrentUserName,
         getCurrentUserPhoto: getCurrentUserPhoto,
-        getExamProgressSummary: function () {
-            return navigationManager.getExamProgressSummary();
-        },
+        getExamProgressSummary: getExamProgressSummary,
         getSelectedExam: getSelectedExam,
         getUserInitial: getUserInitial,
         renderAlert: renderAlert,
@@ -1379,102 +1480,6 @@ export function bootstrapFrontendApp() {
     });
     var renderQuestionInput = questionRenderManager.renderQuestionInput;
     var renderQuestionStem = questionRenderManager.renderQuestionStem;
-    answerInputManager = createAnswerInputManager({
-        autoSaveChoiceDelayMs: AUTO_SAVE_CHOICE_DELAY_MS,
-        autoSaveTextDelayMs: AUTO_SAVE_TEXT_DELAY_MS,
-        clearMessages: clearMessages,
-        normalizeExamToken: normalizeExamToken,
-        render: render,
-        renderExamPartial: function (regions, reason, meta) {
-            if (renderCycleManager && typeof renderCycleManager.patchExamRegions === 'function') {
-                return renderCycleManager.patchExamRegions(regions, reason, meta);
-            }
-            render(reason, meta);
-            return false;
-        },
-        root: root,
-        scheduleAutoSave: scheduleAutoSave,
-        scheduleQuestionCachePersist: function () {
-            if (questionRuntimeManager && typeof questionRuntimeManager.scheduleQuestionCachePersist === 'function') {
-                return questionRuntimeManager.scheduleQuestionCachePersist.apply(questionRuntimeManager, arguments);
-            }
-            return undefined;
-        },
-        state: state,
-        updateSelectedExam: updateSelectedExam
-    });
-    var handleAnswerChangeTarget = answerInputManager.handleChangeTarget;
-    var handleAnswerInputTarget = answerInputManager.handleInputTarget;
-    navigationManager = createExamNavigationManager({
-        attemptUiStateNavigationSyncDelayMs: ATTEMPT_UI_STATE_NAVIGATION_SYNC_DELAY_MS,
-        attemptUiStateSyncDelayMs: ATTEMPT_UI_STATE_SYNC_DELAY_MS,
-        acknowledgeQuestionRevisionMarker: acknowledgeQuestionRevisionMarker,
-        clampQuestionIndex: clampQuestionIndex,
-        clearStickyQuestionRevisionNotice: clearStickyQuestionRevisionNotice,
-        clearMessages: clearMessages,
-        documentRef: document,
-        ensureQuestionWindowForIndex: ensureQuestionWindowForIndex,
-        escapeHtml: escapeHtml,
-        getNavigatorConnectionStatus: getNavigatorConnectionStatus,
-        getQuestionAtIndex: getQuestionAtIndex,
-        getQuestionById: getQuestionById,
-        getQuestionCount: getQuestionCount,
-        getQuestionIdAtIndex: getQuestionIdAtIndex,
-        getShortAnswerKeys: getShortAnswerKeys,
-        getTrueFalseMatrixItems: getTrueFalseMatrixItems,
-        hasUsableLocalAnswerForQuestion: hasUsableLocalAnswerForQuestion,
-        isExamAnswerEditingLocked: isExamAnswerEditingLocked,
-        isNetworkConnectivityError: isNetworkConnectivityError,
-        isQuestionPayloadLoaded: isQuestionPayloadLoaded,
-        navQuestionFilterAll: NAV_QUESTION_FILTER_ALL,
-        navQuestionFilterAnswered: NAV_QUESTION_FILTER_ANSWERED,
-        navQuestionFilterDoubtful: NAV_QUESTION_FILTER_DOUBTFUL,
-        navQuestionFilterUnanswered: NAV_QUESTION_FILTER_UNANSWERED,
-        navigationQuestionTypeBadgeConfig: navigationQuestionTypeBadgeConfig,
-        normalizeTrueFalseMatrixAnswer: normalizeTrueFalseMatrixAnswer,
-        persistCurrentAttemptUiStateLocally: persistCurrentAttemptUiStateLocally,
-        prefetchNextQuestionBatch: prefetchNextQuestionBatch,
-        questionOptionKey: questionOptionKey,
-        questionWindowSize: QUESTION_WINDOW_SIZE,
-        queueQuestionAnswer: queueQuestionAnswer,
-        render: render,
-        renderExamPartial: function (regions, reason, meta) {
-            if (renderCycleManager && typeof renderCycleManager.patchExamRegions === 'function') {
-                return renderCycleManager.patchExamRegions(regions, reason, meta);
-            }
-            render(reason, meta);
-            return false;
-        },
-        resetQuestionPrefetchIdleTimer: resetQuestionPrefetchIdleTimer,
-        resolveStoredAnswerValueForQuestion: resolveStoredAnswerValueForQuestion,
-        scheduleAttemptUiStateSync: scheduleAttemptUiStateSync,
-        schedulePendingAnswerRetry: schedulePendingAnswerRetry,
-        scheduleQuestionCachePersist: function () {
-            if (questionRuntimeManager && typeof questionRuntimeManager.scheduleQuestionCachePersist === 'function') {
-                return questionRuntimeManager.scheduleQuestionCachePersist.apply(questionRuntimeManager, arguments);
-            }
-            return undefined;
-        },
-        setActiveQuestionWindowForIndex: setActiveQuestionWindowForIndex,
-        state: state
-    });
-    var getExamProgressSummary = navigationManager.getExamProgressSummary;
-    var getNavigationQuestionEntries = navigationManager.getNavigationQuestionEntries;
-    var goToQuestion = navigationManager.goToQuestion;
-    var handleNavigationAction = navigationManager.handleAction;
-    var handleArrowNavigationKey = navigationManager.handleArrowNavigationKey;
-    var isQuestionAnswered = navigationManager.isQuestionAnswered;
-    var navigationQuestionFilterEmptyMessage = navigationManager.navigationQuestionFilterEmptyMessage;
-    var normalizeNavigationQuestionFilter = navigationManager.normalizeNavigationQuestionFilter;
-    var questionMatchesNavigationFilter = navigationManager.questionMatchesNavigationFilter;
-    var renderNavigationAnswerBadges = navigationManager.renderNavigationAnswerBadges;
-    var renderNavigationQuestionTypeBadge = navigationManager.renderNavigationQuestionTypeBadge;
-    var questionFlags = createQuestionFlags({
-        state: state
-    });
-    var isQuestionChanged = questionFlags.isQuestionChanged;
-    var isQuestionRevisionMarked = questionFlags.isQuestionRevisionMarked;
-    var isQuestionDoubtful = questionFlags.isQuestionDoubtful;
     stageRuntimeManager = createStageRuntimeManager({
         diagnosticsManager: diagnosticsManager,
         escapeHtml: escapeHtml,
@@ -1536,7 +1541,12 @@ export function bootstrapFrontendApp() {
     var ensureCalculatorFeature = stageRuntimeManager.ensureCalculatorFeature;
     var ensureExamStageRenderer = stageRuntimeManager.ensureExamStageRenderer;
     var ensureResultStageRenderer = stageRuntimeManager.ensureResultStageRenderer;
-    var maybePrefetchExamRuntime = stageRuntimeManager.maybePrefetchExamRuntime;
+    var maybePrefetchExamRuntime = function () {
+        if (stageRuntimeManager) {
+            stageRuntimeManager.maybePrefetchExamRuntime();
+        }
+        prefetchExamRuntimeBundle();
+    };
     var prefetchCalculatorFeature = stageRuntimeManager.prefetchCalculatorFeature;
     var prefetchExamStageRenderer = stageRuntimeManager.prefetchExamStageRenderer;
     var prefetchResultStageRenderer = stageRuntimeManager.prefetchResultStageRenderer;
@@ -1585,9 +1595,7 @@ export function bootstrapFrontendApp() {
     renderCycleManager = createRenderCycleManager({
         applyUiPreferences: applyUiPreferences,
         documentRef: document,
-        enhanceRichMath: function () {
-            renderMathInContainer(root);
-        },
+        enhanceRichMath: enhanceRichMath,
         getEffectiveNavPanelPosition: getEffectiveNavPanelPosition,
         maybePrefetchExamRuntime: maybePrefetchExamRuntime,
         recordRenderPerformed: function (reason, meta, stage) {

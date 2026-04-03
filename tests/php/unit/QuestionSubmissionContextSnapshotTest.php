@@ -1,0 +1,229 @@
+<?php
+
+declare(strict_types=1);
+
+use CbtExamSystem\Tests\TestCase;
+
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-question-submission-context-cache.php';
+
+final class QuestionSubmissionContextSnapshotTest extends TestCase
+{
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->useFakeRedisClient();
+    }
+
+    public function test_get_snapshots_hydrates_redis_once_and_reuses_cached_values_until_exam_version_changes(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionSubmissionContextSnapshotFakeWpdb();
+
+        $first = CBT_Question_Submission_Context_Cache::get_snapshots([201, 202]);
+        $second = CBT_Question_Submission_Context_Cache::get_snapshots([201, 202]);
+
+        self::assertSame(1, $wpdb->questionHydrateCalls);
+        self::assertSame(1, $wpdb->optionHydrateCalls);
+        self::assertSame($first, $second);
+        self::assertSame([9002], $first[201]['correct_option_ids']);
+        self::assertSame(['Jakarta'], $first[202]['short_answer_values']);
+        self::assertArrayNotHasKey('correct_text', $first[201]);
+        self::assertArrayNotHasKey('option_text', $first[201]);
+        self::assertCount(4, $this->storedRedisKeys());
+
+        CBT_Cache::invalidate_exam(55);
+        $third = CBT_Question_Submission_Context_Cache::get_snapshots([201, 202]);
+
+        self::assertSame(2, $wpdb->questionHydrateCalls);
+        self::assertSame(2, $wpdb->optionHydrateCalls);
+        self::assertSame($first[201]['id'], $third[201]['id']);
+    }
+
+    public function test_get_snapshot_discards_invalid_cached_payload_and_rehydrates_from_db(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionSubmissionContextSnapshotFakeWpdb();
+
+        $snapshot = CBT_Question_Submission_Context_Cache::get_snapshot(201);
+        self::assertSame(1, $wpdb->questionHydrateCalls);
+
+        foreach ($this->storedRedisKeys() as $key) {
+            if (strpos($key, 'cbt_submit_context:question:201:') === 0) {
+                $GLOBALS['cbt_test_redis_storage'][$key] = '{broken-json';
+            }
+        }
+
+        $rehydrated = CBT_Question_Submission_Context_Cache::get_snapshot(201);
+
+        self::assertSame(2, $wpdb->questionHydrateCalls);
+        self::assertSame($snapshot['correct_option_ids'], $rehydrated['correct_option_ids']);
+    }
+
+    public function test_get_snapshot_falls_back_to_db_when_redis_is_unavailable(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionSubmissionContextSnapshotFakeWpdb();
+        $this->setSnapshotRedisUnavailable();
+
+        $snapshot = CBT_Question_Submission_Context_Cache::get_snapshot(203);
+
+        self::assertSame('true_false', $snapshot['question_type']);
+        self::assertSame(1, $snapshot['true_false_correct_value']);
+        self::assertSame(1, $wpdb->questionHydrateCalls);
+        self::assertSame([], $this->storedRedisKeys());
+    }
+
+    private function useFakeRedisClient(): void
+    {
+        $reflection = new ReflectionClass(CBT_Question_Submission_Context_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function setSnapshotRedisUnavailable(): void
+    {
+        $reflection = new ReflectionClass(CBT_Question_Submission_Context_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, false);
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, 'disabled in test');
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function storedRedisKeys(): array
+    {
+        $keys = array_keys((array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+
+        return array_values(array_filter($keys, static function ($key): bool {
+            return is_string($key) && strpos($key, 'cbt_submit_context:') === 0;
+        }));
+    }
+}
+
+final class QuestionSubmissionContextSnapshotFakeWpdb
+{
+    public string $prefix = 'wp_';
+
+    public int $questionHydrateCalls = 0;
+    public int $optionHydrateCalls = 0;
+
+    /** @var array<int,array<string,mixed>> */
+    private array $questionRows;
+
+    /** @var array<int,array<int,array<string,mixed>>> */
+    private array $optionsByQuestion;
+
+    public function __construct()
+    {
+        $this->questionRows = [
+            201 => [
+                'id' => 201,
+                'exam_id' => 55,
+                'question_type' => 'multiple_choice',
+                'points' => 5,
+                'correct_text' => '',
+                'true_false_correct_value' => null,
+                'short_answer_correct_text' => null,
+            ],
+            202 => [
+                'id' => 202,
+                'exam_id' => 55,
+                'question_type' => 'short_answer',
+                'points' => 3,
+                'correct_text' => '',
+                'true_false_correct_value' => null,
+                'short_answer_correct_text' => 'Jakarta',
+            ],
+            203 => [
+                'id' => 203,
+                'exam_id' => 56,
+                'question_type' => 'true_false',
+                'points' => 2,
+                'correct_text' => '',
+                'true_false_correct_value' => 1,
+                'short_answer_correct_text' => null,
+            ],
+        ];
+
+        $this->optionsByQuestion = [
+            201 => [
+                ['id' => 9001, 'question_id' => 201, 'option_text' => 'Bandung', 'is_correct' => 0],
+                ['id' => 9002, 'question_id' => 201, 'option_text' => 'Jakarta', 'is_correct' => 1],
+            ],
+            203 => [
+                ['id' => 9010, 'question_id' => 203, 'option_text' => 'Benar', 'is_correct' => 1],
+                ['id' => 9011, 'question_id' => 203, 'option_text' => 'Salah', 'is_correct' => 0],
+            ],
+        ];
+    }
+
+    /** @param array<string,mixed>|string $prepared */
+    public function get_results($prepared, $output = null): array
+    {
+        $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
+
+        if (strpos($query, 'FROM wp_cbt_questions q') !== false) {
+            $this->questionHydrateCalls++;
+            $ids = $this->extractIdsFromInClause($query);
+            $rows = [];
+            foreach ($ids as $questionId) {
+                if (isset($this->questionRows[$questionId])) {
+                    $rows[] = $this->questionRows[$questionId];
+                }
+            }
+
+            return $rows;
+        }
+
+        if (strpos($query, 'FROM wp_cbt_options') !== false) {
+            $this->optionHydrateCalls++;
+            $ids = $this->extractIdsFromInClause($query);
+            $rows = [];
+            foreach ($ids as $questionId) {
+                foreach ($this->optionsByQuestion[$questionId] ?? [] as $optionRow) {
+                    $rows[] = $optionRow;
+                }
+            }
+
+            return $rows;
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<int,int>
+     */
+    private function extractIdsFromInClause(string $query): array
+    {
+        if (!preg_match('/IN\s*\(([^)]+)\)/', $query, $matches)) {
+            return [];
+        }
+
+        $parts = array_map('trim', explode(',', (string) ($matches[1] ?? '')));
+        return array_values(array_filter(array_map('intval', $parts), static function (int $value): bool {
+            return $value > 0;
+        }));
+    }
+}

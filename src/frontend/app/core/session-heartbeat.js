@@ -171,6 +171,25 @@ export function createSessionHeartbeatManager(deps) {
         };
     }
 
+    function buildHeartbeatSessionQuery(attemptId) {
+        var safeAttemptId = Number(attemptId) || 0;
+        var query = {
+            attempt_id: safeAttemptId > 0 ? safeAttemptId : null
+        };
+
+        if (safeAttemptId <= 0 || state.stage !== 'exam') {
+            return query;
+        }
+
+        query.presence_connection_status = String(state.connectionStatus || 'online');
+        query.presence_visibility_state = String(documentRef && documentRef.visibilityState ? documentRef.visibilityState : '');
+        query.presence_has_focus = hasDocumentFocus() ? 1 : 0;
+        query.presence_pending_sync_count = Math.max(0, Number(state.pendingSyncCount) || 0);
+        query.presence_heartbeat_lost_active = state.heartbeatLostActive ? 1 : 0;
+
+        return query;
+    }
+
     function recordHeartbeatLostFailure(attemptId, error) {
         var safeAttemptId = Number(attemptId) || 0;
         if (safeAttemptId <= 0) {
@@ -334,9 +353,7 @@ export function createSessionHeartbeatManager(deps) {
             }
 
             return apiRequest('session', {
-                query: {
-                    attempt_id: heartbeatAttemptId > 0 ? heartbeatAttemptId : null
-                }
+                query: buildHeartbeatSessionQuery(heartbeatAttemptId)
             });
         }).then(function (sessionPayload) {
             resetHeartbeatLostState({

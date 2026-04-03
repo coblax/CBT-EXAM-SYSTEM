@@ -84,6 +84,9 @@ function e2e_fixture_bootstrap_classes(): void
     e2e_fixture_require_class(CBT_UI_State::class);
     e2e_fixture_require_class(CBT_Cache::class);
     e2e_fixture_require_class(CBT_Security_Log::class);
+    e2e_fixture_require_class(CBT_Security_Live_Counters::class);
+    e2e_fixture_require_class(CBT_Live_Proctoring_Presence::class);
+    e2e_fixture_require_class(CBT_Live_Attempt_Roster_Index::class);
 }
 
 function e2e_fixture_resolve_user_role(WP_User $user): string
@@ -671,6 +674,21 @@ function e2e_fixture_update_exam(array $fixture, array $payload): array
         $updates['ends_at'] = $payload['ends_at'] ? sanitize_text_field((string) $payload['ends_at']) : null;
         $formats[] = '%s';
     }
+    if (array_key_exists('target_kelas', $payload)) {
+        $raw_target_kelas = strtoupper((string) $payload['target_kelas']);
+        $target_kelas_values = preg_split('/[,;|]+/', $raw_target_kelas);
+        $target_kelas_values = array_values(array_unique(array_filter(array_map(
+            static function ($kelas_code): string {
+                return sanitize_text_field(trim((string) $kelas_code));
+            },
+            is_array($target_kelas_values) ? $target_kelas_values : []
+        ), static function ($kelas_code): bool {
+            return $kelas_code !== '';
+        })));
+
+        $updates['target_kelas'] = implode(',', $target_kelas_values);
+        $formats[] = '%s';
+    }
 
     if (empty($updates)) {
         return [
@@ -739,6 +757,9 @@ function e2e_fixture_shift_latest_attempt_start(array $fixture, array $payload):
     );
 
     CBT_Cache::invalidate_attempt($attempt_id);
+    if (class_exists(CBT_Runtime::class, false) && method_exists(CBT_Runtime::class, 'is_ready') && CBT_Runtime::is_ready()) {
+        CBT_Runtime::clear_attempt_runtime($attempt_id);
+    }
 
     return [
         'attempt' => e2e_fixture_get_latest_attempt($fixture),
@@ -791,6 +812,20 @@ function e2e_fixture_clear_security_logs(array $payload): array
 
     return [
         'deleted' => $deleted === false ? 0 : (int) $deleted,
+    ];
+}
+
+/**
+ * @return array<string,mixed>
+ */
+function e2e_fixture_clear_security_live_state(array $payload): array
+{
+    CBT_Security_Live_Counters::clear_all();
+    CBT_Live_Proctoring_Presence::clear_all();
+    CBT_Live_Attempt_Roster_Index::clear_all();
+
+    return [
+        'cleared' => true,
     ];
 }
 
@@ -963,12 +998,26 @@ function e2e_fixture_age_login_session(array $payload): array
         $session_key = CBT_Auth::reset_login_session($user_id);
     }
 
-    update_user_meta($user_id, 'cbt_active_login_session_touched_at', time() - $seconds_ago);
+    $aged_touched_at = time() - $seconds_ago;
+    update_user_meta($user_id, 'cbt_active_login_session_touched_at', $aged_touched_at);
+
+    try {
+        $auth_reflection = new ReflectionClass(CBT_Auth::class);
+        $write_state = $auth_reflection->getMethod('write_active_login_state');
+        $write_state->setAccessible(true);
+        $write_state->invoke(null, $user_id, [
+            'session_key' => $session_key,
+            'touched_at' => $aged_touched_at,
+            'issued_at' => max(0, (int) get_user_meta($user_id, 'cbt_active_login_session_touched_at', true)),
+        ]);
+    } catch (Throwable $throwable) {
+        // Legacy user-meta update above remains as a safe fallback when reflection fails.
+    }
 
     return [
         'user' => $user,
         'session_key' => $session_key,
-        'touched_at' => (int) get_user_meta($user_id, 'cbt_active_login_session_touched_at', true),
+        'touched_at' => $aged_touched_at,
     ];
 }
 
@@ -1063,6 +1112,10 @@ switch ($action) {
 
     case 'clear_security_logs':
         e2e_fixture_success(e2e_fixture_clear_security_logs($payload));
+        break;
+
+    case 'clear_security_live_state':
+        e2e_fixture_success(e2e_fixture_clear_security_live_state($payload));
         break;
 
     case 'sync_subject_bank_questions_to_fixture':

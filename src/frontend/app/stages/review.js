@@ -172,6 +172,7 @@ export function createReviewRenderer(deps) {
         var map = {
             correct: 'Benar',
             wrong: 'Salah',
+            graded: 'Sudah dinilai',
             unanswered: 'Belum dijawab',
             manual: 'Perlu penilaian guru'
         };
@@ -182,6 +183,7 @@ export function createReviewRenderer(deps) {
         var map = {
             correct: 'is-correct',
             wrong: 'is-wrong',
+            graded: 'is-graded',
             unanswered: 'is-unanswered',
             manual: 'is-manual'
         };

@@ -36,6 +36,12 @@ export default defineConfig(({ command }) => ({
                 chunkFileNames: 'assets/[name]-[hash].js',
                 assetFileNames: 'assets/[name]-[hash][extname]',
                 manualChunks(id) {
+                    if (id.includes('/src/frontend/app/exam/question-helpers')) {
+                        return 'frontend-exam-shared-helpers';
+                    }
+                    if (id.includes('/src/frontend/app/exam/runtime-bundle')) {
+                        return 'frontend-exam-runtime';
+                    }
                     if (id.includes('/src/frontend/app/features/calculator')) {
                         return 'frontend-feature-calculator';
                     }

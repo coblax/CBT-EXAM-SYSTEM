@@ -1,0 +1,73 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - link "Lewati ke aplikasi CBT" [ref=e3] [cursor=pointer]:
+    - /url: "#cbt-exam-app"
+  - main [ref=e6]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - img [ref=e13]
+          - generic [ref=e17]:
+            - text: Portal CBT
+            - heading "Ujian CBT Sekolah" [level=1] [ref=e18]
+        - paragraph [ref=e19]: Masuk dengan akun resmi, pilih ujian yang aktif, lalu kerjakan dengan autosave dan timer yang sinkron dari server.
+        - paragraph [ref=e20]: Alur masuk ujian
+        - generic "Alur masuk ke ujian CBT" [ref=e21]:
+          - article [ref=e22]:
+            - img [ref=e24]
+            - generic [ref=e27]:
+              - generic [ref=e28]:
+                - generic [ref=e29]: "01"
+                - strong [ref=e30]: Masuk dengan akun resmi
+              - paragraph [ref=e31]: Masuk memakai email, username, atau NISN yang terdaftar.
+              - generic [ref=e32]:
+                - generic [ref=e33]: Email / Username / NISN
+                - generic [ref=e34]: 1 akun = 1 sesi
+          - article [ref=e35]:
+            - img [ref=e37]
+            - generic [ref=e41]:
+              - generic [ref=e42]:
+                - generic [ref=e43]: "02"
+                - strong [ref=e44]: Pilih ujian dan verifikasi token
+              - paragraph [ref=e45]: Pilih ujian, lalu isi token hanya jika memang diwajibkan.
+              - generic [ref=e46]:
+                - generic [ref=e47]: Token global / per ujian
+                - generic [ref=e48]: Sesi aktif bisa dilanjutkan
+          - article [ref=e49]:
+            - img [ref=e51]
+            - generic [ref=e54]:
+              - generic [ref=e55]:
+                - generic [ref=e56]: "03"
+                - strong [ref=e57]: Kerjakan, review, lalu kumpulkan
+              - paragraph [ref=e58]: Jawaban autosave aktif; review sebentar lalu kumpulkan.
+              - generic [ref=e59]:
+                - generic [ref=e60]: Autosave aktif
+                - generic [ref=e61]: Timer sinkron server
+      - generic [ref=e62]:
+        - generic [ref=e63]:
+          - generic [ref=e64]:
+            - generic [ref=e65]: EMAIL / USERNAME / NISN
+            - textbox "EMAIL / USERNAME / NISN" [ref=e66]:
+              - /placeholder: "Contoh: 231045 atau siswa@smkn1tpd.sch.id"
+              - text: coblax
+          - generic [ref=e67]:
+            - generic [ref=e68]: PASSWORD
+            - generic [ref=e69]:
+              - textbox "PASSWORD" [ref=e70]:
+                - /placeholder: Masukkan password akun
+                - text: "223611"
+              - button "Tampilkan" [ref=e71] [cursor=pointer]:
+                - generic [ref=e72]:
+                  - img [ref=e74]
+                  - img [ref=e78]
+                - generic [ref=e83]: Tampilkan
+          - button "LOGIN" [ref=e85] [cursor=pointer]:
+            - generic [ref=e86]: LOGIN
+        - generic [ref=e87]: Akun ini masih aktif di browser lain. Logout dulu dari browser sebelumnya atau minta admin reset login.
+        - paragraph [ref=e88]: Jika gagal login, hubungi admin sekolah atau pengawas ujian.
+        - generic "Informasi sistem" [ref=e89]:
+          - generic [ref=e90]: © COBLAX
+          - generic [ref=e91]: Versi 1.8.4
+```

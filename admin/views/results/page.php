@@ -767,7 +767,7 @@ if (!defined('ABSPATH')) {
                 }
                 #cbt-results-attempts-card .widefat th:nth-child(2),
                 #cbt-results-attempts-card .widefat td:nth-child(2) {
-                    width: 118px;
+                    width: 156px;
                     padding-left: 4px;
                 }
                 #cbt-results-attempts-card .widefat th:nth-child(3),
@@ -797,6 +797,68 @@ if (!defined('ABSPATH')) {
                 #cbt-results-attempts-card .cbt-results-student-name {
                     margin-bottom: 5px;
                     font-size: 13px;
+                }
+                #cbt-results-attempts-card .cbt-results-student-monitor {
+                    display: grid;
+                    gap: 5px;
+                    margin-top: 7px;
+                }
+                #cbt-results-attempts-card .cbt-results-student-monitor-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: fit-content;
+                    min-height: 20px;
+                    padding: 0 8px;
+                    border: 1px solid #d8e3ef;
+                    border-radius: 999px;
+                    background: #f8fafc;
+                    color: #425466;
+                    font-size: 10px;
+                    font-weight: 700;
+                    line-height: 1;
+                }
+                #cbt-results-attempts-card .cbt-results-student-monitor-badge.is-online {
+                    border-color: #b7e3cc;
+                    background: #ecfdf3;
+                    color: #1d6a44;
+                }
+                #cbt-results-attempts-card .cbt-results-student-monitor-badge.is-stale {
+                    border-color: #f3d6a0;
+                    background: #fff7e6;
+                    color: #9a5b00;
+                }
+                #cbt-results-attempts-card .cbt-results-student-monitor-badge.is-offline {
+                    border-color: #d5dce5;
+                    background: #f4f7fb;
+                    color: #526174;
+                }
+                #cbt-results-attempts-card .cbt-results-student-monitor-meta {
+                    color: #607287;
+                    font-size: 10px;
+                    line-height: 1.4;
+                }
+                #cbt-results-attempts-card .cbt-results-student-monitor-meta strong {
+                    color: #334155;
+                }
+                #cbt-results-attempts-card .cbt-results-student-monitor-chips {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 4px;
+                }
+                #cbt-results-attempts-card .cbt-results-student-monitor-chip {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 20px;
+                    padding: 0 7px;
+                    border: 1px solid #dbe5ef;
+                    border-radius: 999px;
+                    background: #f8fafc;
+                    color: #526174;
+                    font-size: 10px;
+                    font-weight: 600;
+                    line-height: 1;
                 }
                 #cbt-results-attempts-card .cbt-results-student-class {
                     min-height: 22px;
@@ -1105,6 +1167,10 @@ if (!defined('ABSPATH')) {
                     background: #fff0f0;
                     color: #b42323;
                 }
+                .cbt-attempt-answer-detail-summary-chip.is-graded {
+                    background: #edf5ff;
+                    color: #145ea8;
+                }
                 .cbt-attempt-answer-detail-summary-chip.is-manual {
                     background: #fff6e8;
                     color: #b4690e;
@@ -1175,6 +1241,9 @@ if (!defined('ABSPATH')) {
                 .cbt-attempt-answer-detail-item.is-wrong td {
                     background: #fff8f8;
                 }
+                .cbt-attempt-answer-detail-item.is-graded td {
+                    background: #f5faff;
+                }
                 .cbt-attempt-answer-detail-item.is-manual td {
                     background: #fffaf2;
                 }
@@ -1219,6 +1288,10 @@ if (!defined('ABSPATH')) {
                 .cbt-attempt-answer-status-badge.is-wrong {
                     background: #fff0f0;
                     color: #b42323;
+                }
+                .cbt-attempt-answer-status-badge.is-graded {
+                    background: #edf5ff;
+                    color: #145ea8;
                 }
                 .cbt-attempt-answer-status-badge.is-manual {
                     background: #fff6e8;
@@ -2017,6 +2090,7 @@ if (!defined('ABSPATH')) {
                                 ?>
                                     <span class="cbt-results-student-class"><?php echo esc_html($attempt_student_kelas); ?></span>
                                 <?php endif; ?>
+                                <?php echo CBT_Admin_Results_Service::render_attempt_student_presence_monitor((array) $attempt); ?>
                             </td>
                             <td class="<?php echo esc_attr($show_exam_column ? '' : 'cbt-results-status-cell'); ?>">
                                 <?php if ($show_exam_column): ?>

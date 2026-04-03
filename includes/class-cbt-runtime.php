@@ -8,6 +8,14 @@ if (!class_exists('CBT_Active_Attempt_Index')) {
     require_once __DIR__ . '/class-cbt-active-attempt-index.php';
 }
 
+if (!class_exists('CBT_Live_Proctoring_Presence')) {
+    require_once __DIR__ . '/class-cbt-live-proctoring-presence.php';
+}
+
+if (!class_exists('CBT_Live_Attempt_Roster_Index')) {
+    require_once __DIR__ . '/class-cbt-live-attempt-roster-index.php';
+}
+
 class CBT_Runtime
 {
     public const CRON_HOOK = 'cbt_runtime_flush_pending';
@@ -816,6 +824,14 @@ class CBT_Runtime
 
         if (class_exists('CBT_Security_Live_Counters')) {
             CBT_Security_Live_Counters::clear_attempt($attempt_id);
+        }
+
+        if (class_exists('CBT_Live_Proctoring_Presence')) {
+            CBT_Live_Proctoring_Presence::clear_attempt($attempt_id);
+        }
+
+        if (class_exists('CBT_Live_Attempt_Roster_Index')) {
+            CBT_Live_Attempt_Roster_Index::clear_attempt($attempt_id);
         }
     }
 

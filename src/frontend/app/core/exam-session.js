@@ -12,6 +12,11 @@ export function createExamSessionManager(deps) {
     var choosePreferredAttemptUiState = deps.choosePreferredAttemptUiState;
     var clearPersistedAttemptUiState = deps.clearPersistedAttemptUiState;
     var clearPersistedQuestionCache = deps.clearPersistedQuestionCache;
+    var ensureExamRuntimeBundle = typeof deps.ensureExamRuntimeBundle === 'function'
+        ? deps.ensureExamRuntimeBundle
+        : function () {
+            return Promise.resolve(null);
+        };
     var ensureExamStageRenderer = deps.ensureExamStageRenderer;
     var ensureQuestionWindowForIndex = deps.ensureQuestionWindowForIndex;
     var examTokenLength = Math.max(1, Number(deps.examTokenLength) || 1);
@@ -348,6 +353,7 @@ export function createExamSessionManager(deps) {
         if (examId > 0) {
             state.selectedExamId = examId;
         }
+        await ensureExamRuntimeBundle();
         setQuestionRevision(startPayload && startPayload.question_revision, examId);
         resetQuestionDataState({
             preserveQuestionRevision: true

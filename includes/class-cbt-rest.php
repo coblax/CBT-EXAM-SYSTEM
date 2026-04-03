@@ -12,8 +12,20 @@ if (!class_exists('CBT_Exam_Availability_Cache')) {
     require_once __DIR__ . '/class-cbt-exam-availability-cache.php';
 }
 
+if (!class_exists('CBT_Question_Submission_Context_Cache')) {
+    require_once __DIR__ . '/class-cbt-question-submission-context-cache.php';
+}
+
 if (!class_exists('CBT_Active_Attempt_Index')) {
     require_once __DIR__ . '/class-cbt-active-attempt-index.php';
+}
+
+if (!class_exists('CBT_Live_Proctoring_Presence')) {
+    require_once __DIR__ . '/class-cbt-live-proctoring-presence.php';
+}
+
+if (!class_exists('CBT_Live_Attempt_Roster_Index')) {
+    require_once __DIR__ . '/class-cbt-live-attempt-roster-index.php';
 }
 
 class CBT_REST
@@ -45,6 +57,31 @@ class CBT_REST
             'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
             'args' => [
                 'attempt_id' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+                'presence_connection_status' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'presence_visibility_state' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'presence_has_focus' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+                'presence_pending_sync_count' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+                'presence_heartbeat_lost_active' => [
                     'required' => false,
                     'type' => 'integer',
                     'sanitize_callback' => 'absint',
@@ -267,6 +304,8 @@ class CBT_REST
             if (is_wp_error($attempt)) {
                 return $attempt;
             }
+
+            self::maybe_update_attempt_presence_from_session($attempt, $request);
 
             $exam_id = (int) ($attempt['exam_id'] ?? 0);
             if ($exam_id > 0) {
@@ -725,7 +764,7 @@ class CBT_REST
 
         $exam = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, status, starts_at, ends_at, duration_minutes, randomize_questions, randomize_options, target_kelas
+                "SELECT id, title, created_by, status, starts_at, ends_at, duration_minutes, randomize_questions, randomize_options, target_kelas
                  FROM {$exam_table}
                  WHERE id = %d",
                 $exam_id
@@ -908,6 +947,15 @@ class CBT_REST
                 'student_id' => $user_id,
                 'status' => 'in_progress',
             ]);
+            self::sync_live_attempt_roster([
+                'id' => $created_attempt_id,
+                'exam_id' => $exam_id,
+                'student_id' => $user_id,
+                'status' => 'in_progress',
+            ], [
+                'teacher_id' => (int) ($exam['created_by'] ?? 0),
+                'exam_title' => (string) ($exam['title'] ?? ''),
+            ]);
             $attempt_timer = self::build_attempt_timer_payload([
                 'id' => $created_attempt_id,
                 'status' => 'in_progress',
@@ -998,6 +1046,10 @@ class CBT_REST
 
         self::ensure_runtime_attempt_state($runtime_attempt, $resolved_duration_minutes);
         self::sync_active_attempt_index($runtime_attempt);
+        self::sync_live_attempt_roster($runtime_attempt, [
+            'teacher_id' => (int) ($exam['created_by'] ?? 0),
+            'exam_title' => (string) ($exam['title'] ?? ''),
+        ]);
 
         $attempt_timer = self::build_attempt_timer_payload([
             'id' => $attempt_id,
@@ -1085,6 +1137,19 @@ class CBT_REST
         }
 
         CBT_Active_Attempt_Index::set_active_attempt($attempt);
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $context
+     */
+    private static function sync_live_attempt_roster(array $attempt, array $context = []): void
+    {
+        if (!class_exists('CBT_Live_Attempt_Roster_Index')) {
+            return;
+        }
+
+        CBT_Live_Attempt_Roster_Index::sync_attempt($attempt, $context);
     }
 
     public static function submit_answer(WP_REST_Request $request)
@@ -1361,6 +1426,9 @@ class CBT_REST
         }
 
         $logged = CBT_Security_Log::record_attempt_event_for_context($attempt, $event_type, $context);
+        if ($logged) {
+            self::maybe_update_attempt_presence_from_context($attempt, $context);
+        }
 
         return rest_ensure_response([
             'ok' => true,
@@ -1469,6 +1537,84 @@ class CBT_REST
         return 'desktop';
     }
 
+    /**
+     * @param array<string,mixed> $attempt
+     */
+    private static function maybe_update_attempt_presence_from_session(array $attempt, WP_REST_Request $request): void
+    {
+        if (!class_exists('CBT_Live_Proctoring_Presence') || !CBT_Live_Proctoring_Presence::is_available()) {
+            return;
+        }
+
+        if (strtolower((string) ($attempt['status'] ?? '')) !== 'in_progress') {
+            return;
+        }
+
+        $presence = [];
+        if ($request->get_param('presence_connection_status') !== null) {
+            $presence['connection_status'] = sanitize_text_field((string) $request->get_param('presence_connection_status'));
+        }
+        if ($request->get_param('presence_visibility_state') !== null) {
+            $presence['visibility_state'] = sanitize_text_field((string) $request->get_param('presence_visibility_state'));
+        }
+        if ($request->get_param('presence_has_focus') !== null) {
+            $presence['has_focus'] = self::normalize_request_flag($request->get_param('presence_has_focus'));
+        }
+        if ($request->get_param('presence_pending_sync_count') !== null) {
+            $presence['pending_sync_count'] = max(0, (int) $request->get_param('presence_pending_sync_count'));
+        }
+        if ($request->get_param('presence_heartbeat_lost_active') !== null) {
+            $presence['heartbeat_lost_active'] = self::normalize_request_flag($request->get_param('presence_heartbeat_lost_active'));
+        }
+
+        if (empty($presence)) {
+            return;
+        }
+
+        CBT_Live_Proctoring_Presence::update_attempt_presence($attempt, $presence);
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $context
+     */
+    private static function maybe_update_attempt_presence_from_context(array $attempt, array $context): void
+    {
+        if (!class_exists('CBT_Live_Proctoring_Presence') || !CBT_Live_Proctoring_Presence::is_available()) {
+            return;
+        }
+
+        if (strtolower((string) ($attempt['status'] ?? '')) !== 'in_progress') {
+            return;
+        }
+
+        $presence = [];
+        foreach (['connection_status', 'visibility_state', 'has_focus', 'pending_sync_count', 'heartbeat_lost_active'] as $key) {
+            if (array_key_exists($key, $context)) {
+                $presence[$key] = $context[$key];
+            }
+        }
+
+        if (empty($presence)) {
+            return;
+        }
+
+        CBT_Live_Proctoring_Presence::update_attempt_presence($attempt, $presence);
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private static function normalize_request_flag($value): int
+    {
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
+
+        $normalized = strtolower(trim((string) $value));
+        return in_array($normalized, ['1', 'true', 'yes', 'on'], true) ? 1 : 0;
+    }
+
     private static function detect_security_request_device_platform(string $user_agent): string
     {
         $user_agent = strtolower($user_agent);
@@ -1517,6 +1663,19 @@ class CBT_REST
             return $attempt;
         }
 
+        $question_ids = [];
+        foreach ($answers as $answer_row) {
+            if (!is_array($answer_row)) {
+                continue;
+            }
+
+            $question_id = (int) ($answer_row['question_id'] ?? 0);
+            if ($question_id > 0) {
+                $question_ids[] = $question_id;
+            }
+        }
+        $question_context_map = self::get_cached_question_submission_contexts($question_ids);
+
         $prepared_entries = [];
         foreach ($answers as $answer_row) {
             if (!is_array($answer_row)) {
@@ -1528,7 +1687,12 @@ class CBT_REST
                 return new WP_Error('invalid_payload', 'question_id is required for each answer item', ['status' => 400]);
             }
 
-            $prepared = self::prepare_submission_entry($attempt, $question_id, $answer_row['answer'] ?? null);
+            $prepared = self::prepare_submission_entry(
+                $attempt,
+                $question_id,
+                $answer_row['answer'] ?? null,
+                is_array($question_context_map[$question_id] ?? null) ? $question_context_map[$question_id] : null
+            );
             if (is_wp_error($prepared)) {
                 return $prepared;
             }
@@ -1633,28 +1797,13 @@ class CBT_REST
     /**
      * @return array<string,mixed>|WP_Error
      */
-    private static function prepare_submission_entry(array $attempt, int $question_id, $answer_input)
+    private static function prepare_submission_entry(array $attempt, int $question_id, $answer_input, ?array $question_context = null)
     {
-        $question_context = self::get_cached_question_submission_context($question_id);
+        $question_context = is_array($question_context) ? $question_context : self::get_cached_question_submission_context($question_id);
         if (!$question_context || (int) ($question_context['exam_id'] ?? 0) !== (int) ($attempt['exam_id'] ?? 0)) {
             return new WP_Error('not_found', 'Attempt atau soal tidak ditemukan pada exam ini', ['status' => 404]);
         }
 
-        $question = [
-            'id' => (int) ($question_context['id'] ?? 0),
-            'exam_id' => (int) ($question_context['exam_id'] ?? 0),
-            'question_type' => (string) ($question_context['question_type'] ?? ''),
-            'points' => (float) ($question_context['points'] ?? 0),
-            'correct_text' => (string) ($question_context['correct_text'] ?? ''),
-            'true_false_correct_value' => $question_context['true_false_correct_value'] ?? null,
-            'short_answer_correct_text' => $question_context['short_answer_correct_text'] ?? null,
-        ];
-        $options = isset($question_context['options']) && is_array($question_context['options'])
-            ? $question_context['options']
-            : [];
-        $question_detail = isset($question_context['question_detail']) && is_array($question_context['question_detail'])
-            ? $question_context['question_detail']
-            : [];
         $now = current_time('mysql');
 
         if (self::is_empty_answer_submission($answer_input)) {
@@ -1671,7 +1820,7 @@ class CBT_REST
             ];
         }
 
-        $question_type = (string) ($question['question_type'] ?? '');
+        $question_type = (string) ($question_context['question_type'] ?? '');
         $deferred_scoring = self::should_defer_submit_scoring();
         if ($deferred_scoring) {
             $normalized_storage = self::normalize_submission_for_storage($question_type, $answer_input);
@@ -1682,7 +1831,7 @@ class CBT_REST
                 'score_awarded' => 0.0,
             ];
         } else {
-            $evaluated = self::evaluate_answer($question, $options, $answer_input, $question_detail);
+            $evaluated = self::evaluate_answer_from_submission_context($question_context, $answer_input);
         }
 
         return [
@@ -3881,96 +4030,20 @@ class CBT_REST
     }
 
     /**
+     * @param array<int,int> $question_ids
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_cached_question_submission_contexts(array $question_ids): array
+    {
+        return CBT_Question_Submission_Context_Cache::get_snapshots($question_ids);
+    }
+
+    /**
      * @return array<string,mixed>|null
      */
     private static function get_cached_question_submission_context(int $question_id): ?array
     {
-        if ($question_id <= 0) {
-            return null;
-        }
-
-        $payload = CBT_Cache::remember(
-            'rest:submit_context:question:' . $question_id,
-            12 * HOUR_IN_SECONDS,
-            [CBT_Cache::namespace_catalog()],
-            static function () use ($question_id): ?array {
-                global $wpdb;
-
-                $question_table = $wpdb->prefix . 'cbt_questions';
-                $question_true_false_table = $wpdb->prefix . 'cbt_question_true_false';
-                $question_short_answer_table = $wpdb->prefix . 'cbt_question_short_answer';
-                $option_table = $wpdb->prefix . 'cbt_options';
-
-                $question = $wpdb->get_row(
-                    $wpdb->prepare(
-                        "SELECT q.id, q.exam_id, q.question_type, q.points, q.correct_text,
-                                qtf.correct_value AS true_false_correct_value,
-                                qsa.correct_text AS short_answer_correct_text
-                         FROM {$question_table} q
-                         LEFT JOIN {$question_true_false_table} qtf ON qtf.question_id = q.id
-                         LEFT JOIN {$question_short_answer_table} qsa ON qsa.question_id = q.id
-                         WHERE q.id = %d
-                         LIMIT 1",
-                        $question_id
-                    ),
-                    ARRAY_A
-                );
-                if (!$question) {
-                    return null;
-                }
-
-                $question_type = (string) ($question['question_type'] ?? '');
-                $options = [];
-                if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false'], true)) {
-                    $options = $wpdb->get_results(
-                        $wpdb->prepare(
-                            "SELECT id, option_text, is_correct
-                             FROM {$option_table}
-                             WHERE question_id = %d
-                             ORDER BY id ASC",
-                            $question_id
-                        ),
-                        ARRAY_A
-                    );
-                }
-
-                $question_detail = [];
-                if ($question_type === 'short_answer') {
-                    $short_answer_correct = trim((string) ($question['short_answer_correct_text'] ?? ''));
-                    if ($short_answer_correct !== '') {
-                        $question_detail['correct_text'] = $short_answer_correct;
-                    }
-                } elseif ($question_type === 'true_false_matrix') {
-                    $question_detail['correct_text'] = (string) ($question['correct_text'] ?? '');
-                } elseif ($question_type === 'true_false') {
-                    $correct_value_raw = $question['true_false_correct_value'] ?? null;
-                    if ($correct_value_raw !== null && $correct_value_raw !== '') {
-                        $question_detail['correct_value'] = (int) $correct_value_raw;
-                    } else {
-                        $legacy_correct = self::normalize_true_false_value((string) ($question['correct_text'] ?? ''), true);
-                        if ($legacy_correct !== null) {
-                            $question_detail['correct_value'] = $legacy_correct;
-                        } else {
-                            $question_detail = self::get_question_type_detail($question_id, $question_type);
-                        }
-                    }
-                }
-
-                return [
-                    'id' => (int) ($question['id'] ?? 0),
-                    'exam_id' => (int) ($question['exam_id'] ?? 0),
-                    'question_type' => $question_type,
-                    'points' => (float) ($question['points'] ?? 0),
-                    'correct_text' => (string) ($question['correct_text'] ?? ''),
-                    'true_false_correct_value' => $question['true_false_correct_value'] ?? null,
-                    'short_answer_correct_text' => $question['short_answer_correct_text'] ?? null,
-                    'options' => $options,
-                    'question_detail' => $question_detail,
-                ];
-            }
-        );
-
-        return is_array($payload) ? $payload : null;
+        return CBT_Question_Submission_Context_Cache::get_snapshot($question_id);
     }
 
     /**
@@ -4266,22 +4339,34 @@ class CBT_REST
             : null;
         $correct_questions = max(0, (int) ($summary['correct_questions'] ?? 0));
         $wrong_questions = max(0, (int) ($summary['wrong_questions'] ?? 0));
+        $graded_questions = max(0, (int) ($summary['graded_questions'] ?? 0));
         $manual_questions = max(0, (int) ($summary['manual_questions'] ?? $summary['pending_manual_questions'] ?? 0));
         $unanswered_questions = max(0, (int) ($summary['unanswered_questions'] ?? 0));
 
         if ($total_questions <= 0) {
-            $total_questions = max(0, $correct_questions + $wrong_questions + $manual_questions + $unanswered_questions);
+            $total_questions = max(0, $correct_questions + $wrong_questions + $graded_questions + $manual_questions + $unanswered_questions);
         }
 
         $answered_questions = $explicit_answered_questions !== null
             ? max(0, min($total_questions, $explicit_answered_questions))
-            : max(0, min($total_questions, $correct_questions + $wrong_questions + $manual_questions));
+            : max(0, min($total_questions, $correct_questions + $wrong_questions + $graded_questions + $manual_questions));
 
         return [
             'total_questions' => $total_questions,
             'answered_questions' => $answered_questions,
             'pending_manual_questions' => $manual_questions,
         ];
+    }
+
+    private static function is_essay_answer_reviewed(?array $answer_row): bool
+    {
+        if (!is_array($answer_row)) {
+            return false;
+        }
+
+        return array_key_exists('is_correct', $answer_row)
+            && $answer_row['is_correct'] !== null
+            && $answer_row['is_correct'] !== '';
     }
 
     private static function get_exam_show_student_result(int $exam_id): int
@@ -4634,6 +4719,7 @@ class CBT_REST
         $question_ids = array_values(array_filter(array_map('intval', array_column($questions, 'id')), static function ($id): bool {
             return $id > 0;
         }));
+        $submission_contexts = self::get_cached_question_submission_contexts($question_ids);
 
         $options_by_question = [];
         if (!empty($question_ids)) {
@@ -4685,7 +4771,7 @@ class CBT_REST
 
         $answer_rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT question_id, selected_option_ids, answer_text, is_correct, score_awarded
+                "SELECT question_id, selected_option_ids, answer_text, is_correct, score_awarded, answered_at, updated_at
                  FROM {$answer_table}
                  WHERE attempt_id = %d",
                 $attempt_id
@@ -4712,6 +4798,7 @@ class CBT_REST
 
             $question_type = (string) ($question['question_type'] ?? '');
             $options = (array) ($options_by_question[$question_id] ?? []);
+            $submission_context = is_array($submission_contexts[$question_id] ?? null) ? $submission_contexts[$question_id] : null;
             $answer_row = $answers_by_question[$question_id] ?? null;
             $is_answered = is_array($answer_row);
 
@@ -4720,13 +4807,16 @@ class CBT_REST
                 : [];
             sort($selected_option_ids);
 
-            $correct_option_ids = [];
+            $correct_option_ids = is_array($submission_context['correct_option_ids'] ?? null)
+                ? array_values(array_unique(array_map('intval', $submission_context['correct_option_ids'])))
+                : [];
+            $has_submission_correct_option_ids = !empty($correct_option_ids);
             $options_with_state = [];
             foreach ($options as $option_row) {
                 $option = (array) $option_row;
                 $option_id = (int) ($option['id'] ?? 0);
                 $is_correct_option = ((int) ($option['is_correct'] ?? 0) === 1);
-                if ($is_correct_option && $option_id > 0) {
+                if ($is_correct_option && $option_id > 0 && !$has_submission_correct_option_ids) {
                     $correct_option_ids[] = $option_id;
                 }
 
@@ -4739,9 +4829,14 @@ class CBT_REST
                 ];
             }
 
-            $question_detail = self::get_question_type_detail($question_id, $question_type);
-            if ($question_type === 'true_false' && empty($correct_option_ids) && isset($question_detail['correct_value'])) {
-                $expected_true_false = (int) $question_detail['correct_value'];
+            $question_detail = [];
+            if (
+                $question_type === 'true_false'
+                && !empty($options_with_state)
+                && isset($submission_context['true_false_correct_value'])
+                && $submission_context['true_false_correct_value'] !== null
+            ) {
+                $expected_true_false = (int) $submission_context['true_false_correct_value'];
                 foreach ($options_with_state as $opt_idx => $option_payload) {
                     $option_value = self::normalize_true_false_value((string) ($option_payload['option_text'] ?? ''), true);
                     if ($option_value !== null && $option_value === $expected_true_false) {
@@ -4752,6 +4847,8 @@ class CBT_REST
                         $options_with_state[$opt_idx]['is_correct'] = 1;
                     }
                 }
+            } elseif ($question_type === 'essay') {
+                $question_detail = self::get_question_type_detail($question_id, $question_type);
             }
             $correct_option_ids = array_values(array_unique($correct_option_ids));
             sort($correct_option_ids);
@@ -4790,7 +4887,8 @@ class CBT_REST
                     $question,
                     $options,
                     $answer_input_for_eval,
-                    $question_detail
+                    $question_detail,
+                    $submission_context
                 );
                 $evaluated_is_correct = $deferred_eval['is_correct'] ?? null;
                 $is_correct = ($evaluated_is_correct === null || $evaluated_is_correct === '')
@@ -4807,8 +4905,9 @@ class CBT_REST
             $question_max_points = (float) ($question['points'] ?? 0);
             if ($question_type === 'short_answer') {
                 $submitted_short_answers = self::extract_short_answer_submission_values($answer_text);
-                $short_answer_correct_text = (string) ($question_detail['correct_text'] ?? ($question['correct_text'] ?? ''));
-                $correct_short_answers = self::normalize_short_answer_values($short_answer_correct_text);
+                $correct_short_answers = is_array($submission_context['short_answer_values'] ?? null)
+                    ? array_values($submission_context['short_answer_values'])
+                    : self::normalize_short_answer_values((string) ($question['correct_text'] ?? ''));
                 $short_answer_input_keys = self::resolve_short_answer_input_keys(
                     (string) ($question['question_text'] ?? ''),
                     $correct_short_answers
@@ -4823,7 +4922,8 @@ class CBT_REST
                         $question,
                         [],
                         $answer_text,
-                        ['correct_text' => $short_answer_correct_text]
+                        [],
+                        $submission_context
                     );
                     $evaluated_is_correct = $short_answer_eval['is_correct'] ?? null;
                     $is_correct = ($evaluated_is_correct === null || $evaluated_is_correct === '')
@@ -4868,7 +4968,9 @@ class CBT_REST
 
             $status = 'unanswered';
             if ($is_answered) {
-                if ($is_correct === 1) {
+                if ($question_type === 'essay' && self::is_essay_answer_reviewed($answer_row)) {
+                    $status = 'graded';
+                } elseif ($is_correct === 1) {
                     $status = 'correct';
                 } elseif ($is_correct === 0) {
                     $status = 'wrong';
@@ -5076,6 +5178,7 @@ class CBT_REST
             'answered_questions' => 0,
             'correct_questions' => 0,
             'wrong_questions' => 0,
+            'graded_questions' => 0,
             'manual_questions' => 0,
             'unanswered_questions' => 0,
         ];
@@ -5091,6 +5194,8 @@ class CBT_REST
                 $summary['correct_questions']++;
             } elseif ($status === 'wrong') {
                 $summary['wrong_questions']++;
+            } elseif ($status === 'graded') {
+                $summary['graded_questions']++;
             } elseif ($status === 'manual') {
                 $summary['manual_questions']++;
             } else {
@@ -5351,18 +5456,102 @@ class CBT_REST
         ];
     }
 
-    private static function evaluate_answer(array $question, array $options, $answer_input, array $question_detail = []): array
+    /**
+     * @param array<string,mixed> $question
+     * @param array<int,array<string,mixed>> $options
+     * @param array<string,mixed> $question_detail
+     * @return array<string,mixed>
+     */
+    private static function build_submission_context_from_evaluation_inputs(array $question, array $options = [], array $question_detail = []): array
     {
-        $type = (string) $question['question_type'];
-        $points = max(0.0, (float) ($question['points'] ?? 0));
-
+        $question_type = (string) ($question['question_type'] ?? '');
         $correct_option_ids = [];
-        foreach ($options as $option) {
-            if ((int) $option['is_correct'] === 1) {
-                $correct_option_ids[] = (int) $option['id'];
+        $true_false_option_value_by_id = [];
+
+        foreach ($options as $option_row) {
+            $option = (array) $option_row;
+            $option_id = (int) ($option['id'] ?? 0);
+            if ($option_id <= 0) {
+                continue;
+            }
+
+            if ((int) ($option['is_correct'] ?? 0) === 1) {
+                $correct_option_ids[] = $option_id;
+            }
+
+            if ($question_type === 'true_false') {
+                $normalized_option_value = self::normalize_true_false_value((string) ($option['option_text'] ?? ''), true);
+                if ($normalized_option_value !== null) {
+                    $true_false_option_value_by_id[(string) $option_id] = $normalized_option_value;
+                }
             }
         }
+
+        $correct_option_ids = array_values(array_unique($correct_option_ids));
         sort($correct_option_ids);
+
+        $true_false_correct_value = null;
+        if ($question_type === 'true_false') {
+            if (array_key_exists('correct_value', $question_detail) && $question_detail['correct_value'] !== null && $question_detail['correct_value'] !== '') {
+                $true_false_correct_value = ((int) $question_detail['correct_value'] === 1) ? 1 : 0;
+            } elseif (array_key_exists('true_false_correct_value', $question) && $question['true_false_correct_value'] !== null && $question['true_false_correct_value'] !== '') {
+                $true_false_correct_value = ((int) $question['true_false_correct_value'] === 1) ? 1 : 0;
+            } else {
+                $legacy_true_false = self::normalize_true_false_value((string) ($question['correct_text'] ?? ''), true);
+                if ($legacy_true_false !== null) {
+                    $true_false_correct_value = $legacy_true_false;
+                }
+            }
+        }
+
+        $short_answer_values = [];
+        if ($question_type === 'short_answer') {
+            $short_answer_values = self::normalize_short_answer_values((string) ($question_detail['correct_text'] ?? ($question['correct_text'] ?? '')));
+        }
+
+        $true_false_matrix_answers = [];
+        if ($question_type === 'true_false_matrix') {
+            $matrix_items = self::normalize_true_false_matrix_config((string) ($question_detail['correct_text'] ?? ($question['correct_text'] ?? '')));
+            foreach ($matrix_items as $idx => $item) {
+                $true_false_matrix_answers[(string) ($idx + 1)] = ((string) ($item['answer'] ?? 'true') === 'false') ? 'false' : 'true';
+            }
+        }
+
+        return [
+            'id' => (int) ($question['id'] ?? 0),
+            'exam_id' => (int) ($question['exam_id'] ?? 0),
+            'question_type' => $question_type,
+            'points' => (float) ($question['points'] ?? 0),
+            'correct_option_ids' => $correct_option_ids,
+            'true_false_correct_value' => $true_false_correct_value,
+            'true_false_option_value_by_id' => $true_false_option_value_by_id,
+            'short_answer_values' => $short_answer_values,
+            'true_false_matrix_answers' => $true_false_matrix_answers,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $question_context
+     * @return array<string,mixed>
+     */
+    private static function evaluate_answer_from_submission_context(array $question_context, $answer_input): array
+    {
+        $type = (string) ($question_context['question_type'] ?? '');
+        $points = max(0.0, (float) ($question_context['points'] ?? 0));
+        $correct_option_ids = isset($question_context['correct_option_ids']) && is_array($question_context['correct_option_ids'])
+            ? array_values(array_unique(array_map('intval', $question_context['correct_option_ids'])))
+            : [];
+        sort($correct_option_ids);
+
+        $true_false_option_value_by_id = isset($question_context['true_false_option_value_by_id']) && is_array($question_context['true_false_option_value_by_id'])
+            ? $question_context['true_false_option_value_by_id']
+            : [];
+        $short_answer_values = isset($question_context['short_answer_values']) && is_array($question_context['short_answer_values'])
+            ? array_values($question_context['short_answer_values'])
+            : [];
+        $true_false_matrix_answers = isset($question_context['true_false_matrix_answers']) && is_array($question_context['true_false_matrix_answers'])
+            ? $question_context['true_false_matrix_answers']
+            : [];
 
         $selected_option_ids = [];
         $answer_text = '';
@@ -5385,19 +5574,14 @@ class CBT_REST
 
                 if (is_numeric($answer_input)) {
                     $selected_option_ids = [(int) $answer_input];
-                    foreach ($options as $option) {
-                        if ((int) $option['id'] === (int) $answer_input) {
-                            $selected_true_false = self::normalize_true_false_value((string) $option['option_text'], true);
-                            break;
-                        }
-                    }
+                    $selected_true_false = $true_false_option_value_by_id[(string) ((int) $answer_input)] ?? null;
+                    $selected_true_false = $selected_true_false === null ? null : (int) $selected_true_false;
                 } elseif (is_string($answer_input)) {
                     $selected_true_false = self::normalize_true_false_value($answer_input, true);
                     if ($selected_true_false !== null) {
-                        foreach ($options as $option) {
-                            $option_tf = self::normalize_true_false_value((string) $option['option_text'], true);
-                            if ($option_tf !== null && $option_tf === $selected_true_false) {
-                                $selected_option_ids = [(int) $option['id']];
+                        foreach ($true_false_option_value_by_id as $option_id => $option_value) {
+                            if ((int) $option_value === $selected_true_false) {
+                                $selected_option_ids = [(int) $option_id];
                                 break;
                             }
                         }
@@ -5406,9 +5590,13 @@ class CBT_REST
 
                 sort($selected_option_ids);
 
-                $correct_true_false = isset($question_detail['correct_value']) ? (int) $question_detail['correct_value'] : null;
+                $correct_true_false = array_key_exists('true_false_correct_value', $question_context)
+                    && $question_context['true_false_correct_value'] !== null
+                    && $question_context['true_false_correct_value'] !== ''
+                    ? (((int) $question_context['true_false_correct_value'] === 1) ? 1 : 0)
+                    : null;
+
                 if ($correct_true_false === null) {
-                    // Legacy fallback: use option flags if detail table is not available yet.
                     $is_correct = ($selected_option_ids === $correct_option_ids) ? 1 : 0;
                 } else {
                     $is_correct = ($selected_true_false !== null && $selected_true_false === $correct_true_false) ? 1 : 0;
@@ -5435,18 +5623,14 @@ class CBT_REST
                 break;
 
             case 'true_false_matrix':
-                $matrix_items = self::normalize_true_false_matrix_config((string) ($question_detail['correct_text'] ?? ($question['correct_text'] ?? '')));
-                $submitted_map = self::normalize_true_false_matrix_submission($answer_input, count($matrix_items));
+                $submitted_map = self::normalize_true_false_matrix_submission($answer_input, count($true_false_matrix_answers));
                 $answer_text = !empty($submitted_map) ? (string) wp_json_encode($submitted_map) : '';
 
-                $total_items = count($matrix_items);
+                $total_items = count($true_false_matrix_answers);
                 $matched_items = 0;
-
-                foreach ($matrix_items as $idx => $item) {
-                    $key = (string) ($idx + 1);
-                    $submitted_value = (string) ($submitted_map[$key] ?? '');
-                    $correct_value = ((string) ($item['answer'] ?? 'true') === 'false') ? 'false' : 'true';
-                    if ($submitted_value !== '' && $submitted_value === $correct_value) {
+                foreach ($true_false_matrix_answers as $key => $correct_value) {
+                    $submitted_value = (string) ($submitted_map[(string) $key] ?? '');
+                    if ($submitted_value !== '' && $submitted_value === (string) $correct_value) {
                         $matched_items++;
                     }
                 }
@@ -5464,13 +5648,12 @@ class CBT_REST
                 break;
 
             case 'short_answer':
-                $correct_values = self::normalize_short_answer_values((string) ($question_detail['correct_text'] ?? ($question['correct_text'] ?? '')));
                 $submitted_values = self::extract_short_answer_submission_values($answer_input);
                 $correct_input_count = 0;
-                $expected_input_count = count($correct_values);
+                $expected_input_count = count($short_answer_values);
                 $max_short_answer_score = $points * max(1, $expected_input_count);
 
-                foreach ($correct_values as $idx => $candidate) {
+                foreach ($short_answer_values as $idx => $candidate) {
                     $submitted = (string) ($submitted_values[$idx] ?? '');
                     if (
                         self::normalize_short_answer_compare_text($submitted) ===
@@ -5486,7 +5669,7 @@ class CBT_REST
                     $correct_input_count === $expected_input_count
                 ) ? 1 : 0;
                 $answer_text = (count($submitted_values) > 1)
-                    ? wp_json_encode($submitted_values)
+                    ? (string) wp_json_encode($submitted_values)
                     : (string) ($submitted_values[0] ?? '');
                 $score = min($max_short_answer_score, $points * $correct_input_count);
                 break;
@@ -5512,14 +5695,32 @@ class CBT_REST
         ];
     }
 
+    private static function evaluate_answer(array $question, array $options, $answer_input, array $question_detail = []): array
+    {
+        $question_context = self::build_submission_context_from_evaluation_inputs($question, $options, $question_detail);
+        return self::evaluate_answer_from_submission_context($question_context, $answer_input);
+    }
+
     public static function evaluate_answer_against_current_question(
         array $question,
         array $options,
         $answer_input,
-        array $question_detail = []
+        array $question_detail = [],
+        ?array $submission_context = null
     ): array {
+        if (is_array($submission_context) && !empty($submission_context)) {
+            return self::evaluate_answer_from_submission_context($submission_context, $answer_input);
+        }
+
+        $question_id = (int) ($question['id'] ?? 0);
+        if ($question_id > 0) {
+            $cached_context = self::get_cached_question_submission_context($question_id);
+            if (is_array($cached_context) && !empty($cached_context)) {
+                return self::evaluate_answer_from_submission_context($cached_context, $answer_input);
+            }
+        }
+
         if (empty($question_detail)) {
-            $question_id = (int) ($question['id'] ?? 0);
             $question_type = (string) ($question['question_type'] ?? '');
             if ($question_id > 0 && $question_type !== '') {
                 $question_detail = self::get_question_type_detail($question_id, $question_type);

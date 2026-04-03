@@ -1,9 +1,64 @@
-import {
-    getShortAnswerKeys,
-    getTrueFalseMatrixItems,
-    normalizeTrueFalseMatrixAnswer,
-    questionOptionKey
-} from './question-helpers';
+function questionOptionKey(option, index) {
+    var key = String(option && option.option_key ? option.option_key : '').trim();
+    if (key !== '') {
+        return key;
+    }
+
+    var code = 65 + Number(index || 0);
+    if (code >= 65 && code <= 90) {
+        return String.fromCharCode(code);
+    }
+
+    return String((Number(index) || 0) + 1);
+}
+
+function getShortAnswerKeys(question) {
+    var meta = question && question.short_answer_meta ? question.short_answer_meta : null;
+    var keys = meta && Array.isArray(meta.input_keys) ? meta.input_keys.slice(0, 8) : [];
+    if (!keys.length) {
+        keys = ['A'];
+    }
+
+    return keys.map(function (item) {
+        return String(item || '').trim().toUpperCase();
+    }).filter(function (item) {
+        return item !== '';
+    });
+}
+
+function getTrueFalseMatrixItems(question) {
+    var meta = question && question.true_false_matrix_meta ? question.true_false_matrix_meta : null;
+    var items = meta && Array.isArray(meta.items) ? meta.items : [];
+
+    return items.map(function (item, index) {
+        var key = String(item && item.key ? item.key : (index + 1)).trim();
+        if (key === '') {
+            key = String(index + 1);
+        }
+
+        return {
+            key: key,
+            text: String(item && item.text ? item.text : '')
+        };
+    });
+}
+
+function normalizeTrueFalseMatrixAnswer(answer) {
+    if (!answer || typeof answer !== 'object') {
+        return {};
+    }
+
+    return Object.keys(answer).reduce(function (accumulator, key) {
+        var normalizedKey = String(key || '').trim();
+        if (normalizedKey === '') {
+            return accumulator;
+        }
+
+        var value = answer[key];
+        accumulator[normalizedKey] = value === null || value === undefined ? '' : String(value);
+        return accumulator;
+    }, {});
+}
 
 export function createQuestionRenderManager(deps) {
     var escapeHtml = deps.escapeHtml;

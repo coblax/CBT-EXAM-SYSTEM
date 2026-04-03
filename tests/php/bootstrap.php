@@ -458,6 +458,23 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
             }
         }
 
+        if (class_exists('CBT_Question_Submission_Context_Cache')) {
+            $reflection = new ReflectionClass('CBT_Question_Submission_Context_Cache');
+            foreach (['snapshot_redis', 'snapshot_redis_connection_attempted', 'snapshot_redis_last_connection_error'] as $property_name) {
+                if ($reflection->hasProperty($property_name)) {
+                    $property = $reflection->getProperty($property_name);
+                    $property->setAccessible(true);
+                    if ($property_name === 'snapshot_redis_connection_attempted') {
+                        $property->setValue(null, false);
+                    } elseif ($property_name === 'snapshot_redis_last_connection_error') {
+                        $property->setValue(null, '');
+                    } else {
+                        $property->setValue(null, null);
+                    }
+                }
+            }
+        }
+
         if (class_exists('CBT_Active_Attempt_Index')) {
             $reflection = new ReflectionClass('CBT_Active_Attempt_Index');
             foreach (['active_attempt_redis', 'active_attempt_redis_connection_attempted', 'active_attempt_redis_last_connection_error'] as $property_name) {
@@ -484,6 +501,40 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
                     if ($property_name === 'live_redis_connection_attempted') {
                         $property->setValue(null, false);
                     } elseif ($property_name === 'live_redis_last_connection_error') {
+                        $property->setValue(null, '');
+                    } else {
+                        $property->setValue(null, null);
+                    }
+                }
+            }
+        }
+
+        if (class_exists('CBT_Live_Proctoring_Presence')) {
+            $reflection = new ReflectionClass('CBT_Live_Proctoring_Presence');
+            foreach (['presence_redis', 'presence_redis_connection_attempted', 'presence_redis_last_connection_error'] as $property_name) {
+                if ($reflection->hasProperty($property_name)) {
+                    $property = $reflection->getProperty($property_name);
+                    $property->setAccessible(true);
+                    if ($property_name === 'presence_redis_connection_attempted') {
+                        $property->setValue(null, false);
+                    } elseif ($property_name === 'presence_redis_last_connection_error') {
+                        $property->setValue(null, '');
+                    } else {
+                        $property->setValue(null, null);
+                    }
+                }
+            }
+        }
+
+        if (class_exists('CBT_Live_Attempt_Roster_Index')) {
+            $reflection = new ReflectionClass('CBT_Live_Attempt_Roster_Index');
+            foreach (['roster_redis', 'roster_redis_connection_attempted', 'roster_redis_last_connection_error'] as $property_name) {
+                if ($reflection->hasProperty($property_name)) {
+                    $property = $reflection->getProperty($property_name);
+                    $property->setAccessible(true);
+                    if ($property_name === 'roster_redis_connection_attempted') {
+                        $property->setValue(null, false);
+                    } elseif ($property_name === 'roster_redis_last_connection_error') {
                         $property->setValue(null, '');
                     } else {
                         $property->setValue(null, null);

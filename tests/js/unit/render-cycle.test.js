@@ -29,7 +29,8 @@ function createQuestionMarkup(payload) {
     ].join('');
 }
 
-function createFixture() {
+function createFixture(overrides) {
+    overrides = overrides || {};
     var root = document.createElement('div');
     document.body.appendChild(root);
     var state = {
@@ -56,14 +57,14 @@ function createFixture() {
     currentRegions.question = createQuestionMarkup(currentRegions);
 
     var manager = createRenderCycleManager({
-        applyUiPreferences: function () {},
+        applyUiPreferences: overrides.applyUiPreferences || function () {},
         documentRef: document,
-        enhanceRichMath: function () {},
+        enhanceRichMath: overrides.enhanceRichMath || function () {},
         getEffectiveNavPanelPosition: function () {
             return 'right';
         },
-        maybePrefetchExamRuntime: function () {},
-        recordRenderPerformed: function () {},
+        maybePrefetchExamRuntime: overrides.maybePrefetchExamRuntime || function () {},
+        recordRenderPerformed: overrides.recordRenderPerformed || function () {},
         recordRenderScheduled: function () {},
         recordTimeline: function () {},
         recordRuntimeSnapshot: function () {},
@@ -170,5 +171,26 @@ describe('createRenderCycleManager patchExamRegions', function () {
         expect(didPatch).toBe(true);
         expect(document.querySelector('[data-cbt-exam-question-region="questionStem"]').innerHTML).toContain('Stem B');
         expect(document.querySelector('[data-cbt-exam-question-region="questionHead"]').innerHTML).toContain('Head B');
+    });
+
+    it('keeps render flow stable when rich math enhancement is async', async function () {
+        var enhanceRichMath = vi.fn(function () {
+            return Promise.resolve(1);
+        });
+        var applyUiPreferences = vi.fn();
+        var recordRenderPerformed = vi.fn();
+        var fixture = createFixture({
+            applyUiPreferences: applyUiPreferences,
+            enhanceRichMath: enhanceRichMath,
+            recordRenderPerformed: recordRenderPerformed
+        });
+
+        fixture.manager.render('initial');
+        await Promise.resolve();
+
+        expect(enhanceRichMath).toHaveBeenCalledTimes(1);
+        expect(applyUiPreferences).toHaveBeenCalledTimes(1);
+        expect(recordRenderPerformed).toHaveBeenCalledTimes(1);
+        expect(document.querySelector('[data-cbt-exam-shell="1"]')).not.toBeNull();
     });
 });

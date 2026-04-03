@@ -67,15 +67,17 @@ final class ResultPayloadHelpersTest extends TestCase
         $summary = $summaryMethod->invoke(null, [
             ['status' => 'correct'],
             ['status' => 'wrong'],
+            ['status' => 'graded'],
             ['status' => 'manual'],
             ['status' => 'unanswered'],
         ]);
 
         self::assertSame([
-            'total_questions' => 4,
-            'answered_questions' => 3,
+            'total_questions' => 5,
+            'answered_questions' => 4,
             'correct_questions' => 1,
             'wrong_questions' => 1,
+            'graded_questions' => 1,
             'manual_questions' => 1,
             'unanswered_questions' => 1,
         ], $summary);

@@ -334,8 +334,14 @@ final class CBT_Admin_Results_Helper
         $answer_text = is_array($answer_row) ? (string) ($answer_row['answer_text'] ?? '') : '';
         $points = max(0, (float) ($question['points'] ?? 0));
         $score_awarded = is_array($answer_row) ? max(0, (float) ($answer_row['score_awarded'] ?? 0)) : 0.0;
+        $question_type = (string) ($question['question_type'] ?? '');
         if (is_array($answer_row)) {
             if (
+                $question_type === 'essay' &&
+                self::is_reviewed_essay_answer_row($answer_row)
+            ) {
+                $status = 'graded';
+            } elseif (
                 array_key_exists('is_correct', $answer_row) &&
                 $answer_row['is_correct'] !== null &&
                 $answer_row['is_correct'] !== ''
@@ -346,7 +352,6 @@ final class CBT_Admin_Results_Helper
             }
         }
 
-        $question_type = (string) ($question['question_type'] ?? '');
         if (is_array($answer_row)) {
             $selected_option_ids = CBT_Admin_Questions_Helper::decode_attempt_selected_option_ids((string) ($answer_row['selected_option_ids'] ?? ''));
         }
@@ -611,6 +616,9 @@ final class CBT_Admin_Results_Helper
         } elseif ($status === 'wrong') {
             $label = 'Salah';
             $tone = 'is-wrong';
+        } elseif ($status === 'graded') {
+            $label = 'Sudah dinilai';
+            $tone = 'is-graded';
         } elseif ($status === 'manual') {
             $label = 'Menunggu nilai';
             $tone = 'is-manual';
@@ -727,6 +735,7 @@ final class CBT_Admin_Results_Helper
         $status_counts = [
             'correct' => 0,
             'wrong' => 0,
+            'graded' => 0,
             'manual' => 0,
             'unanswered' => 0,
         ];
@@ -753,6 +762,7 @@ final class CBT_Admin_Results_Helper
                     <div class="cbt-attempt-answer-detail-summary">
                         <span class="cbt-attempt-answer-detail-summary-chip is-correct"><?php echo esc_html(sprintf('Benar %d', $status_counts['correct'])); ?></span>
                         <span class="cbt-attempt-answer-detail-summary-chip is-wrong"><?php echo esc_html(sprintf('Salah %d', $status_counts['wrong'])); ?></span>
+                        <span class="cbt-attempt-answer-detail-summary-chip is-graded"><?php echo esc_html(sprintf('Dinilai %d', $status_counts['graded'])); ?></span>
                         <span class="cbt-attempt-answer-detail-summary-chip is-manual"><?php echo esc_html(sprintf('Manual %d', $status_counts['manual'])); ?></span>
                         <span class="cbt-attempt-answer-detail-summary-chip is-unanswered"><?php echo esc_html(sprintf('Belum %d', $status_counts['unanswered'])); ?></span>
                     </div>
@@ -1028,6 +1038,13 @@ final class CBT_Admin_Results_Helper
         }
 
         return '-';
+    }
+
+    private static function is_reviewed_essay_answer_row(array $answer_row): bool
+    {
+        return array_key_exists('is_correct', $answer_row)
+            && $answer_row['is_correct'] !== null
+            && $answer_row['is_correct'] !== '';
     }
 
 }

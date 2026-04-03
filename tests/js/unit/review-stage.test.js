@@ -83,6 +83,26 @@ describe('createReviewRenderer', function () {
         expect(markup).toContain('Jawaban siswa');
     });
 
+    it('labels graded essay review items as already reviewed', function () {
+        var renderer = createFixture([
+            {
+                question_number: 4,
+                question_text: '<p>Essay graded</p>',
+                question_type: 'essay',
+                points: 5,
+                score_awarded: 3,
+                status: 'graded',
+                answer_text: 'Jawaban dengan skor parsial',
+                essay_rubric: '<p>Rubrik</p>'
+            }
+        ]);
+
+        var markup = renderer.renderResultReviewSection();
+
+        expect(markup).toContain('Sudah dinilai');
+        expect(markup).toContain('Jawaban dengan skor parsial');
+    });
+
     it('preserves cbt math wrappers inside review rich html payloads', function () {
         var renderer = createFixture([
             {
