@@ -2659,7 +2659,7 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <p class="description"><code>Small</code> cocok untuk cek fungsi cepat, <code>Medium</code> untuk staging realistis, <code>Large</code> untuk pengujian beban awal.</p>
+                            <p class="description"><code>Small</code>, <code>Medium</code>, dan <code>Large</code> sekarang sama-sama memakai 17 exam uji. Perbedaannya ada di jumlah mapel, bank question, siswa, guru, kelas, dan ruang.</p>
                         </div>
                         <div class="cbt-maintenance-field">
                             <label for="cbt-seed-confirm-phrase">Konfirmasi wajib</label>
@@ -2711,6 +2711,7 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                         <strong data-seed-summary-label><?php echo esc_html((string) ($selected_seed_preset_data['label'] ?? 'Small')); ?></strong>
                         akan membuat root question di Bank Soal per mapel, lalu menyinkronkannya ke exam uji. User login dibuat dengan password default
                         <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_default_password); ?></span>.
+                        Exam dinamis menarget semua kelas test yang dibuat preset, dan sinkronisasi soal per exam mengambil sekitar setengah bank question untuk mapel exam tersebut.
                         Akun test khusus yang selalu dibuat: <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_username); ?></span> / <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_password); ?></span>.
                         Short answer bulk memakai placeholder inline <span class="cbt-maintenance-inline-code">[INPUT_1]</span> sampai <span class="cbt-maintenance-inline-code">[INPUT_8]</span>, dan jumlah input selalu sama dengan jumlah jawaban yang disimpan.
                         Rich content bulk memakai sample image internal plugin, lalu menyimpan gambar seperti import soal: prioritas ke uploads WordPress dan fallback ke base64 bila upload gagal.

@@ -118,7 +118,7 @@ export function createAppShellManager(deps) {
     }
 
     function renderFinishConfirmModal() {
-        if (!state.finishConfirmOpen || state.stage !== 'exam') {
+        if ((!state.finishConfirmOpen && !state.isFinishing && !(Number(state.finishProgressStepIndex) > 0)) || state.stage !== 'exam') {
             return '';
         }
 
@@ -129,15 +129,40 @@ export function createAppShellManager(deps) {
         var answeredPercentage = totalQuestions > 0 ? (answeredQuestions / totalQuestions) * 100 : 0;
         var progressWidth = Math.max(0, Math.min(100, answeredPercentage)).toFixed(2);
         var progressLabel = formatScoreValue(answeredPercentage);
+        var finishProgressPercent = Math.max(0, Math.min(100, Number(state.finishProgressPercent) || 0));
+        var finishProgressWidth = finishProgressPercent.toFixed(2);
+        var finishProgressLabel = formatScoreValue(finishProgressPercent);
+        var finishProgressStepIndex = Math.max(0, Number(state.finishProgressStepIndex) || 0);
+        var finishProgressStepTotal = Math.max(4, Number(state.finishProgressStepTotal) || 4);
+        var finishProgressStatus = String(state.finishProgressStatus || 'Menyelesaikan ujian...');
+        var finishProgressDetail = String(state.finishProgressDetail || 'Mohon tunggu sebentar, kami sedang memastikan hasil ujian Anda tersimpan.');
         var warningMarkup = unansweredQuestions > 0
             ? '<div class="cbt-finish-modal-warning">Masih ada <strong>' + escapeHtml(unansweredQuestions) + '</strong> soal belum terjawab.</div>'
             : '<div class="cbt-finish-modal-ok">Semua soal sudah terjawab. Anda bisa lanjut kumpulkan ujian.</div>';
+        var finishLiveMarkup = state.isFinishing
+            ? [
+                '<div class="cbt-finish-live-card" aria-live="polite">',
+                '<div class="cbt-finish-live-head">',
+                '<span class="cbt-finish-live-spinner" aria-hidden="true"></span>',
+                '<div class="cbt-finish-live-copy">',
+                '<strong>' + escapeHtml(finishProgressStatus) + '</strong>',
+                '<span>' + escapeHtml(finishProgressDetail) + '</span>',
+                '</div>',
+                '<span class="cbt-finish-live-step">Langkah ' + escapeHtml(finishProgressStepIndex || 1) + '/' + escapeHtml(finishProgressStepTotal) + '</span>',
+                '</div>',
+                '<div class="cbt-finish-live-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + escapeHtml(finishProgressWidth) + '" aria-label="Progress pengumpulan ujian">',
+                '<span class="cbt-finish-live-progress-fill" style="width: ' + escapeHtml(finishProgressWidth) + '%;"></span>',
+                '</div>',
+                '<p class="cbt-muted">Progress finalisasi: ' + escapeHtml(finishProgressLabel) + '%</p>',
+                '</div>'
+            ].join('')
+            : '';
 
         return [
             '<div class="cbt-finish-modal-overlay">',
             '<section class="cbt-finish-modal" role="dialog" aria-modal="true" aria-labelledby="cbt-finish-modal-title">',
-            '<h3 id="cbt-finish-modal-title">Konfirmasi Pengumpulan Ujian</h3>',
-            '<p class="cbt-subtitle">Periksa jumlah jawaban sebelum ujian dikumpulkan.</p>',
+            '<h3 id="cbt-finish-modal-title">' + escapeHtml(state.isFinishing ? 'Mengumpulkan Ujian' : 'Konfirmasi Pengumpulan Ujian') + '</h3>',
+            '<p class="cbt-subtitle">' + escapeHtml(state.isFinishing ? 'Finalisasi sedang berjalan. Jangan tutup halaman ini sampai hasil muncul.' : 'Periksa jumlah jawaban sebelum ujian dikumpulkan.') + '</p>',
             '<div class="cbt-finish-stat-grid">',
             '<div class="cbt-finish-stat"><span>Total Soal</span><strong>' + escapeHtml(totalQuestions) + '</strong></div>',
             '<div class="cbt-finish-stat is-answered"><span>Terjawab</span><strong>' + escapeHtml(answeredQuestions) + '</strong></div>',
@@ -148,9 +173,10 @@ export function createAppShellManager(deps) {
             '</div>',
             '<p class="cbt-muted">Progress jawaban: ' + escapeHtml(progressLabel) + '%</p>',
             warningMarkup,
+            finishLiveMarkup,
             '<div class="cbt-actions cbt-finish-modal-actions">',
             '<button class="cbt-button cbt-button-secondary" data-action="finish-confirm-cancel" type="button"' + (state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>Kembali Kerjakan</button>',
-            '<button class="cbt-button cbt-button-primary" data-action="finish-confirm-submit" type="button"' + (state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>' + (state.isFinishing ? 'Mengirim...' : 'Tetap Kumpulkan') + '</button>',
+            '<button class="cbt-button cbt-button-primary" data-action="finish-confirm-submit" type="button"' + (state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>' + (state.isFinishing ? 'Sedang Diproses...' : 'Tetap Kumpulkan') + '</button>',
             '</div>',
             '</section>',
             '</div>'
@@ -193,10 +219,80 @@ export function createAppShellManager(deps) {
         ].join('');
     }
 
+    function renderRichZoomModal() {
+        if (!state.richZoomModalOpen || state.stage !== 'exam' || String(state.richZoomModalMarkup || '').trim() === '') {
+            return '';
+        }
+
+        var modalType = String(state.richZoomModalType || 'image').toLowerCase() === 'table' ? 'table' : 'image';
+        var modalTitle = String(state.richZoomModalTitle || (modalType === 'table' ? 'Tabel Soal' : 'Gambar Soal')).trim();
+        var galleryCount = Math.max(0, Number(state.richZoomModalGalleryCount) || 0);
+        var galleryIndex = Math.max(0, Number(state.richZoomModalGalleryIndex) || 0);
+        var scaleMode = state.richZoomModalScaleMode === 'manual' ? 'manual' : 'fit';
+        var scalePercent = Math.max(75, Number(state.richZoomModalScalePercent) || 100);
+        var scaleLabel = scaleMode === 'manual' ? String(scalePercent) + '%' : 'FIT';
+        var minScale = modalType === 'table' ? 75 : 75;
+        var maxScale = modalType === 'table' ? 200 : 250;
+        var imageGalleryActive = modalType === 'image' && galleryCount > 1;
+        var galleryCounterMarkup = imageGalleryActive
+            ? [
+                '<div class="cbt-rich-zoom-gallery-nav" aria-label="Navigasi galeri gambar">',
+                '<button class="cbt-rich-zoom-gallery-btn" data-action="rich-zoom-prev" type="button" aria-label="Gambar sebelumnya" title="Gambar sebelumnya"' + (galleryIndex <= 0 ? ' disabled' : '') + '>&lsaquo;</button>',
+                '<span class="cbt-rich-zoom-gallery-counter">' + escapeHtml(galleryIndex + 1) + ' / ' + escapeHtml(galleryCount) + '</span>',
+                '<button class="cbt-rich-zoom-gallery-btn" data-action="rich-zoom-next" type="button" aria-label="Gambar berikutnya" title="Gambar berikutnya"' + (galleryIndex >= (galleryCount - 1) ? ' disabled' : '') + '>&rsaquo;</button>',
+                '</div>'
+            ].join('')
+            : '';
+        var zoomToolbarMarkup = [
+            '<div class="cbt-rich-zoom-controls" aria-label="Kontrol zoom konten">',
+            '<button class="cbt-rich-zoom-control-btn" data-action="rich-zoom-scale-out" type="button" aria-label="Perkecil tampilan" title="Perkecil tampilan"' + ((scaleMode === 'manual' && scalePercent <= minScale) ? ' disabled' : '') + '>&minus;</button>',
+            '<button class="cbt-rich-zoom-control-btn" data-action="rich-zoom-scale-in" type="button" aria-label="Perbesar tampilan" title="Perbesar tampilan"' + ((scaleMode === 'manual' && scalePercent >= maxScale) ? ' disabled' : '') + '>+</button>',
+            '<button class="cbt-rich-zoom-control-chip' + (scaleMode === 'manual' && scalePercent === 100 ? ' is-active' : '') + '" data-action="rich-zoom-scale-reset" type="button" aria-label="Reset ke 100 persen" title="Reset ke 100 persen">100%</button>',
+            '<button class="cbt-rich-zoom-control-chip' + (scaleMode === 'fit' ? ' is-active' : '') + '" data-action="rich-zoom-scale-fit" type="button" aria-label="Mode pas layar" title="Mode pas layar">Fit</button>',
+            scaleMode === 'manual'
+                ? '<span class="cbt-rich-zoom-scale-badge" aria-live="polite">' + escapeHtml(scaleLabel) + '</span>'
+                : '',
+            '</div>'
+        ].join('');
+        var subtitle = modalType === 'table'
+            ? 'Gunakan Fit, 100%, atau tombol zoom lalu geser tabel untuk membaca kolom yang lebar.'
+            : 'Gunakan tombol zoom untuk memperbesar detail gambar tanpa keluar dari fullscreen.';
+        var modalBodyClass = 'cbt-rich-zoom-modal-body cbt-rich-zoom-modal-body--' + escapeHtml(modalType) + ' is-' + escapeHtml(scaleMode);
+        var canvasClass = 'cbt-rich-zoom-canvas cbt-rich-zoom-canvas--' + escapeHtml(modalType) + ' is-' + escapeHtml(scaleMode);
+        var canvasStyle = '';
+        if (scaleMode === 'manual') {
+            if (modalType === 'image') {
+                canvasStyle = ' style="width: ' + escapeHtml(scalePercent) + '%;"';
+            } else {
+                canvasStyle = ' style="--cbt-rich-zoom-scale: ' + escapeHtml((scalePercent / 100).toFixed(2)) + ';"';
+            }
+        }
+
+        return [
+            '<div class="cbt-rich-zoom-modal-overlay" data-action="close-rich-zoom">',
+            '<section class="cbt-rich-zoom-modal cbt-rich-zoom-modal--' + escapeHtml(modalType) + '" data-action="rich-zoom-modal-panel" role="dialog" aria-modal="true" aria-labelledby="cbt-rich-zoom-title">',
+            '<button class="cbt-rich-zoom-modal-close" data-action="close-rich-zoom" type="button" aria-label="Tutup tampilan perbesar">&times;</button>',
+            '<div class="cbt-rich-zoom-modal-head">',
+            '<h3 id="cbt-rich-zoom-title">' + escapeHtml(modalTitle) + '</h3>',
+            '<p class="cbt-subtitle">' + escapeHtml(subtitle) + '</p>',
+            galleryCounterMarkup,
+            zoomToolbarMarkup,
+            '</div>',
+            '<div class="' + modalBodyClass + '">',
+            '<div class="' + canvasClass + '"' + canvasStyle + '>',
+            state.richZoomModalMarkup,
+            '</div>',
+            '</div>',
+            '</section>',
+            '</div>'
+        ].join('');
+    }
+
     return {
         renderBody: renderBody,
         renderFinishConfirmModal: renderFinishConfirmModal,
         renderQuestionFontControls: renderQuestionFontControls,
+        renderRichZoomModal: renderRichZoomModal,
         renderThemeToggleControl: renderThemeToggleControl,
         renderTopbar: renderTopbar,
         renderUserPhotoModal: renderUserPhotoModal

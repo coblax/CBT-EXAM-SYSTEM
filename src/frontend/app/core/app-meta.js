@@ -3,6 +3,7 @@ export function createAppMetaManager(deps) {
     var escapeHtml = deps.escapeHtml;
     var state = deps.state;
     var windowRef = deps.windowRef;
+    var richZoomGallerySeed = 0;
 
     function normalizeRichTables(html) {
         if (!/<table\b/i.test(html) || !windowRef || !windowRef.document || typeof windowRef.document.createElement !== 'function') {
@@ -231,6 +232,192 @@ export function createAppMetaManager(deps) {
         return html;
     }
 
+    function buildExamRichZoomMeta(type, context) {
+        var normalizedType = String(type || '').toLowerCase() === 'table' ? 'table' : 'image';
+        var normalizedContext = String(context || '').toLowerCase() === 'option' ? 'option' : 'question';
+        var subjectText = normalizedType === 'table' ? 'tabel' : 'gambar';
+        var contextText = normalizedContext === 'option' ? 'opsi' : 'soal';
+        var titleText = subjectText.charAt(0).toUpperCase() + subjectText.slice(1) + ' ' + contextText.charAt(0).toUpperCase() + contextText.slice(1);
+
+        return {
+            buttonLabel: 'Perbesar ' + subjectText + ' ' + contextText,
+            title: titleText
+        };
+    }
+
+    function canWrapExamRichZoomNode(node) {
+        if (!(node instanceof windowRef.Element)) {
+            return false;
+        }
+
+        if (node.closest('.cbt-rich-zoom-target')) {
+            return false;
+        }
+
+        if (node.matches('.cbt-tf-matrix-table, .cbt-tf-matrix-wrap')) {
+            return false;
+        }
+
+        if (node.querySelector('input, textarea, select, button, [data-action]')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function resolveStandaloneImageZoomNode(image) {
+        if (!(image instanceof windowRef.HTMLImageElement)) {
+            return null;
+        }
+
+        if (image.closest('.cbt-rich-zoom-target, .cbt-rich-table-wrap, .cbt-tf-matrix-wrap, .cbt-tf-matrix-table')) {
+            return null;
+        }
+
+        var figure = image.closest('figure');
+        if (figure instanceof windowRef.HTMLElement) {
+            if (figure.querySelectorAll('img').length === 1) {
+                return figure;
+            }
+        }
+
+        var parent = image.parentElement;
+        if (!(parent instanceof windowRef.HTMLElement)) {
+            return image;
+        }
+
+        var parentTag = String(parent.tagName || '').toLowerCase();
+        if (parentTag === 'label' || parentTag === 'button' || parentTag === 'a') {
+            return null;
+        }
+
+        if ((parentTag === 'p' || parentTag === 'div') && parent.childElementCount === 1) {
+            var siblingText = Array.prototype.some.call(parent.childNodes, function (child) {
+                return child.nodeType === windowRef.Node.TEXT_NODE && String(child.textContent || '').trim() !== '';
+            });
+            if (!siblingText) {
+                return parent;
+            }
+        }
+
+        if (parentTag === 'span') {
+            return null;
+        }
+
+        return image;
+    }
+
+    function nextExamRichZoomGalleryId() {
+        richZoomGallerySeed += 1;
+        return 'cbt-rich-zoom-gallery-' + String(richZoomGallerySeed);
+    }
+
+    function wrapExamRichZoomNode(targetNode, type, context, options) {
+        if (!canWrapExamRichZoomNode(targetNode) || !targetNode.parentNode) {
+            return;
+        }
+
+        var extra = options && typeof options === 'object' ? options : {};
+        var meta = buildExamRichZoomMeta(type, context);
+        var wrap = windowRef.document.createElement('div');
+        wrap.className = 'cbt-rich-zoom-target cbt-rich-zoom-target--' + String(type || 'image');
+        wrap.setAttribute('data-rich-zoom-type', String(type || 'image'));
+        wrap.setAttribute('data-rich-zoom-title', meta.title);
+        if (extra.galleryId) {
+            wrap.setAttribute('data-rich-zoom-gallery-id', String(extra.galleryId));
+            wrap.setAttribute('data-rich-zoom-gallery-index', String(Number(extra.galleryIndex) || 0));
+            wrap.setAttribute('data-rich-zoom-gallery-count', String(Math.max(0, Number(extra.galleryCount) || 0)));
+        }
+
+        var toolbar = windowRef.document.createElement('div');
+        toolbar.className = 'cbt-rich-zoom-toolbar';
+
+        var button = windowRef.document.createElement('button');
+        button.className = 'cbt-rich-zoom-button';
+        button.setAttribute('data-action', 'open-rich-zoom');
+        button.setAttribute('type', 'button');
+        button.setAttribute('aria-label', meta.buttonLabel);
+        button.setAttribute('title', meta.buttonLabel);
+        button.innerHTML = '<span class="cbt-rich-zoom-button-icon" aria-hidden="true"><svg viewBox="0 0 20 20" focusable="false" aria-hidden="true"><circle cx="8.25" cy="8.25" r="4.75" fill="none" stroke="currentColor" stroke-width="1.8"></circle><path d="M11.7 11.7L16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path><path d="M8.25 5.8V10.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path><path d="M5.8 8.25H10.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></span><span class="cbt-visually-hidden">' + escapeHtml(meta.buttonLabel) + '</span>';
+
+        var source = windowRef.document.createElement('div');
+        source.className = 'cbt-rich-zoom-source';
+
+        targetNode.parentNode.insertBefore(wrap, targetNode);
+        wrap.appendChild(toolbar);
+        toolbar.appendChild(button);
+        wrap.appendChild(source);
+        source.appendChild(targetNode);
+    }
+
+    function renderExamRichHtml(value, options) {
+        var html = safeRichHtml(value);
+        if (
+            html === ''
+            || !windowRef
+            || !windowRef.document
+            || typeof windowRef.document.createElement !== 'function'
+            || !/<(?:img|figure|table)\b/i.test(html)
+        ) {
+            return html;
+        }
+
+        var template = windowRef.document.createElement('template');
+        template.innerHTML = html;
+
+        var context = options && typeof options === 'object' ? String(options.context || '') : '';
+        var seenImageTargets = [];
+        var imageTargets = [];
+
+        Array.prototype.forEach.call(template.content.querySelectorAll('.cbt-rich-table-wrap'), function (tableWrap) {
+            if (!(tableWrap instanceof windowRef.HTMLElement) || !canWrapExamRichZoomNode(tableWrap)) {
+                return;
+            }
+
+            wrapExamRichZoomNode(tableWrap, 'table', context);
+        });
+
+        Array.prototype.forEach.call(template.content.querySelectorAll('figure'), function (figure) {
+            if (
+                !(figure instanceof windowRef.HTMLElement)
+                || !figure.querySelector('img')
+                || !canWrapExamRichZoomNode(figure)
+                || figure.querySelectorAll('img').length !== 1
+                || seenImageTargets.indexOf(figure) >= 0
+            ) {
+                return;
+            }
+
+            seenImageTargets.push(figure);
+            imageTargets.push(figure);
+        });
+
+        Array.prototype.forEach.call(template.content.querySelectorAll('img'), function (image) {
+            var targetNode = resolveStandaloneImageZoomNode(image);
+            if (
+                !(targetNode instanceof windowRef.Element)
+                || seenImageTargets.indexOf(targetNode) >= 0
+                || !canWrapExamRichZoomNode(targetNode)
+            ) {
+                return;
+            }
+
+            seenImageTargets.push(targetNode);
+            imageTargets.push(targetNode);
+        });
+
+        var galleryId = imageTargets.length > 1 ? nextExamRichZoomGalleryId() : '';
+        imageTargets.forEach(function (targetNode, index) {
+            wrapExamRichZoomNode(targetNode, 'image', context, galleryId === '' ? null : {
+                galleryCount: imageTargets.length,
+                galleryId: galleryId,
+                galleryIndex: index
+            });
+        });
+
+        return template.innerHTML;
+    }
+
     function getNavigatorConnectionStatus() {
         return (windowRef && windowRef.navigator && windowRef.navigator.onLine === false) ? 'offline' : 'online';
     }
@@ -403,6 +590,7 @@ export function createAppMetaManager(deps) {
         isSecurityLoggingEnabled: isSecurityLoggingEnabled,
         normalizePhotoUrl: normalizePhotoUrl,
         renderAlert: renderAlert,
+        renderExamRichHtml: renderExamRichHtml,
         safeRichHtml: safeRichHtml
     };
 }

@@ -2,6 +2,13 @@ import '../../styles/stage-exam.css';
 import { createReviewRenderer } from './review';
 
 export function createExamStageRenderer(deps) {
+    var OPENING_PROGRESS_STEP_LABELS = [
+        'Sesi',
+        'Runtime',
+        'Data Lokal',
+        'Soal Awal',
+        'Finalisasi'
+    ];
     var state = deps.state;
     var escapeHtml = deps.escapeHtml;
     var renderAlert = deps.renderAlert;
@@ -19,6 +26,11 @@ export function createExamStageRenderer(deps) {
     var getSelectedExam = deps.getSelectedExam;
     var getQuestionCount = deps.getQuestionCount;
     var getQuestionIdAtIndex = deps.getQuestionIdAtIndex;
+    var getQuestionManifestById = typeof deps.getQuestionManifestById === 'function'
+        ? deps.getQuestionManifestById
+        : function () {
+            return null;
+        };
     var getQuestionPayloadById = deps.getQuestionPayloadById;
     var ensureQuestionWindowForIndex = deps.ensureQuestionWindowForIndex;
     var refreshAttemptQuestionRevision = deps.refreshAttemptQuestionRevision;
@@ -37,6 +49,11 @@ export function createExamStageRenderer(deps) {
     var getEffectiveNavPanelPosition = deps.getEffectiveNavPanelPosition;
     var getEffectiveCalculatorPanelPosition = deps.getEffectiveCalculatorPanelPosition;
     var getNavigationQuestionEntries = deps.getNavigationQuestionEntries;
+    var getQuestionSaveFeedback = typeof deps.getQuestionSaveFeedback === 'function'
+        ? deps.getQuestionSaveFeedback
+        : function () {
+            return null;
+        };
     var normalizeNavigationQuestionFilter = deps.normalizeNavigationQuestionFilter;
     var navigationQuestionFilterEmptyMessage = deps.navigationQuestionFilterEmptyMessage;
     var navigationQuestionTypeBadgeConfig = deps.navigationQuestionTypeBadgeConfig;
@@ -217,22 +234,32 @@ export function createExamStageRenderer(deps) {
             ? getQuestionRevisionMarkerCount()
             : 0;
         var currentQuestionId = totalQuestions > 0 ? getQuestionIdAtIndex(state.currentIndex) : 0;
+        var currentQuestionManifest = currentQuestionId > 0 ? getQuestionManifestById(currentQuestionId) : null;
         var currentQuestion = currentQuestionId > 0 ? getQuestionPayloadById(currentQuestionId) : null;
-        var currentQuestionIsAnswered = currentQuestion ? isQuestionAnswered(currentQuestion) : false;
-        var currentQuestionIsDoubtful = currentQuestion ? isQuestionDoubtful(currentQuestion) : false;
-        var currentQuestionIsChanged = currentQuestion ? isQuestionChanged(currentQuestion) : false;
+        var currentQuestionReference = currentQuestion || currentQuestionManifest;
+        var currentQuestionIsAnswered = currentQuestionReference ? isQuestionAnswered(currentQuestionReference) : false;
+        var currentQuestionIsDoubtful = currentQuestionReference ? isQuestionDoubtful(currentQuestionReference) : false;
+        var currentQuestionIsChanged = currentQuestionReference ? isQuestionChanged(currentQuestionReference) : false;
         var isLastQuestion = totalQuestions > 0 && state.currentIndex >= (totalQuestions - 1);
-        var currentQuestionTypeLabel = currentQuestion ? formatQuestionType(currentQuestion.question_type) : '';
-        var currentQuestionTypeCode = currentQuestion ? navigationQuestionTypeBadgeConfig(currentQuestion.question_type).code : '';
-        var currentQuestionPointsRaw = currentQuestion && currentQuestion.points !== undefined ? currentQuestion.points : '-';
+        var allQuestionsAnswered = totalQuestions > 0 && answeredCount >= totalQuestions;
+        var showCollectAction = isLastQuestion || allQuestionsAnswered;
+        var showCollectAnywhereNotice = allQuestionsAnswered && !isLastQuestion;
+        var currentQuestionType = currentQuestionReference ? String(currentQuestionReference.question_type || '').trim().toLowerCase() : '';
+        var currentQuestionTypeLabel = currentQuestionReference ? formatQuestionType(currentQuestionReference.question_type) : '';
+        var currentQuestionTypeBadge = currentQuestionReference ? navigationQuestionTypeBadgeConfig(currentQuestionReference.question_type) : null;
+        var currentQuestionTypeCode = currentQuestionTypeBadge && currentQuestionTypeBadge.code
+            ? String(currentQuestionTypeBadge.code)
+            : '';
+        var currentQuestionPointsRaw = currentQuestionReference && currentQuestionReference.points !== undefined ? currentQuestionReference.points : '-';
         var currentQuestionPointsNumber = Number(currentQuestionPointsRaw);
         var currentQuestionPoints = Number.isFinite(currentQuestionPointsNumber)
             ? formatScoreValue(currentQuestionPointsNumber)
             : String(currentQuestionPointsRaw);
-        var currentQuestionDisplayNumber = currentQuestion ? getQuestionDisplayNumber(currentQuestion, state.currentIndex) : Math.max(1, Number(state.currentIndex) + 1);
-        var currentQuestionMetaLabel = currentQuestion ? (currentQuestionTypeLabel + ' | Poin ' + currentQuestionPoints) : '';
-        var currentQuestionMetaCompact = currentQuestion ? (currentQuestionTypeCode + '\u00b7' + currentQuestionPoints) : '';
-        var currentQuestionMetaMobileFull = currentQuestion ? (currentQuestionTypeLabel + ' \u2022 Poin ' + currentQuestionPoints) : '';
+        var currentQuestionDisplayNumber = currentQuestionReference ? getQuestionDisplayNumber(currentQuestionReference, state.currentIndex) : Math.max(1, Number(state.currentIndex) + 1);
+        var currentQuestionMetaLabel = currentQuestionReference ? (currentQuestionTypeLabel + ' | Poin ' + currentQuestionPoints) : '';
+        var currentQuestionMetaCompact = currentQuestionReference ? (currentQuestionTypeCode + '\u00b7' + currentQuestionPoints) : '';
+        var currentQuestionMetaMobileFull = currentQuestionReference ? (currentQuestionTypeLabel + ' \u2022 Poin ' + currentQuestionPoints) : '';
+        var currentQuestionSaveFeedback = currentQuestionReference ? getQuestionSaveFeedback(currentQuestionReference.id) : null;
         var doubtfulActionLabel = currentQuestionIsDoubtful ? 'Batalkan ragu-ragu' : 'Tandai ragu-ragu';
         var doubtfulActionClass = 'cbt-action-icon cbt-action-icon-doubtful' + (currentQuestionIsDoubtful ? ' is-active' : '');
         var answerEditingLocked = isExamAnswerEditingLocked();
@@ -290,9 +317,9 @@ export function createExamStageRenderer(deps) {
         var doubtfulFilterTitle = doubtfulFilterActive
             ? 'Tampilkan semua nomor soal'
             : 'Tampilkan hanya soal yang ditandai ragu-ragu';
-        var quickNavigationMarkup = currentQuestion ? [
+        var quickNavigationMarkup = currentQuestionReference ? [
             '<button class="cbt-action-icon cbt-action-icon-prev" data-action="prev" type="button" aria-label="Sebelumnya" title="Sebelumnya"' + (state.currentIndex <= 0 || state.busy ? ' disabled' : '') + '><span class="cbt-visually-hidden">Sebelumnya</span></button>',
-            '<button class="' + doubtfulActionClass + '" data-action="toggle-doubtful" data-qid="' + escapeHtml(currentQuestion.id) + '" type="button" aria-label="' + escapeHtml(doubtfulActionLabel) + '" title="' + escapeHtml(doubtfulActionLabel) + '"' + (state.busy || answerEditingLocked ? ' disabled' : '') + '><span class="cbt-visually-hidden">' + escapeHtml(doubtfulActionLabel) + '</span></button>',
+            '<button class="' + doubtfulActionClass + '" data-action="toggle-doubtful" data-qid="' + escapeHtml(currentQuestionId) + '" type="button" aria-label="' + escapeHtml(doubtfulActionLabel) + '" title="' + escapeHtml(doubtfulActionLabel) + '"' + (state.busy || answerEditingLocked || currentQuestionId <= 0 ? ' disabled' : '') + '><span class="cbt-visually-hidden">' + escapeHtml(doubtfulActionLabel) + '</span></button>',
             '<button class="cbt-action-icon cbt-action-icon-next" data-action="next" type="button" aria-label="Selanjutnya" title="Selanjutnya"' + (state.currentIndex >= totalQuestions - 1 || state.busy ? ' disabled' : '') + '><span class="cbt-visually-hidden">Selanjutnya</span></button>'
         ].join('') : '';
 
@@ -313,10 +340,13 @@ export function createExamStageRenderer(deps) {
             currentQuestionId: currentQuestionId,
             currentQuestionIsChanged: currentQuestionIsChanged,
             currentQuestionIsDoubtful: currentQuestionIsDoubtful,
+            currentQuestionManifest: currentQuestionManifest,
             currentQuestionMetaCompact: currentQuestionMetaCompact,
             currentQuestionMetaMobileFull: currentQuestionMetaMobileFull,
             currentQuestionMetaLabel: currentQuestionMetaLabel,
             currentQuestionPoints: currentQuestionPoints,
+            currentQuestionSaveFeedback: currentQuestionSaveFeedback,
+            currentQuestionType: currentQuestionType,
             currentQuestionTypeLabel: currentQuestionTypeLabel,
             doubtfulCount: doubtfulCount,
             doubtfulFilterActive: doubtfulFilterActive,
@@ -326,12 +356,15 @@ export function createExamStageRenderer(deps) {
             examFooterSyncMeta: examFooterSyncMeta,
             examLayoutClass: examLayoutClass,
             filteredNavigationEntries: filteredNavigationEntries,
+            allQuestionsAnswered: allQuestionsAnswered,
             isLastQuestion: isLastQuestion,
             navGridClass: navGridClass,
             navGridMarkup: navGridMarkup,
             navPanelPosition: navPanelPosition,
             questionHeadClasses: questionHeadClasses,
             quickNavigationMarkup: quickNavigationMarkup,
+            showCollectAction: showCollectAction,
+            showCollectAnywhereNotice: showCollectAnywhereNotice,
             totalQuestions: totalQuestions,
             unansweredCount: unansweredCount,
             unansweredFilterActive: unansweredFilterActive,
@@ -394,10 +427,136 @@ export function createExamStageRenderer(deps) {
             '<div class="' + viewModel.navGridClass + '">' + viewModel.navGridMarkup + '</div>',
             '<div class="cbt-legend"><span class="cbt-legend-item cbt-legend-item-current"><i class="cbt-dot cbt-dot-current"></i> Aktif</span><span class="cbt-legend-item cbt-legend-item-answered"><i class="cbt-dot cbt-dot-answered"></i> Terjawab</span><span class="cbt-legend-item cbt-legend-item-doubtful"><i class="cbt-dot cbt-dot-doubtful"></i> Ragu-ragu</span>' + (viewModel.revisionMarkerCount > 0 ? '<span class="cbt-legend-item cbt-legend-item-changed"><i class="cbt-dot cbt-dot-changed"></i> Baru / berubah</span>' : '') + '</div>',
             reviewRenderer.renderArchivedReviewHistorySection(),
-            (viewModel.isLastQuestion
+            (viewModel.showCollectAction
                 ? ('<div class="cbt-actions cbt-side-actions-compact"><button class="cbt-button cbt-button-primary" data-action="collect" type="button"' + (state.busy || state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>Kumpulkan Jawaban</button></div>')
                 : ''),
             '</aside>'
+        ].join('');
+    }
+
+    function renderQuestionLoadingQuickNavigation(viewModel) {
+        return [
+            '<button class="cbt-action-icon cbt-action-icon-prev" data-action="prev" type="button" aria-label="Sebelumnya" title="Sebelumnya"' + (state.currentIndex <= 0 || state.busy ? ' disabled' : '') + '><span class="cbt-visually-hidden">Sebelumnya</span></button>',
+            '<span class="cbt-action-icon cbt-action-icon-placeholder" aria-hidden="true"></span>',
+            '<button class="cbt-action-icon cbt-action-icon-next" data-action="next" type="button" aria-label="Selanjutnya" title="Selanjutnya"' + (state.currentIndex >= viewModel.totalQuestions - 1 || state.busy ? ' disabled' : '') + '><span class="cbt-visually-hidden">Selanjutnya</span></button>'
+        ].join('');
+    }
+
+    function renderQuestionSkeletonLine(sizeClass, extraClass) {
+        var classes = ['cbt-question-skeleton-line'];
+        if (sizeClass) {
+            classes.push(sizeClass);
+        }
+        if (extraClass) {
+            classes.push(extraClass);
+        }
+
+        return '<span class="' + classes.join(' ') + '" aria-hidden="true"></span>';
+    }
+
+    function renderQuestionSkeletonOptionRows(markerClass) {
+        return [
+            '<div class="cbt-question-skeleton-options">',
+            [1, 2, 3, 4].map(function () {
+                return [
+                    '<div class="cbt-question-skeleton-option">',
+                    '<span class="cbt-question-skeleton-option-marker ' + escapeHtml(markerClass || 'is-generic') + '" aria-hidden="true"></span>',
+                    '<div class="cbt-question-skeleton-option-lines">',
+                    renderQuestionSkeletonLine('is-medium'),
+                    renderQuestionSkeletonLine('is-short'),
+                    '</div>',
+                    '</div>'
+                ].join('');
+            }).join(''),
+            '</div>'
+        ].join('');
+    }
+
+    function renderQuestionSkeletonTextareaRows(count) {
+        return [
+            '<div class="cbt-question-skeleton-textareas">',
+            new Array(Math.max(1, Number(count) || 1)).fill('').map(function (_, index) {
+                return '<div class="cbt-question-skeleton-textarea' + (index > 0 ? ' is-secondary' : '') + '" aria-hidden="true"></div>';
+            }).join(''),
+            '</div>'
+        ].join('');
+    }
+
+    function renderQuestionSkeletonShortAnswerInputs() {
+        return [
+            '<div class="cbt-question-skeleton-input-grid">',
+            [1, 2, 3].map(function () {
+                return '<span class="cbt-question-skeleton-input" aria-hidden="true"></span>';
+            }).join(''),
+            '</div>'
+        ].join('');
+    }
+
+    function renderQuestionSkeletonMatrix() {
+        return [
+            '<div class="cbt-question-skeleton-matrix" aria-hidden="true">',
+            '<div class="cbt-question-skeleton-matrix-row is-head">',
+            '<span class="cbt-question-skeleton-line is-medium"></span>',
+            '<span class="cbt-question-skeleton-line is-pill"></span>',
+            '<span class="cbt-question-skeleton-line is-pill"></span>',
+            '</div>',
+            [1, 2, 3].map(function () {
+                return [
+                    '<div class="cbt-question-skeleton-matrix-row">',
+                    '<span class="cbt-question-skeleton-line is-medium"></span>',
+                    '<span class="cbt-question-skeleton-cell"></span>',
+                    '<span class="cbt-question-skeleton-cell"></span>',
+                    '</div>'
+                ].join('');
+            }).join(''),
+            '</div>'
+        ].join('');
+    }
+
+    function renderQuestionLoadingSkeleton(viewModel) {
+        var currentQuestionType = String(viewModel.currentQuestionType || '').trim().toLowerCase();
+        var skeletonClasses = ['cbt-question-skeleton'];
+        var bodyMarkup = '';
+
+        switch (currentQuestionType) {
+        case 'multiple_choice':
+        case 'true_false':
+            skeletonClasses.push('is-multiple-choice');
+            bodyMarkup = renderQuestionSkeletonOptionRows('is-radio');
+            break;
+        case 'multiple_answer':
+            skeletonClasses.push('is-multiple-answer');
+            bodyMarkup = renderQuestionSkeletonOptionRows('is-checkbox');
+            break;
+        case 'short_answer':
+            skeletonClasses.push('is-short-answer');
+            bodyMarkup = renderQuestionSkeletonShortAnswerInputs();
+            break;
+        case 'true_false_matrix':
+            skeletonClasses.push('is-true-false-matrix');
+            bodyMarkup = renderQuestionSkeletonMatrix();
+            break;
+        case 'essay':
+        case 'text':
+            skeletonClasses.push('is-textual');
+            bodyMarkup = renderQuestionSkeletonTextareaRows(2);
+            break;
+        default:
+            skeletonClasses.push('is-generic');
+            bodyMarkup = renderQuestionSkeletonOptionRows('is-generic');
+            break;
+        }
+
+        return [
+            '<div class="' + skeletonClasses.join(' ') + '" aria-hidden="true">',
+            '<div class="cbt-question-skeleton-copy">',
+            renderQuestionSkeletonLine('is-kicker'),
+            renderQuestionSkeletonLine('is-long'),
+            renderQuestionSkeletonLine('is-medium'),
+            '</div>',
+            '<div class="cbt-question-skeleton-media"></div>',
+            bodyMarkup,
+            '</div>'
         ].join('');
     }
 
@@ -416,7 +575,10 @@ export function createExamStageRenderer(deps) {
             '<div class="cbt-question-head">',
             '<div class="cbt-question-head-row cbt-question-head-row-top">',
             '<div class="cbt-question-head-row-info cbt-question-head-main">',
-            '<div class="cbt-chip cbt-chip-question-index" aria-label="Soal aktif"><span class="cbt-chip-mobile-icon" aria-hidden="true">#</span><span class="cbt-chip-label">Soal</span><span class="cbt-chip-value">' + escapeHtml(Math.max(1, Number(state.currentIndex) + 1)) + '</span></div>',
+            '<div class="cbt-chip cbt-chip-question-index" aria-label="Soal aktif"><span class="cbt-chip-mobile-icon" aria-hidden="true">#</span><span class="cbt-chip-label">Soal</span><span class="cbt-chip-value">' + escapeHtml(viewModel.currentQuestionDisplayNumber) + '</span></div>',
+            (viewModel.currentQuestionMetaLabel
+                ? '<div class="cbt-chip cbt-chip-question-meta is-loading" title="' + escapeHtml(viewModel.currentQuestionMetaLabel) + '" aria-label="' + escapeHtml(viewModel.currentQuestionMetaLabel) + '"><span class="cbt-chip-mobile-meta" aria-hidden="true">' + escapeHtml(viewModel.currentQuestionMetaCompact) + '</span><span class="cbt-chip-mobile-meta-full" aria-hidden="true">' + escapeHtml(viewModel.currentQuestionMetaMobileFull) + '</span><span class="cbt-chip-type">' + escapeHtml(viewModel.currentQuestionTypeLabel) + '</span><span class="cbt-chip-separator" aria-hidden="true"></span><span class="cbt-chip-points">Poin ' + escapeHtml(viewModel.currentQuestionPoints) + '</span></div>'
+                : ''),
             '</div>',
             '<div class="cbt-question-head-controls-right cbt-question-head-tools">',
             (viewModel.calculatorEnabled ? renderCalculatorToggleButton(state.calculatorVisible) : ''),
@@ -431,12 +593,59 @@ export function createExamStageRenderer(deps) {
             '</div>',
             '</div>',
             '<div class="cbt-question-body">',
-            '<div class="cbt-card cbt-card-inline-loading">',
-            '<h3>' + escapeHtml(loadingTitle) + '</h3>',
-            '<p class="cbt-subtitle">' + escapeHtml(loadingSubtitle) + '</p>',
+            '<div class="cbt-question-quick-nav cbt-question-quick-nav-top" role="group" aria-label="Navigasi Cepat Soal">',
+            (viewModel.quickNavigationMarkup || renderQuestionLoadingQuickNavigation(viewModel)),
+            '</div>',
+            '<div class="cbt-question-loading-status">',
+            '<strong class="cbt-question-loading-title">' + escapeHtml(loadingTitle) + '</strong>',
+            '<p class="cbt-question-loading-note">' + escapeHtml(loadingSubtitle) + '</p>',
+            '</div>',
+            renderQuestionLoadingSkeleton(viewModel),
+            '<div class="cbt-question-quick-nav cbt-question-quick-nav-bottom" role="group" aria-label="Navigasi Cepat Soal">',
+            (viewModel.quickNavigationMarkup || renderQuestionLoadingQuickNavigation(viewModel)),
+            '</div>',
+            '<div class="cbt-question-exam-footer" title="' + escapeHtml(viewModel.activeExamTitle) + '">',
+            '<span class="cbt-question-exam-footer-badge" aria-hidden="true"><span class="cbt-question-exam-footer-badge-core"></span></span>',
+            '<div class="cbt-question-exam-footer-copy">',
+            '<span class="cbt-question-exam-footer-label">Ujian Aktif</span>',
+            '<strong class="cbt-question-exam-footer-value">' + escapeHtml(viewModel.activeExamTitle) + '</strong>',
+            '</div>',
+            '<div class="cbt-question-exam-footer-side">',
+            '<div class="cbt-question-exam-footer-meta" aria-label="Progress ' + escapeHtml(viewModel.examFooterProgressValue) + ', ' + escapeHtml(viewModel.examFooterProgressNote) + ' terjawab">',
+            '<span class="cbt-question-exam-footer-meta-label">Progress</span>',
+            '<strong class="cbt-question-exam-footer-meta-value">' + escapeHtml(viewModel.examFooterProgressValue) + '</strong>',
+            '<small class="cbt-question-exam-footer-meta-note">' + escapeHtml(viewModel.examFooterProgressNote) + '</small>',
+            '</div>',
+            '<div class="cbt-question-exam-footer-meta cbt-question-exam-footer-meta-sync ' + escapeHtml(viewModel.examFooterSyncMeta.tone || '') + '" title="' + escapeHtml(viewModel.examFooterSyncMeta.title || '') + '" aria-label="' + escapeHtml(viewModel.examFooterSyncMeta.title || '') + '">',
+            '<span class="cbt-question-exam-footer-meta-label">' + escapeHtml(viewModel.examFooterSyncMeta.label || 'Sinkron') + '</span>',
+            '<strong class="cbt-question-exam-footer-meta-value">' + escapeHtml(viewModel.examFooterSyncMeta.value || '-') + '</strong>',
+            '<small class="cbt-question-exam-footer-meta-note">' + escapeHtml(viewModel.examFooterSyncMeta.note || '') + '</small>',
+            '</div>',
+            '</div>',
             '</div>',
             '</div>',
             '</section>'
+        ].join('');
+    }
+
+    function renderQuestionSaveFeedback(feedback) {
+        var safeFeedback = feedback && typeof feedback === 'object' ? feedback : null;
+        if (!safeFeedback || !safeFeedback.isVisible || !safeFeedback.label) {
+            return '';
+        }
+
+        var tone = String(safeFeedback.tone || 'saved');
+        var classes = ['cbt-question-save-feedback', 'is-' + tone];
+        var detail = String(safeFeedback.detail || '').trim();
+
+        return [
+            '<div class="' + classes.join(' ') + '" role="status" aria-live="polite">',
+            '<span class="cbt-question-save-feedback-dot" aria-hidden="true"></span>',
+            '<div class="cbt-question-save-feedback-copy">',
+            '<strong class="cbt-question-save-feedback-label">' + escapeHtml(safeFeedback.label) + '</strong>',
+            (detail !== '' ? '<small class="cbt-question-save-feedback-note">' + escapeHtml(detail) + '</small>' : ''),
+            '</div>',
+            '</div>'
         ].join('');
     }
 
@@ -472,10 +681,14 @@ export function createExamStageRenderer(deps) {
             ].join(''),
             questionQuickNav: viewModel.quickNavigationMarkup,
             questionStem: renderQuestionStem(currentQuestion),
-            questionInput: [
-                renderQuestionInput(currentQuestion),
-                (viewModel.isLastQuestion
-                    ? ('<div class="cbt-question-actions cbt-question-actions-main"><button class="cbt-button cbt-button-primary" data-action="finish" type="button"' + (state.busy || state.isFinishing ? ' disabled' : '') + '>' + (state.isFinishing ? 'Mengirim...' : 'Kumpulkan Jawaban') + '</button></div>')
+            questionInput: renderQuestionInput(currentQuestion),
+            questionSaveFeedback: [
+                renderQuestionSaveFeedback(viewModel.currentQuestionSaveFeedback),
+                (viewModel.showCollectAnywhereNotice
+                    ? '<div class="cbt-question-collect-ready-note" role="status" aria-live="polite">SEMUA SOAL SUDAH TERJAWAB. ANDA BISA LANGSUNG KUMPULKAN UJIAN DARI HALAMAN INI.</div>'
+                    : ''),
+                (viewModel.showCollectAction
+                    ? ('<div class="cbt-question-actions cbt-question-actions-main"><button class="cbt-button cbt-button-primary" data-action="finish" type="button"' + (state.busy || state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>' + (state.isFinishing ? 'Mengirim...' : 'Kumpulkan Jawaban') + '</button></div>')
                     : '')
             ].join(''),
             questionFooterProgress: [
@@ -514,6 +727,7 @@ export function createExamStageRenderer(deps) {
             '</div>',
             '<div class="cbt-question-stem' + (currentQuestion.question_type === 'short_answer' ? ' is-short-answer' : '') + '" data-cbt-exam-question-region="questionStem">' + questionSubregions.questionStem + '</div>',
             '<div data-cbt-exam-question-region="questionInput">' + questionSubregions.questionInput + '</div>',
+            '<div data-cbt-exam-question-region="questionSaveFeedback">' + questionSubregions.questionSaveFeedback + '</div>',
             '<div class="cbt-question-quick-nav cbt-question-quick-nav-bottom" data-cbt-exam-question-region="questionQuickNav" role="group" aria-label="Navigasi Cepat Soal">',
             questionSubregions.questionQuickNav,
             '</div>',
@@ -549,18 +763,62 @@ export function createExamStageRenderer(deps) {
         };
     }
 
+    function renderOpeningAttemptCard() {
+        var progressPercent = Math.max(0, Math.min(100, Number(state.openingAttemptProgressPercent) || 0));
+        var progressPercentText = formatScoreValue(progressPercent);
+        var stepIndex = Math.max(0, Number(state.openingAttemptProgressStepIndex) || 0);
+        var stepTotal = Math.max(
+            OPENING_PROGRESS_STEP_LABELS.length,
+            Number(state.openingAttemptProgressStepTotal) || OPENING_PROGRESS_STEP_LABELS.length
+        );
+        var progressStatus = String(state.openingAttemptProgressStatus || 'Session ujian dan daftar soal sedang dimuat. Mohon tunggu sebentar.');
+        var progressDetail = String(state.openingAttemptProgressDetail || 'Mohon tunggu sebentar, kami sedang menyiapkan tampilan ujian Anda.');
+
+        return [
+            '<section class="cbt-card cbt-exam-opening-card">',
+            '<div class="cbt-exam-opening-head">',
+            '<span class="cbt-exam-opening-chip">Loading ' + escapeHtml(stepIndex || 1) + '/' + escapeHtml(stepTotal) + '</span>',
+            '<h3>Menyiapkan Ujian</h3>',
+            '<p class="cbt-subtitle">' + escapeHtml(progressStatus) + '</p>',
+            '</div>',
+            renderAlert(),
+            '<div class="cbt-exam-opening-progress-wrap">',
+            '<div class="cbt-exam-opening-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + escapeHtml(progressPercent.toFixed(2)) + '" aria-label="Progress persiapan ujian">',
+            '<span class="cbt-exam-opening-progress-fill" style="width: ' + escapeHtml(progressPercent.toFixed(2)) + '%;"></span>',
+            '</div>',
+            '<div class="cbt-exam-opening-progress-meta">',
+            '<strong class="cbt-exam-opening-progress-value">' + escapeHtml(progressPercentText) + '%</strong>',
+            '<span class="cbt-exam-opening-progress-status">' + escapeHtml(progressDetail) + '</span>',
+            '</div>',
+            '</div>',
+            '<ol class="cbt-exam-opening-steps" aria-label="Tahap persiapan ujian">',
+            OPENING_PROGRESS_STEP_LABELS.map(function (label, index) {
+                var stepNumber = index + 1;
+                var stepClass = 'cbt-exam-opening-step';
+                if (stepNumber < stepIndex) {
+                    stepClass += ' is-complete';
+                } else if (stepNumber === stepIndex) {
+                    stepClass += ' is-current';
+                }
+
+                return [
+                    '<li class="' + stepClass + '">',
+                    '<span class="cbt-exam-opening-step-dot" aria-hidden="true"></span>',
+                    '<span class="cbt-exam-opening-step-label">' + escapeHtml(label) + '</span>',
+                    '</li>'
+                ].join('');
+            }).join(''),
+            '</ol>',
+            '<div class="cbt-actions"><button class="cbt-button cbt-button-secondary" data-action="logout" type="button">Logout</button></div>',
+            '</section>'
+        ].join('');
+    }
+
     function renderExamStageShell() {
         var viewModel = buildExamStageViewModel();
         if (!viewModel.totalQuestions) {
             if (state.isOpeningAttempt || state.busy) {
-                return [
-                    '<section class="cbt-card">',
-                    '<h3>Menyiapkan Ujian</h3>',
-                    '<p class="cbt-subtitle">Session ujian dan daftar soal sedang dimuat. Mohon tunggu sebentar.</p>',
-                    renderAlert(),
-                    '<div class="cbt-actions"><button class="cbt-button cbt-button-secondary" data-action="logout" type="button">Logout</button></div>',
-                    '</section>'
-                ].join('');
+                return renderOpeningAttemptCard();
             }
 
             return [

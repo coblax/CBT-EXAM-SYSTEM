@@ -1,6 +1,6 @@
 {
-  "_frontend-exam-runtime-DZKpbAv4.js": {
-    "file": "assets/frontend-exam-runtime-DZKpbAv4.js",
+  "_frontend-exam-runtime-BnUrHQ7q.js": {
+    "file": "assets/frontend-exam-runtime-BnUrHQ7q.js",
     "name": "frontend-exam-runtime",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js"
@@ -24,20 +24,20 @@
     "file": "assets/frontend-shared-review-Ckk9yafR.js",
     "name": "frontend-shared-review"
   },
-  "_frontend-stage-exam-BCdM2flb.js": {
-    "file": "assets/frontend-stage-exam-BCdM2flb.js",
+  "_frontend-stage-exam-CfspYxLQ.css": {
+    "file": "assets/frontend-stage-exam-CfspYxLQ.css",
+    "src": "_frontend-stage-exam-CfspYxLQ.css"
+  },
+  "_frontend-stage-exam-DJH6RUM5.js": {
+    "file": "assets/frontend-stage-exam-DJH6RUM5.js",
     "name": "frontend-stage-exam",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
       "_frontend-shared-review-Ckk9yafR.js"
     ],
     "css": [
-      "assets/frontend-stage-exam-CE47zyMI.css"
+      "assets/frontend-stage-exam-CfspYxLQ.css"
     ]
-  },
-  "_frontend-stage-exam-CE47zyMI.css": {
-    "file": "assets/frontend-stage-exam-CE47zyMI.css",
-    "src": "_frontend-stage-exam-CE47zyMI.css"
   },
   "_frontend-stage-result-CXtg3x37.js": {
     "file": "assets/frontend-stage-result-CXtg3x37.js",
@@ -416,20 +416,20 @@
     "isDynamicEntry": true
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-DIfkcqJ9.js",
+    "file": "assets/frontend-core-IWTPbTHp.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
     "dynamicImports": [
-      "_frontend-exam-runtime-DZKpbAv4.js",
+      "_frontend-exam-runtime-BnUrHQ7q.js",
       "_math-render-z4EJh76n.js",
-      "_frontend-stage-exam-BCdM2flb.js",
+      "_frontend-stage-exam-DJH6RUM5.js",
       "_frontend-stage-result-CXtg3x37.js",
       "_frontend-feature-calculator-CuFD8t3I.js",
       "src/frontend/app/core/debug-panel.js"
     ],
     "css": [
-      "assets/frontend-CMy3mZFH.css"
+      "assets/frontend-C6RQhU4v.css"
     ],
     "assets": [
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",

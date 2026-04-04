@@ -225,7 +225,43 @@ describe('createAnswerInputManager', function () {
                     navigation: true,
                     questionFooterProgress: true,
                     questionHead: true,
-                    questionInput: true
+                    questionInput: true,
+                    questionSaveFeedback: true
+                }
+            }
+        ]);
+        expect(fixture.calls.render).toEqual([]);
+    });
+
+    it('uses a save-feedback partial patch for text input changes without remounting the input region', function () {
+        var fixture = createFixture({
+            renderExamPartial: function () {
+                return true;
+            },
+            state: {
+                answers: {},
+                answeredQuestionLookup: {}
+            }
+        });
+        var input = document.createElement('textarea');
+        input.setAttribute('data-action', 'answer-text');
+        input.setAttribute('data-qid', '71');
+        input.value = 'jawaban esai';
+
+        fixture.manager.handleInputTarget(input);
+
+        expect(fixture.calls.renderExamPartial).toEqual([
+            {
+                meta: {
+                    inputType: 'text',
+                    questionId: 71
+                },
+                reason: 'answer-input',
+                regions: {
+                    navigation: true,
+                    questionFooterProgress: true,
+                    questionHead: true,
+                    questionSaveFeedback: true
                 }
             }
         ]);

@@ -44,6 +44,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
             'cbt_exam_status' => 'published',
             'cbt_exam_snapshot_exam_id' => '77',
             'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_paged' => '2',
         ];
 
         try {
@@ -59,6 +60,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertStringContainsString('cbt_exam_status=published', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Snapshot+soal+exam+%2377+siap.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
@@ -111,6 +113,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
             'exam_id' => '77',
             'cbt_exam_status' => 'published',
             'cbt_exam_snapshot_page_77' => '3',
+            'cbt_exam_readiness_paged' => '2',
         ];
 
         try {
@@ -123,6 +126,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertSame([], $this->storedExamSnapshotKeysFor(77));
         self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_page_77=3', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Snapshot+soal+exam+%2377+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
@@ -189,7 +193,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
             'cbt_exam_snapshot_tab' => 'students',
             'cbt_exam_snapshot_exam_id' => '77',
             'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
             'cbt_student_snapshot_paged' => '2',
         ];
 
@@ -198,7 +205,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertNotSame([], $this->storedAvailabilitySnapshotKeysFor(71));
         self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_ruang=R1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Snapshot+ketersediaan+siswa+%2371+siap.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
 
@@ -208,7 +218,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
             'cbt_exam_snapshot_tab' => 'students',
             'cbt_exam_snapshot_exam_id' => '77',
             'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
             'cbt_student_snapshot_paged' => '2',
         ];
 
@@ -216,9 +229,58 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(71));
         self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_ruang=R1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Snapshot+ketersediaan+siswa+%2371+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_start_and_stop_exam_availability_auto_warm_redirects_back_with_snapshot_state(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeAvailabilityRedis();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        $_POST = [
+            'exam_id' => '77',
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_paged' => '2',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_start_exam_availability_auto_warm']);
+
+        $state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
+        self::assertTrue($state['active']);
+        self::assertSame(77, $state['exam_id']);
+        self::assertGreaterThan(0, $state['prepared_count']);
+        self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+
+        $_POST = [
+            'exam_id' => '77',
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_paged' => '2',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_stop_exam_availability_auto_warm']);
+
+        $state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
+        self::assertFalse($state['active']);
+        self::assertSame('stopped', $state['status']);
+        self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Auto-warm+availability+dihentikan+manual.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
@@ -230,7 +292,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         $_POST = [
             'cbt_exam_status' => 'published',
             'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
             'cbt_student_snapshot_paged' => '2',
         ];
 
@@ -239,14 +304,20 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertNotSame([], $this->storedAvailabilitySnapshotKeysFor(71));
         self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(72));
         self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_ruang=R1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Berhasil+menyiapkan+1+snapshot+availability.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
 
         $_POST = [
             'cbt_exam_status' => 'published',
             'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
             'cbt_student_snapshot_paged' => '2',
         ];
 
@@ -255,7 +326,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(71));
         self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(72));
         self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_ruang=R1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Berhasil+membersihkan+snapshot+availability+untuk+1+siswa.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
@@ -272,7 +346,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
             'cbt_exam_snapshot_tab' => 'students',
             'cbt_exam_snapshot_exam_id' => '77',
             'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
             'cbt_student_snapshot_paged' => '2',
         ];
 
@@ -280,7 +357,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(71));
         self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_ruang=R1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Snapshot+profil+siswa+%2371+siap.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
 
@@ -290,7 +370,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
             'cbt_exam_snapshot_tab' => 'students',
             'cbt_exam_snapshot_exam_id' => '77',
             'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
             'cbt_student_snapshot_paged' => '2',
         ];
 
@@ -298,7 +381,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         self::assertSame('', $this->storedProfileSnapshotPayloadFor(71));
         self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_ruang=R1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Snapshot+profil+siswa+%2371+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
@@ -312,7 +398,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         $_POST = [
             'cbt_exam_status' => 'published',
             'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
             'cbt_student_snapshot_paged' => '2',
         ];
 
@@ -321,14 +410,20 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(71));
         self::assertSame('', $this->storedProfileSnapshotPayloadFor(72));
         self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_ruang=R1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Berhasil+menyiapkan+1+snapshot+profil.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
 
         $_POST = [
             'cbt_exam_status' => 'published',
             'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
             'cbt_student_snapshot_paged' => '2',
         ];
 
@@ -337,7 +432,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertSame('', $this->storedProfileSnapshotPayloadFor(71));
         self::assertSame('', $this->storedProfileSnapshotPayloadFor(72));
         self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_ruang=R1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Berhasil+membersihkan+snapshot+profil+untuk+1+siswa.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
@@ -534,10 +632,10 @@ final class AdminExamsSnapshotActionsFakeWpdb
     {
         $query = (string) $prepared;
 
-        if (strpos($query, 'SELECT e.id, e.title, e.status, s.name AS subject_name') !== false) {
+        if (strpos($query, 'SELECT e.id, e.title, e.status, e.target_kelas, s.name AS subject_name') !== false) {
             return [
-                ['id' => 77, 'title' => 'Ujian Matematika', 'status' => 'published', 'subject_name' => 'Matematika'],
-                ['id' => 54, 'title' => 'Ujian Biologi', 'status' => 'published', 'subject_name' => 'Biologi'],
+                ['id' => 77, 'title' => 'Ujian Matematika', 'status' => 'published', 'target_kelas' => 'XI-A', 'subject_name' => 'Matematika', 'duration_minutes' => 90, 'show_student_result' => 1, 'enable_calculator' => 1, 'starts_at' => '', 'ends_at' => ''],
+                ['id' => 54, 'title' => 'Ujian Biologi', 'status' => 'published', 'target_kelas' => 'XI-B', 'subject_name' => 'Biologi', 'duration_minutes' => 60, 'show_student_result' => 1, 'enable_calculator' => 1, 'starts_at' => '', 'ends_at' => ''],
             ];
         }
 

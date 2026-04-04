@@ -344,6 +344,87 @@
     color: #bfdbfe;
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-button {
+    border-color: #3e5774;
+    background: #111c2f;
+    color: #d7e4f5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-button:hover {
+    border-color: #60a5fa;
+    background: #1e293b;
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-modal {
+    border-color: var(--cbt-border);
+    background: linear-gradient(180deg, #0f172a 0%, #111c2f 100%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-modal-head h3 {
+    color: #f8fafc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-modal-body {
+    border-color: #3e5774;
+    background: #111f34;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-gallery-btn {
+    border-color: #3e5774;
+    background: #111c2f;
+    color: #bfdbfe;
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.2);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-control-btn,
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-control-chip {
+    border-color: #3e5774;
+    background: #111c2f;
+    color: #bfdbfe;
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.2);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-control-chip.is-active {
+    border-color: #60a5fa;
+    background: rgba(37, 99, 235, 0.18);
+    color: #dbeafe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-scale-badge {
+    background: rgba(96, 165, 250, 0.14);
+    color: #dbeafe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-gallery-btn:hover:not(:disabled) {
+    border-color: #60a5fa;
+    background: #1e293b;
+    color: #dbeafe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-control-btn:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-control-chip:hover:not(:disabled) {
+    border-color: #60a5fa;
+    background: #1e293b;
+    color: #dbeafe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-gallery-counter {
+    color: #d7e4f5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-modal-close {
+    border-color: #3e5774;
+    background: #111c2f;
+    color: #d7e4f5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-rich-zoom-modal-close:hover {
+    border-color: #60a5fa;
+    background: #1e293b;
+    color: #bfdbfe;
+}
+
 @media (max-width: 620px) {
     .cbt-user-photo-modal {
         width: min(390px, 100%);

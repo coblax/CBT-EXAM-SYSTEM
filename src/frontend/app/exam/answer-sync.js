@@ -39,6 +39,7 @@ export function createAnswerSyncManager(deps) {
     var answerBatchFlushInFlight = null;
     var answerBatchInFlightItems = [];
     var answerSyncRetryCount = 0;
+    var lastSyncErrorRetryable = false;
 
     function recordTimelineEntry(kind, summary, meta) {
         if (typeof recordTimeline === 'function') {
@@ -199,7 +200,8 @@ export function createAnswerSyncManager(deps) {
         if (state.stage === 'exam' && renderExamPartial) {
             if (renderExamPartial({
                 notice: true,
-                questionFooterSync: true
+                questionFooterSync: true,
+                questionSaveFeedback: true
             }, reason, meta || {})) {
                 return;
             }
@@ -278,6 +280,113 @@ export function createAnswerSyncManager(deps) {
         };
     }
 
+    function hasAutoSaveTimer(questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        return safeQuestionId > 0 && !!autoSaveTimersByQuestion[safeQuestionId];
+    }
+
+    function hasPendingAnswerItem(questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        return safeQuestionId > 0 && Object.prototype.hasOwnProperty.call(pendingAnswerBatchByQuestion, safeQuestionId);
+    }
+
+    function hasInFlightAnswerItem(questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        if (safeQuestionId <= 0 || !Array.isArray(answerBatchInFlightItems) || !answerBatchInFlightItems.length) {
+            return false;
+        }
+
+        return answerBatchInFlightItems.some(function (item) {
+            return (Number(item && item.question_id) || 0) === safeQuestionId;
+        });
+    }
+
+    function getQuestionSaveFeedback(questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        if (safeQuestionId <= 0 || (Number(state.attemptId) || 0) <= 0) {
+            return {
+                detail: '',
+                isVisible: false,
+                label: '',
+                tone: 'idle'
+            };
+        }
+
+        var question = getQuestionById(safeQuestionId) || getQuestionPayloadById(safeQuestionId);
+        if (!question) {
+            return {
+                detail: '',
+                isVisible: false,
+                label: '',
+                tone: 'idle'
+            };
+        }
+
+        var payload = questionAnswerPayload(question);
+        var signature = payloadSignature(payload);
+        if (payload === null || signature === '') {
+            return {
+                detail: '',
+                isVisible: false,
+                label: '',
+                tone: 'idle'
+            };
+        }
+
+        var hasPendingTimer = hasAutoSaveTimer(safeQuestionId);
+        var hasPendingItem = hasPendingAnswerItem(safeQuestionId);
+        var hasInFlightItem = hasInFlightAnswerItem(safeQuestionId);
+        var hasLastSubmitted = Object.prototype.hasOwnProperty.call(lastSubmittedPayloadByQuestion, safeQuestionId);
+        var lastSubmittedSignature = hasLastSubmitted ? String(lastSubmittedPayloadByQuestion[safeQuestionId] || '') : '';
+        var hasDirtyLocalChange = !hasLastSubmitted || lastSubmittedSignature !== signature;
+        var hasUnsavedState = hasPendingTimer || hasPendingItem || hasInFlightItem || hasDirtyLocalChange;
+        var connectionOffline = String(state.connectionStatus || getNavigatorConnectionStatus() || 'online') === 'offline';
+        var hasFatalSyncError = String(state.lastSyncError || '') !== '' && !lastSyncErrorRetryable;
+
+        if (hasUnsavedState) {
+            if (hasFatalSyncError) {
+                return {
+                    detail: 'Perubahan terakhir belum berhasil dikirim. Jawaban tetap tersimpan lokal.',
+                    isVisible: true,
+                    label: 'Gagal sinkron',
+                    tone: 'error'
+                };
+            }
+
+            if (connectionOffline || lastSyncErrorRetryable) {
+                return {
+                    detail: 'Perubahan terakhir menunggu koneksi atau giliran sinkron berikutnya.',
+                    isVisible: true,
+                    label: 'Belum terkirim',
+                    tone: 'pending'
+                };
+            }
+
+            return {
+                detail: 'Perubahan jawaban sedang diproses dan dikirim ke server.',
+                isVisible: true,
+                label: 'Menyinkronkan...',
+                tone: 'syncing'
+            };
+        }
+
+        if (hasLastSubmitted && lastSubmittedSignature === signature) {
+            return {
+                detail: 'Jawaban soal ini sudah aman tersimpan di server.',
+                isVisible: true,
+                label: 'Tersimpan',
+                tone: 'saved'
+            };
+        }
+
+        return {
+            detail: '',
+            isVisible: false,
+            label: '',
+            tone: 'idle'
+        };
+    }
+
     function restoreQuestionAutoSaveState(snapshot) {
         var normalizedState = normalizeStoredAutoSaveState(snapshot);
         lastSubmittedPayloadByQuestion = Object.assign({}, normalizedState.lastSubmittedPayloadByQuestion);
@@ -288,6 +397,8 @@ export function createAnswerSyncManager(deps) {
         state.examLockedForPendingFinish = normalizedState.examLockedForPendingFinish;
         state.syncBlockingReason = normalizedState.syncBlockingReason;
         answerSyncRetryCount = 0;
+        lastSyncErrorRetryable = String(state.lastSyncError || '') !== ''
+            && (String(state.syncBlockingReason || '').indexOf('pending') >= 0 || String(state.syncBlockingReason || '').indexOf('offline') >= 0);
         syncPendingAnswerRuntimeState({
             persist: false,
             clearLastSyncError: false,
@@ -360,6 +471,7 @@ export function createAnswerSyncManager(deps) {
         answerBatchFlushInFlight = null;
         answerBatchInFlightItems = [];
         answerSyncRetryCount = 0;
+        lastSyncErrorRetryable = false;
         state.lastSyncError = '';
         state.examLockedForPendingFinish = false;
         state.pendingFinishAutoSubmit = false;
@@ -552,6 +664,7 @@ export function createAnswerSyncManager(deps) {
         state.lastSyncError = error instanceof Error && error.message
             ? error.message
             : 'Koneksi terputus. Jawaban disimpan lokal.';
+        lastSyncErrorRetryable = true;
         markAutoSaveCongested();
         setConnectionStatus('offline', {
             persist: false,
@@ -578,6 +691,7 @@ export function createAnswerSyncManager(deps) {
     function noteSuccessfulAnswerSync(options) {
         options = options || {};
         answerSyncRetryCount = 0;
+        lastSyncErrorRetryable = false;
         state.lastSyncError = '';
         if (typeof state.error === 'string' && state.error.indexOf('Sinkronisasi jawaban gagal') === 0) {
             state.error = '';
@@ -849,14 +963,15 @@ export function createAnswerSyncManager(deps) {
             try {
                 var legacyResponse = await submitLegacyAnswerBatch(items, options);
                 answerBatchInFlightItems = [];
-                applySubmittedBatchItems(items, legacyResponse.items || [], {
-                    questionDataGeneration: requestGeneration
-                });
-                if (requestGeneration === getQuestionDataGeneration()) {
-                    state.lastSyncError = '';
-                }
-                return legacyResponse;
-            } catch (legacyError) {
+                    applySubmittedBatchItems(items, legacyResponse.items || [], {
+                        questionDataGeneration: requestGeneration
+                    });
+                    if (requestGeneration === getQuestionDataGeneration()) {
+                        lastSyncErrorRetryable = false;
+                        state.lastSyncError = '';
+                    }
+                    return legacyResponse;
+                } catch (legacyError) {
                 answerBatchInFlightItems = [];
                 if (requestGeneration === getQuestionDataGeneration()) {
                     var partialSubmittedItems = Array.isArray(legacyError && legacyError.partialSubmittedItems)
@@ -999,6 +1114,7 @@ export function createAnswerSyncManager(deps) {
                             render: true
                         });
                     } else {
+                        lastSyncErrorRetryable = false;
                         state.lastSyncError = error instanceof Error && error.message ? error.message : 'Sinkronisasi jawaban gagal.';
                         state.error = error instanceof Error ? ('Sinkronisasi jawaban gagal: ' + error.message) : 'Sinkronisasi jawaban gagal.';
                         syncPendingAnswerRuntimeState({
@@ -1106,6 +1222,7 @@ export function createAnswerSyncManager(deps) {
                 return;
             }
 
+            lastSyncErrorRetryable = false;
             state.lastSyncError = error instanceof Error && error.message ? error.message : 'Sinkronisasi jawaban gagal.';
             state.error = error instanceof Error ? ('Sinkronisasi jawaban gagal: ' + error.message) : 'Sinkronisasi jawaban gagal.';
             markAutoSaveCongested();
@@ -1201,6 +1318,7 @@ export function createAnswerSyncManager(deps) {
         clearAutoSaveRuntimeState: clearAutoSaveRuntimeState,
         flushPendingAnswerBatch: flushPendingAnswerBatch,
         getAutoSaveState: getAutoSaveState,
+        getQuestionSaveFeedback: getQuestionSaveFeedback,
         getPendingAnswerBatchCount: getPendingAnswerBatchCount,
         handleRecoverableAnswerSyncFailure: handleRecoverableAnswerSyncFailure,
         hasFlushInFlight: hasFlushInFlight,

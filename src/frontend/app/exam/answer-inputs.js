@@ -13,15 +13,22 @@ export function createAnswerInputManager(deps) {
     var scheduleQuestionCachePersist = deps.scheduleQuestionCachePersist;
     var updateSelectedExam = deps.updateSelectedExam;
 
-    function renderAnswerChangePatch(reason, meta, includeNotice) {
+    function renderAnswerChangePatch(reason, meta, options) {
+        options = options || {};
+
         if (renderExamPartial) {
             var regions = {
                 navigation: true,
                 questionFooterProgress: true,
                 questionHead: true,
-                questionInput: true
+                questionSaveFeedback: true
             };
-            if (includeNotice) {
+
+            if (options.includeInput !== false) {
+                regions.questionInput = true;
+            }
+
+            if (options.includeNotice) {
                 regions.notice = true;
             }
 
@@ -57,7 +64,10 @@ export function createAnswerInputManager(deps) {
                 renderAnswerChangePatch('answer-change', {
                     questionId: singleQid,
                     inputType: 'single'
-                }, hadVisibleMessages);
+                }, {
+                    includeInput: true,
+                    includeNotice: hadVisibleMessages
+                });
             }
             return true;
         }
@@ -104,7 +114,10 @@ export function createAnswerInputManager(deps) {
             renderAnswerChangePatch('answer-change', {
                 questionId: multiQid,
                 inputType: 'multi'
-            }, hadVisibleMessages);
+            }, {
+                includeInput: true,
+                includeNotice: hadVisibleMessages
+            });
             return true;
         }
 
@@ -127,7 +140,10 @@ export function createAnswerInputManager(deps) {
             renderAnswerChangePatch('answer-change', {
                 questionId: matrixQid,
                 inputType: 'true-false-matrix'
-            }, hadVisibleMessages);
+            }, {
+                includeInput: true,
+                includeNotice: hadVisibleMessages
+            });
             return true;
         }
 
@@ -208,6 +224,12 @@ export function createAnswerInputManager(deps) {
             syncMirroredShortAnswerInputs(shortQid, shortKey, shortValue, target);
             scheduleQuestionCachePersist(500);
             scheduleAutoSave(shortQid, autoSaveTextDelayMs);
+            renderAnswerChangePatch('answer-input', {
+                questionId: shortQid,
+                inputType: 'short'
+            }, {
+                includeInput: false
+            });
             return true;
         }
 
@@ -226,6 +248,12 @@ export function createAnswerInputManager(deps) {
             }
             scheduleQuestionCachePersist(500);
             scheduleAutoSave(textQid, autoSaveTextDelayMs);
+            renderAnswerChangePatch('answer-input', {
+                questionId: textQid,
+                inputType: 'text'
+            }, {
+                includeInput: false
+            });
             return true;
         }
 

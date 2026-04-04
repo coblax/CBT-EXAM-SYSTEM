@@ -10,13 +10,16 @@ if (!class_exists('CBT_Cache')) {
 
 class CBT_Exam_Availability_Cache
 {
-    private const DIAGNOSTIC_PREVIEW_DEFAULT_ITEMS = 3;
     private const SNAPSHOT_REDIS_TTL_SECONDS = 44100;
     private const SNAPSHOT_REDIS_DEFAULT_HOST = '127.0.0.1';
     private const SNAPSHOT_REDIS_DEFAULT_PORT = 6379;
     private const SNAPSHOT_REDIS_DEFAULT_DATABASE = 2;
     private const SNAPSHOT_REDIS_PREFIX = 'cbt_exam_availability:';
     private const SNAPSHOT_REDIS_TIMEOUT = 1.5;
+    private const SNAPSHOT_SOURCE_PREPARED = 'prepared';
+    private const SNAPSHOT_SOURCE_MINUTE = 'minute';
+    private const SNAPSHOT_SOURCE_MISS = 'miss';
+    private const SNAPSHOT_SOURCE_INVALID = 'invalid';
 
     /** @var Redis|false|null */
     private static $snapshot_redis = null;
@@ -77,6 +80,53 @@ class CBT_Exam_Availability_Cache
         return $snapshot;
     }
 
+    /**
+     * @param callable():array<string,mixed> $producer
+     * @return array{items:array<int,array<string,mixed>>,current_user:array<string,mixed>|null}
+     */
+    public static function warm_prepared_student_snapshot(int $user_id, callable $producer): array
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return self::empty_payload();
+        }
+
+        $payload = $producer();
+        $snapshot = self::sanitize_payload(is_array($payload) ? $payload : []);
+        $redis = self::snapshot_redis();
+        if ($redis instanceof Redis) {
+            self::write_student_redis_snapshot($user_id, $snapshot, self::SNAPSHOT_SOURCE_PREPARED);
+        }
+
+        return $snapshot;
+    }
+
+    public static function has_current_prepared_snapshot(int $user_id): bool
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return false;
+        }
+
+        $redis = self::snapshot_redis();
+        if (!$redis instanceof Redis) {
+            return false;
+        }
+
+        $raw_snapshot = $redis->get(self::prepared_snapshot_storage_key($user_id));
+        if (!is_string($raw_snapshot) || trim($raw_snapshot) === '') {
+            return false;
+        }
+
+        $decoded = json_decode($raw_snapshot, true);
+        if (!is_array($decoded)) {
+            $redis->del(self::prepared_snapshot_storage_key($user_id));
+            return false;
+        }
+
+        return true;
+    }
+
     public static function clear_student_snapshot(int $user_id): int
     {
         $user_id = absint($user_id);
@@ -108,6 +158,7 @@ class CBT_Exam_Availability_Cache
      *   snapshot_exists:bool,
      *   snapshot_valid:bool,
      *   snapshot_status:string,
+     *   snapshot_source:string,
      *   snapshot_message:string,
      *   item_count:int,
      *   payload_bytes:int,
@@ -134,6 +185,7 @@ class CBT_Exam_Availability_Cache
                 'snapshot_exists' => false,
                 'snapshot_valid' => false,
                 'snapshot_status' => 'idle',
+                'snapshot_source' => self::SNAPSHOT_SOURCE_MISS,
                 'snapshot_message' => 'User siswa belum dipilih.',
                 'item_count' => 0,
                 'payload_bytes' => 0,
@@ -154,6 +206,7 @@ class CBT_Exam_Availability_Cache
                 'snapshot_exists' => false,
                 'snapshot_valid' => false,
                 'snapshot_status' => 'unavailable',
+                'snapshot_source' => self::SNAPSHOT_SOURCE_MISS,
                 'snapshot_message' => 'Redis exam availability tidak tersedia.',
                 'item_count' => 0,
                 'payload_bytes' => 0,
@@ -163,27 +216,26 @@ class CBT_Exam_Availability_Cache
             ];
         }
 
-        $raw_snapshot = $storage_key !== '' ? $redis->get($storage_key) : false;
-        $snapshot_exists = is_string($raw_snapshot) && trim($raw_snapshot) !== '';
-        $snapshot_valid = false;
-        $payload_bytes = $snapshot_exists ? strlen((string) $raw_snapshot) : 0;
-        $ttl_seconds = ($snapshot_exists && method_exists($redis, 'ttl')) ? (int) $redis->ttl($storage_key) : -2;
-        $item_count = 0;
-        $current_user_preview = null;
-        $preview_items = [];
+        $resolved_snapshot = self::resolve_student_snapshot_candidate($user_id, $redis);
+        $snapshot_exists = !empty($resolved_snapshot['snapshot_exists']);
+        $snapshot_valid = !empty($resolved_snapshot['snapshot_valid']);
+        $storage_key = (string) ($resolved_snapshot['storage_key'] ?? $storage_key);
+        $snapshot_source = (string) ($resolved_snapshot['snapshot_source'] ?? self::SNAPSHOT_SOURCE_MISS);
+        $payload_bytes = max(0, (int) ($resolved_snapshot['payload_bytes'] ?? 0));
+        $ttl_seconds = (int) ($resolved_snapshot['ttl_seconds'] ?? -2);
+        $snapshot = isset($resolved_snapshot['snapshot']) && is_array($resolved_snapshot['snapshot'])
+            ? $resolved_snapshot['snapshot']
+            : self::empty_payload();
+        $item_count = count((array) ($snapshot['items'] ?? []));
+        $current_user_preview = self::build_current_user_preview(
+            is_array($snapshot['current_user'] ?? null) ? $snapshot['current_user'] : null
+        );
+        $preview_items = self::build_preview_items((array) ($snapshot['items'] ?? []));
 
-        if ($snapshot_exists) {
-            $decoded = json_decode((string) $raw_snapshot, true);
-            if (is_array($decoded)) {
-                $snapshot = self::sanitize_payload($decoded);
-                $snapshot_valid = true;
-                $item_count = count($snapshot['items']);
-                $current_user_preview = self::build_current_user_preview($snapshot['current_user']);
-                $preview_items = self::build_preview_items($snapshot['items']);
-            }
-        }
-
-        if ($snapshot_valid) {
+        if ($snapshot_valid && $snapshot_source === self::SNAPSHOT_SOURCE_PREPARED) {
+            $snapshot_status = 'ready';
+            $snapshot_message = 'Prepared snapshot availability siap dipakai untuk student GET /exams.';
+        } elseif ($snapshot_valid) {
             $snapshot_status = 'ready';
             $snapshot_message = 'Snapshot ketersediaan exam siap dipakai untuk student GET /exams.';
         } elseif ($snapshot_exists) {
@@ -204,6 +256,7 @@ class CBT_Exam_Availability_Cache
             'snapshot_exists' => $snapshot_exists,
             'snapshot_valid' => $snapshot_valid,
             'snapshot_status' => $snapshot_status,
+            'snapshot_source' => $snapshot_source,
             'snapshot_message' => $snapshot_message,
             'item_count' => $item_count,
             'payload_bytes' => $payload_bytes,
@@ -230,27 +283,18 @@ class CBT_Exam_Availability_Cache
         }
 
         $redis_available = true;
-        $storage_key = self::snapshot_storage_key($user_id);
-        $raw_snapshot = $redis->get($storage_key);
-        if (!is_string($raw_snapshot) || trim($raw_snapshot) === '') {
+        $resolved = self::resolve_student_snapshot_candidate($user_id, $redis);
+        if (empty($resolved['snapshot_valid']) || !isset($resolved['snapshot']) || !is_array($resolved['snapshot'])) {
             return null;
         }
 
-        $decoded = json_decode($raw_snapshot, true);
-        if (!is_array($decoded)) {
-            $redis->del($storage_key);
-            return null;
-        }
-
-        $snapshot = self::sanitize_payload($decoded);
-        $redis->expire($storage_key, self::SNAPSHOT_REDIS_TTL_SECONDS);
-        return $snapshot;
+        return $resolved['snapshot'];
     }
 
     /**
      * @param array{items:array<int,array<string,mixed>>,current_user:array<string,mixed>|null} $snapshot
      */
-    private static function write_student_redis_snapshot(int $user_id, array $snapshot): void
+    private static function write_student_redis_snapshot(int $user_id, array $snapshot, string $source = self::SNAPSHOT_SOURCE_MINUTE): void
     {
         $user_id = absint($user_id);
         if ($user_id <= 0) {
@@ -267,7 +311,94 @@ class CBT_Exam_Availability_Cache
             return;
         }
 
-        $redis->setEx(self::snapshot_storage_key($user_id), self::SNAPSHOT_REDIS_TTL_SECONDS, $encoded);
+        $storage_key = $source === self::SNAPSHOT_SOURCE_PREPARED
+            ? self::prepared_snapshot_storage_key($user_id)
+            : self::snapshot_storage_key($user_id);
+        $redis->setEx($storage_key, self::SNAPSHOT_REDIS_TTL_SECONDS, $encoded);
+    }
+
+    /**
+     * @return array{
+     *   snapshot_exists:bool,
+     *   snapshot_valid:bool,
+     *   snapshot_source:string,
+     *   storage_key:string,
+     *   payload_bytes:int,
+     *   ttl_seconds:int,
+     *   snapshot:array{items:array<int,array<string,mixed>>,current_user:array<string,mixed>|null}
+     * }
+     */
+    private static function resolve_student_snapshot_candidate(int $user_id, Redis $redis): array
+    {
+        $default = [
+            'snapshot_exists' => false,
+            'snapshot_valid' => false,
+            'snapshot_source' => self::SNAPSHOT_SOURCE_MISS,
+            'storage_key' => self::snapshot_storage_key($user_id),
+            'payload_bytes' => 0,
+            'ttl_seconds' => -2,
+            'snapshot' => self::empty_payload(),
+        ];
+
+        $invalid_candidate = null;
+        $candidates = [
+            [
+                'source' => self::SNAPSHOT_SOURCE_PREPARED,
+                'storage_key' => self::prepared_snapshot_storage_key($user_id),
+                'refresh_dynamic_fields' => true,
+            ],
+            [
+                'source' => self::SNAPSHOT_SOURCE_MINUTE,
+                'storage_key' => self::snapshot_storage_key($user_id),
+                'refresh_dynamic_fields' => false,
+            ],
+        ];
+
+        foreach ($candidates as $candidate) {
+            $storage_key = (string) ($candidate['storage_key'] ?? '');
+            if ($storage_key === '') {
+                continue;
+            }
+
+            $raw_snapshot = $redis->get($storage_key);
+            if (!is_string($raw_snapshot) || trim($raw_snapshot) === '') {
+                continue;
+            }
+
+            $decoded = json_decode($raw_snapshot, true);
+            if (!is_array($decoded)) {
+                $redis->del($storage_key);
+                if (!is_array($invalid_candidate)) {
+                    $invalid_candidate = array_merge($default, [
+                        'snapshot_exists' => true,
+                        'snapshot_valid' => false,
+                        'snapshot_source' => self::SNAPSHOT_SOURCE_INVALID,
+                        'storage_key' => $storage_key,
+                        'payload_bytes' => strlen($raw_snapshot),
+                        'ttl_seconds' => method_exists($redis, 'ttl') ? (int) $redis->ttl($storage_key) : -2,
+                    ]);
+                }
+                continue;
+            }
+
+            $snapshot = self::sanitize_payload($decoded);
+            if (!empty($candidate['refresh_dynamic_fields'])) {
+                $snapshot = self::refresh_dynamic_payload($snapshot);
+            }
+            $redis->expire($storage_key, self::SNAPSHOT_REDIS_TTL_SECONDS);
+
+            return array_merge($default, [
+                'snapshot_exists' => true,
+                'snapshot_valid' => true,
+                'snapshot_source' => (string) ($candidate['source'] ?? self::SNAPSHOT_SOURCE_MISS),
+                'storage_key' => $storage_key,
+                'payload_bytes' => strlen($raw_snapshot),
+                'ttl_seconds' => method_exists($redis, 'ttl') ? (int) $redis->ttl($storage_key) : -2,
+                'snapshot' => $snapshot,
+            ]);
+        }
+
+        return is_array($invalid_candidate) ? $invalid_candidate : $default;
     }
 
     /**
@@ -296,7 +427,7 @@ class CBT_Exam_Availability_Cache
     private static function build_preview_items(array $items): array
     {
         $preview_items = [];
-        foreach (array_slice($items, 0, self::DIAGNOSTIC_PREVIEW_DEFAULT_ITEMS) as $item) {
+        foreach ($items as $item) {
             if (!is_array($item)) {
                 continue;
             }
@@ -468,6 +599,20 @@ class CBT_Exam_Availability_Cache
             . ':minute:' . $minute_bucket;
     }
 
+    private static function prepared_snapshot_storage_key(int $user_id): string
+    {
+        $catalog_entry = CBT_Cache::get_namespace_registry_entry(CBT_Cache::namespace_catalog());
+        $user_entry = CBT_Cache::get_namespace_registry_entry(CBT_Cache::namespace_user($user_id));
+        $catalog_version = max(1, (int) ($catalog_entry['version'] ?? 1));
+        $user_version = max(1, (int) ($user_entry['version'] ?? 1));
+
+        return self::SNAPSHOT_REDIS_PREFIX
+            . 'student:user:' . max(0, $user_id)
+            . ':prepared'
+            . ':catalog_v:' . $catalog_version
+            . ':user_v:' . $user_version;
+    }
+
     /**
      * @return array<int,string>
      */
@@ -523,6 +668,97 @@ class CBT_Exam_Availability_Cache
         }
 
         return (int) floor($timestamp / MINUTE_IN_SECONDS);
+    }
+
+    /**
+     * @param array{items:array<int,array<string,mixed>>,current_user:array<string,mixed>|null} $snapshot
+     * @return array{items:array<int,array<string,mixed>>,current_user:array<string,mixed>|null}
+     */
+    private static function refresh_dynamic_payload(array $snapshot): array
+    {
+        $current_user = is_array($snapshot['current_user'] ?? null) ? $snapshot['current_user'] : null;
+        $student_kelas = self::normalize_kelas_code((string) ($current_user['kode_kelas'] ?? ''));
+        $server_now = (string) current_time('mysql');
+        $server_timezone = wp_timezone_string();
+        $server_now_ts = strtotime($server_now);
+
+        foreach ($snapshot['items'] as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $start_ts = !empty($item['starts_at']) ? strtotime((string) $item['starts_at']) : false;
+            $end_ts = !empty($item['ends_at']) ? strtotime((string) $item['ends_at']) : false;
+            $within_schedule = (
+                (empty($item['starts_at']) || (string) $item['starts_at'] <= $server_now) &&
+                (empty($item['ends_at']) || (string) $item['ends_at'] >= $server_now)
+            );
+            $class_allowed = self::exam_allows_student_class((array) $item, $student_kelas);
+            $schedule_reason = 'in_range';
+            if ($start_ts !== false && $server_now_ts !== false && $start_ts > $server_now_ts) {
+                $schedule_reason = 'not_started';
+            } elseif ($end_ts !== false && $server_now_ts !== false && $end_ts < $server_now_ts) {
+                $schedule_reason = 'ended';
+            }
+
+            $availability_reason = 'ok';
+            if (!$class_allowed) {
+                $availability_reason = 'class_mismatch';
+            } elseif (!$within_schedule) {
+                $availability_reason = $schedule_reason;
+            }
+
+            $item['is_within_schedule'] = $within_schedule ? 1 : 0;
+            $item['is_class_allowed'] = $class_allowed ? 1 : 0;
+            $item['is_available_now'] = ($within_schedule && $class_allowed) ? 1 : 0;
+            $item['availability_reason'] = $availability_reason;
+            $item['server_now'] = $server_now;
+            $item['server_timezone'] = $server_timezone;
+            $snapshot['items'][$index] = $item;
+        }
+
+        return $snapshot;
+    }
+
+    private static function normalize_kelas_code(string $value): string
+    {
+        return strtoupper(trim(sanitize_text_field($value)));
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function parse_exam_target_kelas(string $raw): array
+    {
+        $parts = preg_split('/[,\n\r;|]+/', $raw) ?: [];
+        $items = [];
+        foreach ($parts as $part) {
+            $normalized = self::normalize_kelas_code((string) $part);
+            if ($normalized === '') {
+                continue;
+            }
+            $items[$normalized] = $normalized;
+        }
+
+        return array_values($items);
+    }
+
+    /**
+     * @param array<string,mixed> $exam
+     */
+    private static function exam_allows_student_class(array $exam, string $student_kelas): bool
+    {
+        $target_kelas = self::parse_exam_target_kelas((string) ($exam['target_kelas'] ?? ''));
+        if (empty($target_kelas)) {
+            return true;
+        }
+
+        $student_kelas = self::normalize_kelas_code($student_kelas);
+        if ($student_kelas === '') {
+            return false;
+        }
+
+        return in_array($student_kelas, $target_kelas, true);
     }
 
     /**

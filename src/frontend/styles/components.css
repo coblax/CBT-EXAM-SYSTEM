@@ -399,4 +399,106 @@
     justify-content: flex-end;
 }
 
+.cbt-finish-live-card {
+    margin-top: 12px;
+    border: 1px solid #cfe0f4;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+    padding: 12px 14px;
+}
+
+.cbt-finish-live-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.cbt-finish-live-copy {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.cbt-finish-live-copy strong {
+    color: #0f172a;
+    font-size: 13px;
+}
+
+.cbt-finish-live-copy span {
+    color: #51657c;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.cbt-finish-live-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: #eaf3fd;
+    color: #0f4fa8;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.cbt-finish-live-spinner {
+    width: 18px;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 2px solid rgba(15, 76, 129, 0.16);
+    border-top-color: #0f4c81;
+    animation: cbt-spin 0.8s linear infinite;
+}
+
+.cbt-finish-live-progress {
+    margin-top: 10px;
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    border: 1px solid #d6e2f0;
+    background: #f3f7fb;
+    overflow: hidden;
+}
+
+.cbt-finish-live-progress-fill {
+    position: relative;
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--cbt-primary), #38a8ce);
+    transition: width 0.24s ease;
+}
+
+.cbt-finish-live-progress-fill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(
+            115deg,
+            rgba(255, 255, 255, 0) 0%,
+            rgba(255, 255, 255, 0.18) 36%,
+            rgba(255, 255, 255, 0.42) 50%,
+            rgba(255, 255, 255, 0.14) 64%,
+            rgba(255, 255, 255, 0) 100%
+        );
+    transform: translateX(-100%);
+    animation: cbt-finish-progress-shimmer 1.3s ease-in-out infinite;
+}
+
+@keyframes cbt-finish-progress-shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(100%);
+    }
+}
 

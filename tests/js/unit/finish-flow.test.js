@@ -1,6 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createFinishFlowManager } from '../../../src/frontend/app/exam/finish-flow.js';
 
+async function waitForAssertion(assertion, attempts) {
+    var remaining = Math.max(1, Number(attempts) || 20);
+    var lastError = null;
+
+    while (remaining > 0) {
+        try {
+            assertion();
+            return;
+        } catch (error) {
+            lastError = error;
+            remaining -= 1;
+            if (remaining <= 0) {
+                throw lastError;
+            }
+            await new Promise(function (resolve) {
+                setTimeout(resolve, 0);
+            });
+        }
+    }
+}
+
 function createFixture(overrides = {}) {
     var calls = {
         clearAllAutoSaveTimers: 0,
@@ -17,6 +38,7 @@ function createFixture(overrides = {}) {
         persistCurrentQuestionCacheLocally: 0,
         prefetchResultStageRenderer: 0,
         render: 0,
+        renderSnapshots: [],
         schedulePendingAnswerRetry: [],
         setConnectionStatus: [],
         startTimer: 0,
@@ -46,6 +68,11 @@ function createFixture(overrides = {}) {
         ],
         finishConfirmOpen: false,
         finishConfirmSummary: null,
+        finishProgressDetail: '',
+        finishProgressPercent: 0,
+        finishProgressStatus: '',
+        finishProgressStepIndex: 0,
+        finishProgressStepTotal: 0,
         isFinishing: false,
         lastSyncError: '',
         pendingFinishAutoSubmit: false,
@@ -202,8 +229,18 @@ function createFixture(overrides = {}) {
         },
         recordActionTrail: function () {},
         recordTimeline: function () {},
-        render: function () {
+        render: function (reason, meta) {
             calls.render += 1;
+            calls.renderSnapshots.push({
+                finishProgressDetail: String(state.finishProgressDetail || ''),
+                finishProgressPercent: Number(state.finishProgressPercent) || 0,
+                finishProgressStatus: String(state.finishProgressStatus || ''),
+                finishProgressStepIndex: Number(state.finishProgressStepIndex) || 0,
+                isFinishing: !!state.isFinishing,
+                meta: meta || null,
+                reason: typeof reason === 'string' ? reason : '',
+                stage: String(state.stage || '')
+            });
         },
         schedulePendingAnswerRetry: function (reason, meta) {
             calls.schedulePendingAnswerRetry.push({
@@ -350,6 +387,8 @@ describe('createFinishFlowManager', function () {
         expect(fixture.state.examLockedForPendingFinish).toBe(false);
         expect(fixture.state.pendingFinishAutoSubmit).toBe(false);
         expect(fixture.state.isFinishing).toBe(false);
+        expect(fixture.state.finishProgressPercent).toBe(0);
+        expect(fixture.state.finishProgressStepIndex).toBe(0);
         expect(fixture.state.error).toBe('Finish gagal dari unit test.');
         expect(fixture.calls.persistCurrentQuestionCacheLocally).toBe(1);
         expect(fixture.calls.startTimer).toBe(1);
@@ -363,5 +402,69 @@ describe('createFinishFlowManager', function () {
                 persist: true
             }
         ]);
+    });
+
+    it('emits staged finish progress from submit until result is ready', async function () {
+        var fixture = createFixture();
+
+        await fixture.manager.handleFinish(false, { skipConfirmation: true });
+        await waitForAssertion(function () {
+            expect(fixture.state.stage).toBe('result');
+        });
+
+        expect(
+            fixture.calls.renderSnapshots.some(function (snapshot) {
+                return snapshot.finishProgressPercent === 12
+                    && snapshot.finishProgressStepIndex === 1
+                    && snapshot.finishProgressStatus === 'Mengecek jawaban terakhir';
+            })
+        ).toBe(true);
+        expect(
+            fixture.calls.renderSnapshots.some(function (snapshot) {
+                return snapshot.finishProgressPercent === 34
+                    && snapshot.finishProgressStepIndex === 2
+                    && snapshot.finishProgressStatus === 'Menyinkronkan jawaban';
+            })
+        ).toBe(true);
+        expect(
+            fixture.calls.renderSnapshots.some(function (snapshot) {
+                return snapshot.finishProgressPercent === 72
+                    && snapshot.finishProgressStepIndex === 3
+                    && snapshot.finishProgressStatus === 'Mengirim finalisasi ujian'
+                    && snapshot.isFinishing === true;
+            })
+        ).toBe(true);
+        expect(
+            fixture.calls.renderSnapshots.some(function (snapshot) {
+                return snapshot.finishProgressPercent === 90
+                    && snapshot.finishProgressStepIndex === 4
+                    && snapshot.finishProgressStatus === 'Menyiapkan hasil ujian';
+            })
+        ).toBe(true);
+        expect(fixture.state.finishProgressPercent).toBe(0);
+        expect(fixture.state.finishProgressStepIndex).toBe(0);
+    });
+
+    it('keeps an interactive waiting state when finish starts while offline', async function () {
+        var fixture = createFixture({
+            connectionStatus: 'offline'
+        });
+
+        await fixture.manager.handleFinish(false, { skipConfirmation: true });
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.examLockedForPendingFinish).toBe(true);
+        expect(fixture.state.isFinishing).toBe(false);
+        expect(fixture.state.finishProgressPercent).toBe(34);
+        expect(fixture.state.finishProgressStepIndex).toBe(2);
+        expect(fixture.state.finishProgressStatus).toBe('Menunggu koneksi kembali');
+        expect(fixture.state.finishProgressDetail).toBe('Jawaban terakhir belum bisa dikirim karena perangkat sedang offline.');
+        expect(
+            fixture.calls.renderSnapshots.some(function (snapshot) {
+                return snapshot.finishProgressStatus === 'Menunggu koneksi kembali'
+                    && snapshot.finishProgressStepIndex === 2
+                    && snapshot.stage === 'exam';
+            })
+        ).toBe(true);
     });
 });

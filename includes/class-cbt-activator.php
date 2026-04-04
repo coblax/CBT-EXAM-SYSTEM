@@ -14,6 +14,9 @@ class CBT_Activator
     {
         self::run_migrations();
         CBT_Runtime::activate();
+        if (class_exists('CBT_Exam_Availability_Auto_Warm_Service')) {
+            CBT_Exam_Availability_Auto_Warm_Service::activate();
+        }
     }
 
     public static function maybe_upgrade(): void

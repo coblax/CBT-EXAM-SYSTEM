@@ -1,4 +1,5 @@
 export function createExamSessionManager(deps) {
+    var OPEN_ATTEMPT_PROGRESS_STEP_TOTAL = 5;
     var recordTimeline = deps.recordTimeline;
     var state = deps.state;
     var apiRequest = deps.apiRequest;
@@ -62,6 +63,42 @@ export function createExamSessionManager(deps) {
     var attemptUiStateSyncDelayMs = Math.max(0, Number(deps.attemptUiStateSyncDelayMs) || 0);
     var startAttemptTimeoutMs = Math.max(5000, Number(deps.startAttemptTimeoutMs) || 15000);
     var questionWindowSize = Math.max(1, Number(deps.questionWindowSize) || 1);
+
+    function resetOpeningAttemptProgressState() {
+        state.openingAttemptProgressPercent = 0;
+        state.openingAttemptProgressStepIndex = 0;
+        state.openingAttemptProgressStepTotal = 0;
+        state.openingAttemptProgressStatus = '';
+        state.openingAttemptProgressDetail = '';
+    }
+
+    function updateOpeningAttemptProgress(percent, stepIndex, status, detail, options) {
+        var safePercent = Number(percent);
+        var safeStepIndex = Number(stepIndex);
+        var shouldRender = !(options && options.render === false);
+
+        if (!Number.isFinite(safePercent)) {
+            safePercent = 0;
+        }
+        if (!Number.isFinite(safeStepIndex)) {
+            safeStepIndex = 0;
+        }
+
+        state.openingAttemptProgressPercent = Math.max(0, Math.min(100, safePercent));
+        state.openingAttemptProgressStepIndex = Math.max(0, Math.min(OPEN_ATTEMPT_PROGRESS_STEP_TOTAL, safeStepIndex));
+        state.openingAttemptProgressStepTotal = OPEN_ATTEMPT_PROGRESS_STEP_TOTAL;
+        state.openingAttemptProgressStatus = String(status || '');
+        state.openingAttemptProgressDetail = String(detail || '');
+
+        if (shouldRender && typeof render === 'function') {
+            render('attempt-opening-progress', {
+                attemptId: Number(state.attemptId) || 0,
+                percent: state.openingAttemptProgressPercent,
+                selectedExamId: Number(state.selectedExamId) || 0,
+                stepIndex: state.openingAttemptProgressStepIndex
+            });
+        }
+    }
 
     function recordTimelineEntry(kind, summary, meta) {
         if (typeof recordTimeline === 'function') {
@@ -153,6 +190,7 @@ export function createExamSessionManager(deps) {
         state.result = null;
         state.finishConfirmOpen = false;
         state.finishConfirmSummary = null;
+        resetOpeningAttemptProgressState();
         resetQuestionDataState();
     }
 
@@ -318,7 +356,12 @@ export function createExamSessionManager(deps) {
             selectedExamId: Number(selectedExam && selectedExam.id) || 0,
             stage: 'exam'
         });
-        render();
+        updateOpeningAttemptProgress(
+            28,
+            2,
+            'Menyiapkan runtime ujian',
+            'Memuat modul interaktif, keamanan, dan shell soal.'
+        );
 
         clearSecurityLoggingRuntimeState();
         clearQuestionPrefetchRuntimeState();
@@ -354,6 +397,12 @@ export function createExamSessionManager(deps) {
             state.selectedExamId = examId;
         }
         await ensureExamRuntimeBundle();
+        updateOpeningAttemptProgress(
+            52,
+            3,
+            'Memulihkan data lokal',
+            'Menyinkronkan posisi terakhir, cache soal, dan jawaban tersimpan.'
+        );
         setQuestionRevision(startPayload && startPayload.question_revision, examId);
         resetQuestionDataState({
             preserveQuestionRevision: true
@@ -445,6 +494,12 @@ export function createExamSessionManager(deps) {
             stage: 'exam',
             currentIndex: Number(requestedResumeIndex) || 0
         });
+        updateOpeningAttemptProgress(
+            76,
+            4,
+            'Memuat soal awal',
+            'Mengambil jendela soal pertama dan jawaban yang sudah pernah tersimpan.'
+        );
         try {
             await loadQuestionWindow(
                 questionWindowOffsetForIndex(requestedResumeIndex, questionWindowSize),
@@ -489,6 +544,12 @@ export function createExamSessionManager(deps) {
             throw new Error('Belum ada soal pada exam ini.');
         }
 
+        updateOpeningAttemptProgress(
+            92,
+            5,
+            'Finalisasi tampilan ujian',
+            'Menyalakan timer, sinkronisasi jawaban, dan panel interaktif.'
+        );
         await ensureQuestionWindowForIndex(state.currentIndex, {
             examId: examId,
             attemptId: state.attemptId,
@@ -540,6 +601,16 @@ export function createExamSessionManager(deps) {
             pendingSyncCount: Number(state.pendingSyncCount) || 0,
             stage: 'exam'
         });
+        updateOpeningAttemptProgress(
+            100,
+            OPEN_ATTEMPT_PROGRESS_STEP_TOTAL,
+            'Ujian siap dibuka',
+            'Mengalihkan Anda ke tampilan soal.',
+            {
+                render: false
+            }
+        );
+        resetOpeningAttemptProgressState();
     }
 
     async function tryResumeExamCandidate(exam) {
@@ -703,13 +774,16 @@ export function createExamSessionManager(deps) {
         state.stage = 'exam';
         state.isOpeningAttempt = true;
         state.busy = true;
+        updateOpeningAttemptProgress(
+            12,
+            1,
+            'Meminta sesi ujian dari server',
+            'Membuat attempt dan memeriksa token ujian.'
+        );
         recordTimelineEntry('attempt:start:request', 'Memulai attempt baru.', {
             attemptId: Number(state.attemptId) || 0,
             selectedExamId: Number(selectedExam.id) || 0,
             stage: 'confirm'
-        });
-        render('attempt-start-request', {
-            selectedExamId: Number(selectedExam.id) || 0
         });
 
         try {
@@ -747,6 +821,7 @@ export function createExamSessionManager(deps) {
         } finally {
             state.isOpeningAttempt = false;
             state.busy = false;
+            resetOpeningAttemptProgressState();
             render('attempt-start-finalize', {
                 selectedExamId: Number(selectedExam && selectedExam.id) || 0
             });

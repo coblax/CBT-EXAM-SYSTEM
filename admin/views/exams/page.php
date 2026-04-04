@@ -913,8 +913,11 @@
                         'exam_snapshot_total' => $exam_snapshot_total,
                         'exam_snapshot_rows' => $exam_snapshot_rows,
                         'exam_snapshot_preview_pages' => $exam_snapshot_preview_pages ?? [],
+                        'exam_readiness_page' => $exam_readiness_page ?? 1,
                         'exam_snapshot_reset_url' => $exam_snapshot_reset_url,
-                        'student_snapshot_filter_state' => $student_snapshot_filter_state ?? ['search' => '', 'paged' => 1, 'per_page' => 25],
+                        'student_snapshot_filter_state' => $student_snapshot_filter_state ?? ['search' => '', 'kelas' => '', 'ruang' => '', 'paged' => 1, 'per_page' => 25],
+                        'student_snapshot_kelas_options' => $student_snapshot_kelas_options ?? [],
+                        'student_snapshot_ruang_options' => $student_snapshot_ruang_options ?? [],
                         'student_snapshot_rows' => $student_snapshot_rows ?? [],
                         'student_snapshot_total' => $student_snapshot_total ?? 0,
                         'student_snapshot_total_pages' => $student_snapshot_total_pages ?? 1,
@@ -1298,7 +1301,23 @@
                     padding-top: 0;
                     border-top: none;
                 }
+                .cbt-exam-snapshot-readiness-row td {
+                    padding-top: 0;
+                    border-top: none;
+                }
                 .cbt-exam-snapshot-preview-row-cell {
+                    padding: 0 12px 14px;
+                    background: #ffffff;
+                }
+                .cbt-exam-snapshot-readiness-row-cell {
+                    padding: 0 12px 14px;
+                    background: #ffffff;
+                }
+                .cbt-exam-snapshot-auto-warm-row td {
+                    padding-top: 0;
+                    border-top: none;
+                }
+                .cbt-exam-snapshot-auto-warm-row-cell {
                     padding: 0 12px 14px;
                     background: #ffffff;
                 }
@@ -1454,6 +1473,170 @@
                     display: grid;
                     gap: 8px;
                 }
+                .cbt-exam-auto-warm-panel {
+                    display: grid;
+                    gap: 10px;
+                    margin-top: 0;
+                    padding: 12px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 14px;
+                    background: #f8fbff;
+                }
+                .cbt-exam-auto-warm-panel-head {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .cbt-exam-auto-warm-panel-head strong {
+                    color: #0f172a;
+                    font-size: 13px;
+                }
+                .cbt-exam-auto-warm-panel-grid {
+                    display: grid;
+                    gap: 6px 12px;
+                    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                    color: #475569;
+                    font-size: 12px;
+                }
+                .cbt-exam-auto-warm-tech {
+                    border-top: 1px dashed #d6e4ff;
+                    padding-top: 10px;
+                }
+                .cbt-exam-auto-warm-tech summary {
+                    cursor: pointer;
+                    color: #163a74;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+                .cbt-exam-auto-warm-tech-body {
+                    display: grid;
+                    gap: 6px 12px;
+                    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                    margin-top: 10px;
+                    color: #475569;
+                    font-size: 12px;
+                    line-height: 1.5;
+                }
+                .cbt-exam-auto-warm-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    flex-wrap: nowrap;
+                }
+                .cbt-exam-auto-warm-actions .cbt-exam-snapshot-row-form {
+                    display: inline-flex;
+                    flex: 0 0 auto;
+                }
+                .cbt-exam-readiness-panel {
+                    display: grid;
+                    gap: 12px;
+                    padding: 14px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 16px;
+                    background: #ffffff;
+                }
+                .cbt-exam-readiness-panel-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                }
+                .cbt-exam-readiness-panel-head strong {
+                    color: #0f172a;
+                    font-size: 14px;
+                }
+                .cbt-exam-readiness-summary-grid {
+                    display: grid;
+                    gap: 10px;
+                    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+                }
+                .cbt-exam-readiness-summary-card {
+                    display: grid;
+                    gap: 6px;
+                    padding: 12px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 14px;
+                    background: #f8fbff;
+                }
+                .cbt-exam-readiness-summary-meta {
+                    color: #64748b;
+                    font-size: 11px;
+                    font-weight: 600;
+                    line-height: 1.45;
+                }
+                .cbt-exam-readiness-flags {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                }
+                .cbt-exam-readiness-alerts {
+                    display: grid;
+                    gap: 12px;
+                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                }
+                .cbt-exam-readiness-alert-group {
+                    display: grid;
+                    gap: 8px;
+                    padding: 12px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 14px;
+                    background: #f8fbff;
+                }
+                .cbt-exam-readiness-alert-group strong {
+                    color: #0f172a;
+                    font-size: 13px;
+                }
+                .cbt-exam-readiness-alert-list {
+                    margin: 0;
+                    padding-left: 18px;
+                    color: #475569;
+                }
+                .cbt-exam-readiness-alert-list li {
+                    margin: 0 0 6px;
+                    line-height: 1.5;
+                }
+                .cbt-exam-readiness-actions {
+                    display: flex;
+                    align-items: center;
+                    justify-content: flex-start;
+                }
+                .cbt-exam-readiness-problem-section {
+                    display: grid;
+                    gap: 10px;
+                    padding-top: 8px;
+                    border-top: 1px dashed #dbe6f1;
+                }
+                .cbt-exam-readiness-problem-head {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .cbt-exam-readiness-problem-head strong {
+                    color: #0f172a;
+                    font-size: 13px;
+                }
+                .cbt-exam-readiness-problem-table th,
+                .cbt-exam-readiness-problem-table td {
+                    vertical-align: top;
+                }
+                .cbt-exam-readiness-pagination {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .cbt-exam-readiness-pagination-state {
+                    color: #35527d;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
                 .cbt-exam-snapshot-student-toolbar {
                     padding: 16px 18px;
                     border: 1px solid #dbe6f1;
@@ -1462,11 +1645,15 @@
                 }
                 .cbt-exam-snapshot-student-toolbar-grid {
                     display: grid;
-                    grid-template-columns: minmax(280px, 1fr) auto;
+                    grid-template-columns: minmax(260px, 1.4fr) minmax(180px, 0.7fr) minmax(180px, 0.7fr) auto;
                     gap: 14px;
                     align-items: end;
                 }
                 .cbt-exam-snapshot-student-search {
+                    display: grid;
+                    gap: 8px;
+                }
+                .cbt-exam-snapshot-student-field {
                     display: grid;
                     gap: 8px;
                 }
@@ -1475,7 +1662,15 @@
                     font-size: 12px;
                     font-weight: 700;
                 }
+                .cbt-exam-snapshot-student-field label {
+                    color: #334155;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
                 .cbt-exam-snapshot-student-search input {
+                    width: 100%;
+                }
+                .cbt-exam-snapshot-student-field select {
                     width: 100%;
                 }
                 .cbt-exam-snapshot-student-toolbar-actions {
@@ -1488,11 +1683,27 @@
                 .cbt-student-snapshot-table td {
                     vertical-align: top;
                 }
+                .cbt-student-snapshot-table {
+                    width: 100%;
+                    table-layout: fixed;
+                }
+                .cbt-student-snapshot-col--user {
+                    width: 15%;
+                }
+                .cbt-student-snapshot-col--availability {
+                    width: 40%;
+                }
+                .cbt-student-snapshot-col--profile {
+                    width: 32%;
+                }
+                .cbt-student-snapshot-col--actions {
+                    width: 13%;
+                }
                 .cbt-student-snapshot-user-cell {
-                    min-width: 280px;
+                    min-width: 0;
                 }
                 .cbt-student-snapshot-status-cell {
-                    min-width: 290px;
+                    min-width: 0;
                 }
                 .cbt-student-snapshot-user-name {
                     margin-bottom: 8px;
@@ -1501,19 +1712,18 @@
                     font-weight: 700;
                 }
                 .cbt-student-snapshot-user-meta {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 8px 14px;
+                    display: grid;
+                    gap: 6px;
                     color: #475569;
-                    font-size: 12px;
+                    font-size: 11px;
                     line-height: 1.5;
                 }
                 .cbt-student-snapshot-card {
                     display: grid;
-                    gap: 10px;
-                    padding: 12px 14px;
+                    gap: 8px;
+                    padding: 10px 12px;
                     border: 1px solid #dbe6f1;
-                    border-radius: 16px;
+                    border-radius: 14px;
                     background: #f8fbff;
                 }
                 .cbt-student-snapshot-card-head {
@@ -1524,29 +1734,118 @@
                 }
                 .cbt-student-snapshot-mini-meta {
                     color: #475569;
-                    font-size: 12px;
+                    font-size: 11px;
                     font-weight: 600;
+                }
+                .cbt-student-snapshot-compact-copy {
+                    color: #35527d;
+                    font-size: 12px;
+                    line-height: 1.45;
                 }
                 .cbt-student-snapshot-preview-list {
                     display: flex;
                     flex-wrap: wrap;
-                    gap: 8px;
+                    gap: 6px;
+                }
+                .cbt-student-snapshot-preview-list--expanded {
+                    margin-top: 0;
+                }
+                .cbt-student-snapshot-profile-top {
+                    display: grid;
+                    grid-template-columns: 56px minmax(0, 1fr);
+                    gap: 10px;
+                    align-items: start;
+                }
+                .cbt-student-snapshot-photo {
+                    display: block;
+                    width: 56px;
+                    height: 56px;
+                    border-radius: 16px;
+                    object-fit: cover;
+                    border: 1px solid #d7e3f1;
+                    background: #ffffff;
                 }
                 .cbt-student-snapshot-preview-pill {
                     display: inline-flex;
                     align-items: center;
-                    min-height: 28px;
-                    padding: 0 12px;
+                    min-height: 26px;
+                    padding: 0 10px;
                     border-radius: 999px;
                     background: #ffffff;
                     border: 1px solid #d7e3f1;
                     color: #0f4fa8;
+                    font-size: 11px;
+                    font-weight: 600;
+                }
+                .cbt-student-snapshot-preview-pill--muted {
+                    color: #35527d;
+                    background: #fdfefe;
+                }
+                .cbt-student-snapshot-preview-expand {
+                    margin-top: 8px;
+                }
+                .cbt-student-snapshot-preview-expand summary {
+                    display: inline-flex;
+                    list-style: none;
+                    cursor: pointer;
+                }
+                .cbt-student-snapshot-preview-expand summary::-webkit-details-marker {
+                    display: none;
+                }
+                .cbt-student-snapshot-preview-expand-body {
+                    display: grid;
+                    gap: 8px;
+                    margin-top: 8px;
+                }
+                .cbt-student-snapshot-preview-expand-label {
+                    color: #35527d;
                     font-size: 12px;
                     font-weight: 600;
                 }
+                .cbt-student-snapshot-tech {
+                    border-top: 1px dashed #d7e3f1;
+                    padding-top: 8px;
+                }
+                .cbt-student-snapshot-tech summary {
+                    cursor: pointer;
+                    color: #35527d;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+                .cbt-student-snapshot-tech-body {
+                    display: grid;
+                    gap: 6px;
+                    margin-top: 8px;
+                    color: #475569;
+                    font-size: 12px;
+                }
+                .cbt-student-snapshot-storage-key {
+                    display: block;
+                    overflow-wrap: anywhere;
+                    word-break: break-word;
+                    white-space: normal;
+                    color: #1e3a5f;
+                    font-size: 11px;
+                    line-height: 1.45;
+                }
                 .cbt-student-snapshot-row-actions {
                     display: grid;
-                    gap: 8px;
+                    gap: 6px;
+                    min-width: 0;
+                }
+                .cbt-student-snapshot-actions-cell {
+                    min-width: 0;
+                    overflow: hidden;
+                }
+                .cbt-student-snapshot-actions-cell .button {
+                    display: block;
+                    width: 100%;
+                    max-width: 100%;
+                    box-sizing: border-box;
+                    text-align: center;
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    white-space: normal;
                 }
                 .cbt-exam-snapshot-student-pagination {
                     display: flex;
@@ -3363,6 +3662,13 @@
                     .cbt-exam-snapshot-student-toolbar-grid {
                         grid-template-columns: 1fr;
                     }
+                    .cbt-student-snapshot-profile-top {
+                        grid-template-columns: 1fr;
+                    }
+                    .cbt-student-snapshot-photo {
+                        width: 64px;
+                        height: 64px;
+                    }
                     .cbt-exam-snapshot-student-toolbar-actions {
                         width: 100%;
                     }
@@ -3372,6 +3678,9 @@
                     .cbt-student-snapshot-row-actions .button {
                         width: 100%;
                         text-align: center;
+                    }
+                    .cbt-student-snapshot-table {
+                        table-layout: auto;
                     }
                     .cbt-exam-snapshot-student-pagination {
                         align-items: stretch;

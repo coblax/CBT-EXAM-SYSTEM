@@ -63,6 +63,9 @@ function normalizeTrueFalseMatrixAnswer(answer) {
 export function createQuestionRenderManager(deps) {
     var escapeHtml = deps.escapeHtml;
     var isExamAnswerEditingLocked = deps.isExamAnswerEditingLocked;
+    var renderExamRichHtml = typeof deps.renderExamRichHtml === 'function'
+        ? deps.renderExamRichHtml
+        : deps.safeRichHtml;
     var resolveStoredAnswerValueForQuestion = deps.resolveStoredAnswerValueForQuestion;
     var safeRichHtml = deps.safeRichHtml;
 
@@ -153,7 +156,9 @@ export function createQuestionRenderManager(deps) {
             }
         });
 
-        var stemMarkup = safeRichHtml(stemWithFields);
+        var stemMarkup = renderExamRichHtml(stemWithFields, {
+            context: 'question'
+        });
         var missingKeys = keys.filter(function (key) {
             return !usedKeyMap[key];
         });
@@ -182,7 +187,9 @@ export function createQuestionRenderManager(deps) {
         if (question && question.question_type === 'short_answer') {
             return renderShortAnswerStem(question);
         }
-        return safeRichHtml(question && question.question_text ? question.question_text : '');
+        return renderExamRichHtml(question && question.question_text ? question.question_text : '', {
+            context: 'question'
+        });
     }
 
     function renderQuestionInput(question) {
@@ -201,7 +208,9 @@ export function createQuestionRenderManager(deps) {
                         '<div class="cbt-option-row">',
                         '<input type="radio" name="cbt_q_' + escapeHtml(question.id) + '" value="' + escapeHtml(optionId) + '" data-action="answer-single" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '"' + (checked ? ' checked' : '') + disabledAttr + ' />',
                         '<span class="cbt-option-key">' + escapeHtml(questionOptionKey(option, index)) + '</span>',
-                        '<div class="cbt-option-label">' + safeRichHtml(option.option_text || '') + '</div>',
+                        '<div class="cbt-option-label">' + renderExamRichHtml(option.option_text || '', {
+                            context: 'option'
+                        }) + '</div>',
                         '</div>',
                         '</label>'
                     ].join('');
@@ -222,7 +231,9 @@ export function createQuestionRenderManager(deps) {
                         '<div class="cbt-option-row">',
                         '<input type="checkbox" value="' + escapeHtml(optionId) + '" data-action="answer-multi" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '"' + (checked ? ' checked' : '') + disabledAttr + ' />',
                         '<span class="cbt-option-key">' + escapeHtml(questionOptionKey(option, index)) + '</span>',
-                        '<div class="cbt-option-label">' + safeRichHtml(option.option_text || '') + '</div>',
+                        '<div class="cbt-option-label">' + renderExamRichHtml(option.option_text || '', {
+                            context: 'option'
+                        }) + '</div>',
                         '</div>',
                         '</label>'
                     ].join('');

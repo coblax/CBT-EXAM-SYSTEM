@@ -31,6 +31,8 @@ class CBT_Admin
         add_action('admin_post_cbt_warm_bulk_exam_delivery_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_exam_delivery_snapshots']);
         add_action('admin_post_cbt_clear_exam_delivery_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_exam_delivery_snapshot']);
         add_action('admin_post_cbt_clear_bulk_exam_delivery_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clear_bulk_exam_delivery_snapshots']);
+        add_action('admin_post_cbt_start_exam_availability_auto_warm', [CBT_Admin_Exams_Actions::class, 'handle_start_exam_availability_auto_warm']);
+        add_action('admin_post_cbt_stop_exam_availability_auto_warm', [CBT_Admin_Exams_Actions::class, 'handle_stop_exam_availability_auto_warm']);
         add_action('admin_post_cbt_warm_student_exam_availability_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_warm_student_exam_availability_snapshot']);
         add_action('admin_post_cbt_clear_student_exam_availability_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_student_exam_availability_snapshot']);
         add_action('admin_post_cbt_warm_bulk_student_exam_availability_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_student_exam_availability_snapshots']);

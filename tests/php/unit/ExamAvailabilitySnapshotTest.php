@@ -93,6 +93,18 @@ final class ExamAvailabilitySnapshotTest extends TestCase
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],
+                    [
+                        'id' => 16,
+                        'title' => 'Biologi',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
+                    [
+                        'id' => 17,
+                        'title' => 'Kimia',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
                 ],
                 'current_user' => [
                     'user_id' => 21,
@@ -109,11 +121,90 @@ final class ExamAvailabilitySnapshotTest extends TestCase
         self::assertTrue($diagnostics['snapshot_exists']);
         self::assertTrue($diagnostics['snapshot_valid']);
         self::assertSame('ready', $diagnostics['snapshot_status']);
-        self::assertSame(1, $diagnostics['item_count']);
+        self::assertSame('minute', $diagnostics['snapshot_source']);
+        self::assertSame(3, $diagnostics['item_count']);
         self::assertSame('Salsa', $diagnostics['current_user_preview']['display_name']);
         self::assertSame('Matematika', $diagnostics['preview_items'][0]['title']);
+        self::assertCount(3, $diagnostics['preview_items']);
+        self::assertSame('Kimia', $diagnostics['preview_items'][2]['title']);
+
+        CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(21, static function (): array {
+            return [
+                'items' => [
+                    [
+                        'id' => 54,
+                        'title' => 'Biologi',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
+                ],
+                'current_user' => [
+                    'user_id' => 21,
+                    'display_name' => 'Salsa',
+                    'username' => 'salsa',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+
+        $preparedDiagnostics = CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(21);
+        self::assertSame('prepared', $preparedDiagnostics['snapshot_source']);
+        self::assertSame('Prepared snapshot availability siap dipakai untuk student GET /exams.', $preparedDiagnostics['snapshot_message']);
+
         self::assertGreaterThan(0, CBT_Exam_Availability_Cache::clear_student_snapshot(21));
         self::assertSame('miss', CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(21)['snapshot_status']);
+    }
+
+    public function test_prepared_snapshot_is_preferred_and_refreshes_dynamic_fields_at_read_time(): void
+    {
+        CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(31, static function (): array {
+            return [
+                'items' => [
+                    [
+                        'id' => 88,
+                        'title' => 'Ujian Fisika',
+                        'starts_at' => '2026-03-24 12:10:00',
+                        'ends_at' => '2026-03-24 13:10:00',
+                        'target_kelas' => 'XI-A',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                        'server_now' => '2026-03-24 11:00:00',
+                        'server_timezone' => 'UTC',
+                    ],
+                ],
+                'current_user' => [
+                    'user_id' => 31,
+                    'display_name' => 'Alya',
+                    'username' => 'alya',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+
+        $calls = 0;
+        $producer = static function () use (&$calls): array {
+            $calls++;
+            return ['items' => [], 'current_user' => null];
+        };
+
+        $beforeStart = CBT_Exam_Availability_Cache::get_student_snapshot(31, $producer);
+        self::assertSame(0, $calls);
+        self::assertSame('2026-03-24 12:00:00', $beforeStart['items'][0]['server_now']);
+        self::assertSame('Asia/Jakarta', $beforeStart['items'][0]['server_timezone']);
+        self::assertSame(0, $beforeStart['items'][0]['is_available_now']);
+        self::assertSame('not_started', $beforeStart['items'][0]['availability_reason']);
+
+        $GLOBALS['cbt_test_current_time_timestamp'] = 1774354500;
+        $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:15:00';
+
+        $afterStart = CBT_Exam_Availability_Cache::get_student_snapshot(31, $producer);
+        self::assertSame(0, $calls);
+        self::assertSame('2026-03-24 12:15:00', $afterStart['items'][0]['server_now']);
+        self::assertSame(1, $afterStart['items'][0]['is_available_now']);
+        self::assertSame('ok', $afterStart['items'][0]['availability_reason']);
+        self::assertSame('prepared', CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(31)['snapshot_source']);
     }
 
     private function useFakeRedisClient(): void

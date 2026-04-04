@@ -14,6 +14,7 @@ export function createRenderCycleManager(deps) {
     var renderExamRegions = deps.renderExamRegions;
     var renderBody = deps.renderBody;
     var renderFinishConfirmModal = deps.renderFinishConfirmModal;
+    var renderRichZoomModal = deps.renderRichZoomModal;
     var renderTopbar = deps.renderTopbar;
     var renderUserPhotoModal = deps.renderUserPhotoModal;
     var root = deps.root;
@@ -34,6 +35,7 @@ export function createRenderCycleManager(deps) {
         'questionQuickNav',
         'questionStem',
         'questionInput',
+        'questionSaveFeedback',
         'questionFooterProgress',
         'questionFooterSync'
     ];
@@ -322,6 +324,7 @@ export function createRenderCycleManager(deps) {
             '</section>',
             '</main>',
             renderFinishConfirmModal(),
+            renderRichZoomModal(),
             renderUserPhotoModal(),
             '</div>'
         ].join('');

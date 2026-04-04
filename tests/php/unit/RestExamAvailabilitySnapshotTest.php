@@ -89,6 +89,79 @@ final class RestExamAvailabilitySnapshotTest extends TestCase
         self::assertSame(88, $second['items'][0]['latest_attempt_id']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_get_exams_student_prefers_prepared_snapshot_before_minute_bucket_snapshot(): void
+    {
+        $this->bootstrapRestSnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->useExamAvailabilityFakeRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = [
+            'token' => 'AUTO1',
+            'refresh_minutes' => 20,
+            'generated_at' => 1774353600,
+            'next_refresh_at' => 1774354800,
+            'frontend_auto_apply' => 1,
+        ];
+
+        \CBT_Exam_Availability_Cache::warm_student_snapshot(7, static function (): array {
+            return [
+                'items' => [
+                    [
+                        'id' => 15,
+                        'title' => 'Minute Snapshot',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                        'latest_attempt_id' => 11,
+                    ],
+                ],
+                'current_user' => [
+                    'user_id' => 7,
+                    'display_name' => 'Aulia',
+                    'username' => 'aulia',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+        \CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(7, static function (): array {
+            return [
+                'items' => [
+                    [
+                        'id' => 99,
+                        'title' => 'Prepared Snapshot',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                        'latest_attempt_id' => 222,
+                    ],
+                ],
+                'current_user' => [
+                    'user_id' => 7,
+                    'display_name' => 'Aulia',
+                    'username' => 'aulia',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+
+        global $wpdb;
+        $wpdb = new RestExamAvailabilitySnapshotFakeWpdb();
+
+        $response = CBT_REST::get_exams(new WP_REST_Request([], [], [], '/cbt/v1/exams', 'GET'));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame(0, $wpdb->examQueryCount);
+        self::assertSame(0, $wpdb->latestAttemptQueryCount);
+        self::assertSame(99, $response['items'][0]['id']);
+        self::assertSame('Prepared Snapshot', $response['items'][0]['title']);
+        self::assertSame(1, $response['items'][0]['requires_token']);
+        self::assertSame('AUTO1', $response['items'][0]['token_auto_value']);
+        self::assertSame('prepared', \CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(7)['snapshot_source']);
+    }
+
     private function bootstrapRestSnapshotScaffold(): void
     {
         if (!class_exists('CBT_Auth')) {

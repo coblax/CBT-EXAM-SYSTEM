@@ -8,6 +8,7 @@ function createFixture(overrides = {}) {
         scheduleQuestionCachePersist: []
     };
     var state = Object.assign({
+        answers: {},
         attemptId: 55,
         connectionStatus: 'online',
         examLockedForPendingFinish: false,
@@ -35,13 +36,13 @@ function createFixture(overrides = {}) {
         getNavigatorConnectionStatus: overrides.getNavigatorConnectionStatus || function () {
             return 'online';
         },
-        getQuestionById: function () {
+        getQuestionById: overrides.getQuestionById || function () {
             return null;
         },
         getQuestionDataGeneration: function () {
             return 1;
         },
-        getQuestionPayloadById: function () {
+        getQuestionPayloadById: overrides.getQuestionPayloadById || function () {
             return null;
         },
         isQuestionRevisionRefreshActive: function () {
@@ -54,10 +55,10 @@ function createFixture(overrides = {}) {
         normalizeStoredAutoSaveState: function (snapshot) {
             return snapshot || {};
         },
-        payloadSignature: function (value) {
+        payloadSignature: overrides.payloadSignature || function (value) {
             return JSON.stringify(value || null);
         },
-        questionAnswerPayload: function () {
+        questionAnswerPayload: overrides.questionAnswerPayload || function () {
             return {};
         },
         recordActionTrail: function () {},
@@ -124,7 +125,8 @@ describe('createAnswerSyncManager', function () {
                 reason: 'connection:offline',
                 regions: {
                     notice: true,
-                    questionFooterSync: true
+                    questionFooterSync: true,
+                    questionSaveFeedback: true
                 }
             }
         ]);
@@ -158,10 +160,127 @@ describe('createAnswerSyncManager', function () {
                 reason: 'flush-failed',
                 regions: {
                     notice: true,
-                    questionFooterSync: true
+                    questionFooterSync: true,
+                    questionSaveFeedback: true
                 }
             }
         ]);
         expect(fixture.calls.render).toEqual([]);
+    });
+
+    it('reports saved feedback when the current question payload already matches the submitted snapshot', function () {
+        var state = {
+            answers: {
+                101: 501
+            }
+        };
+        var question = {
+            id: 101,
+            question_type: 'multiple_choice'
+        };
+        var fixture = createFixture({
+            getQuestionById: function () {
+                return question;
+            },
+            questionAnswerPayload: function () {
+                return state.answers[101];
+            },
+            payloadSignature: function (value) {
+                return String(value || '');
+            },
+            state: state
+        });
+
+        fixture.manager.restoreQuestionAutoSaveState({
+            examLockedForPendingFinish: false,
+            lastSubmittedPayloadByQuestion: {
+                101: '501'
+            },
+            lastSyncError: '',
+            pendingAnswerBatchByQuestion: {},
+            pendingAnswerBatchOrder: [],
+            syncBlockingReason: ''
+        });
+
+        expect(fixture.manager.getQuestionSaveFeedback(101)).toEqual({
+            detail: 'Jawaban soal ini sudah aman tersimpan di server.',
+            isVisible: true,
+            label: 'Tersimpan',
+            tone: 'saved'
+        });
+    });
+
+    it('reports syncing feedback while a question is waiting on the autosave timer', function () {
+        var state = {
+            answers: {
+                101: 501
+            }
+        };
+        var question = {
+            id: 101,
+            question_type: 'multiple_choice'
+        };
+        var fixture = createFixture({
+            getQuestionById: function () {
+                return question;
+            },
+            questionAnswerPayload: function () {
+                return state.answers[101];
+            },
+            payloadSignature: function (value) {
+                return String(value || '');
+            },
+            state: state
+        });
+
+        fixture.manager.scheduleAutoSave(101, 300);
+
+        expect(fixture.manager.getQuestionSaveFeedback(101)).toEqual({
+            detail: 'Perubahan jawaban sedang diproses dan dikirim ke server.',
+            isVisible: true,
+            label: 'Menyinkronkan...',
+            tone: 'syncing'
+        });
+    });
+
+    it('reports pending feedback after a recoverable sync failure keeps the answer local', function () {
+        var state = {
+            answers: {
+                101: 501
+            }
+        };
+        var question = {
+            id: 101,
+            question_type: 'multiple_choice'
+        };
+        var fixture = createFixture({
+            getQuestionById: function () {
+                return question;
+            },
+            questionAnswerPayload: function () {
+                return state.answers[101];
+            },
+            payloadSignature: function (value) {
+                return String(value || '');
+            },
+            state: state
+        });
+        var error = new Error('Koneksi terputus');
+        error.code = 'network_error';
+        error.status = 0;
+        error.isNetworkError = true;
+
+        fixture.manager.queueQuestionAnswer(question);
+        fixture.manager.handleRecoverableAnswerSyncFailure(error, {
+            persist: false,
+            render: false
+        });
+
+        expect(fixture.manager.getQuestionSaveFeedback(101)).toEqual({
+            detail: 'Perubahan terakhir menunggu koneksi atau giliran sinkron berikutnya.',
+            isVisible: true,
+            label: 'Belum terkirim',
+            tone: 'pending'
+        });
     });
 });

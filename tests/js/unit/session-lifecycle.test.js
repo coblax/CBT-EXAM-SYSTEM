@@ -62,6 +62,16 @@ function createLifecycleFixture(overrides = {}) {
         questions: [{ id: 101 }, { id: 102 }],
         remainingSeconds: 120,
         result: { status: 'completed' },
+        richZoomModalGalleryCount: 2,
+        richZoomModalGalleryId: 'gallery-55',
+        richZoomModalGalleryIndex: 1,
+        richZoomModalGalleryItems: [{ markup: '<img src="/a.png" alt="A" />' }],
+        richZoomModalMarkup: '<img src="/a.png" alt="A" />',
+        richZoomModalOpen: true,
+        richZoomModalScaleMode: 'manual',
+        richZoomModalScalePercent: 150,
+        richZoomModalTitle: 'Gambar Soal',
+        richZoomModalType: 'image',
         selectedExamId: 9,
         stage: 'exam',
         success: 'ok',
@@ -267,6 +277,10 @@ describe('createSessionLifecycleManager', function () {
         expect(fixture.state.attemptId).toBe(0);
         expect(fixture.state.remainingSeconds).toBe(0);
         expect(fixture.state.calculatorVisible).toBe(false);
+        expect(fixture.state.richZoomModalOpen).toBe(false);
+        expect(fixture.state.richZoomModalGalleryItems).toEqual([]);
+        expect(fixture.state.richZoomModalScaleMode).toBe('fit');
+        expect(fixture.state.richZoomModalScalePercent).toBe(100);
         expect(fixture.calls.stopSessionHeartbeat).toBe(1);
         expect(fixture.calls.clearSecurityLoggingRuntimeState).toBe(1);
         expect(fixture.calls.clearAutoSaveRuntimeState).toBe(1);
@@ -300,6 +314,10 @@ describe('createSessionLifecycleManager', function () {
         expect(fixture.state.calculatorExpression).toBe('');
         expect(fixture.state.calculatorResult).toBe('');
         expect(fixture.state.calculatorError).toBe('');
+        expect(fixture.state.richZoomModalOpen).toBe(false);
+        expect(fixture.state.richZoomModalGalleryCount).toBe(0);
+        expect(fixture.state.richZoomModalScaleMode).toBe('fit');
+        expect(fixture.state.richZoomModalScalePercent).toBe(100);
         expect(fixture.calls.exitFullscreenSilently).toBe(1);
         expect(fixture.calls.clearPersistedAttemptUiState).toEqual([55]);
         expect(fixture.calls.clearPersistedQuestionCache).toEqual([55]);

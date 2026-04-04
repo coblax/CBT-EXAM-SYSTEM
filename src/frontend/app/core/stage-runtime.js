@@ -15,6 +15,7 @@ export function createStageRuntimeManager(deps) {
     var getQuestionCount = deps.getQuestionCount;
     var getQuestionDisplayNumber = deps.getQuestionDisplayNumber;
     var getQuestionIdAtIndex = deps.getQuestionIdAtIndex;
+    var getQuestionManifestById = deps.getQuestionManifestById;
     var getQuestionPayloadById = deps.getQuestionPayloadById;
     var getSelectedExam = deps.getSelectedExam;
     var isCompactNavViewport = deps.isCompactNavViewport;
@@ -153,9 +154,15 @@ export function createStageRuntimeManager(deps) {
             getExamFooterSyncMeta: getExamFooterSyncMeta,
             getExamProgressSummary: getExamProgressSummary,
             getNavigationQuestionEntries: getNavigationQuestionEntries,
+            getQuestionSaveFeedback: typeof deps.getQuestionSaveFeedback === 'function'
+                ? deps.getQuestionSaveFeedback
+                : function () {
+                    return null;
+                },
             getQuestionCount: getQuestionCount,
             getQuestionDisplayNumber: getQuestionDisplayNumber,
             getQuestionIdAtIndex: getQuestionIdAtIndex,
+            getQuestionManifestById: getQuestionManifestById,
             getQuestionPayloadById: getQuestionPayloadById,
             ensureQuestionWindowForIndex: deps.ensureQuestionWindowForIndex,
             getSelectedExam: getSelectedExam,

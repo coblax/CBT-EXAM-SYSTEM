@@ -541,6 +541,7 @@ export function createExamNavigationManager(deps) {
         if (
             state.stage !== 'exam'
             || state.finishConfirmOpen
+            || state.richZoomModalOpen
             || state.userPhotoModalOpen
             || event.altKey
             || event.ctrlKey

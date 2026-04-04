@@ -661,6 +661,7 @@ export function bootstrapFrontendApp() {
     var isSecurityLoggingActiveForAttempt = appMetaManager.isSecurityLoggingActiveForAttempt;
     var isSecurityLoggingEnabled = appMetaManager.isSecurityLoggingEnabled;
     var renderAlert = appMetaManager.renderAlert;
+    var renderExamRichHtml = appMetaManager.renderExamRichHtml;
     var safeRichHtml = appMetaManager.safeRichHtml;
     var authSessionManager = createAuthSessionManager({
         getSessionStorage: getSessionStorage,
@@ -812,6 +813,9 @@ export function bootstrapFrontendApp() {
     var initializeSubmittedPayloadCache = bindExamRuntimeMethod('answerSyncManager', 'initializeSubmittedPayloadCache', undefined);
     var isNetworkConnectivityError = bindExamRuntimeMethod('answerSyncManager', 'isNetworkConnectivityError', false);
     var isRetryableAnswerSyncError = bindExamRuntimeMethod('answerSyncManager', 'isRetryableAnswerSyncError', false);
+    var getQuestionSaveFeedback = bindExamRuntimeMethod('answerSyncManager', 'getQuestionSaveFeedback', function () {
+        return null;
+    });
     var queueLoadedQuestionAnswersForFlush = bindExamRuntimeMethod('answerSyncManager', 'queueLoadedQuestionAnswersForFlush', 0);
     var schedulePendingAnswerRetry = bindExamRuntimeMethod('answerSyncManager', 'schedulePendingAnswerRetry', undefined);
     var setConnectionStatus = bindExamRuntimeMethod('answerSyncManager', 'setConnectionStatus', undefined);
@@ -1469,12 +1473,14 @@ export function bootstrapFrontendApp() {
     var renderBody = appShellManager.renderBody;
     var renderFinishConfirmModal = appShellManager.renderFinishConfirmModal;
     var renderQuestionFontControls = appShellManager.renderQuestionFontControls;
+    var renderRichZoomModal = appShellManager.renderRichZoomModal;
     var renderThemeToggleControl = appShellManager.renderThemeToggleControl;
     var renderTopbar = appShellManager.renderTopbar;
     var renderUserPhotoModal = appShellManager.renderUserPhotoModal;
     questionRenderManager = createQuestionRenderManager({
         escapeHtml: escapeHtml,
         isExamAnswerEditingLocked: isExamAnswerEditingLocked,
+        renderExamRichHtml: renderExamRichHtml,
         resolveStoredAnswerValueForQuestion: resolveStoredAnswerValueForQuestion,
         safeRichHtml: safeRichHtml
     });
@@ -1495,9 +1501,11 @@ export function bootstrapFrontendApp() {
         getExamFooterSyncMeta: getExamFooterSyncMeta,
         getExamProgressSummary: getExamProgressSummary,
         getNavigationQuestionEntries: getNavigationQuestionEntries,
+        getQuestionSaveFeedback: getQuestionSaveFeedback,
         getQuestionCount: getQuestionCount,
         getQuestionDisplayNumber: getQuestionDisplayNumber,
         getQuestionIdAtIndex: getQuestionIdAtIndex,
+        getQuestionManifestById: getQuestionManifestById,
         getQuestionPayloadById: getQuestionPayloadById,
         ensureQuestionWindowForIndex: ensureQuestionWindowForIndex,
         getSelectedExam: getSelectedExam,
@@ -1626,6 +1634,7 @@ export function bootstrapFrontendApp() {
         },
         renderBody: renderBody,
         renderFinishConfirmModal: renderFinishConfirmModal,
+        renderRichZoomModal: renderRichZoomModal,
         renderTopbar: renderTopbar,
         renderUserPhotoModal: renderUserPhotoModal,
         root: root,

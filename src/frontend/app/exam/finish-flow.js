@@ -1,4 +1,5 @@
 export function createFinishFlowManager(deps) {
+    var FINISH_PROGRESS_STEP_TOTAL = 4;
     var diagnosticsManager = deps.diagnosticsManager;
     var recordActionTrail = deps.recordActionTrail;
     var recordTimeline = deps.recordTimeline;
@@ -34,6 +35,41 @@ export function createFinishFlowManager(deps) {
     var stopTimer = deps.stopTimer;
     var syncFullscreenState = deps.syncFullscreenState;
     var syncPendingAnswerRuntimeState = deps.syncPendingAnswerRuntimeState;
+
+    function resetFinishProgressState() {
+        state.finishProgressPercent = 0;
+        state.finishProgressStepIndex = 0;
+        state.finishProgressStepTotal = 0;
+        state.finishProgressStatus = '';
+        state.finishProgressDetail = '';
+    }
+
+    function updateFinishProgress(percent, stepIndex, status, detail, options) {
+        var safePercent = Number(percent);
+        var safeStepIndex = Number(stepIndex);
+        var shouldRender = !(options && options.render === false);
+
+        if (!Number.isFinite(safePercent)) {
+            safePercent = 0;
+        }
+        if (!Number.isFinite(safeStepIndex)) {
+            safeStepIndex = 0;
+        }
+
+        state.finishProgressPercent = Math.max(0, Math.min(100, safePercent));
+        state.finishProgressStepIndex = Math.max(0, Math.min(FINISH_PROGRESS_STEP_TOTAL, safeStepIndex));
+        state.finishProgressStepTotal = FINISH_PROGRESS_STEP_TOTAL;
+        state.finishProgressStatus = String(status || '');
+        state.finishProgressDetail = String(detail || '');
+
+        if (shouldRender && typeof render === 'function') {
+            render('finish-progress', {
+                attemptId: Number(state.attemptId) || 0,
+                percent: state.finishProgressPercent,
+                stepIndex: state.finishProgressStepIndex
+            });
+        }
+    }
 
     function recordTimelineEntry(kind, summary, meta) {
         if (typeof recordTimeline === 'function') {
@@ -345,6 +381,7 @@ export function createFinishFlowManager(deps) {
         state.stage = 'result';
         prefetchResultStageRenderer();
         state.isFinishing = false;
+        resetFinishProgressState();
         clearAutoSaveRuntimeState();
         state.pendingFinishAutoSubmit = false;
         exitFullscreenSilently();
@@ -364,6 +401,7 @@ export function createFinishFlowManager(deps) {
     function unlockExamAfterFinishFailure() {
         state.examLockedForPendingFinish = false;
         state.pendingFinishAutoSubmit = false;
+        resetFinishProgressState();
         syncPendingAnswerRuntimeState({
             persist: false,
             clearLastSyncError: false
@@ -389,6 +427,12 @@ export function createFinishFlowManager(deps) {
 
         var autoSubmit = !!state.pendingFinishAutoSubmit;
         state.isFinishing = true;
+        updateFinishProgress(
+            72,
+            3,
+            'Mengirim finalisasi ujian',
+            'Request final sedang dikirim ke server dan waktu ujian sudah dihentikan.'
+        );
         clearQuestionPrefetchRuntimeState();
         clearAttemptUiStateSyncTimer();
         clearQuestionCachePersistTimer();
@@ -438,6 +482,12 @@ export function createFinishFlowManager(deps) {
                     attempt_id: state.attemptId
                 }
             });
+            updateFinishProgress(
+                90,
+                4,
+                'Menyiapkan hasil ujian',
+                'Finalisasi diterima. Kami sedang memuat hasil terbaru Anda.'
+            );
             var resultPayload = await buildFinishedResultPayload(finishPayload);
             completeExamWithResult(resultPayload);
             state.success = autoSubmit ? 'Waktu habis. Ujian otomatis diselesaikan.' : 'Ujian selesai.';
@@ -449,6 +499,12 @@ export function createFinishFlowManager(deps) {
             state.isFinishing = false;
 
             if (isNetworkConnectivityError(error)) {
+                updateFinishProgress(
+                    72,
+                    3,
+                    'Koneksi terputus saat finalisasi',
+                    'Kami akan mencoba lagi otomatis ketika jaringan kembali stabil.'
+                );
                 state.lastSyncError = error instanceof Error && error.message ? error.message : 'Koneksi terputus.';
                 setConnectionStatus('offline', {
                     persist: false,
@@ -541,6 +597,12 @@ export function createFinishFlowManager(deps) {
         state.finishConfirmSummary = null;
         state.examLockedForPendingFinish = true;
         state.pendingFinishAutoSubmit = !!autoSubmit;
+        updateFinishProgress(
+            12,
+            1,
+            'Mengecek jawaban terakhir',
+            'Menyimpan posisi terakhir dan memastikan semua jawaban yang sudah diisi ikut tersinkron.'
+        );
         recordTimelineEntry('finish:requested', autoSubmit ? 'Auto-finish dipicu.' : 'User mengonfirmasi finish ujian.', {
             attemptId: Number(state.attemptId) || 0,
             stage: String(state.stage || ''),
@@ -565,8 +627,20 @@ export function createFinishFlowManager(deps) {
             } catch (error) {
                 // Local fallback tetap tersedia.
             }
+            updateFinishProgress(
+                34,
+                2,
+                'Menyinkronkan jawaban',
+                'Mengirim jawaban yang masih antre agar hasil akhir akurat.'
+            );
 
             if (getNavigatorConnectionStatus() === 'offline') {
+                updateFinishProgress(
+                    34,
+                    2,
+                    'Menunggu koneksi kembali',
+                    'Jawaban terakhir belum bisa dikirim karena perangkat sedang offline.'
+                );
                 syncPendingAnswerRuntimeState({
                     persist: true,
                     clearLastSyncError: false

@@ -19,6 +19,7 @@ function createQuestionMarkup(payload) {
         '<div class="cbt-question-quick-nav cbt-question-quick-nav-top" data-cbt-exam-question-region="questionQuickNav">' + payload.questionSubregions.questionQuickNav + '</div>',
         '<div class="cbt-question-stem" data-cbt-exam-question-region="questionStem">' + payload.questionSubregions.questionStem + '</div>',
         '<div data-cbt-exam-question-region="questionInput">' + payload.questionSubregions.questionInput + '</div>',
+        '<div data-cbt-exam-question-region="questionSaveFeedback">' + payload.questionSubregions.questionSaveFeedback + '</div>',
         '<div class="cbt-question-quick-nav cbt-question-quick-nav-bottom" data-cbt-exam-question-region="questionQuickNav">' + payload.questionSubregions.questionQuickNav + '</div>',
         '<div class="cbt-question-exam-footer-side">',
         '<div data-cbt-exam-question-region="questionFooterProgress">' + payload.questionSubregions.questionFooterProgress + '</div>',
@@ -50,6 +51,7 @@ function createFixture(overrides) {
             questionFooterSync: '<div class="cbt-question-exam-footer-meta cbt-question-exam-footer-meta-sync is-online"><strong>Online</strong></div>',
             questionHead: '<div class="cbt-question-head is-answered"><span>Head A</span></div>',
             questionInput: '<div class="cbt-options"><label>A</label></div>',
+            questionSaveFeedback: '<div class="cbt-question-save-feedback is-saved"><strong>Tersimpan</strong></div>',
             questionQuickNav: '<button type="button">Next</button>',
             questionStem: '<p><img src="/img-a.png" alt="" />Stem A</p>'
         }
@@ -76,6 +78,9 @@ function createFixture(overrides) {
             return createExamShellMarkup(currentRegions);
         },
         renderFinishConfirmModal: function () {
+            return '';
+        },
+        renderRichZoomModal: function () {
             return '';
         },
         renderTopbar: function () {
@@ -123,6 +128,7 @@ describe('createRenderCycleManager patchExamRegions', function () {
                 questionFooterSync: '<div class="cbt-question-exam-footer-meta cbt-question-exam-footer-meta-sync is-pending"><strong>2 pending</strong></div>',
                 questionHead: '<div class="cbt-question-head is-doubtful"><span>Head B</span></div>',
                 questionInput: '<div class="cbt-options"><label>B</label></div>',
+                questionSaveFeedback: '<div class="cbt-question-save-feedback is-syncing"><strong>Menyinkronkan...</strong></div>',
                 questionQuickNav: '<button type="button">Prev</button>',
                 questionStem: '<p><img src="/img-b.png" alt="" />Stem B</p>'
             }
@@ -133,6 +139,7 @@ describe('createRenderCycleManager patchExamRegions', function () {
             questionFooterSync: true,
             questionHead: true,
             questionInput: true,
+            questionSaveFeedback: true,
             questionQuickNav: true
         }, 'answer-change', {
             questionId: 10
@@ -142,6 +149,7 @@ describe('createRenderCycleManager patchExamRegions', function () {
         expect(document.querySelector('[data-cbt-exam-question-region="questionStem"]')).toBe(stemNode);
         expect(stemNode.innerHTML).toContain('Stem A');
         expect(document.querySelector('[data-cbt-exam-question-region="questionHead"]').innerHTML).toContain('Head B');
+        expect(document.querySelector('[data-cbt-exam-question-region="questionSaveFeedback"]').innerHTML).toContain('Menyinkronkan...');
         expect(document.querySelector('[data-cbt-exam-question-region="questionFooterSync"]').innerHTML).toContain('2 pending');
         expect(quickNavNodes).toHaveLength(2);
         quickNavNodes.forEach(function (node) {

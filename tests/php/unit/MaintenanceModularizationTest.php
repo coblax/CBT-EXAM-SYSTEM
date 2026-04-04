@@ -81,9 +81,80 @@ final class MaintenanceModularizationTest extends TestCase
 
         self::assertSame('medium', $context['selected_seed_preset']);
         self::assertSame('Medium', $context['selected_seed_preset_data']['label']);
+        self::assertSame(17, $context['selected_seed_preset_data']['exams']);
         self::assertSame('GENERATE TEST DATA', $context['test_data_seed_confirm_phrase']);
         self::assertSame('Skills39', $context['test_data_seed_default_password']);
         self::assertNotSame('{}', $context['seed_presets_json']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_keeps_exam_total_constant_across_presets(): void
+    {
+        $notice = '';
+        $error = '';
+        $context = \CBT_Admin_Maintenance_Seed_Service::build_seed_context([], $notice, $error);
+
+        self::assertSame(17, $context['seed_presets']['small']['exams']);
+        self::assertSame(17, $context['seed_presets']['medium']['exams']);
+        self::assertSame(17, $context['seed_presets']['large']['exams']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_dynamic_exam_targets_all_available_classes(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $method = $service->getMethod('build_test_data_seed_exam_entry');
+        $method->setAccessible(true);
+
+        $entry = $method->invoke(
+            null,
+            12,
+            [
+                ['id' => 7, 'name' => 'Matematika', 'image_bucket' => 'math'],
+            ],
+            ['KELAS_TEST_01', 'KELAS_TEST_02', 'KELAS_TEST_03'],
+            'medium',
+            99,
+            [
+                'profile' => 'mixed',
+                'label' => 'MIXED',
+                'suffix' => '[MIXED]',
+                'question_type' => '',
+            ]
+        );
+
+        self::assertSame('KELAS_TEST_01,KELAS_TEST_02,KELAS_TEST_03', $entry['target_kelas']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_sync_source_selection_uses_half_of_subject_bank_questions(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $method = $service->getMethod('build_test_data_seed_sync_source_question_ids_for_exam');
+        $method->setAccessible(true);
+
+        $selected_ids = $method->invoke(
+            null,
+            [
+                'id' => 77,
+                'subject_id' => 3,
+            ],
+            [
+                ['id' => 77, 'subject_id' => 3],
+                ['id' => 78, 'subject_id' => 3],
+                ['id' => 79, 'subject_id' => 4],
+            ],
+            [
+                77 => [1, 2],
+            ],
+            [
+                3 => [10, 11, 12, 13, 14, 15, 16, 17],
+                4 => [30, 31, 32, 33],
+            ]
+        );
+
+        self::assertCount(4, $selected_ids);
+        self::assertSame([10, 11, 12, 13], array_values($selected_ids));
     }
 
     #[RunInSeparateProcess]

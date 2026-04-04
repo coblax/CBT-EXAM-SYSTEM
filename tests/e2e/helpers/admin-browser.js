@@ -4,6 +4,15 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { expect } = require('@playwright/test');
 
+async function submitWpAdminLoginForm(page, adminUser) {
+    await expect(page.locator('#user_login')).toBeVisible({ timeout: 20000 });
+    await page.locator('#user_login').fill(String(adminUser.username || ''));
+    await page.locator('#user_pass').fill(String(adminUser.password || ''));
+    await page.locator('#wp-submit').click();
+    await page.waitForURL((url) => !String(url || '').includes('/wp-login.php'), { timeout: 20000 }).catch(() => {});
+    await page.waitForLoadState('networkidle').catch(() => {});
+}
+
 async function loginToWpAdmin(page, adminUser) {
     if (adminUser && typeof adminUser === 'object') {
         page.__cbtAdminUser = {
@@ -29,11 +38,7 @@ async function loginToWpAdmin(page, adminUser) {
         return;
     }
 
-    await expect(page.locator('#user_login')).toBeVisible({ timeout: 20000 });
-    await page.locator('#user_login').fill(String(adminUser.username || ''));
-    await page.locator('#user_pass').fill(String(adminUser.password || ''));
-    await page.locator('#wp-submit').click();
-    await page.waitForURL((url) => !String(url || '').includes('/wp-login.php'), { timeout: 20000 }).catch(() => {});
+    await submitWpAdminLoginForm(page, adminUser);
     await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 20000 });
     await page.waitForLoadState('networkidle').catch(() => {});
 }
@@ -43,23 +48,34 @@ async function openResultsPage(page, examId) {
         ? `/wp-admin/admin.php?page=cbt-results&cbt_exam_id=${Number(examId)}`
         : '/wp-admin/admin.php?page=cbt-results';
     const resultsShell = page.locator('.cbt-results-page, #cbt-results-filter-card, #cbt-results-tab-btn-monitoring').first();
+    const loginForm = page.locator('#user_login');
+    const rememberedAdminUser = page.__cbtAdminUser && typeof page.__cbtAdminUser === 'object'
+        ? page.__cbtAdminUser
+        : null;
 
     await page.goto(nextUrl, { waitUntil: 'domcontentloaded' });
 
+    if (await loginForm.count()) {
+        if (!rememberedAdminUser || !rememberedAdminUser.username || !rememberedAdminUser.password) {
+            throw new Error('Admin login session hilang sebelum membuka CBT Results dan kredensial admin tidak tersedia untuk recovery.');
+        }
+        await submitWpAdminLoginForm(page, rememberedAdminUser);
+    }
+
     try {
-        await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 10000 });
         await expect(resultsShell).toBeVisible({ timeout: 10000 });
     } catch (error) {
-        const rememberedAdminUser = page.__cbtAdminUser && typeof page.__cbtAdminUser === 'object'
-            ? page.__cbtAdminUser
-            : null;
-        if (rememberedAdminUser && rememberedAdminUser.username && rememberedAdminUser.password) {
-            await loginToWpAdmin(page, rememberedAdminUser);
-        }
         await page.goto(nextUrl, { waitUntil: 'networkidle' }).catch(async () => {
             await page.reload({ waitUntil: 'networkidle' });
         });
-        await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 20000 });
+
+        if (await loginForm.count()) {
+            if (!rememberedAdminUser || !rememberedAdminUser.username || !rememberedAdminUser.password) {
+                throw new Error('Admin login session hilang saat retry membuka CBT Results dan kredensial admin tidak tersedia untuk recovery.');
+            }
+            await submitWpAdminLoginForm(page, rememberedAdminUser);
+        }
+
         await expect(resultsShell).toBeVisible({ timeout: 20000 });
     }
 }

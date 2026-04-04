@@ -40,6 +40,8 @@ export function createAppEventManager(deps) {
     var flushPendingAnswerBatchSilently = deps.flushPendingAnswerBatchSilently;
     var suppressedClickAction = '';
     var suppressedClickUntil = 0;
+    var IMAGE_RICH_ZOOM_SCALE_STEPS = [75, 100, 125, 150, 175, 200, 225, 250];
+    var TABLE_RICH_ZOOM_SCALE_STEPS = [75, 100, 125, 150, 175, 200];
 
     function resolveEventElement(target) {
         if (target instanceof Element) {
@@ -138,6 +140,7 @@ export function createAppEventManager(deps) {
     function shouldHandleActionOnPointerDown(action) {
         return action === 'logout'
             || action === 'toggle-theme'
+            || action === 'open-rich-zoom'
             || action === 'open-user-photo'
             || action === 'close-user-photo'
             || action === 'back-confirm'
@@ -183,6 +186,246 @@ export function createAppEventManager(deps) {
         recordActionTrail(kind, summary, Object.assign({
             actionStage: String(state.stage || 'login')
         }, meta || {}));
+    }
+
+    function closeRichZoomModal() {
+        state.richZoomModalOpen = false;
+        state.richZoomModalType = '';
+        state.richZoomModalTitle = '';
+        state.richZoomModalMarkup = '';
+        state.richZoomModalGalleryId = '';
+        state.richZoomModalGalleryIndex = 0;
+        state.richZoomModalGalleryItems = [];
+        state.richZoomModalGalleryCount = 0;
+        state.richZoomModalScaleMode = 'fit';
+        state.richZoomModalScalePercent = 100;
+    }
+
+    function getRichZoomScaleSteps(modalType) {
+        return modalType === 'table'
+            ? TABLE_RICH_ZOOM_SCALE_STEPS
+            : IMAGE_RICH_ZOOM_SCALE_STEPS;
+    }
+
+    function normalizeRichZoomScalePercent(percent, modalType) {
+        var steps = getRichZoomScaleSteps(modalType);
+        var numericPercent = Number(percent) || 100;
+        var normalized = steps[0];
+
+        steps.forEach(function (step) {
+            if (numericPercent >= step) {
+                normalized = step;
+            }
+        });
+
+        return normalized;
+    }
+
+    function resetRichZoomScaleState(modalType) {
+        state.richZoomModalScaleMode = 'fit';
+        state.richZoomModalScalePercent = normalizeRichZoomScalePercent(100, modalType);
+    }
+
+    function setRichZoomScaleManual(percent) {
+        if (!state.richZoomModalOpen) {
+            return false;
+        }
+
+        var modalType = String(state.richZoomModalType || 'image').toLowerCase() === 'table' ? 'table' : 'image';
+        var nextPercent = normalizeRichZoomScalePercent(percent, modalType);
+        var changed = state.richZoomModalScaleMode !== 'manual'
+            || Number(state.richZoomModalScalePercent) !== nextPercent;
+
+        state.richZoomModalScaleMode = 'manual';
+        state.richZoomModalScalePercent = nextPercent;
+        return changed;
+    }
+
+    function setRichZoomScaleFit() {
+        if (!state.richZoomModalOpen) {
+            return false;
+        }
+
+        var modalType = String(state.richZoomModalType || 'image').toLowerCase() === 'table' ? 'table' : 'image';
+        var changed = state.richZoomModalScaleMode !== 'fit'
+            || Number(state.richZoomModalScalePercent) !== normalizeRichZoomScalePercent(100, modalType);
+
+        resetRichZoomScaleState(modalType);
+        return changed;
+    }
+
+    function stepRichZoomScale(offset) {
+        if (!state.richZoomModalOpen) {
+            return false;
+        }
+
+        var modalType = String(state.richZoomModalType || 'image').toLowerCase() === 'table' ? 'table' : 'image';
+        var steps = getRichZoomScaleSteps(modalType);
+        var currentPercent = Number(state.richZoomModalScalePercent) || 100;
+        var currentIndex = steps.indexOf(normalizeRichZoomScalePercent(currentPercent, modalType));
+        if (currentIndex < 0) {
+            currentIndex = steps.indexOf(100);
+        }
+        if (currentIndex < 0) {
+            currentIndex = 0;
+        }
+
+        if (state.richZoomModalScaleMode !== 'manual') {
+            currentIndex = steps.indexOf(100);
+            if (currentIndex < 0) {
+                currentIndex = 0;
+            }
+        }
+
+        var nextIndex = Math.max(0, Math.min(steps.length - 1, currentIndex + (Number(offset) || 0)));
+        if (nextIndex === currentIndex && state.richZoomModalScaleMode === 'manual') {
+            return false;
+        }
+
+        return setRichZoomScaleManual(steps[nextIndex]);
+    }
+
+    function buildRichZoomItemFromTarget(zoomTarget) {
+        if (!(zoomTarget instanceof Element) || !documentRef || typeof documentRef.createElement !== 'function') {
+            return null;
+        }
+
+        var zoomSource = zoomTarget.querySelector('.cbt-rich-zoom-source');
+        if (!(zoomSource instanceof Element)) {
+            return null;
+        }
+
+        var cloneWrap = documentRef.createElement('div');
+        Array.prototype.forEach.call(zoomSource.childNodes, function (node) {
+            cloneWrap.appendChild(node.cloneNode(true));
+        });
+
+        Array.prototype.forEach.call(cloneWrap.querySelectorAll('.cbt-rich-zoom-toolbar, [data-action]'), function (node) {
+            if (node.parentNode) {
+                node.parentNode.removeChild(node);
+            }
+        });
+
+        Array.prototype.forEach.call(cloneWrap.querySelectorAll('img'), function (image) {
+            image.setAttribute('loading', 'eager');
+            image.setAttribute('decoding', 'async');
+        });
+
+        var markup = String(cloneWrap.innerHTML || '').trim();
+        if (markup === '') {
+            return null;
+        }
+
+        return {
+            markup: markup
+        };
+    }
+
+    function syncRichZoomModalGalleryState(nextIndex) {
+        var items = Array.isArray(state.richZoomModalGalleryItems) ? state.richZoomModalGalleryItems : [];
+        if (!items.length) {
+            state.richZoomModalGalleryIndex = 0;
+            state.richZoomModalGalleryCount = 0;
+            return false;
+        }
+
+        var clampedIndex = Math.max(0, Math.min(items.length - 1, Number(nextIndex) || 0));
+        state.richZoomModalGalleryIndex = clampedIndex;
+        state.richZoomModalGalleryCount = items.length;
+        state.richZoomModalMarkup = String(items[clampedIndex] && items[clampedIndex].markup ? items[clampedIndex].markup : '').trim();
+        return state.richZoomModalMarkup !== '';
+    }
+
+    function applyRichZoomModalPayload(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return false;
+        }
+
+        closeRichZoomModal();
+        state.richZoomModalOpen = true;
+        state.richZoomModalType = String(payload.type || 'image').toLowerCase() === 'table' ? 'table' : 'image';
+        state.richZoomModalTitle = String(payload.title || (state.richZoomModalType === 'table' ? 'Tabel Soal' : 'Gambar Soal')).trim();
+        resetRichZoomScaleState(state.richZoomModalType);
+
+        if (state.richZoomModalType === 'image' && Array.isArray(payload.galleryItems) && payload.galleryItems.length > 1) {
+            state.richZoomModalGalleryId = String(payload.galleryId || '').trim();
+            state.richZoomModalGalleryItems = payload.galleryItems.slice();
+            return syncRichZoomModalGalleryState(payload.galleryIndex);
+        }
+
+        state.richZoomModalMarkup = String(payload.markup || '').trim();
+        return state.richZoomModalMarkup !== '';
+    }
+
+    function stepRichZoomGallery(offset) {
+        if (!state.richZoomModalOpen || state.richZoomModalType !== 'image' || Number(state.richZoomModalGalleryCount) <= 1) {
+            return false;
+        }
+
+        var currentIndex = Number(state.richZoomModalGalleryIndex) || 0;
+        var nextIndex = currentIndex + (Number(offset) || 0);
+        var changed = syncRichZoomModalGalleryState(nextIndex);
+        if (changed) {
+            resetRichZoomScaleState('image');
+        }
+        return changed && (Number(state.richZoomModalGalleryIndex) || 0) !== currentIndex;
+    }
+
+    function buildRichZoomModalPayload(actionNode) {
+        if (!(actionNode instanceof Element) || !documentRef || typeof documentRef.createElement !== 'function') {
+            return null;
+        }
+
+        var zoomTarget = actionNode.closest('.cbt-rich-zoom-target');
+        if (!(zoomTarget instanceof Element)) {
+            return null;
+        }
+
+        var item = buildRichZoomItemFromTarget(zoomTarget);
+        if (!item) {
+            return null;
+        }
+
+        var type = String(zoomTarget.getAttribute('data-rich-zoom-type') || 'image').toLowerCase() === 'table' ? 'table' : 'image';
+        var title = String(zoomTarget.getAttribute('data-rich-zoom-title') || (type === 'table' ? 'Tabel Soal' : 'Gambar Soal')).trim();
+        var galleryId = String(zoomTarget.getAttribute('data-rich-zoom-gallery-id') || '').trim();
+
+        var payload = {
+            markup: item.markup,
+            title: title,
+            type: type
+        };
+
+        if (type !== 'image' || galleryId === '' || !root) {
+            return payload;
+        }
+
+        var galleryTargets = Array.prototype.filter.call(
+            root.querySelectorAll('.cbt-rich-zoom-target[data-rich-zoom-gallery-id]'),
+            function (node) {
+                return node instanceof Element && String(node.getAttribute('data-rich-zoom-gallery-id') || '') === galleryId;
+            }
+        );
+
+        if (galleryTargets.length <= 1) {
+            return payload;
+        }
+
+        var galleryItems = galleryTargets.map(function (node) {
+            return buildRichZoomItemFromTarget(node);
+        }).filter(function (entry) {
+            return !!entry && String(entry.markup || '').trim() !== '';
+        });
+
+        if (galleryItems.length <= 1) {
+            return payload;
+        }
+
+        payload.galleryId = galleryId;
+        payload.galleryItems = galleryItems;
+        payload.galleryIndex = Math.max(0, galleryTargets.indexOf(zoomTarget));
+        payload.galleryCount = galleryItems.length;
+        return payload;
     }
 
     function handleSubmit(target, event) {
@@ -320,6 +563,126 @@ export function createAppEventManager(deps) {
         }
 
         if (action === 'user-photo-modal-panel') {
+            return true;
+        }
+
+        if (action === 'open-rich-zoom') {
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            if (typeof event.stopPropagation === 'function') {
+                event.stopPropagation();
+            }
+
+            var richZoomPayload = buildRichZoomModalPayload(actionNode);
+            if (!richZoomPayload) {
+                return true;
+            }
+
+            if (!applyRichZoomModalPayload(richZoomPayload)) {
+                return true;
+            }
+            render('open-rich-zoom', {
+                action: action,
+                zoomType: richZoomPayload.type
+            });
+            return true;
+        }
+
+        if (action === 'close-rich-zoom') {
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            closeRichZoomModal();
+            render('close-rich-zoom', {
+                action: action
+            });
+            return true;
+        }
+
+        if (action === 'rich-zoom-modal-panel') {
+            return true;
+        }
+
+        if (action === 'rich-zoom-prev') {
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            if (stepRichZoomGallery(-1)) {
+                render('rich-zoom-prev', {
+                    action: action,
+                    galleryIndex: Number(state.richZoomModalGalleryIndex) || 0
+                });
+            }
+            return true;
+        }
+
+        if (action === 'rich-zoom-next') {
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            if (stepRichZoomGallery(1)) {
+                render('rich-zoom-next', {
+                    action: action,
+                    galleryIndex: Number(state.richZoomModalGalleryIndex) || 0
+                });
+            }
+            return true;
+        }
+
+        if (action === 'rich-zoom-scale-in') {
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            if (stepRichZoomScale(1)) {
+                render('rich-zoom-scale-in', {
+                    action: action,
+                    scaleMode: state.richZoomModalScaleMode,
+                    scalePercent: Number(state.richZoomModalScalePercent) || 100
+                });
+            }
+            return true;
+        }
+
+        if (action === 'rich-zoom-scale-out') {
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            if (stepRichZoomScale(-1)) {
+                render('rich-zoom-scale-out', {
+                    action: action,
+                    scaleMode: state.richZoomModalScaleMode,
+                    scalePercent: Number(state.richZoomModalScalePercent) || 100
+                });
+            }
+            return true;
+        }
+
+        if (action === 'rich-zoom-scale-reset') {
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            if (setRichZoomScaleManual(100)) {
+                render('rich-zoom-scale-reset', {
+                    action: action,
+                    scaleMode: state.richZoomModalScaleMode,
+                    scalePercent: Number(state.richZoomModalScalePercent) || 100
+                });
+            }
+            return true;
+        }
+
+        if (action === 'rich-zoom-scale-fit') {
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            if (setRichZoomScaleFit()) {
+                render('rich-zoom-scale-fit', {
+                    action: action,
+                    scaleMode: state.richZoomModalScaleMode,
+                    scalePercent: Number(state.richZoomModalScalePercent) || 100
+                });
+            }
             return true;
         }
 
@@ -654,6 +1017,28 @@ export function createAppEventManager(deps) {
             return true;
         }
 
+        if (state.richZoomModalOpen && state.richZoomModalType === 'image' && Number(state.richZoomModalGalleryCount) > 1) {
+            if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                if (stepRichZoomGallery(-1)) {
+                    render('rich-zoom-prev:key', {
+                        galleryIndex: Number(state.richZoomModalGalleryIndex) || 0
+                    });
+                }
+                return true;
+            }
+
+            if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                if (stepRichZoomGallery(1)) {
+                    render('rich-zoom-next:key', {
+                        galleryIndex: Number(state.richZoomModalGalleryIndex) || 0
+                    });
+                }
+                return true;
+            }
+        }
+
         if (event.key === 'Escape') {
             if (state.examPickerMobileOpen) {
                 event.preventDefault();
@@ -666,6 +1051,13 @@ export function createAppEventManager(deps) {
                 event.preventDefault();
                 state.userPhotoModalOpen = false;
                 render('escape-close-user-photo', {});
+                return true;
+            }
+
+            if (state.richZoomModalOpen) {
+                event.preventDefault();
+                closeRichZoomModal();
+                render('escape-close-rich-zoom', {});
                 return true;
             }
 

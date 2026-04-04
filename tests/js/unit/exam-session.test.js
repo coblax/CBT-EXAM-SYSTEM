@@ -52,6 +52,11 @@ function buildCachedQuestionSnapshot(totalQuestions) {
 function createFixture(overrides = {}) {
     var state = Object.assign({
         attemptId: 0,
+        openingAttemptProgressPercent: 0,
+        openingAttemptProgressStepIndex: 0,
+        openingAttemptProgressStepTotal: 0,
+        openingAttemptProgressStatus: '',
+        openingAttemptProgressDetail: '',
         stage: 'confirm',
         isOpeningAttempt: false,
         isFinishing: false,
@@ -91,7 +96,8 @@ function createFixture(overrides = {}) {
         initializeSubmittedPayloadCache: 0,
         loadQuestionWindow: [],
         persistCurrentQuestionCacheLocally: 0,
-        queueLoadedQuestionAnswersForFlush: 0
+        queueLoadedQuestionAnswersForFlush: 0,
+        renderSnapshots: []
     };
     var restoredSnapshot = overrides.restoredSnapshot || buildCachedQuestionSnapshot(40);
 
@@ -182,7 +188,15 @@ function createFixture(overrides = {}) {
             return restoredSnapshot;
         },
         recordActionTrail: function () {},
-        render: function () {},
+        render: function () {
+            calls.renderSnapshots.push({
+                openingAttemptProgressDetail: String(state.openingAttemptProgressDetail || ''),
+                openingAttemptProgressPercent: Number(state.openingAttemptProgressPercent) || 0,
+                openingAttemptProgressStatus: String(state.openingAttemptProgressStatus || ''),
+                openingAttemptProgressStepIndex: Number(state.openingAttemptProgressStepIndex) || 0,
+                stage: String(state.stage || '')
+            });
+        },
         requestExamFullscreen: function () {
             return Promise.resolve(null);
         },
@@ -287,5 +301,50 @@ describe('createExamSessionManager', function () {
         expect(fixture.calls.loadQuestionWindow).toHaveLength(1);
         expect(fixture.calls.persistCurrentQuestionCacheLocally).toBe(1);
         expect(fixture.calls.queueLoadedQuestionAnswersForFlush).toBe(1);
+    });
+
+    it('emits staged opening progress while preparing the initial exam window', async function () {
+        var fixture = createFixture({
+            selectedExam: {
+                id: 55,
+                duration_minutes: 60
+            }
+        });
+
+        await fixture.manager.openAttemptSession(
+            {
+                id: 55,
+                duration_minutes: 60
+            },
+            {
+                attempt_id: 77,
+                duration_minutes: 60,
+                started_at: '2026-04-03 05:00:00',
+                status: 'resume',
+                question_order_signature: 'signature-40',
+                question_revision: fixture.restoredSnapshot.questionRevision
+            }
+        );
+
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.openingAttemptProgressStepIndex === 2
+                && snapshot.openingAttemptProgressStatus.indexOf('runtime ujian') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.openingAttemptProgressStepIndex === 3
+                && snapshot.openingAttemptProgressStatus.indexOf('data lokal') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.openingAttemptProgressStepIndex === 4
+                && snapshot.openingAttemptProgressStatus.indexOf('soal awal') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.openingAttemptProgressStepIndex === 5
+                && snapshot.openingAttemptProgressStatus.indexOf('Finalisasi') >= 0;
+        })).toBe(true);
+        expect(fixture.state.openingAttemptProgressPercent).toBe(0);
+        expect(fixture.state.openingAttemptProgressStepIndex).toBe(0);
+        expect(fixture.state.openingAttemptProgressStatus).toBe('');
+        expect(fixture.state.openingAttemptProgressDetail).toBe('');
     });
 });

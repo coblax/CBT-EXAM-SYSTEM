@@ -38,7 +38,7 @@ final class AdminExamsSnapshotContextTest extends TestCase
             'display_name' => 'Bimo',
             'user_login' => 'bimo',
             'user_email' => 'bimo@example.com',
-            'roles' => ['student'],
+            'roles' => ['siswa_cbt'],
         ]);
         update_user_meta(72, 'kode_kelas', 'XI-B');
         update_user_meta(72, 'kode_ruang', 'R2');
@@ -63,7 +63,7 @@ final class AdminExamsSnapshotContextTest extends TestCase
                 ],
             ];
         });
-        \CBT_Exam_Availability_Cache::warm_student_snapshot(71, static function (): array {
+        \CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(71, static function (): array {
             return [
                 'items' => [
                     [
@@ -100,6 +100,8 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertSame(1, $context['student_snapshot_current_page']);
         self::assertSame(1, $context['student_snapshot_total_pages']);
         self::assertSame(25, $context['student_snapshot_per_page']);
+        self::assertSame(['XI-A', 'XI-B'], $context['student_snapshot_kelas_options']);
+        self::assertSame(['R1', 'R2'], $context['student_snapshot_ruang_options']);
         self::assertSame('Bimo', $context['student_snapshot_rows'][0]['display_name']);
         self::assertSame('XI-B', $context['student_snapshot_rows'][0]['kode_kelas']);
         self::assertSame('R2', $context['student_snapshot_rows'][0]['kode_ruang']);
@@ -110,6 +112,59 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertSame('R1', $context['student_snapshot_rows'][1]['kode_ruang']);
         self::assertSame('READY', $context['student_snapshot_rows'][1]['availability_status_label']);
         self::assertSame('READY', $context['student_snapshot_rows'][1]['profile_status_label']);
+        self::assertSame('prepared', $context['student_snapshot_rows'][1]['availability']['snapshot_source']);
+    }
+
+    public function test_build_page_context_marks_prepared_snapshot_as_auto_warm_only_when_session_is_still_active_for_student(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        \CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(71, static function (): array {
+            return [
+                'items' => [
+                    [
+                        'id' => 77,
+                        'title' => 'Ujian Matematika',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
+                ],
+                'current_user' => [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'username' => 'salsa',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+
+        update_option('cbt_exam_availability_auto_warm_state', [
+            'active' => true,
+            'status' => 'active',
+            'session_id' => 'warm-77-abc',
+            'exam_id' => 77,
+            'exam_title' => 'Ujian Matematika',
+            'target_student_ids' => [71],
+            'target_student_count' => 1,
+            'prepared_student_ids' => [71],
+            'prepared_count' => 1,
+            'cursor' => 0,
+            'started_at' => '2026-04-04 12:00:00',
+            'stop_after_ts' => 1775305800,
+            'stop_after_at' => '2026-04-04 12:30:00',
+            'last_tick_at' => '2026-04-04 12:01:00',
+            'last_success_count' => 1,
+            'last_failure_count' => 0,
+            'last_skip_count' => 0,
+            'last_message' => 'Batch awal auto-warm memproses 1 siswa.',
+        ]);
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+        ]);
+
+        self::assertSame('AUTO-WARM', $context['student_snapshot_rows'][1]['availability_status_label']);
     }
 
     public function test_build_page_context_honors_snapshot_preview_page_request_per_exam(): void
@@ -149,6 +204,96 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertTrue($context['exam_snapshot_rows'][0]['preview_is_expanded']);
     }
 
+    public function test_build_page_context_includes_exam_readiness_for_selected_exam(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        \CBT_Exam_Question_Delivery_Cache::get_exam_payload(77, static function (int $examId): array {
+            return [
+                [
+                    'id' => 901,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal Redis Siap',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [
+                        ['id' => 1, 'option_key' => 'A', 'option_text' => 'A'],
+                    ],
+                ],
+            ];
+        });
+        \CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(71, static function (): array {
+            return [
+                'items' => [
+                    [
+                        'id' => 77,
+                        'title' => 'Ujian Matematika',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
+                ],
+                'current_user' => [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'username' => 'salsa',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+        \CBT_Student_Profile_Cache::warm_snapshot(71);
+
+        for ($index = 0; $index < 11; $index++) {
+            $user_id = 200 + $index;
+            cbt_test_register_user([
+                'ID' => $user_id,
+                'display_name' => 'XI-A Student ' . $index,
+                'user_login' => 'xia_' . $index,
+                'user_email' => 'xia_' . $index . '@example.com',
+                'roles' => ['student'],
+            ]);
+            update_user_meta($user_id, 'kode_kelas', 'XI-A');
+            update_user_meta($user_id, 'kode_ruang', 'R1');
+        }
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_exam_readiness_paged' => '2',
+        ]);
+
+        self::assertSame(2, $context['exam_readiness_page']);
+        self::assertCount(1, $context['exam_snapshot_rows']);
+        $readiness = $context['exam_snapshot_rows'][0]['readiness'];
+        self::assertSame('PERLU PERHATIAN', $readiness['overall_label']);
+        self::assertTrue($readiness['question_snapshot_ready']);
+        self::assertSame(12, $readiness['target_student_count']);
+        self::assertSame(1, $readiness['profile_ready_count']);
+        self::assertSame(11, $readiness['profile_missing_count']);
+        self::assertSame(1, $readiness['availability_ready_count']);
+        self::assertSame(0, $readiness['availability_auto_warm_count']);
+        self::assertSame(11, $readiness['availability_missing_count']);
+        self::assertSame(11, $readiness['problem_total']);
+        self::assertSame(2, $readiness['problem_page']);
+        self::assertSame(2, $readiness['problem_total_pages']);
+        self::assertCount(1, $readiness['problem_students']);
+    }
+
+    public function test_build_page_context_marks_selected_exam_not_ready_when_question_snapshot_missing(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_exam_id' => '54',
+        ]);
+
+        self::assertCount(1, $context['exam_snapshot_rows']);
+        $readiness = $context['exam_snapshot_rows'][0]['readiness'];
+        self::assertSame('BELUM SIAP', $readiness['overall_label']);
+        self::assertContains('Snapshot Soal belum READY.', $readiness['blockers']);
+    }
+
     public function test_build_page_context_filters_snapshot_rows_by_selected_exam_dropdown(): void
     {
         $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
@@ -163,6 +308,8 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertCount(1, $context['exam_snapshot_rows']);
         self::assertSame(1, $context['exam_snapshot_total']);
         self::assertSame('Ujian Biologi', $context['exam_snapshot_rows'][0]['title']);
+        self::assertArrayHasKey('auto_warm', $context['exam_snapshot_rows'][0]);
+        self::assertSame('NONAKTIF', $context['exam_snapshot_rows'][0]['auto_warm']['status_label']);
     }
 
     public function test_build_page_context_falls_back_to_list_panel_for_non_admin_snapshot_request(): void
@@ -188,11 +335,15 @@ final class AdminExamsSnapshotContextTest extends TestCase
             'cbt_exam_panel' => 'snapshot',
             'cbt_exam_snapshot_tab' => 'students',
             'cbt_student_snapshot_q' => 'bimo',
+            'cbt_student_snapshot_kelas' => 'XI-B',
+            'cbt_student_snapshot_ruang' => 'R2',
             'cbt_student_snapshot_paged' => '9',
         ]);
 
         self::assertSame(\CBT_Admin_Exams_Service::SNAPSHOT_TAB_STUDENTS, $context['exam_snapshot_tab']);
         self::assertSame('bimo', $context['student_snapshot_filter_state']['search']);
+        self::assertSame('XI-B', $context['student_snapshot_filter_state']['kelas']);
+        self::assertSame('R2', $context['student_snapshot_filter_state']['ruang']);
         self::assertSame(9, $context['student_snapshot_filter_state']['paged']);
         self::assertSame(1, $context['student_snapshot_total']);
         self::assertCount(1, $context['student_snapshot_rows']);
@@ -203,6 +354,14 @@ final class AdminExamsSnapshotContextTest extends TestCase
             [
                 'label' => 'Cari Siswa',
                 'value' => 'bimo',
+            ],
+            [
+                'label' => 'Kelas',
+                'value' => 'XI-B',
+            ],
+            [
+                'label' => 'Ruang',
+                'value' => 'R2',
             ],
         ], $context['student_snapshot_active_filters']);
     }
@@ -309,17 +468,18 @@ final class AdminExamsSnapshotContextFakeWpdb
                     'title' => 'Ujian Matematika',
                     'subject_name' => 'Matematika',
                     'status' => 'published',
+                    'target_kelas' => 'XI-A',
                     'question_count' => 12,
                     'attempt_total' => 0,
                     'attempt_in_progress' => 0,
                     'attempt_completed' => 0,
-                    'target_kelas' => 'XI-A',
                 ],
                 [
                     'id' => 54,
                     'title' => 'Ujian Biologi',
                     'subject_name' => 'Biologi',
                     'status' => 'published',
+                    'target_kelas' => 'XI-B',
                     'question_count' => 8,
                     'attempt_total' => 0,
                     'attempt_in_progress' => 0,
@@ -329,16 +489,22 @@ final class AdminExamsSnapshotContextFakeWpdb
             ];
         }
 
-        if (strpos($query, 'SELECT e.id, e.title, e.status, s.name AS subject_name') !== false) {
+        if (strpos($query, 'SELECT e.id, e.title, e.status, e.target_kelas, s.name AS subject_name') !== false) {
+            if (strpos($query, 'e.id = 77') !== false) {
+                return [
+                    ['id' => 77, 'title' => 'Ujian Matematika', 'status' => 'published', 'subject_name' => 'Matematika', 'target_kelas' => 'XI-A', 'duration_minutes' => 90, 'show_student_result' => 1, 'enable_calculator' => 1, 'starts_at' => '', 'ends_at' => ''],
+                ];
+            }
+
             if (strpos($query, 'e.id = 54') !== false) {
                 return [
-                    ['id' => 54, 'title' => 'Ujian Biologi', 'status' => 'published', 'subject_name' => 'Biologi'],
+                    ['id' => 54, 'title' => 'Ujian Biologi', 'status' => 'published', 'subject_name' => 'Biologi', 'target_kelas' => 'XI-B', 'duration_minutes' => 60, 'show_student_result' => 1, 'enable_calculator' => 1, 'starts_at' => '', 'ends_at' => ''],
                 ];
             }
 
             return [
-                ['id' => 77, 'title' => 'Ujian Matematika', 'status' => 'published', 'subject_name' => 'Matematika'],
-                ['id' => 54, 'title' => 'Ujian Biologi', 'status' => 'published', 'subject_name' => 'Biologi'],
+                ['id' => 77, 'title' => 'Ujian Matematika', 'status' => 'published', 'subject_name' => 'Matematika', 'target_kelas' => 'XI-A', 'duration_minutes' => 90, 'show_student_result' => 1, 'enable_calculator' => 1, 'starts_at' => '', 'ends_at' => ''],
+                ['id' => 54, 'title' => 'Ujian Biologi', 'status' => 'published', 'subject_name' => 'Biologi', 'target_kelas' => 'XI-B', 'duration_minutes' => 60, 'show_student_result' => 1, 'enable_calculator' => 1, 'starts_at' => '', 'ends_at' => ''],
             ];
         }
 

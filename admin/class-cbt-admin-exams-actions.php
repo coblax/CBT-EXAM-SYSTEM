@@ -36,6 +36,16 @@ final class CBT_Admin_Exams_Actions
         CBT_Admin_Exams_Service::handle_clear_bulk_exam_delivery_snapshots();
     }
 
+    public static function handle_start_exam_availability_auto_warm(): void
+    {
+        CBT_Admin_Exams_Service::handle_start_exam_availability_auto_warm();
+    }
+
+    public static function handle_stop_exam_availability_auto_warm(): void
+    {
+        CBT_Admin_Exams_Service::handle_stop_exam_availability_auto_warm();
+    }
+
     public static function handle_warm_student_exam_availability_snapshot(): void
     {
         CBT_Admin_Exams_Service::handle_warm_student_exam_availability_snapshot();

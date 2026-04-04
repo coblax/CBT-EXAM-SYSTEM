@@ -25,6 +25,7 @@ final class CBT_Admin_Maintenance_Seed_Service
     private const TEST_DATA_SEED_SECURITY_FIXTURE_TITLE = 'TEST Security Fixture';
     private const TEST_DATA_SEED_IMPORT_PREVIEW_FIXTURE_TITLE = 'TEST Import Preview Fixture';
     private const TEST_DATA_SEED_SAMPLE_IMAGE_DIRECTORY = 'public/images/test-data';
+    private const TEST_DATA_SEED_SHARED_EXAM_TOTAL = 17;
     private const TEST_DATA_SEED_BULK_UPLOAD_FILE_PREFIX = 'cbt-bulk-question-';
 
     public static function get_seed_special_student_username(): string
@@ -392,6 +393,7 @@ public static function handle_generate_test_dataset(): void
             'question_type_counts' => [],
             'exam_question_counts' => [],
             'target_exam_source_question_ids' => [],
+            'subject_source_question_ids' => [],
             'sync_exam_offset' => 0,
             'sync_exam_synced_count' => 0,
             'synced_exam_question_counts' => [],
@@ -480,6 +482,9 @@ public static function handle_generate_test_dataset(): void
             : [];
         $target_exam_source_question_ids = isset($state['target_exam_source_question_ids']) && is_array($state['target_exam_source_question_ids'])
             ? (array) $state['target_exam_source_question_ids']
+            : [];
+        $subject_source_question_ids = isset($state['subject_source_question_ids']) && is_array($state['subject_source_question_ids'])
+            ? (array) $state['subject_source_question_ids']
             : [];
         $sync_exam_offset = max(0, min((int) ($preset['exams'] ?? 0), (int) ($state['sync_exam_offset'] ?? 0)));
         $sync_exam_synced_count = max(0, (int) ($state['sync_exam_synced_count'] ?? 0));
@@ -850,11 +855,18 @@ public static function handle_generate_test_dataset(): void
                             ? ((int) $question_type_counts[$question_type] + 1)
                             : 1;
                     }
+                    $subject_id = absint($question_row['subject_id'] ?? 0);
                     if ($target_exam_id > 0 && $source_question_id > 0) {
                         if (!isset($target_exam_source_question_ids[$target_exam_id]) || !is_array($target_exam_source_question_ids[$target_exam_id])) {
                             $target_exam_source_question_ids[$target_exam_id] = [];
                         }
                         $target_exam_source_question_ids[$target_exam_id][] = $source_question_id;
+                    }
+                    if ($subject_id > 0 && $source_question_id > 0) {
+                        if (!isset($subject_source_question_ids[$subject_id]) || !is_array($subject_source_question_ids[$subject_id])) {
+                            $subject_source_question_ids[$subject_id] = [];
+                        }
+                        $subject_source_question_ids[$subject_id][] = $source_question_id;
                     }
                 } else {
                     $seed_bank_question_failed_count++;
@@ -890,10 +902,12 @@ public static function handle_generate_test_dataset(): void
             while ($sync_exam_offset < $exam_total && $processed_sync_this_round < $sync_exam_batch_size) {
                 $exam_entry = isset($exams[$sync_exam_offset]) ? (array) $exams[$sync_exam_offset] : [];
                 $target_exam_id = (int) ($exam_entry['id'] ?? 0);
-                $source_question_ids = array_values(array_unique(array_filter(array_map(
-                    'absint',
-                    (array) ($target_exam_source_question_ids[$target_exam_id] ?? [])
-                ))));
+                $source_question_ids = self::build_test_data_seed_sync_source_question_ids_for_exam(
+                    $exam_entry,
+                    $exams,
+                    $target_exam_source_question_ids,
+                    $subject_source_question_ids
+                );
 
                 if ($target_exam_id > 0) {
                     if (!empty($source_question_ids)) {
@@ -971,6 +985,7 @@ public static function handle_generate_test_dataset(): void
         $state['question_type_counts'] = $question_type_counts;
         $state['exam_question_counts'] = $exam_question_counts;
         $state['target_exam_source_question_ids'] = $target_exam_source_question_ids;
+        $state['subject_source_question_ids'] = $subject_source_question_ids;
         $state['sync_exam_offset'] = $sync_exam_offset;
         $state['sync_exam_synced_count'] = $sync_exam_synced_count;
         $state['synced_exam_question_counts'] = $synced_exam_question_counts;
@@ -1192,7 +1207,7 @@ public static function handle_generate_test_dataset(): void
             'small' => [
                 'label' => 'Small',
                 'subjects' => 5,
-                'exams' => 17,
+                'exams' => self::TEST_DATA_SEED_SHARED_EXAM_TOTAL,
                 'questions' => 200,
                 'students' => 60,
                 'teachers' => 6,
@@ -1203,7 +1218,7 @@ public static function handle_generate_test_dataset(): void
             'medium' => [
                 'label' => 'Medium',
                 'subjects' => 10,
-                'exams' => 30,
+                'exams' => self::TEST_DATA_SEED_SHARED_EXAM_TOTAL,
                 'questions' => 900,
                 'students' => 300,
                 'teachers' => 18,
@@ -1214,7 +1229,7 @@ public static function handle_generate_test_dataset(): void
             'large' => [
                 'label' => 'Large',
                 'subjects' => 20,
-                'exams' => 80,
+                'exams' => self::TEST_DATA_SEED_SHARED_EXAM_TOTAL,
                 'questions' => 3200,
                 'students' => 1200,
                 'teachers' => 48,
@@ -2993,16 +3008,12 @@ public static function handle_generate_test_dataset(): void
         $subject_image_bucket = sanitize_key((string) ($subject_entry['image_bucket'] ?? ''));
         $exam_number = $offset + 1;
 
-        $target_kelas = [];
-        $kelas_total = count($kelas_codes);
-        if ($kelas_total > 0) {
-            $span = min($kelas_total, (($offset % 3) + 1));
-            $start = $offset % $kelas_total;
-            for ($idx = 0; $idx < $span; $idx++) {
-                $target_kelas[] = (string) $kelas_codes[($start + $idx) % $kelas_total];
-            }
-            $target_kelas = array_values(array_unique($target_kelas));
-        }
+        $target_kelas = array_values(array_unique(array_filter(array_map(
+            static function ($kelas_code): string {
+                return sanitize_text_field((string) $kelas_code);
+            },
+            $kelas_codes
+        ))));
         $special_test_kelas = self::get_test_data_seed_special_student_kelas_code($kelas_codes);
         if ($special_test_kelas !== '') {
             array_unshift($target_kelas, $special_test_kelas);
@@ -3059,7 +3070,7 @@ public static function handle_generate_test_dataset(): void
                 $profile_suffix !== '' ? $profile_suffix : '[MIXED]'
             ),
             'description' => sprintf(
-                'Dataset uji otomatis preset %s untuk %s. Profil exam: %s. Target kelas: %s.',
+                'Dataset uji otomatis preset %s untuk %s. Profil exam: %s. Target kelas mencakup semua kelas test: %s.',
                 ucfirst($preset_key),
                 $subject_name,
                 $profile_label !== '' ? $profile_label : 'MIXED',
@@ -3447,6 +3458,8 @@ public static function handle_generate_test_dataset(): void
                 break;
         }
 
+        $row['subject_id'] = $subject_id;
+
         return self::decorate_test_data_seed_question_row_with_rich_content(
             $row,
             $question_number,
@@ -3761,6 +3774,70 @@ public static function handle_generate_test_dataset(): void
         }
 
         return max(0, $processed);
+    }
+
+    /**
+     * @param array<string,mixed> $exam_entry
+     * @param array<int|string,array<string,mixed>> $exams
+     * @param array<int|string,array<int,int|string>> $target_exam_source_question_ids
+     * @param array<int|string,array<int,int|string>> $subject_source_question_ids
+     * @return array<int,int>
+     */
+    private static function build_test_data_seed_sync_source_question_ids_for_exam(
+        array $exam_entry,
+        array $exams,
+        array $target_exam_source_question_ids,
+        array $subject_source_question_ids
+    ): array {
+        $target_exam_id = (int) ($exam_entry['id'] ?? 0);
+        $fallback_source_ids = array_values(array_unique(array_filter(array_map(
+            'absint',
+            (array) ($target_exam_source_question_ids[$target_exam_id] ?? [])
+        ))));
+        $subject_id = (int) ($exam_entry['subject_id'] ?? 0);
+        $subject_source_ids = $subject_id > 0
+            ? array_values(array_unique(array_filter(array_map(
+                'absint',
+                (array) ($subject_source_question_ids[$subject_id] ?? [])
+            ))))
+            : [];
+
+        if (empty($subject_source_ids)) {
+            return $fallback_source_ids;
+        }
+
+        $target_count = max(1, (int) ceil(count($subject_source_ids) / 2));
+        if (count($subject_source_ids) <= $target_count) {
+            return $subject_source_ids;
+        }
+
+        $same_subject_exam_ids = [];
+        foreach ($exams as $candidate_exam_entry) {
+            if (!is_array($candidate_exam_entry) || (int) ($candidate_exam_entry['subject_id'] ?? 0) !== $subject_id) {
+                continue;
+            }
+
+            $candidate_exam_id = (int) ($candidate_exam_entry['id'] ?? 0);
+            if ($candidate_exam_id > 0) {
+                $same_subject_exam_ids[] = $candidate_exam_id;
+            }
+        }
+
+        $subject_exam_index = array_search($target_exam_id, $same_subject_exam_ids, true);
+        if ($subject_exam_index === false) {
+            $subject_exam_index = 0;
+        }
+
+        $subject_exam_total = max(1, count($same_subject_exam_ids));
+        $subject_source_total = count($subject_source_ids);
+        $start_offset = (int) floor(($subject_exam_index * $subject_source_total) / $subject_exam_total);
+        $selected_source_ids = [];
+
+        for ($offset = 0; $offset < $target_count; $offset++) {
+            $selected_source_ids[] = (int) $subject_source_ids[($start_offset + $offset) % $subject_source_total];
+        }
+
+        return array_values(array_unique(array_filter($selected_source_ids)));
     }
 
     private static function normalize_maintenance_kkm_percentage(float $value): float
