@@ -82,6 +82,21 @@ final class StudentProfileSnapshotTest extends TestCase
         self::assertSame('', $this->readStoredSnapshotPayload(11));
     }
 
+    public function test_warm_clear_and_diagnostics_manage_profile_snapshot_operationally(): void
+    {
+        CBT_Student_Profile_Cache::warm_snapshot(11);
+
+        $diagnostics = CBT_Student_Profile_Cache::get_snapshot_diagnostics(11);
+
+        self::assertTrue($diagnostics['snapshot_exists']);
+        self::assertTrue($diagnostics['snapshot_valid']);
+        self::assertSame('ready', $diagnostics['snapshot_status']);
+        self::assertSame('XI-A', $diagnostics['preview']['kode_kelas']);
+        self::assertSame('20260011', $diagnostics['preview']['nisn']);
+        self::assertGreaterThan(0, CBT_Student_Profile_Cache::clear_snapshot(11));
+        self::assertSame('miss', CBT_Student_Profile_Cache::get_snapshot_diagnostics(11)['snapshot_status']);
+    }
+
     private function useFakeRedisClient(): void
     {
         $reflection = new ReflectionClass(CBT_Student_Profile_Cache::class);

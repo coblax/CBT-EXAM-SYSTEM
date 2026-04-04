@@ -440,6 +440,22 @@ class CBT_REST
         );
     }
 
+    /**
+     * @return array{items:array<int,array<string,mixed>>,current_user:array<string,mixed>|null}
+     */
+    public static function build_student_exam_availability_snapshot_payload(int $user_id): array
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return [
+                'items' => [],
+                'current_user' => null,
+            ];
+        }
+
+        return self::build_exams_payload($user_id, 'student');
+    }
+
     private static function is_student_role(string $role): bool
     {
         return in_array(strtolower(trim($role)), ['siswa', 'student'], true);

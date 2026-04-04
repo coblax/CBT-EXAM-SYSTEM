@@ -5,9 +5,17 @@ const { execFileSync } = require('child_process');
 const { expect } = require('@playwright/test');
 
 async function loginToWpAdmin(page, adminUser) {
+    if (adminUser && typeof adminUser === 'object') {
+        page.__cbtAdminUser = {
+            username: String(adminUser.username || ''),
+            password: String(adminUser.password || ''),
+        };
+    }
+
     await page.goto('/wp-admin/');
     if (await page.locator('#wpadminbar').count()) {
         await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 20000 });
+        await page.waitForLoadState('networkidle').catch(() => {});
         return;
     }
 
@@ -17,6 +25,7 @@ async function loginToWpAdmin(page, adminUser) {
 
     if (await page.locator('#wpadminbar').count()) {
         await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 20000 });
+        await page.waitForLoadState('networkidle').catch(() => {});
         return;
     }
 
@@ -24,15 +33,35 @@ async function loginToWpAdmin(page, adminUser) {
     await page.locator('#user_login').fill(String(adminUser.username || ''));
     await page.locator('#user_pass').fill(String(adminUser.password || ''));
     await page.locator('#wp-submit').click();
+    await page.waitForURL((url) => !String(url || '').includes('/wp-login.php'), { timeout: 20000 }).catch(() => {});
     await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 20000 });
+    await page.waitForLoadState('networkidle').catch(() => {});
 }
 
 async function openResultsPage(page, examId) {
     const nextUrl = examId && Number(examId) > 0
         ? `/wp-admin/admin.php?page=cbt-results&cbt_exam_id=${Number(examId)}`
         : '/wp-admin/admin.php?page=cbt-results';
-    await page.goto(nextUrl);
-    await expect(page.locator('#cbt-results-attempts-card')).toBeVisible({ timeout: 20000 });
+    const resultsShell = page.locator('.cbt-results-page, #cbt-results-filter-card, #cbt-results-tab-btn-monitoring').first();
+
+    await page.goto(nextUrl, { waitUntil: 'domcontentloaded' });
+
+    try {
+        await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 10000 });
+        await expect(resultsShell).toBeVisible({ timeout: 10000 });
+    } catch (error) {
+        const rememberedAdminUser = page.__cbtAdminUser && typeof page.__cbtAdminUser === 'object'
+            ? page.__cbtAdminUser
+            : null;
+        if (rememberedAdminUser && rememberedAdminUser.username && rememberedAdminUser.password) {
+            await loginToWpAdmin(page, rememberedAdminUser);
+        }
+        await page.goto(nextUrl, { waitUntil: 'networkidle' }).catch(async () => {
+            await page.reload({ waitUntil: 'networkidle' });
+        });
+        await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 20000 });
+        await expect(resultsShell).toBeVisible({ timeout: 20000 });
+    }
 }
 
 async function openResultsEssayTab(page, examId) {

@@ -10,6 +10,7 @@ if (!class_exists('CBT_Cache')) {
 
 class CBT_Exam_Availability_Cache
 {
+    private const DIAGNOSTIC_PREVIEW_DEFAULT_ITEMS = 3;
     private const SNAPSHOT_REDIS_TTL_SECONDS = 44100;
     private const SNAPSHOT_REDIS_DEFAULT_HOST = '127.0.0.1';
     private const SNAPSHOT_REDIS_DEFAULT_PORT = 6379;
@@ -53,6 +54,163 @@ class CBT_Exam_Availability_Cache
         }
 
         return $snapshot;
+    }
+
+    /**
+     * @param callable():array<string,mixed> $producer
+     * @return array{items:array<int,array<string,mixed>>,current_user:array<string,mixed>|null}
+     */
+    public static function warm_student_snapshot(int $user_id, callable $producer): array
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return self::empty_payload();
+        }
+
+        $payload = $producer();
+        $snapshot = self::sanitize_payload(is_array($payload) ? $payload : []);
+        $redis = self::snapshot_redis();
+        if ($redis instanceof Redis) {
+            self::write_student_redis_snapshot($user_id, $snapshot);
+        }
+
+        return $snapshot;
+    }
+
+    public static function clear_student_snapshot(int $user_id): int
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return 0;
+        }
+
+        $redis = self::snapshot_redis();
+        if (!$redis instanceof Redis) {
+            return 0;
+        }
+
+        $keys = self::collect_student_storage_keys($redis, $user_id);
+        if (empty($keys)) {
+            return 0;
+        }
+
+        return (int) $redis->del(...$keys);
+    }
+
+    /**
+     * @return array{
+     *   user_id:int,
+     *   redis_available:bool,
+     *   redis_error:string,
+     *   redis_host:string,
+     *   redis_database:int,
+     *   storage_key:string,
+     *   snapshot_exists:bool,
+     *   snapshot_valid:bool,
+     *   snapshot_status:string,
+     *   snapshot_message:string,
+     *   item_count:int,
+     *   payload_bytes:int,
+     *   ttl_seconds:int,
+     *   current_user_preview:array<string,mixed>|null,
+     *   preview_items:array<int,array{id:int,title:string,availability_reason:string,is_available_now:int}>
+     * }
+     */
+    public static function get_student_snapshot_diagnostics(int $user_id): array
+    {
+        $user_id = absint($user_id);
+        $settings = self::snapshot_redis_settings();
+        $storage_key = $user_id > 0 ? self::snapshot_storage_key($user_id) : '';
+        $redis = self::snapshot_redis();
+
+        if ($user_id <= 0) {
+            return [
+                'user_id' => 0,
+                'redis_available' => $redis instanceof Redis,
+                'redis_error' => self::$snapshot_redis_last_connection_error,
+                'redis_host' => (string) ($settings['host'] ?? self::SNAPSHOT_REDIS_DEFAULT_HOST),
+                'redis_database' => (int) ($settings['database'] ?? self::SNAPSHOT_REDIS_DEFAULT_DATABASE),
+                'storage_key' => '',
+                'snapshot_exists' => false,
+                'snapshot_valid' => false,
+                'snapshot_status' => 'idle',
+                'snapshot_message' => 'User siswa belum dipilih.',
+                'item_count' => 0,
+                'payload_bytes' => 0,
+                'ttl_seconds' => -2,
+                'current_user_preview' => null,
+                'preview_items' => [],
+            ];
+        }
+
+        if (!$redis instanceof Redis) {
+            return [
+                'user_id' => $user_id,
+                'redis_available' => false,
+                'redis_error' => self::$snapshot_redis_last_connection_error,
+                'redis_host' => (string) ($settings['host'] ?? self::SNAPSHOT_REDIS_DEFAULT_HOST),
+                'redis_database' => (int) ($settings['database'] ?? self::SNAPSHOT_REDIS_DEFAULT_DATABASE),
+                'storage_key' => $storage_key,
+                'snapshot_exists' => false,
+                'snapshot_valid' => false,
+                'snapshot_status' => 'unavailable',
+                'snapshot_message' => 'Redis exam availability tidak tersedia.',
+                'item_count' => 0,
+                'payload_bytes' => 0,
+                'ttl_seconds' => -2,
+                'current_user_preview' => null,
+                'preview_items' => [],
+            ];
+        }
+
+        $raw_snapshot = $storage_key !== '' ? $redis->get($storage_key) : false;
+        $snapshot_exists = is_string($raw_snapshot) && trim($raw_snapshot) !== '';
+        $snapshot_valid = false;
+        $payload_bytes = $snapshot_exists ? strlen((string) $raw_snapshot) : 0;
+        $ttl_seconds = ($snapshot_exists && method_exists($redis, 'ttl')) ? (int) $redis->ttl($storage_key) : -2;
+        $item_count = 0;
+        $current_user_preview = null;
+        $preview_items = [];
+
+        if ($snapshot_exists) {
+            $decoded = json_decode((string) $raw_snapshot, true);
+            if (is_array($decoded)) {
+                $snapshot = self::sanitize_payload($decoded);
+                $snapshot_valid = true;
+                $item_count = count($snapshot['items']);
+                $current_user_preview = self::build_current_user_preview($snapshot['current_user']);
+                $preview_items = self::build_preview_items($snapshot['items']);
+            }
+        }
+
+        if ($snapshot_valid) {
+            $snapshot_status = 'ready';
+            $snapshot_message = 'Snapshot ketersediaan exam siap dipakai untuk student GET /exams.';
+        } elseif ($snapshot_exists) {
+            $snapshot_status = 'invalid';
+            $snapshot_message = 'Snapshot ditemukan tetapi payload-nya tidak valid dan akan diabaikan.';
+        } else {
+            $snapshot_status = 'miss';
+            $snapshot_message = 'Snapshot belum ada. Request student berikutnya akan hydrate dan menulis ke Redis.';
+        }
+
+        return [
+            'user_id' => $user_id,
+            'redis_available' => true,
+            'redis_error' => self::$snapshot_redis_last_connection_error,
+            'redis_host' => (string) ($settings['host'] ?? self::SNAPSHOT_REDIS_DEFAULT_HOST),
+            'redis_database' => (int) ($settings['database'] ?? self::SNAPSHOT_REDIS_DEFAULT_DATABASE),
+            'storage_key' => $storage_key,
+            'snapshot_exists' => $snapshot_exists,
+            'snapshot_valid' => $snapshot_valid,
+            'snapshot_status' => $snapshot_status,
+            'snapshot_message' => $snapshot_message,
+            'item_count' => $item_count,
+            'payload_bytes' => $payload_bytes,
+            'ttl_seconds' => $ttl_seconds,
+            'current_user_preview' => $current_user_preview,
+            'preview_items' => $preview_items,
+        ];
     }
 
     /**
@@ -110,6 +268,53 @@ class CBT_Exam_Availability_Cache
         }
 
         $redis->setEx(self::snapshot_storage_key($user_id), self::SNAPSHOT_REDIS_TTL_SECONDS, $encoded);
+    }
+
+    /**
+     * @param array<string,mixed>|null $current_user
+     * @return array<string,mixed>|null
+     */
+    private static function build_current_user_preview(?array $current_user): ?array
+    {
+        if (!is_array($current_user) || empty($current_user)) {
+            return null;
+        }
+
+        return [
+            'user_id' => absint($current_user['user_id'] ?? 0),
+            'display_name' => sanitize_text_field((string) ($current_user['display_name'] ?? '')),
+            'username' => sanitize_text_field((string) ($current_user['username'] ?? '')),
+            'kode_kelas' => sanitize_text_field((string) ($current_user['kode_kelas'] ?? '')),
+            'kode_ruang' => sanitize_text_field((string) ($current_user['kode_ruang'] ?? '')),
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $items
+     * @return array<int,array{id:int,title:string,availability_reason:string,is_available_now:int}>
+     */
+    private static function build_preview_items(array $items): array
+    {
+        $preview_items = [];
+        foreach (array_slice($items, 0, self::DIAGNOSTIC_PREVIEW_DEFAULT_ITEMS) as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $exam_id = absint($item['id'] ?? 0);
+            if ($exam_id <= 0) {
+                continue;
+            }
+
+            $preview_items[] = [
+                'id' => $exam_id,
+                'title' => sanitize_text_field((string) ($item['title'] ?? ('Exam #' . $exam_id))),
+                'availability_reason' => sanitize_key((string) ($item['availability_reason'] ?? '')),
+                'is_available_now' => ((int) ($item['is_available_now'] ?? 0) === 1) ? 1 : 0,
+            ];
+        }
+
+        return $preview_items;
     }
 
     /**
@@ -261,6 +466,53 @@ class CBT_Exam_Availability_Cache
             . ':catalog_v:' . $catalog_version
             . ':user_v:' . $user_version
             . ':minute:' . $minute_bucket;
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private static function collect_student_storage_keys(Redis $redis, int $user_id): array
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return [];
+        }
+
+        $pattern = self::SNAPSHOT_REDIS_PREFIX . 'student:user:' . $user_id . ':';
+        $keys = [];
+
+        if (method_exists($redis, 'scan')) {
+            try {
+                $iterator = null;
+                do {
+                    $batch = $redis->scan($iterator, $pattern . '*', 100);
+                    if (is_array($batch)) {
+                        foreach ($batch as $key) {
+                            if (is_string($key) && $key !== '') {
+                                $keys[$key] = $key;
+                            }
+                        }
+                    }
+                } while ($iterator !== 0 && $iterator !== null);
+            } catch (Throwable $throwable) {
+                $keys = [];
+            }
+        }
+
+        if (empty($keys) && isset($GLOBALS['cbt_test_redis_storage']) && is_array($GLOBALS['cbt_test_redis_storage'])) {
+            foreach (array_keys($GLOBALS['cbt_test_redis_storage']) as $key) {
+                if (is_string($key) && strpos($key, $pattern) === 0) {
+                    $keys[$key] = $key;
+                }
+            }
+        }
+
+        if (empty($keys)) {
+            $storage_key = self::snapshot_storage_key($user_id);
+            $keys[$storage_key] = $storage_key;
+        }
+
+        return array_values($keys);
     }
 
     private static function current_minute_bucket(): int

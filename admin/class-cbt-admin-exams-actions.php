@@ -36,6 +36,46 @@ final class CBT_Admin_Exams_Actions
         CBT_Admin_Exams_Service::handle_clear_bulk_exam_delivery_snapshots();
     }
 
+    public static function handle_warm_student_exam_availability_snapshot(): void
+    {
+        CBT_Admin_Exams_Service::handle_warm_student_exam_availability_snapshot();
+    }
+
+    public static function handle_clear_student_exam_availability_snapshot(): void
+    {
+        CBT_Admin_Exams_Service::handle_clear_student_exam_availability_snapshot();
+    }
+
+    public static function handle_warm_bulk_student_exam_availability_snapshots(): void
+    {
+        CBT_Admin_Exams_Service::handle_warm_bulk_student_exam_availability_snapshots();
+    }
+
+    public static function handle_clear_bulk_student_exam_availability_snapshots(): void
+    {
+        CBT_Admin_Exams_Service::handle_clear_bulk_student_exam_availability_snapshots();
+    }
+
+    public static function handle_warm_student_profile_snapshot(): void
+    {
+        CBT_Admin_Exams_Service::handle_warm_student_profile_snapshot();
+    }
+
+    public static function handle_clear_student_profile_snapshot(): void
+    {
+        CBT_Admin_Exams_Service::handle_clear_student_profile_snapshot();
+    }
+
+    public static function handle_warm_bulk_student_profile_snapshots(): void
+    {
+        CBT_Admin_Exams_Service::handle_warm_bulk_student_profile_snapshots();
+    }
+
+    public static function handle_clear_bulk_student_profile_snapshots(): void
+    {
+        CBT_Admin_Exams_Service::handle_clear_bulk_student_profile_snapshots();
+    }
+
     public static function handle_sync_exam_builder_selection(): void
     {
         CBT_Admin_Exams_Service::handle_sync_exam_builder_selection();

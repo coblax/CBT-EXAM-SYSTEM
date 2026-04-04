@@ -31,6 +31,14 @@ class CBT_Admin
         add_action('admin_post_cbt_warm_bulk_exam_delivery_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_exam_delivery_snapshots']);
         add_action('admin_post_cbt_clear_exam_delivery_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_exam_delivery_snapshot']);
         add_action('admin_post_cbt_clear_bulk_exam_delivery_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clear_bulk_exam_delivery_snapshots']);
+        add_action('admin_post_cbt_warm_student_exam_availability_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_warm_student_exam_availability_snapshot']);
+        add_action('admin_post_cbt_clear_student_exam_availability_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_student_exam_availability_snapshot']);
+        add_action('admin_post_cbt_warm_bulk_student_exam_availability_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_student_exam_availability_snapshots']);
+        add_action('admin_post_cbt_clear_bulk_student_exam_availability_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clear_bulk_student_exam_availability_snapshots']);
+        add_action('admin_post_cbt_warm_student_profile_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_warm_student_profile_snapshot']);
+        add_action('admin_post_cbt_clear_student_profile_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_student_profile_snapshot']);
+        add_action('admin_post_cbt_warm_bulk_student_profile_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_student_profile_snapshots']);
+        add_action('admin_post_cbt_clear_bulk_student_profile_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clear_bulk_student_profile_snapshots']);
         add_action('admin_post_cbt_save_global_exam_token', [CBT_Admin_Tokens_Actions::class, 'handle_save_global_exam_token']);
         add_action('admin_post_cbt_save_setup_branding', [CBT_Admin_Setup_Actions::class, 'handle_save_setup_branding']);
         add_action('admin_post_cbt_save_setup_security', [CBT_Admin_Security_Actions::class, 'handle_save_setup_security']);

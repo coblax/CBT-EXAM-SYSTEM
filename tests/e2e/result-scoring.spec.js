@@ -115,7 +115,7 @@ test.describe('Result & Scoring flow check', () => {
             await expect(page.locator('.cbt-result-wrap')).toContainText(/Menunggu Koreksi/i, { timeout: 20000 });
         });
 
-        const adminContext = await browser.newContext();
+        const adminContext = await browser.newContext(baseURL ? { baseURL } : undefined);
         const adminPage = await adminContext.newPage();
         try {
             await test.step('Admin memberi score essay dari panel hasil', async () => {
@@ -183,7 +183,7 @@ test.describe('Result & Scoring flow check', () => {
             }
         });
 
-        const adminContext = await browser.newContext();
+        const adminContext = await browser.newContext(baseURL ? { baseURL } : undefined);
         const adminPage = await adminContext.newPage();
         try {
             await test.step('Admin melihat monitoring live compact di kolom Student pada Results', async () => {

@@ -6,6 +6,7 @@ namespace CbtExamSystem\Tests\Unit;
 
 use CbtExamSystem\Tests\TestCase;
 
+require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-exams-service.php';
 require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-exams-page.php';
 
 final class AdminExamsSnapshotRenderTest extends TestCase
@@ -33,6 +34,7 @@ final class AdminExamsSnapshotRenderTest extends TestCase
             'exam_active_filters' => [
                 ['label' => 'Status', 'value' => 'Published'],
             ],
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_STUDENTS,
             'exam_snapshot_filter_state' => [
                 'exam_id' => 77,
             ],
@@ -45,6 +47,58 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                 77 => 2,
             ],
             'exam_snapshot_reset_url' => 'http://example.com/wp-admin/admin.php?page=cbt-exams&cbt_exam_panel=snapshot',
+            'student_snapshot_filter_state' => [
+                'search' => 'salsa',
+                'paged' => 2,
+                'per_page' => 25,
+            ],
+            'student_snapshot_total' => 2,
+            'student_snapshot_total_pages' => 2,
+            'student_snapshot_current_page' => 2,
+            'student_snapshot_per_page' => 25,
+            'student_snapshot_active_filters' => [
+                ['label' => 'Cari Siswa', 'value' => 'salsa'],
+            ],
+            'student_snapshot_reset_url' => 'http://example.com/wp-admin/admin.php?page=cbt-exams&cbt_exam_panel=snapshot',
+            'student_snapshot_rows' => [
+                [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'user_login' => 'salsa',
+                    'user_email' => 'salsa@example.com',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                    'availability_status_label' => 'READY',
+                    'availability_status_tone' => 'success',
+                    'availability' => [
+                        'item_count' => 2,
+                        'ttl_seconds' => 44100,
+                        'payload_bytes' => 1536,
+                        'storage_key' => 'cbt_exam_availability:student:user:71',
+                        'snapshot_message' => 'Snapshot ketersediaan exam siap dipakai untuk student GET /exams.',
+                        'current_user_preview' => [
+                            'display_name' => 'Salsa',
+                        ],
+                        'preview_items' => [
+                            ['id' => 77, 'title' => 'Ujian Matematika'],
+                            ['id' => 54, 'title' => 'Ujian Biologi'],
+                        ],
+                    ],
+                    'profile_status_label' => 'READY',
+                    'profile_status_tone' => 'success',
+                    'profile' => [
+                        'ttl_seconds' => 44100,
+                        'payload_bytes' => 512,
+                        'storage_key' => 'cbt_profile:user:71',
+                        'snapshot_message' => 'Snapshot profil siswa siap dipakai untuk live payload.',
+                        'preview' => [
+                            'agama' => 'Islam',
+                            'jenis_kelamin' => 'Perempuan',
+                            'nisn' => '20260071',
+                        ],
+                    ],
+                ],
+            ],
             'exam_snapshot_rows' => [
                 [
                     'exam_id' => 77,
@@ -84,6 +138,9 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         ]);
 
         self::assertStringContainsString('Snapshot Soal', $html);
+        self::assertStringContainsString('cbt-exam-snapshot-subtabs', $html);
+        self::assertStringContainsString('cbt_exam_snapshot_tab', $html);
+        self::assertStringContainsString('cbt-exam-snapshot-subtab is-active', $html);
         self::assertStringContainsString('Siapkan Semua Snapshot', $html);
         self::assertStringContainsString('Bersihkan Semua Snapshot', $html);
         self::assertStringContainsString('name="cbt_exam_snapshot_exam_id"', $html);
@@ -108,6 +165,78 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Soal preview pertama', $html);
         self::assertStringContainsString('Siapkan Snapshot Soal', $html);
         self::assertStringContainsString('Bersihkan Snapshot Soal', $html);
+        self::assertStringContainsString('Snapshot Siswa', $html);
+        self::assertStringContainsString('cbt_exam_snapshot_tab" value="students"', $html);
+        self::assertStringContainsString('Cari Siswa', $html);
+        self::assertStringContainsString('Snapshot Ketersediaan', $html);
+        self::assertStringContainsString('Snapshot Profil', $html);
+        self::assertStringContainsString('Salsa', $html);
+        self::assertStringContainsString('Ujian Biologi', $html);
+        self::assertStringContainsString('Siapkan Availability', $html);
+        self::assertStringContainsString('Bersihkan Availability', $html);
+        self::assertStringContainsString('Siapkan Profil', $html);
+        self::assertStringContainsString('Bersihkan Profil', $html);
+        self::assertStringContainsString('Siapkan Semua Availability', $html);
+        self::assertStringContainsString('Bersihkan Semua Availability', $html);
+        self::assertStringContainsString('Siapkan Semua Profil', $html);
+        self::assertStringContainsString('Bersihkan Semua Profil', $html);
+        self::assertStringContainsString('name="cbt_student_snapshot_q"', $html);
+        self::assertStringContainsString('value="salsa"', $html);
+        self::assertStringContainsString('name="cbt_student_snapshot_paged" value="2"', $html);
+        self::assertStringContainsString('name="cbt_exam_snapshot_exam_id" value="77"', $html);
+        self::assertStringContainsString('name="cbt_exam_snapshot_page_77" value="2"', $html);
+        self::assertStringContainsString('Halaman 2 dari 2 · 2 siswa', $html);
+    }
+
+    public function test_render_snapshot_panel_shows_lightweight_empty_state_before_exam_is_selected(): void
+    {
+        $html = $this->renderSnapshotPanel([
+            'subjects' => [
+                ['id' => 3, 'name' => 'Matematika', 'code' => 'MAT'],
+            ],
+            'exam_status_labels' => [
+                'published' => 'Published',
+            ],
+            'exam_list_state' => [
+                'per_page' => 20,
+                'paged' => 1,
+                'search' => '',
+                'status' => '',
+                'subject_id' => 0,
+                'kelas' => '',
+            ],
+            'exam_list_kelas_options' => [],
+            'exam_per_page' => 20,
+            'exam_active_filters' => [],
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_QUESTIONS,
+            'exam_snapshot_filter_state' => [
+                'exam_id' => 0,
+            ],
+            'exam_snapshot_exam_options' => [
+                ['id' => 77, 'title' => 'Ujian Matematika'],
+            ],
+            'exam_snapshot_total' => 0,
+            'exam_snapshot_preview_pages' => [],
+            'exam_snapshot_reset_url' => 'http://example.com/wp-admin/admin.php?page=cbt-exams&cbt_exam_panel=snapshot',
+            'student_snapshot_filter_state' => [
+                'search' => '',
+                'paged' => 1,
+                'per_page' => 25,
+            ],
+            'student_snapshot_total' => 0,
+            'student_snapshot_total_pages' => 1,
+            'student_snapshot_current_page' => 1,
+            'student_snapshot_per_page' => 25,
+            'student_snapshot_active_filters' => [],
+            'student_snapshot_reset_url' => 'http://example.com/wp-admin/admin.php?page=cbt-exams&cbt_exam_panel=snapshot',
+            'student_snapshot_rows' => [],
+            'exam_snapshot_rows' => [],
+        ]);
+
+        self::assertStringContainsString('Pilih exam dulu', $html);
+        self::assertStringContainsString('Panel snapshot soal baru memuat detail setelah Anda memilih satu exam dari dropdown.', $html);
+        self::assertStringContainsString('Pilih satu exam pada dropdown di atas untuk memeriksa snapshot soal.', $html);
+        self::assertStringContainsString('disabled="disabled"', $html);
     }
 
     /**

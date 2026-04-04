@@ -752,20 +752,6 @@
     font-weight: 700;
 }
 
-.cbt-short-grid {
-    margin-top: 16px;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-}
-
-.cbt-short-item label {
-    display: block;
-    margin-bottom: 6px;
-    font-size: 12px;
-    font-weight: 700;
-}
-
 .cbt-question-actions {
     display: flex;
     justify-content: space-between;
@@ -868,13 +854,6 @@
     align-items: center;
 }
 
-.cbt-side-action-icon {
-    width: 38px;
-    min-width: 38px;
-    height: 38px;
-    border-radius: 10px;
-}
-
 .cbt-visually-hidden {
     position: absolute;
     width: 1px;
@@ -961,22 +940,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.cbt-archived-review-summary-helper {
-    display: block;
-    font-size: 12px;
-    line-height: 1.55;
-    font-weight: 500;
-    color: #7c6243;
-    max-width: 760px;
-}
-
-.cbt-archived-review-summary-side {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    flex: 0 0 auto;
 }
 
 .cbt-archived-review-count {
@@ -1261,129 +1224,6 @@
     color: #1f2937;
 }
 
-.cbt-archived-review-item {
-    border: 1px solid #e7d6bf;
-    border-radius: 18px;
-    background: linear-gradient(180deg, #ffffff, #fff9f1);
-    box-shadow: 0 12px 24px rgba(148, 97, 22, 0.08);
-    overflow: hidden;
-}
-
-.cbt-archived-review-item > summary {
-    list-style: none;
-}
-
-.cbt-archived-review-item > summary::-webkit-details-marker {
-    display: none;
-}
-
-.cbt-archived-review-item-summary {
-    cursor: pointer;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 14px;
-    padding: 14px 16px;
-}
-
-.cbt-archived-review-item-main {
-    min-width: 0;
-    flex: 1 1 auto;
-    display: grid;
-    gap: 8px;
-}
-
-.cbt-archived-review-item-kicker {
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #b4690e;
-}
-
-.cbt-archived-review-item-title-row {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.cbt-archived-review-item-type {
-    font-size: 15px;
-    line-height: 1.2;
-    color: #111827;
-}
-
-.cbt-archived-review-item-score {
-    display: inline-flex;
-    align-items: center;
-    min-height: 28px;
-    padding: 0 10px;
-    border-radius: 999px;
-    border: 1px solid #d8e3ef;
-    background: #f7fbff;
-    color: #38506c;
-    font-size: 11px;
-    font-weight: 700;
-    white-space: nowrap;
-}
-
-.cbt-archived-review-item-preview {
-    margin: 0;
-    font-size: 13px;
-    line-height: 1.6;
-    color: #6b7280;
-}
-
-.cbt-archived-review-item-side {
-    flex: 0 0 auto;
-    display: grid;
-    justify-items: end;
-    gap: 8px;
-}
-
-.cbt-archived-review-item-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 28px;
-    padding: 0 10px;
-    border-radius: 999px;
-    border: 1px solid #d9e3ee;
-    background: rgba(255, 255, 255, 0.96);
-    color: #52657c;
-    font-size: 11px;
-    font-weight: 700;
-    white-space: nowrap;
-}
-
-.cbt-archived-review-item[open] .cbt-archived-review-item-toggle {
-    border-color: #f0c57d;
-    background: #fff8ea;
-    color: #a76507;
-}
-
-.cbt-archived-review-item-body {
-    padding: 0 16px 16px;
-    border-top: 1px solid #efe0ce;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 249, 241, 0.92));
-}
-
-.cbt-archived-review-item-note {
-    margin: 12px 0 0;
-    padding: 10px 12px;
-    border-radius: 12px;
-    border: 1px solid #f1dfc8;
-    background: rgba(255, 255, 255, 0.96);
-    color: #6b7280;
-    font-size: 12px;
-    line-height: 1.5;
-}
-
-.cbt-archived-review-item-body .cbt-review-question {
-    margin-top: 12px;
-}
-
 .cbt-archived-review-section[open] {
     position: fixed;
     top: 104px;
@@ -1467,8 +1307,7 @@
         padding: 14px 14px 10px;
     }
 
-    .cbt-archived-review-summary-row,
-    .cbt-archived-review-item-summary {
+    .cbt-archived-review-summary-row {
         flex-direction: column;
         align-items: stretch;
     }
@@ -1479,13 +1318,8 @@
         align-items: center;
     }
 
-    .cbt-archived-review-item-side {
-        justify-items: start;
-    }
-
     .cbt-archived-review-count,
-    .cbt-archived-review-close,
-    .cbt-archived-review-item-toggle {
+    .cbt-archived-review-close {
         min-height: 30px;
     }
 

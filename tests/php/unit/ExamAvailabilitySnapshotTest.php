@@ -82,6 +82,40 @@ final class ExamAvailabilitySnapshotTest extends TestCase
         self::assertSame(3, $calls);
     }
 
+    public function test_warm_clear_and_diagnostics_manage_student_snapshot_operationally(): void
+    {
+        CBT_Exam_Availability_Cache::warm_student_snapshot(21, static function (): array {
+            return [
+                'items' => [
+                    [
+                        'id' => 15,
+                        'title' => 'Matematika',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
+                ],
+                'current_user' => [
+                    'user_id' => 21,
+                    'display_name' => 'Salsa',
+                    'username' => 'salsa',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+
+        $diagnostics = CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(21);
+
+        self::assertTrue($diagnostics['snapshot_exists']);
+        self::assertTrue($diagnostics['snapshot_valid']);
+        self::assertSame('ready', $diagnostics['snapshot_status']);
+        self::assertSame(1, $diagnostics['item_count']);
+        self::assertSame('Salsa', $diagnostics['current_user_preview']['display_name']);
+        self::assertSame('Matematika', $diagnostics['preview_items'][0]['title']);
+        self::assertGreaterThan(0, CBT_Exam_Availability_Cache::clear_student_snapshot(21));
+        self::assertSame('miss', CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(21)['snapshot_status']);
+    }
+
     private function useFakeRedisClient(): void
     {
         $reflection = new ReflectionClass(CBT_Exam_Availability_Cache::class);

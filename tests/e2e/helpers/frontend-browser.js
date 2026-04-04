@@ -156,13 +156,41 @@ async function getCheckedSingleChoiceOptionId(page) {
     return Number(optionId) || 0;
 }
 
+async function setChoiceChecked(input, checked) {
+    const desired = checked !== false;
+    await expect(input).toBeVisible({ timeout: 20000 });
+
+    const currentChecked = await input.isChecked().catch(() => false);
+    if (currentChecked === desired) {
+        return;
+    }
+
+    try {
+        await input.setChecked(desired, { force: true, timeout: 5000 });
+    } catch (error) {
+        const label = input.locator('xpath=ancestor::label[1]').first();
+        if (await label.count()) {
+            await label.scrollIntoViewIfNeeded().catch(() => {});
+            await label.click({ force: true });
+        } else {
+            throw error;
+        }
+    }
+
+    if (desired) {
+        await expect(input).toBeChecked({ timeout: 20000 });
+    } else {
+        await expect(input).not.toBeChecked({ timeout: 20000 });
+    }
+}
+
 async function answerCurrentSingleChoice(page, optionIndex = 0) {
     const options = page.locator('[data-action="answer-single"]');
     const targetIndex = Number.isFinite(optionIndex) ? Number(optionIndex) : 0;
     const target = options.nth(targetIndex);
     await expect(target).toBeVisible({ timeout: 20000 });
     const optionId = await target.getAttribute('data-option-id');
-    await target.check();
+    await setChoiceChecked(target, true);
     await waitForAnswerSync(page, 3600);
     return Number(optionId) || 0;
 }
@@ -174,7 +202,7 @@ async function answerCurrentMultipleChoice(page, optionIndexes = [0, 1]) {
         const option = page.locator('[data-action="answer-multi"]').nth(index);
         await expect(option).toBeVisible({ timeout: 20000 });
         const optionId = await option.getAttribute('data-option-id');
-        await option.check();
+        await setChoiceChecked(option, true);
         selectedOptionIds.push(Number(optionId) || 0);
     }
     await waitForAnswerSync(page, 3600);

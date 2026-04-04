@@ -24,35 +24,35 @@
     "file": "assets/frontend-shared-review-Ckk9yafR.js",
     "name": "frontend-shared-review"
   },
-  "_frontend-stage-exam-B1ZcFZVF.css": {
-    "file": "assets/frontend-stage-exam-B1ZcFZVF.css",
-    "src": "_frontend-stage-exam-B1ZcFZVF.css"
-  },
-  "_frontend-stage-exam-DiF7yzds.js": {
-    "file": "assets/frontend-stage-exam-DiF7yzds.js",
+  "_frontend-stage-exam-BCdM2flb.js": {
+    "file": "assets/frontend-stage-exam-BCdM2flb.js",
     "name": "frontend-stage-exam",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
       "_frontend-shared-review-Ckk9yafR.js"
     ],
     "css": [
-      "assets/frontend-stage-exam-B1ZcFZVF.css"
+      "assets/frontend-stage-exam-CE47zyMI.css"
     ]
   },
-  "_frontend-stage-result-D-kLR0-G.js": {
-    "file": "assets/frontend-stage-result-D-kLR0-G.js",
+  "_frontend-stage-exam-CE47zyMI.css": {
+    "file": "assets/frontend-stage-exam-CE47zyMI.css",
+    "src": "_frontend-stage-exam-CE47zyMI.css"
+  },
+  "_frontend-stage-result-CXtg3x37.js": {
+    "file": "assets/frontend-stage-result-CXtg3x37.js",
     "name": "frontend-stage-result",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
       "_frontend-shared-review-Ckk9yafR.js"
     ],
     "css": [
-      "assets/frontend-stage-result-tq0Mx534.css"
+      "assets/frontend-stage-result-DA1JA-0T.css"
     ]
   },
-  "_frontend-stage-result-tq0Mx534.css": {
-    "file": "assets/frontend-stage-result-tq0Mx534.css",
-    "src": "_frontend-stage-result-tq0Mx534.css"
+  "_frontend-stage-result-DA1JA-0T.css": {
+    "file": "assets/frontend-stage-result-DA1JA-0T.css",
+    "src": "_frontend-stage-result-DA1JA-0T.css"
   },
   "_math-render-DvP1Qxaf.css": {
     "file": "assets/math-render-DvP1Qxaf.css",
@@ -416,20 +416,20 @@
     "isDynamicEntry": true
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-C9P2WybR.js",
+    "file": "assets/frontend-core-DIfkcqJ9.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
     "dynamicImports": [
       "_frontend-exam-runtime-DZKpbAv4.js",
       "_math-render-z4EJh76n.js",
-      "_frontend-stage-exam-DiF7yzds.js",
-      "_frontend-stage-result-D-kLR0-G.js",
+      "_frontend-stage-exam-BCdM2flb.js",
+      "_frontend-stage-result-CXtg3x37.js",
       "_frontend-feature-calculator-CuFD8t3I.js",
       "src/frontend/app/core/debug-panel.js"
     ],
     "css": [
-      "assets/frontend-PlVm-bIw.css"
+      "assets/frontend-CMy3mZFH.css"
     ],
     "assets": [
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",

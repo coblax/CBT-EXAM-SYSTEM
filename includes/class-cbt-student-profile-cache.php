@@ -63,6 +63,143 @@ class CBT_Student_Profile_Cache
         return $snapshot;
     }
 
+    /**
+     * @return array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string}
+     */
+    public static function warm_snapshot(int $user_id): array
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return self::empty_snapshot();
+        }
+
+        $snapshot = self::build_snapshot_from_usermeta($user_id);
+        $redis = self::profile_redis();
+        if ($redis instanceof Redis) {
+            self::write_profile_redis_snapshot($user_id, $snapshot);
+        }
+
+        return $snapshot;
+    }
+
+    public static function clear_snapshot(int $user_id): int
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return 0;
+        }
+
+        $redis = self::profile_redis();
+        if (!$redis instanceof Redis) {
+            return 0;
+        }
+
+        return (int) $redis->del(self::profile_storage_key($user_id));
+    }
+
+    /**
+     * @return array{
+     *   user_id:int,
+     *   redis_available:bool,
+     *   redis_error:string,
+     *   redis_host:string,
+     *   redis_database:int,
+     *   storage_key:string,
+     *   snapshot_exists:bool,
+     *   snapshot_valid:bool,
+     *   snapshot_status:string,
+     *   snapshot_message:string,
+     *   payload_bytes:int,
+     *   ttl_seconds:int,
+     *   preview:array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string}
+     * }
+     */
+    public static function get_snapshot_diagnostics(int $user_id): array
+    {
+        $user_id = absint($user_id);
+        $settings = self::profile_redis_settings();
+        $storage_key = $user_id > 0 ? self::profile_storage_key($user_id) : '';
+        $redis = self::profile_redis();
+
+        if ($user_id <= 0) {
+            return [
+                'user_id' => 0,
+                'redis_available' => $redis instanceof Redis,
+                'redis_error' => self::$profile_redis_last_connection_error,
+                'redis_host' => (string) ($settings['host'] ?? self::PROFILE_REDIS_DEFAULT_HOST),
+                'redis_database' => (int) ($settings['database'] ?? self::PROFILE_REDIS_DEFAULT_DATABASE),
+                'storage_key' => '',
+                'snapshot_exists' => false,
+                'snapshot_valid' => false,
+                'snapshot_status' => 'idle',
+                'snapshot_message' => 'User siswa belum dipilih.',
+                'payload_bytes' => 0,
+                'ttl_seconds' => -2,
+                'preview' => self::empty_snapshot(),
+            ];
+        }
+
+        if (!$redis instanceof Redis) {
+            return [
+                'user_id' => $user_id,
+                'redis_available' => false,
+                'redis_error' => self::$profile_redis_last_connection_error,
+                'redis_host' => (string) ($settings['host'] ?? self::PROFILE_REDIS_DEFAULT_HOST),
+                'redis_database' => (int) ($settings['database'] ?? self::PROFILE_REDIS_DEFAULT_DATABASE),
+                'storage_key' => $storage_key,
+                'snapshot_exists' => false,
+                'snapshot_valid' => false,
+                'snapshot_status' => 'unavailable',
+                'snapshot_message' => 'Redis profile tidak tersedia.',
+                'payload_bytes' => 0,
+                'ttl_seconds' => -2,
+                'preview' => self::empty_snapshot(),
+            ];
+        }
+
+        $raw_snapshot = $storage_key !== '' ? $redis->get($storage_key) : false;
+        $snapshot_exists = is_string($raw_snapshot) && trim($raw_snapshot) !== '';
+        $snapshot_valid = false;
+        $payload_bytes = $snapshot_exists ? strlen((string) $raw_snapshot) : 0;
+        $ttl_seconds = ($snapshot_exists && method_exists($redis, 'ttl')) ? (int) $redis->ttl($storage_key) : -2;
+        $preview = self::empty_snapshot();
+
+        if ($snapshot_exists) {
+            $decoded = json_decode((string) $raw_snapshot, true);
+            if (is_array($decoded)) {
+                $preview = self::sanitize_snapshot($decoded);
+                $snapshot_valid = true;
+            }
+        }
+
+        if ($snapshot_valid) {
+            $snapshot_status = 'ready';
+            $snapshot_message = 'Snapshot profil siswa siap dipakai untuk live payload.';
+        } elseif ($snapshot_exists) {
+            $snapshot_status = 'invalid';
+            $snapshot_message = 'Snapshot profil ditemukan tetapi payload-nya tidak valid dan akan diabaikan.';
+        } else {
+            $snapshot_status = 'miss';
+            $snapshot_message = 'Snapshot profil belum ada. Pembacaan profile berikutnya akan hydrate ke Redis.';
+        }
+
+        return [
+            'user_id' => $user_id,
+            'redis_available' => true,
+            'redis_error' => self::$profile_redis_last_connection_error,
+            'redis_host' => (string) ($settings['host'] ?? self::PROFILE_REDIS_DEFAULT_HOST),
+            'redis_database' => (int) ($settings['database'] ?? self::PROFILE_REDIS_DEFAULT_DATABASE),
+            'storage_key' => $storage_key,
+            'snapshot_exists' => $snapshot_exists,
+            'snapshot_valid' => $snapshot_valid,
+            'snapshot_status' => $snapshot_status,
+            'snapshot_message' => $snapshot_message,
+            'payload_bytes' => $payload_bytes,
+            'ttl_seconds' => $ttl_seconds,
+            'preview' => $preview,
+        ];
+    }
+
     public static function invalidate(int $user_id): void
     {
         $user_id = absint($user_id);

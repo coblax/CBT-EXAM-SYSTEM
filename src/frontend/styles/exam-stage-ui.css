@@ -193,22 +193,6 @@
     color: #fff;
 }
 
-.cbt-side-card-position,
-.cbt-calc-position-wrap {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-}
-
-.cbt-side-card-position {
-    margin-top: 10px;
-    margin-bottom: 0;
-}
-
-.cbt-calc-position-wrap {
-    margin-top: -2px;
-}
-
 .cbt-nav-position-group,
 .cbt-calc-position-group {
     border-color: #bfd3e9;

@@ -107,14 +107,6 @@
     color: #8a1c1c;
 }
 
-.cbt-result-card--pass .cbt-score-unit {
-    color: #5b728f;
-}
-
-.cbt-result-card--fail .cbt-score-unit {
-    color: #8b6b6b;
-}
-
 .cbt-result-body {
     padding: 18px 20px 24px;
     background: transparent;
@@ -297,8 +289,7 @@
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-result-hero h3,
-.cbt-web-shell.cbt-theme-dark .cbt-result-card--pass .cbt-score,
-.cbt-web-shell.cbt-theme-dark .cbt-result-card--pass .cbt-result-detail-row strong {
+.cbt-web-shell.cbt-theme-dark .cbt-result-card--pass .cbt-score {
     color: #eff6ff;
 }
 
@@ -320,10 +311,6 @@
 .cbt-web-shell.cbt-theme-dark .cbt-review-card-title::after {
     background: linear-gradient(90deg, #38bdf8 0%, #60a5fa 100%);
     box-shadow: 0 8px 20px rgba(56, 189, 248, 0.16);
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-score-unit {
-    color: #9fb1cb;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-result-progress-track {
@@ -373,42 +360,6 @@
     color: #fcd34d;
 }
 
-.cbt-web-shell.cbt-theme-dark .cbt-result-stat,
-.cbt-web-shell.cbt-theme-dark .cbt-result-detail-card {
-    background: #111827;
-    border-color: #2a3d58;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-result-stat.is-correct {
-    background: rgba(20, 83, 45, 0.24);
-    border-color: rgba(74, 222, 128, 0.28);
-    color: #86efac;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-result-stat.is-wrong {
-    background: rgba(127, 29, 29, 0.24);
-    border-color: rgba(248, 113, 113, 0.28);
-    color: #fda4af;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-result-stat.is-unanswered {
-    background: rgba(30, 41, 59, 0.72);
-    border-color: rgba(100, 116, 139, 0.28);
-    color: #cbd5e1;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-result-detail-row {
-    border-bottom-color: #243246;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-result-detail-row span {
-    color: #8ea0ba;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-result-detail-row strong {
-    color: #e5edf8;
-}
-
 .cbt-web-shell.cbt-theme-dark .cbt-review-text {
     background: #0f172a;
     border-color: #2a3d58;
@@ -432,11 +383,6 @@
 
     .cbt-result-body {
         padding: 16px 16px 20px;
-    }
-
-    .cbt-result-detail-row {
-        grid-template-columns: minmax(0, 150px) minmax(0, 1fr);
-        padding: 16px;
     }
 }
 
@@ -478,39 +424,6 @@
     .cbt-result-progress-legend-value {
         margin-left: auto;
         text-align: right;
-    }
-
-    .cbt-result-stat-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-    }
-
-    .cbt-result-stat.is-unanswered {
-        grid-column: auto;
-    }
-
-    .cbt-result-stat {
-        min-height: 104px;
-        padding: 16px 10px;
-        border-radius: 18px;
-    }
-
-    .cbt-result-stat strong {
-        font-size: clamp(28px, 8vw, 40px);
-    }
-
-    .cbt-result-stat span {
-        font-size: 10px;
-        letter-spacing: 0.08em;
-    }
-
-    .cbt-result-detail-row {
-        grid-template-columns: 1fr;
-        gap: 8px;
-    }
-
-    .cbt-result-detail-row strong {
-        font-size: 18px;
     }
 
     .cbt-result-pending-card {
@@ -593,13 +506,6 @@
         font-size: clamp(48px, 18vw, 72px);
     }
 
-    .cbt-score-unit {
-        font-size: clamp(48px, 18vw, 72px);
-        letter-spacing: 0;
-        line-height: 0.92;
-        transform: translateY(-2px);
-    }
-
     .cbt-result-score-note {
         margin-top: -2px;
         font-size: 12px;
@@ -609,10 +515,6 @@
 
     .cbt-result-progress-track {
         height: 14px;
-    }
-
-    .cbt-result-progress-threshold {
-        height: 24px;
     }
 
     .cbt-result-progress-meta {
@@ -691,34 +593,6 @@
         border-radius: 14px;
         font-size: 12px;
         letter-spacing: 0.04em;
-    }
-
-    .cbt-result-stat-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px;
-    }
-
-    .cbt-result-stat.is-unanswered {
-        grid-column: auto;
-    }
-
-    .cbt-result-stat {
-        min-height: 92px;
-        padding: 12px 8px;
-        border-radius: 16px;
-    }
-
-    .cbt-result-stat strong {
-        font-size: clamp(24px, 9vw, 34px);
-    }
-
-    .cbt-result-stat span {
-        font-size: 9px;
-        letter-spacing: 0.07em;
-    }
-
-    .cbt-result-detail-row {
-        padding: 14px 16px;
     }
 
     .cbt-result-actions {

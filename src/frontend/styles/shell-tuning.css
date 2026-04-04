@@ -223,10 +223,6 @@
     line-height: 1;
 }
 
-.cbt-theme-toggle-label {
-    display: none;
-}
-
 .cbt-theme-toggle-icon {
     font-size: 15px;
 }
@@ -429,10 +425,6 @@
     font-weight: 800;
     color: #fff;
     background: linear-gradient(135deg, #1d4ed8, #2563eb);
-}
-
-.cbt-confirm-profile-meta {
-    display: none;
 }
 
 @media (min-width: 621px) {
