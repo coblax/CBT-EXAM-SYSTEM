@@ -16,6 +16,26 @@ final class CBT_Admin_Exams_Actions
         CBT_Admin_Exams_Service::handle_delete_exam();
     }
 
+    public static function handle_warm_exam_delivery_snapshot(): void
+    {
+        CBT_Admin_Exams_Service::handle_warm_exam_delivery_snapshot();
+    }
+
+    public static function handle_warm_bulk_exam_delivery_snapshots(): void
+    {
+        CBT_Admin_Exams_Service::handle_warm_bulk_exam_delivery_snapshots();
+    }
+
+    public static function handle_clear_exam_delivery_snapshot(): void
+    {
+        CBT_Admin_Exams_Service::handle_clear_exam_delivery_snapshot();
+    }
+
+    public static function handle_clear_bulk_exam_delivery_snapshots(): void
+    {
+        CBT_Admin_Exams_Service::handle_clear_bulk_exam_delivery_snapshots();
+    }
+
     public static function handle_sync_exam_builder_selection(): void
     {
         CBT_Admin_Exams_Service::handle_sync_exam_builder_selection();

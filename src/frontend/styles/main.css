@@ -8,4 +8,7 @@
 @import './shell-tuning.css';
 @import './login-stage-tuning.css';
 @import './theme-dark.css';
+@import './editor-theme-core.css';
+@import './editor-theme-responsive.css';
 @import './confirm-card.css';
+@import './auth-stage-mobile-tuning.css';

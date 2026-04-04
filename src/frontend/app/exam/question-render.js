@@ -198,11 +198,11 @@ export function createQuestionRenderManager(deps) {
                     var checked = optionId === selectedId;
                     return [
                         '<label class="cbt-option' + (checked ? ' is-selected' : '') + '">',
-                        '<span class="cbt-option-row">',
+                        '<div class="cbt-option-row">',
                         '<input type="radio" name="cbt_q_' + escapeHtml(question.id) + '" value="' + escapeHtml(optionId) + '" data-action="answer-single" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '"' + (checked ? ' checked' : '') + disabledAttr + ' />',
                         '<span class="cbt-option-key">' + escapeHtml(questionOptionKey(option, index)) + '</span>',
-                        '<span class="cbt-option-label">' + safeRichHtml(option.option_text || '') + '</span>',
-                        '</span>',
+                        '<div class="cbt-option-label">' + safeRichHtml(option.option_text || '') + '</div>',
+                        '</div>',
                         '</label>'
                     ].join('');
                 }).join(''),
@@ -219,11 +219,11 @@ export function createQuestionRenderManager(deps) {
                     var checked = selected.indexOf(optionId) >= 0;
                     return [
                         '<label class="cbt-option' + (checked ? ' is-selected' : '') + '">',
-                        '<span class="cbt-option-row">',
+                        '<div class="cbt-option-row">',
                         '<input type="checkbox" value="' + escapeHtml(optionId) + '" data-action="answer-multi" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '"' + (checked ? ' checked' : '') + disabledAttr + ' />',
                         '<span class="cbt-option-key">' + escapeHtml(questionOptionKey(option, index)) + '</span>',
-                        '<span class="cbt-option-label">' + safeRichHtml(option.option_text || '') + '</span>',
-                        '</span>',
+                        '<div class="cbt-option-label">' + safeRichHtml(option.option_text || '') + '</div>',
+                        '</div>',
                         '</label>'
                     ].join('');
                 }).join(''),

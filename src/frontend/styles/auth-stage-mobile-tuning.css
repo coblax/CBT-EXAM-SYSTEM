@@ -1,0 +1,129 @@
+@media (max-width: 1080px) {
+    .cbt-login-shell {
+        grid-template-columns: 1fr;
+        min-height: auto;
+    }
+
+    .cbt-login-hero {
+        display: none;
+    }
+
+    .cbt-login-panel {
+        border-radius: 18px;
+        padding: 16px;
+    }
+
+    .cbt-login-panel-brand-mobile {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 2px auto 10px;
+    }
+
+    .cbt-login-panel-brand-mobile-logo {
+        display: block;
+        width: clamp(92px, 30vw, 182px);
+        max-width: 45vw;
+        height: auto;
+        object-fit: contain;
+        object-position: center;
+    }
+
+    .cbt-login-panel .cbt-form-grid {
+        width: min(100%, 720px);
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .cbt-grid-2 {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 620px) {
+    .cbt-web-shell {
+        padding: 8px;
+    }
+
+    .cbt-container {
+        margin-top: 8px;
+    }
+
+    .cbt-login-panel .cbt-form-grid {
+        padding: 14px;
+    }
+
+    .cbt-exam-picker-mobile {
+        display: block;
+        padding: 12px;
+        border-radius: 16px;
+    }
+
+    .cbt-exam-picker-card .cbt-exam-list {
+        display: none;
+    }
+
+    .cbt-exam-picker-mobile-head {
+        margin-bottom: 10px;
+    }
+
+    .cbt-exam-picker-trigger {
+        min-height: 56px;
+        padding: 12px 12px 12px 14px;
+        border-radius: 16px;
+    }
+
+    .cbt-exam-picker-trigger-value {
+        font-size: 14px;
+    }
+
+    .cbt-exam-picker-trigger-note {
+        font-size: 10px;
+    }
+
+    .cbt-exam-picker-menu {
+        top: calc(100% + 8px);
+        padding: 6px;
+        border-radius: 16px;
+    }
+
+    .cbt-exam-picker-option {
+        padding: 11px 11px 11px 12px;
+        border-radius: 14px;
+    }
+
+    .cbt-exam-picker-mobile-help {
+        margin-top: 10px;
+        padding: 9px 10px;
+        font-size: 11px;
+    }
+
+    .cbt-exam-list {
+        gap: 8px;
+    }
+
+    .cbt-exam-item {
+        border-radius: 10px;
+        padding: 10px 9px;
+    }
+
+    .cbt-exam-title {
+        font-size: 13px;
+        line-height: 1.18;
+    }
+
+}
+
+@media (max-width: 560px) {
+    .cbt-login-panel-brand-mobile-logo {
+        width: clamp(82px, 34vw, 156px);
+        max-width: 50vw;
+    }
+}
+
+@media (max-width: 400px) {
+    .cbt-login-panel-brand-mobile-logo {
+        width: clamp(74px, 36vw, 132px);
+        max-width: 52vw;
+    }
+}

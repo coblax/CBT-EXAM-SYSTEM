@@ -120,6 +120,9 @@ if ($is_stable_mode) {
         .cbt-developer-page .cbt-dev-status-list { display:grid; gap:12px; }
         .cbt-developer-page .cbt-dev-status-item { padding:12px 14px; border-radius:10px; background:#f6f7f7; }
         .cbt-developer-page .cbt-dev-status-item strong { display:block; margin-bottom:4px; }
+        .cbt-developer-page .cbt-dev-inline-form { display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
+        .cbt-developer-page .cbt-dev-inline-form input[type="number"] { width:160px; }
+        .cbt-developer-page .cbt-dev-inline-form .cbt-dev-field { margin:0; }
         .cbt-developer-page .cbt-dev-chip-row { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
         .cbt-developer-page .cbt-dev-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:600; background:#edf2ff; color:#1d4ed8; }
         .cbt-developer-page .cbt-dev-chip.is-build { background:#eef2ff; color:#4338ca; }
@@ -129,11 +132,18 @@ if ($is_stable_mode) {
         .cbt-developer-page .cbt-dev-chip.is-success { background:#ecfdf5; color:#047857; }
         .cbt-developer-page .cbt-dev-chip.is-error { background:#fef2f2; color:#b91c1c; }
         .cbt-developer-page .cbt-dev-chip.is-warning { background:#fffbeb; color:#a16207; }
+        .cbt-developer-page .cbt-dev-chip.is-neutral { background:#f1f5f9; color:#334155; }
         .cbt-developer-page .cbt-dev-kv { display:grid; gap:6px; }
         .cbt-developer-page .cbt-dev-kv code { word-break:break-all; }
         .cbt-developer-page .cbt-dev-list { margin:8px 0 0 18px; }
         .cbt-developer-page .cbt-dev-muted { color:#646970; }
         .cbt-developer-page .cbt-dev-tool-status { min-height:20px; font-weight:600; }
+        .cbt-developer-page .cbt-dev-diagnostic-grid { display:grid; gap:12px; }
+        .cbt-developer-page .cbt-dev-diagnostic-grid code { word-break:break-all; }
+        .cbt-developer-page .cbt-dev-preview-list { display:grid; gap:10px; margin-top:10px; }
+        .cbt-developer-page .cbt-dev-preview-item { padding:12px; border:1px solid #dbe4f0; border-radius:12px; background:#ffffff; }
+        .cbt-developer-page .cbt-dev-preview-item-header { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+        .cbt-developer-page .cbt-dev-preview-text { color:#334155; line-height:1.6; }
         .cbt-developer-page .cbt-dev-diag-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:16px; }
         .cbt-developer-page .cbt-dev-diag-span-2 { grid-column:1 / -1; }
         .cbt-developer-page .cbt-dev-diag-note { padding:14px 16px; border-radius:10px; background:#f8fafc; border:1px dashed #cbd5e1; color:#475569; }

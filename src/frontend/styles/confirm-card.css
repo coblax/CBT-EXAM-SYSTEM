@@ -18,22 +18,6 @@
     pointer-events: none;
 }
 
-.cbt-confirm-hero {
-    position: relative;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 18px;
-    padding-bottom: 18px;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-}
-
-.cbt-confirm-hero-copy {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
 .cbt-confirm-kicker {
     margin: 0 0 8px;
     font-size: 11px;
@@ -123,98 +107,6 @@
     color: #35506b;
 }
 
-.cbt-confirm-shell {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
-    align-items: start;
-    margin-top: 18px;
-}
-
-.cbt-confirm-main,
-.cbt-confirm-aside {
-    min-width: 0;
-}
-
-.cbt-confirm-main {
-    display: grid;
-    gap: 14px;
-}
-
-.cbt-confirm-section {
-    padding: 16px;
-    border-radius: 18px;
-    border: 1px solid rgba(210, 223, 238, 0.92);
-    background: linear-gradient(180deg, #fff, #f8fbff);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
-}
-
-.cbt-confirm-section-head {
-    margin-bottom: 14px;
-}
-
-.cbt-confirm-section-head h4 {
-    margin: 0;
-    font-size: 16px;
-}
-
-.cbt-confirm-section-head p {
-    margin: 4px 0 0;
-    font-size: 12px;
-    line-height: 1.55;
-    color: #64748b;
-}
-
-.cbt-confirm-info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 12px;
-}
-
-.cbt-confirm-fact {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
-    padding: 14px 15px;
-    border-radius: 16px;
-    border: 1px solid rgba(214, 225, 239, 0.95);
-    background: rgba(255, 255, 255, 0.82);
-}
-
-.cbt-confirm-fact.is-wide {
-    grid-column: 1 / -1;
-}
-
-.cbt-confirm-fact-label {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #5f6b7a;
-}
-
-.cbt-confirm-fact-value {
-    font-size: 15px;
-    font-weight: 800;
-    line-height: 1.35;
-    color: #102a43;
-    overflow-wrap: anywhere;
-}
-
-.cbt-confirm-fact-meta {
-    font-size: 12px;
-    line-height: 1.5;
-    color: #64748b;
-}
-
-.cbt-confirm-token-panel {
-    padding: 14px;
-    border-radius: 16px;
-    border: 1px solid rgba(191, 219, 254, 0.62);
-    background: linear-gradient(180deg, rgba(239, 246, 255, 0.88), rgba(255, 255, 255, 0.92));
-}
-
 .cbt-confirm-card .cbt-confirm-field {
     margin: 0;
 }
@@ -265,32 +157,6 @@
     font-weight: 700;
 }
 
-.cbt-confirm-aside {
-    display: grid;
-    gap: 12px;
-}
-
-.cbt-confirm-profile-card {
-    position: relative;
-    overflow: hidden;
-    padding: 18px;
-    border-radius: 20px;
-    border: 1px solid rgba(202, 216, 234, 0.92);
-    background: linear-gradient(180deg, #ffffff 0%, #f4f9ff 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
-}
-
-.cbt-confirm-profile-card::before {
-    content: "";
-    position: absolute;
-    inset: -40px -40px auto auto;
-    width: 180px;
-    height: 180px;
-    border-radius: 999px;
-    background: radial-gradient(circle, rgba(96, 165, 250, 0.16), transparent 70%);
-    pointer-events: none;
-}
-
 .cbt-confirm-profile {
     position: relative;
     z-index: 1;
@@ -330,70 +196,6 @@
     font-size: 54px;
 }
 
-.cbt-confirm-profile-copy {
-    position: relative;
-    z-index: 1;
-    margin-top: 16px;
-}
-
-.cbt-confirm-profile-label {
-    margin: 0 0 6px;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: #1d4ed8;
-}
-
-.cbt-confirm-profile-copy h4 {
-    margin: 0;
-    font-size: 24px;
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-    color: #102a43;
-    overflow-wrap: anywhere;
-}
-
-.cbt-confirm-profile-subtitle {
-    margin: 6px 0 0;
-    font-size: 13px;
-    line-height: 1.5;
-    color: #5f6b7a;
-}
-
-.cbt-confirm-profile-meta {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 14px;
-}
-
-.cbt-confirm-aside-note {
-    position: relative;
-    z-index: 1;
-    margin-top: 16px;
-    padding: 14px 15px;
-    border-radius: 16px;
-    border: 1px solid rgba(191, 219, 254, 0.62);
-    background: rgba(239, 246, 255, 0.78);
-}
-
-.cbt-confirm-aside-note strong {
-    display: block;
-    margin: 0 0 6px;
-    font-size: 13px;
-    color: #163b68;
-}
-
-.cbt-confirm-aside-note span {
-    display: block;
-    font-size: 12px;
-    line-height: 1.55;
-    color: #52667b;
-}
-
 .cbt-web-shell.cbt-theme-dark .cbt-confirm-card {
     background:
         radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 32%),
@@ -401,39 +203,15 @@
     border-color: var(--cbt-dark-surface-3);
 }
 
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-hero {
-    border-bottom-color: rgba(255, 255, 255, 0.06);
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-kicker,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-label {
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-kicker {
     color: #7dd3fc;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-confirm-selected-title,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-card h3,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-fact-value,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-copy h4,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-aside-note strong {
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-card h3 {
     color: #f8fafc;
 }
-
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-section,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-card,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-token-panel,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-fact,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-aside-note {
-    border-color: rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.04);
-    box-shadow: none;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-section-head p,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-fact-label,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-fact-meta,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-token-note,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-subtitle,
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-aside-note span {
+.cbt-web-shell.cbt-theme-dark .cbt-confirm-token-note {
     color: #aab6c5;
 }
 
@@ -482,10 +260,6 @@
     color: #d7e3f4;
 }
 
-.cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-card::before {
-    background: radial-gradient(circle, rgba(56, 189, 248, 0.16), transparent 70%);
-}
-
 .cbt-web-shell.cbt-theme-dark .cbt-confirm-profile-avatar {
     border-color: rgba(255, 255, 255, 0.08);
     background: #111827;
@@ -501,28 +275,10 @@
     }
 }
 
-@media (min-width: 1440px) {
-    .cbt-confirm-shell {
-        grid-template-columns: minmax(0, 1.18fr) minmax(280px, 0.82fr);
-    }
-}
-
 @media (max-width: 720px) {
-    .cbt-confirm-hero {
-        flex-direction: column;
-    }
-
     .cbt-confirm-status-list {
         justify-content: flex-start;
         max-width: none;
-    }
-
-    .cbt-confirm-info-grid {
-        grid-template-columns: minmax(0, 1fr);
-    }
-
-    .cbt-confirm-fact.is-wide {
-        grid-column: auto;
     }
 }
 
@@ -542,17 +298,6 @@
 
     .cbt-confirm-selected-title {
         font-size: 14px;
-    }
-
-    .cbt-confirm-shell {
-        gap: 14px;
-        margin-top: 14px;
-    }
-
-    .cbt-confirm-section,
-    .cbt-confirm-profile-card {
-        padding: 14px;
-        border-radius: 16px;
     }
 
     .cbt-confirm-profile-avatar,
@@ -591,21 +336,6 @@
         font-size: 11px;
     }
 
-    .cbt-confirm-section,
-    .cbt-confirm-profile-card,
-    .cbt-confirm-token-panel {
-        padding: 12px;
-    }
-
-    .cbt-confirm-fact {
-        padding: 12px;
-        border-radius: 14px;
-    }
-
-    .cbt-confirm-fact-value {
-        font-size: 14px;
-    }
-
     .cbt-confirm-profile-avatar,
     .cbt-confirm-profile-avatar-fallback {
         max-width: 132px;
@@ -626,224 +356,6 @@
 
     .cbt-confirm-token-note {
         font-size: 11px;
-    }
-}
-
-/* Final cleanup for login flow cards: simpler hierarchy, no floating chip. */
-.cbt-login-steps {
-    gap: 12px;
-}
-
-.cbt-login-step {
-    display: block;
-    padding: 18px 20px 17px;
-    border-radius: 22px;
-    background:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.07)),
-        linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(30, 64, 175, 0.12));
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.12),
-        0 16px 28px rgba(12, 41, 74, 0.16);
-}
-
-.cbt-login-step::before {
-    inset: 0 auto auto 20px;
-    width: 58px;
-    height: 3px;
-    border-radius: 999px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.92), rgba(191, 219, 254, 0.2));
-    opacity: 0.9;
-}
-
-.cbt-login-step-head {
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr);
-    gap: 14px;
-    align-items: start;
-}
-
-.cbt-login-step-number {
-    width: 44px;
-    height: 32px;
-    flex: 0 0 44px;
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    background: rgba(8, 31, 58, 0.18);
-    color: rgba(255, 255, 255, 0.94);
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    box-shadow: none;
-}
-
-.cbt-login-step-copy {
-    display: grid;
-    gap: 5px;
-    padding-top: 1px;
-}
-
-.cbt-login-step-kicker {
-    display: inline-block;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: rgba(219, 234, 254, 0.74);
-}
-
-.cbt-login-step strong {
-    flex: none;
-    font-size: 20px;
-    line-height: 1.18;
-    color: #f8fbff;
-}
-
-.cbt-login-step-chip {
-    display: none;
-}
-
-.cbt-login-step p {
-    margin: 14px 0 0 58px;
-    max-width: 44ch;
-    font-size: 13px;
-    line-height: 1.7;
-}
-
-.cbt-login-step-meta {
-    gap: 8px;
-    margin-top: 12px;
-    margin-left: 58px;
-}
-
-.cbt-login-step-meta small {
-    min-height: 26px;
-    padding: 0 10px;
-    border-radius: 999px;
-    border-color: rgba(255, 255, 255, 0.12);
-    background: rgba(8, 31, 58, 0.14);
-    color: rgba(255, 255, 255, 0.86);
-    font-size: 10.5px;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-login-step {
-    background:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.02)),
-        linear-gradient(135deg, rgba(10, 24, 39, 0.96), rgba(7, 14, 24, 0.98));
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-login-step::before {
-    background: linear-gradient(90deg, rgba(125, 211, 252, 0.9), rgba(29, 78, 216, 0.2));
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-login-step-number {
-    border-color: rgba(125, 211, 252, 0.18);
-    background: rgba(10, 24, 39, 0.5);
-    color: #e0f2fe;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-login-step-kicker {
-    color: #8ab4d8;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-login-step-meta small {
-    border-color: rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.04);
-    color: #b8c7d8;
-}
-
-.cbt-web-shell.cbt-theme-light .cbt-login-step-number {
-    border-color: rgba(255, 255, 255, 0.22);
-    background: rgba(8, 31, 58, 0.16);
-    color: rgba(255, 255, 255, 0.96);
-}
-
-.cbt-web-shell.cbt-theme-light .cbt-login-step-kicker {
-    color: rgba(219, 234, 254, 0.76);
-}
-
-@media (max-width: 640px) {
-    .cbt-login-step {
-        padding: 15px 16px 14px;
-        border-radius: 18px;
-    }
-
-    .cbt-login-step::before {
-        left: 16px;
-        width: 48px;
-    }
-
-    .cbt-login-step-head {
-        grid-template-columns: 40px minmax(0, 1fr);
-        gap: 12px;
-    }
-
-    .cbt-login-step-number {
-        width: 40px;
-        height: 30px;
-        flex-basis: 40px;
-        border-radius: 10px;
-        font-size: 11px;
-    }
-
-    .cbt-login-step strong {
-        font-size: 17px;
-    }
-
-    .cbt-login-step p,
-    .cbt-login-step-meta {
-        margin-left: 52px;
-    }
-}
-
-@media (max-width: 420px) {
-    .cbt-login-step {
-        padding: 13px 14px 12px;
-    }
-
-    .cbt-login-step::before {
-        left: 14px;
-        width: 42px;
-    }
-
-    .cbt-login-step-head {
-        grid-template-columns: 36px minmax(0, 1fr);
-        gap: 10px;
-    }
-
-    .cbt-login-step-number {
-        width: 36px;
-        height: 28px;
-        flex-basis: 36px;
-        border-radius: 10px;
-        letter-spacing: 0.08em;
-    }
-
-    .cbt-login-step-kicker {
-        font-size: 9px;
-    }
-
-    .cbt-login-step strong {
-        font-size: 15px;
-    }
-
-    .cbt-login-step p,
-    .cbt-login-step-meta {
-        margin-left: 46px;
-    }
-
-    .cbt-login-step p {
-        margin-top: 10px;
-        font-size: 12px;
-    }
-
-    .cbt-login-step-meta {
-        gap: 6px;
-    }
-
-    .cbt-login-step-meta small {
-        min-height: 24px;
-        padding: 0 8px;
-        font-size: 10px;
     }
 }
 

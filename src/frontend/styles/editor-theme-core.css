@@ -53,7 +53,6 @@
 .cbt-web-shell.cbt-theme-dark .cbt-brand small,
 .cbt-web-shell.cbt-theme-dark .cbt-subtitle,
 .cbt-web-shell.cbt-theme-dark .cbt-muted,
-.cbt-web-shell.cbt-theme-dark .cbt-exam-meta,
 .cbt-web-shell.cbt-theme-dark .cbt-login-help,
 .cbt-web-shell.cbt-theme-dark .cbt-side-card-subtitle,
 .cbt-web-shell.cbt-theme-dark .cbt-calc-head-subtitle,
@@ -97,10 +96,6 @@
     background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(165, 180, 252, 0.86) 34%, rgba(129, 140, 248, 0.34) 100%);
 }
 
-.cbt-web-shell.cbt-theme-dark .cbt-login-kicker {
-    color: #8ab4f8;
-}
-
 .cbt-web-shell.cbt-theme-dark .cbt-login-hero-school-tag {
     border-color: rgba(191, 219, 254, 0.18);
     background: rgba(255, 255, 255, 0.08);
@@ -122,21 +117,6 @@
 
 .cbt-web-shell.cbt-theme-dark .cbt-login-description {
     color: #b8c0cc;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-login-step {
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    background: rgba(255, 255, 255, 0.04);
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-login-step span {
-    background: linear-gradient(180deg, #0e639c 0%, #1177bb 100%);
-    color: #fff;
-    box-shadow: 0 8px 18px rgba(14, 99, 156, 0.2);
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-login-step small {
-    color: #aab3bf;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-question-head {
@@ -430,21 +410,8 @@
     color: #f6d98a;
 }
 
-.cbt-web-shell.cbt-theme-dark .cbt-exam-meta-attempt,
 .cbt-web-shell.cbt-theme-dark .cbt-result-body .cbt-subtitle {
     color: #b9c4d1;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-exam-meta-chip {
-    border-color: rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.04);
-    color: #c9d6e5;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-exam-meta-chip.is-accent {
-    border-color: rgba(96, 165, 250, 0.24);
-    background: rgba(37, 99, 235, 0.16);
-    color: #bfdbfe;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-option-key,
@@ -612,9 +579,7 @@
 }
 
 .cbt-web-shell.cbt-theme-light .cbt-brand small,
-.cbt-web-shell.cbt-theme-light .cbt-login-kicker,
-.cbt-web-shell.cbt-theme-light .cbt-login-description,
-.cbt-web-shell.cbt-theme-light .cbt-login-step small {
+.cbt-web-shell.cbt-theme-light .cbt-login-description {
     color: rgba(255, 255, 255, 0.84);
 }
 
@@ -693,7 +658,6 @@
 
 .cbt-web-shell.cbt-theme-light .cbt-subtitle,
 .cbt-web-shell.cbt-theme-light .cbt-muted,
-.cbt-web-shell.cbt-theme-light .cbt-exam-meta,
 .cbt-web-shell.cbt-theme-light .cbt-login-help,
 .cbt-web-shell.cbt-theme-light .cbt-side-card-subtitle,
 .cbt-web-shell.cbt-theme-light .cbt-calc-head-subtitle,
@@ -719,16 +683,6 @@
 
 .cbt-web-shell.cbt-theme-light .cbt-login-hero::after {
     background: rgba(255, 255, 255, 0.1);
-}
-
-.cbt-web-shell.cbt-theme-light .cbt-login-step {
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.14);
-}
-
-.cbt-web-shell.cbt-theme-light .cbt-login-step span {
-    background: #fff;
-    color: #2e68b4;
 }
 
 .cbt-web-shell.cbt-theme-light .cbt-question-head {

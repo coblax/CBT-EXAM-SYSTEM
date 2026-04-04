@@ -152,6 +152,34 @@ final class LiveAttemptRosterIndexTest extends TestCase
         self::assertSame([], CBT_Live_Attempt_Roster_Index::get_grouped_payloads(['teacher_id' => 77]));
     }
 
+    #[RunInSeparateProcess]
+    public function test_has_active_attempts_for_exam_ids_reads_exam_membership_from_live_rows(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-live-attempt-roster-index.php';
+        $this->useFakeRosterRedis();
+
+        CBT_Live_Attempt_Roster_Index::sync_attempt(
+            [
+                'id' => 21,
+                'exam_id' => 81,
+                'student_id' => 301,
+                'status' => 'in_progress',
+            ],
+            [
+                'teacher_id' => 9,
+                'exam_title' => 'Exam 81',
+                'student_name' => 'Gamma',
+                'student_login' => 'gamma',
+                'student_kode_kelas' => 'XII-A',
+                'student_kode_ruang' => 'LAB-1',
+                'last_seen_at' => '2026-04-03 06:00:00',
+            ]
+        );
+
+        self::assertTrue(CBT_Live_Attempt_Roster_Index::has_active_attempts_for_exam_ids([81]));
+        self::assertFalse(CBT_Live_Attempt_Roster_Index::has_active_attempts_for_exam_ids([82]));
+    }
+
     private function useFakeRosterRedis(): void
     {
         $reflection = new ReflectionClass(CBT_Live_Attempt_Roster_Index::class);

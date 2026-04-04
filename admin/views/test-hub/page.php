@@ -1144,7 +1144,7 @@ if (!defined('ABSPATH')) {
             <div class="cbt-test-hub-artifact-box">
                 <div>
                     <strong>Bersihkan Artefak Test</strong>
-                    <p>Membersihkan folder hasil run yang sering membesar seperti `playwright-results`, `test-results`, `coverage`, dan `.phpunit.cache`. Tombol ini tidak menyentuh `node_modules` maupun `.playwright-browsers`.</p>
+                    <p>Membersihkan folder hasil run yang sering membesar seperti `playwright-results`, `test-results`, `coverage`, `.phpunit.cache`, dan artefak debug `output/playwright*`. Tombol ini tidak menyentuh `node_modules` maupun `.playwright-browsers`.</p>
                 </div>
                 <div class="cbt-test-hub-artifact-list">
                     <?php foreach ($test_artifact_cleanup_targets as $artifact_target): ?>
@@ -1432,7 +1432,17 @@ if (!defined('ABSPATH')) {
                                 <?php endif; ?>
                                 <ul class="cbt-test-hub-list">
                                     <?php foreach ($unit_test_items as $unit_test_item): ?>
+                                        <?php $unit_item_run_form_id = 'cbt-test-hub-item-run-form-' . sanitize_key((string) $unit_test_tab_key . '-unit-' . (string) ($unit_test_item['item_index'] ?? '')); ?>
                                         <li>
+                                            <?php if (!empty($unit_test_item['has_runner'])): ?>
+                                                <form id="<?php echo esc_attr($unit_item_run_form_id); ?>" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-test-hub-item-run-form-summary" data-item-run-form hidden>
+                                                    <input type="hidden" name="action" value="cbt_run_unit_test_suite">
+                                                    <input type="hidden" name="cbt_unit_test_tab" value="<?php echo esc_attr((string) $unit_test_tab_key); ?>">
+                                                    <input type="hidden" name="cbt_checklist_scope" value="unit_tests">
+                                                    <input type="hidden" name="cbt_checklist_item_index" value="<?php echo esc_attr((string) ($unit_test_item['item_index'] ?? '')); ?>">
+                                                    <?php wp_nonce_field('cbt_test_hub_runner_' . (string) $unit_test_tab_key); ?>
+                                                </form>
+                                            <?php endif; ?>
                                             <details class="cbt-test-hub-item"<?php echo !empty($unit_test_item['detail_open']) ? ' open' : ''; ?>>
                                                 <summary class="cbt-test-hub-item-summary">
                                                     <div class="cbt-test-hub-item-copy">
@@ -1453,14 +1463,15 @@ if (!defined('ABSPATH')) {
                                                                 </span>
                                                             <?php endif; ?>
                                                             <?php if (!empty($unit_test_item['has_runner'])): ?>
-                                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-test-hub-item-run-form-summary" data-item-run-form>
-                                                                    <input type="hidden" name="action" value="cbt_run_unit_test_suite">
-                                                                    <input type="hidden" name="cbt_unit_test_tab" value="<?php echo esc_attr((string) $unit_test_tab_key); ?>">
-                                                                    <input type="hidden" name="cbt_checklist_scope" value="unit_tests">
-                                                                    <input type="hidden" name="cbt_checklist_item_index" value="<?php echo esc_attr((string) ($unit_test_item['item_index'] ?? '')); ?>">
-                                                                    <?php wp_nonce_field('cbt_test_hub_runner_' . (string) $unit_test_tab_key); ?>
-                                                                    <button type="submit" class="button cbt-test-hub-item-run-trigger" data-item-run-button <?php disabled(!$unit_runner_available || empty($unit_test_item['can_run_task'])); ?>><?php echo esc_html((string) ($unit_test_item['run_button_label'] ?? 'Run Task')); ?></button>
-                                                                </form>
+                                                                <button
+                                                                    type="submit"
+                                                                    class="button cbt-test-hub-item-run-trigger"
+                                                                    data-item-run-button
+                                                                    data-item-run-form-id="<?php echo esc_attr($unit_item_run_form_id); ?>"
+                                                                    form="<?php echo esc_attr($unit_item_run_form_id); ?>"
+                                                                    onclick="event.preventDefault(); event.stopPropagation(); var form = document.getElementById('<?php echo esc_js($unit_item_run_form_id); ?>'); if (form) { if (typeof form.requestSubmit === 'function') { form.requestSubmit(); } else { form.submit(); } } return false;"
+                                                                    <?php disabled(!$unit_runner_available || empty($unit_test_item['can_run_task'])); ?>
+                                                                ><?php echo esc_html((string) ($unit_test_item['run_button_label'] ?? 'Run Task')); ?></button>
                                                             <?php endif; ?>
                                                         </div>
                                                         <span class="cbt-test-hub-item-toggle">Detail</span>
@@ -1633,7 +1644,17 @@ if (!defined('ABSPATH')) {
                                 <?php endif; ?>
                                 <ul class="cbt-test-hub-list">
                                     <?php foreach ($flow_check_items as $unit_test_item): ?>
+                                        <?php $flow_item_run_form_id = 'cbt-test-hub-item-run-form-' . sanitize_key((string) $unit_test_tab_key . '-smoke-' . (string) ($unit_test_item['item_index'] ?? '')); ?>
                                         <li>
+                                            <?php if (!empty($unit_test_item['has_runner'])): ?>
+                                                <form id="<?php echo esc_attr($flow_item_run_form_id); ?>" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-test-hub-item-run-form-summary" data-item-run-form hidden>
+                                                    <input type="hidden" name="action" value="cbt_queue_flow_check_job">
+                                                    <input type="hidden" name="cbt_unit_test_tab" value="<?php echo esc_attr((string) $unit_test_tab_key); ?>">
+                                                    <input type="hidden" name="cbt_checklist_scope" value="smoke_tests">
+                                                    <input type="hidden" name="cbt_checklist_item_index" value="<?php echo esc_attr((string) ($unit_test_item['item_index'] ?? '')); ?>">
+                                                    <?php wp_nonce_field('cbt_test_hub_runner_' . (string) $unit_test_tab_key); ?>
+                                                </form>
+                                            <?php endif; ?>
                                             <details class="cbt-test-hub-item"<?php echo !empty($unit_test_item['detail_open']) ? ' open' : ''; ?>>
                                                 <summary class="cbt-test-hub-item-summary">
                                                     <div class="cbt-test-hub-item-copy">
@@ -1654,14 +1675,15 @@ if (!defined('ABSPATH')) {
                                                                 </span>
                                                             <?php endif; ?>
                                                             <?php if (!empty($unit_test_item['has_runner'])): ?>
-                                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-test-hub-item-run-form-summary" data-item-run-form>
-                                                                    <input type="hidden" name="action" value="cbt_queue_flow_check_job">
-                                                                    <input type="hidden" name="cbt_unit_test_tab" value="<?php echo esc_attr((string) $unit_test_tab_key); ?>">
-                                                                    <input type="hidden" name="cbt_checklist_scope" value="smoke_tests">
-                                                                    <input type="hidden" name="cbt_checklist_item_index" value="<?php echo esc_attr((string) ($unit_test_item['item_index'] ?? '')); ?>">
-                                                                    <?php wp_nonce_field('cbt_test_hub_runner_' . (string) $unit_test_tab_key); ?>
-                                                                    <button type="submit" class="button cbt-test-hub-item-run-trigger" data-item-run-button <?php disabled(!$flow_runner_available || empty($unit_test_item['can_run_task'])); ?>><?php echo esc_html((string) ($unit_test_item['run_button_label'] ?? 'Run Task')); ?></button>
-                                                                </form>
+                                                                <button
+                                                                    type="submit"
+                                                                    class="button cbt-test-hub-item-run-trigger"
+                                                                    data-item-run-button
+                                                                    data-item-run-form-id="<?php echo esc_attr($flow_item_run_form_id); ?>"
+                                                                    form="<?php echo esc_attr($flow_item_run_form_id); ?>"
+                                                                    onclick="event.preventDefault(); event.stopPropagation(); var form = document.getElementById('<?php echo esc_js($flow_item_run_form_id); ?>'); if (form) { if (typeof form.requestSubmit === 'function') { form.requestSubmit(); } else { form.submit(); } } return false;"
+                                                                    <?php disabled(!$flow_runner_available || empty($unit_test_item['can_run_task'])); ?>
+                                                                ><?php echo esc_html((string) ($unit_test_item['run_button_label'] ?? 'Run Task')); ?></button>
                                                             <?php endif; ?>
                                                         </div>
                                                         <span class="cbt-test-hub-item-toggle">Detail</span>
@@ -1920,6 +1942,35 @@ if (!defined('ABSPATH')) {
                 element.addEventListener(eventName, function (event) {
                     event.stopPropagation();
                 });
+            });
+        });
+
+        document.querySelectorAll('[data-item-run-button]').forEach(function (button) {
+            button.addEventListener('click', function (event) {
+                const targetButton = event.currentTarget;
+                if (!(targetButton instanceof HTMLButtonElement) || targetButton.disabled) {
+                    return;
+                }
+
+                const formId = String(targetButton.getAttribute('data-item-run-form-id') || '').trim();
+                const formFromId = formId !== '' ? document.getElementById(formId) : null;
+                const parentForm = formFromId instanceof HTMLFormElement
+                    ? formFromId
+                    : targetButton.closest('form');
+
+                if (!(parentForm instanceof HTMLFormElement)) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                if (typeof parentForm.requestSubmit === 'function') {
+                    parentForm.requestSubmit(targetButton);
+                    return;
+                }
+
+                parentForm.submit();
             });
         });
 

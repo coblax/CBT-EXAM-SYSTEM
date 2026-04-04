@@ -438,13 +438,6 @@ export function createExamSessionManager(deps) {
                 expectedQuestionRevision: state.questionRevision
             }
         );
-        if (restoredQuestionCache) {
-            state.questions = [];
-            state.questionPayloadById = {};
-            state.loadedQuestionWindowOffsets = {};
-            state.windowOffset = 0;
-            state.windowLimit = 0;
-        }
 
         recordTimelineEntry('question-window:load:start', 'Memuat question window awal.', {
             attemptId: Number(state.attemptId) || 0,

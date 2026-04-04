@@ -376,6 +376,50 @@ class CBT_Live_Attempt_Roster_Index
     }
 
     /**
+     * @param array<int,int> $exam_ids
+     */
+    public static function has_active_attempts_for_exam_ids(array $exam_ids): bool
+    {
+        $exam_ids = array_values(array_unique(array_filter(array_map('intval', $exam_ids), static function (int $exam_id): bool {
+            return $exam_id > 0;
+        })));
+        if (empty($exam_ids)) {
+            return false;
+        }
+
+        $redis = self::roster_redis();
+        if (!$redis instanceof Redis) {
+            return false;
+        }
+
+        $exam_lookup = array_fill_keys($exam_ids, true);
+        $attempt_ids = $redis->zRange(self::active_attempts_key(), 0, -1);
+        if (!is_array($attempt_ids) || empty($attempt_ids)) {
+            return false;
+        }
+
+        foreach ($attempt_ids as $attempt_id_raw) {
+            $attempt_id = absint($attempt_id_raw);
+            if ($attempt_id <= 0) {
+                continue;
+            }
+
+            $row = self::read_row($redis, $attempt_id);
+            if (!is_array($row)) {
+                $redis->zRem(self::active_attempts_key(), (string) $attempt_id);
+                continue;
+            }
+
+            if (isset($exam_lookup[(int) ($row['exam_id'] ?? 0)])) {
+                self::touch_row($redis, $row);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @return array<string,mixed>|null
      */
     private static function read_row(Redis $redis, int $attempt_id): ?array

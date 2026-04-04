@@ -724,16 +724,7 @@ export function createQuestionCacheStorage(deps) {
                 return;
             }
 
-            var previousUpdatedAt = questionManifestUpdatedAt(previousManifest);
-            var nextUpdatedAt = questionManifestUpdatedAt(nextManifest);
             var contentChanged = questionManifestContentSignature(previousManifest) !== questionManifestContentSignature(nextManifest);
-            if (previousUpdatedAt !== '' && nextUpdatedAt !== '') {
-                if (previousUpdatedAt !== nextUpdatedAt && contentChanged) {
-                    changedLookup[questionId] = true;
-                }
-                return;
-            }
-
             if (contentChanged) {
                 changedLookup[questionId] = true;
             }

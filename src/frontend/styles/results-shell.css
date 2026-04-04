@@ -1014,7 +1014,6 @@
 
 .cbt-web-shell.cbt-theme-dark .cbt-subtitle,
 .cbt-web-shell.cbt-theme-dark .cbt-muted,
-.cbt-web-shell.cbt-theme-dark .cbt-exam-meta,
 .cbt-web-shell.cbt-theme-dark .cbt-login-help,
 .cbt-web-shell.cbt-theme-dark .cbt-review-empty,
 .cbt-web-shell.cbt-theme-dark .cbt-loading {
@@ -1090,10 +1089,6 @@
 .cbt-web-shell.cbt-theme-dark .cbt-exam-item.is-not-started {
     border-color: #3c5876;
     background: #101a2b;
-}
-
-.cbt-web-shell.cbt-theme-dark .cbt-exam-meta-attempt {
-    color: #b8d9fb;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-progress,

@@ -134,6 +134,32 @@
     justify-content: flex-end;
 }
 
+.cbt-question-head-row-top,
+.cbt-question-head-row-controls {
+    display: contents;
+}
+
+.cbt-question-head-row-info {
+    min-width: 0;
+}
+
+.cbt-question-head-row-info.cbt-question-head-main {
+    order: 1;
+}
+
+.cbt-question-head-controls-left {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    order: 2;
+}
+
+.cbt-question-head-controls-right {
+    display: flex;
+    align-items: center;
+    order: 3;
+}
+
 .cbt-nav-position-group {
     border-color: #bfd3e9;
     background: #eaf3fd;
@@ -367,6 +393,28 @@
     border-radius: 8px;
 }
 
+.cbt-option-label img,
+.cbt-option-label figure,
+.cbt-option-label .cbt-rich-image-figure,
+.cbt-option-label .cbt-rich-table-wrap,
+.cbt-option-label table,
+.cbt-option-label [style*="float"],
+.cbt-option-label .alignleft,
+.cbt-option-label .alignright {
+    float: none !important;
+    clear: both !important;
+}
+
+.cbt-option-label > img,
+.cbt-option-label > figure,
+.cbt-option-label > .cbt-rich-image-figure,
+.cbt-option-label > .cbt-rich-table-wrap,
+.cbt-option-label [style*="float"] {
+    display: block;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
 .cbt-rich-image-figure {
     margin: 0 0 14px;
 }
@@ -389,6 +437,9 @@
 .cbt-rich-table-wrap {
     margin-top: 14px;
     overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
 }
 
 .cbt-rich-table-wrap--compact {
@@ -400,6 +451,34 @@
     border-collapse: collapse;
     border: 1px solid #d5dee8;
     background: #fff;
+}
+
+.cbt-option-label .cbt-rich-table-wrap,
+.cbt-review-option .cbt-option-label .cbt-rich-table-wrap {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    margin-top: 8px;
+}
+
+.cbt-option-label .cbt-rich-content-table,
+.cbt-review-option .cbt-option-label .cbt-rich-content-table {
+    display: inline-table;
+    width: auto;
+    min-width: max-content;
+    max-width: none;
+    table-layout: auto;
+}
+
+.cbt-option-label .cbt-rich-content-table th,
+.cbt-option-label .cbt-rich-content-table td,
+.cbt-review-option .cbt-option-label .cbt-rich-content-table th,
+.cbt-review-option .cbt-option-label .cbt-rich-content-table td {
+    padding: 6px 8px;
+    font-size: 12px;
+    line-height: 1.35;
+    word-break: normal;
+    overflow-wrap: normal;
 }
 
 .cbt-rich-content-table caption {

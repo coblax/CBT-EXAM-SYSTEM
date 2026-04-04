@@ -232,6 +232,7 @@ export function createExamStageRenderer(deps) {
         var currentQuestionDisplayNumber = currentQuestion ? getQuestionDisplayNumber(currentQuestion, state.currentIndex) : Math.max(1, Number(state.currentIndex) + 1);
         var currentQuestionMetaLabel = currentQuestion ? (currentQuestionTypeLabel + ' | Poin ' + currentQuestionPoints) : '';
         var currentQuestionMetaCompact = currentQuestion ? (currentQuestionTypeCode + '\u00b7' + currentQuestionPoints) : '';
+        var currentQuestionMetaMobileFull = currentQuestion ? (currentQuestionTypeLabel + ' \u2022 Poin ' + currentQuestionPoints) : '';
         var doubtfulActionLabel = currentQuestionIsDoubtful ? 'Batalkan ragu-ragu' : 'Tandai ragu-ragu';
         var doubtfulActionClass = 'cbt-action-icon cbt-action-icon-doubtful' + (currentQuestionIsDoubtful ? ' is-active' : '');
         var answerEditingLocked = isExamAnswerEditingLocked();
@@ -313,6 +314,7 @@ export function createExamStageRenderer(deps) {
             currentQuestionIsChanged: currentQuestionIsChanged,
             currentQuestionIsDoubtful: currentQuestionIsDoubtful,
             currentQuestionMetaCompact: currentQuestionMetaCompact,
+            currentQuestionMetaMobileFull: currentQuestionMetaMobileFull,
             currentQuestionMetaLabel: currentQuestionMetaLabel,
             currentQuestionPoints: currentQuestionPoints,
             currentQuestionTypeLabel: currentQuestionTypeLabel,
@@ -412,13 +414,20 @@ export function createExamStageRenderer(deps) {
         return [
             '<section class="cbt-question-card cbt-question-card-loading">',
             '<div class="cbt-question-head">',
-            '<div class="cbt-question-head-main">',
+            '<div class="cbt-question-head-row cbt-question-head-row-top">',
+            '<div class="cbt-question-head-row-info cbt-question-head-main">',
             '<div class="cbt-chip cbt-chip-question-index" aria-label="Soal aktif"><span class="cbt-chip-mobile-icon" aria-hidden="true">#</span><span class="cbt-chip-label">Soal</span><span class="cbt-chip-value">' + escapeHtml(Math.max(1, Number(state.currentIndex) + 1)) + '</span></div>',
-            renderQuestionFontControls(),
             '</div>',
-            '<div class="cbt-question-head-tools">',
+            '<div class="cbt-question-head-controls-right cbt-question-head-tools">',
             (viewModel.calculatorEnabled ? renderCalculatorToggleButton(state.calculatorVisible) : ''),
             renderNavToggleButton(state.navPanelVisible, 'cbt-nav-toggle-head'),
+            '</div>',
+            '</div>',
+            '<div class="cbt-question-head-row cbt-question-head-row-controls">',
+            '<div class="cbt-question-head-controls-left">',
+            renderQuestionPrefetchIndicator('cbt-chip-prefetch-mobile-row'),
+            renderQuestionFontControls(),
+            '</div>',
             '</div>',
             '</div>',
             '<div class="cbt-question-body">',
@@ -440,17 +449,24 @@ export function createExamStageRenderer(deps) {
         return {
             questionHead: [
                 '<div class="' + viewModel.questionHeadClasses.join(' ') + '">',
-                '<div class="cbt-question-head-main">',
+                '<div class="cbt-question-head-row cbt-question-head-row-top">',
+                '<div class="cbt-question-head-row-info cbt-question-head-main">',
                 '<div class="cbt-chip cbt-chip-question-index" aria-label="Soal ' + escapeHtml(viewModel.currentQuestionDisplayNumber) + '"><span class="cbt-chip-mobile-icon" aria-hidden="true">#</span><span class="cbt-chip-label">Soal</span><span class="cbt-chip-value">' + escapeHtml(viewModel.currentQuestionDisplayNumber) + '</span></div>',
-                '<div class="cbt-chip cbt-chip-question-meta" title="' + escapeHtml(viewModel.currentQuestionMetaLabel) + '" aria-label="' + escapeHtml(viewModel.currentQuestionMetaLabel) + '"><span class="cbt-chip-mobile-meta" aria-hidden="true">' + escapeHtml(viewModel.currentQuestionMetaCompact) + '</span><span class="cbt-chip-type">' + escapeHtml(viewModel.currentQuestionTypeLabel) + '</span><span class="cbt-chip-separator" aria-hidden="true"></span><span class="cbt-chip-points">Poin ' + escapeHtml(viewModel.currentQuestionPoints) + '</span></div>',
+                '<div class="cbt-chip cbt-chip-question-meta" title="' + escapeHtml(viewModel.currentQuestionMetaLabel) + '" aria-label="' + escapeHtml(viewModel.currentQuestionMetaLabel) + '"><span class="cbt-chip-mobile-meta" aria-hidden="true">' + escapeHtml(viewModel.currentQuestionMetaCompact) + '</span><span class="cbt-chip-mobile-meta-full" aria-hidden="true">' + escapeHtml(viewModel.currentQuestionMetaMobileFull) + '</span><span class="cbt-chip-type">' + escapeHtml(viewModel.currentQuestionTypeLabel) + '</span><span class="cbt-chip-separator" aria-hidden="true"></span><span class="cbt-chip-points">Poin ' + escapeHtml(viewModel.currentQuestionPoints) + '</span></div>',
                 renderQuestionPrefetchIndicator(),
                 (viewModel.currentQuestionIsChanged ? '<div class="cbt-chip cbt-chip-danger">Soal baru / berubah</div>' : ''),
                 (viewModel.currentQuestionIsDoubtful ? '<div class="cbt-chip cbt-chip-warning cbt-chip-warning-icon" aria-label="Ragu-ragu"><span class="cbt-chip-warning-symbol" aria-hidden="true">!</span><span class="cbt-visually-hidden">Ragu-ragu</span></div>' : ''),
-                renderQuestionFontControls(),
                 '</div>',
-                '<div class="cbt-question-head-tools">',
+                '<div class="cbt-question-head-controls-right cbt-question-head-tools">',
                 (viewModel.calculatorEnabled ? renderCalculatorToggleButton(state.calculatorVisible) : ''),
                 renderNavToggleButton(state.navPanelVisible, 'cbt-nav-toggle-head'),
+                '</div>',
+                '</div>',
+                '<div class="cbt-question-head-row cbt-question-head-row-controls">',
+                '<div class="cbt-question-head-controls-left">',
+                renderQuestionPrefetchIndicator('cbt-chip-prefetch-mobile-row'),
+                renderQuestionFontControls(),
+                '</div>',
                 '</div>',
                 '</div>'
             ].join(''),

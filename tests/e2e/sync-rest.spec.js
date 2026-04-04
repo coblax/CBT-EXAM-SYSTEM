@@ -258,32 +258,49 @@ test.describe('Sync & REST flow check', () => {
             });
 
             if (postRetryStage === 'exam') {
-                await page.locator('[data-action="collect"], [data-action="finish"]').first().click({ force: true });
-                const postCollectStage = await waitForCondition(async () => {
-                    const resultShellVisible = await page.locator('.cbt-result-wrap').first().isVisible().catch(() => false);
-                    if (resultShellVisible) {
-                        return 'result';
+                const finishAction = page.locator('[data-action="collect"], [data-action="finish"]').first();
+                const finishActionVisible = await finishAction.isVisible().catch(() => false);
+
+                if (finishActionVisible) {
+                    let finishActionClicked = false;
+                    try {
+                        await finishAction.click({ force: true, timeout: 3000 });
+                        finishActionClicked = true;
+                    } catch (error) {
+                        const resultShellVisible = await page.locator('.cbt-result-wrap').first().isVisible().catch(() => false);
+                        if (!resultShellVisible) {
+                            throw error;
+                        }
                     }
 
-                    const finishConfirmVisible = await page.locator('[data-action="finish-confirm-submit"]').first().isVisible().catch(() => false);
-                    if (finishConfirmVisible) {
-                        return 'confirm';
+                    if (finishActionClicked) {
+                        const postCollectStage = await waitForCondition(async () => {
+                            const resultShellVisible = await page.locator('.cbt-result-wrap').first().isVisible().catch(() => false);
+                            if (resultShellVisible) {
+                                return 'result';
+                            }
+
+                            const finishConfirmVisible = await page.locator('[data-action="finish-confirm-submit"]').first().isVisible().catch(() => false);
+                            if (finishConfirmVisible) {
+                                return 'confirm';
+                            }
+
+                            const examShellVisible = await page.locator('[data-cbt-exam-shell="1"]').first().isVisible().catch(() => false);
+                            if (examShellVisible) {
+                                return 'exam';
+                            }
+
+                            return null;
+                        }, {
+                            timeoutMs: 20000,
+                            intervalMs: 250,
+                            errorMessage: 'Exam tidak kembali ke modal confirm atau result setelah retry finish.',
+                        });
+
+                        if (postCollectStage === 'confirm') {
+                            await page.locator('[data-action="finish-confirm-submit"]').first().click({ force: true });
+                        }
                     }
-
-                    const examShellVisible = await page.locator('[data-cbt-exam-shell="1"]').first().isVisible().catch(() => false);
-                    if (examShellVisible) {
-                        return 'exam';
-                    }
-
-                    return null;
-                }, {
-                    timeoutMs: 20000,
-                    intervalMs: 250,
-                    errorMessage: 'Exam tidak kembali ke modal confirm atau result setelah retry finish.',
-                });
-
-                if (postCollectStage === 'confirm') {
-                    await page.locator('[data-action="finish-confirm-submit"]').first().click({ force: true });
                 }
             }
 

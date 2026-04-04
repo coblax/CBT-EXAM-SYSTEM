@@ -12,6 +12,10 @@ if (!class_exists('CBT_Exam_Availability_Cache')) {
     require_once __DIR__ . '/class-cbt-exam-availability-cache.php';
 }
 
+if (!class_exists('CBT_Exam_Question_Delivery_Cache')) {
+    require_once __DIR__ . '/class-cbt-exam-question-delivery-cache.php';
+}
+
 if (!class_exists('CBT_Question_Submission_Context_Cache')) {
     require_once __DIR__ . '/class-cbt-question-submission-context-cache.php';
 }
@@ -541,7 +545,10 @@ class CBT_REST
             }
         }
 
-        $questions = self::get_cached_exam_question_payload($exam_id);
+        $use_student_delivery_snapshot = self::should_use_student_delivery_snapshot($role, $attempt);
+        $questions = $use_student_delivery_snapshot
+            ? self::get_student_exam_question_delivery_payload($exam_id)
+            : self::get_cached_exam_question_payload($exam_id);
         $window_mode = ($attempt_id > 0 && $limit > 0);
 
         if (is_array($attempt)) {
@@ -558,6 +565,9 @@ class CBT_REST
                 $exam_id,
                 (string) ($attempt['question_order'] ?? '')
             );
+            if ($use_student_delivery_snapshot) {
+                $questions = self::sanitize_question_delivery_payload($questions);
+            }
             $resolved_attempt_payload = self::resolve_attempt_question_payload(
                 $questions,
                 $attempt,
@@ -2433,30 +2443,86 @@ class CBT_REST
             12 * HOUR_IN_SECONDS,
             [CBT_Cache::namespace_exam($exam_id)],
             static function () use ($exam_id): array {
-                global $wpdb;
-
-                $question_table = $wpdb->prefix . 'cbt_questions';
-                $short_answer_table = $wpdb->prefix . 'cbt_question_short_answer';
-                $question_rows = (array) $wpdb->get_results(
-                    $wpdb->prepare(
-                        "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text, q.created_at, q.updated_at,
-                                COALESCE(q.is_active, 1) AS is_active,
-                                qsa.correct_text AS short_answer_correct_text
-                         FROM {$question_table} q
-                         LEFT JOIN {$short_answer_table} qsa ON qsa.question_id = q.id
-                         WHERE q.exam_id = %d
-                           AND COALESCE(q.is_active, 1) = 1
-                         ORDER BY q.id ASC",
-                        $exam_id
-                    ),
-                    ARRAY_A
-                );
-
-                return self::build_question_payload_from_rows($question_rows);
+                return self::build_exam_question_payload_from_db($exam_id);
             }
         );
 
         return is_array($payload) ? $payload : [];
+    }
+
+    public static function warm_exam_question_delivery_snapshot(int $exam_id): void
+    {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0 || !class_exists('CBT_Exam_Question_Delivery_Cache')) {
+            return;
+        }
+
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload($exam_id, static function (int $target_exam_id): array {
+            return self::build_student_exam_question_delivery_payload_from_db($target_exam_id);
+        });
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_exam_question_payload_from_db(int $exam_id): array
+    {
+        global $wpdb;
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $short_answer_table = $wpdb->prefix . 'cbt_question_short_answer';
+        $question_rows = (array) $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text, q.created_at, q.updated_at,
+                        COALESCE(q.is_active, 1) AS is_active,
+                        qsa.correct_text AS short_answer_correct_text
+                 FROM {$question_table} q
+                 LEFT JOIN {$short_answer_table} qsa ON qsa.question_id = q.id
+                 WHERE q.exam_id = %d
+                   AND COALESCE(q.is_active, 1) = 1
+                 ORDER BY q.id ASC",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+
+        return self::build_question_payload_from_rows($question_rows);
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_student_exam_question_delivery_payload_from_db(int $exam_id): array
+    {
+        return self::sanitize_question_delivery_payload(self::build_exam_question_payload_from_db($exam_id));
+    }
+
+    private static function should_use_student_delivery_snapshot(string $role, $attempt): bool
+    {
+        if (!self::is_student_role($role) || !is_array($attempt)) {
+            return false;
+        }
+
+        return (string) ($attempt['status'] ?? '') === 'in_progress';
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_student_exam_question_delivery_payload(int $exam_id): array
+    {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0) {
+            return [];
+        }
+
+        if (class_exists('CBT_Exam_Question_Delivery_Cache')) {
+            return CBT_Exam_Question_Delivery_Cache::get_exam_payload($exam_id, static function (int $target_exam_id): array {
+                return self::build_student_exam_question_delivery_payload_from_db($target_exam_id);
+            });
+        }
+
+        return self::sanitize_question_delivery_payload(self::get_cached_exam_question_payload($exam_id));
     }
 
     /**
@@ -2625,6 +2691,85 @@ class CBT_REST
         }
 
         return $questions;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $questions
+     * @return array<int,array<string,mixed>>
+     */
+    private static function sanitize_question_delivery_payload(array $questions): array
+    {
+        $sanitized_questions = [];
+
+        foreach ($questions as $question_row) {
+            $question = (array) $question_row;
+            $question_id = (int) ($question['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+
+            $sanitized = [
+                'id' => $question_id,
+                'exam_id' => (int) ($question['exam_id'] ?? 0),
+                'question_text' => (string) ($question['question_text'] ?? ''),
+                'question_type' => (string) ($question['question_type'] ?? ''),
+                'points' => (float) ($question['points'] ?? 0),
+                'created_at' => (string) ($question['created_at'] ?? ''),
+                'updated_at' => (string) ($question['updated_at'] ?? ''),
+                'is_active' => (int) ($question['is_active'] ?? 1),
+                'options' => [],
+            ];
+
+            if (!empty($question['options']) && is_array($question['options'])) {
+                foreach ((array) $question['options'] as $option_row) {
+                    $option = (array) $option_row;
+                    $option_id = (int) ($option['id'] ?? 0);
+                    if ($option_id <= 0) {
+                        continue;
+                    }
+
+                    $sanitized['options'][] = [
+                        'id' => $option_id,
+                        'option_key' => (string) ($option['option_key'] ?? ''),
+                        'option_text' => (string) ($option['option_text'] ?? ''),
+                    ];
+                }
+            }
+
+            if (!empty($question['short_answer_meta']) && is_array($question['short_answer_meta'])) {
+                $input_keys = array_values(array_filter(array_map(static function ($key): string {
+                    return strtoupper(trim((string) $key));
+                }, (array) ($question['short_answer_meta']['input_keys'] ?? [])), static function (string $key): bool {
+                    return $key !== '';
+                }));
+
+                $sanitized['short_answer_meta'] = [
+                    'max_inputs' => max(0, (int) ($question['short_answer_meta']['max_inputs'] ?? 0)),
+                    'input_count' => max(0, (int) ($question['short_answer_meta']['input_count'] ?? count($input_keys))),
+                    'input_keys' => $input_keys,
+                ];
+            }
+
+            if (!empty($question['true_false_matrix_meta']) && is_array($question['true_false_matrix_meta'])) {
+                $items = [];
+                foreach ((array) ($question['true_false_matrix_meta']['items'] ?? []) as $item_row) {
+                    $item = (array) $item_row;
+                    $items[] = [
+                        'key' => (string) ($item['key'] ?? ''),
+                        'text' => (string) ($item['text'] ?? ''),
+                    ];
+                }
+
+                $sanitized['true_false_matrix_meta'] = [
+                    'item_count' => max(0, (int) ($question['true_false_matrix_meta']['item_count'] ?? count($items))),
+                    'items' => $items,
+                ];
+            }
+
+            $sanitized_questions[] = $sanitized;
+        }
+
+        return $sanitized_questions;
     }
 
     /**
@@ -3601,6 +3746,13 @@ class CBT_REST
                 'question_type' => (string) ($question['question_type'] ?? ''),
                 'updated_at' => (string) ($question['updated_at'] ?? ''),
             ];
+            $question_text = (string) ($question['question_text'] ?? '');
+            if ($question_text !== '') {
+                $manifest_item['question_text'] = $question_text;
+            }
+            if (array_key_exists('points', $question)) {
+                $manifest_item['points'] = (float) ($question['points'] ?? 0);
+            }
             $question_number = (int) ($question['question_number'] ?? 0);
             if ($question_number > 0) {
                 $manifest_item['question_number'] = $question_number;

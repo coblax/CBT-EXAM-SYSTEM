@@ -273,9 +273,12 @@ export function createQuestionWindowManager(deps) {
         };
     }
 
-    function renderQuestionPrefetchIndicator() {
+    function renderQuestionPrefetchIndicator(extraClass) {
         var meta = getQuestionPrefetchMeta();
         var classes = ['cbt-chip', 'cbt-chip-prefetch'];
+        if (extraClass) {
+            classes.push(String(extraClass));
+        }
         if (meta.isLoading) {
             classes.push('is-loading');
         }
@@ -298,26 +301,32 @@ export function createQuestionWindowManager(deps) {
             return;
         }
 
-        var indicator = root.querySelector('[data-prefetch-indicator]');
-        if (!(indicator instanceof HTMLElement)) {
+        var indicators = Array.from(root.querySelectorAll('[data-prefetch-indicator]'));
+        if (!indicators.length) {
             return;
         }
 
         var meta = getQuestionPrefetchMeta();
-        indicator.classList.toggle('is-loading', meta.isLoading);
-        indicator.classList.toggle('is-complete', meta.isComplete);
-        indicator.setAttribute('title', meta.title);
-        indicator.setAttribute('aria-label', meta.ariaLabel);
+        indicators.forEach(function (indicator) {
+            if (!(indicator instanceof HTMLElement)) {
+                return;
+            }
 
-        var countEl = indicator.querySelector('[data-prefetch-count]');
-        if (countEl) {
-            countEl.textContent = meta.summaryText;
-        }
+            indicator.classList.toggle('is-loading', meta.isLoading);
+            indicator.classList.toggle('is-complete', meta.isComplete);
+            indicator.setAttribute('title', meta.title);
+            indicator.setAttribute('aria-label', meta.ariaLabel);
 
-        var statusEl = indicator.querySelector('[data-prefetch-status]');
-        if (statusEl) {
-            statusEl.textContent = meta.statusText;
-        }
+            var countEl = indicator.querySelector('[data-prefetch-count]');
+            if (countEl) {
+                countEl.textContent = meta.summaryText;
+            }
+
+            var statusEl = indicator.querySelector('[data-prefetch-status]');
+            if (statusEl) {
+                statusEl.textContent = meta.statusText;
+            }
+        });
     }
 
     function resetQuestionPrefetchIdleTimer() {

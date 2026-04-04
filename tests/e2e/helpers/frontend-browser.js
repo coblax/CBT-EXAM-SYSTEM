@@ -51,8 +51,14 @@ async function loginAsStudent(page, user) {
 
 async function logoutFromFrontend(page) {
     const logoutButton = page.locator('[data-action="logout"]').first();
+    const logoutResponse = page.waitForResponse((response) => {
+        return response.url().includes('/wp-json/cbt/v1/logout');
+    }, {
+        timeout: 20000,
+    }).catch(() => null);
     await expect(logoutButton).toBeVisible({ timeout: 20000 });
     await logoutButton.click({ force: true });
+    await logoutResponse;
     await expect(page.locator('#cbt-login-form')).toBeVisible({ timeout: 20000 });
 }
 

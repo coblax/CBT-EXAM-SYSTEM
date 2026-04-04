@@ -4,6 +4,39 @@ export function createAppMetaManager(deps) {
     var state = deps.state;
     var windowRef = deps.windowRef;
 
+    function normalizeRichTables(html) {
+        if (!/<table\b/i.test(html) || !windowRef || !windowRef.document || typeof windowRef.document.createElement !== 'function') {
+            return html;
+        }
+
+        var template = windowRef.document.createElement('template');
+        template.innerHTML = html;
+
+        Array.prototype.forEach.call(template.content.querySelectorAll('table'), function (table) {
+            if (!(table instanceof windowRef.HTMLTableElement)) {
+                return;
+            }
+
+            if (!table.classList.contains('cbt-rich-content-table')) {
+                table.classList.add('cbt-rich-content-table');
+            }
+
+            var parent = table.parentElement;
+            if (parent && parent.classList && parent.classList.contains('cbt-rich-table-wrap')) {
+                return;
+            }
+
+            var wrap = windowRef.document.createElement('div');
+            wrap.className = 'cbt-rich-table-wrap';
+            if (table.parentNode) {
+                table.parentNode.insertBefore(wrap, table);
+            }
+            wrap.appendChild(table);
+        });
+
+        return template.innerHTML;
+    }
+
     function normalizePhotoUrl(value) {
         var text = String(value || '').trim();
         if (!text) {
@@ -192,6 +225,8 @@ export function createAppMetaManager(deps) {
             html = html.replace(/\n\s*\n+/g, '\n');
             html = html.replace(/\n/g, '<br />');
         }
+
+        html = normalizeRichTables(html);
 
         return html;
     }

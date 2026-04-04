@@ -876,6 +876,7 @@ final class CBT_Admin_Test_Hub_Service
         }
         $queued_count = 0;
         $skipped_labels = [];
+        $storage_failed_labels = [];
         $queued_job_ids = [];
 
         foreach ($checklist_items as $index => $item_definition) {
@@ -905,21 +906,37 @@ final class CBT_Admin_Test_Hub_Service
             }
 
             $job = self::create_flow_check_job($tab, $scope, (int) $index, $item_definition, $item_commands);
-            self::write_flow_check_job($job);
+            if (!self::write_flow_check_job($job)) {
+                if ($item_label !== '') {
+                    $storage_failed_labels[] = $item_label;
+                }
+                continue;
+            }
             $queued_job_ids[] = (string) ($job['job_id'] ?? '');
             $queued_count += 1;
             $latest_jobs[self::flow_job_lookup_key($tab, $scope, (int) $index)] = $job;
         }
 
         if ($queued_count <= 0) {
+            if (!empty($storage_failed_labels)) {
+                self::redirect_test_hub_after_run(
+                    $tab,
+                    null,
+                    '',
+                    'Task flow check gagal disimpan ke storage background. Periksa permission direktori write untuk runner web: ' . implode(', ', $storage_failed_labels),
+                    $scope
+                );
+            }
+
             $error = !empty($skipped_labels)
                 ? 'Task flow check sudah sedang berjalan atau belum punya runner: ' . implode(', ', $skipped_labels)
                 : 'Tidak ada task flow check yang bisa diantrikan.';
             self::redirect_test_hub_after_run($tab, null, '', $error, $scope);
         }
 
+        $worker_start_failed = false;
         if (!$has_running_jobs) {
-            self::start_flow_check_job_process((string) $queued_job_ids[0]);
+            $worker_start_failed = !self::start_flow_check_job_process((string) $queued_job_ids[0]);
         }
 
         $message = $queued_count === 1
@@ -927,6 +944,19 @@ final class CBT_Admin_Test_Hub_Service
             : $queued_count . ' task flow check berhasil diantrikan di background.';
         if (!empty($skipped_labels)) {
             $message .= ' Beberapa task dilewati karena masih queued/running: ' . implode(', ', $skipped_labels) . '.';
+        }
+        if (!empty($storage_failed_labels)) {
+            $message .= ' Beberapa task gagal disimpan ke storage background: ' . implode(', ', $storage_failed_labels) . '.';
+        }
+
+        if ($worker_start_failed) {
+            self::redirect_test_hub_after_run(
+                $tab,
+                null,
+                '',
+                'Flow check tersimpan, tetapi worker background gagal dimulai. Periksa PATH Node.js dan permission direktori runner web.',
+                $scope
+            );
         }
 
         wp_safe_redirect(self::test_hub_page_url([
@@ -991,13 +1021,25 @@ final class CBT_Admin_Test_Hub_Service
                 continue;
             }
 
-            $path = isset($target['absolute_path']) ? (string) $target['absolute_path'] : '';
-            $label = isset($target['label']) ? (string) $target['label'] : $path;
-            if ($path === '') {
+            $target_paths = self::resolve_test_artifact_target_paths($target);
+            $label = isset($target['label']) ? (string) $target['label'] : (isset($target_paths[0]) ? (string) $target_paths[0] : '');
+            if (empty($target_paths)) {
                 continue;
             }
 
-            if (self::remove_test_artifact_path($path)) {
+            $target_success = true;
+            foreach ($target_paths as $path) {
+                if (!self::test_artifact_target_has_contents((string) $path)) {
+                    continue;
+                }
+
+                if (!self::remove_test_artifact_path((string) $path)) {
+                    $target_success = false;
+                    break;
+                }
+            }
+
+            if ($target_success) {
                 $deleted_labels[] = $label;
             } else {
                 $failed_labels[] = $label;
@@ -1265,8 +1307,9 @@ final class CBT_Admin_Test_Hub_Service
         if ($settings['e2e_base_url'] !== '') {
             $environment['CBT_E2E_BASE_URL'] = $settings['e2e_base_url'];
         }
+        $results_root = self::playwright_results_root_path();
         $environment['PLAYWRIGHT_BROWSERS_PATH'] = rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/.playwright-browsers';
-        $environment['PLAYWRIGHT_OUTPUT_DIR'] = rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/playwright-results/admin';
+        $environment['PLAYWRIGHT_OUTPUT_DIR'] = $results_root . '/admin';
 
         return $environment;
     }
@@ -1344,14 +1387,21 @@ final class CBT_Admin_Test_Hub_Service
         $existing_count = 0;
 
         foreach (self::get_test_artifact_cleanup_targets() as $target) {
-            $relative_path = isset($target['relative_path']) ? (string) $target['relative_path'] : '';
-            $absolute_path = self::plugin_relative_path($relative_path);
-            $exists = $absolute_path !== '' && file_exists($absolute_path);
+            $absolute_paths = self::resolve_test_artifact_target_paths($target);
+            $primary_path = isset($absolute_paths[0]) ? (string) $absolute_paths[0] : '';
+            $exists = false;
+            foreach ($absolute_paths as $candidate_path) {
+                if (self::test_artifact_target_has_contents((string) $candidate_path)) {
+                    $exists = true;
+                    break;
+                }
+            }
             if ($exists) {
                 $existing_count += 1;
             }
 
-            $target['absolute_path'] = $absolute_path;
+            $target['absolute_path'] = $primary_path;
+            $target['absolute_paths'] = $absolute_paths;
             $target['exists'] = $exists;
             $targets[] = $target;
         }
@@ -1369,10 +1419,10 @@ final class CBT_Admin_Test_Hub_Service
      */
     private static function get_test_artifact_cleanup_targets(): array
     {
-        return [
+        $targets = [
             [
                 'label' => 'Playwright Results',
-                'relative_path' => 'playwright-results',
+                'absolute_path' => self::playwright_results_root_path(),
                 'description' => 'Trace, screenshot, video, admin-jobs log, dan artefak run browser.',
             ],
             [
@@ -1390,7 +1440,61 @@ final class CBT_Admin_Test_Hub_Service
                 'relative_path' => '.phpunit.cache',
                 'description' => 'Cache run PHPUnit lokal untuk percepatan test developer.',
             ],
+            [
+                'label' => 'Output Playwright Artifacts',
+                'absolute_paths' => [
+                    rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/output/playwright',
+                    rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/output/playwright-auth',
+                    rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/output/playwright-result',
+                    rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/output/playwright-sync',
+                    rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/output/playwright-timer',
+                ],
+                'description' => 'Screenshot, snapshot text, dan bukti debug browser yang disimpan di folder output/playwright*.',
+            ],
         ];
+
+        $legacy_playwright_root = rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/playwright-results';
+        if (wp_normalize_path($legacy_playwright_root) !== wp_normalize_path(self::playwright_results_root_path())) {
+            $targets[] = [
+                'label' => 'Playwright Results (Legacy)',
+                'absolute_path' => $legacy_playwright_root,
+                'description' => 'Artefak Playwright lama yang masih tersimpan di root plugin dari run CLI/lokal.',
+            ];
+        }
+
+        return $targets;
+    }
+
+    /**
+     * @param array<string,mixed> $target
+     * @return array<int,string>
+     */
+    private static function resolve_test_artifact_target_paths(array $target): array
+    {
+        $resolved = [];
+
+        if (isset($target['absolute_paths']) && is_array($target['absolute_paths'])) {
+            foreach ((array) $target['absolute_paths'] as $absolute_path) {
+                $absolute_path = is_string($absolute_path) ? trim($absolute_path) : '';
+                if ($absolute_path !== '') {
+                    $resolved[] = $absolute_path;
+                }
+            }
+        }
+
+        if (empty($resolved)) {
+            $absolute_path = isset($target['absolute_path']) ? (string) $target['absolute_path'] : '';
+            if ($absolute_path === '') {
+                $relative_path = isset($target['relative_path']) ? (string) $target['relative_path'] : '';
+                $absolute_path = self::plugin_relative_path($relative_path);
+            }
+
+            if ($absolute_path !== '') {
+                $resolved[] = $absolute_path;
+            }
+        }
+
+        return array_values(array_unique($resolved));
     }
 
     private static function plugin_relative_path(string $relative_path): string
@@ -1407,7 +1511,28 @@ final class CBT_Admin_Test_Hub_Service
     {
         $normalized_path = wp_normalize_path($path);
         $plugin_root = wp_normalize_path(rtrim(CBT_EXAM_SYSTEM_PATH, '/\\'));
-        if ($normalized_path === '' || $plugin_root === '' || !str_starts_with($normalized_path, $plugin_root . '/')) {
+        $uploads_root = '';
+        if (function_exists('wp_upload_dir')) {
+            $uploads = wp_upload_dir();
+            $basedir = is_array($uploads) ? (string) ($uploads['basedir'] ?? '') : '';
+            if ($basedir !== '') {
+                $uploads_root = wp_normalize_path(rtrim($basedir, '/\\') . '/cbt-test-hub');
+            }
+        }
+
+        $allowed_roots = array_filter([$plugin_root, $uploads_root], static function ($root): bool {
+            return is_string($root) && $root !== '';
+        });
+
+        $is_allowed = false;
+        foreach ($allowed_roots as $root) {
+            if ($normalized_path === $root || str_starts_with($normalized_path, $root . '/')) {
+                $is_allowed = true;
+                break;
+            }
+        }
+
+        if ($normalized_path === '' || !$is_allowed) {
             return false;
         }
 
@@ -1442,12 +1567,45 @@ final class CBT_Admin_Test_Hub_Service
             }
         }
 
-        return @rmdir($path);
+        if (@rmdir($path)) {
+            return true;
+        }
+
+        clearstatcache(true, $path);
+
+        return self::is_empty_directory($path);
+    }
+
+    private static function test_artifact_target_has_contents(string $path): bool
+    {
+        if ($path === '' || !file_exists($path)) {
+            return false;
+        }
+
+        if (is_file($path) || is_link($path)) {
+            return true;
+        }
+
+        if (!is_dir($path)) {
+            return false;
+        }
+
+        return !self::is_empty_directory($path);
+    }
+
+    private static function is_empty_directory(string $path): bool
+    {
+        if (!is_dir($path)) {
+            return false;
+        }
+
+        $iterator = new FilesystemIterator($path, FilesystemIterator::SKIP_DOTS);
+        return !$iterator->valid();
     }
 
     private static function flow_job_directory_path(): string
     {
-        return rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/' . self::FLOW_JOB_DIRECTORY_RELATIVE;
+        return self::playwright_results_root_path() . '/admin-jobs';
     }
 
     private static function flow_job_file_path(string $job_id): string
@@ -1460,35 +1618,107 @@ final class CBT_Admin_Test_Hub_Service
         return self::flow_job_directory_path() . '/' . sanitize_file_name($job_id) . '.log';
     }
 
-    private static function ensure_flow_job_directory(): void
+    private static function playwright_results_root_path(): string
     {
-        $root_directory = rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/playwright-results';
-        wp_mkdir_p($root_directory);
-        wp_mkdir_p(self::flow_job_directory_path());
+        static $resolved_root = null;
+        if (is_string($resolved_root) && $resolved_root !== '') {
+            return $resolved_root;
+        }
 
-        foreach ([$root_directory, self::flow_job_directory_path()] as $directory_path) {
-            if (is_dir($directory_path)) {
-                @chmod($directory_path, 0777);
+        $candidate_paths = [
+            rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/playwright-results',
+        ];
+
+        if (function_exists('wp_upload_dir')) {
+            $uploads = wp_upload_dir();
+            $basedir = is_array($uploads) ? (string) ($uploads['basedir'] ?? '') : '';
+            if ($basedir !== '') {
+                $candidate_paths[] = rtrim($basedir, '/\\') . '/cbt-test-hub/playwright-results';
             }
         }
+
+        foreach ($candidate_paths as $candidate_path) {
+            if (self::ensure_directory_is_writable($candidate_path)) {
+                $resolved_root = $candidate_path;
+                return $resolved_root;
+            }
+        }
+
+        $resolved_root = $candidate_paths[0];
+        return $resolved_root;
+    }
+
+    private static function ensure_directory_is_writable(string $directory_path): bool
+    {
+        if ($directory_path === '') {
+            return false;
+        }
+
+        wp_mkdir_p($directory_path);
+        if (!is_dir($directory_path)) {
+            return false;
+        }
+
+        @chmod($directory_path, 0777);
+
+        return is_writable($directory_path);
+    }
+
+    private static function ensure_flow_job_directory(): bool
+    {
+        $root_directory = self::playwright_results_root_path();
+        $job_directory = self::flow_job_directory_path();
+
+        $root_ready = self::ensure_directory_is_writable($root_directory);
+        $job_ready = self::ensure_directory_is_writable($job_directory);
+
+        return $root_ready && $job_ready && is_dir($job_directory) && is_writable($job_directory);
     }
 
     /**
      * @param array<string,mixed> $job
      */
-    private static function write_flow_check_job(array $job): void
+    private static function write_flow_check_job(array $job): bool
     {
-        self::ensure_flow_job_directory();
+        if (!self::ensure_flow_job_directory()) {
+            return false;
+        }
+
         $encoded = wp_json_encode($job, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         if (!is_string($encoded) || $encoded === '') {
-            return;
+            return false;
         }
 
         $job_path = self::flow_job_file_path((string) ($job['job_id'] ?? ''));
-        file_put_contents($job_path, $encoded);
+        $bytes_written = file_put_contents($job_path, $encoded);
         if (is_file($job_path)) {
             @chmod($job_path, 0666);
         }
+
+        clearstatcache(true, $job_path);
+
+        return $bytes_written !== false && is_file($job_path);
+    }
+
+    private static function mark_flow_check_job_failed(string $job_id, string $failure_summary, string $stderr = '', string $failure_kind = 'interrupted'): void
+    {
+        $job_path = self::flow_job_file_path($job_id);
+        $job = self::read_flow_check_job_from_path($job_path);
+        if (!is_array($job)) {
+            return;
+        }
+
+        $job['status'] = 'failed';
+        $job['finished_at'] = time();
+        $job['exit_code'] = 1;
+        $job['failure_kind'] = $failure_kind;
+        $job['failure_summary'] = $failure_summary;
+        if ($stderr !== '') {
+            $existing_stderr = trim((string) ($job['stderr'] ?? ''));
+            $job['stderr'] = $existing_stderr === '' ? $stderr : ($existing_stderr . PHP_EOL . PHP_EOL . $stderr);
+        }
+
+        self::write_flow_check_job($job);
     }
 
     /**
@@ -1826,10 +2056,10 @@ final class CBT_Admin_Test_Hub_Service
         self::start_flow_check_job_process($next_queued_job_id);
     }
 
-    private static function start_flow_check_job_process(string $job_id): void
+    private static function start_flow_check_job_process(string $job_id): bool
     {
         if ($job_id === '' || !function_exists('proc_open')) {
-            return;
+            return false;
         }
 
         $environment = self::build_runner_environment();
@@ -1845,7 +2075,13 @@ final class CBT_Admin_Test_Hub_Service
 
         $process = proc_open($command, $descriptorspec, $pipes, CBT_EXAM_SYSTEM_PATH, $environment);
         if (!is_resource($process)) {
-            return;
+            self::mark_flow_check_job_failed(
+                $job_id,
+                'Worker background gagal dimulai dari PHP web.',
+                'proc_open tidak berhasil membuat worker background untuk flow check.',
+                'interrupted'
+            );
+            return false;
         }
 
         foreach ($pipes as $pipe) {
@@ -1854,7 +2090,18 @@ final class CBT_Admin_Test_Hub_Service
             }
         }
 
-        proc_close($process);
+        $exit_code = proc_close($process);
+        if ($exit_code !== 0) {
+            self::mark_flow_check_job_failed(
+                $job_id,
+                'Worker background gagal dimulai dari shell web.',
+                'Shell background untuk flow check keluar dengan exit code ' . (int) $exit_code . '.',
+                'interrupted'
+            );
+            return false;
+        }
+
+        return true;
     }
 
     /**

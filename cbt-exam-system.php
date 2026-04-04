@@ -23,6 +23,7 @@ require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-runtime.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-active-attempt-index.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-student-profile-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-availability-cache.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-question-delivery-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-question-submission-context-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-security-live-counters.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-live-proctoring-presence.php';

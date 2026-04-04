@@ -65,7 +65,9 @@ async function importDocxAndSync(adminPage, fixture, fileName, questionType) {
         path.join(fixtureDirectory, fileName),
         questionType
     );
-    await expect(adminPage.getByText('Import ke Bank Soal selesai diproses.')).toBeVisible({ timeout: 20000 });
+    await expect(
+        adminPage.getByText(/Import (ke Bank Soal selesai diproses\.|soal ke Bank Soal selesai\.)/i).first()
+    ).toBeVisible({ timeout: 20000 });
     const syncResult = syncE2ESubjectBankQuestionsToFixture('import_preview', {
         subject_id: Number(fixture.exam.subject_id),
     });
@@ -832,7 +834,7 @@ test.describe('Import & Preview flow check', () => {
         try {
             await test.step('Admin mengunggah DOCX invalid yang memuat beberapa blok hardening failure', async () => {
                 await loginToWpAdmin(adminPage, catalog.users.admin_seed);
-                await uploadQuestionsDocx(adminPage, Number(fixture.exam.subject_id), path.join(fixtureDirectory, 'invalid-hardening.docx'), 'multiple_choice');
+                await uploadQuestionsDocx(adminPage, Number(fixture.exam.subject_id), path.join(fixtureDirectory, 'invalid-hardening.docx'), 'all');
                 await expect(
                     adminPage.getByText(/Import (ke Bank Soal selesai diproses\.|soal ke Bank Soal selesai\.)/i).first()
                 ).toBeVisible({ timeout: 20000 });

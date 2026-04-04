@@ -315,6 +315,11 @@ final class CBT_Admin_Questions_Sync_Helper
     
             if (!empty($affected_exam_ids)) {
                 CBT_Cache::invalidate_exams(array_values($affected_exam_ids));
+                if (class_exists('CBT_REST') && method_exists('CBT_REST', 'warm_exam_question_delivery_snapshot')) {
+                    foreach (array_values($affected_exam_ids) as $affected_exam_id) {
+                        CBT_REST::warm_exam_question_delivery_snapshot((int) $affected_exam_id);
+                    }
+                }
             }
     
             return [

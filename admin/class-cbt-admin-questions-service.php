@@ -6,6 +6,7 @@ if (!defined('ABSPATH')) {
 
 final class CBT_Admin_Questions_Service
 {
+    private const TEST_REDIRECT_SIGNAL = '__cbt_admin_questions_redirect__';
     private const QUESTION_IMPORT_SCOPE_CREATED = 'created';
 
     public static function can_manage_questions(): bool
@@ -41,6 +42,130 @@ final class CBT_Admin_Questions_Service
         }
 
         return $args;
+    }
+
+    private static function dispatch_redirect(string $url): void
+    {
+        wp_safe_redirect($url);
+        if (defined('PHPUNIT_COMPOSER_INSTALL')) {
+            throw new RuntimeException(self::TEST_REDIRECT_SIGNAL);
+        }
+
+        exit;
+    }
+
+    /**
+     * @param array<int,int> $exam_ids
+     */
+    private static function warm_exam_question_delivery_snapshots(array $exam_ids): void
+    {
+        if (!class_exists('CBT_REST') || !method_exists('CBT_REST', 'warm_exam_question_delivery_snapshot')) {
+            return;
+        }
+
+        $exam_ids = array_values(array_unique(array_filter(array_map('intval', $exam_ids), static function (int $exam_id): bool {
+            return $exam_id > 0;
+        })));
+        foreach ($exam_ids as $exam_id) {
+            CBT_REST::warm_exam_question_delivery_snapshot($exam_id);
+        }
+    }
+
+    /**
+     * @param array<int,int> $question_ids
+     * @return array<int,int>
+     */
+    private static function collect_impacted_exam_ids_for_question_ids(array $question_ids): array
+    {
+        global $wpdb;
+
+        $question_ids = array_values(array_unique(array_filter(array_map('absint', $question_ids))));
+        if (empty($question_ids)) {
+            return [];
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+        $question_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, exam_id
+                 FROM {$question_table}
+                 WHERE id IN ({$placeholders})",
+                ...$question_ids
+            ),
+            ARRAY_A
+        );
+
+        $impacted_exam_ids = [];
+        foreach ((array) $question_rows as $question_row) {
+            $exam_id = (int) ($question_row['exam_id'] ?? 0);
+            if ($exam_id > 0) {
+                $impacted_exam_ids[$exam_id] = $exam_id;
+            }
+        }
+
+        $descendant_exam_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT DISTINCT exam_id
+                 FROM {$question_table}
+                 WHERE source_question_id IN ({$placeholders})",
+                ...$question_ids
+            ),
+            ARRAY_A
+        );
+        foreach ((array) $descendant_exam_rows as $exam_row) {
+            $exam_id = (int) ($exam_row['exam_id'] ?? 0);
+            if ($exam_id > 0) {
+                $impacted_exam_ids[$exam_id] = $exam_id;
+            }
+        }
+
+        return array_values($impacted_exam_ids);
+    }
+
+    /**
+     * @param array<int,int> $exam_ids
+     */
+    private static function has_in_progress_attempts_for_exam_ids(array $exam_ids): bool
+    {
+        global $wpdb;
+
+        $exam_ids = array_values(array_unique(array_filter(array_map('intval', $exam_ids), static function (int $exam_id): bool {
+            return $exam_id > 0;
+        })));
+        if (empty($exam_ids)) {
+            return false;
+        }
+
+        if (
+            class_exists('CBT_Live_Attempt_Roster_Index')
+            && method_exists('CBT_Live_Attempt_Roster_Index', 'is_available')
+            && CBT_Live_Attempt_Roster_Index::is_available()
+            && method_exists('CBT_Live_Attempt_Roster_Index', 'has_active_attempts_for_exam_ids')
+        ) {
+            return CBT_Live_Attempt_Roster_Index::has_active_attempts_for_exam_ids($exam_ids);
+        }
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $placeholders = implode(',', array_fill(0, count($exam_ids), '%d'));
+        $found_attempt_id = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT id
+                 FROM {$attempt_table}
+                 WHERE status = %s
+                   AND exam_id IN ({$placeholders})
+                 LIMIT 1",
+                'in_progress',
+                ...$exam_ids
+            )
+        );
+
+        return $found_attempt_id > 0;
+    }
+
+    private static function active_attempt_delete_error_message(): string
+    {
+        return 'Soal tidak bisa dihapus saat masih ada peserta aktif pada exam terkait.';
     }
 
     /**
@@ -1430,6 +1555,7 @@ final class CBT_Admin_Questions_Service
             foreach ($affected_exam_ids as $affected_exam_id) {
                 CBT_Cache::invalidate_exam((int) $affected_exam_id);
             }
+            self::warm_exam_question_delivery_snapshots(array_values($affected_exam_ids));
     
             $success_message = $id > 0 ? 'Question updated' : 'Question saved to Bank Soal';
             wp_safe_redirect(add_query_arg(
@@ -1483,9 +1609,7 @@ final class CBT_Admin_Questions_Service
     
             if ($id > 0) {
                 global $wpdb;
-                $affected_exam_id = (int) $wpdb->get_var(
-                    $wpdb->prepare("SELECT exam_id FROM {$wpdb->prefix}cbt_questions WHERE id = %d", $id)
-                );
+                $affected_exam_ids = self::collect_impacted_exam_ids_for_question_ids([$id]);
                 if (!self::is_admin_scope()) {
                     $owned_question = (int) $wpdb->get_var($wpdb->prepare(
                         "SELECT COUNT(*)
@@ -1499,13 +1623,39 @@ final class CBT_Admin_Questions_Service
                         wp_die('Unauthorized question delete.');
                     }
                 }
+                if (self::has_in_progress_attempts_for_exam_ids($affected_exam_ids)) {
+                    $redirect_args = [
+                        'page' => $return_page,
+                        'cbt_err' => self::active_attempt_delete_error_message(),
+                        'cbt_question_per_page' => $question_per_page,
+                        'cbt_question_paged' => $question_paged,
+                    ];
+                    if ($filter_exam_id > 0) {
+                        $redirect_args['filter_exam_id'] = $filter_exam_id;
+                    }
+                    if ($filter_type !== '') {
+                        $redirect_args['filter_type'] = $filter_type;
+                    }
+                    if ($filter_source_kind !== '') {
+                        $redirect_args['filter_source_kind'] = $filter_source_kind;
+                    }
+                    if ($filter_subject_id > 0) {
+                        $redirect_args['filter_subject_id'] = $filter_subject_id;
+                    }
+                    if ($question_import_batch_notice === '') {
+                        $redirect_args = self::add_question_import_batch_scope_args($redirect_args, $question_import_token, $question_import_scope);
+                    }
+
+                    self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+                }
                 $wpdb->delete($wpdb->prefix . 'cbt_questions', ['id' => $id], ['%d']);
                 if ($question_import_token !== '' && $question_import_scope === self::QUESTION_IMPORT_SCOPE_CREATED && in_array($id, $question_import_batch_ids, true)) {
                     CBT_Admin_Questions_Import_Helper::remove_question_import_created_question_ids_for_current_user($question_import_token, [$id]);
                 }
-                if ($affected_exam_id > 0) {
+                if (!empty($affected_exam_ids)) {
                     CBT_Cache::invalidate_catalog();
-                    CBT_Cache::invalidate_exam($affected_exam_id);
+                    CBT_Cache::invalidate_exams($affected_exam_ids);
+                    self::warm_exam_question_delivery_snapshots($affected_exam_ids);
                 }
             }
     
@@ -1533,8 +1683,7 @@ final class CBT_Admin_Questions_Service
                 $redirect_args = self::add_question_import_batch_scope_args($redirect_args, $question_import_token, $question_import_scope);
             }
 
-            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-            exit;
+            self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
         }
 
         public static function handle_delete_all_import_batch_questions(): void
@@ -1563,32 +1712,21 @@ final class CBT_Admin_Questions_Service
 
             if ($question_import_token === '' || $question_import_scope !== self::QUESTION_IMPORT_SCOPE_CREATED) {
                 $redirect_args['cbt_err'] = 'Batch hasil import tidak valid untuk dihapus.';
-                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-                exit;
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
 
             $target_ids = CBT_Admin_Questions_Import_Helper::get_question_import_created_question_ids_for_current_user($question_import_token);
             if (empty($target_ids)) {
                 $redirect_args['cbt_err'] = 'Sesi hasil import batch sudah berakhir atau batch ini sudah kosong.';
-                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-                exit;
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
 
             global $wpdb;
-            $affected_exam_ids = [];
-            $placeholders = implode(',', array_fill(0, count($target_ids), '%d'));
-            $exam_rows = $wpdb->get_results(
-                $wpdb->prepare(
-                    "SELECT DISTINCT exam_id FROM {$wpdb->prefix}cbt_questions WHERE id IN ({$placeholders})",
-                    ...$target_ids
-                ),
-                ARRAY_A
-            );
-            foreach ((array) $exam_rows as $exam_row) {
-                $exam_id = (int) ($exam_row['exam_id'] ?? 0);
-                if ($exam_id > 0) {
-                    $affected_exam_ids[$exam_id] = $exam_id;
-                }
+            $affected_exam_ids = self::collect_impacted_exam_ids_for_question_ids($target_ids);
+            if (self::has_in_progress_attempts_for_exam_ids($affected_exam_ids)) {
+                $redirect_args['cbt_err'] = self::active_attempt_delete_error_message();
+                $redirect_args = self::add_question_import_batch_scope_args($redirect_args, $question_import_token, $question_import_scope);
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
 
             $state = [
@@ -1603,14 +1741,12 @@ final class CBT_Admin_Questions_Service
             if ($token === '') {
                 $redirect_args = self::add_question_import_batch_scope_args($redirect_args, $question_import_token, $question_import_scope);
                 $redirect_args['cbt_err'] = 'Gagal menyiapkan sesi hapus batch hasil import. Coba lagi.';
-                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-                exit;
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
 
             $redirect_args['cbt_question_delete_token'] = $token;
             $redirect_args = self::add_question_import_batch_scope_args($redirect_args, $question_import_token, $question_import_scope);
-            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-            exit;
+            self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
         }
 
         public static function handle_bulk_delete_questions(): void
@@ -1683,14 +1819,12 @@ final class CBT_Admin_Questions_Service
                 }
             }
             if ($question_import_batch_expired) {
-                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-                exit;
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
     
             if (empty($question_ids)) {
                 $redirect_args['cbt_err'] = 'Pilih minimal satu soal untuk dihapus.';
-                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-                exit;
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
     
             global $wpdb;
@@ -1714,24 +1848,13 @@ final class CBT_Admin_Questions_Service
     
             if (empty($target_ids)) {
                 $redirect_args['cbt_err'] = 'Tidak ada soal yang bisa dihapus.';
-                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-                exit;
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
     
-            $affected_exam_ids = [];
-            $placeholders = implode(',', array_fill(0, count($target_ids), '%d'));
-            $exam_rows = $wpdb->get_results(
-                $wpdb->prepare(
-                    "SELECT DISTINCT exam_id FROM {$wpdb->prefix}cbt_questions WHERE id IN ({$placeholders})",
-                    ...$target_ids
-                ),
-                ARRAY_A
-            );
-            foreach ((array) $exam_rows as $exam_row) {
-                $exam_id = (int) ($exam_row['exam_id'] ?? 0);
-                if ($exam_id > 0) {
-                    $affected_exam_ids[$exam_id] = $exam_id;
-                }
+            $affected_exam_ids = self::collect_impacted_exam_ids_for_question_ids($target_ids);
+            if (self::has_in_progress_attempts_for_exam_ids($affected_exam_ids)) {
+                $redirect_args['cbt_err'] = self::active_attempt_delete_error_message();
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
 
             $state = [
@@ -1749,13 +1872,11 @@ final class CBT_Admin_Questions_Service
             $token = self::start_question_delete_session($target_ids, $state);
             if ($token === '') {
                 $redirect_args['cbt_err'] = 'Gagal menyiapkan sesi hapus soal. Coba lagi.';
-                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-                exit;
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
     
             $redirect_args['cbt_question_delete_token'] = $token;
-            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-            exit;
+            self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
         }
 
         private static function continue_bulk_delete_questions(string $token): void
@@ -1808,8 +1929,7 @@ final class CBT_Admin_Questions_Service
             if (!is_array($target_ids) || empty($target_ids)) {
                 self::clear_question_delete_transients($token);
                 $redirect_args['cbt_err'] = 'Data batch hapus soal tidak ditemukan. Silakan pilih ulang soal.';
-                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-                exit;
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
     
             $target_ids = array_values(array_map('intval', $target_ids));
@@ -1820,8 +1940,7 @@ final class CBT_Admin_Questions_Service
             if ($total <= 0 || empty($target_ids)) {
                 self::clear_question_delete_transients($token);
                 $redirect_args['cbt_err'] = 'Data hapus soal kosong.';
-                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-                exit;
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
             if ($offset < 0) {
                 $offset = 0;
@@ -1838,6 +1957,11 @@ final class CBT_Admin_Questions_Service
                         $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
                     }
                 }
+            }
+            if (self::has_in_progress_attempts_for_exam_ids(array_values($affected_exam_ids))) {
+                self::clear_question_delete_transients($token);
+                $redirect_args['cbt_err'] = 'Proses hapus dibatalkan karena masih ada peserta aktif pada exam terkait.';
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
     
             $batch_size = self::get_question_delete_batch_size();
@@ -1886,25 +2010,23 @@ final class CBT_Admin_Questions_Service
                 if (!$state_saved) {
                     self::clear_question_delete_transients($token);
                     $redirect_args['cbt_err'] = 'Gagal menyimpan progres hapus soal. Silakan ulangi proses.';
-                    wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-                    exit;
+                    self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
                 }
                 $redirect_args['cbt_question_delete_token'] = $token;
-                wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-                exit;
+                self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             }
     
             self::clear_question_delete_transients($token);
             if ($deleted > 0) {
                 CBT_Cache::invalidate_catalog();
                 CBT_Cache::invalidate_exams(array_values($affected_exam_ids));
+                self::warm_exam_question_delivery_snapshots(array_values($affected_exam_ids));
                 $redirect_args['cbt_msg'] = sprintf('Hapus soal selesai. Total: %d, Deleted: %d, Failed: %d', $total, $deleted, $failed);
             } else {
                 $redirect_args['cbt_err'] = 'Tidak ada soal yang berhasil dihapus.';
             }
     
-            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
-            exit;
+            self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
         }
 
         private static function get_question_delete_state_key(string $token): string

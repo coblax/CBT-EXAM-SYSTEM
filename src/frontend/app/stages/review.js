@@ -226,7 +226,7 @@ export function createReviewRenderer(deps) {
                         '<div class="' + optionClasses.join(' ') + '" data-option-id="' + escapeHtml(optionId) + '">',
                         '<div class="cbt-review-option-main">',
                         '<span class="cbt-option-key">' + escapeHtml(questionOptionKey(option, index)) + '</span>',
-                        '<span class="cbt-option-label">' + safeRichHtml(option && option.option_text ? option.option_text : '') + '</span>',
+                        '<div class="cbt-option-label">' + safeRichHtml(option && option.option_text ? option.option_text : '') + '</div>',
                         '</div>',
                         badges.length ? '<div class="cbt-review-option-badges">' + badges.join('') + '</div>' : '',
                         '</div>'

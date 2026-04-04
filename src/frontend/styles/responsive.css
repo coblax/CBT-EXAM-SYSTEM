@@ -71,10 +71,6 @@
         font-size: 28px;
     }
 
-    .cbt-login-step {
-        padding: 10px;
-    }
-
     .cbt-topbar {
         flex-direction: column;
         align-items: flex-start;

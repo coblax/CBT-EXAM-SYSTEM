@@ -43,6 +43,10 @@ if (!defined('ARRAY_A')) {
     define('ARRAY_A', 'ARRAY_A');
 }
 
+if (!defined('OBJECT')) {
+    define('OBJECT', 'OBJECT');
+}
+
 if (!function_exists('absint')) {
     function absint($maybeint): int
     {
@@ -97,6 +101,33 @@ if (!function_exists('wp_json_encode')) {
     function wp_json_encode($value, $flags = 0, $depth = 512): string|false
     {
         return json_encode($value, $flags, $depth);
+    }
+}
+
+if (!function_exists('wp_list_pluck')) {
+    function wp_list_pluck($input_list, $field, $index_key = null): array
+    {
+        $result = [];
+        foreach ((array) $input_list as $item) {
+            if (is_array($item)) {
+                $value = $item[$field] ?? null;
+                $index = $index_key !== null ? ($item[$index_key] ?? null) : null;
+            } elseif (is_object($item)) {
+                $value = $item->{$field} ?? null;
+                $index = $index_key !== null ? ($item->{$index_key} ?? null) : null;
+            } else {
+                $value = null;
+                $index = null;
+            }
+
+            if ($index_key !== null && (is_scalar($index) || $index === null)) {
+                $result[(string) $index] = $value;
+            } else {
+                $result[] = $value;
+            }
+        }
+
+        return $result;
     }
 }
 
@@ -722,6 +753,12 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
             return true;
         }
 
+        public function ttl($key)
+        {
+            $key = (string) $key;
+            return array_key_exists($key, $GLOBALS['cbt_test_redis_storage']) ? 44100 : -2;
+        }
+
         public function zAdd($key, $score, $member, ...$extra_args)
         {
             $key = (string) $key;
@@ -1138,6 +1175,20 @@ if (!function_exists('get_current_user_id')) {
     function get_current_user_id(): int
     {
         return (int) ($GLOBALS['cbt_test_current_user_id'] ?? 0);
+    }
+}
+
+if (!function_exists('get_permalink')) {
+    function get_permalink($post = 0): string
+    {
+        return '';
+    }
+}
+
+if (!function_exists('get_page_by_path')) {
+    function get_page_by_path($page_path, $output = OBJECT, $post_type = 'page')
+    {
+        return null;
     }
 }
 

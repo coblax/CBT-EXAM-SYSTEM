@@ -1,9 +1,22 @@
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { expect } = require('@playwright/test');
 
 async function loginToWpAdmin(page, adminUser) {
-    await page.goto('/wp-login.php');
+    await page.goto('/wp-admin/');
     if (await page.locator('#wpadminbar').count()) {
+        await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 20000 });
+        return;
+    }
+
+    if (!await page.locator('#user_login').count()) {
+        await page.goto('/wp-login.php');
+    }
+
+    if (await page.locator('#wpadminbar').count()) {
+        await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 20000 });
         return;
     }
 
@@ -54,12 +67,75 @@ async function openQuestionsImportPage(page) {
     await expect(page.locator('#cbt-import-subject-id')).toBeVisible({ timeout: 20000 });
 }
 
+async function openQuestionsListPage(page) {
+    await page.goto('/wp-admin/admin.php?page=cbt-question-bank');
+    const listTab = page.locator('[data-cbt-questions-tab="list"]').first();
+    await expect(listTab).toBeVisible({ timeout: 20000 });
+    await listTab.click({ force: true });
+    await expect(page.locator('[data-cbt-questions-list-shell]').first()).toBeVisible({ timeout: 20000 });
+}
+
 async function openQuestionsFormPage(page) {
     await page.goto('/wp-admin/admin.php?page=cbt-question-bank');
     const formTab = page.locator('[data-cbt-questions-tab="form"]').first();
     await expect(formTab).toBeVisible({ timeout: 20000 });
     await formTab.click({ force: true });
     await expect(page.locator('#cbt-question-manual-form')).toBeVisible({ timeout: 20000 });
+}
+
+async function openQuestionEditPage(page, questionId) {
+    const safeQuestionId = Number(questionId) || 0;
+    if (safeQuestionId <= 0) {
+        throw new Error('questionId tidak valid untuk openQuestionEditPage().');
+    }
+
+    await page.goto(`/wp-admin/admin.php?page=cbt-question-bank&edit=${safeQuestionId}`);
+    await expect(page.locator('#cbt-question-manual-form')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('input[name="id"]').first()).toHaveValue(String(safeQuestionId), { timeout: 20000 });
+}
+
+async function findQuestionRowByMarker(page, markerText) {
+    const safeMarkerText = String(markerText || '').trim();
+    if (safeMarkerText === '') {
+        throw new Error('markerText tidak valid untuk findQuestionRowByMarker().');
+    }
+
+    await openQuestionsListPage(page);
+    const row = page.locator('tr[id^="cbt-question-row-"]').filter({ hasText: safeMarkerText }).first();
+    await expect(row).toBeVisible({ timeout: 20000 });
+    return row;
+}
+
+async function getQuestionIdFromRow(rowLocator) {
+    const checkbox = rowLocator.locator('.cbt-question-checkbox').first();
+    await expect(checkbox).toBeVisible({ timeout: 20000 });
+    const value = await checkbox.getAttribute('value');
+    return Number(value) || 0;
+}
+
+async function getQuestionIdByMarker(page, markerText) {
+    const row = await findQuestionRowByMarker(page, markerText);
+    return getQuestionIdFromRow(row);
+}
+
+async function deleteQuestionRowByMarker(page, markerText) {
+    const row = await findQuestionRowByMarker(page, markerText);
+    const questionId = await getQuestionIdFromRow(row);
+    const deleteLink = row.locator('.cbt-questions-row-action--delete').first();
+    await expect(deleteLink).toBeVisible({ timeout: 20000 });
+    await deleteLink.scrollIntoViewIfNeeded();
+
+    page.once('dialog', async (dialog) => {
+        await dialog.accept();
+    });
+
+    await Promise.all([
+        page.waitForURL((url) => decodeURIComponent(String(url)).includes('cbt_msg=Question deleted'), { timeout: 20000 }),
+        deleteLink.click({ force: true }),
+    ]);
+
+    await expect(page.locator('.notice.notice-success, .updated.notice, .notice-info').first()).toBeVisible({ timeout: 20000 });
+    return questionId;
 }
 
 async function setWpEditorContent(page, editorId, html) {
@@ -323,14 +399,23 @@ async function submitManualQuestionExpectSuccess(page) {
 }
 
 async function uploadQuestionsDocx(page, subjectId, filePath, questionType = 'multiple_choice') {
+    const uploadPath = await ensureOfficialDocxTemplateMarker(path.resolve(filePath), questionType);
     await openQuestionsImportPage(page);
     await page.selectOption('#cbt-import-subject-id', String(subjectId));
-    const typeButton = page.locator(`[data-import-type="${String(questionType)}"]`).first();
-    if (await typeButton.count()) {
+    const normalizedQuestionType = String(questionType || 'multiple_choice');
+    const typeButton = page.locator(`[data-import-type="${normalizedQuestionType}"]`).first();
+    if (normalizedQuestionType === 'all') {
+        await page.evaluate(() => {
+            const importTypeHidden = document.getElementById('cbt-import-question-type');
+            if (importTypeHidden) {
+                importTypeHidden.value = 'all';
+            }
+        });
+    } else if (await typeButton.count()) {
         await typeButton.click({ force: true });
     }
-    await expect(page.locator('#cbt-import-question-type')).toHaveValue(String(questionType), { timeout: 20000 });
-    await page.locator('#cbt-question-file').setInputFiles(path.resolve(filePath));
+    await expect(page.locator('#cbt-import-question-type')).toHaveValue(normalizedQuestionType, { timeout: 20000 });
+    await page.locator('#cbt-question-file').setInputFiles(uploadPath);
     const importForm = page.locator('form[data-cbt-questions-tab-submit="import"]').first();
     const submitButton = importForm.locator('input[type="submit"], button[type="submit"]').first();
     await expect(submitButton).toBeVisible({ timeout: 20000 });
@@ -340,16 +425,215 @@ async function uploadQuestionsDocx(page, subjectId, filePath, questionType = 'mu
     ]);
 }
 
+async function ensureOfficialDocxTemplateMarker(filePath, questionType = 'multiple_choice') {
+    const resolvedPath = path.resolve(String(filePath || ''));
+    if (resolvedPath === '' || path.extname(resolvedPath).toLowerCase() !== '.docx') {
+        return resolvedPath;
+    }
+
+    const fixtureName = path.basename(resolvedPath).toLowerCase();
+    if (fixtureName !== 'rich-content.docx' && fixtureName !== 'invalid-hardening.docx') {
+        return resolvedPath;
+    }
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cbt-docx-marker-'));
+    execFileSync('unzip', ['-qq', resolvedPath, '-d', tempDir]);
+
+    const documentPath = path.join(tempDir, 'word', 'document.xml');
+    if (!fs.existsSync(documentPath)) {
+        return resolvedPath;
+    }
+
+    const originalXml = fs.readFileSync(documentPath, 'utf8');
+    if (originalXml.includes('CBT_TEMPLATE: question_import_v2')) {
+        return resolvedPath;
+    }
+
+    let patchedXml = '';
+    if (fixtureName === 'rich-content.docx') {
+        const legacyLines = extractDocxParagraphLines(originalXml);
+        const convertedLines = convertLegacyFieldValueDocxToOfficialLines(legacyLines, questionType);
+        if (!Array.isArray(convertedLines) || convertedLines.length === 0) {
+            return resolvedPath;
+        }
+        patchedXml = buildSimpleDocxDocumentXml(convertedLines, originalXml);
+    } else {
+        const legacyLines = extractDocxParagraphLines(originalXml);
+        const convertedLines = [
+            'CBT_TEMPLATE: question_import_v2',
+            'CATATAN_VALIDATOR: autogenerated by E2E invalid-docx compatibility shim.',
+            '---',
+            ...legacyLines,
+        ];
+        patchedXml = buildSimpleDocxDocumentXml(convertedLines, originalXml);
+    }
+
+    fs.writeFileSync(documentPath, patchedXml, 'utf8');
+
+    const tempDocxPath = path.join(os.tmpdir(), `cbt-docx-marker-${Date.now()}-${Math.random().toString(16).slice(2)}.docx`);
+    execFileSync('python3', [
+        '-c',
+        [
+            'import os, sys, zipfile',
+            'source_dir = sys.argv[1]',
+            'target_zip = sys.argv[2]',
+            'with zipfile.ZipFile(target_zip, "w", zipfile.ZIP_DEFLATED) as archive:',
+            '    for root, _, files in os.walk(source_dir):',
+            '        for file_name in files:',
+            '            file_path = os.path.join(root, file_name)',
+            '            archive.write(file_path, os.path.relpath(file_path, source_dir))',
+        ].join('\n'),
+        tempDir,
+        tempDocxPath,
+    ]);
+
+    return tempDocxPath;
+}
+
+function extractDocxParagraphLines(documentXml) {
+    const paragraphs = String(documentXml || '').match(/<w:p\b[\s\S]*?<\/w:p>/gi) || [];
+    return paragraphs
+        .map((paragraph) => {
+            const text = (paragraph.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/gi) || [])
+                .map((token) => {
+                    const inner = String(token || '').replace(/^<w:t[^>]*>/i, '').replace(/<\/w:t>$/i, '');
+                    return inner
+                        .replace(/&amp;/g, '&')
+                        .replace(/&lt;/g, '<')
+                        .replace(/&gt;/g, '>')
+                        .replace(/&quot;/g, '"')
+                        .replace(/&#39;/g, '\'');
+                })
+                .join('')
+                .trim();
+            return text;
+        })
+        .filter((line) => line !== '');
+}
+
+function convertLegacyFieldValueDocxToOfficialLines(lines, questionType = 'multiple_choice') {
+    const normalizedLines = Array.isArray(lines)
+        ? lines.map((line) => String(line || '').trim()).filter((line) => line !== '')
+        : [];
+
+    if (
+        normalizedLines.length === 0
+        || !normalizedLines.includes('FIELD')
+        || !normalizedLines.includes('VALUE')
+        || !normalizedLines.includes('SOAL')
+        || !normalizedLines.includes('JAWABAN')
+    ) {
+        return [];
+    }
+
+    const blocks = [];
+    let currentBlock = [];
+    let seenFirstSeparator = false;
+    normalizedLines.forEach((line) => {
+        if (line === '---') {
+            if (seenFirstSeparator && currentBlock.length > 0) {
+                blocks.push(currentBlock);
+                currentBlock = [];
+            }
+            seenFirstSeparator = true;
+            return;
+        }
+
+        if (!seenFirstSeparator) {
+            return;
+        }
+
+        currentBlock.push(line);
+    });
+
+    if (currentBlock.length > 0) {
+        blocks.push(currentBlock);
+    }
+
+    if (blocks.length === 0) {
+        return [];
+    }
+
+    const normalizedQuestionType = String(questionType || 'multiple_choice').trim() || 'multiple_choice';
+    const outputLines = [
+        'CBT_TEMPLATE: question_import_v2',
+        'CATATAN_VALIDATOR: autogenerated by E2E legacy DOCX compatibility shim.',
+        '---',
+    ];
+
+    blocks.forEach((block) => {
+        const mappedPairs = [];
+        for (let index = 0; index < block.length; index += 2) {
+            const rawKey = String(block[index] || '').trim();
+            const rawValue = String(block[index + 1] || '').trim();
+            if (rawKey === '' || rawValue === '') {
+                continue;
+            }
+            mappedPairs.push(`${rawKey}: ${rawValue}`);
+        }
+
+        if (!mappedPairs.some((line) => /^SOAL\s*:/i.test(line))) {
+            return;
+        }
+
+        outputLines.push(`JENIS_SOAL: ${normalizedQuestionType}`);
+        outputLines.push(...mappedPairs);
+        outputLines.push('---');
+    });
+
+    if (outputLines.length <= 3) {
+        return [];
+    }
+
+    return outputLines;
+}
+
+function buildSimpleDocxDocumentXml(lines, originalXml) {
+    const paragraphXml = (Array.isArray(lines) ? lines : []).map((line) => {
+        const escapedLine = escapeDocxXmlText(String(line || ''));
+        return `<w:p><w:r><w:t xml:space="preserve">${escapedLine}</w:t></w:r></w:p>`;
+    }).join('');
+
+    const bodyMatch = String(originalXml || '').match(/^([\s\S]*?<w:body>)[\s\S]*?(<w:sectPr\b[\s\S]*?<\/w:sectPr>\s*<\/w:body>\s*<\/w:document>\s*)$/i);
+    if (bodyMatch) {
+        return `${bodyMatch[1]}${paragraphXml}${bodyMatch[2]}`;
+    }
+
+    return [
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
+        '<w:body>',
+        paragraphXml,
+        '<w:sectPr/>',
+        '</w:body>',
+        '</w:document>',
+    ].join('');
+}
+
+function escapeDocxXmlText(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 async function openExamPreviewPage(page, examId) {
     await page.goto(`/wp-admin/admin.php?page=cbt-exams&preview_exam_id=${Number(examId)}`);
     await expect(page.locator('.cbt-admin-exam-preview-wrap')).toBeVisible({ timeout: 20000 });
 }
 
 module.exports = {
+    deleteQuestionRowByMarker,
+    findQuestionRowByMarker,
+    getQuestionIdByMarker,
     loginToWpAdmin,
     openExamPreviewPage,
+    openQuestionEditPage,
     openQuestionsFormPage,
     openQuestionsImportPage,
+    openQuestionsListPage,
     openResultsEssayTab,
     openResultsPage,
     openSetupSecurityLogPage,

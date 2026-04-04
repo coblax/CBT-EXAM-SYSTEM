@@ -47,6 +47,7 @@ final class AuthSessionLifecycleTest extends TestCase
         update_user_meta(9, 'agama', 'Islam');
         update_user_meta(9, 'foto', 'https://example.com/avatar.jpg');
         $this->useFakeRedisClient();
+        $this->useFakeProfileRedisClient();
     }
 
     public function test_login_blocks_recent_active_session_from_legacy_shadow_and_hydrates_redis(): void
@@ -254,6 +255,23 @@ final class AuthSessionLifecycleTest extends TestCase
         $errorProperty = $reflection->getProperty('auth_redis_last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, 'forced unavailable');
+    }
+
+    private function useFakeProfileRedisClient(): void
+    {
+        $reflection = new \ReflectionClass(CBT_Student_Profile_Cache::class);
+
+        $redisProperty = $reflection->getProperty('profile_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new \CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('profile_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('profile_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
     }
 
     private function writeRedisSession(int $userId, string $sessionKey, int $touchedAt): void
