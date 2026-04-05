@@ -93,6 +93,7 @@ function createFixture(overrides = {}) {
     }, overrides.state || {});
 
     var calls = {
+        apiCalls: [],
         initializeSubmittedPayloadCache: 0,
         loadQuestionWindow: [],
         persistCurrentQuestionCacheLocally: 0,
@@ -104,7 +105,16 @@ function createFixture(overrides = {}) {
     var manager = createExamSessionManager({
         recordTimeline: function () {},
         state,
-        apiRequest: async function (endpoint) {
+        apiRequest: async function (endpoint, options) {
+            calls.apiCalls.push({
+                endpoint,
+                options: options || null
+            });
+
+            if (typeof overrides.apiRequest === 'function') {
+                return overrides.apiRequest(endpoint, options);
+            }
+
             if (endpoint === 'ui_state') {
                 return { attempt_state: null };
             }
@@ -132,7 +142,7 @@ function createFixture(overrides = {}) {
         clearSecurityLoggingRuntimeState: function () {},
         exitFullscreenSilently: function () {},
         findExamById: function () {
-            return null;
+            return overrides.selectedExam || null;
         },
         getNavigatorConnectionStatus: function () {
             return 'online';
@@ -254,7 +264,10 @@ function createFixture(overrides = {}) {
 
             return true;
         },
-        bumpQuestionDataGeneration: function () {}
+        bumpQuestionDataGeneration: function () {},
+        startAttemptTimeoutMs: overrides.startAttemptTimeoutMs,
+        startAttemptRecoveryTimeoutMs: overrides.startAttemptRecoveryTimeoutMs,
+        startAttemptRecoveryPollDelayMs: overrides.startAttemptRecoveryPollDelayMs
     });
 
     return {
@@ -346,5 +359,62 @@ describe('createExamSessionManager', function () {
         expect(fixture.state.openingAttemptProgressStepIndex).toBe(0);
         expect(fixture.state.openingAttemptProgressStatus).toBe('');
         expect(fixture.state.openingAttemptProgressDetail).toBe('');
+    });
+
+    it('recovers a congested start flow by resuming the active attempt after a lock response', async function () {
+        var restoredSnapshot = buildCachedQuestionSnapshot(40);
+        var fixture = createFixture({
+            restoredSnapshot,
+            selectedExam: {
+                id: 55,
+                duration_minutes: 60,
+                is_class_allowed: 1
+            },
+            startAttemptRecoveryPollDelayMs: 0,
+            apiRequest: async function (endpoint, options) {
+                if (endpoint === 'ui_state') {
+                    return { attempt_state: null };
+                }
+
+                if (endpoint !== 'start_attempt') {
+                    throw new Error('Unexpected endpoint: ' + String(endpoint));
+                }
+
+                var body = options && options.body ? options.body : {};
+                if (Number(body.resume_only) === 1) {
+                    return {
+                        attempt_id: 77,
+                        duration_minutes: 60,
+                        started_at: '2026-04-03 05:00:00',
+                        status: 'resumed',
+                        question_order_signature: restoredSnapshot.questionOrderSignature,
+                        question_revision: restoredSnapshot.questionRevision
+                    };
+                }
+
+                throw Object.assign(new Error('Permintaan mulai ujian sedang diproses. Coba lagi beberapa detik.'), {
+                    code: 'attempt_lock_active',
+                    status: 429
+                });
+            }
+        });
+
+        await fixture.manager.handleStartExam();
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.error).toBe('');
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint + ':' + String(
+                entry.options && entry.options.body && entry.options.body.resume_only ? 1 : 0
+            );
+        })).toEqual([
+            'start_attempt:0',
+            'start_attempt:1',
+            'ui_state:0'
+        ]);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.openingAttemptProgressStatus.indexOf('Mengecek attempt aktif') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.loadQuestionWindow).toHaveLength(1);
     });
 });

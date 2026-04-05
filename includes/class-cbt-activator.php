@@ -17,6 +17,9 @@ class CBT_Activator
         if (class_exists('CBT_Exam_Availability_Auto_Warm_Service')) {
             CBT_Exam_Availability_Auto_Warm_Service::activate();
         }
+        if (class_exists('CBT_Exam_Preflight_Service')) {
+            CBT_Exam_Preflight_Service::activate();
+        }
     }
 
     public static function maybe_upgrade(): void

@@ -5,6 +5,7 @@ if (!defined('ABSPATH')) {
 }
 
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-maintenance-common.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-maintenance-seed-service.php';
 
 final class CBT_Admin_Maintenance_Load_Test_Service
 {
@@ -792,9 +793,15 @@ final class CBT_Admin_Maintenance_Load_Test_Service
         $rows = [];
         $total_count = 0;
         $missing_password_count = 0;
+        $reserved_excluded_count = 0;
 
         foreach ((array) $users as $user) {
             if (!($user instanceof WP_User)) {
+                continue;
+            }
+
+            if (self::is_reserved_load_test_student($user)) {
+                $reserved_excluded_count++;
                 continue;
             }
 
@@ -835,7 +842,45 @@ final class CBT_Admin_Maintenance_Load_Test_Service
             'total_count' => $total_count,
             'valid_count' => count($rows),
             'missing_password_count' => $missing_password_count,
+            'reserved_excluded_count' => $reserved_excluded_count,
         ];
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function get_reserved_load_test_student_usernames(): array
+    {
+        $usernames = [];
+
+        if (
+            class_exists('CBT_Admin_Maintenance_Seed_Service')
+            && method_exists('CBT_Admin_Maintenance_Seed_Service', 'get_seed_special_student_username')
+        ) {
+            $seed_username = sanitize_user((string) CBT_Admin_Maintenance_Seed_Service::get_seed_special_student_username(), true);
+            if ($seed_username !== '') {
+                $usernames[] = strtolower($seed_username);
+            }
+        }
+
+        return array_values(array_unique(array_filter($usernames, static function ($username) {
+            return is_string($username) && $username !== '';
+        })));
+    }
+
+    private static function is_reserved_load_test_student(WP_User $user): bool
+    {
+        $reserved_usernames = self::get_reserved_load_test_student_usernames();
+        if (empty($reserved_usernames)) {
+            return false;
+        }
+
+        $username = strtolower(sanitize_user((string) $user->user_login, true));
+        if ($username === '') {
+            return false;
+        }
+
+        return in_array($username, $reserved_usernames, true);
     }
 
     private static function get_load_test_runtime_snapshot(): array

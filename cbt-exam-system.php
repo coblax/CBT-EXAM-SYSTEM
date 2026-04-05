@@ -24,6 +24,7 @@ require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-active-attempt-index.php
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-student-profile-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-availability-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-availability-auto-warm-service.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-preflight-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-question-delivery-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-question-submission-context-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-security-live-counters.php';
@@ -107,6 +108,7 @@ add_action('plugins_loaded', static function () {
     CBT_Runtime::init();
     CBT_Student_Profile_Cache::init();
     CBT_Exam_Availability_Auto_Warm_Service::init();
+    CBT_Exam_Preflight_Service::init();
     CBT_Admin::init();
     CBT_Frontend::init();
     CBT_REST::init();

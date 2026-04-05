@@ -12,6 +12,9 @@ class CBT_Deactivator
         if (class_exists('CBT_Exam_Availability_Auto_Warm_Service')) {
             CBT_Exam_Availability_Auto_Warm_Service::deactivate();
         }
+        if (class_exists('CBT_Exam_Preflight_Service')) {
+            CBT_Exam_Preflight_Service::deactivate();
+        }
         // Keep data and roles on deactivate to avoid accidental data loss.
     }
 }

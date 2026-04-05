@@ -1217,9 +1217,9 @@ public static function handle_generate_test_dataset(): void
             ],
             'medium' => [
                 'label' => 'Medium',
-                'subjects' => 10,
+                'subjects' => 5,
                 'exams' => self::TEST_DATA_SEED_SHARED_EXAM_TOTAL,
-                'questions' => 900,
+                'questions' => 750,
                 'students' => 300,
                 'teachers' => 18,
                 'classes' => 12,
@@ -1228,9 +1228,9 @@ public static function handle_generate_test_dataset(): void
             ],
             'large' => [
                 'label' => 'Large',
-                'subjects' => 20,
+                'subjects' => 5,
                 'exams' => self::TEST_DATA_SEED_SHARED_EXAM_TOTAL,
-                'questions' => 3200,
+                'questions' => 2500,
                 'students' => 1200,
                 'teachers' => 48,
                 'classes' => 24,
@@ -1572,62 +1572,503 @@ public static function handle_generate_test_dataset(): void
     }
 
     /**
-     * @return array{key:string,stem_image:bool,stem_table:bool,option_image:bool}
+     * @return array{
+     *     key:string,
+     *     rich:bool,
+     *     stem_blocks:string[],
+     *     option_blocks:string[],
+     *     explanation_blocks:string[],
+     *     image_count_total:int,
+     *     image_distribution:string,
+     *     stem_image_count:int,
+     *     option_image_count:int,
+     *     stem_list:string,
+     *     stem_equation:string,
+     *     stem_table:bool,
+     *     option_list:string,
+     *     option_equation:string,
+     *     option_table:bool,
+     *     explanation_list:string,
+     *     explanation_equation:string
+     * }
      */
-    private static function resolve_test_data_seed_rich_profile(string $question_type, int $question_number): array
+    private static function resolve_test_data_seed_rich_recipe(string $question_type, int $question_number): array
     {
         $question_type = sanitize_key($question_type);
-        $slot = max(0, (($question_number - 1) % 6));
-        if ($question_type === 'multiple_choice') {
-            switch ($slot) {
-                case 2:
-                case 3:
-                case 5:
-                    return ['key' => 'stem_image_table', 'stem_image' => true, 'stem_table' => true, 'option_image' => false];
-                case 4:
-                    return ['key' => 'stem_image_option_image', 'stem_image' => true, 'stem_table' => false, 'option_image' => true];
-                case 0:
-                case 1:
-                default:
-                    return ['key' => 'stem_image', 'stem_image' => true, 'stem_table' => false, 'option_image' => false];
-            }
-        }
-
-        $supports_option_image = ($question_type === 'multiple_answer');
-
-        if ($supports_option_image) {
-            switch ($slot) {
-                case 1:
-                    return ['key' => 'stem_image', 'stem_image' => true, 'stem_table' => false, 'option_image' => false];
-                case 2:
-                    return ['key' => 'stem_table', 'stem_image' => false, 'stem_table' => true, 'option_image' => false];
-                case 3:
-                    return ['key' => 'stem_image_table', 'stem_image' => true, 'stem_table' => true, 'option_image' => false];
-                case 4:
-                    return ['key' => 'option_image', 'stem_image' => false, 'stem_table' => false, 'option_image' => true];
-                case 5:
-                    return ['key' => 'stem_image_table', 'stem_image' => true, 'stem_table' => true, 'option_image' => false];
-                case 0:
-                default:
-                    return ['key' => 'plain', 'stem_image' => false, 'stem_table' => false, 'option_image' => false];
-            }
-        }
+        $supports_rich_options = in_array($question_type, ['multiple_choice', 'multiple_answer'], true);
+        $slot = max(0, (($question_number - 1) % 10));
+        $recipe = [
+            'key' => 'plain',
+            'rich' => false,
+            'stem_blocks' => ['plain'],
+            'option_blocks' => $supports_rich_options ? ['plain'] : [],
+            'explanation_blocks' => ['plain'],
+            'image_count_total' => 0,
+            'image_distribution' => 'none',
+            'stem_image_count' => 0,
+            'option_image_count' => 0,
+            'stem_list' => 'none',
+            'stem_equation' => 'none',
+            'stem_table' => false,
+            'option_list' => 'none',
+            'option_equation' => 'none',
+            'option_table' => false,
+            'explanation_list' => 'none',
+            'explanation_equation' => 'none',
+        ];
 
         switch ($slot) {
             case 1:
-                return ['key' => 'stem_image', 'stem_image' => true, 'stem_table' => false, 'option_image' => false];
+                $recipe = [
+                    'key' => 'rich_stem_bullet_image',
+                    'rich' => true,
+                    'stem_blocks' => ['plain', 'bullet', 'image'],
+                    'option_blocks' => $supports_rich_options ? ['plain'] : [],
+                    'explanation_blocks' => ['plain', 'bullet'],
+                    'image_count_total' => 1,
+                    'image_distribution' => 'stem-only',
+                    'stem_image_count' => 1,
+                    'option_image_count' => 0,
+                    'stem_list' => 'bullet',
+                    'stem_equation' => 'none',
+                    'stem_table' => false,
+                    'option_list' => 'none',
+                    'option_equation' => 'none',
+                    'option_table' => false,
+                    'explanation_list' => 'numbered',
+                    'explanation_equation' => 'none',
+                ];
+                break;
+
             case 2:
-                return ['key' => 'stem_table', 'stem_image' => false, 'stem_table' => true, 'option_image' => false];
+                $recipe = [
+                    'key' => 'rich_stem_numbered_equation',
+                    'rich' => true,
+                    'stem_blocks' => ['plain', 'numbered', 'equation', 'image', 'table'],
+                    'option_blocks' => $supports_rich_options ? ['plain', 'equation', 'mini-table'] : [],
+                    'explanation_blocks' => ['plain'],
+                    'image_count_total' => 1,
+                    'image_distribution' => 'stem-only',
+                    'stem_image_count' => 1,
+                    'option_image_count' => 0,
+                    'stem_list' => 'numbered',
+                    'stem_equation' => 'block',
+                    'stem_table' => true,
+                    'option_list' => 'none',
+                    'option_equation' => 'inline',
+                    'option_table' => true,
+                    'explanation_list' => 'none',
+                    'explanation_equation' => 'inline',
+                ];
+                break;
+
             case 3:
-                return ['key' => 'stem_image_table', 'stem_image' => true, 'stem_table' => true, 'option_image' => false];
-            case 4:
-                return ['key' => 'stem_image', 'stem_image' => true, 'stem_table' => false, 'option_image' => false];
+                $recipe = [
+                    'key' => 'rich_multi_image_stem',
+                    'rich' => true,
+                    'stem_blocks' => ['plain', 'image', 'bullet', 'equation', 'table'],
+                    'option_blocks' => $supports_rich_options ? ['plain', 'bullet', 'equation'] : [],
+                    'explanation_blocks' => ['plain', 'numbered'],
+                    'image_count_total' => 2,
+                    'image_distribution' => 'multi-image-stem',
+                    'stem_image_count' => 2,
+                    'option_image_count' => 0,
+                    'stem_list' => 'bullet',
+                    'stem_equation' => 'inline',
+                    'stem_table' => true,
+                    'option_list' => 'bullet',
+                    'option_equation' => 'inline',
+                    'option_table' => false,
+                    'explanation_list' => 'numbered',
+                    'explanation_equation' => 'none',
+                ];
+                break;
+
             case 5:
-                return ['key' => 'stem_table', 'stem_image' => false, 'stem_table' => true, 'option_image' => false];
-            case 0:
-            default:
-                return ['key' => 'plain', 'stem_image' => false, 'stem_table' => false, 'option_image' => false];
+                $recipe = [
+                    'key' => 'rich_option_image_focus',
+                    'rich' => true,
+                    'stem_blocks' => ['plain', 'numbered'],
+                    'option_blocks' => $supports_rich_options ? ['plain', 'image', 'numbered', 'equation', 'mini-table'] : [],
+                    'explanation_blocks' => ['plain', 'bullet'],
+                    'image_count_total' => 1,
+                    'image_distribution' => 'option-only',
+                    'stem_image_count' => 0,
+                    'option_image_count' => $supports_rich_options ? 1 : 0,
+                    'stem_list' => 'numbered',
+                    'stem_equation' => 'none',
+                    'stem_table' => false,
+                    'option_list' => 'numbered',
+                    'option_equation' => 'inline',
+                    'option_table' => true,
+                    'explanation_list' => 'bullet',
+                    'explanation_equation' => 'none',
+                ];
+                break;
+
+            case 6:
+                $recipe = [
+                    'key' => 'rich_stem_option_split',
+                    'rich' => true,
+                    'stem_blocks' => ['plain', 'image', 'table'],
+                    'option_blocks' => $supports_rich_options ? ['plain', 'image', 'bullet', 'equation'] : [],
+                    'explanation_blocks' => ['plain', 'equation'],
+                    'image_count_total' => 2,
+                    'image_distribution' => 'stem+option',
+                    'stem_image_count' => 1,
+                    'option_image_count' => $supports_rich_options ? 1 : 0,
+                    'stem_list' => 'none',
+                    'stem_equation' => 'inline',
+                    'stem_table' => true,
+                    'option_list' => 'bullet',
+                    'option_equation' => 'block',
+                    'option_table' => false,
+                    'explanation_list' => 'none',
+                    'explanation_equation' => 'block',
+                ];
+                break;
+
+            case 7:
+                $recipe = [
+                    'key' => 'rich_full_stack',
+                    'rich' => true,
+                    'stem_blocks' => ['plain', 'image', 'bullet', 'equation', 'table'],
+                    'option_blocks' => $supports_rich_options ? ['plain', 'numbered', 'equation', 'mini-table'] : [],
+                    'explanation_blocks' => ['plain', 'numbered', 'equation'],
+                    'image_count_total' => 3,
+                    'image_distribution' => 'multi-image-stem',
+                    'stem_image_count' => 3,
+                    'option_image_count' => 0,
+                    'stem_list' => 'bullet',
+                    'stem_equation' => 'block',
+                    'stem_table' => true,
+                    'option_list' => 'numbered',
+                    'option_equation' => 'inline',
+                    'option_table' => true,
+                    'explanation_list' => 'numbered',
+                    'explanation_equation' => 'inline',
+                ];
+                break;
+
+            case 9:
+                $recipe = [
+                    'key' => 'rich_equation_focus',
+                    'rich' => true,
+                    'stem_blocks' => ['plain', 'numbered', 'equation', 'table'],
+                    'option_blocks' => $supports_rich_options ? ['plain', 'bullet', 'equation', 'mini-table'] : [],
+                    'explanation_blocks' => ['plain', 'numbered', 'equation'],
+                    'image_count_total' => 0,
+                    'image_distribution' => 'none',
+                    'stem_image_count' => 0,
+                    'option_image_count' => 0,
+                    'stem_list' => 'numbered',
+                    'stem_equation' => 'block',
+                    'stem_table' => true,
+                    'option_list' => 'bullet',
+                    'option_equation' => 'inline',
+                    'option_table' => true,
+                    'explanation_list' => 'numbered',
+                    'explanation_equation' => 'block',
+                ];
+                break;
         }
+
+        if (!$supports_rich_options) {
+            if ((int) $recipe['option_image_count'] > 0) {
+                $recipe['stem_image_count'] = (int) $recipe['stem_image_count'] + (int) $recipe['option_image_count'];
+                $recipe['option_image_count'] = 0;
+                $recipe['image_distribution'] = (int) $recipe['stem_image_count'] > 1 ? 'multi-image-stem' : 'stem-only';
+            }
+            $recipe['option_blocks'] = [];
+            $recipe['option_list'] = 'none';
+            $recipe['option_equation'] = 'none';
+            $recipe['option_table'] = false;
+        }
+
+        return $recipe;
+    }
+
+    private static function build_test_data_seed_math_html(
+        string $source,
+        string $display_mode = 'inline',
+        string $fallback = ''
+    ): string {
+        $source = trim($source);
+        if ($source === '') {
+            return '';
+        }
+
+        $display_mode = strtolower(trim($display_mode)) === 'block' ? 'block' : 'inline';
+        $tag_name = $display_mode === 'block' ? 'div' : 'span';
+        $class_name = $display_mode === 'block' ? 'cbt-math cbt-math-block' : 'cbt-math';
+        $fallback = trim($fallback) !== '' ? trim($fallback) : $source;
+
+        return sprintf(
+            '<%1$s class="%2$s" data-cbt-math="%3$s" data-cbt-math-display="%4$s">%5$s</%1$s>',
+            $tag_name,
+            esc_attr($class_name),
+            esc_attr($source),
+            esc_attr($display_mode),
+            esc_html($fallback)
+        );
+    }
+
+    /**
+     * @param string[] $items
+     */
+    private static function build_test_data_seed_rich_list_html(
+        array $items,
+        string $list_type = 'bullet',
+        string $heading = ''
+    ): string {
+        $items = array_values(array_filter(array_map(static function ($item): string {
+            return is_scalar($item) ? trim((string) $item) : '';
+        }, $items), static function (string $item): bool {
+            return $item !== '';
+        }));
+        if (empty($items)) {
+            return '';
+        }
+
+        $tag_name = strtolower(trim($list_type)) === 'numbered' ? 'ol' : 'ul';
+        $heading_markup = trim($heading) !== ''
+            ? '<p><strong>' . esc_html(trim($heading)) . '</strong></p>'
+            : '';
+        $list_items = '';
+        foreach ($items as $item) {
+            $list_items .= '<li>' . $item . '</li>';
+        }
+
+        return '<div class="cbt-rich-list-wrap">'
+            . $heading_markup
+            . '<' . $tag_name . '>' . $list_items . '</' . $tag_name . '>'
+            . '</div>';
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     * @return string[]
+     */
+    private static function build_test_data_seed_rich_list_items(
+        string $area,
+        string $question_type,
+        int $question_number,
+        string $subject_name,
+        array $context = [],
+        string $option_key = '',
+        string $option_text = ''
+    ): array {
+        $question_type = sanitize_key($question_type);
+        $area = sanitize_key($area);
+        $left = (int) ($context['left'] ?? (($question_number % 37) + 13));
+        $right = (int) ($context['right'] ?? (($question_number % 10) + 3));
+        $base = (int) ($context['base'] ?? (($question_number % 12) + 2));
+        $claim = (int) ($context['claim'] ?? ($left + $right));
+        $input_count = (int) ($context['input_count'] ?? ((($question_number - 1) % 8) + 1));
+        $option_value = is_numeric($option_text) ? (int) $option_text : 0;
+        $option_remainder = $base > 0 ? ($option_value % $base) : 0;
+
+        if ($area === 'option') {
+            if ($question_type === 'multiple_answer') {
+                return [
+                    'Nilai kandidat <strong>' . esc_html($option_text) . '</strong> untuk opsi ' . esc_html($option_key) . '.',
+                    'Sisa bagi terhadap ' . esc_html((string) $base) . ' adalah <strong>' . esc_html((string) $option_remainder) . '</strong>.',
+                ];
+            }
+
+            return [
+                'Opsi ' . esc_html($option_key) . ' membawa nilai <strong>' . esc_html($option_text) . '</strong>.',
+                'Bandingkan nilai ini dengan hasil operasi pada stem.',
+            ];
+        }
+
+        if ($area === 'explanation') {
+            switch ($question_type) {
+                case 'multiple_answer':
+                    return [
+                        'Periksa semua opsi yang habis dibagi bilangan dasar.',
+                        'Jangan berhenti setelah menemukan satu jawaban yang benar.',
+                        'Validasi ulang dengan pola kelipatan yang konsisten.',
+                    ];
+                case 'true_false':
+                    return [
+                        'Hitung dulu nilai sebenarnya dari operasi di stem.',
+                        'Bandingkan dengan klaim yang tertulis.',
+                    ];
+                case 'true_false_matrix':
+                    return [
+                        'Nilai setiap pernyataan secara mandiri.',
+                        'Fokus pada operasi dasar yang disebutkan pada stem.',
+                    ];
+                case 'short_answer':
+                    return [
+                        'Isi placeholder dari kiri ke kanan tanpa menambah kalimat lain.',
+                        'Pastikan jumlah isian cocok dengan jumlah placeholder.',
+                    ];
+                case 'essay':
+                    return [
+                        'Buka jawaban dengan ide utama yang jelas.',
+                        'Uraikan langkah kerja secara runtut.',
+                        'Tutup dengan kesimpulan yang konsisten.',
+                    ];
+                case 'multiple_choice':
+                default:
+                    return [
+                        'Jumlahkan kedua bilangan sesuai urutan soal.',
+                        'Bandingkan hasilnya dengan seluruh opsi yang tersedia.',
+                        'Pilih satu jawaban yang paling tepat.',
+                    ];
+            }
+        }
+
+        switch ($question_type) {
+            case 'multiple_answer':
+                return [
+                    'Bilangan dasar kelipatan: <strong>' . esc_html((string) $base) . '</strong>.',
+                    'Pilih semua opsi yang habis dibagi bilangan dasar tersebut.',
+                    'Jumlah jawaban benar dapat lebih dari satu.',
+                ];
+            case 'true_false':
+                return [
+                    'Hitung hasil operasi penjumlahan sebelum memilih jawaban.',
+                    'Bandingkan nilai aktual dengan klaim pada stem.',
+                    'Model klaim: ' . self::build_test_data_seed_math_html(
+                        $left . ' + ' . $right . ' = ' . $claim,
+                        'inline',
+                        $left . ' + ' . $right . ' = ' . $claim
+                    ) . '.',
+                ];
+            case 'true_false_matrix':
+                return [
+                    'Evaluasi tiap pernyataan secara terpisah.',
+                    'Fokus pada bilangan dasar <strong>' . esc_html((string) $base) . '</strong> dan turunannya.',
+                    'Gunakan pola operasi sederhana untuk menentukan benar atau salah.',
+                ];
+            case 'short_answer':
+                return [
+                    'Mapel konteks: <strong>' . esc_html($subject_name) . '</strong>.',
+                    'Jumlah placeholder aktif: <strong>' . esc_html((string) $input_count) . '</strong>.',
+                    'Isi jawaban singkat tanpa menambahkan unit atau kalimat lain.',
+                ];
+            case 'essay':
+                return [
+                    'Gunakan konsep inti dari topik <strong>' . esc_html($subject_name) . '</strong>.',
+                    'Jelaskan langkah penyelesaian secara runtut.',
+                    'Pastikan kesimpulan selaras dengan uraian sebelumnya.',
+                ];
+            case 'multiple_choice':
+            default:
+                return [
+                    'Bilangan pertama: <strong>' . esc_html((string) $left) . '</strong>.',
+                    'Bilangan kedua: <strong>' . esc_html((string) $right) . '</strong>.',
+                    'Operasi yang dipakai adalah penjumlahan.',
+                ];
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function build_test_data_seed_rich_equation_html(
+        string $area,
+        string $question_type,
+        int $question_number,
+        array $context = [],
+        string $display_mode = 'inline',
+        string $option_key = '',
+        string $option_text = ''
+    ): string {
+        $question_type = sanitize_key($question_type);
+        $area = sanitize_key($area);
+        $left = (int) ($context['left'] ?? (($question_number % 37) + 13));
+        $right = (int) ($context['right'] ?? (($question_number % 10) + 3));
+        $base = (int) ($context['base'] ?? (($question_number % 12) + 2));
+        $claim = (int) ($context['claim'] ?? ($left + $right));
+        $correct = (int) ($context['correct'] ?? ($left + $right));
+        $input_count = (int) ($context['input_count'] ?? ((($question_number - 1) % 8) + 1));
+        $option_value = is_numeric($option_text) ? (int) $option_text : 0;
+        $option_remainder = $base > 0 ? ($option_value % $base) : 0;
+        $source = '';
+        $fallback = '';
+
+        if ($area === 'option') {
+            if ($question_type === 'multiple_answer') {
+                $source = $option_value . ' \\bmod ' . $base . ' = ' . $option_remainder;
+                $fallback = $option_value . ' mod ' . $base . ' = ' . $option_remainder;
+            } else {
+                $source = '\\text{opsi } ' . strtoupper($option_key) . ' = ' . $option_value;
+                $fallback = 'Opsi ' . strtoupper($option_key) . ' = ' . $option_value;
+            }
+
+            return self::build_test_data_seed_math_html($source, $display_mode, $fallback);
+        }
+
+        if ($area === 'explanation') {
+            switch ($question_type) {
+                case 'multiple_answer':
+                    $source = '\\text{kelipatan dari } ' . $base;
+                    $fallback = 'Kelipatan dari ' . $base;
+                    break;
+                case 'true_false':
+                    $source = $left . ' + ' . $right . ' = ' . ($left + $right);
+                    $fallback = $left . ' + ' . $right . ' = ' . ($left + $right);
+                    break;
+                case 'true_false_matrix':
+                    $source = $base . ' + 1 \\neq ' . $base;
+                    $fallback = $base . ' + 1 != ' . $base;
+                    break;
+                case 'short_answer':
+                    $source = '\\text{isi}_1 \\rightarrow \\text{isi}_{' . max(1, $input_count) . '}';
+                    $fallback = 'Isi 1 -> Isi ' . max(1, $input_count);
+                    break;
+                case 'essay':
+                    $source = '\\text{konsep} + \\text{langkah} + \\text{kesimpulan}';
+                    $fallback = 'konsep + langkah + kesimpulan';
+                    break;
+                case 'multiple_choice':
+                default:
+                    $source = $left . ' + ' . $right . ' = ' . $correct;
+                    $fallback = $left . ' + ' . $right . ' = ' . $correct;
+                    break;
+            }
+
+            return self::build_test_data_seed_math_html($source, $display_mode, $fallback);
+        }
+
+        switch ($question_type) {
+            case 'multiple_answer':
+                $source = 'n \\bmod ' . $base . ' = 0';
+                $fallback = 'n mod ' . $base . ' = 0';
+                break;
+            case 'true_false':
+                $source = $left . ' + ' . $right . ' = ' . $claim;
+                $fallback = $left . ' + ' . $right . ' = ' . $claim;
+                break;
+            case 'true_false_matrix':
+                $source = $base . ' \\times 2 = ' . ($base * 2);
+                $fallback = $base . ' x 2 = ' . ($base * 2);
+                break;
+            case 'short_answer':
+                if ($input_count <= 1) {
+                    $source = '\\text{INPUT}_1 = ' . $left . ' \\times ' . $right;
+                    $fallback = 'INPUT_1 = ' . $left . ' x ' . $right;
+                } else {
+                    $source = '\\text{INPUT}_1 \\rightarrow \\text{INPUT}_{' . max(1, $input_count) . '}';
+                    $fallback = 'INPUT_1 -> INPUT_' . max(1, $input_count);
+                }
+                break;
+            case 'essay':
+                $source = '\\text{data} \\rightarrow \\text{analisis} \\rightarrow \\text{kesimpulan}';
+                $fallback = 'data -> analisis -> kesimpulan';
+                break;
+            case 'multiple_choice':
+            default:
+                $source = $left . ' + ' . $right;
+                $fallback = $left . ' + ' . $right;
+                break;
+        }
+
+        return self::build_test_data_seed_math_html($source, $display_mode, $fallback);
     }
 
     private static function build_test_data_seed_stem_paragraph_html(string $text): string
@@ -1637,7 +2078,12 @@ public static function handle_generate_test_dataset(): void
             return '';
         }
 
-        return trim((string) wpautop(esc_html($text)));
+        $escaped = esc_html($text);
+        if (function_exists('wpautop')) {
+            return trim((string) wpautop($escaped));
+        }
+
+        return '<p>' . $escaped . '</p>';
     }
 
     private static function build_test_data_seed_rich_image_html(string $src, string $alt, string $caption = ''): string
@@ -1655,6 +2101,55 @@ public static function handle_generate_test_dataset(): void
             . '<img class="cbt-rich-image" src="' . esc_attr($src) . '" alt="' . esc_attr($alt) . '" loading="lazy" decoding="async" />'
             . $caption_markup
             . '</figure>';
+    }
+
+    /**
+     * @param array<string,string> $source_map
+     */
+    private static function build_test_data_seed_rich_images_html(
+        string $bucket,
+        int $question_number,
+        int $image_count,
+        string $subject_name,
+        string $area,
+        array &$source_map
+    ): string {
+        $image_count = max(0, $image_count);
+        if ($image_count <= 0) {
+            return '';
+        }
+
+        $parts = [];
+        $base_offset = $area === 'option' ? 200 : 0;
+        for ($idx = 0; $idx < $image_count; $idx++) {
+            $image_src = self::resolve_test_data_seed_sample_image_src(
+                $bucket,
+                $question_number + $base_offset + $idx,
+                $source_map
+            );
+            if ($image_src === '') {
+                continue;
+            }
+
+            $parts[] = self::build_test_data_seed_rich_image_html(
+                $image_src,
+                sprintf(
+                    'Ilustrasi %s %s %03d',
+                    $area === 'option' ? 'opsi' : $subject_name,
+                    $area === 'option' ? $subject_name : 'soal',
+                    $question_number
+                ),
+                $area === 'option'
+                    ? 'Referensi visual opsi'
+                    : 'Ilustrasi ' . self::format_test_data_seed_image_bucket_label($bucket)
+            );
+        }
+
+        if (empty($parts)) {
+            return '';
+        }
+
+        return '<div class="cbt-rich-image-stack">' . implode('', $parts) . '</div>';
     }
 
     private static function wrap_test_data_seed_rich_table(string $table_html): string
@@ -1822,7 +2317,7 @@ public static function handle_generate_test_dataset(): void
         string $src,
         string $headline,
         string $caption = '',
-        string $table_html = ''
+        string $detail_html = ''
     ): string {
         $media_markup = $src !== ''
             ? '<span class="cbt-rich-option-media"><img src="' . esc_attr($src) . '" alt="' . esc_attr($headline) . '" loading="lazy" decoding="async" /></span>'
@@ -1830,8 +2325,8 @@ public static function handle_generate_test_dataset(): void
         $caption_markup = $caption !== ''
             ? '<span class="cbt-rich-option-caption">' . esc_html($caption) . '</span>'
             : '';
-        $table_markup = trim($table_html) !== ''
-            ? $table_html
+        $detail_markup = trim($detail_html) !== ''
+            ? $detail_html
             : '';
 
         return '<div class="cbt-rich-option-card">'
@@ -1839,7 +2334,7 @@ public static function handle_generate_test_dataset(): void
             . '<span class="cbt-rich-option-copy">'
             . '<span class="cbt-rich-option-title">' . esc_html($headline) . '</span>'
             . '<span class="cbt-rich-option-text">' . esc_html($option_text) . '</span>'
-            . $table_markup
+            . $detail_markup
             . $caption_markup
             . '</span>'
             . '</div>';
@@ -1848,6 +2343,13 @@ public static function handle_generate_test_dataset(): void
     /**
      * @param string[] $plain_options
      * @param string[] $correct_keys
+     * @param array{
+     *     option_image_count:int,
+     *     option_list:string,
+     *     option_equation:string,
+     *     option_table:bool
+     * } $rich_recipe
+     * @param array<string,mixed> $context
      * @param array<string,string> $source_map
      */
     private static function build_test_data_seed_rich_option_payload(
@@ -1856,7 +2358,8 @@ public static function handle_generate_test_dataset(): void
         string $question_type,
         string $image_bucket,
         int $question_number,
-        bool $include_images,
+        array $rich_recipe,
+        array $context,
         array &$source_map
     ): string {
         if (empty($plain_options)) {
@@ -1866,15 +2369,44 @@ public static function handle_generate_test_dataset(): void
         $entries = [];
         foreach (array_values($plain_options) as $idx => $plain_option) {
             $option_key = chr(65 + $idx);
-            $src = $include_images
+            $src = $idx < max(0, (int) ($rich_recipe['option_image_count'] ?? 0))
                 ? self::resolve_test_data_seed_sample_image_src($image_bucket, $question_number + $idx + 1, $source_map)
                 : '';
-            $table_html = self::build_test_data_seed_rich_option_table_html(
-                $question_type,
-                $option_key,
-                (string) $plain_option,
-                $question_number
-            );
+            $detail_parts = [];
+            if (!empty($rich_recipe['option_table'])) {
+                $detail_parts[] = self::build_test_data_seed_rich_option_table_html(
+                    $question_type,
+                    $option_key,
+                    (string) $plain_option,
+                    $question_number
+                );
+            }
+            if ((string) ($rich_recipe['option_list'] ?? 'none') !== 'none') {
+                $detail_parts[] = self::build_test_data_seed_rich_list_html(
+                    self::build_test_data_seed_rich_list_items(
+                        'option',
+                        $question_type,
+                        $question_number,
+                        '',
+                        $context,
+                        $option_key,
+                        (string) $plain_option
+                    ),
+                    (string) $rich_recipe['option_list'],
+                    'Catatan opsi'
+                );
+            }
+            if ((string) ($rich_recipe['option_equation'] ?? 'none') !== 'none') {
+                $detail_parts[] = self::build_test_data_seed_rich_equation_html(
+                    'option',
+                    $question_type,
+                    $question_number,
+                    $context,
+                    (string) $rich_recipe['option_equation'],
+                    $option_key,
+                    (string) $plain_option
+                );
+            }
             $entries[] = [
                 'option_text' => self::build_test_data_seed_rich_option_html(
                     (string) $plain_option,
@@ -1883,7 +2415,9 @@ public static function handle_generate_test_dataset(): void
                     $question_type === 'multiple_answer'
                         ? 'Periksa apakah opsi ini memenuhi semua syarat soal.'
                         : 'Gunakan data mini berikut untuk membaca pilihan jawaban.',
-                    $table_html
+                    implode('', array_values(array_filter($detail_parts, static function ($part): bool {
+                        return is_string($part) && trim($part) !== '';
+                    })))
                 ),
                 'is_correct' => in_array($option_key, $correct_keys, true) ? 1 : 0,
             ];
@@ -1895,8 +2429,177 @@ public static function handle_generate_test_dataset(): void
     }
 
     /**
+     * @param array{
+     *     explanation_list:string,
+     *     explanation_equation:string,
+     *     rich:bool
+     * } $rich_recipe
+     * @param array<string,mixed> $context
+     */
+    private static function decorate_test_data_seed_explanation_html(
+        string $base_text,
+        string $question_type,
+        int $question_number,
+        string $subject_name,
+        array $rich_recipe,
+        array $context = []
+    ): string {
+        if (empty($rich_recipe['rich'])) {
+            return $base_text;
+        }
+
+        $parts = [];
+        $base_markup = self::build_test_data_seed_stem_paragraph_html($base_text);
+        if ($base_markup !== '') {
+            $parts[] = $base_markup;
+        }
+
+        if ((string) ($rich_recipe['explanation_list'] ?? 'none') !== 'none') {
+            $parts[] = self::build_test_data_seed_rich_list_html(
+                self::build_test_data_seed_rich_list_items(
+                    'explanation',
+                    $question_type,
+                    $question_number,
+                    $subject_name,
+                    $context
+                ),
+                (string) $rich_recipe['explanation_list'],
+                'Panduan baca'
+            );
+        }
+
+        if ((string) ($rich_recipe['explanation_equation'] ?? 'none') !== 'none') {
+            $parts[] = self::build_test_data_seed_rich_equation_html(
+                'explanation',
+                $question_type,
+                $question_number,
+                $context,
+                (string) $rich_recipe['explanation_equation']
+            );
+        }
+
+        $parts = array_values(array_filter($parts, static function ($part): bool {
+            return is_string($part) && trim($part) !== '';
+        }));
+
+        return !empty($parts) ? implode('', $parts) : $base_text;
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function decorate_test_data_seed_true_false_matrix_correct_text(
+        string $correct_text,
+        int $question_number,
+        array $context = []
+    ): string {
+        $items = self::normalize_true_false_matrix_config($correct_text);
+        if (empty($items)) {
+            return $correct_text;
+        }
+
+        $base = (int) ($context['base'] ?? (($question_number % 17) + 6));
+        $sources = [
+            [$base . ' > 0', $base . ' > 0'],
+            [$base . ' + 1 \\neq ' . $base, $base . ' + 1 != ' . $base],
+            [$base . ' \\times 2 = ' . ($base * 2), $base . ' x 2 = ' . ($base * 2)],
+        ];
+        $lines = [];
+
+        foreach (array_values($items) as $index => $item) {
+            $statement = trim((string) ($item['text'] ?? ''));
+            $answer = ((string) ($item['answer'] ?? 'false') === 'true') ? 'true' : 'false';
+            if ($statement === '') {
+                continue;
+            }
+
+            $math_pair = $sources[$index % count($sources)];
+            $statement_html = '<strong>Pernyataan ' . esc_html((string) ($index + 1)) . '.</strong> '
+                . esc_html($statement)
+                . ' '
+                . self::build_test_data_seed_math_html(
+                    (string) $math_pair[0],
+                    'inline',
+                    (string) $math_pair[1]
+                );
+
+            $lines[] = $statement_html . '|' . $answer;
+        }
+
+        return !empty($lines) ? implode("\n", $lines) : $correct_text;
+    }
+
+    /**
+     * @param array{
+     *     explanation_list:string,
+     *     explanation_equation:string,
+     *     rich:bool
+     * } $rich_recipe
+     * @param array<string,mixed> $context
+     */
+    private static function decorate_test_data_seed_essay_rubric_html(
+        string $correct_text,
+        int $question_number,
+        string $subject_name,
+        array $rich_recipe,
+        array $context = []
+    ): string {
+        if (empty($rich_recipe['rich'])) {
+            return $correct_text;
+        }
+
+        $parts = [];
+        $base_markup = self::build_test_data_seed_stem_paragraph_html($correct_text);
+        if ($base_markup !== '') {
+            $parts[] = $base_markup;
+        }
+
+        if ((string) ($rich_recipe['explanation_list'] ?? 'none') !== 'none') {
+            $parts[] = self::build_test_data_seed_rich_list_html(
+                self::build_test_data_seed_rich_list_items(
+                    'explanation',
+                    'essay',
+                    $question_number,
+                    $subject_name,
+                    $context
+                ),
+                (string) $rich_recipe['explanation_list'],
+                'Rubrik ringkas'
+            );
+        }
+
+        if ((string) ($rich_recipe['explanation_equation'] ?? 'none') !== 'none') {
+            $parts[] = self::build_test_data_seed_rich_equation_html(
+                'explanation',
+                'essay',
+                $question_number,
+                $context,
+                (string) $rich_recipe['explanation_equation']
+            );
+        }
+
+        $parts = array_values(array_filter($parts, static function ($part): bool {
+            return is_string($part) && trim($part) !== '';
+        }));
+
+        return !empty($parts) ? implode('', $parts) : $correct_text;
+    }
+
+    /**
      * @param array<string,mixed> $row
-     * @param array{key:string,stem_image:bool,stem_table:bool,option_image:bool} $rich_profile
+     * @param array{
+     *     rich:bool,
+     *     stem_image_count:int,
+     *     stem_list:string,
+     *     stem_equation:string,
+     *     stem_table:bool,
+     *     option_image_count:int,
+     *     option_list:string,
+     *     option_equation:string,
+     *     option_table:bool,
+     *     explanation_list:string,
+     *     explanation_equation:string
+     * } $rich_recipe
      * @param array<string,mixed> $context
      * @param array<string,string> $source_map
      * @return array<string,mixed>
@@ -1906,17 +2609,13 @@ public static function handle_generate_test_dataset(): void
         int $question_number,
         string $subject_name,
         string $image_bucket,
-        array $rich_profile,
+        array $rich_recipe,
         array $context,
         array &$source_map
     ): array {
         $question_type = sanitize_key((string) ($row['question_type'] ?? ''));
-        $has_stem_image = !empty($rich_profile['stem_image']);
-        $has_stem_table = !empty($rich_profile['stem_table']);
         $supports_rich_options = in_array($question_type, ['multiple_choice', 'multiple_answer'], true);
-        $has_option_image = !empty($rich_profile['option_image']) && $supports_rich_options;
-
-        if (!$has_stem_image && !$has_stem_table && !$supports_rich_options) {
+        if (empty($rich_recipe['rich'])) {
             return $row;
         }
 
@@ -1925,40 +2624,97 @@ public static function handle_generate_test_dataset(): void
             $bucket = 'mathematics';
         }
 
-        if ($has_stem_image || $has_stem_table) {
-            $stem_parts = [];
-            if ($has_stem_image) {
-                $image_src = self::resolve_test_data_seed_sample_image_src($bucket, $question_number, $source_map);
-                $image_markup = self::build_test_data_seed_rich_image_html(
-                    $image_src,
-                    sprintf('Ilustrasi %s soal %03d', $subject_name, $question_number),
-                    'Ilustrasi ' . self::format_test_data_seed_image_bucket_label($bucket)
-                );
-                if ($image_markup !== '') {
-                    $stem_parts[] = $image_markup;
-                }
-            }
+        $stem_parts = [];
+        if ((int) ($rich_recipe['stem_image_count'] ?? 0) > 0) {
+            $stem_parts[] = self::build_test_data_seed_rich_images_html(
+                $bucket,
+                $question_number,
+                (int) $rich_recipe['stem_image_count'],
+                $subject_name,
+                'stem',
+                $source_map
+            );
+        }
 
-            $stem_parts[] = self::build_test_data_seed_stem_paragraph_html((string) ($row['question_text'] ?? ''));
+        $stem_parts[] = self::build_test_data_seed_stem_paragraph_html((string) ($row['question_text'] ?? ''));
 
-            if ($has_stem_table) {
-                $table_markup = self::build_test_data_seed_rich_table_html(
+        if ((string) ($rich_recipe['stem_list'] ?? 'none') !== 'none') {
+            $stem_parts[] = self::build_test_data_seed_rich_list_html(
+                self::build_test_data_seed_rich_list_items(
+                    'stem',
                     $question_type,
                     $question_number,
                     $subject_name,
                     $context
-                );
-                if ($table_markup !== '') {
-                    $stem_parts[] = $table_markup;
-                }
-            }
-
-            $row['question_text'] = implode('', array_values(array_filter($stem_parts, static function ($part): bool {
-                return is_string($part) && trim($part) !== '';
-            })));
+                ),
+                (string) $rich_recipe['stem_list'],
+                'Petunjuk baca'
+            );
         }
 
-        if ($supports_rich_options) {
+        if ((string) ($rich_recipe['stem_equation'] ?? 'none') !== 'none') {
+            $stem_parts[] = self::build_test_data_seed_rich_equation_html(
+                'stem',
+                $question_type,
+                $question_number,
+                $context,
+                (string) $rich_recipe['stem_equation']
+            );
+        }
+
+        if (!empty($rich_recipe['stem_table'])) {
+            $table_markup = self::build_test_data_seed_rich_table_html(
+                $question_type,
+                $question_number,
+                $subject_name,
+                $context
+            );
+            if ($table_markup !== '') {
+                $stem_parts[] = $table_markup;
+            }
+        }
+
+        $stem_parts = array_values(array_filter($stem_parts, static function ($part): bool {
+            return is_string($part) && trim($part) !== '';
+        }));
+        if (!empty($stem_parts)) {
+            $row['question_text'] = implode('', $stem_parts);
+        }
+
+        $row['explanation'] = self::decorate_test_data_seed_explanation_html(
+            (string) ($row['explanation'] ?? ''),
+            $question_type,
+            $question_number,
+            $subject_name,
+            $rich_recipe,
+            $context
+        );
+
+        if ($question_type === 'true_false_matrix') {
+            $row['correct_text'] = self::decorate_test_data_seed_true_false_matrix_correct_text(
+                (string) ($row['correct_text'] ?? ''),
+                $question_number,
+                $context
+            );
+        } elseif ($question_type === 'essay') {
+            $row['correct_text'] = self::decorate_test_data_seed_essay_rubric_html(
+                (string) ($row['correct_text'] ?? ''),
+                $question_number,
+                $subject_name,
+                $rich_recipe,
+                $context
+            );
+        }
+
+        if (
+            $supports_rich_options
+            && (
+                (int) ($rich_recipe['option_image_count'] ?? 0) > 0
+                || (string) ($rich_recipe['option_list'] ?? 'none') !== 'none'
+                || (string) ($rich_recipe['option_equation'] ?? 'none') !== 'none'
+                || !empty($rich_recipe['option_table'])
+            )
+        ) {
             $plain_options = isset($context['plain_options']) && is_array($context['plain_options'])
                 ? array_values(array_map('strval', (array) $context['plain_options']))
                 : [];
@@ -1972,7 +2728,8 @@ public static function handle_generate_test_dataset(): void
                 $question_type,
                 $bucket,
                 $question_number,
-                $has_option_image,
+                $rich_recipe,
+                $context,
                 $source_map
             );
 
@@ -3253,8 +4010,8 @@ public static function handle_generate_test_dataset(): void
         string $preset_key,
         array &$bulk_image_source_map
     ): array {
+        $exam_entry = self::resolve_test_data_seed_bank_question_exam_entry($offset, $exams);
         $exam_count = count($exams);
-        $exam_entry = $exam_count > 0 ? (array) $exams[$offset % $exam_count] : [];
         $target_exam_id = (int) ($exam_entry['id'] ?? 0);
         $subject_id = (int) ($exam_entry['subject_id'] ?? 0);
         $bank_exam_entry = $subject_id > 0 && isset($bank_exams[$subject_id]) && is_array($bank_exams[$subject_id])
@@ -3265,7 +4022,7 @@ public static function handle_generate_test_dataset(): void
         $image_bucket = sanitize_key((string) ($exam_entry['seed_image_bucket'] ?? ''));
         $question_number = $offset + 1;
         $question_type = self::resolve_test_data_seed_question_type_for_exam_entry($exam_entry, $offset, $exam_count, $preset_key);
-        $rich_profile = self::resolve_test_data_seed_rich_profile($question_type, $question_number);
+        $rich_recipe = self::resolve_test_data_seed_rich_recipe($question_type, $question_number);
         $row = [];
         $context = [];
 
@@ -3465,10 +4222,59 @@ public static function handle_generate_test_dataset(): void
             $question_number,
             $subject_name,
             $image_bucket,
-            $rich_profile,
+            $rich_recipe,
             $context,
             $bulk_image_source_map
         );
+    }
+
+    /**
+     * @param array<int|string,array<string,mixed>> $exams
+     * @return array<string,mixed>
+     */
+    private static function resolve_test_data_seed_bank_question_exam_entry(int $offset, array $exams): array
+    {
+        $subject_exam_groups = [];
+        foreach ($exams as $exam_entry) {
+            if (!is_array($exam_entry)) {
+                continue;
+            }
+
+            $subject_id = (int) ($exam_entry['subject_id'] ?? 0);
+            if ($subject_id <= 0) {
+                continue;
+            }
+
+            if (!isset($subject_exam_groups[$subject_id])) {
+                $subject_exam_groups[$subject_id] = [];
+            }
+
+            $subject_exam_groups[$subject_id][] = $exam_entry;
+        }
+
+        if (empty($subject_exam_groups)) {
+            $first_exam_entry = reset($exams);
+            return is_array($first_exam_entry) ? $first_exam_entry : [];
+        }
+
+        $subject_ids = array_values(array_map('intval', array_keys($subject_exam_groups)));
+        sort($subject_ids);
+        $subject_total = count($subject_ids);
+        $subject_index = $subject_total > 0 ? ($offset % $subject_total) : 0;
+        $subject_id = (int) ($subject_ids[$subject_index] ?? 0);
+        $subject_exam_entries = isset($subject_exam_groups[$subject_id]) && is_array($subject_exam_groups[$subject_id])
+            ? array_values($subject_exam_groups[$subject_id])
+            : [];
+
+        if (empty($subject_exam_entries)) {
+            return [];
+        }
+
+        $exam_rotation_offset = intdiv(max(0, $offset), max(1, $subject_total));
+        $exam_index = $exam_rotation_offset % count($subject_exam_entries);
+        $exam_entry = $subject_exam_entries[$exam_index] ?? [];
+
+        return is_array($exam_entry) ? $exam_entry : [];
     }
 
     /**

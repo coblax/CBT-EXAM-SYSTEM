@@ -29,6 +29,18 @@ if (!function_exists('wp_normalize_path')) {
     }
 }
 
+if (!function_exists('wpautop')) {
+    function wpautop($text): string
+    {
+        $text = is_scalar($text) ? trim((string) $text) : '';
+        if ($text === '') {
+            return '';
+        }
+
+        return '<p>' . $text . '</p>';
+    }
+}
+
 final class MaintenanceModularizationTest extends TestCase
 {
     protected function setUp(): void
@@ -39,6 +51,7 @@ final class MaintenanceModularizationTest extends TestCase
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-ui-state.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-auth.php';
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-branding-settings.php';
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-questions-helper.php';
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-maintenance-service.php';
 
         global $wpdb;
@@ -81,7 +94,9 @@ final class MaintenanceModularizationTest extends TestCase
 
         self::assertSame('medium', $context['selected_seed_preset']);
         self::assertSame('Medium', $context['selected_seed_preset_data']['label']);
+        self::assertSame(5, $context['selected_seed_preset_data']['subjects']);
         self::assertSame(17, $context['selected_seed_preset_data']['exams']);
+        self::assertSame(750, $context['selected_seed_preset_data']['questions']);
         self::assertSame('GENERATE TEST DATA', $context['test_data_seed_confirm_phrase']);
         self::assertSame('Skills39', $context['test_data_seed_default_password']);
         self::assertNotSame('{}', $context['seed_presets_json']);
@@ -94,9 +109,15 @@ final class MaintenanceModularizationTest extends TestCase
         $error = '';
         $context = \CBT_Admin_Maintenance_Seed_Service::build_seed_context([], $notice, $error);
 
+        self::assertSame(5, $context['seed_presets']['small']['subjects']);
+        self::assertSame(5, $context['seed_presets']['medium']['subjects']);
+        self::assertSame(5, $context['seed_presets']['large']['subjects']);
         self::assertSame(17, $context['seed_presets']['small']['exams']);
         self::assertSame(17, $context['seed_presets']['medium']['exams']);
         self::assertSame(17, $context['seed_presets']['large']['exams']);
+        self::assertSame(200, $context['seed_presets']['small']['questions']);
+        self::assertSame(750, $context['seed_presets']['medium']['questions']);
+        self::assertSame(2500, $context['seed_presets']['large']['questions']);
     }
 
     #[RunInSeparateProcess]
@@ -155,6 +176,206 @@ final class MaintenanceModularizationTest extends TestCase
 
         self::assertCount(4, $selected_ids);
         self::assertSame([10, 11, 12, 13], array_values($selected_ids));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_distributes_bank_questions_evenly_per_subject_for_medium_preset(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $presetsMethod = $service->getMethod('test_data_seed_presets');
+        $presetsMethod->setAccessible(true);
+        $resolveExamMethod = $service->getMethod('resolve_test_data_seed_bank_question_exam_entry');
+        $resolveExamMethod->setAccessible(true);
+
+        $preset = $presetsMethod->invoke(null)['medium'];
+        $exams = [
+            ['id' => 1, 'subject_id' => 1],
+            ['id' => 2, 'subject_id' => 2],
+            ['id' => 3, 'subject_id' => 3],
+            ['id' => 4, 'subject_id' => 4],
+            ['id' => 5, 'subject_id' => 5],
+            ['id' => 6, 'subject_id' => 1],
+            ['id' => 7, 'subject_id' => 2],
+            ['id' => 8, 'subject_id' => 3],
+            ['id' => 9, 'subject_id' => 4],
+            ['id' => 10, 'subject_id' => 5],
+            ['id' => 11, 'subject_id' => 1],
+            ['id' => 12, 'subject_id' => 2],
+            ['id' => 13, 'subject_id' => 3],
+            ['id' => 14, 'subject_id' => 4],
+            ['id' => 15, 'subject_id' => 5],
+            ['id' => 16, 'subject_id' => 1],
+            ['id' => 17, 'subject_id' => 2],
+        ];
+
+        $subjectCounts = [];
+        for ($index = 0; $index < (int) $preset['questions']; $index++) {
+            $examEntry = $resolveExamMethod->invoke(null, $index, $exams);
+            $subjectId = (int) ($examEntry['subject_id'] ?? 0);
+            if ($subjectId <= 0) {
+                continue;
+            }
+
+            $subjectCounts[$subjectId] = ($subjectCounts[$subjectId] ?? 0) + 1;
+        }
+
+        ksort($subjectCounts);
+        self::assertSame([
+            1 => 150,
+            2 => 150,
+            3 => 150,
+            4 => 150,
+            5 => 150,
+        ], $subjectCounts);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_rich_recipe_is_deterministic_and_keeps_majority_rich_with_image_span(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $method = $service->getMethod('resolve_test_data_seed_rich_recipe');
+        $method->setAccessible(true);
+
+        $firstRecipe = $method->invoke(null, 'multiple_choice', 7);
+        $secondRecipe = $method->invoke(null, 'multiple_choice', 7);
+
+        self::assertSame($firstRecipe, $secondRecipe);
+
+        $richCount = 0;
+        $imageCounts = [];
+        for ($questionNumber = 1; $questionNumber <= 10; $questionNumber++) {
+            $recipe = $method->invoke(null, 'multiple_choice', $questionNumber);
+            if (!empty($recipe['rich'])) {
+                $richCount++;
+            }
+            $imageCounts[(int) ($recipe['image_count_total'] ?? 0)] = true;
+        }
+
+        ksort($imageCounts);
+        self::assertSame(7, $richCount);
+        self::assertSame([0, 1, 2, 3], array_values(array_map('intval', array_keys($imageCounts))));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_decorates_multiple_choice_row_with_lists_equation_and_rich_options(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $recipeMethod = $service->getMethod('resolve_test_data_seed_rich_recipe');
+        $recipeMethod->setAccessible(true);
+        $decorateMethod = $service->getMethod('decorate_test_data_seed_question_row_with_rich_content');
+        $decorateMethod->setAccessible(true);
+
+        $sourceMap = [];
+        $recipe = $recipeMethod->invoke(null, 'multiple_choice', 10);
+        $rowArgs = [
+            [
+                'question_type' => 'multiple_choice',
+                'question_text' => 'Soal MC plain untuk rich content.',
+                'explanation' => 'Pembahasan MC plain.',
+            ],
+            10,
+            'TEST Subject 01',
+            'biology',
+            $recipe,
+            [
+                'left' => 17,
+                'right' => 6,
+                'correct' => 23,
+                'plain_options' => ['21', '23', '24', '27'],
+                'correct_keys' => ['B'],
+            ],
+            &$sourceMap
+        ];
+        $row = $decorateMethod->invokeArgs(null, $rowArgs);
+
+        self::assertStringContainsString('<ol>', (string) $row['question_text']);
+        self::assertStringContainsString('data-cbt-math=', (string) $row['question_text']);
+        self::assertStringContainsString('<table', (string) $row['question_text']);
+        self::assertStringContainsString('data-cbt-math=', (string) $row['explanation']);
+
+        $optionsPayload = json_decode((string) ($row['options_payload'] ?? ''), true);
+        self::assertIsArray($optionsPayload);
+        self::assertCount(4, $optionsPayload);
+        self::assertStringContainsString('class="cbt-math"', (string) $optionsPayload[0]['option_text']);
+        self::assertStringContainsString('<ul>', (string) $optionsPayload[0]['option_text']);
+        self::assertStringContainsString('<table', (string) $optionsPayload[0]['option_text']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_decorates_non_objective_rows_without_breaking_answer_contracts(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $recipeMethod = $service->getMethod('resolve_test_data_seed_rich_recipe');
+        $recipeMethod->setAccessible(true);
+        $decorateMethod = $service->getMethod('decorate_test_data_seed_question_row_with_rich_content');
+        $decorateMethod->setAccessible(true);
+
+        $sourceMap = [];
+        $shortAnswerRecipe = $recipeMethod->invoke(null, 'short_answer', 10);
+        $shortAnswerArgs = [
+            [
+                'question_type' => 'short_answer',
+                'question_text' => 'Lengkapi [INPUT_1] dan [INPUT_2].',
+                'correct_text' => 'jakarta||bandung',
+                'explanation' => 'Pembahasan short answer.',
+            ],
+            10,
+            'TEST Subject 01',
+            'biology',
+            $shortAnswerRecipe,
+            [
+                'input_count' => 2,
+                'left' => 8,
+                'right' => 4,
+            ],
+            &$sourceMap
+        ];
+        $shortAnswerRow = $decorateMethod->invokeArgs(null, $shortAnswerArgs);
+
+        self::assertSame('jakarta||bandung', $shortAnswerRow['correct_text']);
+        self::assertStringContainsString('<ol>', (string) $shortAnswerRow['question_text']);
+        self::assertStringContainsString('data-cbt-math=', (string) $shortAnswerRow['question_text']);
+
+        $essayRecipe = $recipeMethod->invoke(null, 'essay', 10);
+        $essayArgs = [
+            [
+                'question_type' => 'essay',
+                'question_text' => 'Jelaskan topik utama.',
+                'correct_text' => 'Rubrik plain.',
+                'explanation' => 'Pembahasan essay plain.',
+            ],
+            10,
+            'TEST Subject 01',
+            'biology',
+            $essayRecipe,
+            [],
+            &$sourceMap
+        ];
+        $essayRow = $decorateMethod->invokeArgs(null, $essayArgs);
+
+        self::assertStringContainsString('<ol>', (string) $essayRow['correct_text']);
+        self::assertStringContainsString('data-cbt-math=', (string) $essayRow['correct_text']);
+
+        $tfmRecipe = $recipeMethod->invoke(null, 'true_false_matrix', 10);
+        $tfmArgs = [
+            [
+                'question_type' => 'true_false_matrix',
+                'question_text' => 'Tentukan benar atau salah.',
+                'correct_text' => "Pernyataan pertama|true\nPernyataan kedua|false\nPernyataan ketiga|true",
+                'explanation' => 'Pembahasan tfm plain.',
+            ],
+            10,
+            'TEST Subject 01',
+            'biology',
+            $tfmRecipe,
+            ['base' => 9],
+            &$sourceMap
+        ];
+        $tfmRow = $decorateMethod->invokeArgs(null, $tfmArgs);
+
+        self::assertStringContainsString('Pernyataan 1.', (string) $tfmRow['correct_text']);
+        self::assertStringContainsString('class="cbt-math"', (string) $tfmRow['correct_text']);
+        self::assertStringContainsString('|true', (string) $tfmRow['correct_text']);
     }
 
     #[RunInSeparateProcess]

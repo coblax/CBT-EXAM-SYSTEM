@@ -357,6 +357,24 @@ final class CBT_Exam_Availability_Auto_Warm_Service
         return self::build_state(is_array($state) ? $state : []);
     }
 
+    /**
+     * @param array<string,mixed> $exam_row
+     * @return int[]
+     */
+    public static function get_target_student_ids_for_exam(array $exam_row): array
+    {
+        return self::resolve_target_student_ids($exam_row);
+    }
+
+    /**
+     * @param array<string,mixed> $exam_row
+     * @return string[]
+     */
+    public static function get_target_kelas_for_exam(array $exam_row): array
+    {
+        return self::resolve_target_kelas_values($exam_row);
+    }
+
     public static function is_active_for_student(int $user_id): bool
     {
         $user_id = absint($user_id);

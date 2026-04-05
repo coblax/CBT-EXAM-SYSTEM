@@ -38,6 +38,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
     {
         $this->bootstrapSnapshotActionScaffold();
         $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
 
         $_POST = [
             'exam_id' => '77',
@@ -55,13 +56,14 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         }
 
         self::assertSame([77], CBT_REST::$warmedExamIds);
+        self::assertSame([77], CBT_REST::$warmedStartExamIds);
         self::assertStringContainsString('page=cbt-exams', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_status=published', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
-        self::assertStringContainsString('cbt_msg=Snapshot+soal+exam+%2377+siap.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Snapshot+exam+%2377+siap.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
@@ -69,6 +71,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
     {
         $this->bootstrapSnapshotActionScaffold();
         $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
 
         global $wpdb;
         $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
@@ -85,9 +88,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         }
 
         self::assertSame([77, 54], CBT_REST::$warmedExamIds);
+        self::assertSame([77, 54], CBT_REST::$warmedStartExamIds);
         self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_status=published', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
-        self::assertStringContainsString('cbt_msg=Berhasil+menyiapkan+2+snapshot+soal.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Berhasil+menyiapkan+2+snapshot+exam.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
@@ -95,6 +99,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
     {
         $this->bootstrapSnapshotActionScaffold();
         $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
 
         CBT_Exam_Question_Delivery_Cache::warm_exam_payload(77, static function (int $examId): array {
             return [
@@ -106,6 +111,16 @@ final class AdminExamsSnapshotActionsTest extends TestCase
                     'points' => 1,
                     'options' => [],
                 ],
+            ];
+        });
+        CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot(77, static function (int $examId): array {
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [977],
+                'question_number_map' => [977 => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'option_randomization_tokens_by_question' => [],
             ];
         });
 
@@ -124,10 +139,11 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         }
 
         self::assertSame([], $this->storedExamSnapshotKeysFor(77));
+        self::assertSame([], $this->storedStartSnapshotKeysFor(77));
         self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_page_77=3', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
-        self::assertStringContainsString('cbt_msg=Snapshot+soal+exam+%2377+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Snapshot+exam+%2377+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
@@ -135,6 +151,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
     {
         $this->bootstrapSnapshotActionScaffold();
         $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
 
         global $wpdb;
         $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
@@ -163,6 +180,26 @@ final class AdminExamsSnapshotActionsTest extends TestCase
                 ],
             ];
         });
+        CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot(77, static function (int $examId): array {
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [977],
+                'question_number_map' => [977 => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'option_randomization_tokens_by_question' => [],
+            ];
+        });
+        CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot(54, static function (int $examId): array {
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [954],
+                'question_number_map' => [954 => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'option_randomization_tokens_by_question' => [],
+            ];
+        });
 
         $_POST = [
             'cbt_exam_status' => 'published',
@@ -177,8 +214,10 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         self::assertSame([], $this->storedExamSnapshotKeysFor(77));
         self::assertSame([], $this->storedExamSnapshotKeysFor(54));
+        self::assertSame([], $this->storedStartSnapshotKeysFor(77));
+        self::assertSame([], $this->storedStartSnapshotKeysFor(54));
         self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
-        self::assertStringContainsString('cbt_msg=Berhasil+membersihkan+snapshot+soal+untuk+2+exam.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Berhasil+membersihkan+snapshot+exam+untuk+2+exam.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
@@ -190,7 +229,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         $_POST = [
             'user_id' => '71',
             'cbt_exam_status' => 'published',
-            'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_snapshot_tab' => 'exam_monitor',
             'cbt_exam_snapshot_exam_id' => '77',
             'cbt_exam_snapshot_page_77' => '2',
             'cbt_exam_readiness_paged' => '2',
@@ -204,7 +243,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         self::assertNotSame([], $this->storedAvailabilitySnapshotKeysFor(71));
         self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
-        self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_tab=exam_monitor', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
@@ -215,7 +254,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         $_POST = [
             'user_id' => '71',
             'cbt_exam_status' => 'published',
-            'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_snapshot_tab' => 'exam_monitor',
             'cbt_exam_snapshot_exam_id' => '77',
             'cbt_exam_snapshot_page_77' => '2',
             'cbt_exam_readiness_paged' => '2',
@@ -228,7 +267,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_clear_student_exam_availability_snapshot']);
 
         self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(71));
-        self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_tab=exam_monitor', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
@@ -284,6 +323,50 @@ final class AdminExamsSnapshotActionsTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_handle_start_exam_preflight_redirects_back_with_snapshot_state(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAvailabilityRedis();
+        $this->useFakeProfileRedis();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        $_POST = [
+            'exam_id' => '77',
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_paged' => '2',
+            'cbt_exam_snapshot_tab' => 'preflight',
+            'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
+            'cbt_student_snapshot_paged' => '2',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_start_exam_preflight']);
+
+        $state = CBT_Exam_Preflight_Service::get_state();
+        self::assertSame(77, $state['exam_id']);
+        self::assertSame('completed', $state['status']);
+        self::assertTrue($state['question_snapshot_ready']);
+        self::assertTrue($state['start_snapshot_ready']);
+        self::assertTrue($state['auto_warm_started']);
+        self::assertSame(1, $state['profile_success_count']);
+        self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_ruang=R1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=One-click+pra+ujian+selesai.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
     public function test_handle_warm_and_clear_bulk_student_exam_availability_snapshots_process_filtered_students_only(): void
     {
         $this->bootstrapSnapshotActionScaffold();
@@ -291,7 +374,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         $_POST = [
             'cbt_exam_status' => 'published',
-            'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_snapshot_tab' => 'exam_monitor',
             'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
             'cbt_student_snapshot_kelas' => 'XI-A',
@@ -303,7 +386,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         self::assertNotSame([], $this->storedAvailabilitySnapshotKeysFor(71));
         self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(72));
-        self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_tab=exam_monitor', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
@@ -313,7 +396,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         $_POST = [
             'cbt_exam_status' => 'published',
-            'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_snapshot_tab' => 'exam_monitor',
             'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
             'cbt_student_snapshot_kelas' => 'XI-A',
@@ -325,7 +408,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(71));
         self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(72));
-        self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_tab=exam_monitor', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
@@ -343,7 +426,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         $_POST = [
             'user_id' => '71',
             'cbt_exam_status' => 'published',
-            'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_snapshot_tab' => 'profile_monitor',
             'cbt_exam_snapshot_exam_id' => '77',
             'cbt_exam_snapshot_page_77' => '2',
             'cbt_exam_readiness_paged' => '2',
@@ -356,7 +439,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_warm_student_profile_snapshot']);
 
         self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(71));
-        self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_tab=profile_monitor', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
@@ -367,7 +450,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         $_POST = [
             'user_id' => '71',
             'cbt_exam_status' => 'published',
-            'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_snapshot_tab' => 'profile_monitor',
             'cbt_exam_snapshot_exam_id' => '77',
             'cbt_exam_snapshot_page_77' => '2',
             'cbt_exam_readiness_paged' => '2',
@@ -380,7 +463,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_clear_student_profile_snapshot']);
 
         self::assertSame('', $this->storedProfileSnapshotPayloadFor(71));
-        self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_tab=profile_monitor', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
@@ -397,7 +480,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         $_POST = [
             'cbt_exam_status' => 'published',
-            'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_snapshot_tab' => 'profile_monitor',
             'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
             'cbt_student_snapshot_kelas' => 'XI-A',
@@ -409,7 +492,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(71));
         self::assertSame('', $this->storedProfileSnapshotPayloadFor(72));
-        self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_tab=profile_monitor', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
@@ -419,7 +502,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         $_POST = [
             'cbt_exam_status' => 'published',
-            'cbt_exam_snapshot_tab' => 'students',
+            'cbt_exam_snapshot_tab' => 'profile_monitor',
             'cbt_exam_readiness_paged' => '2',
             'cbt_student_snapshot_q' => 'salsa',
             'cbt_student_snapshot_kelas' => 'XI-A',
@@ -431,7 +514,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         self::assertSame('', $this->storedProfileSnapshotPayloadFor(71));
         self::assertSame('', $this->storedProfileSnapshotPayloadFor(72));
-        self::assertStringContainsString('cbt_exam_snapshot_tab=students', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_tab=profile_monitor', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
@@ -445,6 +528,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-availability-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-question-delivery-cache.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-start-attempt-snapshot-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
 
         if (!class_exists('CBT_REST')) {
@@ -452,6 +536,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 class CBT_REST
 {
     public static array $warmedExamIds = [];
+    public static array $warmedStartExamIds = [];
 
     public static function warm_exam_question_delivery_snapshot(int $exam_id): void
     {
@@ -466,6 +551,21 @@ class CBT_REST
                     'points' => 1,
                     'options' => [],
                 ],
+            ];
+        });
+    }
+
+    public static function warm_exam_start_attempt_snapshot(int $exam_id): void
+    {
+        self::$warmedStartExamIds[] = $exam_id;
+        CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot($exam_id, static function (int $target_exam_id): array {
+            return [
+                'exam_id' => $target_exam_id,
+                'question_ids' => [900 + $target_exam_id],
+                'question_number_map' => [900 + $target_exam_id => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'option_randomization_tokens_by_question' => [],
             ];
         });
     }
@@ -524,6 +624,23 @@ PHP);
         $errorProperty->setValue(null, '');
     }
 
+    private function useFakeStartSnapshotRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Exam_Start_Attempt_Snapshot_Cache::class);
+
+        $redisProperty = $reflection->getProperty('start_snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('start_snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('start_snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
     private function useFakeAvailabilityRedis(): void
     {
         $reflection = new ReflectionClass(CBT_Exam_Availability_Cache::class);
@@ -577,6 +694,19 @@ PHP);
     private function storedExamSnapshotKeysFor(int $examId): array
     {
         $prefix = 'cbt_exam_delivery:exam:' . $examId . ':';
+        $keys = array_keys((array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+
+        return array_values(array_filter($keys, static function ($key) use ($prefix): bool {
+            return is_string($key) && strpos($key, $prefix) === 0;
+        }));
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function storedStartSnapshotKeysFor(int $examId): array
+    {
+        $prefix = 'cbt_exam_start_attempt:exam:' . $examId . ':';
         $keys = array_keys((array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
 
         return array_values(array_filter($keys, static function ($key) use ($prefix): bool {

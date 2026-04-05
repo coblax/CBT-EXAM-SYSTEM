@@ -68,6 +68,9 @@ final class CBT_Admin_Questions_Service
         })));
         foreach ($exam_ids as $exam_id) {
             CBT_REST::warm_exam_question_delivery_snapshot($exam_id);
+            if (method_exists('CBT_REST', 'warm_exam_start_attempt_snapshot')) {
+                CBT_REST::warm_exam_start_attempt_snapshot($exam_id);
+            }
         }
     }
 

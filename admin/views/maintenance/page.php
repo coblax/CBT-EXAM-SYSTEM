@@ -2659,7 +2659,7 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <p class="description"><code>Small</code>, <code>Medium</code>, dan <code>Large</code> sekarang sama-sama memakai 17 exam uji. Perbedaannya ada di jumlah mapel, bank question, siswa, guru, kelas, dan ruang.</p>
+                            <p class="description"><code>Small</code>, <code>Medium</code>, dan <code>Large</code> sekarang sama-sama memakai 5 subject dan 17 exam uji. Perbedaannya ada di jumlah bank question, siswa, guru, kelas, dan ruang.</p>
                         </div>
                         <div class="cbt-maintenance-field">
                             <label for="cbt-seed-confirm-phrase">Konfirmasi wajib</label>
@@ -2714,8 +2714,9 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                         Exam dinamis menarget semua kelas test yang dibuat preset, dan sinkronisasi soal per exam mengambil sekitar setengah bank question untuk mapel exam tersebut.
                         Akun test khusus yang selalu dibuat: <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_username); ?></span> / <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_password); ?></span>.
                         Short answer bulk memakai placeholder inline <span class="cbt-maintenance-inline-code">[INPUT_1]</span> sampai <span class="cbt-maintenance-inline-code">[INPUT_8]</span>, dan jumlah input selalu sama dengan jumlah jawaban yang disimpan.
-                        Rich content bulk memakai sample image internal plugin, lalu menyimpan gambar seperti import soal: prioritas ke uploads WordPress dan fallback ke base64 bila upload gagal.
-                        Tabel HTML dipakai di stem soal, dan option <code>multiple_choice</code> / <code>multiple_answer</code> bisa membawa gambar serta tabel ringkas yang compact.
+                        Rich content bulk memakai recipe deterministik dengan kombinasi bullet, numbering, image 0-3, tabel HTML, dan equation <code>cbt-math</code>.
+                        Gambar memakai sample image internal plugin, lalu disimpan seperti import soal: prioritas ke uploads WordPress dan fallback ke base64 bila upload gagal.
+                        Stem soal bisa membawa list, equation, gambar, dan tabel; option objektif bisa membawa gambar, list, mini-table, dan equation; rubric essay serta statement True/False Matrix juga ikut diperkaya.
                     </p>
 
                     <div class="cbt-maintenance-question-breakdown">

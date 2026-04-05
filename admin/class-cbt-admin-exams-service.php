@@ -12,6 +12,14 @@ if (!class_exists('CBT_Exam_Availability_Auto_Warm_Service')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-exam-availability-auto-warm-service.php';
 }
 
+if (!class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-exam-start-attempt-snapshot-cache.php';
+}
+
+if (!class_exists('CBT_Exam_Preflight_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-exam-preflight-service.php';
+}
+
 if (!class_exists('CBT_Student_Profile_Cache')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-student-profile-cache.php';
 }
@@ -22,6 +30,11 @@ final class CBT_Admin_Exams_Service
     private const SNAPSHOT_PREVIEW_PER_PAGE = 7;
     private const STUDENT_SNAPSHOT_PER_PAGE = 25;
     private const EXAM_READINESS_PROBLEM_PER_PAGE = 10;
+    public const SNAPSHOT_TAB_PREFLIGHT = 'preflight';
+    public const SNAPSHOT_TAB_QUESTION_MONITOR = 'question_monitor';
+    public const SNAPSHOT_TAB_START_MONITOR = 'start_monitor';
+    public const SNAPSHOT_TAB_EXAM_MONITOR = 'exam_monitor';
+    public const SNAPSHOT_TAB_PROFILE_MONITOR = 'profile_monitor';
     public const SNAPSHOT_TAB_QUESTIONS = 'questions';
     public const SNAPSHOT_TAB_STUDENTS = 'students';
 
@@ -1090,6 +1103,9 @@ final class CBT_Admin_Exams_Service
             ],
             admin_url('admin.php')
         );
+        $exam_snapshot_reset_tab = self::is_exam_snapshot_exam_tab($exam_snapshot_tab)
+            ? $exam_snapshot_tab
+            : self::SNAPSHOT_TAB_PREFLIGHT;
         $exam_snapshot_reset_url = add_query_arg(
             self::add_exam_snapshot_tab_args(
                 [
@@ -1097,10 +1113,13 @@ final class CBT_Admin_Exams_Service
                     'cbt_exam_panel' => 'snapshot',
                     'cbt_exam_per_page' => $exam_per_page,
                 ],
-                self::SNAPSHOT_TAB_QUESTIONS
+                $exam_snapshot_reset_tab
             ),
             admin_url('admin.php')
         );
+        $student_snapshot_reset_tab = self::is_exam_snapshot_student_tab($exam_snapshot_tab)
+            ? $exam_snapshot_tab
+            : self::SNAPSHOT_TAB_EXAM_MONITOR;
         $student_snapshot_reset_url = add_query_arg(
             self::add_exam_readiness_page_args(
                 self::add_exam_snapshot_tab_args(
@@ -1118,26 +1137,28 @@ final class CBT_Admin_Exams_Service
                         ),
                         $exam_snapshot_preview_pages
                     ),
-                    self::SNAPSHOT_TAB_STUDENTS
+                    $student_snapshot_reset_tab
                 ),
                 $exam_readiness_page
             ),
             admin_url('admin.php')
         );
         $exam_snapshot_exam_options = $can_manage_exam_snapshots
-            ? self::build_exam_snapshot_exam_options($exam_list_state, $is_admin_scope, $current_user_id)
+            ? self::build_exam_snapshot_exam_options($is_admin_scope, $current_user_id)
             : [];
         $valid_snapshot_exam_ids = array_map('intval', wp_list_pluck((array) $exam_snapshot_exam_options, 'id'));
-        if (!empty($exam_snapshot_filter_state['exam_id']) && !in_array((int) $exam_snapshot_filter_state['exam_id'], $valid_snapshot_exam_ids, true)) {
-            $exam_snapshot_filter_state['exam_id'] = 0;
+        $selected_snapshot_exam_ids = array_values(array_filter(array_map('intval', (array) ($exam_snapshot_filter_state['exam_ids'] ?? []))));
+        if (!empty($selected_snapshot_exam_ids)) {
+            $selected_snapshot_exam_ids = array_values(array_intersect($selected_snapshot_exam_ids, $valid_snapshot_exam_ids));
         }
+        $exam_snapshot_filter_state['exam_ids'] = $selected_snapshot_exam_ids;
+        $exam_snapshot_filter_state['exam_id'] = !empty($selected_snapshot_exam_ids) ? (int) $selected_snapshot_exam_ids[0] : 0;
         $exam_snapshot_rows = $can_manage_exam_snapshots
             ? self::build_filtered_exam_snapshot_rows(
-                $exam_list_state,
                 $is_admin_scope,
                 $current_user_id,
                 $exam_snapshot_preview_pages,
-                (int) ($exam_snapshot_filter_state['exam_id'] ?? 0),
+                $selected_snapshot_exam_ids,
                 $exam_readiness_page
             )
             : [];
@@ -1145,19 +1166,24 @@ final class CBT_Admin_Exams_Service
         if (!empty($exam_snapshot_rows[0]['readiness']['problem_page'])) {
             $exam_readiness_page = max(1, (int) $exam_snapshot_rows[0]['readiness']['problem_page']);
         }
-        $exam_snapshot_active_filters = $exam_active_filters;
-        if (!empty($exam_snapshot_filter_state['exam_id'])) {
+        $exam_snapshot_active_filters = [];
+        if (!empty($selected_snapshot_exam_ids)) {
+            $selected_snapshot_exam_titles = [];
             foreach ($exam_snapshot_exam_options as $snapshot_exam_option) {
-                if ((int) ($snapshot_exam_option['id'] ?? 0) !== (int) $exam_snapshot_filter_state['exam_id']) {
+                $snapshot_exam_option_id = (int) ($snapshot_exam_option['id'] ?? 0);
+                if (!in_array($snapshot_exam_option_id, $selected_snapshot_exam_ids, true)) {
                     continue;
                 }
 
-                $exam_snapshot_active_filters[] = [
-                    'label' => 'Exam',
-                    'value' => (string) ($snapshot_exam_option['title'] ?? ('Exam #' . (int) $exam_snapshot_filter_state['exam_id'])),
-                ];
-                break;
+                $selected_snapshot_exam_titles[] = (string) ($snapshot_exam_option['title'] ?? ('Exam #' . $snapshot_exam_option_id));
             }
+
+            $exam_snapshot_active_filters[] = [
+                'label' => 'Exam',
+                'value' => count($selected_snapshot_exam_titles) <= 1
+                    ? (string) ($selected_snapshot_exam_titles[0] ?? ('Exam #' . (int) $exam_snapshot_filter_state['exam_id']))
+                    : (count($selected_snapshot_exam_titles) . ' exam dipilih'),
+            ];
         }
         $student_snapshot_filter_options = $can_manage_exam_snapshots
             ? self::build_snapshot_student_filter_options()
@@ -1718,29 +1744,37 @@ final class CBT_Admin_Exams_Service
             ]);
         }
 
-        if (!class_exists('CBT_REST') || !class_exists('CBT_Exam_Question_Delivery_Cache')) {
+        if (
+            !class_exists('CBT_REST')
+            || !class_exists('CBT_Exam_Question_Delivery_Cache')
+            || !class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')
+        ) {
             self::redirect_exam_snapshot_page($exam_list_state, [
-                'cbt_err' => 'Runtime snapshot soal belum tersedia di environment ini.',
+                'cbt_err' => 'Runtime snapshot exam belum tersedia lengkap di environment ini.',
             ]);
         }
 
         CBT_REST::warm_exam_question_delivery_snapshot($exam_id);
+        CBT_REST::warm_exam_start_attempt_snapshot($exam_id);
         $diagnostics = CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics($exam_id);
-        if (!empty($diagnostics['snapshot_valid'])) {
+        $start_diagnostics = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot_diagnostics($exam_id);
+        if (!empty($diagnostics['snapshot_valid']) && !empty($start_diagnostics['snapshot_valid'])) {
             self::redirect_exam_snapshot_page($exam_list_state, [
                 'cbt_msg' => sprintf(
-                    'Snapshot soal exam #%d siap. Items: %d.',
+                    'Snapshot exam #%d siap. Soal: %d item · Start: %d item.',
                     $exam_id,
-                    (int) ($diagnostics['snapshot_item_count'] ?? 0)
+                    (int) ($diagnostics['snapshot_item_count'] ?? 0),
+                    (int) ($start_diagnostics['snapshot_item_count'] ?? 0)
                 ),
             ]);
         }
 
         self::redirect_exam_snapshot_page($exam_list_state, [
             'cbt_err' => sprintf(
-                'Snapshot soal exam #%d belum valid. %s',
+                'Snapshot exam #%d belum valid. %s %s',
                 $exam_id,
-                (string) ($diagnostics['snapshot_message'] ?? '')
+                (string) ($diagnostics['snapshot_message'] ?? ''),
+                (string) ($start_diagnostics['snapshot_message'] ?? '')
             ),
         ]);
     }
@@ -1754,16 +1788,20 @@ final class CBT_Admin_Exams_Service
         check_admin_referer('cbt_warm_bulk_exam_delivery_snapshots');
 
         $exam_list_state = self::get_exam_list_state_from_request($_POST);
-        if (!class_exists('CBT_REST') || !class_exists('CBT_Exam_Question_Delivery_Cache')) {
+        if (
+            !class_exists('CBT_REST')
+            || !class_exists('CBT_Exam_Question_Delivery_Cache')
+            || !class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')
+        ) {
             self::redirect_exam_snapshot_page($exam_list_state, [
-                'cbt_err' => 'Runtime snapshot soal belum tersedia di environment ini.',
+                'cbt_err' => 'Runtime snapshot exam belum tersedia lengkap di environment ini.',
             ]);
         }
 
-        $rows = self::get_filtered_exam_snapshot_exams($exam_list_state, self::is_admin_scope(), get_current_user_id());
+        $rows = self::get_filtered_exam_snapshot_exams(self::is_admin_scope(), get_current_user_id());
         if (empty($rows)) {
             self::redirect_exam_snapshot_page($exam_list_state, [
-                'cbt_err' => 'Tidak ada exam yang cocok dengan filter saat ini untuk disiapkan snapshot-nya.',
+                'cbt_err' => 'Tidak ada exam yang tersedia untuk disiapkan snapshot-nya.',
             ]);
         }
 
@@ -1777,8 +1815,10 @@ final class CBT_Admin_Exams_Service
             }
 
             CBT_REST::warm_exam_question_delivery_snapshot($exam_id);
+            CBT_REST::warm_exam_start_attempt_snapshot($exam_id);
             $diagnostics = CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics($exam_id);
-            if (!empty($diagnostics['snapshot_valid'])) {
+            $start_diagnostics = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot_diagnostics($exam_id);
+            if (!empty($diagnostics['snapshot_valid']) && !empty($start_diagnostics['snapshot_valid'])) {
                 $success_count++;
             } else {
                 $failure_count++;
@@ -1788,13 +1828,13 @@ final class CBT_Admin_Exams_Service
         if ($success_count <= 0) {
             self::redirect_exam_snapshot_page($exam_list_state, [
                 'cbt_err' => sprintf(
-                    'Gagal menyiapkan snapshot soal untuk %d exam yang terfilter.',
+                    'Gagal menyiapkan snapshot exam untuk %d exam yang dipilih.',
                     max(0, $failure_count)
                 ),
             ]);
         }
 
-        $message = sprintf('Berhasil menyiapkan %d snapshot soal.', $success_count);
+        $message = sprintf('Berhasil menyiapkan %d snapshot exam.', $success_count);
         if ($failure_count > 0) {
             $message .= ' Gagal: ' . $failure_count . '.';
         }
@@ -1820,19 +1860,21 @@ final class CBT_Admin_Exams_Service
             ]);
         }
 
-        if (!class_exists('CBT_Exam_Question_Delivery_Cache')) {
+        if (!class_exists('CBT_Exam_Question_Delivery_Cache') || !class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
             self::redirect_exam_snapshot_page($exam_list_state, [
-                'cbt_err' => 'Runtime snapshot soal belum tersedia di environment ini.',
+                'cbt_err' => 'Runtime snapshot exam belum tersedia lengkap di environment ini.',
             ]);
         }
 
-        $deleted_count = CBT_Exam_Question_Delivery_Cache::clear_exam_payload($exam_id);
+        $deleted_count = CBT_Exam_Question_Delivery_Cache::clear_exam_payload($exam_id)
+            + CBT_Exam_Start_Attempt_Snapshot_Cache::clear_exam_snapshot($exam_id);
         $diagnostics = CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics($exam_id);
+        $start_diagnostics = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot_diagnostics($exam_id);
 
-        if ($deleted_count > 0 || ($diagnostics['snapshot_status'] ?? '') === 'miss') {
+        if ($deleted_count > 0 || (($diagnostics['snapshot_status'] ?? '') === 'miss' && ($start_diagnostics['snapshot_status'] ?? '') === 'miss')) {
             $message = $deleted_count > 0
-                ? sprintf('Snapshot soal exam #%d berhasil dibersihkan. Keys: %d.', $exam_id, $deleted_count)
-                : sprintf('Snapshot soal exam #%d sudah kosong.', $exam_id);
+                ? sprintf('Snapshot exam #%d berhasil dibersihkan. Keys: %d.', $exam_id, $deleted_count)
+                : sprintf('Snapshot exam #%d sudah kosong.', $exam_id);
             self::redirect_exam_snapshot_page($exam_list_state, [
                 'cbt_msg' => $message,
             ]);
@@ -1840,9 +1882,10 @@ final class CBT_Admin_Exams_Service
 
         self::redirect_exam_snapshot_page($exam_list_state, [
             'cbt_err' => sprintf(
-                'Snapshot soal exam #%d belum berhasil dibersihkan. %s',
+                'Snapshot exam #%d belum berhasil dibersihkan. %s %s',
                 $exam_id,
-                (string) ($diagnostics['snapshot_message'] ?? '')
+                (string) ($diagnostics['snapshot_message'] ?? ''),
+                (string) ($start_diagnostics['snapshot_message'] ?? '')
             ),
         ]);
     }
@@ -1856,16 +1899,16 @@ final class CBT_Admin_Exams_Service
         check_admin_referer('cbt_clear_bulk_exam_delivery_snapshots');
 
         $exam_list_state = self::get_exam_list_state_from_request($_POST);
-        if (!class_exists('CBT_Exam_Question_Delivery_Cache')) {
+        if (!class_exists('CBT_Exam_Question_Delivery_Cache') || !class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
             self::redirect_exam_snapshot_page($exam_list_state, [
-                'cbt_err' => 'Runtime snapshot soal belum tersedia di environment ini.',
+                'cbt_err' => 'Runtime snapshot exam belum tersedia lengkap di environment ini.',
             ]);
         }
 
-        $rows = self::get_filtered_exam_snapshot_exams($exam_list_state, self::is_admin_scope(), get_current_user_id());
+        $rows = self::get_filtered_exam_snapshot_exams(self::is_admin_scope(), get_current_user_id());
         if (empty($rows)) {
             self::redirect_exam_snapshot_page($exam_list_state, [
-                'cbt_err' => 'Tidak ada exam yang cocok dengan filter saat ini untuk dibersihkan snapshot-nya.',
+                'cbt_err' => 'Tidak ada exam yang tersedia untuk dibersihkan snapshot-nya.',
             ]);
         }
 
@@ -1879,8 +1922,10 @@ final class CBT_Admin_Exams_Service
                 continue;
             }
 
-            $deleted_count = CBT_Exam_Question_Delivery_Cache::clear_exam_payload($exam_id);
+            $deleted_count = CBT_Exam_Question_Delivery_Cache::clear_exam_payload($exam_id)
+                + CBT_Exam_Start_Attempt_Snapshot_Cache::clear_exam_snapshot($exam_id);
             $diagnostics = CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics($exam_id);
+            $start_diagnostics = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot_diagnostics($exam_id);
 
             if ($deleted_count > 0) {
                 $cleared_exam_count++;
@@ -1888,18 +1933,18 @@ final class CBT_Admin_Exams_Service
                 continue;
             }
 
-            if (($diagnostics['snapshot_status'] ?? '') === 'miss') {
+            if (($diagnostics['snapshot_status'] ?? '') === 'miss' && ($start_diagnostics['snapshot_status'] ?? '') === 'miss') {
                 $empty_exam_count++;
             }
         }
 
         if ($cleared_exam_count <= 0 && $empty_exam_count <= 0) {
             self::redirect_exam_snapshot_page($exam_list_state, [
-                'cbt_err' => 'Tidak ada snapshot soal yang berhasil dibersihkan pada filter aktif.',
+                'cbt_err' => 'Tidak ada snapshot exam yang berhasil dibersihkan pada exam yang dipilih.',
             ]);
         }
 
-        $message = sprintf('Berhasil membersihkan snapshot soal untuk %d exam.', $cleared_exam_count);
+        $message = sprintf('Berhasil membersihkan snapshot exam untuk %d exam.', $cleared_exam_count);
         if ($deleted_key_count > 0) {
             $message .= ' Keys: ' . $deleted_key_count . '.';
         }
@@ -1922,10 +1967,10 @@ final class CBT_Admin_Exams_Service
 
         $exam_id = isset($_POST['exam_id']) ? absint(wp_unslash((string) $_POST['exam_id'])) : 0;
         $exam_list_state = self::get_exam_list_state_from_request($_POST);
-        $exam_row = self::get_snapshot_exam_row_by_id($exam_id, $exam_list_state, self::is_admin_scope(), get_current_user_id());
+        $exam_row = self::get_snapshot_exam_row_by_id($exam_id, self::is_admin_scope(), get_current_user_id());
         if (!is_array($exam_row)) {
             self::redirect_exam_snapshot_page($exam_list_state, [
-                'cbt_err' => 'Exam snapshot tidak ditemukan atau tidak cocok dengan filter aktif.',
+                'cbt_err' => 'Exam snapshot tidak ditemukan atau tidak tersedia.',
             ]);
         }
 
@@ -1945,16 +1990,39 @@ final class CBT_Admin_Exams_Service
 
         $exam_id = isset($_POST['exam_id']) ? absint(wp_unslash((string) $_POST['exam_id'])) : 0;
         $exam_list_state = self::get_exam_list_state_from_request($_POST);
-        $exam_row = self::get_snapshot_exam_row_by_id($exam_id, $exam_list_state, self::is_admin_scope(), get_current_user_id());
+        $exam_row = self::get_snapshot_exam_row_by_id($exam_id, self::is_admin_scope(), get_current_user_id());
         if (!is_array($exam_row)) {
             self::redirect_exam_snapshot_page($exam_list_state, [
-                'cbt_err' => 'Exam snapshot tidak ditemukan atau tidak cocok dengan filter aktif.',
+                'cbt_err' => 'Exam snapshot tidak ditemukan atau tidak tersedia.',
             ]);
         }
 
         $result = CBT_Exam_Availability_Auto_Warm_Service::stop_for_exam($exam_row);
         self::redirect_exam_snapshot_page($exam_list_state, [
             !empty($result['success']) ? 'cbt_msg' : 'cbt_err' => (string) ($result['message'] ?? 'Gagal menghentikan auto-warm availability.'),
+        ]);
+    }
+
+    public static function handle_start_exam_preflight(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_start_exam_preflight');
+
+        $exam_id = isset($_POST['exam_id']) ? absint(wp_unslash((string) $_POST['exam_id'])) : 0;
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        $exam_row = self::get_snapshot_exam_row_by_id($exam_id, self::is_admin_scope(), get_current_user_id());
+        if (!is_array($exam_row)) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Exam snapshot tidak ditemukan atau tidak tersedia.',
+            ]);
+        }
+
+        $result = CBT_Exam_Preflight_Service::start_for_exam($exam_row);
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            !empty($result['success']) ? 'cbt_msg' : 'cbt_err' => (string) ($result['message'] ?? 'Gagal menjalankan one-click pra ujian.'),
         ]);
     }
 
@@ -2582,26 +2650,59 @@ final class CBT_Admin_Exams_Service
 
     /**
      * @param array<string,mixed> $request
-     * @return array{exam_id:int}
+     * @return array{exam_id:int,exam_ids:array<int,int>}
      */
     private static function get_exam_snapshot_filter_state_from_request(array $request): array
     {
+        $exam_ids = [];
+
+        if (isset($request['cbt_exam_snapshot_exam_ids']) && is_array($request['cbt_exam_snapshot_exam_ids'])) {
+            $exam_ids = array_map(
+                'absint',
+                array_map(
+                    static function ($value): string {
+                        return (string) wp_unslash((string) $value);
+                    },
+                    (array) $request['cbt_exam_snapshot_exam_ids']
+                )
+            );
+        }
+
+        if (isset($request['cbt_exam_snapshot_exam_id'])) {
+            $exam_ids[] = absint(wp_unslash((string) $request['cbt_exam_snapshot_exam_id']));
+        }
+
+        $exam_ids = array_values(array_unique(array_filter($exam_ids, static function ($exam_id): bool {
+            return (int) $exam_id > 0;
+        })));
+
         return [
-            'exam_id' => isset($request['cbt_exam_snapshot_exam_id'])
-                ? absint(wp_unslash((string) $request['cbt_exam_snapshot_exam_id']))
-                : 0,
+            'exam_id' => !empty($exam_ids) ? (int) $exam_ids[0] : 0,
+            'exam_ids' => $exam_ids,
         ];
     }
 
     /**
      * @param array<string,mixed> $args
-     * @param array{exam_id:int} $state
+     * @param array{exam_id:int,exam_ids?:array<int,int>} $state
      * @return array<string,mixed>
      */
     public static function add_exam_snapshot_filter_state_args(array $args, array $state): array
     {
-        if (!empty($state['exam_id'])) {
-            $args['cbt_exam_snapshot_exam_id'] = (int) $state['exam_id'];
+        $exam_ids = array_values(array_filter(array_map('intval', (array) ($state['exam_ids'] ?? []))));
+        if (empty($exam_ids) && !empty($state['exam_id'])) {
+            $exam_ids[] = (int) $state['exam_id'];
+        }
+
+        if (!empty($exam_ids)) {
+            $args['cbt_exam_snapshot_exam_ids'] = $exam_ids;
+            if (count($exam_ids) === 1) {
+                $args['cbt_exam_snapshot_exam_id'] = (int) $exam_ids[0];
+            } else {
+                unset($args['cbt_exam_snapshot_exam_id']);
+            }
+        } else {
+            unset($args['cbt_exam_snapshot_exam_ids'], $args['cbt_exam_snapshot_exam_id']);
         }
 
         return $args;
@@ -2686,13 +2787,38 @@ final class CBT_Admin_Exams_Service
     public static function add_exam_snapshot_tab_args(array $args, string $tab): array
     {
         $sanitized_tab = self::sanitize_exam_snapshot_tab($tab);
-        if ($sanitized_tab === self::SNAPSHOT_TAB_STUDENTS) {
-            $args['cbt_exam_snapshot_tab'] = self::SNAPSHOT_TAB_STUDENTS;
-        } else {
+        if ($sanitized_tab === self::SNAPSHOT_TAB_PREFLIGHT) {
             unset($args['cbt_exam_snapshot_tab']);
+        } else {
+            $args['cbt_exam_snapshot_tab'] = $sanitized_tab;
         }
 
         return $args;
+    }
+
+    public static function is_exam_snapshot_exam_tab(string $tab): bool
+    {
+        return in_array(
+            self::sanitize_exam_snapshot_tab($tab),
+            [
+                self::SNAPSHOT_TAB_PREFLIGHT,
+                self::SNAPSHOT_TAB_QUESTION_MONITOR,
+                self::SNAPSHOT_TAB_START_MONITOR,
+            ],
+            true
+        );
+    }
+
+    public static function is_exam_snapshot_student_tab(string $tab): bool
+    {
+        return in_array(
+            self::sanitize_exam_snapshot_tab($tab),
+            [
+                self::SNAPSHOT_TAB_EXAM_MONITOR,
+                self::SNAPSHOT_TAB_PROFILE_MONITOR,
+            ],
+            true
+        );
     }
 
     /**
@@ -2922,24 +3048,44 @@ final class CBT_Admin_Exams_Service
     {
         $tab = sanitize_key($tab);
 
-        if ($tab === self::SNAPSHOT_TAB_STUDENTS) {
-            return self::SNAPSHOT_TAB_STUDENTS;
+        if ($tab === self::SNAPSHOT_TAB_QUESTIONS || $tab === '') {
+            return self::SNAPSHOT_TAB_PREFLIGHT;
         }
 
-        return self::SNAPSHOT_TAB_QUESTIONS;
+        if ($tab === self::SNAPSHOT_TAB_STUDENTS) {
+            return self::SNAPSHOT_TAB_EXAM_MONITOR;
+        }
+
+        if (
+            in_array(
+                $tab,
+                [
+                    self::SNAPSHOT_TAB_PREFLIGHT,
+                    self::SNAPSHOT_TAB_QUESTION_MONITOR,
+                    self::SNAPSHOT_TAB_START_MONITOR,
+                    self::SNAPSHOT_TAB_EXAM_MONITOR,
+                    self::SNAPSHOT_TAB_PROFILE_MONITOR,
+                ],
+                true
+            )
+        ) {
+            return $tab;
+        }
+
+        return self::SNAPSHOT_TAB_PREFLIGHT;
     }
 
     /**
-     * @param array{per_page:int,paged:int,search:string,status:string,subject_id:int,kelas:string} $exam_list_state
      * @return array<int,array<string,mixed>>
      */
-    private static function build_filtered_exam_snapshot_rows(array $exam_list_state, bool $is_admin_scope, int $current_user_id, array $preview_pages = [], int $selected_exam_id = 0, int $readiness_page = 1): array
+    private static function build_filtered_exam_snapshot_rows(bool $is_admin_scope, int $current_user_id, array $preview_pages = [], array $selected_exam_ids = [], int $readiness_page = 1): array
     {
-        if ($selected_exam_id <= 0) {
+        $selected_exam_ids = array_values(array_filter(array_map('intval', $selected_exam_ids)));
+        if (empty($selected_exam_ids)) {
             return [];
         }
 
-        $rows = self::get_filtered_exam_snapshot_exams($exam_list_state, $is_admin_scope, $current_user_id, $selected_exam_id);
+        $rows = self::get_filtered_exam_snapshot_exams($is_admin_scope, $current_user_id, $selected_exam_ids);
         $snapshot_rows = [];
 
         foreach ($rows as $row) {
@@ -2950,10 +3096,9 @@ final class CBT_Admin_Exams_Service
     }
 
     /**
-     * @param array{per_page:int,paged:int,search:string,status:string,subject_id:int,kelas:string} $exam_list_state
      * @return array<int,array<string,mixed>>
      */
-    private static function get_filtered_exam_snapshot_exams(array $exam_list_state, bool $is_admin_scope, int $current_user_id, int $selected_exam_id = 0): array
+    private static function get_filtered_exam_snapshot_exams(bool $is_admin_scope, int $current_user_id, array $selected_exam_ids = []): array
     {
         global $wpdb;
 
@@ -2970,31 +3115,13 @@ final class CBT_Admin_Exams_Service
             $where_params[] = $current_user_id;
         }
 
-        if (($exam_list_state['search'] ?? '') !== '') {
-            $search_like = '%' . $wpdb->esc_like((string) $exam_list_state['search']) . '%';
-            $where_parts[] = '(e.title LIKE %s OR COALESCE(e.description, \'\') LIKE %s)';
-            $where_params[] = $search_like;
-            $where_params[] = $search_like;
-        }
-
-        if (($exam_list_state['status'] ?? '') !== '') {
-            $where_parts[] = 'e.status = %s';
-            $where_params[] = (string) $exam_list_state['status'];
-        }
-
-        if (!empty($exam_list_state['subject_id'])) {
-            $where_parts[] = 'e.subject_id = %d';
-            $where_params[] = (int) $exam_list_state['subject_id'];
-        }
-
-        if (($exam_list_state['kelas'] ?? '') !== '') {
-            $where_parts[] = "(COALESCE(NULLIF(TRIM(e.target_kelas), ''), '') = '' OR FIND_IN_SET(%s, REPLACE(REPLACE(REPLACE(UPPER(COALESCE(e.target_kelas, '')), ', ', ','), ';', ','), '|', ',')) > 0)";
-            $where_params[] = (string) $exam_list_state['kelas'];
-        }
-
-        if ($selected_exam_id > 0) {
-            $where_parts[] = 'e.id = %d';
-            $where_params[] = $selected_exam_id;
+        $selected_exam_ids = array_values(array_filter(array_map('intval', $selected_exam_ids)));
+        if (!empty($selected_exam_ids)) {
+            $placeholders = implode(', ', array_fill(0, count($selected_exam_ids), '%d'));
+            $where_parts[] = 'e.id IN (' . $placeholders . ')';
+            foreach ($selected_exam_ids as $selected_exam_id) {
+                $where_params[] = $selected_exam_id;
+            }
         }
 
         $where_sql = ' WHERE ' . implode(' AND ', $where_parts);
@@ -3012,17 +3139,16 @@ final class CBT_Admin_Exams_Service
     }
 
     /**
-     * @param array{per_page:int,paged:int,search:string,status:string,subject_id:int,kelas:string} $exam_list_state
      * @return array<string,mixed>|null
      */
-    private static function get_snapshot_exam_row_by_id(int $exam_id, array $exam_list_state, bool $is_admin_scope, int $current_user_id): ?array
+    private static function get_snapshot_exam_row_by_id(int $exam_id, bool $is_admin_scope, int $current_user_id): ?array
     {
         $exam_id = absint($exam_id);
         if ($exam_id <= 0) {
             return null;
         }
 
-        $rows = self::get_filtered_exam_snapshot_exams($exam_list_state, $is_admin_scope, $current_user_id, $exam_id);
+        $rows = self::get_filtered_exam_snapshot_exams($is_admin_scope, $current_user_id, [$exam_id]);
         foreach ($rows as $row) {
             if ((int) ($row['id'] ?? 0) === $exam_id) {
                 return $row;
@@ -3033,13 +3159,11 @@ final class CBT_Admin_Exams_Service
     }
 
     /**
-     * @param array{per_page:int,paged:int,search:string,status:string,subject_id:int,kelas:string} $exam_list_state
-     * @return array<int,array{id:int,title:string}>
+     * @return array<int,array{id:int,title:string,subject_name:string,status:string,target_kelas_list:array<int,string>}>
      */
-    private static function build_exam_snapshot_exam_options(array $exam_list_state, bool $is_admin_scope, int $current_user_id): array
+    private static function build_exam_snapshot_exam_options(bool $is_admin_scope, int $current_user_id): array
     {
-        $option_state = $exam_list_state;
-        $rows = self::get_filtered_exam_snapshot_exams($option_state, $is_admin_scope, $current_user_id, 0);
+        $rows = self::get_filtered_exam_snapshot_exams($is_admin_scope, $current_user_id, []);
         $options = [];
 
         foreach ($rows as $row) {
@@ -3052,6 +3176,9 @@ final class CBT_Admin_Exams_Service
             $options[] = [
                 'id' => $exam_id,
                 'title' => $title !== '' ? $title : ('Exam #' . $exam_id),
+                'subject_name' => trim((string) ($row['subject_name'] ?? '')),
+                'status' => trim((string) ($row['status'] ?? '')),
+                'target_kelas_list' => self::split_target_kelas_csv((string) ($row['target_kelas'] ?? '')),
             ];
         }
 
@@ -3067,6 +3194,7 @@ final class CBT_Admin_Exams_Service
         $exam_id = (int) ($exam_row['id'] ?? 0);
         $preview_page = max(1, (int) ($preview_pages[$exam_id] ?? 1));
         $auto_warm_context = CBT_Exam_Availability_Auto_Warm_Service::get_exam_panel_context($exam_row);
+        $preflight_context = CBT_Exam_Preflight_Service::get_exam_panel_context($exam_row);
         $fallback = [
             'exam_id' => $exam_id,
             'title' => (string) ($exam_row['title'] ?? ''),
@@ -3087,6 +3215,26 @@ final class CBT_Admin_Exams_Service
             'snapshot_item_count' => 0,
             'snapshot_payload_bytes' => 0,
             'snapshot_ttl_seconds' => -2,
+            'start_snapshot_status' => 'unavailable',
+            'start_snapshot_status_label' => 'UNAVAILABLE',
+            'start_snapshot_status_tone' => 'error',
+            'start_snapshot_message' => 'Helper start snapshot belum tersedia.',
+            'start_snapshot_valid' => false,
+            'start_snapshot_exists' => false,
+            'start_snapshot_item_count' => 0,
+            'start_snapshot_payload_bytes' => 0,
+            'start_snapshot_ttl_seconds' => -2,
+            'start_snapshot_storage_key' => '',
+            'start_snapshot_redis_available' => false,
+            'start_snapshot_redis_error' => '',
+            'start_snapshot_redis_host' => '',
+            'start_snapshot_redis_database' => 0,
+            'start_snapshot_revision_meta' => [
+                'exam_id' => $exam_id,
+                'version' => 1,
+                'invalidated_at' => '',
+                'signature' => '',
+            ],
             'preview_current_page' => $preview_page,
             'preview_total_pages' => 1,
             'preview_per_page' => self::SNAPSHOT_PREVIEW_PER_PAGE,
@@ -3099,10 +3247,11 @@ final class CBT_Admin_Exams_Service
             'preview_question_ids' => [],
             'preview_items' => [],
             'auto_warm' => $auto_warm_context,
-            'readiness' => self::build_exam_readiness_context($exam_row, false, $auto_warm_context, $readiness_page),
+            'preflight' => $preflight_context,
+            'readiness' => self::build_exam_readiness_context($exam_row, false, false, $auto_warm_context, $readiness_page),
         ];
 
-        if ($exam_id <= 0 || !class_exists('CBT_Exam_Question_Delivery_Cache')) {
+        if ($exam_id <= 0 || !class_exists('CBT_Exam_Question_Delivery_Cache') || !class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
             return $fallback;
         }
 
@@ -3118,6 +3267,14 @@ final class CBT_Admin_Exams_Service
         } elseif ($status === 'invalid' || $status === 'unavailable') {
             $tone = 'error';
         }
+        $start_diagnostics = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot_diagnostics($exam_id);
+        $start_status = sanitize_key((string) ($start_diagnostics['snapshot_status'] ?? 'unavailable'));
+        $start_tone = 'warning';
+        if ($start_status === 'ready') {
+            $start_tone = 'success';
+        } elseif ($start_status === 'invalid' || $start_status === 'unavailable') {
+            $start_tone = 'error';
+        }
 
         return array_merge($fallback, $diagnostics, [
             'exam_id' => $exam_id,
@@ -3131,7 +3288,25 @@ final class CBT_Admin_Exams_Service
             'preview_is_expanded' => ((int) ($diagnostics['preview_current_page'] ?? 1) > 1),
             'snapshot_message' => (string) ($diagnostics['snapshot_message'] ?? $fallback['snapshot_message']),
             'auto_warm' => $auto_warm_context,
-            'readiness' => self::build_exam_readiness_context($exam_row, $status === 'ready', $auto_warm_context, $readiness_page),
+            'start_snapshot_status' => $start_status,
+            'start_snapshot_status_label' => strtoupper($start_status),
+            'start_snapshot_status_tone' => $start_tone,
+            'start_snapshot_message' => (string) ($start_diagnostics['snapshot_message'] ?? $fallback['start_snapshot_message']),
+            'start_snapshot_valid' => !empty($start_diagnostics['snapshot_valid']),
+            'start_snapshot_exists' => !empty($start_diagnostics['snapshot_exists']),
+            'start_snapshot_item_count' => (int) ($start_diagnostics['snapshot_item_count'] ?? 0),
+            'start_snapshot_payload_bytes' => (int) ($start_diagnostics['snapshot_payload_bytes'] ?? 0),
+            'start_snapshot_ttl_seconds' => (int) ($start_diagnostics['snapshot_ttl_seconds'] ?? -2),
+            'start_snapshot_storage_key' => (string) ($start_diagnostics['storage_key'] ?? ''),
+            'start_snapshot_redis_available' => !empty($start_diagnostics['redis_available']),
+            'start_snapshot_redis_error' => (string) ($start_diagnostics['redis_error'] ?? ''),
+            'start_snapshot_redis_host' => (string) ($start_diagnostics['redis_host'] ?? ''),
+            'start_snapshot_redis_database' => (int) ($start_diagnostics['redis_database'] ?? 0),
+            'start_snapshot_revision_meta' => is_array($start_diagnostics['revision_meta'] ?? null)
+                ? $start_diagnostics['revision_meta']
+                : $fallback['start_snapshot_revision_meta'],
+            'preflight' => CBT_Exam_Preflight_Service::get_exam_panel_context($exam_row, $status === 'ready', $start_status === 'ready'),
+            'readiness' => self::build_exam_readiness_context($exam_row, $status === 'ready', $start_status === 'ready', $auto_warm_context, $readiness_page),
         ]);
     }
 
@@ -3140,7 +3315,7 @@ final class CBT_Admin_Exams_Service
      * @param array<string,mixed> $auto_warm_context
      * @return array<string,mixed>
      */
-    private static function build_exam_readiness_context(array $exam_row, bool $question_snapshot_ready, array $auto_warm_context, int $page = 1): array
+    private static function build_exam_readiness_context(array $exam_row, bool $question_snapshot_ready, bool $start_snapshot_ready, array $auto_warm_context, int $page = 1): array
     {
         $target_kelas = self::split_target_kelas_csv((string) ($exam_row['target_kelas'] ?? ''));
         $target_students = self::get_snapshot_target_students_for_exam($exam_row);
@@ -3238,6 +3413,9 @@ final class CBT_Admin_Exams_Service
         if (!$question_snapshot_ready) {
             $blockers[] = 'Snapshot Soal belum READY.';
         }
+        if (!$start_snapshot_ready) {
+            $blockers[] = 'Start Snapshot belum READY.';
+        }
 
         if ($profile_missing_count > 0) {
             $warnings[] = sprintf('%d siswa target belum memiliki Snapshot Profil READY.', $profile_missing_count);
@@ -3289,6 +3467,7 @@ final class CBT_Admin_Exams_Service
             'availability_auto_warm_count' => $availability_auto_warm_count,
             'availability_missing_count' => $availability_missing_count,
             'question_snapshot_ready' => $question_snapshot_ready,
+            'start_snapshot_ready' => $start_snapshot_ready,
             'auto_warm_status' => $auto_warm_status,
             'token_enabled' => !empty($token_context['enabled']),
             'token_frontend_auto_apply' => !empty($token_context['frontend_auto_apply']),
@@ -4776,6 +4955,9 @@ final class CBT_Admin_Exams_Service
         CBT_Cache::invalidate_exam($saved_exam_id);
         if (class_exists('CBT_REST') && method_exists('CBT_REST', 'warm_exam_question_delivery_snapshot')) {
             CBT_REST::warm_exam_question_delivery_snapshot($saved_exam_id);
+        }
+        if (class_exists('CBT_REST') && method_exists('CBT_REST', 'warm_exam_start_attempt_snapshot')) {
+            CBT_REST::warm_exam_start_attempt_snapshot($saved_exam_id);
         }
         self::clear_exam_builder_selection_state('cbt_exam_builder_new', $current_user_id);
         self::clear_exam_builder_selection_state('cbt_exam_builder_edit_' . $saved_exam_id, $current_user_id);

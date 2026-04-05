@@ -318,6 +318,9 @@ final class CBT_Admin_Questions_Sync_Helper
                 if (class_exists('CBT_REST') && method_exists('CBT_REST', 'warm_exam_question_delivery_snapshot')) {
                     foreach (array_values($affected_exam_ids) as $affected_exam_id) {
                         CBT_REST::warm_exam_question_delivery_snapshot((int) $affected_exam_id);
+                        if (method_exists('CBT_REST', 'warm_exam_start_attempt_snapshot')) {
+                            CBT_REST::warm_exam_start_attempt_snapshot((int) $affected_exam_id);
+                        }
                     }
                 }
             }

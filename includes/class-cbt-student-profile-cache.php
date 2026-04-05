@@ -29,6 +29,11 @@ class CBT_Student_Profile_Cache
     /** @var string */
     private static $profile_redis_last_connection_error = '';
 
+    public static function is_available(): bool
+    {
+        return self::profile_redis() instanceof Redis;
+    }
+
     public static function init(): void
     {
         if (function_exists('add_action')) {

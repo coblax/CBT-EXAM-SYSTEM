@@ -13,6 +13,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         $this->bootstrapStartAttemptScaffold();
         $this->useFakeRuntimeRedisClient();
         $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartSnapshotRedis();
 
         $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
         $GLOBALS['cbt_test_rest_auth_role'] = 'student';
@@ -76,6 +77,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         $this->bootstrapStartAttemptScaffold();
         $this->useFakeRuntimeRedisClient();
         $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartSnapshotRedis();
 
         $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
         $GLOBALS['cbt_test_rest_auth_role'] = 'student';
@@ -129,6 +131,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         $this->bootstrapStartAttemptScaffold();
         $this->useFakeRuntimeRedisClient();
         $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartSnapshotRedis();
 
         $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
         $GLOBALS['cbt_test_rest_auth_role'] = 'student';
@@ -160,6 +163,134 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertSame(123, $response['attempt_id']);
         self::assertSame(1, $wpdb->latestAttemptQueryCount);
         self::assertSame(1, $wpdb->insertCalls);
+        self::assertSame(123, CBT_Active_Attempt_Index::get_active_attempt_id(7, 15));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_returns_resumed_attempt_when_lock_is_busy_but_active_index_is_ready(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+        $GLOBALS['cbt_test_acquire_lock_result'] = false;
+
+        CBT_Runtime::ensure_attempt_state([
+            'id' => 81,
+            'exam_id' => 15,
+            'student_id' => 7,
+            'status' => 'in_progress',
+            'started_at' => '2026-04-02 10:00:00',
+            'question_order' => '[]',
+            'option_order' => '',
+            'extra_time_minutes' => 0,
+        ], 90);
+        CBT_Active_Attempt_Index::set_active_attempt([
+            'id' => 81,
+            'exam_id' => 15,
+            'student_id' => 7,
+            'status' => 'in_progress',
+        ]);
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: []
+        );
+
+        $response = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('resumed', $response['status']);
+        self::assertSame(81, $response['attempt_id']);
+        self::assertSame(0, $wpdb->latestAttemptQueryCount);
+        self::assertSame(0, $wpdb->insertCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_uses_ready_start_snapshot_without_hydrating_full_question_payload(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 1,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [],
+            insertId: 123,
+            startSnapshotQuestionRows: [
+                ['id' => 201, 'question_type' => 'multiple_choice', 'correct_text' => ''],
+            ],
+            startSnapshotOptionRows: [
+                ['id' => 9001, 'question_id' => 201],
+                ['id' => 9002, 'question_id' => 201],
+                ['id' => 9003, 'question_id' => 201],
+            ]
+        );
+
+        CBT_REST::warm_exam_start_attempt_snapshot(15);
+
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 1,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [],
+            insertId: 123
+        );
+
+        $response = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('started', $response['status']);
+        self::assertSame(123, $response['attempt_id']);
+        self::assertSame(0, $wpdb->questionQueryCount);
+        self::assertSame(0, $wpdb->startSnapshotQuestionQueryCount);
+        self::assertSame([201], json_decode((string) $wpdb->lastInsertData['question_order'], true));
+        $optionOrder = json_decode((string) $wpdb->lastInsertData['option_order'], true);
+        self::assertCount(1, $optionOrder);
+        self::assertCount(3, $optionOrder['201']);
         self::assertSame(123, CBT_Active_Attempt_Index::get_active_attempt_id(7, 15));
     }
 
@@ -204,6 +335,10 @@ class CBT_Cache
 {
     public static function acquire_lock(string $key, int $ttl, array $context = []): bool
     {
+        if (array_key_exists('cbt_test_acquire_lock_result', $GLOBALS)) {
+            return (bool) $GLOBALS['cbt_test_acquire_lock_result'];
+        }
+
         return true;
     }
 
@@ -278,6 +413,23 @@ PHP);
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, '');
     }
+
+    private function useFakeStartSnapshotRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Exam_Start_Attempt_Snapshot_Cache::class);
+
+        $redisProperty = $reflection->getProperty('start_snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('start_snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('start_snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
 }
 
 final class RestStartAttemptActiveIndexFakeWpdb
@@ -288,7 +440,11 @@ final class RestStartAttemptActiveIndexFakeWpdb
     public int $latestAttemptQueryCount = 0;
     public int $attemptByIdQueryCount = 0;
     public int $questionQueryCount = 0;
+    public int $startSnapshotQuestionQueryCount = 0;
+    public int $startSnapshotOptionQueryCount = 0;
     public int $insertCalls = 0;
+    /** @var array<string,mixed> */
+    public array $lastInsertData = [];
 
     /** @var array<string,mixed>|null */
     private ?array $examRow;
@@ -299,17 +455,27 @@ final class RestStartAttemptActiveIndexFakeWpdb
     /** @var array<int,array<string,mixed>> */
     private array $attemptRowsById;
 
+    /** @var array<int,array<string,mixed>> */
+    private array $startSnapshotQuestionRows;
+
+    /** @var array<int,array<string,mixed>> */
+    private array $startSnapshotOptionRows;
+
     /**
      * @param array<string,mixed>|null $examRow
      * @param array<string,mixed>|null $latestAttemptRow
      * @param array<int,array<string,mixed>> $attemptRowsById
+     * @param array<int,array<string,mixed>> $startSnapshotQuestionRows
+     * @param array<int,array<string,mixed>> $startSnapshotOptionRows
      */
-    public function __construct(?array $examRow, ?array $latestAttemptRow, array $attemptRowsById = [], int $insertId = 123)
+    public function __construct(?array $examRow, ?array $latestAttemptRow, array $attemptRowsById = [], int $insertId = 123, array $startSnapshotQuestionRows = [], array $startSnapshotOptionRows = [])
     {
         $this->examRow = $examRow;
         $this->latestAttemptRow = $latestAttemptRow;
         $this->attemptRowsById = $attemptRowsById;
         $this->insert_id = $insertId;
+        $this->startSnapshotQuestionRows = $startSnapshotQuestionRows;
+        $this->startSnapshotOptionRows = $startSnapshotOptionRows;
     }
 
     /** @return array<string,mixed> */
@@ -355,6 +521,16 @@ final class RestStartAttemptActiveIndexFakeWpdb
     {
         $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
 
+        if (str_contains($query, 'SELECT q.id, q.question_type, q.correct_text')) {
+            $this->startSnapshotQuestionQueryCount++;
+            return $this->startSnapshotQuestionRows;
+        }
+
+        if (str_contains($query, 'SELECT id, question_id') && str_contains($query, 'FROM wp_cbt_options')) {
+            $this->startSnapshotOptionQueryCount++;
+            return $this->startSnapshotOptionRows;
+        }
+
         if (str_contains($query, 'FROM wp_cbt_questions q')) {
             $this->questionQueryCount++;
             return [];
@@ -370,6 +546,7 @@ final class RestStartAttemptActiveIndexFakeWpdb
     public function insert(string $table, array $data, ?array $format = null): bool
     {
         $this->insertCalls++;
+        $this->lastInsertData = $data;
         return true;
     }
 }

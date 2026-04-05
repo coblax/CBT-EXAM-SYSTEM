@@ -1,5 +1,6 @@
 export function createExamSessionManager(deps) {
     var OPEN_ATTEMPT_PROGRESS_STEP_TOTAL = 5;
+    var START_ATTEMPT_TIMEOUT_MESSAGE = 'Gagal menyiapkan sesi ujian. Server terlalu lama merespons.';
     var recordTimeline = deps.recordTimeline;
     var state = deps.state;
     var apiRequest = deps.apiRequest;
@@ -62,6 +63,8 @@ export function createExamSessionManager(deps) {
     var bumpQuestionDataGeneration = deps.bumpQuestionDataGeneration;
     var attemptUiStateSyncDelayMs = Math.max(0, Number(deps.attemptUiStateSyncDelayMs) || 0);
     var startAttemptTimeoutMs = Math.max(5000, Number(deps.startAttemptTimeoutMs) || 15000);
+    var startAttemptRecoveryTimeoutMs = Math.max(5000, Number(deps.startAttemptRecoveryTimeoutMs) || 30000);
+    var startAttemptRecoveryPollDelayMs = Math.max(0, Number(deps.startAttemptRecoveryPollDelayMs) || 1200);
     var questionWindowSize = Math.max(1, Number(deps.questionWindowSize) || 1);
 
     function resetOpeningAttemptProgressState() {
@@ -110,6 +113,17 @@ export function createExamSessionManager(deps) {
         if (typeof recordActionTrail === 'function') {
             recordActionTrail(kind, summary, meta || {});
         }
+    }
+
+    function delay(ms) {
+        var waitMs = Math.max(0, Number(ms) || 0);
+        if (waitMs <= 0) {
+            return Promise.resolve();
+        }
+
+        return new Promise(function (resolve) {
+            setTimeout(resolve, waitMs);
+        });
     }
 
     function withTimeout(promise, timeoutMs, timeoutMessage) {
@@ -171,15 +185,107 @@ export function createExamSessionManager(deps) {
         };
     }
 
-    async function requestStartAttempt(body) {
+    function isStartAttemptTimeoutError(error) {
+        return error instanceof Error && String(error.message || '') === START_ATTEMPT_TIMEOUT_MESSAGE;
+    }
+
+    function isStartAttemptLockError(error) {
+        var status = Number(error && error.status) || 0;
+        var code = String(error && error.code ? error.code : '').trim().toLowerCase();
+        return status === 429 || code === 'attempt_lock_active';
+    }
+
+    function isStartAttemptNotFoundError(error) {
+        var status = Number(error && error.status) || 0;
+        var code = String(error && error.code ? error.code : '').trim().toLowerCase();
+        return status === 404 || code === 'attempt_not_found';
+    }
+
+    function shouldRecoverSlowStartAttempt(error) {
+        return isStartAttemptTimeoutError(error) || isStartAttemptLockError(error);
+    }
+
+    function isRetryableStartAttemptRecoveryError(error) {
+        return shouldRecoverSlowStartAttempt(error) || isStartAttemptNotFoundError(error);
+    }
+
+    async function requestStartAttempt(body, options) {
+        options = options || {};
         return withTimeout(
             apiRequest('start_attempt', {
                 method: 'POST',
                 body: body
             }),
-            startAttemptTimeoutMs,
-            'Gagal menyiapkan sesi ujian. Server terlalu lama merespons.'
+            Math.max(5000, Number(options.timeoutMs) || startAttemptTimeoutMs),
+            String(options.timeoutMessage || START_ATTEMPT_TIMEOUT_MESSAGE)
         );
+    }
+
+    async function recoverSlowStartAttempt(selectedExam, submittedToken, triggerError) {
+        var examId = Number(selectedExam && selectedExam.id) || 0;
+        var recoveryDeadlineAt = Date.now() + startAttemptRecoveryTimeoutMs;
+        var lastError = triggerError;
+        var hasRetriedFreshStart = false;
+        var resumeTimeoutMs = Math.max(5000, Math.min(startAttemptTimeoutMs, 8000));
+
+        while (Date.now() <= recoveryDeadlineAt) {
+            updateOpeningAttemptProgress(
+                18,
+                1,
+                'Server masih menyiapkan sesi ujian',
+                'Request awal sedang kami pantau. Anda tidak perlu menekan tombol lagi.'
+            );
+            await delay(startAttemptRecoveryPollDelayMs);
+
+            try {
+                updateOpeningAttemptProgress(
+                    24,
+                    1,
+                    'Mengecek attempt aktif',
+                    'Kami mencoba melanjutkan ke sesi yang mungkin sudah berhasil dibuat.'
+                );
+                return await requestStartAttempt({
+                    exam_id: examId,
+                    resume_only: 1
+                }, {
+                    timeoutMs: resumeTimeoutMs
+                });
+            } catch (resumeError) {
+                lastError = resumeError;
+                if (!isRetryableStartAttemptRecoveryError(resumeError)) {
+                    throw resumeError;
+                }
+
+                if (!isStartAttemptNotFoundError(resumeError) || hasRetriedFreshStart) {
+                    continue;
+                }
+
+                hasRetriedFreshStart = true;
+                try {
+                    updateOpeningAttemptProgress(
+                        30,
+                        1,
+                        'Mencoba lagi pembuatan sesi',
+                        'Attempt aktif belum terlihat. Kami mencoba sekali lagi dengan aman.'
+                    );
+                    return await requestStartAttempt({
+                        exam_id: examId,
+                        exam_token: submittedToken
+                    });
+                } catch (retryError) {
+                    lastError = retryError;
+                    if (!isRetryableStartAttemptRecoveryError(retryError)) {
+                        throw retryError;
+                    }
+                }
+            }
+        }
+
+        if (lastError && !isRetryableStartAttemptRecoveryError(lastError)) {
+            throw lastError;
+        }
+
+        throw new Error('Server masih sibuk menyiapkan sesi ujian. Coba lagi beberapa saat.');
     }
 
     function resetOpeningAttemptState() {
@@ -787,18 +893,38 @@ export function createExamSessionManager(deps) {
         });
 
         try {
-            var startPayload = await requestStartAttempt({
-                exam_id: Number(selectedExam.id) || 0,
-                exam_token: submittedToken
-            });
+            var startPayload;
+            var recoveredSlowStart = false;
+
+            try {
+                startPayload = await requestStartAttempt({
+                    exam_id: Number(selectedExam.id) || 0,
+                    exam_token: submittedToken
+                });
+            } catch (startError) {
+                if (!shouldRecoverSlowStartAttempt(startError)) {
+                    throw startError;
+                }
+
+                recordTimelineEntry('attempt:start:recovering', startError instanceof Error ? startError.message : 'Request mulai ujian melambat.', {
+                    attemptId: Number(state.attemptId) || 0,
+                    selectedExamId: Number(selectedExam.id) || 0,
+                    stage: 'exam'
+                });
+                recordActionTrailEntry('attempt:start:recovering', 'Server lambat, mencoba mengambil attempt aktif.', {
+                    selectedExamId: Number(selectedExam.id) || 0
+                });
+                startPayload = await recoverSlowStartAttempt(selectedExam, submittedToken, startError);
+                recoveredSlowStart = true;
+            }
 
             await openAttemptSession(selectedExam, startPayload);
-            recordTimelineEntry('attempt:start:success', 'Attempt baru berhasil dimulai.', {
+            recordTimelineEntry(recoveredSlowStart ? 'attempt:start:recovered' : 'attempt:start:success', recoveredSlowStart ? 'Attempt aktif berhasil dipulihkan setelah server sibuk.' : 'Attempt baru berhasil dimulai.', {
                 attemptId: Number(startPayload && startPayload.attempt_id) || 0,
                 selectedExamId: Number(selectedExam.id) || 0,
                 stage: 'exam'
             });
-            recordActionTrailEntry('attempt:start:success', 'Attempt baru berhasil dimulai.', {
+            recordActionTrailEntry(recoveredSlowStart ? 'attempt:start:recovered' : 'attempt:start:success', recoveredSlowStart ? 'Attempt aktif berhasil dipulihkan.' : 'Attempt baru berhasil dimulai.', {
                 attemptId: Number(startPayload && startPayload.attempt_id) || 0,
                 selectedExamId: Number(selectedExam.id) || 0
             });

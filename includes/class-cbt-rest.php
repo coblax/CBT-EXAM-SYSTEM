@@ -16,6 +16,10 @@ if (!class_exists('CBT_Exam_Question_Delivery_Cache')) {
     require_once __DIR__ . '/class-cbt-exam-question-delivery-cache.php';
 }
 
+if (!class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
+    require_once __DIR__ . '/class-cbt-exam-start-attempt-snapshot-cache.php';
+}
+
 if (!class_exists('CBT_Question_Submission_Context_Cache')) {
     require_once __DIR__ . '/class-cbt-question-submission-context-cache.php';
 }
@@ -806,12 +810,63 @@ class CBT_REST
             return new WP_Error('forbidden', 'Exam is not available for your class', ['status' => 403]);
         }
 
+        $expected_token = null;
+        $resolve_expected_token = static function () use (&$expected_token): string {
+            if (is_string($expected_token)) {
+                return $expected_token;
+            }
+
+            $global_token_meta = CBT_Auth::get_global_exam_token(true);
+            $expected_token = CBT_Auth::normalize_exam_token_input((string) ($global_token_meta['token'] ?? ''));
+            return $expected_token;
+        };
+        $validate_token_submission = static function (string $submitted_token) use ($resolve_expected_token) {
+            $expected_token = $resolve_expected_token();
+            if (
+                $expected_token !== '' &&
+                $submitted_token === '' &&
+                CBT_Auth::is_frontend_auto_exam_token_enabled()
+            ) {
+                $submitted_token = $expected_token;
+            }
+
+            return self::validate_exam_token_or_error($expected_token, $submitted_token);
+        };
+
+        $indexed_attempt = self::get_active_attempt_from_index($user_id, $exam_id, $attempt_table);
+        if (is_array($indexed_attempt)) {
+            return self::build_resumed_attempt_response(
+                $indexed_attempt,
+                $exam,
+                $exam_id,
+                $user_id,
+                $attempt_table,
+                $resume_only,
+                $exam_token_input,
+                $validate_token_submission
+            );
+        }
+
         $lock_key = 'start_attempt:user:' . $user_id . ':exam:' . $exam_id;
         if (!CBT_Cache::acquire_lock($lock_key, 15, [
             'type' => 'start_attempt',
             'user_id' => $user_id,
             'exam_id' => $exam_id,
         ])) {
+            $indexed_attempt = self::get_active_attempt_from_index($user_id, $exam_id, $attempt_table);
+            if (is_array($indexed_attempt)) {
+                return self::build_resumed_attempt_response(
+                    $indexed_attempt,
+                    $exam,
+                    $exam_id,
+                    $user_id,
+                    $attempt_table,
+                    $resume_only,
+                    $exam_token_input,
+                    $validate_token_submission
+                );
+            }
+
             return new WP_Error(
                 'attempt_lock_active',
                 'Permintaan mulai ujian sedang diproses. Coba lagi beberapa detik.',
@@ -820,29 +875,6 @@ class CBT_REST
         }
 
         try {
-            $expected_token = null;
-            $resolve_expected_token = static function () use (&$expected_token): string {
-                if (is_string($expected_token)) {
-                    return $expected_token;
-                }
-
-                $global_token_meta = CBT_Auth::get_global_exam_token(true);
-                $expected_token = CBT_Auth::normalize_exam_token_input((string) ($global_token_meta['token'] ?? ''));
-                return $expected_token;
-            };
-            $validate_token_submission = static function (string $submitted_token) use ($resolve_expected_token) {
-                $expected_token = $resolve_expected_token();
-                if (
-                    $expected_token !== '' &&
-                    $submitted_token === '' &&
-                    CBT_Auth::is_frontend_auto_exam_token_enabled()
-                ) {
-                    $submitted_token = $expected_token;
-                }
-
-                return self::validate_exam_token_or_error($expected_token, $submitted_token);
-            };
-
             $indexed_attempt = self::get_active_attempt_from_index($user_id, $exam_id, $attempt_table);
             if (is_array($indexed_attempt)) {
                 return self::build_resumed_attempt_response(
@@ -920,17 +952,51 @@ class CBT_REST
                 return $token_check;
             }
 
-            $questions = self::get_cached_exam_question_payload($exam_id);
-            $question_ids = self::extract_question_ids_from_payload($questions);
-            $option_order = self::encode_attempt_option_order_map(
-                self::build_attempt_option_order_map(
-                    $questions,
-                    (int) ($exam['randomize_options'] ?? 0) === 1
-                )
-            );
-            if ((int) $exam['randomize_questions'] === 1 && !empty($question_ids)) {
-                shuffle($question_ids);
+            $question_ids = [];
+            $question_number_map = [];
+            $option_order = '{}';
+            $used_start_snapshot = false;
+
+            try {
+                $start_snapshot = self::get_cached_exam_start_attempt_snapshot($exam_id);
+                $snapshot_question_ids = array_values(array_filter(array_map('intval', (array) ($start_snapshot['question_ids'] ?? [])), static function (int $question_id): bool {
+                    return $question_id > 0;
+                }));
+                if (!empty($snapshot_question_ids)) {
+                    $question_ids = $snapshot_question_ids;
+                    if ((int) ($exam['randomize_questions'] ?? 0) === 1) {
+                        shuffle($question_ids);
+                    }
+                    $question_number_map = self::build_attempt_question_number_map($question_ids, $question_ids);
+                    $option_order = self::encode_attempt_option_order_map(
+                        self::build_attempt_option_order_map_from_snapshot_tokens(
+                            isset($start_snapshot['option_randomization_tokens_by_question']) && is_array($start_snapshot['option_randomization_tokens_by_question'])
+                                ? $start_snapshot['option_randomization_tokens_by_question']
+                                : [],
+                            (int) ($exam['randomize_options'] ?? 0) === 1
+                        )
+                    );
+                    $used_start_snapshot = true;
+                }
+            } catch (Throwable $throwable) {
+                $used_start_snapshot = false;
             }
+
+            if (!$used_start_snapshot) {
+                $questions = self::get_cached_exam_question_payload($exam_id);
+                $question_ids = self::extract_question_ids_from_payload($questions);
+                $option_order = self::encode_attempt_option_order_map(
+                    self::build_attempt_option_order_map(
+                        $questions,
+                        (int) ($exam['randomize_options'] ?? 0) === 1
+                    )
+                );
+                if ((int) $exam['randomize_questions'] === 1 && !empty($question_ids)) {
+                    shuffle($question_ids);
+                }
+                $question_number_map = self::build_attempt_question_number_map($question_ids, $question_ids);
+            }
+
             $question_order = wp_json_encode($question_ids);
             if (!is_string($question_order)) {
                 $question_order = '[]';
@@ -990,7 +1056,7 @@ class CBT_REST
             ], (int) ($exam['duration_minutes'] ?? 0));
             $question_order_signature = self::build_attempt_question_order_signature(
                 $question_ids,
-                self::build_attempt_question_number_map($question_ids, $question_ids)
+                $question_number_map
             );
 
             return rest_ensure_response([
@@ -2478,6 +2544,37 @@ class CBT_REST
         });
     }
 
+    public static function warm_exam_start_attempt_snapshot(int $exam_id): void
+    {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0 || !class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
+            return;
+        }
+
+        CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot($exam_id, static function (int $target_exam_id): array {
+            return self::build_exam_start_attempt_snapshot_from_db($target_exam_id);
+        });
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function get_cached_exam_start_attempt_snapshot(int $exam_id): array
+    {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0) {
+            return [];
+        }
+
+        if (class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
+            return CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot($exam_id, static function (int $target_exam_id): array {
+                return self::build_exam_start_attempt_snapshot_from_db($target_exam_id);
+            });
+        }
+
+        return self::build_exam_start_attempt_snapshot_from_db($exam_id);
+    }
+
     /**
      * @return array<int,array<string,mixed>>
      */
@@ -2511,6 +2608,107 @@ class CBT_REST
     private static function build_student_exam_question_delivery_payload_from_db(int $exam_id): array
     {
         return self::sanitize_question_delivery_payload(self::build_exam_question_payload_from_db($exam_id));
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function build_exam_start_attempt_snapshot_from_db(int $exam_id): array
+    {
+        global $wpdb;
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $option_table = $wpdb->prefix . 'cbt_options';
+
+        $exam_row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, randomize_questions, randomize_options
+                 FROM {$exam_table}
+                 WHERE id = %d",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+
+        $question_rows = (array) $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT q.id, q.question_type, q.correct_text
+                 FROM {$question_table} q
+                 WHERE q.exam_id = %d
+                   AND COALESCE(q.is_active, 1) = 1
+                 ORDER BY q.id ASC",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+
+        $question_ids = [];
+        $option_question_ids = [];
+        $option_tokens_by_question = [];
+
+        foreach ($question_rows as $question_row) {
+            $question = (array) $question_row;
+            $question_id = (int) ($question['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+
+            $question_ids[] = $question_id;
+
+            $question_type = (string) ($question['question_type'] ?? '');
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer'], true)) {
+                $option_question_ids[] = $question_id;
+                continue;
+            }
+
+            if ($question_type === 'true_false_matrix') {
+                $matrix_items = self::normalize_true_false_matrix_config((string) ($question['correct_text'] ?? ''));
+                $tokens = [];
+                foreach (array_keys($matrix_items) as $item_index) {
+                    $tokens[] = (string) ($item_index + 1);
+                }
+                if (!empty($tokens)) {
+                    $option_tokens_by_question[$question_id] = $tokens;
+                }
+            }
+        }
+
+        $option_question_ids = array_values(array_unique(array_filter(array_map('intval', $option_question_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        })));
+        if (!empty($option_question_ids)) {
+            $question_ids_sql = implode(',', $option_question_ids);
+            $option_rows = (array) $wpdb->get_results(
+                "SELECT id, question_id
+                 FROM {$option_table}
+                 WHERE question_id IN ({$question_ids_sql})
+                 ORDER BY question_id ASC, id ASC",
+                ARRAY_A
+            );
+
+            foreach ($option_rows as $option_row) {
+                $question_id = (int) ($option_row['question_id'] ?? 0);
+                $option_id = (int) ($option_row['id'] ?? 0);
+                if ($question_id <= 0 || $option_id <= 0) {
+                    continue;
+                }
+
+                if (!isset($option_tokens_by_question[$question_id])) {
+                    $option_tokens_by_question[$question_id] = [];
+                }
+                $option_tokens_by_question[$question_id][] = (string) $option_id;
+            }
+        }
+
+        return [
+            'exam_id' => $exam_id,
+            'question_ids' => array_values(array_unique($question_ids)),
+            'question_number_map' => self::build_attempt_question_number_map($question_ids, $question_ids),
+            'randomize_questions' => (int) ($exam_row['randomize_questions'] ?? 0) === 1 ? 1 : 0,
+            'randomize_options' => (int) ($exam_row['randomize_options'] ?? 0) === 1 ? 1 : 0,
+            'option_randomization_tokens_by_question' => self::normalize_attempt_option_order_map($option_tokens_by_question),
+        ];
     }
 
     private static function should_use_student_delivery_snapshot(string $role, $attempt): bool
@@ -3380,6 +3578,32 @@ class CBT_REST
             }
 
             $option_order_map[$question_id] = array_values($item_tokens);
+        }
+
+        return self::normalize_attempt_option_order_map($option_order_map);
+    }
+
+    /**
+     * @param array<int,array<int,string>> $option_tokens_by_question
+     * @return array<int,array<int,string>>
+     */
+    private static function build_attempt_option_order_map_from_snapshot_tokens(array $option_tokens_by_question, bool $shuffle_items): array
+    {
+        if (!$shuffle_items) {
+            return [];
+        }
+
+        $option_order_map = [];
+        $normalized_tokens_by_question = self::normalize_attempt_option_order_map($option_tokens_by_question);
+        foreach ($normalized_tokens_by_question as $question_id => $item_tokens) {
+            $safe_question_id = (int) $question_id;
+            if ($safe_question_id <= 0 || count($item_tokens) <= 1) {
+                continue;
+            }
+
+            $shuffled_tokens = array_values($item_tokens);
+            shuffle($shuffled_tokens);
+            $option_order_map[$safe_question_id] = $shuffled_tokens;
         }
 
         return self::normalize_attempt_option_order_map($option_order_map);

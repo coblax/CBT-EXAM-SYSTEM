@@ -46,6 +46,11 @@ final class CBT_Admin_Exams_Actions
         CBT_Admin_Exams_Service::handle_stop_exam_availability_auto_warm();
     }
 
+    public static function handle_start_exam_preflight(): void
+    {
+        CBT_Admin_Exams_Service::handle_start_exam_preflight();
+    }
+
     public static function handle_warm_student_exam_availability_snapshot(): void
     {
         CBT_Admin_Exams_Service::handle_warm_student_exam_availability_snapshot();
