@@ -112,6 +112,7 @@ describe('createBootstrapSessionManager', function () {
     it('restores a valid persisted session, resumes an active attempt, and starts heartbeat safely', async function () {
         var fixture = createFixture({
             persisted: {
+                lastStage: 'exam',
                 token: 'token-123',
                 user: {
                     user_id: 9,
@@ -157,6 +158,7 @@ describe('createBootstrapSessionManager', function () {
     it('keeps a valid session bootstrapped even when no active attempt is resumed', async function () {
         var fixture = createFixture({
             persisted: {
+                lastStage: 'confirm',
                 token: 'token-123',
                 user: {
                     user_id: 9,
@@ -178,6 +180,42 @@ describe('createBootstrapSessionManager', function () {
                 && snapshot.sessionRecoveryMode === 'confirm_restore'
                 && snapshot.sessionRecoveryStepIndex === 4;
         })).toBe(true);
+        expect(fixture.calls.triggerPendingSyncLifecycleRetry).toEqual([
+            {
+                options: { delayMs: 220 },
+                reason: 'bootstrap-session'
+            }
+        ]);
+    });
+
+    it('keeps the user on confirm when refresh happens from preparation even if an attempt is still in progress', async function () {
+        var fixture = createFixture({
+            persisted: {
+                lastStage: 'confirm',
+                token: 'token-123',
+                user: {
+                    user_id: 9,
+                    role: 'student'
+                },
+                selectedExamId: 44
+            },
+            state: {
+                exams: [
+                    {
+                        id: 44,
+                        latest_attempt_id: 91,
+                        latest_attempt_status: 'in_progress'
+                    }
+                ]
+            }
+        });
+
+        await fixture.manager.bootstrapFromPersistedSession();
+
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.calls.tryResumeActiveAttemptFromExamList).toEqual([]);
+        expect(fixture.calls.reconcilePendingPageRefreshSecurityEvent).toBe(0);
         expect(fixture.calls.triggerPendingSyncLifecycleRetry).toEqual([
             {
                 options: { delayMs: 220 },

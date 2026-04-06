@@ -10,6 +10,8 @@ if (!class_exists('CBT_Admin_Branding_Settings')) {
 
 final class CBT_Admin_Maintenance_Common
 {
+    private const TEST_REDIRECT_SIGNAL = '__cbt_admin_maintenance_redirect__';
+
     /**
      * @return string[]
      */
@@ -51,7 +53,13 @@ final class CBT_Admin_Maintenance_Common
             $args['cbt_err'] = $error;
         }
 
-        wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
+        $location = add_query_arg($args, admin_url('admin.php'));
+        if (defined('PHPUNIT_COMPOSER_INSTALL')) {
+            $GLOBALS['cbt_test_last_redirect'] = (string) $location;
+            throw new RuntimeException(self::TEST_REDIRECT_SIGNAL);
+        }
+
+        wp_safe_redirect($location);
         exit;
     }
 

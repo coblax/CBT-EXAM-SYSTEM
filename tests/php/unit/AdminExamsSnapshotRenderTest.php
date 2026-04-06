@@ -27,6 +27,25 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Auto-Warm Availability', $html);
         self::assertStringContainsString('Login Snapshot', $html);
         self::assertStringContainsString('Submission Context', $html);
+        self::assertStringContainsString('Kesiapan Saat Ini', $html);
+        self::assertStringContainsString('Jadwal & Waktu', $html);
+        self::assertStringContainsString('Peserta Target', $html);
+        self::assertStringContainsString('Target Kelas', $html);
+        self::assertStringContainsString('Token MANUAL', $html);
+        self::assertStringContainsString('Siap 8/8 · Belum 0', $html);
+        self::assertStringContainsString('Total 8 soal · Cache Siap · Warm Siap', $html);
+        self::assertStringContainsString('Siap 12/18 · Belum 2', $html);
+        self::assertStringContainsString('Diproses 13 · Gagal 1 · MISS 2', $html);
+        self::assertStringContainsString('Siap 11/18 · Belum 7', $html);
+        self::assertStringContainsString('Target 18 · MISS 7 · Gagal 2', $html);
+        self::assertStringContainsString('Siap 8/8 · Belum 0', $html);
+        self::assertStringContainsString('Total 8 soal · INVALID 0', $html);
+        self::assertStringContainsString('Siap 16/18 · Belum 2', $html);
+        self::assertStringContainsString('READY 9 · AUTO 7 · MISS 2', $html);
+        self::assertStringContainsString('diperbarui otomatis setiap 10 detik', $html);
+        self::assertStringNotContainsString('Ringkasan Profil', $html);
+        self::assertStringNotContainsString('Ringkasan Availability', $html);
+        self::assertStringNotContainsString('Status Operasional', $html);
         self::assertStringNotContainsString('Preview Soal (8-8 dari 8)', $html);
         self::assertStringNotContainsString('name="cbt_exam_snapshot_tab" value="preflight"', $html);
     }

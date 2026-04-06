@@ -3,6 +3,7 @@ import { createAuthSessionManager } from '../../../src/frontend/app/core/auth-se
 
 function createManager(stateOverrides = {}, storage = globalThis.sessionStorage) {
     var state = Object.assign({
+        stage: 'login',
         token: '',
         user: null,
         selectedExamId: 0
@@ -40,6 +41,7 @@ describe('createAuthSessionManager', function () {
     it('persists and restores an auth session snapshot', function () {
         var storage = globalThis.sessionStorage;
         var manager = createManager({
+            stage: 'confirm',
             token: 'token-123',
             user: {
                 user_id: 9,
@@ -55,9 +57,18 @@ describe('createAuthSessionManager', function () {
 
         expect(storage.getItem('cbt-auth-session')).toContain('token-123');
         expect(manager.readPersistedAuthSession()).toMatchObject({
+            lastStage: 'confirm',
             token: 'token-123',
             selectedExamId: 44
         });
+    });
+
+    it('normalizes persisted stage and drops unsupported values safely', function () {
+        var manager = createManager();
+
+        expect(manager.normalizePersistedStage('exam')).toBe('exam');
+        expect(manager.normalizePersistedStage('CONFIRM')).toBe('confirm');
+        expect(manager.normalizePersistedStage('weird-stage')).toBe('');
     });
 
     it('returns null when persisted payload is malformed', function () {

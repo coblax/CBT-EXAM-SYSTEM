@@ -899,7 +899,13 @@
                 </div>
             </div>
             <?php if (!empty($can_manage_exam_snapshots)): ?>
-                <div id="cbt-exam-snapshot-panel" class="cbt-exam-page-panel<?php echo $active_exam_page_panel === 'cbt-exam-snapshot-panel' ? ' cbt-active' : ''; ?>" role="tabpanel">
+                <div
+                    id="cbt-exam-snapshot-panel"
+                    class="cbt-exam-page-panel<?php echo $active_exam_page_panel === 'cbt-exam-snapshot-panel' ? ' cbt-active' : ''; ?>"
+                    role="tabpanel"
+                    data-cbt-snapshot-tab="<?php echo esc_attr((string) ($exam_snapshot_tab ?? CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT)); ?>"
+                    data-cbt-snapshot-auto-refresh-seconds="<?php echo esc_attr(((string) ($exam_snapshot_tab ?? CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT)) === CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT ? '10' : '0'); ?>"
+                >
                     <?php CBT_Admin_Exams_Page::render_snapshot_panel([
                         'subjects' => $subjects,
                         'exam_status_labels' => $exam_status_labels,
@@ -1642,6 +1648,25 @@
                     border-radius: 14px;
                     background: #f8fbff;
                     align-content: start;
+                    min-height: 124px;
+                }
+                .cbt-exam-preflight-stage-card-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                }
+                .cbt-exam-preflight-stage-summary {
+                    color: #0f172a;
+                    font-size: 14px;
+                    font-weight: 700;
+                    line-height: 1.45;
+                }
+                .cbt-exam-preflight-stage-meta {
+                    color: #64748b;
+                    font-size: 12px;
+                    line-height: 1.55;
                 }
                 .cbt-exam-preflight-actions {
                     display: flex;
@@ -4063,6 +4088,7 @@
                 const activatePageTab = initTabs('cbt-exam-page-tabs', '.cbt-exam-page-panel', {
                     afterActivate(targetId) {
                         if (typeof window.URL !== 'function' || !window.history || typeof window.history.replaceState !== 'function') {
+                            handleSnapshotAutoRefreshState();
                             return;
                         }
 
@@ -4076,9 +4102,11 @@
                         const nextUrl = new URL(window.location.href);
                         nextUrl.searchParams.set('cbt_exam_panel', panelValue);
                         window.history.replaceState({}, '', nextUrl.toString());
+                        handleSnapshotAutoRefreshState();
                     },
                 });
                 const page = document.querySelector('.cbt-exams-page');
+                const snapshotPanel = document.getElementById('cbt-exam-snapshot-panel');
                 const examListFilterForm = document.getElementById('cbt-exam-list-filter-form');
                 const examListSearchInput = document.getElementById('cbt-exam-search');
                 const examSnapshotFilterForm = document.getElementById('cbt-exam-snapshot-filter-form');
@@ -4157,12 +4185,63 @@
                 let isExamSaveRunning = false;
                 let examListFilterTimer = null;
                 let examSnapshotFilterTimer = null;
+                let snapshotAutoRefreshTimer = null;
+                let isPageNavigating = false;
                 let questionFilterTimer = 0;
                 let questionCatalogRequestSeq = 0;
                 let selectionSyncTimer = null;
                 let pendingSelectionConfirmAction = null;
                 let selectedSidebarSearchTerm = '';
                 const defaultQuestionSubmitHelpText = questionSubmitHelp ? String(questionSubmitHelp.textContent || '').trim() : '';
+                const snapshotAutoRefreshSeconds = snapshotPanel
+                    ? Math.max(0, Number(snapshotPanel.getAttribute('data-cbt-snapshot-auto-refresh-seconds') || '0') || 0)
+                    : 0;
+
+                function clearSnapshotAutoRefreshTimer() {
+                    if (snapshotAutoRefreshTimer) {
+                        window.clearTimeout(snapshotAutoRefreshTimer);
+                        snapshotAutoRefreshTimer = null;
+                    }
+                }
+
+                function isPreflightSnapshotAutoRefreshActive() {
+                    if (!snapshotPanel || snapshotAutoRefreshSeconds <= 0 || isPageNavigating) {
+                        return false;
+                    }
+
+                    if (!snapshotPanel.classList.contains('cbt-active') || document.hidden) {
+                        return false;
+                    }
+
+                    return String(snapshotPanel.getAttribute('data-cbt-snapshot-tab') || '') === 'preflight';
+                }
+
+                function scheduleSnapshotAutoRefresh() {
+                    clearSnapshotAutoRefreshTimer();
+
+                    if (!isPreflightSnapshotAutoRefreshActive()) {
+                        return;
+                    }
+
+                    snapshotAutoRefreshTimer = window.setTimeout(() => {
+                        if (!isPreflightSnapshotAutoRefreshActive()) {
+                            clearSnapshotAutoRefreshTimer();
+                            return;
+                        }
+
+                        isPageNavigating = true;
+                        window.location.reload();
+                    }, snapshotAutoRefreshSeconds * 1000);
+                }
+
+                function handleSnapshotAutoRefreshState() {
+                    if (isPreflightSnapshotAutoRefreshActive()) {
+                        scheduleSnapshotAutoRefresh();
+                        return;
+                    }
+
+                    clearSnapshotAutoRefreshTimer();
+                }
 
                 function getQuestionCatalogPanel() {
                     return page ? page.querySelector('[data-cbt-exam-question-catalog]') : null;
@@ -4462,6 +4541,26 @@
                     });
                     updateExamSnapshotPickerSummary();
                 }
+
+                document.addEventListener('submit', (event) => {
+                    if (!(event.target instanceof HTMLFormElement)) {
+                        return;
+                    }
+
+                    isPageNavigating = true;
+                    clearSnapshotAutoRefreshTimer();
+                }, true);
+
+                window.addEventListener('beforeunload', () => {
+                    isPageNavigating = true;
+                    clearSnapshotAutoRefreshTimer();
+                });
+
+                document.addEventListener('visibilitychange', () => {
+                    handleSnapshotAutoRefreshState();
+                });
+
+                handleSnapshotAutoRefreshState();
 
                 function setExamDetailValidationNotice(isVisible, message = '') {
                     if (!detailValidationNotice) {

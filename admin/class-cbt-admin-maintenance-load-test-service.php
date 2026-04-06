@@ -13,6 +13,7 @@ final class CBT_Admin_Maintenance_Load_Test_Service
     private const LOAD_TEST_JOBS_OPTION = 'cbt_load_test_jobs';
     private const LOAD_TEST_RUNTIME_DIRECTORY = 'cbt-load-test';
     private const LOAD_TEST_MAX_JOB_HISTORY = 24;
+    private const LOAD_TEST_CANCELLED_EXIT_CODE = 143;
 
     /**
      * @return array<string,mixed>
@@ -1262,6 +1263,12 @@ final class CBT_Admin_Maintenance_Load_Test_Service
             if ($job['finished_at'] === '') {
                 $job['finished_at'] = current_time('mysql');
             }
+            if (!$process_running) {
+                $job['pid'] = 0;
+                if ($job['exit_code'] === null) {
+                    $job['exit_code'] = self::LOAD_TEST_CANCELLED_EXIT_CODE;
+                }
+            }
             if ($exit_code !== null) {
                 $job['exit_code'] = $exit_code;
             }
@@ -1803,10 +1810,13 @@ final class CBT_Admin_Maintenance_Load_Test_Service
 
         $terminated = false;
         if (function_exists('posix_kill')) {
-            $terminated = @posix_kill($pid, SIGTERM);
+            $sigterm = defined('SIGTERM') ? (int) constant('SIGTERM') : 15;
+            $sigkill = defined('SIGKILL') ? (int) constant('SIGKILL') : 9;
+
+            $terminated = @posix_kill($pid, $sigterm);
             usleep(250000);
             if (@posix_kill($pid, 0)) {
-                @posix_kill($pid, SIGKILL);
+                @posix_kill($pid, $sigkill);
             }
             return $terminated;
         }
@@ -2108,24 +2118,46 @@ final class CBT_Admin_Maintenance_Load_Test_Service
         $job_id = isset($_POST['job_id']) ? sanitize_key((string) wp_unslash($_POST['job_id'])) : '';
         check_admin_referer('cbt_cancel_load_test_' . $job_id);
 
-        $jobs = self::get_load_test_jobs_option_map();
+        $jobs = self::sync_load_test_jobs();
         if ($job_id === '' || !isset($jobs[$job_id])) {
             CBT_Admin_Maintenance_Common::redirect_maintenance_page(null, 'Job load test tidak ditemukan.', 'load');
         }
 
         $job = self::normalize_load_test_job((array) $jobs[$job_id]);
+        $current_status = (string) ($job['status'] ?? 'queued');
+        if (!in_array($current_status, ['queued', 'running'], true)) {
+            CBT_Admin_Maintenance_Common::redirect_maintenance_page(
+                'Job load test ini sudah tidak aktif lagi.',
+                null,
+                'load'
+            );
+        }
+
         $pid = (int) ($job['pid'] ?? 0);
+        $terminate_result = false;
         if ($pid > 0) {
-            self::terminate_load_test_process($pid);
+            $terminate_result = self::terminate_load_test_process($pid);
         }
 
         $job['status'] = 'cancelled';
         $job['finished_at'] = current_time('mysql');
-        $job['notes'] = trim((string) $job['notes'] . ' Dibatalkan dari CBT Maintenance.');
+        $job['pid'] = 0;
+        if ($job['exit_code'] === null) {
+            $job['exit_code'] = self::LOAD_TEST_CANCELLED_EXIT_CODE;
+        }
+
+        $notes = trim((string) ($job['notes'] ?? ''));
+        $cancel_note = $terminate_result
+            ? 'Dibatalkan dari CBT Maintenance. Sinyal stop berhasil dikirim ke runner.'
+            : 'Dibatalkan dari CBT Maintenance. Runner ditandai cancelled meski sinyal stop tidak terkonfirmasi.';
+        $job['notes'] = trim($notes . ' ' . $cancel_note);
         $jobs[$job_id] = $job;
         self::save_load_test_jobs_option_map($jobs);
 
-        CBT_Admin_Maintenance_Common::redirect_maintenance_page('Job load test berhasil dibatalkan.', null, 'load');
+        $message = $terminate_result || $pid <= 0
+            ? 'Job load test berhasil dibatalkan.'
+            : 'Job load test ditandai cancelled, tetapi sinyal stop ke runner tidak terkonfirmasi.';
+        CBT_Admin_Maintenance_Common::redirect_maintenance_page($message, null, 'load');
     }
 
     public static function handle_delete_load_test_job(): void

@@ -265,7 +265,7 @@ class CBT_Student_Profile_Cache
             }
 
             if ($field === 'foto') {
-                $snapshot[$field] = esc_url_raw(trim((string) $value));
+                $snapshot[$field] = self::normalize_snapshot_photo_url((string) $value);
                 continue;
             }
 
@@ -273,6 +273,91 @@ class CBT_Student_Profile_Cache
         }
 
         return $snapshot;
+    }
+
+    private static function normalize_snapshot_photo_url(string $value): string
+    {
+        $sanitized = esc_url_raw(trim($value));
+        if ($sanitized === '') {
+            return '';
+        }
+
+        if ($sanitized[0] === '/') {
+            return $sanitized;
+        }
+
+        $parsed = wp_parse_url($sanitized);
+        if (!is_array($parsed)) {
+            return $sanitized;
+        }
+
+        $scheme = strtolower((string) ($parsed['scheme'] ?? ''));
+        $host = strtolower((string) ($parsed['host'] ?? ''));
+        $path = (string) ($parsed['path'] ?? '');
+        if (($scheme !== 'http' && $scheme !== 'https') || $host === '' || $path === '') {
+            return $sanitized;
+        }
+
+        $current = wp_parse_url(home_url('/'));
+        if (!is_array($current)) {
+            return $sanitized;
+        }
+
+        $current_scheme = strtolower((string) ($current['scheme'] ?? ''));
+        $current_host = strtolower((string) ($current['host'] ?? ''));
+        $query = (string) ($parsed['query'] ?? '');
+        $fragment = (string) ($parsed['fragment'] ?? '');
+
+        if ($host === $current_host && $scheme === 'http' && $current_scheme === 'https') {
+            return self::build_current_site_asset_url($path, $query, $fragment);
+        }
+
+        if ($host !== $current_host && self::is_private_network_host($host) && self::is_wordpress_local_content_path($path)) {
+            return self::build_current_site_asset_url($path, $query, $fragment);
+        }
+
+        return $sanitized;
+    }
+
+    private static function build_current_site_asset_url(string $path, string $query = '', string $fragment = ''): string
+    {
+        $normalized_path = '/' . ltrim($path, '/');
+        $url = untrailingslashit(home_url('/')) . $normalized_path;
+        if ($query !== '') {
+            $url .= '?' . ltrim($query, '?');
+        }
+        if ($fragment !== '') {
+            $url .= '#' . ltrim($fragment, '#');
+        }
+
+        return esc_url_raw($url);
+    }
+
+    private static function is_wordpress_local_content_path(string $path): bool
+    {
+        return preg_match('#^/(?:wp-content|wp-includes|wp-admin)/#i', $path) === 1;
+    }
+
+    private static function is_private_network_host(string $host): bool
+    {
+        $normalized = strtolower(trim($host));
+        if ($normalized === '') {
+            return false;
+        }
+
+        if ($normalized === 'localhost' || $normalized === '127.0.0.1' || $normalized === '::1') {
+            return true;
+        }
+
+        if (preg_match('/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/', $normalized) === 1) {
+            return true;
+        }
+
+        if (preg_match('/^192\.168\.\d{1,3}\.\d{1,3}$/', $normalized) === 1) {
+            return true;
+        }
+
+        return preg_match('/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/', $normalized) === 1;
     }
 
     /**

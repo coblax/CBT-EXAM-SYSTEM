@@ -5,6 +5,30 @@ export function createAppMetaManager(deps) {
     var windowRef = deps.windowRef;
     var richZoomGallerySeed = 0;
 
+    function isLoopbackHost(host) {
+        var normalized = String(host || '').trim().toLowerCase();
+        return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
+    }
+
+    function isPrivateNetworkHost(host) {
+        var normalized = String(host || '').trim().toLowerCase();
+        if (!normalized) {
+            return false;
+        }
+
+        if (isLoopbackHost(normalized)) {
+            return true;
+        }
+
+        return /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(normalized)
+            || /^192\.168\.\d{1,3}\.\d{1,3}$/.test(normalized)
+            || /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(normalized);
+    }
+
+    function isWordPressContentPath(pathname) {
+        return /^\/(?:wp-content|wp-includes|wp-admin)\//i.test(String(pathname || ''));
+    }
+
     function normalizeRichTables(html) {
         if (!/<table\b/i.test(html) || !windowRef || !windowRef.document || typeof windowRef.document.createElement !== 'function') {
             return html;
@@ -54,10 +78,19 @@ export function createAppMetaManager(deps) {
                 var current = new URL(windowRef.location.origin + '/');
                 var parsedHost = String(parsed.hostname || '').toLowerCase();
                 var currentHost = String(current.hostname || '').toLowerCase();
-                var parsedIsLocal = parsedHost === 'localhost' || parsedHost === '127.0.0.1' || parsedHost === '::1';
+                var parsedPath = String(parsed.pathname || '');
+                var parsedIsLocal = isLoopbackHost(parsedHost);
+                var parsedIsPrivateNetwork = isPrivateNetworkHost(parsedHost);
+                var parsedIsWordPressPath = isWordPressContentPath(parsedPath);
 
-                if (parsedIsLocal && parsedHost !== currentHost && parsed.pathname) {
-                    return parsed.pathname + parsed.search + parsed.hash;
+                if (parsedHost !== currentHost && parsedPath) {
+                    if (parsedIsLocal) {
+                        return parsedPath + parsed.search + parsed.hash;
+                    }
+
+                    if (parsedIsPrivateNetwork && parsedIsWordPressPath) {
+                        return parsedPath + parsed.search + parsed.hash;
+                    }
                 }
 
                 if (current.protocol === 'https:' && parsed.protocol === 'http:' && parsedHost === currentHost) {

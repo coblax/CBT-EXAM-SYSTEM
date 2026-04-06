@@ -12,6 +12,17 @@ function createManager() {
     });
 }
 
+function createManagerWithWindow(windowRef) {
+    return createAppMetaManager({
+        config: {},
+        escapeHtml: function (value) {
+            return String(value || '');
+        },
+        state: {},
+        windowRef: windowRef
+    });
+}
+
 describe('createAppMetaManager safeRichHtml', function () {
     it('wraps rich text tables in a horizontal scroll container', function () {
         var manager = createManager();
@@ -61,5 +72,29 @@ describe('createAppMetaManager safeRichHtml', function () {
         expect(html).toContain('cbt-rich-zoom-target--image');
         expect(html).not.toContain('data-rich-zoom-gallery-id=');
         expect(html).not.toContain('data-rich-zoom-gallery-count=');
+    });
+});
+
+describe('createAppMetaManager normalizePhotoUrl', function () {
+    it('rewrites stale private-network WordPress asset urls to the current host path', function () {
+        var manager = createManagerWithWindow({
+            location: {
+                origin: 'https://exam.example.test'
+            }
+        });
+
+        expect(manager.normalizePhotoUrl('http://192.168.1.9/wp-content/plugins/cbt-exam-system/public/Default%20Pria.png'))
+            .toBe('/wp-content/plugins/cbt-exam-system/public/Default%20Pria.png');
+    });
+
+    it('keeps external cdn photo urls untouched', function () {
+        var manager = createManagerWithWindow({
+            location: {
+                origin: 'https://exam.example.test'
+            }
+        });
+
+        expect(manager.normalizePhotoUrl('https://cdn.example.com/avatar.jpg'))
+            .toBe('https://cdn.example.com/avatar.jpg');
     });
 });

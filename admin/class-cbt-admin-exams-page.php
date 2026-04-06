@@ -426,6 +426,32 @@ final class CBT_Admin_Exams_Page
         <?php
     }
 
+    private static function format_preflight_ready_meta(bool $is_ready): string
+    {
+        return $is_ready ? 'Siap' : 'Tidak siap';
+    }
+
+    private static function render_preflight_stage_card(
+        string $label,
+        string $status_label,
+        string $status_tone,
+        string $summary,
+        string $meta = ''
+    ): void {
+        ?>
+        <div class="cbt-exam-preflight-stage-card">
+            <div class="cbt-exam-preflight-stage-card-head">
+                <span class="cbt-exam-snapshot-summary-label"><?php echo esc_html($label); ?></span>
+                <span class="cbt-exam-snapshot-status is-<?php echo esc_attr(sanitize_html_class($status_tone, 'warning')); ?>"><?php echo esc_html($status_label); ?></span>
+            </div>
+            <strong class="cbt-exam-preflight-stage-summary"><?php echo esc_html($summary); ?></strong>
+            <?php if ($meta !== ''): ?>
+                <span class="cbt-exam-preflight-stage-meta"><?php echo esc_html($meta); ?></span>
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+
     /**
      * @param array{
      *   subjects:array<int,array<string,mixed>>,
@@ -1353,11 +1379,37 @@ final class CBT_Admin_Exams_Page
                     </form>
                 </div>
             <?php else: ?>
+                <?php
+                $preflight_exam_meta = $subject_name !== ''
+                    ? ($subject_name . ' · Token ' . $readiness_token_label)
+                    : ('Token ' . $readiness_token_label);
+                $preflight_question_stage_ready_count = ($preflight_question_cache_ready && $preflight_rest_warm_ready)
+                    ? $snapshot_item_count
+                    : 0;
+                $preflight_question_stage_missing_count = max(0, $snapshot_item_count - $preflight_question_stage_ready_count);
+                $preflight_question_stage_summary = 'Siap ' . $preflight_question_stage_ready_count . '/' . $snapshot_item_count . ' · Belum ' . $preflight_question_stage_missing_count;
+                $preflight_question_stage_meta = 'Total ' . $snapshot_item_count . ' soal · Cache ' . self::format_preflight_ready_meta($preflight_question_cache_ready) . ' · Warm ' . self::format_preflight_ready_meta($preflight_rest_warm_ready);
+                $preflight_start_stage_ready_count = ($preflight_start_cache_ready && $preflight_start_warm_ready)
+                    ? $start_snapshot_item_count
+                    : 0;
+                $preflight_start_stage_missing_count = max(0, $start_snapshot_item_count - $preflight_start_stage_ready_count);
+                $preflight_start_stage_summary = 'Siap ' . $preflight_start_stage_ready_count . '/' . $start_snapshot_item_count . ' · Belum ' . $preflight_start_stage_missing_count;
+                $preflight_start_stage_meta = 'Total ' . $start_snapshot_item_count . ' item · Cache ' . self::format_preflight_ready_meta($preflight_start_cache_ready) . ' · Warm ' . self::format_preflight_ready_meta($preflight_start_warm_ready);
+                $preflight_submission_stage_summary = 'Siap ' . $preflight_submission_context_ready_count . '/' . $preflight_submission_context_question_count . ' · Belum ' . $preflight_submission_context_missing_count;
+                $preflight_submission_stage_meta = 'Total ' . $preflight_submission_context_question_count . ' soal · INVALID ' . $preflight_submission_context_invalid_count;
+                $preflight_profile_stage_summary = 'Siap ' . $preflight_profile_success_count . '/' . $preflight_target_student_count . ' · Belum ' . $readiness_profile_missing_count;
+                $preflight_profile_stage_meta = 'Target ' . $preflight_target_student_count . ' · Diproses ' . $preflight_profile_processed_count . ' · Gagal ' . $preflight_profile_failure_count . ' · MISS ' . $readiness_profile_missing_count;
+                $preflight_login_stage_summary = 'Siap ' . $preflight_login_snapshot_ready_count . '/' . $preflight_target_student_count . ' · Belum ' . $preflight_login_snapshot_missing_count;
+                $preflight_login_stage_meta = 'Target ' . $preflight_target_student_count . ' · MISS ' . $preflight_login_snapshot_missing_count . ' · Gagal ' . $preflight_login_snapshot_failure_count;
+                $preflight_auto_warm_ready_total = max(0, $readiness_availability_ready_count + $readiness_availability_auto_warm_count);
+                $preflight_auto_warm_stage_summary = 'Siap ' . $preflight_auto_warm_ready_total . '/' . $preflight_target_student_count . ' · Belum ' . $readiness_availability_missing_count;
+                $preflight_auto_warm_stage_meta = 'READY ' . $readiness_availability_ready_count . ' · AUTO ' . $readiness_availability_auto_warm_count . ' · MISS ' . $readiness_availability_missing_count;
+                ?>
                 <div class="cbt-exam-preflight-panel">
                     <div class="cbt-exam-preflight-panel-head">
                         <div>
                             <strong>One-Click Pra Ujian</strong>
-                            <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle">Pusat aksi dan ringkasan kesiapan pra-ujian untuk exam terpilih. Panel ini menggabungkan status kesiapan, blocker, warning, serta eksekusi Snapshot Soal, Start Snapshot, Submission Context, Snapshot Profil, Login Snapshot, dan Auto-Warm Availability.</p>
+                            <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle">Ringkasan kesiapan dan aksi pra-ujian untuk exam terpilih. Detail setiap snapshot diringkas langsung di kartu stage bawah dan panel ini diperbarui otomatis setiap 10 detik saat tab tetap terbuka.</p>
                         </div>
                         <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_status_tone); ?>"><?php echo esc_html($preflight_status_label); ?></span>
                     </div>
@@ -1371,32 +1423,7 @@ final class CBT_Admin_Exams_Page
                         <div class="cbt-exam-readiness-summary-card">
                             <span class="cbt-exam-snapshot-summary-label">Exam</span>
                             <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($title); ?></strong>
-                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html($subject_name !== '' ? $subject_name : ('Exam #' . $exam_id)); ?></span>
-                        </div>
-                        <div class="cbt-exam-readiness-summary-card">
-                            <span class="cbt-exam-snapshot-summary-label">Ringkasan Profil</span>
-                            <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($preflight_profile_success_count . ' / ' . $preflight_target_student_count); ?></strong>
-                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Diproses ' . $preflight_profile_processed_count . ' · Gagal ' . $preflight_profile_failure_count . ' · MISS ' . $readiness_profile_missing_count); ?></span>
-                        </div>
-                        <div class="cbt-exam-readiness-summary-card">
-                            <span class="cbt-exam-snapshot-summary-label">Login Snapshot</span>
-                            <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($preflight_login_snapshot_ready_count . ' / ' . $preflight_target_student_count); ?></strong>
-                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('MISS ' . $preflight_login_snapshot_missing_count . ' · Gagal ' . $preflight_login_snapshot_failure_count); ?></span>
-                        </div>
-                        <div class="cbt-exam-readiness-summary-card">
-                            <span class="cbt-exam-snapshot-summary-label">Submission Context</span>
-                            <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($preflight_submission_context_ready_count . ' / ' . $preflight_submission_context_question_count); ?></strong>
-                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('MISS ' . $preflight_submission_context_missing_count . ' · INVALID ' . $preflight_submission_context_invalid_count); ?></span>
-                        </div>
-                        <div class="cbt-exam-readiness-summary-card">
-                            <span class="cbt-exam-snapshot-summary-label">Ringkasan Availability</span>
-                            <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html('READY ' . $readiness_availability_ready_count . ' · AUTO ' . $readiness_availability_auto_warm_count); ?></strong>
-                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('MISS ' . $readiness_availability_missing_count . ' · Auto-Warm ' . $auto_warm_status_label); ?></span>
-                        </div>
-                        <div class="cbt-exam-readiness-summary-card">
-                            <span class="cbt-exam-snapshot-summary-label">Status Operasional</span>
-                            <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html('Soal ' . $snapshot_status_label . ' · Start ' . $start_snapshot_status_label . ' · Submit ' . $preflight_submission_context_stage_label . ' · Token ' . $readiness_token_label); ?></strong>
-                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Result ' . $readiness_show_student_result . ' · Calculator ' . $readiness_enable_calculator); ?></span>
+                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html($preflight_exam_meta); ?></span>
                         </div>
                         <div class="cbt-exam-readiness-summary-card">
                             <span class="cbt-exam-snapshot-summary-label">Jadwal & Waktu</span>
@@ -1423,30 +1450,12 @@ final class CBT_Admin_Exams_Page
                     </div>
 
                     <div class="cbt-exam-preflight-stage-grid">
-                        <div class="cbt-exam-preflight-stage-card">
-                            <span class="cbt-exam-snapshot-summary-label">Snapshot Soal</span>
-                            <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_question_stage_tone); ?>"><?php echo esc_html($preflight_question_stage_label); ?></span>
-                        </div>
-                        <div class="cbt-exam-preflight-stage-card">
-                            <span class="cbt-exam-snapshot-summary-label">Start Snapshot</span>
-                            <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_start_snapshot_stage_tone); ?>"><?php echo esc_html($preflight_start_snapshot_stage_label); ?></span>
-                        </div>
-                        <div class="cbt-exam-preflight-stage-card">
-                            <span class="cbt-exam-snapshot-summary-label">Submission Context</span>
-                            <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_submission_context_stage_tone); ?>"><?php echo esc_html($preflight_submission_context_stage_label); ?></span>
-                        </div>
-                        <div class="cbt-exam-preflight-stage-card">
-                            <span class="cbt-exam-snapshot-summary-label">Snapshot Profil</span>
-                            <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_profile_stage_tone); ?>"><?php echo esc_html($preflight_profile_stage_label); ?></span>
-                        </div>
-                        <div class="cbt-exam-preflight-stage-card">
-                            <span class="cbt-exam-snapshot-summary-label">Login Snapshot</span>
-                            <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_login_snapshot_stage_tone); ?>"><?php echo esc_html($preflight_login_snapshot_stage_label); ?></span>
-                        </div>
-                        <div class="cbt-exam-preflight-stage-card">
-                            <span class="cbt-exam-snapshot-summary-label">Auto-Warm Availability</span>
-                            <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_auto_warm_stage_tone); ?>"><?php echo esc_html($preflight_auto_warm_stage_label); ?></span>
-                        </div>
+                        <?php self::render_preflight_stage_card('Snapshot Soal', $preflight_question_stage_label, $preflight_question_stage_tone, $preflight_question_stage_summary, $preflight_question_stage_meta); ?>
+                        <?php self::render_preflight_stage_card('Start Snapshot', $preflight_start_snapshot_stage_label, $preflight_start_snapshot_stage_tone, $preflight_start_stage_summary, $preflight_start_stage_meta); ?>
+                        <?php self::render_preflight_stage_card('Submission Context', $preflight_submission_context_stage_label, $preflight_submission_context_stage_tone, $preflight_submission_stage_summary, $preflight_submission_stage_meta); ?>
+                        <?php self::render_preflight_stage_card('Snapshot Profil', $preflight_profile_stage_label, $preflight_profile_stage_tone, $preflight_profile_stage_summary, $preflight_profile_stage_meta); ?>
+                        <?php self::render_preflight_stage_card('Login Snapshot', $preflight_login_snapshot_stage_label, $preflight_login_snapshot_stage_tone, $preflight_login_stage_summary, $preflight_login_stage_meta); ?>
+                        <?php self::render_preflight_stage_card('Auto-Warm Availability', $preflight_auto_warm_stage_label, $preflight_auto_warm_stage_tone, $preflight_auto_warm_stage_summary, $preflight_auto_warm_stage_meta); ?>
                     </div>
 
                     <div class="cbt-exam-readiness-alerts">

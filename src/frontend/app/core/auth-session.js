@@ -3,6 +3,15 @@ export function createAuthSessionManager(deps) {
     var getSessionStorage = deps.getSessionStorage;
     var storageKey = String(deps.storageKey || '');
 
+    function normalizePersistedStage(rawStage) {
+        var stage = String(rawStage || '').trim().toLowerCase();
+        if (stage === 'exam' || stage === 'confirm' || stage === 'result' || stage === 'login') {
+            return stage;
+        }
+
+        return '';
+    }
+
     function normalizePersistedUser(rawUser) {
         if (!rawUser || typeof rawUser !== 'object') {
             return null;
@@ -54,7 +63,8 @@ export function createAuthSessionManager(deps) {
         var payload = {
             token: String(state.token || ''),
             user: normalizePersistedUser(state.user),
-            selected_exam_id: Number(state.selectedExamId) || 0
+            selected_exam_id: Number(state.selectedExamId) || 0,
+            last_stage: normalizePersistedStage(state.stage)
         };
 
         if (!payload.user || payload.token === '') {
@@ -89,12 +99,14 @@ export function createAuthSessionManager(deps) {
             var token = String(parsed.token || '');
             var user = normalizePersistedUser(parsed.user || null);
             var selectedExamId = Number(parsed.selected_exam_id) || 0;
+            var lastStage = normalizePersistedStage(parsed.last_stage || '');
 
             if (token === '' || !user) {
                 return null;
             }
 
             return {
+                lastStage: lastStage,
                 token: token,
                 user: user,
                 selectedExamId: selectedExamId
@@ -106,6 +118,7 @@ export function createAuthSessionManager(deps) {
 
     return {
         clearPersistedAuthSession: clearPersistedAuthSession,
+        normalizePersistedStage: normalizePersistedStage,
         normalizePersistedUser: normalizePersistedUser,
         persistAuthSession: persistAuthSession,
         readPersistedAuthSession: readPersistedAuthSession

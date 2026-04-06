@@ -60,6 +60,20 @@ final class StudentProfileSnapshotTest extends TestCase
         self::assertSame('', $this->readStoredSnapshotPayload(11));
     }
 
+    public function test_get_snapshot_normalizes_stale_private_network_photo_urls_even_without_redis(): void
+    {
+        update_user_meta(11, 'foto', 'http://192.168.1.9/wp-content/plugins/cbt-exam-system/public/Default%20Pria.png');
+        $this->setProfileRedisUnavailable();
+
+        $snapshot = CBT_Student_Profile_Cache::get_snapshot(11);
+
+        self::assertSame(
+            'http://localhost/wordpress/wp-content/plugins/cbt-exam-system/public/Default%20Pria.png',
+            $snapshot['foto']
+        );
+        self::assertSame('', $this->readStoredSnapshotPayload(11));
+    }
+
     public function test_handle_user_meta_change_invalidates_only_relevant_keys(): void
     {
         CBT_Student_Profile_Cache::get_snapshot(11);

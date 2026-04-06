@@ -184,6 +184,10 @@ export function createBootstrapSessionManager(deps) {
         });
     }
 
+    function shouldAutoResumePersistedAttempt(persisted) {
+        return String(persisted && persisted.lastStage ? persisted.lastStage : '').toLowerCase() === 'exam';
+    }
+
     async function bootstrapFromPersistedSession(options) {
         options = options || {};
         var persisted = readPersistedAuthSession();
@@ -245,7 +249,8 @@ export function createBootstrapSessionManager(deps) {
                     runId: recoveryRunId
                 }
             );
-            if (hasActiveResumeCandidate(Number(persisted.selectedExamId) > 0)) {
+            var shouldAutoResume = shouldAutoResumePersistedAttempt(persisted);
+            if (shouldAutoResume && hasActiveResumeCandidate(Number(persisted.selectedExamId) > 0)) {
                 updateSessionRecoveryProgress(
                     'exam_restore',
                     4,
@@ -257,9 +262,12 @@ export function createBootstrapSessionManager(deps) {
                     }
                 );
             }
-            var resumed = await tryResumeActiveAttemptFromExamList({
-                selectedOnly: Number(persisted.selectedExamId) > 0
-            });
+            var resumed = false;
+            if (shouldAutoResume) {
+                resumed = await tryResumeActiveAttemptFromExamList({
+                    selectedOnly: Number(persisted.selectedExamId) > 0
+                });
+            }
             if (!isActiveRecoveryRun(recoveryRunId)) {
                 return;
             }
