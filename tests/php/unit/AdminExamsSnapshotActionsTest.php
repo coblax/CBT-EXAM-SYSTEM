@@ -446,6 +446,204 @@ final class AdminExamsSnapshotActionsTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_handle_clean_exam_snapshots_stops_same_exam_auto_warm_and_clears_target_snapshot_stack(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAvailabilityRedis();
+        $this->useFakeProfileRedis();
+        $this->useFakeLoginSnapshotRedis();
+        $this->useFakeSubmissionContextRedis();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(77, static function (int $examId): array {
+            return [
+                [
+                    'id' => 900 + $examId,
+                    'exam_id' => $examId,
+                    'question_text' => 'Snapshot exam ' . $examId,
+                    'question_type' => 'multiple_choice',
+                    'points' => 1,
+                    'options' => [],
+                ],
+            ];
+        });
+        CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot(77, static function (int $examId): array {
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [900 + $examId],
+                'question_number_map' => [900 + $examId => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'option_randomization_tokens_by_question' => [],
+            ];
+        });
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots(77);
+        CBT_Student_Profile_Cache::warm_snapshot(71);
+        CBT_Student_Profile_Cache::warm_snapshot(72);
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(71, 'test');
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(72, 'test');
+        CBT_Exam_Availability_Cache::write_prepared_student_snapshot(71, CBT_REST::build_student_exam_availability_snapshot_payload(71));
+        CBT_Exam_Availability_Cache::write_prepared_student_snapshot(72, CBT_REST::build_student_exam_availability_snapshot_payload(72));
+
+        CBT_Exam_Availability_Auto_Warm_Service::start_for_exam([
+            'id' => 77,
+            'title' => 'Ujian Matematika',
+            'status' => 'published',
+            'target_kelas' => 'XI-A',
+        ]);
+
+        $_POST = [
+            'exam_id' => '77',
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_paged' => '2',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_clean_exam_snapshots']);
+
+        self::assertFalse(CBT_Exam_Availability_Auto_Warm_Service::get_state()['active']);
+        self::assertSame('inactive', CBT_Exam_Availability_Auto_Warm_Service::get_state()['status']);
+        self::assertSame(0, CBT_Exam_Availability_Auto_Warm_Service::get_state()['exam_id']);
+        self::assertSame([], $this->storedExamSnapshotKeysFor(77));
+        self::assertSame([], $this->storedStartSnapshotKeysFor(77));
+        self::assertSame([], $this->storedSubmissionContextKeysFor(77));
+        self::assertSame('', $this->storedProfileSnapshotPayloadFor(71));
+        self::assertSame('', $this->storedLoginSnapshotPayloadFor(71));
+        self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(71));
+        self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(72));
+        self::assertNotSame('', $this->storedLoginSnapshotPayloadFor(72));
+        self::assertNotSame([], $this->storedAvailabilitySnapshotKeysFor(72));
+        self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Snapshot+pra+ujian+untuk+Ujian+Matematika+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_clean_exam_snapshots_stops_same_exam_preflight_and_clears_target_snapshot_stack(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAvailabilityRedis();
+        $this->useFakeProfileRedis();
+        $this->useFakeLoginSnapshotRedis();
+        $this->useFakeSubmissionContextRedis();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(77, static function (int $examId): array {
+            return [
+                [
+                    'id' => 900 + $examId,
+                    'exam_id' => $examId,
+                    'question_text' => 'Snapshot exam ' . $examId,
+                    'question_type' => 'multiple_choice',
+                    'points' => 1,
+                    'options' => [],
+                ],
+            ];
+        });
+        CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot(77, static function (int $examId): array {
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [900 + $examId],
+                'question_number_map' => [900 + $examId => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'option_randomization_tokens_by_question' => [],
+            ];
+        });
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots(77);
+        CBT_Student_Profile_Cache::warm_snapshot(71);
+        CBT_Student_Profile_Cache::warm_snapshot(72);
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(71, 'test');
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(72, 'test');
+        CBT_Exam_Availability_Cache::write_prepared_student_snapshot(71, CBT_REST::build_student_exam_availability_snapshot_payload(71));
+        CBT_Exam_Availability_Cache::write_prepared_student_snapshot(72, CBT_REST::build_student_exam_availability_snapshot_payload(72));
+
+        $this->seedActivePreflightState(77, 'Ujian Matematika', [71]);
+
+        $_POST = [
+            'exam_id' => '77',
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_paged' => '2',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_clean_exam_snapshots']);
+
+        self::assertFalse(CBT_Exam_Preflight_Service::get_state()['active']);
+        self::assertSame('inactive', CBT_Exam_Preflight_Service::get_state()['status']);
+        self::assertSame(0, CBT_Exam_Preflight_Service::get_state()['exam_id']);
+        self::assertSame([], $this->storedExamSnapshotKeysFor(77));
+        self::assertSame([], $this->storedStartSnapshotKeysFor(77));
+        self::assertSame([], $this->storedSubmissionContextKeysFor(77));
+        self::assertSame('', $this->storedProfileSnapshotPayloadFor(71));
+        self::assertSame('', $this->storedLoginSnapshotPayloadFor(71));
+        self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(71));
+        self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(72));
+        self::assertNotSame('', $this->storedLoginSnapshotPayloadFor(72));
+        self::assertNotSame([], $this->storedAvailabilitySnapshotKeysFor(72));
+        self::assertStringContainsString('cbt_msg=Snapshot+pra+ujian+untuk+Ujian+Matematika+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_clean_exam_snapshots_rejects_when_other_exam_preflight_is_active(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeProfileRedis();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+        CBT_Student_Profile_Cache::warm_snapshot(71);
+        $this->seedActivePreflightState(54, 'Ujian Biologi', [72]);
+
+        $_POST = [
+            'exam_id' => '77',
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_exam_id' => '77',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_clean_exam_snapshots']);
+
+        self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(71));
+        self::assertTrue(CBT_Exam_Preflight_Service::get_state()['active']);
+        self::assertStringContainsString('cbt_err=Tidak+bisa+membersihkan+snapshot+karena+one-click+pra+ujian+exam+lain+masih+aktif%3A+Ujian+Biologi.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_clean_exam_snapshots_rejects_when_other_exam_auto_warm_is_active(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeAvailabilityRedis();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        CBT_Exam_Availability_Auto_Warm_Service::start_for_exam([
+            'id' => 54,
+            'title' => 'Ujian Biologi',
+            'status' => 'published',
+            'target_kelas' => 'XI-B',
+        ]);
+
+        $_POST = [
+            'exam_id' => '77',
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_exam_id' => '77',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_clean_exam_snapshots']);
+
+        self::assertTrue(CBT_Exam_Availability_Auto_Warm_Service::get_state()['active']);
+        self::assertSame(54, CBT_Exam_Availability_Auto_Warm_Service::get_state()['exam_id']);
+        self::assertStringContainsString('cbt_err=Tidak+bisa+membersihkan+snapshot+karena+auto-warm+availability+exam+lain+masih+aktif%3A+Ujian+Biologi.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
     public function test_handle_warm_and_clear_bulk_student_exam_availability_snapshots_process_filtered_students_only(): void
     {
         $this->bootstrapSnapshotActionScaffold();
@@ -725,6 +923,7 @@ class CBT_REST
     public static array $warmedExamIds = [];
     public static array $warmedStartExamIds = [];
     public static array $warmedSubmissionContextExamIds = [];
+    public static array $batchAvailabilityPayloadRequests = [];
 
     public static function warm_exam_question_delivery_snapshot(int $exam_id): void
     {
@@ -794,11 +993,65 @@ class CBT_REST
             ],
         ];
     }
+
+    public static function build_batch_student_exam_availability_snapshot_payloads(array $user_ids): array
+    {
+        $user_ids = array_values(array_filter(array_map('intval', $user_ids)));
+        self::$batchAvailabilityPayloadRequests[] = $user_ids;
+        $payloads = [];
+
+        foreach ($user_ids as $user_id) {
+            $payloads[$user_id] = self::build_student_exam_availability_snapshot_payload($user_id);
+        }
+
+        return $payloads;
+    }
 }
 PHP);
         }
 
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-exams-service.php';
+    }
+
+    /**
+     * @param array<int,int> $targetStudentIds
+     */
+    private function seedActivePreflightState(int $examId, string $examTitle, array $targetStudentIds): void
+    {
+        update_option('cbt_exam_preflight_state', [
+            'active' => true,
+            'status' => 'active',
+            'session_id' => 'preflight-' . $examId . '-test',
+            'exam_id' => $examId,
+            'exam_title' => $examTitle,
+            'exam_status' => 'published',
+            'target_kelas_csv' => $examId === 54 ? 'XI-B' : 'XI-A',
+            'target_student_ids' => $targetStudentIds,
+            'target_student_count' => count($targetStudentIds),
+            'profile_cursor' => 0,
+            'profile_success_count' => 0,
+            'profile_failure_count' => 0,
+            'login_snapshot_success_count' => 0,
+            'login_snapshot_failure_count' => 0,
+            'submission_context_question_count' => 0,
+            'submission_context_ready_count' => 0,
+            'submission_context_missing_count' => 0,
+            'submission_context_invalid_count' => 0,
+            'question_snapshot_ready' => true,
+            'start_snapshot_ready' => true,
+            'submission_context_ready' => true,
+            'auto_warm_started' => false,
+            'started_at' => '2026-04-06 09:00:00',
+            'finished_at' => '',
+            'last_tick_at' => '2026-04-06 09:00:00',
+            'last_message' => 'Sedang berjalan.',
+            'stage_question' => 'ready',
+            'stage_start_snapshot' => 'ready',
+            'stage_submission_context' => 'ready',
+            'stage_profiles' => 'active',
+            'stage_login_snapshot' => 'active',
+            'stage_auto_warm' => 'pending',
+        ]);
     }
 
     private function useFakeDeliveryRedis(): void

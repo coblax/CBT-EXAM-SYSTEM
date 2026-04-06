@@ -9,6 +9,8 @@ final class ExamAvailabilityAutoWarmServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $GLOBALS['cbt_test_availability_initial_burst_seconds'] = 60.0;
+        $GLOBALS['cbt_test_availability_initial_burst_max_batches'] = 2;
         $this->bootstrapServiceScaffold();
         $this->useFakeAvailabilityRedis();
 
@@ -62,6 +64,76 @@ final class ExamAvailabilityAutoWarmServiceTest extends TestCase
         self::assertGreaterThan(0, count($this->storedAvailabilitySnapshotKeysFor(71)));
         self::assertGreaterThan(0, count($this->storedAvailabilitySnapshotKeysFor(72)));
         self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(73));
+        self::assertCount(1, CBT_REST::$batchAvailabilityPayloadRequests);
+        self::assertSame([71, 72], CBT_REST::$batchAvailabilityPayloadRequests[0]);
+        self::assertCount(1, (array) ($GLOBALS['cbt_test_redis_pipeline_batches'] ?? []));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_for_exam_runs_two_initial_bursts_for_large_target_batches(): void
+    {
+        for ($index = 0; $index < 58; $index++) {
+            $user_id = 80 + $index;
+            cbt_test_register_user([
+                'ID' => $user_id,
+                'display_name' => 'XI-A Burst ' . $index,
+                'user_login' => 'xiburst_' . $index,
+                'user_email' => 'xiburst_' . $index . '@example.com',
+                'roles' => ['student'],
+            ]);
+            update_user_meta($user_id, 'kode_kelas', 'XI-A');
+            update_user_meta($user_id, 'kode_ruang', 'RB');
+        }
+
+        $result = CBT_Exam_Availability_Auto_Warm_Service::start_for_exam([
+            'id' => 77,
+            'title' => 'Ujian Matematika',
+            'status' => 'published',
+            'target_kelas' => 'XI-A',
+        ]);
+
+        self::assertTrue($result['success']);
+        $state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
+        self::assertSame(60, $state['target_student_count']);
+        self::assertSame(60, $state['prepared_count']);
+        self::assertCount(2, CBT_REST::$batchAvailabilityPayloadRequests);
+        self::assertCount(50, CBT_REST::$batchAvailabilityPayloadRequests[0]);
+        self::assertCount(10, CBT_REST::$batchAvailabilityPayloadRequests[1]);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_for_exam_can_expand_initial_burst_when_budget_allows_more_batches(): void
+    {
+        $GLOBALS['cbt_test_availability_initial_burst_max_batches'] = 3;
+
+        for ($index = 0; $index < 108; $index++) {
+            $user_id = 200 + $index;
+            cbt_test_register_user([
+                'ID' => $user_id,
+                'display_name' => 'XI-A Adaptive ' . $index,
+                'user_login' => 'xiadaptive_' . $index,
+                'user_email' => 'xiadaptive_' . $index . '@example.com',
+                'roles' => ['student'],
+            ]);
+            update_user_meta($user_id, 'kode_kelas', 'XI-A');
+            update_user_meta($user_id, 'kode_ruang', 'RA');
+        }
+
+        $result = CBT_Exam_Availability_Auto_Warm_Service::start_for_exam([
+            'id' => 77,
+            'title' => 'Ujian Matematika',
+            'status' => 'published',
+            'target_kelas' => 'XI-A',
+        ]);
+
+        self::assertTrue($result['success']);
+        $state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
+        self::assertSame(110, $state['target_student_count']);
+        self::assertSame(110, $state['prepared_count']);
+        self::assertCount(3, CBT_REST::$batchAvailabilityPayloadRequests);
+        self::assertCount(50, CBT_REST::$batchAvailabilityPayloadRequests[0]);
+        self::assertCount(50, CBT_REST::$batchAvailabilityPayloadRequests[1]);
+        self::assertCount(10, CBT_REST::$batchAvailabilityPayloadRequests[2]);
     }
 
     #[RunInSeparateProcess]
@@ -138,6 +210,8 @@ final class ExamAvailabilityAutoWarmServiceTest extends TestCase
             eval(<<<'PHP'
 class CBT_REST
 {
+    public static array $batchAvailabilityPayloadRequests = [];
+
     public static function build_student_exam_availability_snapshot_payload(int $user_id): array
     {
         $user = get_user_by('id', $user_id);
@@ -164,6 +238,19 @@ class CBT_REST
                 'kode_ruang' => (string) get_user_meta($user_id, 'kode_ruang', true),
             ],
         ];
+    }
+
+    public static function build_batch_student_exam_availability_snapshot_payloads(array $user_ids): array
+    {
+        $user_ids = array_values(array_filter(array_map('intval', $user_ids)));
+        self::$batchAvailabilityPayloadRequests[] = $user_ids;
+        $payloads = [];
+
+        foreach ($user_ids as $user_id) {
+            $payloads[$user_id] = self::build_student_exam_availability_snapshot_payload($user_id);
+        }
+
+        return $payloads;
     }
 }
 PHP);

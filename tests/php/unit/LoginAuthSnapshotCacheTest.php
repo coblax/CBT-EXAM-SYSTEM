@@ -79,6 +79,81 @@ final class LoginAuthSnapshotCacheTest extends TestCase
         self::assertSame('miss', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11)['snapshot_status']);
     }
 
+    public function test_warm_user_snapshot_result_accepts_prewarmed_profile_snapshot(): void
+    {
+        $profileResult = CBT_Student_Profile_Cache::warm_snapshot_result(11);
+        self::assertTrue($profileResult['ready']);
+
+        $result = CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot_result(
+            11,
+            'preflight',
+            $profileResult['snapshot']
+        );
+
+        self::assertTrue($result['ready']);
+        self::assertTrue($result['write_success']);
+        self::assertSame('ready', $result['reason']);
+        self::assertSame('XI-A', $result['snapshot']['kode_kelas']);
+        self::assertSame('20260011', $result['snapshot']['nisn']);
+    }
+
+    public function test_warm_user_snapshot_results_batches_profile_reuse_and_pipeline_write(): void
+    {
+        $profileResults = CBT_Student_Profile_Cache::warm_snapshot_results([11, 12]);
+        $GLOBALS['cbt_test_redis_pipeline_batches'] = [];
+        $results = CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot_results(
+            [11, 12],
+            'preflight',
+            [
+                11 => $profileResults[11]['snapshot'],
+                12 => array_merge($profileResults[12]['snapshot'], ['kode_kelas' => 'PREWARM-XI-A']),
+            ]
+        );
+
+        self::assertTrue($results[11]['ready']);
+        self::assertTrue($results[12]['ready']);
+        self::assertSame('PREWARM-XI-A', $results[12]['snapshot']['kode_kelas']);
+        self::assertCount(1, (array) ($GLOBALS['cbt_test_redis_pipeline_batches'] ?? []));
+        self::assertNotNull(CBT_Login_Auth_Snapshot_Cache::get_snapshot_by_identifier('bimo@student.sch.id'));
+    }
+
+    public function test_warm_user_snapshot_results_marks_only_failed_user_when_index_write_breaks(): void
+    {
+        $GLOBALS['cbt_test_redis_fail_keys'] = ['cbt_login_auth:index:login:bimo'];
+
+        $results = CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot_results([11, 12], 'preflight');
+
+        self::assertTrue($results[11]['ready']);
+        self::assertFalse($results[12]['ready']);
+        self::assertSame('write_failed', $results[12]['reason']);
+        self::assertSame('ready', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11)['snapshot_status']);
+        self::assertSame('miss', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(12)['snapshot_status']);
+    }
+
+    public function test_clear_user_snapshots_for_rewrite_only_touches_requested_users(): void
+    {
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot_results([11, 12], 'preflight');
+
+        $deleted = CBT_Login_Auth_Snapshot_Cache::clear_user_snapshots_for_rewrite([11]);
+
+        self::assertGreaterThan(0, $deleted);
+        self::assertSame('miss', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11)['snapshot_status']);
+        self::assertSame('ready', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(12)['snapshot_status']);
+    }
+
+    public function test_warm_user_snapshot_result_reports_ineligible_or_unavailable_states(): void
+    {
+        $teacherResult = CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot_result(21, 'manual');
+        self::assertFalse($teacherResult['ready']);
+        self::assertSame('ineligible_user', $teacherResult['reason']);
+
+        $this->useUnavailableLoginSnapshotRedis();
+        $studentResult = CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot_result(11, 'manual');
+        self::assertFalse($studentResult['ready']);
+        self::assertSame('redis_unavailable', $studentResult['reason']);
+        self::assertSame('XI-A', $studentResult['snapshot']['kode_kelas']);
+    }
+
     public function test_warm_and_clear_exam_target_snapshots_only_touch_target_students(): void
     {
         $result = CBT_Login_Auth_Snapshot_Cache::warm_exam_target_snapshots([
@@ -189,5 +264,22 @@ final class LoginAuthSnapshotCacheTest extends TestCase
         $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, '');
+    }
+
+    private function useUnavailableLoginSnapshotRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Login_Auth_Snapshot_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, false);
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, 'disabled in test');
     }
 }

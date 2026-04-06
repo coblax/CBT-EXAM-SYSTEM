@@ -906,6 +906,21 @@
                     data-cbt-snapshot-tab="<?php echo esc_attr((string) ($exam_snapshot_tab ?? CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT)); ?>"
                     data-cbt-snapshot-auto-refresh-seconds="<?php echo esc_attr(((string) ($exam_snapshot_tab ?? CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT)) === CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT ? '10' : '0'); ?>"
                 >
+                    <div id="cbt-exam-clean-progress-overlay" class="cbt-exam-save-progress-overlay cbt-exam-clean-progress-overlay" hidden aria-hidden="true" style="display:none;">
+                        <div class="cbt-exam-save-progress-card cbt-exam-clean-progress-card">
+                            <h3 id="cbt-exam-clean-progress-title">Membersihkan Snapshot Pra Ujian</h3>
+                            <p id="cbt-exam-clean-progress-message">Menyiapkan proses clean snapshot untuk exam terpilih.</p>
+                            <div class="cbt-exam-save-progress-meta">
+                                <span id="cbt-exam-clean-progress-phase">Menyiapkan proses</span>
+                                <span id="cbt-exam-clean-progress-stats"></span>
+                            </div>
+                            <div class="cbt-exam-save-progress-bar" aria-hidden="true">
+                                <div id="cbt-exam-clean-progress-fill" class="cbt-exam-save-progress-fill cbt-exam-clean-progress-fill"></div>
+                            </div>
+                            <div id="cbt-exam-clean-progress-percent" class="cbt-exam-save-progress-percent">0%</div>
+                            <p class="description cbt-exam-save-progress-help">Jawaban, nilai, attempt, dan sesi login tetap aman. Jangan tutup halaman ini selama proses clean berjalan.</p>
+                        </div>
+                    </div>
                     <?php CBT_Admin_Exams_Page::render_snapshot_panel([
                         'subjects' => $subjects,
                         'exam_status_labels' => $exam_status_labels,
@@ -2400,6 +2415,9 @@
                 }
                 .cbt-exam-save-progress-help {
                     margin-top: 8px;
+                }
+                .cbt-exam-clean-progress-fill {
+                    background: linear-gradient(90deg, #166534 0%, #15803d 100%);
                 }
                 .cbt-exam-question-shell {
                     margin-top: 12px;
@@ -4168,6 +4186,13 @@
                 const saveProgressStats = document.getElementById('cbt-exam-save-progress-stats');
                 const saveProgressFill = document.getElementById('cbt-exam-save-progress-fill');
                 const saveProgressPercent = document.getElementById('cbt-exam-save-progress-percent');
+                const cleanProgressOverlay = document.getElementById('cbt-exam-clean-progress-overlay');
+                const cleanProgressTitle = document.getElementById('cbt-exam-clean-progress-title');
+                const cleanProgressMessage = document.getElementById('cbt-exam-clean-progress-message');
+                const cleanProgressPhase = document.getElementById('cbt-exam-clean-progress-phase');
+                const cleanProgressStats = document.getElementById('cbt-exam-clean-progress-stats');
+                const cleanProgressFill = document.getElementById('cbt-exam-clean-progress-fill');
+                const cleanProgressPercent = document.getElementById('cbt-exam-clean-progress-percent');
                 const selectedSidebarList = document.getElementById('cbt-exam-selected-sidebar-list');
                 const selectedSidebarTotal = document.getElementById('cbt-exam-selected-total');
                 const selectedSidebarAdded = document.getElementById('cbt-exam-selected-added');
@@ -4183,9 +4208,11 @@
                 const ajaxNonce = ajaxNonceInput ? String(ajaxNonceInput.value || '') : '';
                 let isFinalFormSubmit = false;
                 let isExamSaveRunning = false;
+                let isSnapshotCleanRunning = false;
                 let examListFilterTimer = null;
                 let examSnapshotFilterTimer = null;
                 let snapshotAutoRefreshTimer = null;
+                let snapshotCleanProgressTimer = null;
                 let isPageNavigating = false;
                 let questionFilterTimer = 0;
                 let questionCatalogRequestSeq = 0;
@@ -4201,6 +4228,13 @@
                     if (snapshotAutoRefreshTimer) {
                         window.clearTimeout(snapshotAutoRefreshTimer);
                         snapshotAutoRefreshTimer = null;
+                    }
+                }
+
+                function clearSnapshotCleanProgressTimer() {
+                    if (snapshotCleanProgressTimer) {
+                        window.clearInterval(snapshotCleanProgressTimer);
+                        snapshotCleanProgressTimer = null;
                     }
                 }
 
@@ -4554,6 +4588,7 @@
                 window.addEventListener('beforeunload', () => {
                     isPageNavigating = true;
                     clearSnapshotAutoRefreshTimer();
+                    clearSnapshotCleanProgressTimer();
                 });
 
                 document.addEventListener('visibilitychange', () => {
@@ -5441,6 +5476,18 @@
 
                 toggleExamSaveOverlay(false);
 
+                function toggleSnapshotCleanOverlay(isVisible) {
+                    if (!cleanProgressOverlay) {
+                        return;
+                    }
+
+                    cleanProgressOverlay.hidden = !isVisible;
+                    cleanProgressOverlay.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+                    cleanProgressOverlay.style.display = isVisible ? 'flex' : 'none';
+                }
+
+                toggleSnapshotCleanOverlay(false);
+
                 function navigateBuilderPanel(targetId) {
                     const normalizedTargetId = String(targetId || '');
                     if (normalizedTargetId === '') {
@@ -5506,6 +5553,117 @@
                     if (saveProgressPercent) {
                         saveProgressPercent.textContent = `${Math.round(percentValue)}%`;
                     }
+                }
+
+                function updateSnapshotCleanProgressUi(payload) {
+                    const progressData = payload && typeof payload === 'object' ? payload : {};
+                    const titleText = typeof progressData.title === 'string' && progressData.title !== ''
+                        ? progressData.title
+                        : 'Membersihkan Snapshot Pra Ujian';
+                    const messageText = typeof progressData.message === 'string' && progressData.message !== ''
+                        ? progressData.message
+                        : 'Menyiapkan proses clean snapshot untuk exam terpilih.';
+                    const phaseText = typeof progressData.phase === 'string' && progressData.phase !== ''
+                        ? progressData.phase
+                        : 'Menyiapkan proses';
+                    const statsText = typeof progressData.stats === 'string' ? progressData.stats : '';
+                    const percentValue = Number.isFinite(Number(progressData.percent)) ? Math.max(0, Math.min(100, Number(progressData.percent))) : 0;
+
+                    if (cleanProgressTitle) {
+                        cleanProgressTitle.textContent = titleText;
+                    }
+                    if (cleanProgressMessage) {
+                        cleanProgressMessage.textContent = messageText;
+                    }
+                    if (cleanProgressPhase) {
+                        cleanProgressPhase.textContent = phaseText;
+                    }
+                    if (cleanProgressStats) {
+                        cleanProgressStats.textContent = statsText;
+                    }
+                    if (cleanProgressFill) {
+                        cleanProgressFill.style.width = `${percentValue}%`;
+                    }
+                    if (cleanProgressPercent) {
+                        cleanProgressPercent.textContent = `${Math.round(percentValue)}%`;
+                    }
+                }
+
+                function startSnapshotCleanProgress(formElement) {
+                    if (!formElement || !cleanProgressOverlay) {
+                        return;
+                    }
+
+                    clearSnapshotCleanProgressTimer();
+                    isSnapshotCleanRunning = true;
+                    isPageNavigating = true;
+                    clearSnapshotAutoRefreshTimer();
+
+                    const examTitle = String(formElement.getAttribute('data-cbt-clean-exam-title') || '').trim() || 'Exam terpilih';
+                    const targetCountValue = Number.parseInt(String(formElement.getAttribute('data-cbt-clean-target-count') || '0'), 10);
+                    const targetCount = Number.isInteger(targetCountValue) ? Math.max(0, targetCountValue) : 0;
+                    const statsLabel = targetCount > 0
+                        ? `${targetCount} siswa target · clean only`
+                        : 'Target siswa mengikuti konfigurasi exam';
+                    const steps = [
+                        {
+                            percent: 8,
+                            phase: 'Menyiapkan clean',
+                            message: `Memvalidasi exam dan memastikan clean aman untuk ${examTitle}.`,
+                        },
+                        {
+                            percent: 24,
+                            phase: 'Menghentikan proses warm',
+                            message: 'Menghentikan one-click atau auto-warm yang masih aktif untuk exam ini sebelum snapshot dibersihkan.',
+                        },
+                        {
+                            percent: 48,
+                            phase: 'Membersihkan snapshot exam',
+                            message: 'Menghapus Snapshot Soal, Start Snapshot, dan Submission Context untuk exam terpilih.',
+                        },
+                        {
+                            percent: 74,
+                            phase: 'Membersihkan snapshot siswa',
+                            message: 'Menghapus Snapshot Profil dan Login untuk siswa target exam ini.',
+                        },
+                        {
+                            percent: 92,
+                            phase: 'Membersihkan availability',
+                            message: 'Menghapus prepared dan minute snapshot availability untuk siswa target exam ini.',
+                        },
+                    ];
+
+                    toggleSnapshotCleanOverlay(true);
+                    updateSnapshotCleanProgressUi({
+                        title: 'Membersihkan Snapshot Pra Ujian',
+                        message: steps[0].message,
+                        phase: steps[0].phase,
+                        percent: steps[0].percent,
+                        stats: statsLabel,
+                    });
+
+                    const submitButton = formElement.querySelector('button[type="submit"]');
+                    if (submitButton) {
+                        submitButton.disabled = true;
+                    }
+
+                    let stepIndex = 0;
+                    snapshotCleanProgressTimer = window.setInterval(() => {
+                        if (stepIndex >= steps.length - 1) {
+                            clearSnapshotCleanProgressTimer();
+                            return;
+                        }
+
+                        stepIndex += 1;
+                        const step = steps[stepIndex];
+                        updateSnapshotCleanProgressUi({
+                            title: 'Membersihkan Snapshot Pra Ujian',
+                            message: step.message,
+                            phase: step.phase,
+                            percent: step.percent,
+                            stats: statsLabel,
+                        });
+                    }, 720);
                 }
 
                 function fallbackSubmitExamForm() {
@@ -6362,6 +6520,16 @@
                         });
                     });
                 }
+
+                Array.from(document.querySelectorAll('[data-cbt-preflight-clean-form="1"]')).forEach((cleanForm) => {
+                    cleanForm.addEventListener('submit', (event) => {
+                        if (event.defaultPrevented || isSnapshotCleanRunning) {
+                            return;
+                        }
+
+                        startSnapshotCleanProgress(cleanForm);
+                    });
+                });
 
                 if (cancelEditLink) {
                     cancelEditLink.addEventListener('click', (event) => {

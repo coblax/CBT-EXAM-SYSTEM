@@ -8,6 +8,10 @@ if (!class_exists('CBT_Cache')) {
     require_once __DIR__ . '/class-cbt-cache.php';
 }
 
+if (!class_exists('CBT_Redis_Pipeline_Helper')) {
+    require_once __DIR__ . '/class-cbt-redis-pipeline-helper.php';
+}
+
 class CBT_Exam_Availability_Cache
 {
     private const SNAPSHOT_REDIS_TTL_SECONDS = 44100;
@@ -93,12 +97,35 @@ class CBT_Exam_Availability_Cache
 
         $payload = $producer();
         $snapshot = self::sanitize_payload(is_array($payload) ? $payload : []);
-        $redis = self::snapshot_redis();
-        if ($redis instanceof Redis) {
-            self::write_student_redis_snapshot($user_id, $snapshot, self::SNAPSHOT_SOURCE_PREPARED);
-        }
+        self::write_prepared_student_snapshot($user_id, $snapshot);
 
         return $snapshot;
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     */
+    public static function write_prepared_student_snapshot(int $user_id, array $payload): bool
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return false;
+        }
+
+        $results = self::write_prepared_student_snapshots([
+            $user_id => $payload,
+        ]);
+
+        return !empty($results[$user_id]);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $payloads_by_user
+     * @return array<int,bool>
+     */
+    public static function write_prepared_student_snapshots(array $payloads_by_user): array
+    {
+        return self::write_student_redis_snapshots($payloads_by_user, self::SNAPSHOT_SOURCE_PREPARED);
     }
 
     public static function has_current_prepared_snapshot(int $user_id): bool
@@ -294,27 +321,83 @@ class CBT_Exam_Availability_Cache
     /**
      * @param array{items:array<int,array<string,mixed>>,current_user:array<string,mixed>|null} $snapshot
      */
-    private static function write_student_redis_snapshot(int $user_id, array $snapshot, string $source = self::SNAPSHOT_SOURCE_MINUTE): void
+    private static function write_student_redis_snapshot(int $user_id, array $snapshot, string $source = self::SNAPSHOT_SOURCE_MINUTE): bool
     {
-        $user_id = absint($user_id);
-        if ($user_id <= 0) {
-            return;
+        $results = self::write_student_redis_snapshots([
+            $user_id => $snapshot,
+        ], $source);
+
+        return !empty($results[$user_id]);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $payloads_by_user
+     * @return array<int,bool>
+     */
+    private static function write_student_redis_snapshots(array $payloads_by_user, string $source = self::SNAPSHOT_SOURCE_MINUTE): array
+    {
+        $results = [];
+        $operations = [];
+        $operation_user_ids = [];
+
+        foreach ($payloads_by_user as $user_id => $payload) {
+            $user_id = absint($user_id);
+            if ($user_id <= 0) {
+                continue;
+            }
+
+            $results[$user_id] = false;
+            $operation = self::prepare_student_snapshot_write($user_id, is_array($payload) ? $payload : [], $source);
+            if (!is_array($operation)) {
+                continue;
+            }
+
+            $operations[] = $operation;
+            $operation_user_ids[] = $user_id;
+        }
+
+        if (empty($operations)) {
+            return $results;
         }
 
         $redis = self::snapshot_redis();
         if (!$redis instanceof Redis) {
-            return;
+            return $results;
+        }
+
+        $write_results = CBT_Redis_Pipeline_Helper::write_setex_results($redis, $operations);
+        foreach ($operation_user_ids as $index => $operation_user_id) {
+            $results[$operation_user_id] = !empty($write_results[$index]);
+        }
+
+        return $results;
+    }
+
+    /**
+     * @param array<string,mixed> $snapshot
+     * @return array{key:string,ttl:int,value:string}|null
+     */
+    private static function prepare_student_snapshot_write(int $user_id, array $snapshot, string $source = self::SNAPSHOT_SOURCE_MINUTE): ?array
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return null;
         }
 
         $encoded = wp_json_encode(self::sanitize_payload($snapshot));
         if (!is_string($encoded) || $encoded === '') {
-            return;
+            return null;
         }
 
         $storage_key = $source === self::SNAPSHOT_SOURCE_PREPARED
             ? self::prepared_snapshot_storage_key($user_id)
             : self::snapshot_storage_key($user_id);
-        $redis->setEx($storage_key, self::SNAPSHOT_REDIS_TTL_SECONDS, $encoded);
+
+        return [
+            'key' => $storage_key,
+            'ttl' => self::SNAPSHOT_REDIS_TTL_SECONDS,
+            'value' => $encoded,
+        ];
     }
 
     /**

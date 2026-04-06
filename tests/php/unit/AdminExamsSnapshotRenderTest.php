@@ -19,10 +19,14 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Monitor Snapshot Soal', $html);
         self::assertStringContainsString('Monitor Snapshot Start', $html);
         self::assertStringContainsString('Monitor Snapshot Submit', $html);
+        self::assertStringContainsString('Monitor Session Runtime', $html);
         self::assertStringContainsString('Monitor Snapshot Exam', $html);
         self::assertStringContainsString('Monitor Snapshot Profile', $html);
         self::assertStringContainsString('Monitor Snapshot Login', $html);
         self::assertStringContainsString('Jalankan One-Click Pra Ujian', $html);
+        self::assertStringContainsString('Bersihkan Semua Snapshot', $html);
+        self::assertStringContainsString('data-cbt-preflight-clean-form="1"', $html);
+        self::assertStringContainsString('data-cbt-clean-target-count="18"', $html);
         self::assertStringContainsString('Siswa Bermasalah', $html);
         self::assertStringContainsString('Auto-Warm Availability', $html);
         self::assertStringContainsString('Login Snapshot', $html);
@@ -34,14 +38,17 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Token MANUAL', $html);
         self::assertStringContainsString('Siap 8/8 · Belum 0', $html);
         self::assertStringContainsString('Total 8 soal · Cache Siap · Warm Siap', $html);
-        self::assertStringContainsString('Siap 12/18 · Belum 2', $html);
-        self::assertStringContainsString('Diproses 13 · Gagal 1 · MISS 2', $html);
-        self::assertStringContainsString('Siap 11/18 · Belum 7', $html);
-        self::assertStringContainsString('Target 18 · MISS 7 · Gagal 2', $html);
+        self::assertStringContainsString('Siap 12/18 · Pending 6', $html);
+        self::assertStringContainsString('Reuse 4 · Gagal 1 · Diproses 13', $html);
+        self::assertStringContainsString('Siap 11/18 · Pending 7', $html);
+        self::assertStringContainsString('Reuse 3 · Gagal 2 · Diproses 13', $html);
         self::assertStringContainsString('Siap 8/8 · Belum 0', $html);
         self::assertStringContainsString('Total 8 soal · INVALID 0', $html);
-        self::assertStringContainsString('Siap 16/18 · Belum 2', $html);
-        self::assertStringContainsString('READY 9 · AUTO 7 · MISS 2', $html);
+        self::assertStringContainsString('Siap 9/18 · Pending 2', $html);
+        self::assertStringContainsString('Reuse 7 · Gagal 0 · Queue 1', $html);
+        self::assertStringContainsString('Global Runner Owner:', $html);
+        self::assertStringContainsString('Layer Global Aktif:', $html);
+        self::assertStringContainsString('Queued Exams:', $html);
         self::assertStringContainsString('diperbarui otomatis setiap 10 detik', $html);
         self::assertStringNotContainsString('Ringkasan Profil', $html);
         self::assertStringNotContainsString('Ringkasan Availability', $html);
@@ -95,6 +102,27 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Q#901', $html);
         self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="submission_context_monitor"', $html);
         self::assertStringNotContainsString('Snapshot ini memuat katalog exam siswa yang tersedia, bukan snapshot satu exam tunggal.', $html);
+    }
+
+    public function test_render_snapshot_panel_renders_session_runtime_monitor_tab(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_SESSION_RUNTIME_MONITOR,
+        ]));
+
+        self::assertStringContainsString('Monitor Session Runtime', $html);
+        self::assertStringContainsString('Pantau attempt siswa yang sedang `in_progress`', $html);
+        self::assertStringContainsString('Attempt Aktif', $html);
+        self::assertStringContainsString('Redis-First', $html);
+        self::assertStringContainsString('Legacy Fallback', $html);
+        self::assertStringContainsString('<th>Session Snapshot</th>', $html);
+        self::assertStringContainsString('<th>Contract Snapshot</th>', $html);
+        self::assertStringContainsString('<th>Delivery Snapshot</th>', $html);
+        self::assertStringContainsString('<th>Runtime Answers</th>', $html);
+        self::assertStringContainsString('LEGACY delivery', $html);
+        self::assertStringContainsString('cbt_attempt_session:attempt:501', $html);
+        self::assertStringContainsString('cbt_attempt_contract:attempt:501', $html);
+        self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="session_runtime_monitor"', $html);
     }
 
     public function test_render_snapshot_panel_renders_exam_monitor_tab(): void
@@ -452,10 +480,18 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                         'profile_success_count' => 12,
                         'profile_failure_count' => 1,
                         'profile_processed_count' => 13,
+                        'profiles_reuse_count' => 4,
+                        'profiles_pending_count' => 6,
                         'login_snapshot_success_count' => 11,
                         'login_snapshot_failure_count' => 2,
                         'login_snapshot_ready_count' => 11,
                         'login_snapshot_missing_count' => 7,
+                        'login_reuse_count' => 3,
+                        'login_pending_count' => 7,
+                        'availability_ready_count' => 9,
+                        'availability_reuse_count' => 7,
+                        'availability_pending_count' => 2,
+                        'availability_failure_count' => 0,
                         'submission_context_question_count' => 8,
                         'submission_context_ready_count' => 8,
                         'submission_context_missing_count' => 0,
@@ -490,6 +526,57 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                         'blocking_exam_title' => '',
                         'blocking_auto_warm_exam_id' => 0,
                         'blocking_auto_warm_exam_title' => '',
+                        'queue_position' => 0,
+                        'queue_total' => 1,
+                        'global_runner_exam_id' => 77,
+                        'global_runner_exam_title' => 'Ujian Matematika',
+                        'active_global_layer' => 'login',
+                        'queued_exam_titles' => ['Ujian Biologi'],
+                    ],
+                    'session_runtime' => [
+                        'attempt_total' => 1,
+                        'rows' => [
+                            [
+                                'attempt_id' => 501,
+                                'student_id' => 71,
+                                'display_name' => 'Salsa',
+                                'user_login' => 'salsa',
+                                'kode_kelas' => 'XI-A',
+                                'kode_ruang' => 'R1',
+                                'status' => 'in_progress',
+                                'session_status_label' => 'READY',
+                                'session_status_tone' => 'success',
+                                'session_snapshot' => [
+                                    'storage_key' => 'cbt_attempt_session:attempt:501',
+                                    'snapshot_exists' => true,
+                                    'snapshot_valid' => true,
+                                    'question_count' => 8,
+                                    'question_order_signature' => 'runtime-sig-501',
+                                ],
+                                'contract_status_label' => 'READY',
+                                'contract_status_tone' => 'success',
+                                'contract_snapshot' => [
+                                    'storage_key' => 'cbt_attempt_contract:attempt:501',
+                                    'snapshot_exists' => true,
+                                    'snapshot_valid' => true,
+                                    'question_count' => 8,
+                                    'question_order_signature' => 'runtime-sig-501',
+                                ],
+                                'delivery_status_label' => 'MISS',
+                                'delivery_status_tone' => 'warning',
+                                'delivery_snapshot' => [
+                                    'storage_key' => 'cbt_exam_delivery:exam:77:rev:4',
+                                    'snapshot_exists' => false,
+                                    'snapshot_valid' => false,
+                                    'snapshot_item_count' => 8,
+                                ],
+                                'runtime_answers_status_label' => 'READY',
+                                'runtime_answers_status_tone' => 'success',
+                                'last_seen_at' => '2026-04-04 07:41:09',
+                                'remaining_label' => '00:42:11',
+                                'fallback_mode' => 'LEGACY delivery',
+                            ],
+                        ],
                     ],
                 ],
             ],

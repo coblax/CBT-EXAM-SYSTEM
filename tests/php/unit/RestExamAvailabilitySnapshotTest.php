@@ -213,6 +213,106 @@ final class RestExamAvailabilitySnapshotTest extends TestCase
         self::assertSame('', $response['items'][0]['latest_attempt_finished_at']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_build_batch_student_exam_availability_snapshot_payloads_reuses_shared_queries_for_multiple_students(): void
+    {
+        $this->bootstrapRestSnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->setExamAvailabilityRedisUnavailable();
+
+        cbt_test_register_user([
+            'ID' => 8,
+            'display_name' => 'Bagus',
+            'roles' => ['student'],
+            'user_email' => 'bagus@example.com',
+            'user_login' => 'bagus',
+            'user_pass' => 'secret',
+        ]);
+        update_user_meta(8, 'kode_kelas', 'XI-B');
+        update_user_meta(8, 'kode_ruang', 'R2');
+        update_user_meta(8, 'agama', 'Islam');
+        update_user_meta(8, 'foto', 'https://example.com/bagus.jpg');
+
+        $fakeWpdb = new RestExamAvailabilitySnapshotFakeWpdb();
+        $fakeWpdb->attemptRows = [
+            [
+                'student_id' => 7,
+                'exam_id' => 15,
+                'id' => 88,
+                'status' => 'in_progress',
+                'score' => 0,
+                'max_score' => 100,
+                'started_at' => '2026-03-24 11:00:00',
+                'finished_at' => '',
+            ],
+            [
+                'student_id' => 8,
+                'exam_id' => 15,
+                'id' => 77,
+                'status' => 'completed',
+                'score' => 80,
+                'max_score' => 100,
+                'started_at' => '2026-03-24 09:00:00',
+                'finished_at' => '2026-03-24 10:15:00',
+            ],
+        ];
+
+        global $wpdb;
+        $wpdb = $fakeWpdb;
+
+        $payloads = CBT_REST::build_batch_student_exam_availability_snapshot_payloads([7, 8]);
+
+        self::assertCount(2, $payloads);
+        self::assertSame(1, $wpdb->examQueryCount);
+        self::assertSame(1, $wpdb->latestAttemptQueryCount);
+        self::assertSame(88, $payloads[7]['items'][0]['latest_attempt_id']);
+        self::assertSame('in_progress', $payloads[7]['items'][0]['latest_attempt_status']);
+        self::assertSame(8, $payloads[8]['current_user']['user_id']);
+        self::assertSame('XI-B', $payloads[8]['current_user']['kode_kelas']);
+        self::assertSame(77, $payloads[8]['items'][0]['latest_attempt_id']);
+        self::assertSame('completed', $payloads[8]['items'][0]['latest_attempt_status']);
+        self::assertSame('class_mismatch', $payloads[8]['items'][0]['availability_reason']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_build_batch_student_exam_availability_snapshot_payloads_reuses_base_catalog_between_calls(): void
+    {
+        $this->bootstrapRestSnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->setExamAvailabilityRedisUnavailable();
+
+        $fakeWpdb = new RestExamAvailabilitySnapshotFakeWpdb();
+        global $wpdb;
+        $wpdb = $fakeWpdb;
+
+        $first = CBT_REST::build_batch_student_exam_availability_snapshot_payloads([7]);
+        $second = CBT_REST::build_batch_student_exam_availability_snapshot_payloads([7]);
+
+        self::assertCount(1, $first);
+        self::assertCount(1, $second);
+        self::assertSame(1, $wpdb->examQueryCount);
+        self::assertSame(2, $wpdb->latestAttemptQueryCount);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_build_batch_student_exam_availability_snapshot_payloads_refreshes_base_catalog_after_catalog_invalidation(): void
+    {
+        $this->bootstrapRestSnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->setExamAvailabilityRedisUnavailable();
+
+        $fakeWpdb = new RestExamAvailabilitySnapshotFakeWpdb();
+        global $wpdb;
+        $wpdb = $fakeWpdb;
+
+        CBT_REST::build_batch_student_exam_availability_snapshot_payloads([7]);
+        CBT_Cache::invalidate_catalog();
+        CBT_REST::build_batch_student_exam_availability_snapshot_payloads([7]);
+
+        self::assertSame(2, $wpdb->examQueryCount);
+        self::assertSame(2, $wpdb->latestAttemptQueryCount);
+    }
+
     private function bootstrapRestSnapshotScaffold(): void
     {
         if (!class_exists('CBT_Auth')) {
@@ -316,6 +416,7 @@ final class RestExamAvailabilitySnapshotFakeWpdb
     /** @var array<int,array<string,mixed>> */
     public array $attemptRows = [
         [
+            'student_id' => 7,
             'exam_id' => 15,
             'id' => 88,
             'status' => 'in_progress',

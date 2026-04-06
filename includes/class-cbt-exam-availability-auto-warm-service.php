@@ -26,6 +26,8 @@ final class CBT_Exam_Availability_Auto_Warm_Service
     private const STATUS_STOPPED = 'stopped';
     private const WINDOW_SECONDS = 1800;
     private const BATCH_SIZE = 50;
+    private const INITIAL_BURST_SECONDS = 2.0;
+    private const INITIAL_BURST_MAX_BATCHES = 8;
 
     public static function init(): void
     {
@@ -90,6 +92,7 @@ final class CBT_Exam_Availability_Auto_Warm_Service
         try {
             $exam_id = (int) ($exam_row['id'] ?? 0);
             $state = self::get_state();
+            $is_same_exam_state = !empty($state['active']) && (int) ($state['exam_id'] ?? 0) === $exam_id;
             if (!empty($state['active']) && (int) ($state['exam_id'] ?? 0) > 0 && (int) ($state['exam_id'] ?? 0) !== $exam_id) {
                 return [
                     'success' => false,
@@ -118,7 +121,7 @@ final class CBT_Exam_Availability_Auto_Warm_Service
                 ? (string) $exam_row['title']
                 : ('Exam #' . $exam_id);
 
-            if (!empty($state['active']) && (int) ($state['exam_id'] ?? 0) === $exam_id) {
+            if ($is_same_exam_state) {
                 $state['target_student_ids'] = $target_student_ids;
                 $state['target_student_count'] = count($target_student_ids);
                 $state['exam_title'] = $exam_title;
@@ -152,7 +155,11 @@ final class CBT_Exam_Availability_Auto_Warm_Service
                 ]);
             }
 
-            $state = self::run_batch($state, 'start');
+            if ($is_same_exam_state) {
+                $state = self::run_batch($state, 'resume');
+            } else {
+                $state = self::run_initial_burst($state);
+            }
             self::save_state($state);
             self::ensure_tick_event();
 
@@ -211,6 +218,48 @@ final class CBT_Exam_Availability_Auto_Warm_Service
             return [
                 'success' => true,
                 'message' => (string) ($state['last_message'] ?? 'Auto-warm availability dihentikan.'),
+                'state' => $state,
+            ];
+        } finally {
+            CBT_Cache::release_lock(self::LOCK_KEY);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $exam_row
+     * @return array<string,mixed>
+     */
+    public static function clear_state_for_exam(array $exam_row): array
+    {
+        if (!CBT_Cache::acquire_lock(self::LOCK_KEY, self::LOCK_TTL, [
+            'source' => 'clear_state',
+            'exam_id' => (int) ($exam_row['id'] ?? 0),
+        ])) {
+            return [
+                'success' => false,
+                'message' => 'State auto-warm sedang diproses proses lain. Coba lagi beberapa saat lagi.',
+                'state' => self::get_state(),
+            ];
+        }
+
+        try {
+            $exam_id = (int) ($exam_row['id'] ?? 0);
+            $state = self::get_state();
+            if ($exam_id <= 0 || (int) ($state['exam_id'] ?? 0) !== $exam_id) {
+                return [
+                    'success' => true,
+                    'message' => 'State auto-warm untuk exam ini sudah kosong.',
+                    'state' => $state,
+                ];
+            }
+
+            $state = self::build_state([]);
+            self::save_state($state);
+            self::clear_tick_event();
+
+            return [
+                'success' => true,
+                'message' => 'State auto-warm dibersihkan.',
                 'state' => $state,
             ];
         } finally {
@@ -482,6 +531,7 @@ final class CBT_Exam_Availability_Auto_Warm_Service
         $success_count = 0;
         $failure_count = 0;
         $skip_count = 0;
+        $uncached_user_ids = [];
 
         foreach ($batch_student_ids as $user_id) {
             $user_id = absint($user_id);
@@ -495,30 +545,33 @@ final class CBT_Exam_Availability_Auto_Warm_Service
                     $skip_count++;
                     continue;
                 }
-
-                if (!class_exists('CBT_REST') || !method_exists('CBT_REST', 'build_student_exam_availability_snapshot_payload')) {
-                    throw new RuntimeException('Producer availability snapshot belum tersedia.');
-                }
-
-                CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(
-                    $user_id,
-                    static function () use ($user_id): array {
-                        return CBT_REST::build_student_exam_availability_snapshot_payload($user_id);
-                    }
-                );
-
-                if (CBT_Exam_Availability_Cache::has_current_prepared_snapshot($user_id)) {
-                    $prepared_student_ids[(string) $user_id] = true;
-                    $success_count++;
-                    continue;
-                }
-
-                unset($prepared_student_ids[(string) $user_id]);
-                $failure_count++;
             } catch (Throwable $throwable) {
                 unset($prepared_student_ids[(string) $user_id]);
                 $failure_count++;
+                continue;
             }
+
+            $uncached_user_ids[] = $user_id;
+        }
+
+        $payloads_by_user = self::build_batch_snapshot_payloads($uncached_user_ids);
+        $prepared_payloads = [];
+        foreach ($uncached_user_ids as $user_id) {
+            if (isset($payloads_by_user[$user_id]) && is_array($payloads_by_user[$user_id])) {
+                $prepared_payloads[$user_id] = (array) $payloads_by_user[$user_id];
+            }
+        }
+
+        $write_results = CBT_Exam_Availability_Cache::write_prepared_student_snapshots($prepared_payloads);
+        foreach ($uncached_user_ids as $user_id) {
+            if (!empty($write_results[$user_id])) {
+                $prepared_student_ids[(string) $user_id] = true;
+                $success_count++;
+                continue;
+            }
+
+            unset($prepared_student_ids[(string) $user_id]);
+            $failure_count++;
         }
 
         $next_cursor = $cursor + count($batch_student_ids);
@@ -555,6 +608,81 @@ final class CBT_Exam_Availability_Auto_Warm_Service
         }
 
         return $state;
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private static function run_initial_burst(array $state): array
+    {
+        $deadline = microtime(true) + self::initial_burst_seconds();
+        $max_batches = self::initial_burst_max_batches();
+        $burst_count = 0;
+
+        do {
+            if (empty($state['active'])) {
+                break;
+            }
+
+            $state = self::run_batch($state, 'start');
+            $burst_count++;
+        } while (
+            !empty($state['active'])
+            && $burst_count < $max_batches
+            && microtime(true) < $deadline
+        );
+
+        return $state;
+    }
+
+    /**
+     * @param int[] $user_ids
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_batch_snapshot_payloads(array $user_ids): array
+    {
+        $user_ids = array_values(array_filter(array_map('absint', $user_ids)));
+        if (empty($user_ids) || !class_exists('CBT_REST')) {
+            return [];
+        }
+
+        if (method_exists('CBT_REST', 'build_batch_student_exam_availability_snapshot_payloads')) {
+            $payloads = CBT_REST::build_batch_student_exam_availability_snapshot_payloads($user_ids);
+            return is_array($payloads) ? $payloads : [];
+        }
+
+        if (!method_exists('CBT_REST', 'build_student_exam_availability_snapshot_payload')) {
+            return [];
+        }
+
+        $payloads = [];
+        foreach ($user_ids as $user_id) {
+            $payload = CBT_REST::build_student_exam_availability_snapshot_payload($user_id);
+            if (is_array($payload)) {
+                $payloads[$user_id] = $payload;
+            }
+        }
+
+        return $payloads;
+    }
+
+    private static function initial_burst_seconds(): float
+    {
+        $seconds = isset($GLOBALS['cbt_test_availability_initial_burst_seconds'])
+            ? (float) $GLOBALS['cbt_test_availability_initial_burst_seconds']
+            : self::INITIAL_BURST_SECONDS;
+
+        return max(0.0, $seconds);
+    }
+
+    private static function initial_burst_max_batches(): int
+    {
+        $max_batches = isset($GLOBALS['cbt_test_availability_initial_burst_max_batches'])
+            ? (int) $GLOBALS['cbt_test_availability_initial_burst_max_batches']
+            : self::INITIAL_BURST_MAX_BATCHES;
+
+        return max(1, $max_batches);
     }
 
     /**

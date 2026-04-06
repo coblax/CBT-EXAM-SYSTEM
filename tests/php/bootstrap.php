@@ -421,6 +421,9 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
         $GLOBALS['cbt_test_redis_storage'] = [];
         $GLOBALS['cbt_test_redis_zsets'] = [];
         $GLOBALS['cbt_test_redis_should_fail_connect'] = false;
+        $GLOBALS['cbt_test_redis_pipeline_disabled'] = false;
+        $GLOBALS['cbt_test_redis_pipeline_batches'] = [];
+        $GLOBALS['cbt_test_redis_fail_keys'] = [];
         $GLOBALS['cbt_test_current_time_timestamp'] = 1774353600;
         $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:00:00';
 
@@ -692,6 +695,12 @@ if (!class_exists('Redis')) {
 if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
     class CBT_Test_Redis_Client extends Redis
     {
+        /** @var bool */
+        private $pipeline_active = false;
+
+        /** @var array<int,array{command:string,key:string,ttl:int,value:string}> */
+        private $pipeline_commands = [];
+
         public function connect($host, $port = null, $timeout = null, $retry_interval = null)
         {
             if (!empty($GLOBALS['cbt_test_redis_should_fail_connect'])) {
@@ -726,8 +735,66 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
 
         public function setEx($key, $ttl, $value)
         {
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'setEx',
+                    'key' => (string) $key,
+                    'ttl' => (int) $ttl,
+                    'value' => (string) $value,
+                ];
+
+                return $this;
+            }
+
+            if (in_array((string) $key, (array) ($GLOBALS['cbt_test_redis_fail_keys'] ?? []), true)) {
+                return false;
+            }
+
             $GLOBALS['cbt_test_redis_storage'][(string) $key] = (string) $value;
             return true;
+        }
+
+        public function pipeline()
+        {
+            if (!empty($GLOBALS['cbt_test_redis_pipeline_disabled'])) {
+                throw new RuntimeException('Redis test pipeline disabled.');
+            }
+
+            $this->pipeline_active = true;
+            $this->pipeline_commands = [];
+
+            return $this;
+        }
+
+        public function exec()
+        {
+            if (!$this->pipeline_active) {
+                return false;
+            }
+
+            $commands = $this->pipeline_commands;
+            $this->pipeline_active = false;
+            $this->pipeline_commands = [];
+            $GLOBALS['cbt_test_redis_pipeline_batches'][] = $commands;
+
+            $results = [];
+            foreach ($commands as $command) {
+                if (($command['command'] ?? '') !== 'setEx') {
+                    $results[] = false;
+                    continue;
+                }
+
+                $key = (string) ($command['key'] ?? '');
+                if (in_array($key, (array) ($GLOBALS['cbt_test_redis_fail_keys'] ?? []), true)) {
+                    $results[] = false;
+                    continue;
+                }
+
+                $GLOBALS['cbt_test_redis_storage'][$key] = (string) ($command['value'] ?? '');
+                $results[] = true;
+            }
+
+            return $results;
         }
 
         public function del(...$keys)

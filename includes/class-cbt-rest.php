@@ -20,6 +20,14 @@ if (!class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
     require_once __DIR__ . '/class-cbt-exam-start-attempt-snapshot-cache.php';
 }
 
+if (!class_exists('CBT_Attempt_Question_Contract_Cache')) {
+    require_once __DIR__ . '/class-cbt-attempt-question-contract-cache.php';
+}
+
+if (!class_exists('CBT_Attempt_Session_Snapshot_Cache')) {
+    require_once __DIR__ . '/class-cbt-attempt-session-snapshot-cache.php';
+}
+
 if (!class_exists('CBT_Question_Submission_Context_Cache')) {
     require_once __DIR__ . '/class-cbt-question-submission-context-cache.php';
 }
@@ -39,6 +47,7 @@ if (!class_exists('CBT_Live_Attempt_Roster_Index')) {
 class CBT_REST
 {
     private const PRIORITY_WINDOW_TRANSIENT_KEY = 'cbt_exam_priority_window_until';
+    private const AVAILABILITY_BASE_CATALOG_TTL = 900;
 
     public static function init(): void
     {
@@ -319,12 +328,7 @@ class CBT_REST
             if ($exam_id > 0) {
                 $question_revision = CBT_Cache::get_exam_revision_meta($exam_id);
                 $attempt_status = (string) ($attempt['status'] ?? '');
-                $attempt_timer = ($attempt_status === 'in_progress')
-                    ? self::build_attempt_timer_payload(
-                        $attempt,
-                        (int) ($attempt['exam_duration_minutes'] ?? 0)
-                    )
-                    : null;
+                $attempt_timer = null;
                 $attempt_question_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
                 if ($attempt_status === 'in_progress') {
                     $attempt_table = $wpdb->prefix . 'cbt_attempts';
@@ -340,18 +344,34 @@ class CBT_REST
                     );
 
                     if (is_array($exam)) {
-                        $show_student_result = self::normalize_show_student_result($exam['show_student_result'] ?? 1);
-                        $enable_calculator = self::normalize_enable_calculator($exam['enable_calculator'] ?? 1);
-                        $attempt_sync_meta = self::build_attempt_question_sync_meta(
-                            $attempt,
-                            $exam,
-                            $attempt_table
+                        $attempt_session_snapshot = self::get_cached_attempt_session_snapshot($attempt, $exam, $attempt_table);
+                        $session_duration_minutes = max(
+                            0,
+                            (int) ($attempt_session_snapshot['duration_minutes'] ?? $attempt['exam_duration_minutes'] ?? $exam['duration_minutes'] ?? 0)
                         );
-                        $question_count = (int) ($attempt_sync_meta['question_count'] ?? 0);
-                        $question_order_signature = (string) ($attempt_sync_meta['question_order_signature'] ?? '');
+                        $attempt_timer = self::build_attempt_timer_payload($attempt, $session_duration_minutes);
+                        $show_student_result = self::normalize_show_student_result(
+                            $attempt_session_snapshot['show_student_result'] ?? ($exam['show_student_result'] ?? 1)
+                        );
+                        $enable_calculator = self::normalize_enable_calculator(
+                            $attempt_session_snapshot['enable_calculator'] ?? ($exam['enable_calculator'] ?? 1)
+                        );
+                        $question_count = max(
+                            0,
+                            (int) ($attempt_session_snapshot['question_count'] ?? 0)
+                        );
+                        $question_order_signature = (string) ($attempt_session_snapshot['question_order_signature'] ?? '');
                     } elseif (!empty($attempt_question_order_ids)) {
+                        $attempt_timer = self::build_attempt_timer_payload(
+                            $attempt,
+                            (int) ($attempt['exam_duration_minutes'] ?? 0)
+                        );
                         $question_count = count($attempt_question_order_ids);
                     } else {
+                        $attempt_timer = self::build_attempt_timer_payload(
+                            $attempt,
+                            (int) ($attempt['exam_duration_minutes'] ?? 0)
+                        );
                         $question_table = $wpdb->prefix . 'cbt_questions';
                         $question_count = (int) $wpdb->get_var(
                             $wpdb->prepare(
@@ -457,7 +477,54 @@ class CBT_REST
             ];
         }
 
-        return self::build_exams_payload($user_id, 'student');
+        $batch_payloads = self::build_batch_student_exam_availability_snapshot_payloads([$user_id]);
+        return isset($batch_payloads[$user_id]) && is_array($batch_payloads[$user_id])
+            ? $batch_payloads[$user_id]
+            : [
+                'items' => [],
+                'current_user' => null,
+            ];
+    }
+
+    /**
+     * @param int[] $user_ids
+     * @return array<int,array{items:array<int,array<string,mixed>>,current_user:array<string,mixed>|null}>
+     */
+    public static function build_batch_student_exam_availability_snapshot_payloads(array $user_ids): array
+    {
+        $user_ids = array_values(array_filter(array_unique(array_map('absint', $user_ids))));
+        if (empty($user_ids)) {
+            return [];
+        }
+
+        self::prime_student_availability_user_caches($user_ids);
+
+        $student_now = current_time('mysql');
+        $server_timezone = wp_timezone_string();
+        $exam_rows = self::fetch_published_exam_rows_for_availability();
+        $latest_attempts_by_user = self::fetch_latest_attempts_by_user_and_exam($user_ids);
+        $payloads = [];
+
+        foreach ($user_ids as $user_id) {
+            $profile_snapshot = self::get_live_user_profile($user_id);
+            $student_kelas = self::normalize_kelas_code((string) ($profile_snapshot['kode_kelas'] ?? ''));
+            $latest_attempt_by_exam = isset($latest_attempts_by_user[$user_id]) && is_array($latest_attempts_by_user[$user_id])
+                ? $latest_attempts_by_user[$user_id]
+                : [];
+
+            $payloads[$user_id] = [
+                'items' => self::build_student_exam_availability_items(
+                    $exam_rows,
+                    $student_kelas,
+                    $student_now,
+                    $server_timezone,
+                    $latest_attempt_by_exam
+                ),
+                'current_user' => self::build_student_exam_current_user_payload($user_id, 'student', $profile_snapshot),
+            ];
+        }
+
+        return $payloads;
     }
 
     private static function is_student_role(string $role): bool
@@ -571,6 +638,7 @@ class CBT_REST
             : self::get_cached_exam_question_payload($exam_id);
         $window_mode = ($attempt_id > 0 && $limit > 0);
 
+        $question_manifest = [];
         if (is_array($attempt)) {
             $attempt_snapshot_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
             if (!empty($attempt_snapshot_order_ids)) {
@@ -580,24 +648,72 @@ class CBT_REST
                 }
             }
 
-            $questions = self::append_missing_attempt_questions(
-                $questions,
-                $exam_id,
-                (string) ($attempt['question_order'] ?? '')
-            );
             if ($use_student_delivery_snapshot) {
                 $questions = self::sanitize_question_delivery_payload($questions);
             }
-            $resolved_attempt_payload = self::resolve_attempt_question_payload(
-                $questions,
-                $attempt,
-                $exam,
-                $attempt_table
-            );
-            $questions = $resolved_attempt_payload['questions'];
-            $question_order_ids = $resolved_attempt_payload['question_order_ids'];
-            $question_order_signature = (string) ($resolved_attempt_payload['question_order_signature'] ?? '');
-            $attempt = $resolved_attempt_payload['attempt'];
+
+            $used_contract_snapshot = false;
+            if ($use_student_delivery_snapshot) {
+                $attempt_contract = self::get_cached_attempt_question_contract($attempt, $exam, $questions, $attempt_table);
+                $contract_question_order_ids = array_values(array_filter(array_map('intval', (array) ($attempt_contract['question_order_ids'] ?? [])), static function (int $question_id): bool {
+                    return $question_id > 0;
+                }));
+                if (!empty($contract_question_order_ids)) {
+                    $questions = self::append_missing_questions_by_ids($questions, $exam_id, $contract_question_order_ids);
+                    $questions = self::order_question_payload_by_ids($questions, $contract_question_order_ids);
+                    $contract_option_order_map = self::normalize_attempt_option_order_map($attempt_contract['option_order_map'] ?? []);
+                    if (!empty($contract_option_order_map)) {
+                        $questions = self::apply_attempt_option_order_to_questions($questions, $contract_option_order_map);
+                    }
+                    $contract_question_number_map = self::normalize_attempt_question_number_map(
+                        is_array($attempt_contract['question_number_map'] ?? null)
+                            ? $attempt_contract['question_number_map']
+                            : []
+                    );
+                    if (!empty($contract_question_number_map)) {
+                        $questions = self::apply_question_numbers_to_payload($questions, $contract_question_number_map);
+                    }
+                    $question_order_ids = $contract_question_order_ids;
+                    $question_order_signature = (string) ($attempt_contract['question_order_signature'] ?? '');
+                    $question_manifest = is_array($attempt_contract['question_manifest'] ?? null)
+                        ? array_values(array_filter($attempt_contract['question_manifest'], 'is_array'))
+                        : [];
+                    $attempt['question_order'] = (string) (wp_json_encode($contract_question_order_ids) ?: '[]');
+                    if (!empty($contract_option_order_map)) {
+                        $attempt['option_order'] = self::encode_attempt_option_order_map($contract_option_order_map);
+                    }
+                    if (empty($question_manifest)) {
+                        $question_manifest = self::build_question_manifest($questions);
+                        self::sync_attempt_runtime_snapshots(
+                            $attempt,
+                            $exam,
+                            $question_order_ids,
+                            $contract_question_number_map,
+                            $contract_option_order_map,
+                            $question_manifest
+                        );
+                    }
+                    $used_contract_snapshot = true;
+                }
+            }
+
+            if (!$used_contract_snapshot) {
+                $questions = self::append_missing_attempt_questions(
+                    $questions,
+                    $exam_id,
+                    (string) ($attempt['question_order'] ?? '')
+                );
+                $resolved_attempt_payload = self::resolve_attempt_question_payload(
+                    $questions,
+                    $attempt,
+                    $exam,
+                    $attempt_table
+                );
+                $questions = $resolved_attempt_payload['questions'];
+                $question_order_ids = $resolved_attempt_payload['question_order_ids'];
+                $question_order_signature = (string) ($resolved_attempt_payload['question_order_signature'] ?? '');
+                $attempt = $resolved_attempt_payload['attempt'];
+            }
         } else {
             $questions = self::shuffle_question_payload_if_needed($questions, (int) ($exam['randomize_questions'] ?? 0) === 1);
         }
@@ -610,7 +726,9 @@ class CBT_REST
             is_array($attempt) ? $attempt : null,
             (int) ($exam['duration_minutes'] ?? 0)
         );
-        $question_manifest = self::build_question_manifest($questions);
+        if (empty($question_manifest)) {
+            $question_manifest = self::build_question_manifest($questions);
+        }
         $answered_question_ids = [];
         $existing_answers_map = [];
         $archived_review_items = [];
@@ -727,6 +845,30 @@ class CBT_REST
             ];
         }
 
+        if (class_exists('CBT_Attempt_Question_Contract_Cache')) {
+            $attempt_contract = CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot((int) ($attempt['id'] ?? 0), function () use ($attempt, $exam, $attempt_table): array {
+                $contract = self::build_attempt_runtime_snapshot_contract($attempt, $exam, [], $attempt_table);
+                return array_merge($contract, [
+                    'attempt_id' => (int) ($attempt['id'] ?? 0),
+                    'exam_id' => (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+                    'student_id' => (int) ($attempt['student_id'] ?? 0),
+                    'status' => (string) ($attempt['status'] ?? ''),
+                ]);
+            });
+            $contract_question_order_ids = array_values(array_filter(array_map('intval', (array) ($attempt_contract['question_order_ids'] ?? [])), static function (int $question_id): bool {
+                return $question_id > 0;
+            }));
+            if (!empty($contract_question_order_ids)) {
+                $attempt['question_order'] = (string) (wp_json_encode($contract_question_order_ids) ?: '[]');
+
+                return [
+                    'question_count' => count($contract_question_order_ids),
+                    'question_order_signature' => (string) ($attempt_contract['question_order_signature'] ?? ''),
+                    'attempt' => $attempt,
+                ];
+            }
+        }
+
         $attempt_snapshot_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
         if (!empty($attempt_snapshot_order_ids)) {
             $attempt_snapshot_order_json = wp_json_encode($attempt_snapshot_order_ids);
@@ -794,7 +936,7 @@ class CBT_REST
 
         $exam = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, title, created_by, status, starts_at, ends_at, duration_minutes, randomize_questions, randomize_options, target_kelas
+                "SELECT id, title, created_by, status, starts_at, ends_at, duration_minutes, randomize_questions, randomize_options, show_student_result, enable_calculator, target_kelas
                  FROM {$exam_table}
                  WHERE id = %d",
                 $exam_id
@@ -1022,9 +1164,7 @@ class CBT_REST
             }
 
             $created_attempt_id = (int) $wpdb->insert_id;
-            CBT_Cache::invalidate_user($user_id);
-            CBT_Cache::invalidate_attempt($created_attempt_id);
-            self::ensure_runtime_attempt_state([
+            $created_attempt = [
                 'id' => $created_attempt_id,
                 'exam_id' => $exam_id,
                 'student_id' => $user_id,
@@ -1032,19 +1172,13 @@ class CBT_REST
                 'started_at' => $now,
                 'question_order' => $question_order,
                 'option_order' => $option_order,
-            ], (int) ($exam['duration_minutes'] ?? 0));
-            self::sync_active_attempt_index([
-                'id' => $created_attempt_id,
-                'exam_id' => $exam_id,
-                'student_id' => $user_id,
-                'status' => 'in_progress',
-            ]);
-            self::sync_live_attempt_roster([
-                'id' => $created_attempt_id,
-                'exam_id' => $exam_id,
-                'student_id' => $user_id,
-                'status' => 'in_progress',
-            ], [
+                'extra_time_minutes' => 0,
+            ];
+            CBT_Cache::invalidate_user($user_id);
+            CBT_Cache::invalidate_attempt($created_attempt_id);
+            self::ensure_runtime_attempt_state($created_attempt, (int) ($exam['duration_minutes'] ?? 0));
+            self::sync_active_attempt_index($created_attempt);
+            self::sync_live_attempt_roster($created_attempt, [
                 'teacher_id' => (int) ($exam['created_by'] ?? 0),
                 'exam_title' => (string) ($exam['title'] ?? ''),
             ]);
@@ -1057,6 +1191,14 @@ class CBT_REST
             $question_order_signature = self::build_attempt_question_order_signature(
                 $question_ids,
                 $question_number_map
+            );
+            self::sync_attempt_runtime_snapshots(
+                $created_attempt,
+                $exam,
+                $question_ids,
+                $question_number_map,
+                self::normalize_attempt_option_order_map($option_order),
+                []
             );
 
             return rest_ensure_response([
@@ -1142,6 +1284,20 @@ class CBT_REST
             'teacher_id' => (int) ($exam['created_by'] ?? 0),
             'exam_title' => (string) ($exam['title'] ?? ''),
         ]);
+        $attempt_contract = self::build_attempt_runtime_snapshot_contract(
+            $runtime_attempt,
+            $exam,
+            [],
+            $attempt_table
+        );
+        self::sync_attempt_runtime_snapshots(
+            $runtime_attempt,
+            $exam,
+            (array) ($attempt_contract['question_order_ids'] ?? []),
+            (array) ($attempt_contract['question_number_map'] ?? []),
+            (array) ($attempt_contract['option_order_map'] ?? []),
+            (array) ($attempt_contract['question_manifest'] ?? [])
+        );
 
         $attempt_timer = self::build_attempt_timer_payload([
             'id' => $attempt_id,
@@ -2292,10 +2448,18 @@ class CBT_REST
      */
     private static function build_exams_payload(int $user_id, string $role): array
     {
+        if (self::is_student_role($role)) {
+            $batch_payloads = self::build_batch_student_exam_availability_snapshot_payloads([$user_id]);
+            return isset($batch_payloads[$user_id]) && is_array($batch_payloads[$user_id])
+                ? $batch_payloads[$user_id]
+                : [
+                    'items' => [],
+                    'current_user' => null,
+                ];
+        }
+
         global $wpdb;
 
-        $student_kelas = '';
-        $student_now = '';
         $exam_table = $wpdb->prefix . 'cbt_exams';
         $subject_table = $wpdb->prefix . 'cbt_subjects';
 
@@ -2305,10 +2469,6 @@ class CBT_REST
         if ($role === 'guru' || $role === 'teacher') {
             $where .= ' AND created_by = %d';
             $params[] = $user_id;
-        } elseif ($role === 'siswa' || $role === 'student') {
-            $student_kelas = self::get_live_user_kelas($user_id);
-            $student_now = current_time('mysql');
-            $where .= " AND status = 'published'";
         }
 
                 $sql = "SELECT
@@ -2348,111 +2508,6 @@ class CBT_REST
                 return $item;
             }, (array) $wpdb->get_results($sql, ARRAY_A));
 
-        if ($role === 'siswa' || $role === 'student') {
-            $attempt_table = $wpdb->prefix . 'cbt_attempts';
-            $latest_attempt_rows = $wpdb->get_results(
-                $wpdb->prepare(
-                    "SELECT a.exam_id, a.id, a.status, a.score, a.max_score, a.started_at, a.finished_at
-                     FROM {$attempt_table} a
-                     WHERE a.student_id = %d
-                       AND a.status IN ('in_progress', 'completed')
-                     ORDER BY a.exam_id ASC, FIELD(a.status, 'in_progress', 'completed'), a.id DESC",
-                    $user_id
-                ),
-                ARRAY_A
-            );
-            $latest_attempt_by_exam = [];
-            foreach ((array) $latest_attempt_rows as $attempt_row) {
-                $attempt_row = (array) $attempt_row;
-                $exam_id = (int) ($attempt_row['exam_id'] ?? 0);
-                if ($exam_id > 0 && !isset($latest_attempt_by_exam[$exam_id])) {
-                    $latest_attempt_by_exam[$exam_id] = $attempt_row;
-                }
-            }
-
-            $rows = array_map(static function ($row) use ($student_kelas, $student_now, $latest_attempt_by_exam): array {
-                $item = (array) $row;
-                $now_ts = strtotime($student_now);
-                $start_ts = !empty($item['starts_at']) ? strtotime((string) $item['starts_at']) : false;
-                $end_ts = !empty($item['ends_at']) ? strtotime((string) $item['ends_at']) : false;
-
-                $within_schedule = (
-                    (empty($item['starts_at']) || (string) $item['starts_at'] <= $student_now) &&
-                    (empty($item['ends_at']) || (string) $item['ends_at'] >= $student_now)
-                );
-                $class_allowed = self::exam_allows_student_class($item, $student_kelas);
-
-                $schedule_reason = 'in_range';
-                if ($start_ts !== false && $now_ts !== false && $start_ts > $now_ts) {
-                    $schedule_reason = 'not_started';
-                } elseif ($end_ts !== false && $now_ts !== false && $end_ts < $now_ts) {
-                    $schedule_reason = 'ended';
-                }
-
-                $availability_reason = 'ok';
-                if (!$class_allowed) {
-                    $availability_reason = 'class_mismatch';
-                } elseif (!$within_schedule) {
-                    $availability_reason = $schedule_reason;
-                }
-
-                $item['is_within_schedule'] = $within_schedule ? 1 : 0;
-                $item['is_class_allowed'] = $class_allowed ? 1 : 0;
-                $item['is_available_now'] = ($within_schedule && $class_allowed) ? 1 : 0;
-                $item['availability_reason'] = $availability_reason;
-                $item['server_now'] = $student_now;
-                $item['server_timezone'] = wp_timezone_string();
-
-                $exam_id = (int) ($item['id'] ?? 0);
-                $latest_attempt = ($exam_id > 0 && isset($latest_attempt_by_exam[$exam_id]))
-                    ? (array) $latest_attempt_by_exam[$exam_id]
-                    : null;
-                if ($latest_attempt) {
-                    $show_student_result = self::normalize_show_student_result($item['show_student_result'] ?? 1);
-                    $attempt_score = (float) ($latest_attempt['score'] ?? 0);
-                    $attempt_max_score = (float) ($latest_attempt['max_score'] ?? 0);
-                    $attempt_percentage = $attempt_max_score > 0
-                        ? round(($attempt_score / $attempt_max_score) * 100, 2)
-                        : 0.0;
-                    $attempt_pass_meta = self::build_result_pass_meta($attempt_score, $attempt_max_score, (float) ($item['kkm_percentage'] ?? 75.0));
-                    $item['latest_attempt_id'] = (int) ($latest_attempt['id'] ?? 0);
-                    $item['latest_attempt_status'] = (string) ($latest_attempt['status'] ?? '');
-                    $item['latest_attempt_score'] = $attempt_score;
-                    $item['latest_attempt_max_score'] = $attempt_max_score;
-                    $item['latest_attempt_percentage'] = $attempt_percentage;
-                    $item['latest_attempt_passing_score'] = $attempt_pass_meta['passing_score'];
-                    $item['latest_attempt_is_passed'] = $attempt_pass_meta['is_passed'];
-                    $item['latest_attempt_pass_label'] = $attempt_pass_meta['pass_label'];
-                    $item['latest_attempt_result_tone'] = $attempt_pass_meta['result_tone'];
-                    $item['latest_attempt_started_at'] = (string) ($latest_attempt['started_at'] ?? '');
-                    $item['latest_attempt_finished_at'] = (string) ($latest_attempt['finished_at'] ?? '');
-                    if ($show_student_result !== 1 && (string) ($item['latest_attempt_status'] ?? '') === 'completed') {
-                        $item['latest_attempt_score'] = 0.0;
-                        $item['latest_attempt_max_score'] = 0.0;
-                        $item['latest_attempt_percentage'] = 0.0;
-                        $item['latest_attempt_passing_score'] = 0.0;
-                        $item['latest_attempt_is_passed'] = 0;
-                        $item['latest_attempt_pass_label'] = '';
-                        $item['latest_attempt_result_tone'] = '';
-                    }
-                } else {
-                    $item['latest_attempt_id'] = 0;
-                    $item['latest_attempt_status'] = '';
-                    $item['latest_attempt_score'] = 0.0;
-                    $item['latest_attempt_max_score'] = 0.0;
-                    $item['latest_attempt_percentage'] = 0.0;
-                    $item['latest_attempt_passing_score'] = self::calculate_result_passing_score(0.0, (float) ($item['kkm_percentage'] ?? 75.0));
-                    $item['latest_attempt_is_passed'] = 0;
-                    $item['latest_attempt_pass_label'] = 'TIDAK LULUS';
-                    $item['latest_attempt_result_tone'] = 'fail';
-                    $item['latest_attempt_started_at'] = '';
-                    $item['latest_attempt_finished_at'] = '';
-                }
-
-                return $item;
-            }, (array) $rows);
-        }
-
         $current_user_payload = null;
         $current_user = get_user_by('id', $user_id);
         if ($current_user instanceof WP_User) {
@@ -2488,6 +2543,263 @@ class CBT_REST
     {
         $profile = self::get_live_user_profile($user_id);
         return self::normalize_kelas_code((string) ($profile['kode_kelas'] ?? ''));
+    }
+
+    /**
+     * @param int[] $user_ids
+     */
+    private static function prime_student_availability_user_caches(array $user_ids): void
+    {
+        if (empty($user_ids)) {
+            return;
+        }
+
+        if (function_exists('cache_users')) {
+            cache_users($user_ids);
+        }
+
+        if (function_exists('update_meta_cache')) {
+            update_meta_cache('user', $user_ids);
+        }
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function fetch_published_exam_rows_for_availability(): array
+    {
+        static $request_cache = null;
+        $catalog_entry = CBT_Cache::get_namespace_registry_entry(CBT_Cache::namespace_catalog());
+        $catalog_version = max(1, (int) ($catalog_entry['version'] ?? 1));
+
+        if (
+            is_array($request_cache)
+            && (int) ($request_cache['catalog_version'] ?? 0) === $catalog_version
+            && isset($request_cache['items'])
+            && is_array($request_cache['items'])
+        ) {
+            return $request_cache['items'];
+        }
+
+        $catalog = CBT_Cache::remember(
+            'rest:exams:availability:base_catalog',
+            self::AVAILABILITY_BASE_CATALOG_TTL,
+            [CBT_Cache::namespace_catalog()],
+            static function (): array {
+                global $wpdb;
+
+                $exam_table = $wpdb->prefix . 'cbt_exams';
+                $subject_table = $wpdb->prefix . 'cbt_subjects';
+                $sql = "SELECT
+                            e.id,
+                            e.subject_id,
+                            e.title,
+                            e.duration_minutes,
+                            e.kkm_percentage,
+                            e.total_questions,
+                            e.randomize_questions,
+                            e.show_student_result,
+                            e.enable_calculator,
+                            e.status,
+                            e.starts_at,
+                            e.ends_at,
+                            e.target_kelas,
+                            e.created_by,
+                            e.created_at,
+                            e.updated_at,
+                            s.name AS subject_name,
+                            s.code AS subject_code,
+                            COALESCE(NULLIF(e.total_questions, 0), 0) AS question_count
+                        FROM {$exam_table} e
+                        LEFT JOIN {$subject_table} s ON s.id = e.subject_id
+                        WHERE e.status = 'published'
+                        ORDER BY e.created_at DESC";
+
+                return array_map(static function ($row): array {
+                    $item = (array) $row;
+                    $item['kkm_percentage'] = self::normalize_exam_kkm_percentage((float) ($item['kkm_percentage'] ?? 75.0));
+                    $item['show_student_result'] = self::normalize_show_student_result($item['show_student_result'] ?? 1);
+                    $item['enable_calculator'] = self::normalize_enable_calculator($item['enable_calculator'] ?? 1);
+                    return $item;
+                }, (array) $wpdb->get_results($sql, ARRAY_A));
+            }
+        );
+
+        $request_cache = [
+            'catalog_version' => $catalog_version,
+            'items' => is_array($catalog) ? $catalog : [],
+        ];
+
+        return $request_cache['items'];
+    }
+
+    /**
+     * @param int[] $user_ids
+     * @return array<int,array<int,array<string,mixed>>>
+     */
+    private static function fetch_latest_attempts_by_user_and_exam(array $user_ids): array
+    {
+        global $wpdb;
+
+        $user_ids = array_values(array_filter(array_unique(array_map('absint', $user_ids))));
+        if (empty($user_ids)) {
+            return [];
+        }
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $placeholders = implode(', ', array_fill(0, count($user_ids), '%d'));
+        $query = $wpdb->prepare(
+            "SELECT a.student_id, a.exam_id, a.id, a.status, a.score, a.max_score, a.started_at, a.finished_at
+             FROM {$attempt_table} a
+             WHERE a.student_id IN ({$placeholders})
+               AND a.status IN ('in_progress', 'completed')
+             ORDER BY a.student_id ASC, a.exam_id ASC, FIELD(a.status, 'in_progress', 'completed'), a.id DESC",
+            ...$user_ids
+        );
+        $rows = (array) $wpdb->get_results($query, ARRAY_A);
+        $attempts_by_user = [];
+
+        foreach ($rows as $attempt_row) {
+            $attempt_row = (array) $attempt_row;
+            $student_id = (int) ($attempt_row['student_id'] ?? 0);
+            if ($student_id <= 0 && count($user_ids) === 1) {
+                $student_id = (int) $user_ids[0];
+            }
+
+            $exam_id = (int) ($attempt_row['exam_id'] ?? 0);
+            if ($student_id <= 0 || $exam_id <= 0) {
+                continue;
+            }
+
+            if (!isset($attempts_by_user[$student_id])) {
+                $attempts_by_user[$student_id] = [];
+            }
+
+            if (!isset($attempts_by_user[$student_id][$exam_id])) {
+                $attempts_by_user[$student_id][$exam_id] = $attempt_row;
+            }
+        }
+
+        return $attempts_by_user;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $exam_rows
+     * @param array<int,array<string,mixed>> $latest_attempt_by_exam
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_student_exam_availability_items(
+        array $exam_rows,
+        string $student_kelas,
+        string $student_now,
+        string $server_timezone,
+        array $latest_attempt_by_exam
+    ): array {
+        return array_map(static function ($row) use ($student_kelas, $student_now, $server_timezone, $latest_attempt_by_exam): array {
+            $item = (array) $row;
+            $now_ts = strtotime($student_now);
+            $start_ts = !empty($item['starts_at']) ? strtotime((string) $item['starts_at']) : false;
+            $end_ts = !empty($item['ends_at']) ? strtotime((string) $item['ends_at']) : false;
+
+            $within_schedule = (
+                (empty($item['starts_at']) || (string) $item['starts_at'] <= $student_now) &&
+                (empty($item['ends_at']) || (string) $item['ends_at'] >= $student_now)
+            );
+            $class_allowed = self::exam_allows_student_class($item, $student_kelas);
+
+            $schedule_reason = 'in_range';
+            if ($start_ts !== false && $now_ts !== false && $start_ts > $now_ts) {
+                $schedule_reason = 'not_started';
+            } elseif ($end_ts !== false && $now_ts !== false && $end_ts < $now_ts) {
+                $schedule_reason = 'ended';
+            }
+
+            $availability_reason = 'ok';
+            if (!$class_allowed) {
+                $availability_reason = 'class_mismatch';
+            } elseif (!$within_schedule) {
+                $availability_reason = $schedule_reason;
+            }
+
+            $item['is_within_schedule'] = $within_schedule ? 1 : 0;
+            $item['is_class_allowed'] = $class_allowed ? 1 : 0;
+            $item['is_available_now'] = ($within_schedule && $class_allowed) ? 1 : 0;
+            $item['availability_reason'] = $availability_reason;
+            $item['server_now'] = $student_now;
+            $item['server_timezone'] = $server_timezone;
+
+            $exam_id = (int) ($item['id'] ?? 0);
+            $latest_attempt = ($exam_id > 0 && isset($latest_attempt_by_exam[$exam_id]))
+                ? (array) $latest_attempt_by_exam[$exam_id]
+                : null;
+            if ($latest_attempt) {
+                $show_student_result = self::normalize_show_student_result($item['show_student_result'] ?? 1);
+                $attempt_score = (float) ($latest_attempt['score'] ?? 0);
+                $attempt_max_score = (float) ($latest_attempt['max_score'] ?? 0);
+                $attempt_percentage = $attempt_max_score > 0
+                    ? round(($attempt_score / $attempt_max_score) * 100, 2)
+                    : 0.0;
+                $attempt_pass_meta = self::build_result_pass_meta($attempt_score, $attempt_max_score, (float) ($item['kkm_percentage'] ?? 75.0));
+                $item['latest_attempt_id'] = (int) ($latest_attempt['id'] ?? 0);
+                $item['latest_attempt_status'] = (string) ($latest_attempt['status'] ?? '');
+                $item['latest_attempt_score'] = $attempt_score;
+                $item['latest_attempt_max_score'] = $attempt_max_score;
+                $item['latest_attempt_percentage'] = $attempt_percentage;
+                $item['latest_attempt_passing_score'] = $attempt_pass_meta['passing_score'];
+                $item['latest_attempt_is_passed'] = $attempt_pass_meta['is_passed'];
+                $item['latest_attempt_pass_label'] = $attempt_pass_meta['pass_label'];
+                $item['latest_attempt_result_tone'] = $attempt_pass_meta['result_tone'];
+                $item['latest_attempt_started_at'] = (string) ($latest_attempt['started_at'] ?? '');
+                $item['latest_attempt_finished_at'] = (string) ($latest_attempt['finished_at'] ?? '');
+                if ($show_student_result !== 1 && (string) ($item['latest_attempt_status'] ?? '') === 'completed') {
+                    $item['latest_attempt_score'] = 0.0;
+                    $item['latest_attempt_max_score'] = 0.0;
+                    $item['latest_attempt_percentage'] = 0.0;
+                    $item['latest_attempt_passing_score'] = 0.0;
+                    $item['latest_attempt_is_passed'] = 0;
+                    $item['latest_attempt_pass_label'] = '';
+                    $item['latest_attempt_result_tone'] = '';
+                }
+            } else {
+                $item['latest_attempt_id'] = 0;
+                $item['latest_attempt_status'] = '';
+                $item['latest_attempt_score'] = 0.0;
+                $item['latest_attempt_max_score'] = 0.0;
+                $item['latest_attempt_percentage'] = 0.0;
+                $item['latest_attempt_passing_score'] = self::calculate_result_passing_score(0.0, (float) ($item['kkm_percentage'] ?? 75.0));
+                $item['latest_attempt_is_passed'] = 0;
+                $item['latest_attempt_pass_label'] = 'TIDAK LULUS';
+                $item['latest_attempt_result_tone'] = 'fail';
+                $item['latest_attempt_started_at'] = '';
+                $item['latest_attempt_finished_at'] = '';
+            }
+
+            return $item;
+        }, $exam_rows);
+    }
+
+    /**
+     * @param array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string} $profile_snapshot
+     * @return array<string,mixed>|null
+     */
+    private static function build_student_exam_current_user_payload(int $user_id, string $role, array $profile_snapshot): ?array
+    {
+        $current_user = get_user_by('id', $user_id);
+        if (!($current_user instanceof WP_User)) {
+            return null;
+        }
+
+        return [
+            'user_id' => $user_id,
+            'role' => $role,
+            'display_name' => (string) $current_user->display_name,
+            'username' => (string) $current_user->user_login,
+            'email' => (string) $current_user->user_email,
+            'kode_kelas' => (string) ($profile_snapshot['kode_kelas'] ?? ''),
+            'kode_ruang' => (string) ($profile_snapshot['kode_ruang'] ?? ''),
+            'agama' => (string) ($profile_snapshot['agama'] ?? ''),
+            'foto' => (string) ($profile_snapshot['foto'] ?? ''),
+        ];
     }
 
     /**
@@ -2589,6 +2901,255 @@ class CBT_REST
     }
 
     /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $exam
+     * @param array<int,int> $question_order_ids
+     * @param array<int,int> $question_number_map
+     * @param array<int,array<int,string>> $option_order_map
+     * @param array<int,array<string,mixed>> $question_manifest
+     */
+    private static function sync_attempt_runtime_snapshots(
+        array $attempt,
+        array $exam,
+        array $question_order_ids,
+        array $question_number_map,
+        array $option_order_map,
+        array $question_manifest
+    ): void {
+        $attempt_id = absint($attempt['id'] ?? 0);
+        if ($attempt_id <= 0) {
+            return;
+        }
+
+        $question_order_ids = array_values(array_filter(array_map('intval', $question_order_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        }));
+        $question_number_map = self::normalize_attempt_question_number_map($question_number_map);
+        $option_order_map = self::normalize_attempt_option_order_map($option_order_map);
+        $question_manifest = is_array($question_manifest) ? array_values(array_filter($question_manifest, 'is_array')) : [];
+        $question_order_signature = self::build_attempt_question_order_signature($question_order_ids, $question_number_map);
+
+        if (class_exists('CBT_Attempt_Question_Contract_Cache')) {
+            CBT_Attempt_Question_Contract_Cache::write_attempt_snapshot($attempt_id, [
+                'attempt_id' => $attempt_id,
+                'exam_id' => (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+                'student_id' => (int) ($attempt['student_id'] ?? 0),
+                'status' => (string) ($attempt['status'] ?? 'in_progress'),
+                'question_order_ids' => $question_order_ids,
+                'question_number_map' => $question_number_map,
+                'question_order_signature' => $question_order_signature,
+                'question_manifest' => $question_manifest,
+                'option_order_map' => $option_order_map,
+            ]);
+        }
+
+        if (class_exists('CBT_Attempt_Session_Snapshot_Cache')) {
+            CBT_Attempt_Session_Snapshot_Cache::write_attempt_snapshot($attempt_id, [
+                'attempt_id' => $attempt_id,
+                'exam_id' => (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+                'student_id' => (int) ($attempt['student_id'] ?? 0),
+                'status' => (string) ($attempt['status'] ?? 'in_progress'),
+                'started_at' => (string) ($attempt['started_at'] ?? ''),
+                'duration_minutes' => self::resolve_attempt_duration_minutes(
+                    $attempt,
+                    (int) ($exam['duration_minutes'] ?? 0)
+                ),
+                'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? 0)),
+                'question_count' => count($question_order_ids),
+                'question_order_signature' => $question_order_signature,
+                'show_student_result' => self::normalize_show_student_result($exam['show_student_result'] ?? 1),
+                'enable_calculator' => self::normalize_enable_calculator($exam['enable_calculator'] ?? 1),
+            ]);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $exam
+     * @param array<int,array<string,mixed>> $questions
+     * @return array{
+     *   question_order_ids:array<int,int>,
+     *   question_number_map:array<int,int>,
+     *   option_order_map:array<int,array<int,string>>,
+     *   question_manifest:array<int,array<string,mixed>>,
+     *   question_order_signature:string
+     * }
+     */
+    private static function build_attempt_runtime_snapshot_contract(array $attempt, array $exam, array $questions, string $attempt_table): array
+    {
+        $attempt_id = absint($attempt['id'] ?? 0);
+        if ($attempt_id <= 0) {
+            return [
+                'question_order_ids' => [],
+                'question_number_map' => [],
+                'option_order_map' => [],
+                'question_manifest' => [],
+                'question_order_signature' => '',
+            ];
+        }
+
+        $use_snapshot_questions = !empty($questions) ? $questions : self::get_cached_exam_question_payload((int) ($exam['id'] ?? 0));
+        $resolved_attempt_payload = self::resolve_attempt_question_payload(
+            $use_snapshot_questions,
+            $attempt,
+            $exam,
+            $attempt_table
+        );
+        $resolved_questions = isset($resolved_attempt_payload['questions']) && is_array($resolved_attempt_payload['questions'])
+            ? $resolved_attempt_payload['questions']
+            : [];
+        $question_order_ids = isset($resolved_attempt_payload['question_order_ids']) && is_array($resolved_attempt_payload['question_order_ids'])
+            ? array_values(array_filter(array_map('intval', $resolved_attempt_payload['question_order_ids']), static function (int $question_id): bool {
+                return $question_id > 0;
+            }))
+            : self::extract_question_ids_from_payload($resolved_questions);
+        $question_number_map = [];
+        foreach ($resolved_questions as $question_row) {
+            $question = (array) $question_row;
+            $question_id = (int) ($question['id'] ?? 0);
+            $question_number = (int) ($question['question_number'] ?? 0);
+            if ($question_id > 0 && $question_number > 0) {
+                $question_number_map[$question_id] = $question_number;
+            }
+        }
+        $resolved_attempt = isset($resolved_attempt_payload['attempt']) && is_array($resolved_attempt_payload['attempt'])
+            ? $resolved_attempt_payload['attempt']
+            : $attempt;
+
+        return [
+            'question_order_ids' => $question_order_ids,
+            'question_number_map' => $question_number_map,
+            'option_order_map' => self::normalize_attempt_option_order_map($resolved_attempt['option_order'] ?? ''),
+            'question_manifest' => self::build_question_manifest($resolved_questions),
+            'question_order_signature' => (string) ($resolved_attempt_payload['question_order_signature'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $exam
+     * @return array<string,mixed>
+     */
+    private static function get_cached_attempt_session_snapshot(array $attempt, array $exam, string $attempt_table): array
+    {
+        $attempt_id = absint($attempt['id'] ?? 0);
+        if ($attempt_id <= 0) {
+            return [];
+        }
+
+        if (!class_exists('CBT_Attempt_Session_Snapshot_Cache')) {
+            $contract = self::build_attempt_runtime_snapshot_contract($attempt, $exam, [], $attempt_table);
+            return [
+                'attempt_id' => $attempt_id,
+                'exam_id' => (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+                'student_id' => (int) ($attempt['student_id'] ?? 0),
+                'status' => (string) ($attempt['status'] ?? ''),
+                'started_at' => (string) ($attempt['started_at'] ?? ''),
+                'duration_minutes' => self::resolve_attempt_duration_minutes($attempt, (int) ($exam['duration_minutes'] ?? 0)),
+                'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? 0)),
+                'question_count' => count((array) ($contract['question_order_ids'] ?? [])),
+                'question_order_signature' => (string) ($contract['question_order_signature'] ?? ''),
+                'show_student_result' => self::normalize_show_student_result($exam['show_student_result'] ?? 1),
+                'enable_calculator' => self::normalize_enable_calculator($exam['enable_calculator'] ?? 1),
+            ];
+        }
+
+        return CBT_Attempt_Session_Snapshot_Cache::get_attempt_snapshot($attempt_id, function () use ($attempt, $exam, $attempt_table): array {
+            $contract = self::build_attempt_runtime_snapshot_contract($attempt, $exam, [], $attempt_table);
+            return [
+                'attempt_id' => (int) ($attempt['id'] ?? 0),
+                'exam_id' => (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+                'student_id' => (int) ($attempt['student_id'] ?? 0),
+                'status' => (string) ($attempt['status'] ?? ''),
+                'started_at' => (string) ($attempt['started_at'] ?? ''),
+                'duration_minutes' => self::resolve_attempt_duration_minutes($attempt, (int) ($exam['duration_minutes'] ?? 0)),
+                'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? 0)),
+                'question_count' => count((array) ($contract['question_order_ids'] ?? [])),
+                'question_order_signature' => (string) ($contract['question_order_signature'] ?? ''),
+                'show_student_result' => self::normalize_show_student_result($exam['show_student_result'] ?? 1),
+                'enable_calculator' => self::normalize_enable_calculator($exam['enable_calculator'] ?? 1),
+            ];
+        });
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $exam
+     * @param array<int,array<string,mixed>> $questions
+     * @return array<string,mixed>
+     */
+    private static function get_cached_attempt_question_contract(array $attempt, array $exam, array $questions, string $attempt_table): array
+    {
+        $attempt_id = absint($attempt['id'] ?? 0);
+        if ($attempt_id <= 0) {
+            return [];
+        }
+
+        if (!class_exists('CBT_Attempt_Question_Contract_Cache')) {
+            return self::build_attempt_runtime_snapshot_contract($attempt, $exam, $questions, $attempt_table);
+        }
+
+        return CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot($attempt_id, function () use ($attempt, $exam, $questions, $attempt_table): array {
+            $contract = self::build_attempt_runtime_snapshot_contract($attempt, $exam, $questions, $attempt_table);
+            return array_merge($contract, [
+                'attempt_id' => (int) ($attempt['id'] ?? 0),
+                'exam_id' => (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+                'student_id' => (int) ($attempt['student_id'] ?? 0),
+                'status' => (string) ($attempt['status'] ?? ''),
+            ]);
+        });
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $questions
+     * @param array<int,int> $question_order_ids
+     * @return array<int,array<string,mixed>>
+     */
+    private static function append_missing_questions_by_ids(array $questions, int $exam_id, array $question_order_ids): array
+    {
+        $question_order_ids = array_values(array_filter(array_map('intval', $question_order_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        }));
+        if ($exam_id <= 0 || empty($question_order_ids)) {
+            return $questions;
+        }
+
+        $known_question_ids = array_fill_keys(self::extract_question_ids_from_payload($questions), true);
+        $missing_question_ids = [];
+        foreach ($question_order_ids as $question_id) {
+            if (!isset($known_question_ids[$question_id])) {
+                $missing_question_ids[] = $question_id;
+            }
+        }
+
+        if (empty($missing_question_ids)) {
+            return $questions;
+        }
+
+        return array_merge($questions, self::get_question_payload_by_ids($exam_id, $missing_question_ids));
+    }
+
+    /**
+     * @param array<int,int> $question_number_map
+     * @return array<int,int>
+     */
+    private static function normalize_attempt_question_number_map(array $question_number_map): array
+    {
+        $normalized = [];
+        foreach ($question_number_map as $question_id => $question_number) {
+            $safe_question_id = (int) $question_id;
+            $safe_question_number = (int) $question_number;
+            if ($safe_question_id <= 0 || $safe_question_number <= 0) {
+                continue;
+            }
+
+            $normalized[$safe_question_id] = $safe_question_number;
+        }
+
+        return $normalized;
+    }
+
+    /**
      * @return array<int,array<string,mixed>>
      */
     private static function build_exam_question_payload_from_db(int $exam_id): array
@@ -2636,7 +3197,7 @@ class CBT_REST
 
         $exam_row = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, randomize_questions, randomize_options
+                "SELECT id, randomize_questions, randomize_options, duration_minutes, show_student_result, enable_calculator
                  FROM {$exam_table}
                  WHERE id = %d",
                 $exam_id
@@ -2717,9 +3278,13 @@ class CBT_REST
         return [
             'exam_id' => $exam_id,
             'question_ids' => array_values(array_unique($question_ids)),
+            'question_count' => count(array_values(array_unique($question_ids))),
             'question_number_map' => self::build_attempt_question_number_map($question_ids, $question_ids),
             'randomize_questions' => (int) ($exam_row['randomize_questions'] ?? 0) === 1 ? 1 : 0,
             'randomize_options' => (int) ($exam_row['randomize_options'] ?? 0) === 1 ? 1 : 0,
+            'duration_minutes' => max(0, (int) ($exam_row['duration_minutes'] ?? 0)),
+            'show_student_result' => self::normalize_show_student_result($exam_row['show_student_result'] ?? 1),
+            'enable_calculator' => self::normalize_enable_calculator($exam_row['enable_calculator'] ?? 1),
             'option_randomization_tokens_by_question' => self::normalize_attempt_option_order_map($option_tokens_by_question),
         ];
     }
@@ -4560,6 +5125,13 @@ class CBT_REST
             return new WP_Error('db_failed', 'Failed to finish exam', ['status' => 500]);
         }
 
+        if (class_exists('CBT_Attempt_Session_Snapshot_Cache')) {
+            CBT_Attempt_Session_Snapshot_Cache::update_attempt_status($attempt_id, 'completed');
+        }
+        if (class_exists('CBT_Attempt_Question_Contract_Cache')) {
+            CBT_Attempt_Question_Contract_Cache::update_attempt_status($attempt_id, 'completed');
+        }
+
         $student_id = (int) ($attempt['student_id'] ?? 0);
         CBT_Runtime::clear_attempt_runtime($attempt_id);
         if (class_exists('CBT_Active_Attempt_Index')) {
@@ -4999,6 +5571,15 @@ class CBT_REST
             return null;
         }
 
+        $runtime_question_order_ids = CBT_Runtime::get_attempt_question_order($attempt_id, $runtime_question_order_found);
+        if (!$runtime_question_order_found) {
+            $runtime_question_order_ids = [];
+        }
+        $runtime_option_order_map = CBT_Runtime::get_attempt_option_order($attempt_id, $runtime_option_order_found);
+        if (!$runtime_option_order_found) {
+            $runtime_option_order_map = [];
+        }
+
         return [
             'id' => (int) ($runtime_attempt['attempt_id'] ?? $attempt_id),
             'attempt_id' => (int) ($runtime_attempt['attempt_id'] ?? $attempt_id),
@@ -5009,8 +5590,12 @@ class CBT_REST
             'extra_time_minutes' => max(0, (int) ($runtime_attempt['extra_time_minutes'] ?? 0)),
             'duration_minutes' => max(1, (int) ($runtime_attempt['duration_minutes'] ?? 60)),
             'exam_duration_minutes' => max(1, (int) ($runtime_attempt['duration_minutes'] ?? 60)),
-            'question_order' => '',
-            'option_order' => '',
+            'question_order' => !empty($runtime_question_order_ids)
+                ? ((string) (wp_json_encode($runtime_question_order_ids) ?: '[]'))
+                : '',
+            'option_order' => !empty($runtime_option_order_map)
+                ? self::encode_attempt_option_order_map($runtime_option_order_map)
+                : '',
         ];
     }
 

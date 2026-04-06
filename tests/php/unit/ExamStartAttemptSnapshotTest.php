@@ -24,9 +24,13 @@ final class ExamStartAttemptSnapshotTest extends TestCase
             return [
                 'exam_id' => $examId,
                 'question_ids' => [201, 202],
+                'question_count' => 2,
                 'question_number_map' => [201 => 1, 202 => 2],
                 'randomize_questions' => 1,
                 'randomize_options' => 1,
+                'duration_minutes' => 90,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
                 'option_randomization_tokens_by_question' => [
                     201 => ['9001', '9002'],
                 ],
@@ -41,6 +45,10 @@ final class ExamStartAttemptSnapshotTest extends TestCase
         self::assertSame($first['question_ids'], $second['question_ids']);
         self::assertSame($first['question_number_map'], $second['question_number_map']);
         self::assertSame($first['option_randomization_tokens_by_question'], $second['option_randomization_tokens_by_question']);
+        self::assertSame(2, $first['question_count']);
+        self::assertSame(90, $first['duration_minutes']);
+        self::assertSame(1, $first['show_student_result']);
+        self::assertSame(1, $first['enable_calculator']);
         self::assertCount(1, $this->storedRedisKeys());
 
         CBT_Cache::invalidate_exam(55);
@@ -57,9 +65,13 @@ final class ExamStartAttemptSnapshotTest extends TestCase
             return [
                 'exam_id' => $examId,
                 'question_ids' => [201],
+                'question_count' => 1,
                 'question_number_map' => [201 => 1],
                 'randomize_questions' => 0,
                 'randomize_options' => 0,
+                'duration_minutes' => 60,
+                'show_student_result' => 0,
+                'enable_calculator' => 0,
                 'option_randomization_tokens_by_question' => [],
             ];
         });
@@ -71,6 +83,10 @@ final class ExamStartAttemptSnapshotTest extends TestCase
         self::assertTrue($diagnostics['snapshot_valid']);
         self::assertSame('ready', $diagnostics['snapshot_status']);
         self::assertSame(1, $diagnostics['snapshot_item_count']);
+        self::assertSame(1, $diagnostics['question_count']);
+        self::assertSame(60, $diagnostics['duration_minutes']);
+        self::assertSame(0, $diagnostics['show_student_result']);
+        self::assertSame(0, $diagnostics['enable_calculator']);
         self::assertStringStartsWith('cbt_exam_start_attempt:exam:55:rev:', $diagnostics['storage_key']);
     }
 

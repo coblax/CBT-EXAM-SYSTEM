@@ -13,6 +13,7 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
         $this->bootstrapRestDeliverySnapshotScaffold();
         $this->registerStudentFixture();
         $this->useDeliveryFakeRedis();
+        $this->useAttemptContractFakeRedis();
         $this->setRuntimeRedisUnavailable();
 
         $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
@@ -42,6 +43,7 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
         self::assertArrayNotHasKey('correct_text', $response['items'][0]);
         self::assertSame('Ibu Kota Indonesia?', $response['items'][0]['question_text']);
         self::assertSame(9002, $response['items'][0]['existing_answer']);
+        self::assertArrayHasKey('cbt_attempt_contract:attempt:77', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
     }
 
     private function bootstrapRestDeliverySnapshotScaffold(): void
@@ -67,6 +69,7 @@ PHP);
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-runtime.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-question-delivery-cache.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-question-contract-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
     }
 
@@ -116,6 +119,23 @@ PHP);
         $errorProperty = $reflection->getProperty('last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, 'disabled in test');
+    }
+
+    private function useAttemptContractFakeRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Attempt_Question_Contract_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
     }
 }
 

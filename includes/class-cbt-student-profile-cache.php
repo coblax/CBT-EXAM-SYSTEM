@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Redis_Pipeline_Helper')) {
+    require_once __DIR__ . '/class-cbt-redis-pipeline-helper.php';
+}
+
 class CBT_Student_Profile_Cache
 {
     private const PROFILE_REDIS_TTL_SECONDS = 44100;
@@ -73,18 +77,91 @@ class CBT_Student_Profile_Cache
      */
     public static function warm_snapshot(int $user_id): array
     {
+        $result = self::warm_snapshot_result($user_id);
+        return is_array($result['snapshot'] ?? null) ? $result['snapshot'] : self::empty_snapshot();
+    }
+
+    /**
+     * @return array{
+     *   ready:bool,
+     *   write_success:bool,
+     *   reason:string,
+     *   snapshot:array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string}
+     * }
+     */
+    public static function warm_snapshot_result(int $user_id): array
+    {
+        $results = self::warm_snapshot_results([$user_id]);
         $user_id = absint($user_id);
-        if ($user_id <= 0) {
-            return self::empty_snapshot();
+
+        return $results[$user_id] ?? [
+            'ready' => false,
+            'write_success' => false,
+            'reason' => 'invalid_user',
+            'snapshot' => self::empty_snapshot(),
+        ];
+    }
+
+    /**
+     * @param int[] $user_ids
+     * @return array<int,array{
+     *   ready:bool,
+     *   write_success:bool,
+     *   reason:string,
+     *   snapshot:array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string}
+     * }>
+     */
+    public static function warm_snapshot_results(array $user_ids): array
+    {
+        $user_ids = array_values(array_unique(array_filter(array_map('absint', $user_ids))));
+        if (empty($user_ids)) {
+            return [];
         }
 
-        $snapshot = self::build_snapshot_from_usermeta($user_id);
+        self::prime_snapshot_batch_caches($user_ids);
+        $results = [];
+        $operations = [];
+        $operation_user_ids = [];
+
+        foreach ($user_ids as $user_id) {
+            $snapshot = self::build_snapshot_from_usermeta($user_id);
+            $results[$user_id] = [
+                'ready' => false,
+                'write_success' => false,
+                'reason' => 'redis_unavailable',
+                'snapshot' => $snapshot,
+            ];
+
+            $operation = self::prepare_profile_snapshot_write($user_id, $snapshot);
+            if (!is_array($operation)) {
+                $results[$user_id]['reason'] = 'encode_failed';
+                continue;
+            }
+
+            $operations[] = $operation;
+            $operation_user_ids[] = $user_id;
+        }
+
         $redis = self::profile_redis();
-        if ($redis instanceof Redis) {
-            self::write_profile_redis_snapshot($user_id, $snapshot);
+        if (!$redis instanceof Redis) {
+            foreach ($user_ids as $user_id) {
+                if (($results[$user_id]['reason'] ?? '') !== 'encode_failed') {
+                    $results[$user_id]['reason'] = 'redis_unavailable';
+                }
+            }
+
+            return $results;
         }
 
-        return $snapshot;
+        $write_results = CBT_Redis_Pipeline_Helper::write_setex_results($redis, $operations);
+        foreach ($operation_user_ids as $index => $user_id) {
+            $write_success = !empty($write_results[$index]);
+            $results[$user_id]['ready'] = $write_success;
+            $results[$user_id]['write_success'] = $write_success;
+            $results[$user_id]['reason'] = $write_success ? 'ready' : 'write_failed';
+        }
+
+        return $results;
     }
 
     public static function clear_snapshot(int $user_id): int
@@ -396,24 +473,70 @@ class CBT_Student_Profile_Cache
     /**
      * @param array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string} $snapshot
      */
-    private static function write_profile_redis_snapshot(int $user_id, array $snapshot): void
+    private static function write_profile_redis_snapshot(int $user_id, array $snapshot): bool
     {
+        $operation = self::prepare_profile_snapshot_write($user_id, $snapshot);
+        if (!is_array($operation)) {
+            return false;
+        }
+
         $user_id = absint($user_id);
         if ($user_id <= 0) {
-            return;
+            return false;
         }
 
         $redis = self::profile_redis();
         if (!$redis instanceof Redis) {
-            return;
+            return false;
+        }
+
+        return $redis->setEx(
+            (string) $operation['key'],
+            (int) $operation['ttl'],
+            (string) $operation['value']
+        ) !== false;
+    }
+
+    /**
+     * @param array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string} $snapshot
+     * @return array{key:string,ttl:int,value:string}|null
+     */
+    private static function prepare_profile_snapshot_write(int $user_id, array $snapshot): ?array
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return null;
         }
 
         $encoded = wp_json_encode(self::sanitize_snapshot($snapshot));
         if (!is_string($encoded) || $encoded === '') {
+            return null;
+        }
+
+        return [
+            'key' => self::profile_storage_key($user_id),
+            'ttl' => self::PROFILE_REDIS_TTL_SECONDS,
+            'value' => $encoded,
+        ];
+    }
+
+    /**
+     * @param int[] $user_ids
+     */
+    private static function prime_snapshot_batch_caches(array $user_ids): void
+    {
+        $user_ids = array_values(array_filter(array_map('absint', $user_ids)));
+        if (empty($user_ids)) {
             return;
         }
 
-        $redis->setEx(self::profile_storage_key($user_id), self::PROFILE_REDIS_TTL_SECONDS, $encoded);
+        if (function_exists('cache_users')) {
+            cache_users($user_ids);
+        }
+
+        if (function_exists('update_meta_cache')) {
+            update_meta_cache('user', $user_ids);
+        }
     }
 
     /**

@@ -27,6 +27,7 @@ final class RestSessionPresenceSnapshotTest extends TestCase
     public function test_get_session_updates_live_presence_without_changing_response_shape(): void
     {
         $this->bootstrapRestSessionScaffold();
+        $this->useFakeAttemptSessionRedis();
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
 
         global $wpdb;
@@ -42,6 +43,19 @@ final class RestSessionPresenceSnapshotTest extends TestCase
                 'option_order' => '{}',
                 'exam_duration_minutes' => 60,
             ],
+        ]);
+        CBT_Attempt_Session_Snapshot_Cache::write_attempt_snapshot(114, [
+            'attempt_id' => 114,
+            'exam_id' => 16,
+            'student_id' => 7,
+            'status' => 'in_progress',
+            'started_at' => '2026-03-26 21:00:00',
+            'duration_minutes' => 75,
+            'extra_time_minutes' => 0,
+            'question_count' => 9,
+            'question_order_signature' => 'session-sig-114',
+            'show_student_result' => 1,
+            'enable_calculator' => 0,
         ]);
 
         $response = CBT_REST::get_session(new WP_REST_Request([
@@ -68,7 +82,10 @@ final class RestSessionPresenceSnapshotTest extends TestCase
             ],
             array_keys($response)
         );
-        self::assertSame(2, $response['question_count']);
+        self::assertSame(9, $response['question_count']);
+        self::assertSame('session-sig-114', $response['question_order_signature']);
+        self::assertSame(1, $response['show_student_result']);
+        self::assertSame(0, $response['enable_calculator']);
         self::assertCount(1, CBT_Live_Proctoring_Presence::$updates);
         self::assertSame(114, CBT_Live_Proctoring_Presence::$updates[0]['attempt']['id']);
         self::assertSame(
@@ -87,6 +104,7 @@ final class RestSessionPresenceSnapshotTest extends TestCase
     public function test_get_session_without_presence_params_keeps_presence_snapshot_untouched(): void
     {
         $this->bootstrapRestSessionScaffold();
+        $this->useFakeAttemptSessionRedis();
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
 
         global $wpdb;
@@ -102,6 +120,19 @@ final class RestSessionPresenceSnapshotTest extends TestCase
                 'option_order' => '{}',
                 'exam_duration_minutes' => 60,
             ],
+        ]);
+        CBT_Attempt_Session_Snapshot_Cache::write_attempt_snapshot(114, [
+            'attempt_id' => 114,
+            'exam_id' => 16,
+            'student_id' => 7,
+            'status' => 'in_progress',
+            'started_at' => '2026-03-26 21:00:00',
+            'duration_minutes' => 60,
+            'extra_time_minutes' => 0,
+            'question_count' => 1,
+            'question_order_signature' => 'session-sig-114',
+            'show_student_result' => 1,
+            'enable_calculator' => 1,
         ]);
 
         $response = CBT_REST::get_session(new WP_REST_Request([
@@ -178,6 +209,25 @@ class CBT_Live_Proctoring_Presence
 PHP);
         }
     }
+
+    private function useFakeAttemptSessionRedis(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-session-snapshot-cache.php';
+
+        $reflection = new ReflectionClass(CBT_Attempt_Session_Snapshot_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
 }
 
 if (!class_exists('RestSessionPresenceFakeWpdb')) {
@@ -208,6 +258,21 @@ if (!class_exists('RestSessionPresenceFakeWpdb')) {
                     $attemptId = (int) ($matches[1] ?? 0);
                     return $this->attemptRows[$attemptId] ?? null;
                 }
+            }
+
+            if (str_contains($query, 'FROM wp_cbt_exams')) {
+                return [
+                    'id' => 16,
+                    'duration_minutes' => 60,
+                    'randomize_questions' => 0,
+                    'randomize_options' => 0,
+                    'show_student_result' => 1,
+                    'enable_calculator' => 1,
+                    'status' => 'published',
+                    'starts_at' => '',
+                    'ends_at' => '',
+                    'target_kelas' => '',
+                ];
             }
 
             return null;

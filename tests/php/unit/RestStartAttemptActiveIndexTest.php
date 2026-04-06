@@ -14,6 +14,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         $this->useFakeRuntimeRedisClient();
         $this->useFakeActiveAttemptRedisClient();
         $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
 
         $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
         $GLOBALS['cbt_test_rest_auth_role'] = 'student';
@@ -78,6 +80,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         $this->useFakeRuntimeRedisClient();
         $this->useFakeActiveAttemptRedisClient();
         $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
 
         $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
         $GLOBALS['cbt_test_rest_auth_role'] = 'student';
@@ -132,6 +136,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         $this->useFakeRuntimeRedisClient();
         $this->useFakeActiveAttemptRedisClient();
         $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
 
         $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
         $GLOBALS['cbt_test_rest_auth_role'] = 'student';
@@ -164,6 +170,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertSame(1, $wpdb->latestAttemptQueryCount);
         self::assertSame(1, $wpdb->insertCalls);
         self::assertSame(123, CBT_Active_Attempt_Index::get_active_attempt_id(7, 15));
+        self::assertArrayHasKey('cbt_attempt_session:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+        self::assertArrayHasKey('cbt_attempt_contract:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
     }
 
     #[RunInSeparateProcess]
@@ -173,6 +181,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         $this->useFakeRuntimeRedisClient();
         $this->useFakeActiveAttemptRedisClient();
         $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
 
         $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
         $GLOBALS['cbt_test_rest_auth_role'] = 'student';
@@ -230,6 +240,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         $this->useFakeRuntimeRedisClient();
         $this->useFakeActiveAttemptRedisClient();
         $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
 
         $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
         $GLOBALS['cbt_test_rest_auth_role'] = 'student';
@@ -427,6 +439,40 @@ PHP);
         $attemptedProperty->setValue(null, true);
 
         $errorProperty = $reflection->getProperty('start_snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeAttemptSessionSnapshotRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Attempt_Session_Snapshot_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeAttemptContractSnapshotRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Attempt_Question_Contract_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, '');
     }

@@ -207,6 +207,67 @@ final class ExamAvailabilitySnapshotTest extends TestCase
         self::assertSame('prepared', CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(31)['snapshot_source']);
     }
 
+    public function test_write_prepared_student_snapshot_persists_payload_without_readback(): void
+    {
+        $written = CBT_Exam_Availability_Cache::write_prepared_student_snapshot(44, [
+            'items' => [
+                [
+                    'id' => 101,
+                    'title' => 'Batch Warm',
+                    'availability_reason' => 'ok',
+                    'is_available_now' => 1,
+                ],
+            ],
+            'current_user' => [
+                'user_id' => 44,
+                'display_name' => 'Batch User',
+                'username' => 'batch-user',
+                'kode_kelas' => 'XI-A',
+                'kode_ruang' => 'R1',
+            ],
+        ]);
+
+        self::assertTrue($written);
+        self::assertSame('prepared', CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(44)['snapshot_source']);
+    }
+
+    public function test_write_prepared_student_snapshots_batches_pipeline_write_and_fallback(): void
+    {
+        $results = CBT_Exam_Availability_Cache::write_prepared_student_snapshots([
+            51 => [
+                'items' => [
+                    ['id' => 151, 'title' => 'Batch 1', 'availability_reason' => 'ok', 'is_available_now' => 1],
+                ],
+                'current_user' => ['user_id' => 51, 'display_name' => 'Batch 1'],
+            ],
+            52 => [
+                'items' => [
+                    ['id' => 152, 'title' => 'Batch 2', 'availability_reason' => 'ok', 'is_available_now' => 1],
+                ],
+                'current_user' => ['user_id' => 52, 'display_name' => 'Batch 2'],
+            ],
+        ]);
+
+        self::assertTrue($results[51]);
+        self::assertTrue($results[52]);
+        self::assertCount(1, (array) ($GLOBALS['cbt_test_redis_pipeline_batches'] ?? []));
+
+        $GLOBALS['cbt_test_redis_pipeline_disabled'] = true;
+        $GLOBALS['cbt_test_redis_pipeline_batches'] = [];
+
+        $fallbackResults = CBT_Exam_Availability_Cache::write_prepared_student_snapshots([
+            53 => [
+                'items' => [
+                    ['id' => 153, 'title' => 'Fallback', 'availability_reason' => 'ok', 'is_available_now' => 1],
+                ],
+                'current_user' => ['user_id' => 53, 'display_name' => 'Fallback'],
+            ],
+        ]);
+
+        self::assertTrue($fallbackResults[53]);
+        self::assertSame([], $GLOBALS['cbt_test_redis_pipeline_batches']);
+    }
+
     private function useFakeRedisClient(): void
     {
         $reflection = new ReflectionClass(CBT_Exam_Availability_Cache::class);

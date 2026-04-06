@@ -12,6 +12,10 @@ if (!class_exists('CBT_Student_Profile_Cache')) {
     require_once __DIR__ . '/class-cbt-student-profile-cache.php';
 }
 
+if (!class_exists('CBT_Redis_Pipeline_Helper')) {
+    require_once __DIR__ . '/class-cbt-redis-pipeline-helper.php';
+}
+
 class CBT_Login_Auth_Snapshot_Cache
 {
     private const SNAPSHOT_REDIS_TTL_SECONDS = 14400;
@@ -94,70 +98,193 @@ class CBT_Login_Auth_Snapshot_Cache
      */
     public static function warm_user_snapshot(int $user_id, string $source = 'manual'): array
     {
+        $result = self::warm_user_snapshot_result($user_id, $source);
+        return is_array($result['snapshot'] ?? null) ? $result['snapshot'] : self::empty_snapshot();
+    }
+
+    /**
+     * @param array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string}|null $profile_snapshot
+     * @return array{
+     *   ready:bool,
+     *   write_success:bool,
+     *   reason:string,
+     *   snapshot:array<string,mixed>
+     * }
+     */
+    public static function warm_user_snapshot_result(int $user_id, string $source = 'manual', ?array $profile_snapshot = null): array
+    {
         $user_id = absint($user_id);
-        if ($user_id <= 0) {
-            return self::empty_snapshot();
+        $results = self::warm_user_snapshot_results(
+            [$user_id],
+            $source,
+            $profile_snapshot !== null ? [$user_id => $profile_snapshot] : []
+        );
+
+        return $results[$user_id] ?? [
+            'ready' => false,
+            'write_success' => false,
+            'reason' => 'invalid_user',
+            'snapshot' => self::empty_snapshot(),
+        ];
+    }
+
+    /**
+     * @param int[] $user_ids
+     * @param array<int,array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string}> $profile_snapshots_by_user
+     * @return array<int,array{
+     *   ready:bool,
+     *   write_success:bool,
+     *   reason:string,
+     *   snapshot:array<string,mixed>
+     * }>
+     */
+    public static function warm_user_snapshot_results(array $user_ids, string $source = 'manual', array $profile_snapshots_by_user = []): array
+    {
+        $user_ids = array_values(array_unique(array_filter(array_map('absint', $user_ids))));
+        if (empty($user_ids)) {
+            return [];
         }
 
-        $user = get_user_by('id', $user_id);
-        if (!($user instanceof WP_User) || !self::is_snapshot_eligible_user($user)) {
-            self::clear_user_snapshot($user_id);
-            return self::empty_snapshot();
-        }
+        self::prime_user_snapshot_caches($user_ids);
+        $results = [];
+        $prepared_snapshots = [];
+        $clear_target_ids = [];
 
-        $snapshot = self::build_snapshot_from_user($user, $source);
-        if (empty($snapshot['identifiers']) || (string) ($snapshot['password_hash'] ?? '') === '') {
-            self::clear_user_snapshot($user_id);
-            return self::empty_snapshot();
+        foreach ($user_ids as $user_id) {
+            $results[$user_id] = [
+                'ready' => false,
+                'write_success' => false,
+                'reason' => 'invalid_user',
+                'snapshot' => self::empty_snapshot(),
+            ];
+
+            $user = get_user_by('id', $user_id);
+            if (!($user instanceof WP_User) || !self::is_snapshot_eligible_user($user)) {
+                $results[$user_id]['reason'] = 'ineligible_user';
+                $clear_target_ids[] = $user_id;
+                continue;
+            }
+
+            $profile_snapshot = isset($profile_snapshots_by_user[$user_id]) && is_array($profile_snapshots_by_user[$user_id])
+                ? $profile_snapshots_by_user[$user_id]
+                : null;
+            $snapshot = self::build_snapshot_from_user($user, $source, $profile_snapshot);
+            if (empty($snapshot['identifiers']) || (string) ($snapshot['password_hash'] ?? '') === '') {
+                $results[$user_id]['reason'] = 'invalid_snapshot';
+                $clear_target_ids[] = $user_id;
+                continue;
+            }
+
+            $prepared_snapshots[$user_id] = $snapshot;
+            $results[$user_id]['snapshot'] = $snapshot;
+            $results[$user_id]['reason'] = 'redis_unavailable';
+            $clear_target_ids[] = $user_id;
         }
 
         $redis = self::snapshot_redis();
         if (!$redis instanceof Redis) {
-            return $snapshot;
+            return $results;
         }
 
-        self::clear_user_snapshot($user_id);
-        $encoded = wp_json_encode($snapshot);
-        if (!is_string($encoded) || $encoded === '') {
-            return self::empty_snapshot();
-        }
+        self::clear_user_snapshots_for_rewrite($clear_target_ids);
+        $operations = [];
+        $operation_user_ids = [];
 
-        $redis->setEx(self::user_storage_key($user_id), self::SNAPSHOT_REDIS_TTL_SECONDS, $encoded);
-        foreach ((array) $snapshot['identifiers'] as $identifier_key) {
-            $identifier_key = is_scalar($identifier_key) ? trim((string) $identifier_key) : '';
-            if ($identifier_key === '') {
+        foreach ($prepared_snapshots as $user_id => $snapshot) {
+            $encoded = wp_json_encode($snapshot);
+            if (!is_string($encoded) || $encoded === '') {
+                $results[$user_id]['snapshot'] = self::empty_snapshot();
+                $results[$user_id]['reason'] = 'encode_failed';
+                unset($prepared_snapshots[$user_id]);
                 continue;
             }
 
-            $redis->setEx(self::index_storage_key($identifier_key), self::SNAPSHOT_REDIS_TTL_SECONDS, (string) $user_id);
+            $operations[] = [
+                'key' => self::user_storage_key($user_id),
+                'ttl' => self::SNAPSHOT_REDIS_TTL_SECONDS,
+                'value' => $encoded,
+            ];
+            $operation_user_ids[] = $user_id;
+
+            foreach ((array) ($snapshot['identifiers'] ?? []) as $identifier_key) {
+                $identifier_key = is_scalar($identifier_key) ? trim((string) $identifier_key) : '';
+                if ($identifier_key === '') {
+                    continue;
+                }
+
+                $operations[] = [
+                    'key' => self::index_storage_key($identifier_key),
+                    'ttl' => self::SNAPSHOT_REDIS_TTL_SECONDS,
+                    'value' => (string) $user_id,
+                ];
+                $operation_user_ids[] = $user_id;
+            }
         }
 
-        return $snapshot;
+        $write_results = CBT_Redis_Pipeline_Helper::write_setex_results($redis, $operations);
+        $user_write_results = [];
+        foreach ($operation_user_ids as $index => $operation_user_id) {
+            if (!isset($user_write_results[$operation_user_id])) {
+                $user_write_results[$operation_user_id] = [];
+            }
+
+            $user_write_results[$operation_user_id][] = !empty($write_results[$index]);
+        }
+
+        $failed_user_ids = [];
+        foreach ($prepared_snapshots as $user_id => $snapshot) {
+            $write_success = !empty($user_write_results[$user_id])
+                && !in_array(false, $user_write_results[$user_id], true);
+            $results[$user_id]['ready'] = $write_success;
+            $results[$user_id]['write_success'] = $write_success;
+            $results[$user_id]['reason'] = $write_success ? 'ready' : 'write_failed';
+
+            if (!$write_success) {
+                $failed_user_ids[] = $user_id;
+            }
+        }
+
+        if (!empty($failed_user_ids)) {
+            self::clear_user_snapshots_for_rewrite($failed_user_ids);
+        }
+
+        return $results;
     }
 
     public static function clear_user_snapshot(int $user_id): int
     {
-        $user_id = absint($user_id);
-        if ($user_id <= 0) {
+        return self::clear_user_snapshots_for_rewrite([$user_id]);
+    }
+
+    /**
+     * @param int[] $user_ids
+     */
+    public static function clear_user_snapshots_for_rewrite(array $user_ids): int
+    {
+        $user_ids = array_values(array_unique(array_filter(array_map('absint', $user_ids))));
+        if (empty($user_ids)) {
             return 0;
         }
 
+        self::prime_user_snapshot_caches($user_ids);
         $redis = self::snapshot_redis();
         if (!$redis instanceof Redis) {
             return 0;
         }
 
-        $keys = [self::user_storage_key($user_id)];
-        $raw_snapshot = $redis->get(self::user_storage_key($user_id));
-        $snapshot_identifiers = self::extract_identifiers_from_raw_snapshot($raw_snapshot);
-        foreach ($snapshot_identifiers as $identifier_key) {
-            $keys[] = self::index_storage_key($identifier_key);
-        }
-
-        $user = get_user_by('id', $user_id);
-        if ($user instanceof WP_User) {
-            foreach (self::build_user_identifiers($user) as $identifier_key) {
+        $keys = [];
+        foreach ($user_ids as $user_id) {
+            $keys[] = self::user_storage_key($user_id);
+            $raw_snapshot = $redis->get(self::user_storage_key($user_id));
+            foreach (self::extract_identifiers_from_raw_snapshot($raw_snapshot) as $identifier_key) {
                 $keys[] = self::index_storage_key($identifier_key);
+            }
+
+            $user = get_user_by('id', $user_id);
+            if ($user instanceof WP_User) {
+                foreach (self::build_user_identifiers($user) as $identifier_key) {
+                    $keys[] = self::index_storage_key($identifier_key);
+                }
             }
         }
 
@@ -176,13 +303,16 @@ class CBT_Login_Auth_Snapshot_Cache
     public static function warm_exam_target_snapshots(array $exam_row, string $source = 'manual_exam'): array
     {
         $target_student_ids = self::get_exam_target_student_ids($exam_row);
+        self::prime_user_snapshot_caches($target_student_ids);
         $ready_count = 0;
         $failure_count = 0;
 
+        $results = self::warm_user_snapshot_results($target_student_ids, $source);
         foreach ($target_student_ids as $user_id) {
-            self::warm_user_snapshot($user_id, $source);
-            $diagnostics = self::get_snapshot_diagnostics($user_id);
-            if ((string) ($diagnostics['snapshot_status'] ?? '') === 'ready') {
+            $result = $results[$user_id] ?? [
+                'ready' => false,
+            ];
+            if (!empty($result['ready'])) {
                 $ready_count++;
             } else {
                 $failure_count++;
@@ -206,11 +336,7 @@ class CBT_Login_Auth_Snapshot_Cache
     public static function clear_exam_target_snapshots(array $exam_row): array
     {
         $target_student_ids = self::get_exam_target_student_ids($exam_row);
-        $deleted_keys = 0;
-
-        foreach ($target_student_ids as $user_id) {
-            $deleted_keys += self::clear_user_snapshot($user_id);
-        }
+        $deleted_keys = self::clear_user_snapshots_for_rewrite($target_student_ids);
 
         return [
             'exam_id' => (int) ($exam_row['id'] ?? 0),
@@ -436,11 +562,12 @@ class CBT_Login_Auth_Snapshot_Cache
     /**
      * @return array<string,mixed>
      */
-    private static function build_snapshot_from_user(WP_User $user, string $source): array
+    private static function build_snapshot_from_user(WP_User $user, string $source, ?array $profile_snapshot = null): array
     {
         $user_id = (int) $user->ID;
-        $profile = CBT_Student_Profile_Cache::get_snapshot($user_id);
-        $identifiers = self::build_user_identifiers($user);
+        $profile = is_array($profile_snapshot) ? $profile_snapshot : CBT_Student_Profile_Cache::get_snapshot($user_id);
+        $nisn = sanitize_text_field((string) ($profile['nisn'] ?? ''));
+        $identifiers = self::build_user_identifiers($user, $nisn);
 
         return [
             'user_id' => $user_id,
@@ -448,7 +575,7 @@ class CBT_Login_Auth_Snapshot_Cache
             'display_name' => sanitize_text_field((string) ($user->display_name !== '' ? $user->display_name : $user->user_login)),
             'user_login' => sanitize_text_field((string) $user->user_login),
             'user_email' => sanitize_email((string) $user->user_email),
-            'nisn' => sanitize_text_field((string) get_user_meta($user_id, 'nisn', true)),
+            'nisn' => $nisn,
             'identifiers' => $identifiers,
             'password_hash' => (string) $user->user_pass,
             'kode_kelas' => (string) ($profile['kode_kelas'] ?? ''),
@@ -500,12 +627,12 @@ class CBT_Login_Auth_Snapshot_Cache
     /**
      * @return array<int,string>
      */
-    private static function build_user_identifiers(WP_User $user): array
+    private static function build_user_identifiers(WP_User $user, string $nisn = ''): array
     {
         $identifiers = [];
         $user_login = sanitize_user((string) $user->user_login, true);
         $user_email = sanitize_email((string) $user->user_email);
-        $nisn = sanitize_text_field((string) get_user_meta((int) $user->ID, 'nisn', true));
+        $nisn = sanitize_text_field($nisn !== '' ? $nisn : (string) get_user_meta((int) $user->ID, 'nisn', true));
 
         if ($user_login !== '') {
             $identifiers[] = 'login:' . strtolower($user_login);
@@ -524,6 +651,25 @@ class CBT_Login_Auth_Snapshot_Cache
         }
 
         return array_values(array_unique(array_filter($identifiers)));
+    }
+
+    /**
+     * @param int[] $user_ids
+     */
+    private static function prime_user_snapshot_caches(array $user_ids): void
+    {
+        $user_ids = array_values(array_filter(array_map('absint', $user_ids)));
+        if (empty($user_ids)) {
+            return;
+        }
+
+        if (function_exists('cache_users')) {
+            cache_users($user_ids);
+        }
+
+        if (function_exists('update_meta_cache')) {
+            update_meta_cache('user', $user_ids);
+        }
     }
 
     private static function extract_fallback_local_part(string $email): string

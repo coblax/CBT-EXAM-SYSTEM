@@ -44,7 +44,11 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
      *   snapshot_message:string,
      *   snapshot_item_count:int,
      *   snapshot_payload_bytes:int,
-     *   snapshot_ttl_seconds:int
+     *   snapshot_ttl_seconds:int,
+     *   question_count:int,
+     *   duration_minutes:int,
+     *   show_student_result:int,
+     *   enable_calculator:int
      * }
      */
     public static function get_exam_snapshot_diagnostics(int $exam_id): array
@@ -61,6 +65,10 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
         $snapshot_item_count = 0;
         $snapshot_payload_bytes = 0;
         $snapshot_ttl_seconds = -2;
+        $question_count = 0;
+        $duration_minutes = 0;
+        $show_student_result = 0;
+        $enable_calculator = 0;
         $snapshot_status = 'idle';
         $snapshot_message = 'Masukkan Exam ID untuk memeriksa start snapshot.';
 
@@ -80,6 +88,10 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
                 'snapshot_item_count' => 0,
                 'snapshot_payload_bytes' => 0,
                 'snapshot_ttl_seconds' => -2,
+                'question_count' => 0,
+                'duration_minutes' => 0,
+                'show_student_result' => 0,
+                'enable_calculator' => 0,
             ];
         }
 
@@ -99,6 +111,10 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
                 'snapshot_item_count' => 0,
                 'snapshot_payload_bytes' => 0,
                 'snapshot_ttl_seconds' => -2,
+                'question_count' => 0,
+                'duration_minutes' => 0,
+                'show_student_result' => 0,
+                'enable_calculator' => 0,
             ];
         }
 
@@ -119,6 +135,10 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
                 $expected_signature = self::revision_signature($revision_meta);
                 $question_ids = self::normalize_question_ids($decoded['question_ids'] ?? []);
                 $snapshot_item_count = count($question_ids);
+                $question_count = max(0, (int) ($decoded['question_count'] ?? $snapshot_item_count));
+                $duration_minutes = max(0, (int) ($decoded['duration_minutes'] ?? 0));
+                $show_student_result = !empty($decoded['show_student_result']) ? 1 : 0;
+                $enable_calculator = !empty($decoded['enable_calculator']) ? 1 : 0;
                 $snapshot_valid = $stored_exam_id === $exam_id && $stored_signature === $expected_signature;
             }
         }
@@ -149,6 +169,10 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
             'snapshot_item_count' => $snapshot_item_count,
             'snapshot_payload_bytes' => $snapshot_payload_bytes,
             'snapshot_ttl_seconds' => $snapshot_ttl_seconds,
+            'question_count' => $question_count,
+            'duration_minutes' => $duration_minutes,
+            'show_student_result' => $show_student_result,
+            'enable_calculator' => $enable_calculator,
         ];
     }
 
@@ -402,9 +426,13 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
                 ? (string) $payload['revision_signature']
                 : '',
             'question_ids' => self::normalize_question_ids($payload['question_ids'] ?? []),
+            'question_count' => max(0, (int) ($payload['question_count'] ?? count((array) ($payload['question_ids'] ?? [])))),
             'question_number_map' => self::normalize_question_number_map($payload['question_number_map'] ?? []),
             'randomize_questions' => !empty($payload['randomize_questions']) ? 1 : 0,
             'randomize_options' => !empty($payload['randomize_options']) ? 1 : 0,
+            'duration_minutes' => max(0, (int) ($payload['duration_minutes'] ?? 0)),
+            'show_student_result' => !empty($payload['show_student_result']) ? 1 : 0,
+            'enable_calculator' => !empty($payload['enable_calculator']) ? 1 : 0,
             'option_randomization_tokens_by_question' => self::normalize_option_randomization_tokens_map(
                 $payload['option_randomization_tokens_by_question'] ?? []
             ),

@@ -10,6 +10,8 @@ final class ExamPreflightServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $GLOBALS['cbt_test_preflight_initial_burst_seconds'] = 60.0;
+        $GLOBALS['cbt_test_preflight_initial_burst_max_batches'] = 3;
         $this->bootstrapServiceScaffold();
         global $wpdb;
         $wpdb = new ExamPreflightSubmissionContextFakeWpdb();
@@ -20,7 +22,7 @@ final class ExamPreflightServiceTest extends TestCase
         $this->useFakeLoginSnapshotRedis();
         $this->useFakeSubmissionContextRedis();
 
-        for ($index = 0; $index < 52; $index++) {
+        for ($index = 0; $index < 152; $index++) {
             $user_id = 701 + $index;
             cbt_test_register_user([
                 'ID' => $user_id,
@@ -36,15 +38,15 @@ final class ExamPreflightServiceTest extends TestCase
         }
 
         cbt_test_register_user([
-            'ID' => 801,
+            'ID' => 901,
             'display_name' => 'XI-B Student',
             'user_login' => 'xib_1',
             'user_email' => 'xib_1@example.com',
             'user_pass' => 'pass-xib',
             'roles' => ['student'],
         ]);
-        update_user_meta(801, 'kode_kelas', 'XI-B');
-        update_user_meta(801, 'kode_ruang', 'R2');
+        update_user_meta(901, 'kode_kelas', 'XI-B');
+        update_user_meta(901, 'kode_ruang', 'R2');
     }
 
     #[RunInSeparateProcess]
@@ -70,21 +72,22 @@ final class ExamPreflightServiceTest extends TestCase
         self::assertSame('ready', $state['stage_start_snapshot']);
         self::assertSame('ready', $state['stage_submission_context']);
         self::assertSame('active', $state['stage_profiles']);
-        self::assertSame('active', $state['stage_login_snapshot']);
+        self::assertSame('pending', $state['stage_login_snapshot']);
         self::assertSame('pending', $state['stage_auto_warm']);
-        self::assertSame(52, $state['target_student_count']);
+        self::assertSame(152, $state['target_student_count']);
         self::assertSame(1, $state['submission_context_question_count']);
         self::assertSame(1, $state['submission_context_ready_count']);
         self::assertSame(0, $state['submission_context_missing_count']);
         self::assertSame(0, $state['submission_context_invalid_count']);
-        self::assertSame(50, $state['profile_success_count']);
-        self::assertSame(50, $state['login_snapshot_success_count']);
+        self::assertSame(150, $state['profile_success_count']);
+        self::assertSame(0, $state['login_snapshot_success_count']);
         self::assertSame(0, $state['profile_failure_count']);
         self::assertGreaterThan(0, count($this->storedExamSnapshotKeysFor(77)));
         self::assertGreaterThan(0, count($this->storedStartSnapshotKeysFor(77)));
         self::assertGreaterThan(0, count($this->storedSubmissionContextKeysFor(77)));
         self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(701));
-        self::assertNotSame('', $this->storedLoginSnapshotPayloadFor(701));
+        self::assertSame('', $this->storedLoginSnapshotPayloadFor(701));
+        self::assertGreaterThan(0, count((array) ($GLOBALS['cbt_test_redis_pipeline_batches'] ?? [])));
 
         $auto_warm_state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
         self::assertFalse($auto_warm_state['active']);
@@ -103,24 +106,64 @@ final class ExamPreflightServiceTest extends TestCase
         $this->useUnavailableProfileRedis();
         $state = CBT_Exam_Preflight_Service::tick();
 
-        self::assertFalse($state['active']);
-        self::assertSame('completed_with_warnings', $state['status']);
+        self::assertTrue($state['active']);
+        self::assertSame('active', $state['status']);
         self::assertSame('ready', $state['stage_submission_context']);
         self::assertSame('warning', $state['stage_profiles']);
-        self::assertSame('ready', $state['stage_login_snapshot']);
-        self::assertSame('ready', $state['stage_auto_warm']);
-        self::assertSame(50, $state['profile_success_count']);
-        self::assertSame(52, $state['login_snapshot_success_count']);
+        self::assertSame('active', $state['stage_login_snapshot']);
+        self::assertSame('pending', $state['stage_auto_warm']);
+        self::assertSame(150, $state['profile_success_count']);
+        self::assertSame(50, $state['login_snapshot_success_count']);
         self::assertSame(2, $state['profile_failure_count']);
-        self::assertStringContainsString('catatan', (string) $state['last_message']);
+        self::assertStringContainsString('Login 50/152 siap', (string) $state['last_message']);
 
         $auto_warm_state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
-        self::assertTrue($auto_warm_state['active']);
-        self::assertSame(77, $auto_warm_state['exam_id']);
+        self::assertFalse($auto_warm_state['active']);
     }
 
     #[RunInSeparateProcess]
-    public function test_start_for_exam_is_rejected_when_other_auto_warm_exam_is_active(): void
+    public function test_start_for_exam_with_small_target_finishes_in_initial_burst_and_starts_auto_warm(): void
+    {
+        $result = CBT_Exam_Preflight_Service::start_for_exam([
+            'id' => 54,
+            'title' => 'Ujian Biologi',
+            'status' => 'published',
+            'target_kelas' => 'XI-B',
+        ]);
+
+        self::assertTrue($result['success']);
+        $state = CBT_Exam_Preflight_Service::get_state();
+        self::assertFalse($state['active']);
+        self::assertSame('completed', $state['status']);
+        self::assertTrue($state['auto_warm_started']);
+        self::assertSame(1, $state['target_student_count']);
+        self::assertSame(1, $state['profile_success_count']);
+        self::assertSame(1, $state['login_snapshot_success_count']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_for_exam_can_finish_large_target_in_initial_burst_when_budget_allows_more_batches(): void
+    {
+        $GLOBALS['cbt_test_preflight_initial_burst_max_batches'] = 4;
+
+        $result = CBT_Exam_Preflight_Service::start_for_exam([
+            'id' => 77,
+            'title' => 'Ujian Matematika',
+            'status' => 'published',
+            'target_kelas' => 'XI-A',
+        ]);
+
+        self::assertTrue($result['success']);
+        $state = CBT_Exam_Preflight_Service::get_state();
+        self::assertFalse($state['active']);
+        self::assertSame('completed', $state['status']);
+        self::assertTrue($state['auto_warm_started']);
+        self::assertSame(152, $state['profile_success_count']);
+        self::assertSame(152, $state['login_snapshot_success_count']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_for_exam_remains_allowed_when_other_auto_warm_exam_is_active(): void
     {
         CBT_Exam_Availability_Auto_Warm_Service::start_for_exam([
             'id' => 54,
@@ -136,10 +179,11 @@ final class ExamPreflightServiceTest extends TestCase
             'target_kelas' => 'XI-A',
         ]);
 
-        self::assertFalse($result['success']);
-        self::assertStringContainsString('Auto-Warm Availability aktif untuk exam lain', $result['message']);
-        self::assertSame('failed', CBT_Exam_Preflight_Service::get_state()['status']);
-        self::assertSame([], $this->storedExamSnapshotKeysFor(77));
+        self::assertTrue($result['success']);
+        self::assertSame(77, CBT_Exam_Preflight_Service::get_state()['exam_id']);
+        self::assertTrue(CBT_Exam_Preflight_Service::get_state()['question_snapshot_ready']);
+        self::assertTrue(CBT_Exam_Availability_Auto_Warm_Service::get_state()['active']);
+        self::assertSame(54, CBT_Exam_Availability_Auto_Warm_Service::get_state()['exam_id']);
     }
 
     #[RunInSeparateProcess]
@@ -166,7 +210,91 @@ final class ExamPreflightServiceTest extends TestCase
         self::assertSame('ready', $state['stage_question']);
         self::assertSame('ready', $state['stage_start_snapshot']);
         self::assertSame('active', $state['stage_profiles']);
-        self::assertSame('active', $state['stage_login_snapshot']);
+        self::assertSame('pending', $state['stage_login_snapshot']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_stop_for_exam_marks_active_session_as_stopped(): void
+    {
+        CBT_Exam_Preflight_Service::start_for_exam([
+            'id' => 77,
+            'title' => 'Ujian Matematika',
+            'status' => 'published',
+            'target_kelas' => 'XI-A',
+        ]);
+
+        $result = CBT_Exam_Preflight_Service::stop_for_exam([
+            'id' => 77,
+            'title' => 'Ujian Matematika',
+            'status' => 'published',
+            'target_kelas' => 'XI-A',
+        ]);
+
+        self::assertTrue($result['success']);
+        self::assertStringContainsString('dihentikan manual', (string) ($result['message'] ?? ''));
+
+        $state = CBT_Exam_Preflight_Service::get_state();
+        self::assertFalse($state['active']);
+        self::assertSame('stopped', $state['status']);
+        self::assertSame('stopped', $state['stage_profiles']);
+        self::assertSame('stopped', $state['stage_login_snapshot']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_stop_for_exam_is_rejected_when_other_exam_is_active(): void
+    {
+        CBT_Exam_Preflight_Service::start_for_exam([
+            'id' => 77,
+            'title' => 'Ujian Matematika',
+            'status' => 'published',
+            'target_kelas' => 'XI-A',
+        ]);
+
+        $result = CBT_Exam_Preflight_Service::stop_for_exam([
+            'id' => 54,
+            'title' => 'Ujian Biologi',
+            'status' => 'published',
+            'target_kelas' => 'XI-B',
+        ]);
+
+        self::assertFalse($result['success']);
+        self::assertStringContainsString('exam lain', (string) ($result['message'] ?? ''));
+        self::assertTrue(CBT_Exam_Preflight_Service::get_state()['active']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_for_exam_queues_second_exam_while_first_exam_owns_global_runner(): void
+    {
+        CBT_Exam_Preflight_Service::start_for_exam([
+            'id' => 77,
+            'title' => 'Ujian Matematika',
+            'status' => 'published',
+            'target_kelas' => 'XI-A',
+        ]);
+
+        $result = CBT_Exam_Preflight_Service::start_for_exam([
+            'id' => 54,
+            'title' => 'Ujian Biologi',
+            'status' => 'published',
+            'target_kelas' => 'XI-B',
+        ]);
+
+        self::assertTrue($result['success']);
+
+        $jobs = CBT_Exam_Preflight_Service::get_jobs_state();
+        self::assertSame('active', $jobs[77]['status']);
+        self::assertSame('queued', $jobs[54]['status']);
+        self::assertSame('ready', $jobs[54]['stage_question']);
+        self::assertSame('ready', $jobs[54]['stage_start_snapshot']);
+        self::assertSame('ready', $jobs[54]['stage_submission_context']);
+        self::assertSame('queued', $jobs[54]['stage_profiles']);
+        self::assertSame('queued', $jobs[54]['stage_login_snapshot']);
+        self::assertSame('queued', $jobs[54]['stage_auto_warm']);
+        self::assertSame(1, $jobs[54]['queue_position']);
+
+        $runner = CBT_Exam_Preflight_Service::get_global_runner_state();
+        self::assertSame(77, $runner['active_exam_id']);
+        self::assertSame([54], $runner['queue_exam_ids']);
     }
 
     private function bootstrapServiceScaffold(): void
@@ -189,6 +317,7 @@ class CBT_REST
     public static array $warmedExamIds = [];
     public static array $warmedStartExamIds = [];
     public static array $warmedSubmissionContextExamIds = [];
+    public static array $batchAvailabilityPayloadRequests = [];
 
     public static function warm_exam_question_delivery_snapshot(int $exam_id): void
     {
@@ -251,6 +380,19 @@ class CBT_REST
                 'kode_ruang' => (string) get_user_meta($user_id, 'kode_ruang', true),
             ],
         ];
+    }
+
+    public static function build_batch_student_exam_availability_snapshot_payloads(array $user_ids): array
+    {
+        $user_ids = array_values(array_filter(array_map('intval', $user_ids)));
+        self::$batchAvailabilityPayloadRequests[] = $user_ids;
+        $payloads = [];
+
+        foreach ($user_ids as $user_id) {
+            $payloads[$user_id] = self::build_student_exam_availability_snapshot_payload($user_id);
+        }
+
+        return $payloads;
     }
 }
 PHP);
@@ -459,6 +601,12 @@ final class ExamPreflightSubmissionContextFakeWpdb
             ];
         }
 
+        if (strpos($query, 'FROM wp_cbt_questions') !== false && strpos($query, 'WHERE exam_id = 54') !== false) {
+            return [
+                ['id' => 954, 'question_type' => 'multiple_choice'],
+            ];
+        }
+
         if (strpos($query, 'FROM wp_cbt_questions q') !== false && strpos($query, 'WHERE q.id IN (977)') !== false) {
             return [
                 [
@@ -473,10 +621,31 @@ final class ExamPreflightSubmissionContextFakeWpdb
             ];
         }
 
+        if (strpos($query, 'FROM wp_cbt_questions q') !== false && strpos($query, 'WHERE q.id IN (954)') !== false) {
+            return [
+                [
+                    'id' => 954,
+                    'exam_id' => 54,
+                    'question_type' => 'multiple_choice',
+                    'points' => 1,
+                    'correct_text' => '',
+                    'true_false_correct_value' => null,
+                    'short_answer_correct_text' => null,
+                ],
+            ];
+        }
+
         if (strpos($query, 'FROM wp_cbt_options') !== false && strpos($query, 'WHERE question_id IN (977)') !== false) {
             return [
                 ['id' => 9901, 'question_id' => 977, 'option_text' => 'A', 'is_correct' => 1],
                 ['id' => 9902, 'question_id' => 977, 'option_text' => 'B', 'is_correct' => 0],
+            ];
+        }
+
+        if (strpos($query, 'FROM wp_cbt_options') !== false && strpos($query, 'WHERE question_id IN (954)') !== false) {
+            return [
+                ['id' => 9541, 'question_id' => 954, 'option_text' => 'A', 'is_correct' => 1],
+                ['id' => 9542, 'question_id' => 954, 'option_text' => 'B', 'is_correct' => 0],
             ];
         }
 

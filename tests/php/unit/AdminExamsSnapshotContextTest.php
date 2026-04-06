@@ -11,9 +11,12 @@ require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-availability-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-question-delivery-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-start-attempt-snapshot-cache.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-session-snapshot-cache.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-question-contract-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-question-submission-context-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-auth-snapshot-cache.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-runtime.php';
 require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-exams-service.php';
 
 final class AdminExamsSnapshotContextTest extends TestCase
@@ -27,6 +30,9 @@ final class AdminExamsSnapshotContextTest extends TestCase
         $this->useFakeProfileRedis();
         $this->useFakeLoginSnapshotRedis();
         $this->useFakeSubmissionContextRedis();
+        $this->useFakeAttemptSessionRedis();
+        $this->useFakeAttemptContractRedis();
+        $this->useFakeRuntimeRedis();
         cbt_test_register_user([
             'ID' => 71,
             'display_name' => 'Salsa',
@@ -421,6 +427,105 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertSame('AKTIF', $preflight['stage_login_snapshot_label']);
     }
 
+    public function test_build_page_context_includes_queued_preflight_context_for_second_exam(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        \CBT_Exam_Question_Delivery_Cache::get_exam_payload(54, static function (int $examId): array {
+            return [
+                [
+                    'id' => 954,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal Biologi',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [],
+                ],
+            ];
+        });
+        \CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot(54, static function (int $examId): array {
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [954],
+                'question_number_map' => [954 => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'option_randomization_tokens_by_question' => [],
+            ];
+        });
+
+        update_option('cbt_exam_preflight_jobs', [
+            77 => [
+                'active' => true,
+                'status' => 'active',
+                'session_id' => 'preflight-77-123',
+                'exam_id' => 77,
+                'exam_title' => 'Ujian Matematika',
+                'exam_status' => 'published',
+                'target_kelas_csv' => 'XI-A',
+                'target_student_ids' => [71],
+                'target_student_count' => 1,
+                'started_at' => '2026-04-04 12:00:00',
+                'last_tick_at' => '2026-04-04 12:01:00',
+                'stage_question' => 'ready',
+                'stage_start_snapshot' => 'ready',
+                'stage_submission_context' => 'ready',
+                'stage_profiles' => 'active',
+                'stage_login_snapshot' => 'pending',
+                'stage_auto_warm' => 'pending',
+            ],
+            54 => [
+                'active' => false,
+                'status' => 'queued',
+                'session_id' => 'preflight-54-123',
+                'exam_id' => 54,
+                'exam_title' => 'Ujian Biologi',
+                'exam_status' => 'published',
+                'target_kelas_csv' => 'XI-B',
+                'target_student_ids' => [72],
+                'target_student_count' => 1,
+                'started_at' => '2026-04-04 12:02:00',
+                'last_tick_at' => '2026-04-04 12:02:00',
+                'queue_position' => 1,
+                'profiles_pending_count' => 1,
+                'login_pending_count' => 1,
+                'availability_pending_count' => 1,
+                'stage_question' => 'ready',
+                'stage_start_snapshot' => 'ready',
+                'stage_submission_context' => 'ready',
+                'stage_profiles' => 'queued',
+                'stage_login_snapshot' => 'queued',
+                'stage_auto_warm' => 'queued',
+            ],
+        ]);
+        update_option('cbt_exam_preflight_global_runner', [
+            'active_exam_id' => 77,
+            'active_exam_title' => 'Ujian Matematika',
+            'active_layer' => 'profiles',
+            'queue_exam_ids' => [54],
+            'session_id' => 'preflight-77-123',
+        ]);
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_exam_id' => '54',
+        ]);
+
+        $preflight = $context['exam_snapshot_rows'][0]['preflight'];
+        self::assertSame('MENUNGGU', $preflight['status_label']);
+        self::assertSame('READY', $preflight['stage_question_label']);
+        self::assertSame('READY', $preflight['stage_start_snapshot_label']);
+        self::assertSame('READY', $preflight['stage_submission_context_label']);
+        self::assertSame('MENUNGGU', $preflight['stage_profiles_label']);
+        self::assertSame('MENUNGGU', $preflight['stage_login_snapshot_label']);
+        self::assertSame('MENUNGGU', $preflight['stage_auto_warm_label']);
+        self::assertSame(1, $preflight['queue_position']);
+        self::assertSame(1, $preflight['queue_total']);
+        self::assertSame(77, $preflight['global_runner_exam_id']);
+        self::assertSame('Ujian Matematika', $preflight['global_runner_exam_title']);
+        self::assertFalse($preflight['can_start']);
+    }
+
     public function test_build_page_context_marks_selected_exam_not_ready_when_question_snapshot_missing(): void
     {
         $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
@@ -595,6 +700,64 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertCount(2, $context['exam_snapshot_rows'][0]['submission_context']['preview_items']);
     }
 
+    public function test_build_page_context_builds_session_runtime_monitor_rows_for_selected_exam(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        \CBT_Exam_Question_Delivery_Cache::get_exam_payload(77, static function (int $examId): array {
+            return [
+                [
+                    'id' => 901,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal Redis Siap',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [],
+                ],
+            ];
+        });
+        \CBT_Attempt_Session_Snapshot_Cache::write_attempt_snapshot(501, [
+            'attempt_id' => 501,
+            'exam_id' => 77,
+            'student_id' => 71,
+            'status' => 'in_progress',
+            'started_at' => '2026-04-04 07:00:00',
+            'duration_minutes' => 90,
+            'extra_time_minutes' => 5,
+            'question_count' => 8,
+            'question_order_signature' => 'runtime-sig-501',
+            'show_student_result' => 1,
+            'enable_calculator' => 1,
+        ]);
+        \CBT_Attempt_Question_Contract_Cache::write_attempt_snapshot(501, [
+            'attempt_id' => 501,
+            'exam_id' => 77,
+            'student_id' => 71,
+            'status' => 'in_progress',
+            'question_order_ids' => [901],
+            'question_number_map' => [901 => 1],
+            'question_order_signature' => 'runtime-sig-501',
+            'question_manifest' => [['id' => 901, 'question_number' => 1]],
+            'option_order_map' => [],
+        ]);
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => 'session_runtime_monitor',
+            'cbt_exam_snapshot_exam_id' => '77',
+        ]);
+
+        self::assertSame(\CBT_Admin_Exams_Service::SNAPSHOT_TAB_SESSION_RUNTIME_MONITOR, $context['exam_snapshot_tab']);
+        self::assertTrue(\CBT_Admin_Exams_Service::is_exam_snapshot_exam_tab('session_runtime_monitor'));
+        self::assertStringContainsString('cbt_exam_snapshot_tab=session_runtime_monitor', (string) $context['exam_snapshot_reset_url']);
+        self::assertCount(1, $context['exam_snapshot_rows']);
+        self::assertSame(1, $context['exam_snapshot_rows'][0]['session_runtime']['attempt_total']);
+        self::assertCount(1, $context['exam_snapshot_rows'][0]['session_runtime']['rows']);
+        self::assertSame('READY', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['session_status_label']);
+        self::assertSame('READY', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['contract_status_label']);
+        self::assertSame('MISS', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['runtime_answers_status_label']);
+        self::assertSame('LEGACY runtime', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['fallback_mode']);
+    }
+
     private function useFakeDeliveryRedis(): void
     {
         $reflection = new ReflectionClass(\CBT_Exam_Question_Delivery_Cache::class);
@@ -696,6 +859,57 @@ final class AdminExamsSnapshotContextTest extends TestCase
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, '');
     }
+
+    private function useFakeAttemptSessionRedis(): void
+    {
+        $reflection = new ReflectionClass(\CBT_Attempt_Session_Snapshot_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new \CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeAttemptContractRedis(): void
+    {
+        $reflection = new ReflectionClass(\CBT_Attempt_Question_Contract_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new \CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeRuntimeRedis(): void
+    {
+        $reflection = new ReflectionClass(\CBT_Runtime::class);
+
+        $redisProperty = $reflection->getProperty('redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, false);
+
+        $attemptedProperty = $reflection->getProperty('redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
 }
 
 final class AdminExamsSnapshotContextFakeWpdb
@@ -789,6 +1003,23 @@ final class AdminExamsSnapshotContextFakeWpdb
         }
 
         if (strpos($query, 'SELECT q.exam_id AS target_exam_id') !== false) {
+            return [];
+        }
+
+        if (strpos($query, 'FROM wp_cbt_attempts') !== false && strpos($query, "status = 'in_progress'") !== false) {
+            if (strpos($query, 'exam_id = 77') !== false) {
+                return [
+                    [
+                        'id' => 501,
+                        'exam_id' => 77,
+                        'student_id' => 71,
+                        'status' => 'in_progress',
+                        'started_at' => '2026-04-04 07:00:00',
+                        'extra_time_minutes' => 5,
+                    ],
+                ];
+            }
+
             return [];
         }
 
