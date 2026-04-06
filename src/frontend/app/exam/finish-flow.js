@@ -26,6 +26,11 @@ export function createFinishFlowManager(deps) {
     var isQuestionAnswered = deps.isQuestionAnswered;
     var isRetryableAnswerSyncError = deps.isRetryableAnswerSyncError;
     var persistCurrentQuestionCacheLocally = deps.persistCurrentQuestionCacheLocally;
+    var ensureResultStageRenderer = typeof deps.ensureResultStageRenderer === 'function'
+        ? deps.ensureResultStageRenderer
+        : function () {
+            return Promise.resolve(null);
+        };
     var prefetchResultStageRenderer = deps.prefetchResultStageRenderer;
     var queueQuestionAnswer = deps.queueQuestionAnswer;
     var render = deps.render;
@@ -236,6 +241,7 @@ export function createFinishFlowManager(deps) {
         if (state.stage !== 'exam' || state.isFinishing || state.examLockedForPendingFinish) {
             return;
         }
+        prefetchResultStageRenderer();
         state.finishConfirmSummary = getExamProgressSummary();
         state.finishConfirmOpen = true;
         clearMessages();
@@ -394,6 +400,18 @@ export function createFinishFlowManager(deps) {
         });
     }
 
+    async function prepareResultStageForFinishTransition() {
+        prefetchResultStageRenderer();
+
+        try {
+            await ensureResultStageRenderer({
+                renderOnResolve: false
+            });
+        } catch (error) {
+            // Keep the finish path successful; result fallback shell can render if the chunk still fails.
+        }
+    }
+
     function shouldUnlockExamAfterFinishFailure() {
         return !state.pendingFinishAutoSubmit && state.remainingSeconds > 0;
     }
@@ -437,6 +455,7 @@ export function createFinishFlowManager(deps) {
         clearAttemptUiStateSyncTimer();
         clearQuestionCachePersistTimer();
         clearMessages();
+        prefetchResultStageRenderer();
         recordTimelineEntry('finish:submit:start', 'Finalisasi ujian dimulai.', {
             attemptId: Number(state.attemptId) || 0,
             stage: String(state.stage || '')
@@ -486,9 +505,10 @@ export function createFinishFlowManager(deps) {
                 90,
                 4,
                 'Menyiapkan hasil ujian',
-                'Finalisasi diterima. Kami sedang memuat hasil terbaru Anda.'
+                'Finalisasi diterima. Kami sedang memuat hasil terbaru dan menyiapkan tampilan nilai Anda.'
             );
             var resultPayload = await buildFinishedResultPayload(finishPayload);
+            await prepareResultStageForFinishTransition();
             completeExamWithResult(resultPayload);
             state.success = autoSubmit ? 'Waktu habis. Ujian otomatis diselesaikan.' : 'Ujian selesai.';
             recordTimelineEntry('finish:submit:success', 'Finalisasi ujian berhasil.', {
@@ -529,6 +549,7 @@ export function createFinishFlowManager(deps) {
                         attempt_id: state.attemptId,
                         status: 'completed'
                     });
+                    await prepareResultStageForFinishTransition();
                     completeExamWithResult(recoveredResultPayload);
                     state.success = autoSubmit ? 'Waktu habis. Ujian otomatis diselesaikan.' : 'Ujian selesai.';
                     recordTimelineEntry('finish:submit:success', 'Attempt sudah closed; hasil berhasil dipulihkan.', {

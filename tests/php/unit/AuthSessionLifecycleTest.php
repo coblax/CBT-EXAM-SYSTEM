@@ -48,6 +48,7 @@ final class AuthSessionLifecycleTest extends TestCase
         update_user_meta(9, 'foto', 'https://example.com/avatar.jpg');
         $this->useFakeRedisClient();
         $this->useFakeProfileRedisClient();
+        $this->useFakeLoginSnapshotRedisClient();
     }
 
     public function test_login_blocks_recent_active_session_from_legacy_shadow_and_hydrates_redis(): void
@@ -89,6 +90,38 @@ final class AuthSessionLifecycleTest extends TestCase
         self::assertSame('R1', $result['kode_ruang']);
         self::assertSame('Islam', $result['agama']);
         self::assertSame('https://example.com/avatar.jpg', $result['foto']);
+    }
+
+    public function test_login_uses_login_snapshot_hit_without_canonical_lookup(): void
+    {
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(9, 'test_hit');
+
+        $user = get_user_by('id', 9);
+        self::assertInstanceOf(WP_User::class, $user);
+        $user->user_pass = 'new-secret';
+        $GLOBALS['cbt_test_wp_users'][9] = $user;
+
+        $result = CBT_Auth::login('ayu', 'secret');
+
+        self::assertIsArray($result);
+        self::assertSame('ayu', $result['username']);
+        self::assertSame('XI-A', $result['kode_kelas']);
+    }
+
+    public function test_login_falls_back_to_canonical_when_login_snapshot_hash_is_stale_and_rewrites_snapshot(): void
+    {
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(9, 'test_stale');
+
+        $user = get_user_by('id', 9);
+        self::assertInstanceOf(WP_User::class, $user);
+        $user->user_pass = 'new-secret';
+        $GLOBALS['cbt_test_wp_users'][9] = $user;
+
+        $result = CBT_Auth::login('ayu', 'new-secret');
+
+        self::assertIsArray($result);
+        self::assertSame('ayu', $result['username']);
+        self::assertSame('new-secret', $this->readLoginSnapshotPasswordHash(9));
     }
 
     public function test_clear_login_session_rejects_wrong_session_key_and_logout_current_session_only_clears_matching_session(): void
@@ -274,6 +307,23 @@ final class AuthSessionLifecycleTest extends TestCase
         $errorProperty->setValue(null, '');
     }
 
+    private function useFakeLoginSnapshotRedisClient(): void
+    {
+        $reflection = new \ReflectionClass(CBT_Login_Auth_Snapshot_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new \CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
     private function writeRedisSession(int $userId, string $sessionKey, int $touchedAt): void
     {
         $GLOBALS['cbt_test_redis_storage'][$this->redisSessionKey($userId)] = json_encode([
@@ -309,5 +359,16 @@ final class AuthSessionLifecycleTest extends TestCase
     private function redisSessionKey(int $userId): string
     {
         return 'cbt_auth:user:' . $userId . ':session';
+    }
+
+    private function readLoginSnapshotPasswordHash(int $userId): string
+    {
+        $raw = (string) ($GLOBALS['cbt_test_redis_storage']['cbt_login_auth:user:' . $userId] ?? '');
+        if ($raw === '') {
+            return '';
+        }
+
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? (string) ($decoded['password_hash'] ?? '') : '';
     }
 }

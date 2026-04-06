@@ -52,6 +52,26 @@ function buildCachedQuestionSnapshot(totalQuestions) {
 function createFixture(overrides = {}) {
     var state = Object.assign({
         attemptId: 0,
+        authProgressVisible: false,
+        authProgressMode: '',
+        authProgressPercent: 0,
+        authProgressStepIndex: 0,
+        authProgressStepTotal: 0,
+        authProgressStatus: '',
+        authProgressDetail: '',
+        resultProgressVisible: false,
+        resultProgressPercent: 0,
+        resultProgressStepIndex: 0,
+        resultProgressStepTotal: 0,
+        resultProgressStatus: '',
+        resultProgressDetail: '',
+        sessionRecoveryVisible: false,
+        sessionRecoveryMode: '',
+        sessionRecoveryPercent: 0,
+        sessionRecoveryStepIndex: 0,
+        sessionRecoveryStepTotal: 0,
+        sessionRecoveryStatus: '',
+        sessionRecoveryDetail: '',
         openingAttemptProgressPercent: 0,
         openingAttemptProgressStepIndex: 0,
         openingAttemptProgressStepTotal: 0,
@@ -96,11 +116,57 @@ function createFixture(overrides = {}) {
         apiCalls: [],
         initializeSubmittedPayloadCache: 0,
         loadQuestionWindow: [],
+        ensureResultStageRenderer: [],
         persistCurrentQuestionCacheLocally: 0,
         queueLoadedQuestionAnswersForFlush: 0,
         renderSnapshots: []
     };
     var restoredSnapshot = overrides.restoredSnapshot || buildCachedQuestionSnapshot(40);
+
+    function resolveSelectedExam() {
+        if (typeof overrides.getSelectedExam === 'function') {
+            return overrides.getSelectedExam(state);
+        }
+
+        if (overrides.selectedExam) {
+            return overrides.selectedExam;
+        }
+
+        var selectedExamId = Number(state.selectedExamId) || 0;
+        if (selectedExamId <= 0 || !Array.isArray(state.exams)) {
+            return null;
+        }
+
+        for (var index = 0; index < state.exams.length; index++) {
+            if (Number(state.exams[index] && state.exams[index].id) === selectedExamId) {
+                return state.exams[index];
+            }
+        }
+
+        return null;
+    }
+
+    function resolveExamById(examId) {
+        if (typeof overrides.findExamById === 'function') {
+            return overrides.findExamById(examId, state);
+        }
+
+        if (overrides.selectedExam && Number(overrides.selectedExam.id) === Number(examId)) {
+            return overrides.selectedExam;
+        }
+
+        if (!Array.isArray(state.exams)) {
+            return null;
+        }
+
+        for (var index = 0; index < state.exams.length; index++) {
+            if (Number(state.exams[index] && state.exams[index].id) === Number(examId)) {
+                return state.exams[index];
+            }
+        }
+
+        return null;
+    }
 
     var manager = createExamSessionManager({
         recordTimeline: function () {},
@@ -113,6 +179,15 @@ function createFixture(overrides = {}) {
 
             if (typeof overrides.apiRequest === 'function') {
                 return overrides.apiRequest(endpoint, options);
+            }
+
+            if (endpoint === 'exams') {
+                return {
+                    current_user: null,
+                    items: Array.isArray(state.exams) && state.exams.length
+                        ? state.exams
+                        : (overrides.selectedExam ? [overrides.selectedExam] : [])
+                };
             }
 
             if (endpoint === 'ui_state') {
@@ -137,12 +212,19 @@ function createFixture(overrides = {}) {
         ensureExamStageRenderer: function () {
             return Promise.resolve(null);
         },
+        ensureResultStageRenderer: function (options) {
+            calls.ensureResultStageRenderer.push(options || {});
+            if (typeof overrides.ensureResultStageRenderer === 'function') {
+                return overrides.ensureResultStageRenderer(options);
+            }
+            return Promise.resolve(null);
+        },
         ensureQuestionWindowForIndex: async function () {},
         examTokenLength: 6,
         clearSecurityLoggingRuntimeState: function () {},
         exitFullscreenSilently: function () {},
-        findExamById: function () {
-            return overrides.selectedExam || null;
+        findExamById: function (examId) {
+            return resolveExamById(examId);
         },
         getNavigatorConnectionStatus: function () {
             return 'online';
@@ -153,7 +235,7 @@ function createFixture(overrides = {}) {
                 : Number(state.totalQuestions) || 0;
         },
         getSelectedExam: function () {
-            return overrides.selectedExam || null;
+            return resolveSelectedExam();
         },
         initializeSubmittedPayloadCache: function () {
             calls.initializeSubmittedPayloadCache += 1;
@@ -200,10 +282,26 @@ function createFixture(overrides = {}) {
         recordActionTrail: function () {},
         render: function () {
             calls.renderSnapshots.push({
+                authProgressDetail: String(state.authProgressDetail || ''),
+                authProgressMode: String(state.authProgressMode || ''),
+                authProgressPercent: Number(state.authProgressPercent) || 0,
+                authProgressStatus: String(state.authProgressStatus || ''),
+                authProgressStepIndex: Number(state.authProgressStepIndex) || 0,
+                authProgressVisible: Boolean(state.authProgressVisible),
                 openingAttemptProgressDetail: String(state.openingAttemptProgressDetail || ''),
                 openingAttemptProgressPercent: Number(state.openingAttemptProgressPercent) || 0,
                 openingAttemptProgressStatus: String(state.openingAttemptProgressStatus || ''),
                 openingAttemptProgressStepIndex: Number(state.openingAttemptProgressStepIndex) || 0,
+                resultProgressDetail: String(state.resultProgressDetail || ''),
+                resultProgressPercent: Number(state.resultProgressPercent) || 0,
+                resultProgressStatus: String(state.resultProgressStatus || ''),
+                resultProgressStepIndex: Number(state.resultProgressStepIndex) || 0,
+                resultProgressVisible: Boolean(state.resultProgressVisible),
+                sessionRecoveryDetail: String(state.sessionRecoveryDetail || ''),
+                sessionRecoveryMode: String(state.sessionRecoveryMode || ''),
+                sessionRecoveryStatus: String(state.sessionRecoveryStatus || ''),
+                sessionRecoveryStepIndex: Number(state.sessionRecoveryStepIndex) || 0,
+                sessionRecoveryVisible: Boolean(state.sessionRecoveryVisible),
                 stage: String(state.stage || '')
             });
         },
@@ -361,6 +459,136 @@ describe('createExamSessionManager', function () {
         expect(fixture.state.openingAttemptProgressDetail).toBe('');
     });
 
+    it('updates recovery progress while reopening an exam from a persisted session refresh', async function () {
+        var fixture = createFixture({
+            state: {
+                sessionRecoveryVisible: true,
+                sessionRecoveryMode: 'exam_restore',
+                sessionRecoveryStepIndex: 4,
+                sessionRecoveryStepTotal: 7,
+                selectedExamId: 55
+            },
+            selectedExam: {
+                id: 55,
+                duration_minutes: 60
+            }
+        });
+
+        await fixture.manager.openAttemptSession(
+            {
+                id: 55,
+                duration_minutes: 60
+            },
+            {
+                attempt_id: 77,
+                duration_minutes: 60,
+                started_at: '2026-04-03 05:00:00',
+                status: 'resume',
+                question_order_signature: 'signature-40',
+                question_revision: fixture.restoredSnapshot.questionRevision
+            }
+        );
+
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.sessionRecoveryVisible
+                && snapshot.sessionRecoveryMode === 'exam_restore'
+                && snapshot.sessionRecoveryStepIndex === 5
+                && snapshot.sessionRecoveryStatus.indexOf('window soal') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.sessionRecoveryVisible
+                && snapshot.sessionRecoveryStepIndex === 6
+                && snapshot.sessionRecoveryStatus.indexOf('jawaban lokal') >= 0;
+        })).toBe(true);
+        expect(fixture.state.sessionRecoveryStatus).toContain('Menyinkronkan jawaban tertunda');
+        expect(fixture.state.sessionRecoveryStepIndex).toBe(7);
+    });
+
+    it('shows staged auth progress while login prepares the exam dashboard', async function () {
+        var fixture = createFixture({
+            state: {
+                stage: 'login'
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'login') {
+                    return {
+                        token: 'token-login-123',
+                        user_id: 19,
+                        role: 'student',
+                        display_name: 'Ayu',
+                        username: 'ayu',
+                        email: 'ayu@example.test',
+                        kode_kelas: 'XII IPA 1',
+                        kode_ruang: 'R-3',
+                        agama: 'Islam',
+                        foto: '/uploads/ayu.jpg'
+                    };
+                }
+
+                if (endpoint === 'exams') {
+                    return {
+                        current_user: {
+                            user_id: 19,
+                            role: 'student',
+                            display_name: 'Ayu',
+                            username: 'ayu',
+                            email: 'ayu@example.test',
+                            kode_kelas: 'XII IPA 1',
+                            kode_ruang: 'R-3',
+                            agama: 'Islam',
+                            foto: '/uploads/ayu.jpg'
+                        },
+                        items: [
+                            {
+                                id: 55,
+                                title: 'TOBK Biologi'
+                            }
+                        ]
+                    };
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+        var form = document.createElement('form');
+        form.innerHTML = [
+            '<input name="identifier" value="ayu" />',
+            '<input name="password" value="secret-pass" />'
+        ].join('');
+
+        await fixture.manager.handleLogin(form);
+
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint;
+        })).toEqual(['login', 'exams']);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.authProgressMode === 'login'
+                && snapshot.authProgressStepIndex === 1
+                && snapshot.authProgressStatus.indexOf('Menghubungi server login') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.authProgressMode === 'login'
+                && snapshot.authProgressStepIndex === 3
+                && snapshot.authProgressStatus.indexOf('Memuat daftar ujian') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.renderSnapshots[fixture.calls.renderSnapshots.length - 1]).toMatchObject({
+            authProgressMode: '',
+            authProgressPercent: 0,
+            authProgressStatus: '',
+            authProgressStepIndex: 0,
+            authProgressVisible: false,
+            stage: 'confirm'
+        });
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.selectedExamId).toBe(55);
+        expect(fixture.state.token).toBe('token-login-123');
+        expect(fixture.state.authProgressVisible).toBe(false);
+        expect(fixture.state.authProgressPercent).toBe(0);
+        expect(fixture.state.authProgressStatus).toBe('');
+        expect(fixture.state.loginIdentifier).toBe('');
+        expect(fixture.state.loginPassword).toBe('');
+    });
+
     it('recovers a congested start flow by resuming the active attempt after a lock response', async function () {
         var restoredSnapshot = buildCachedQuestionSnapshot(40);
         var fixture = createFixture({
@@ -372,6 +600,21 @@ describe('createExamSessionManager', function () {
             },
             startAttemptRecoveryPollDelayMs: 0,
             apiRequest: async function (endpoint, options) {
+                if (endpoint === 'exams') {
+                    return {
+                        current_user: null,
+                        items: [
+                            {
+                                id: 55,
+                                duration_minutes: 60,
+                                is_class_allowed: 1,
+                                latest_attempt_id: 0,
+                                latest_attempt_status: ''
+                            }
+                        ]
+                    };
+                }
+
                 if (endpoint === 'ui_state') {
                     return { attempt_state: null };
                 }
@@ -408,6 +651,7 @@ describe('createExamSessionManager', function () {
                 entry.options && entry.options.body && entry.options.body.resume_only ? 1 : 0
             );
         })).toEqual([
+            'exams:0',
             'start_attempt:0',
             'start_attempt:1',
             'ui_state:0'
@@ -416,5 +660,276 @@ describe('createExamSessionManager', function () {
             return snapshot.openingAttemptProgressStatus.indexOf('Mengecek attempt aktif') >= 0;
         })).toBe(true);
         expect(fixture.calls.loadQuestionWindow).toHaveLength(1);
+    });
+
+    it('refreshes the exam list before viewing results and reroutes to start when an admin reset makes the attempt active again', async function () {
+        var restoredSnapshot = buildCachedQuestionSnapshot(40);
+        var fixture = createFixture({
+            restoredSnapshot,
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        title: 'TOBK Biologi',
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 120,
+                        latest_attempt_status: 'completed'
+                    }
+                ],
+                selectedExamId: 55
+            },
+            apiRequest: async function (endpoint, options) {
+                if (endpoint === 'exams') {
+                    return {
+                        current_user: null,
+                        items: [
+                            {
+                                id: 55,
+                                title: 'TOBK Biologi',
+                                duration_minutes: 60,
+                                is_class_allowed: 1,
+                                latest_attempt_id: 99,
+                                latest_attempt_status: 'in_progress'
+                            }
+                        ]
+                    };
+                }
+
+                if (endpoint === 'ui_state') {
+                    return { attempt_state: null };
+                }
+
+                if (endpoint === 'start_attempt') {
+                    return {
+                        attempt_id: 99,
+                        duration_minutes: 60,
+                        started_at: '2026-04-03 05:00:00',
+                        status: 'resumed',
+                        question_order_signature: restoredSnapshot.questionOrderSignature,
+                        question_revision: restoredSnapshot.questionRevision
+                    };
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.handleViewResult();
+
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint;
+        })).toEqual(['exams', 'start_attempt', 'ui_state']);
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.error).toBe('');
+        expect(fixture.state.attemptId).toBe(99);
+    });
+
+    it('shows staged result progress while viewing results from the exam picker', async function () {
+        var fixture = createFixture({
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        title: 'TOBK Biologi',
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 88,
+                        latest_attempt_status: 'completed',
+                        latest_attempt_score: 80,
+                        latest_attempt_max_score: 100,
+                        latest_attempt_percentage: 80,
+                        latest_attempt_is_passed: 1,
+                        latest_attempt_pass_label: 'LULUS',
+                        latest_attempt_result_tone: 'pass',
+                        kkm_percentage: 75,
+                        show_student_result: 1
+                    }
+                ],
+                selectedExamId: 55
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'exams') {
+                    return {
+                        current_user: null,
+                        items: [
+                            {
+                                id: 55,
+                                title: 'TOBK Biologi',
+                                duration_minutes: 60,
+                                is_class_allowed: 1,
+                                latest_attempt_id: 88,
+                                latest_attempt_status: 'completed',
+                                latest_attempt_score: 80,
+                                latest_attempt_max_score: 100,
+                                latest_attempt_percentage: 80,
+                                latest_attempt_is_passed: 1,
+                                latest_attempt_pass_label: 'LULUS',
+                                latest_attempt_result_tone: 'pass',
+                                kkm_percentage: 75,
+                                show_student_result: 1
+                            }
+                        ]
+                    };
+                }
+
+                if (endpoint === 'result') {
+                    return {
+                        attempt: {
+                            exam_id: 55,
+                            id: 88,
+                            max_score: 100,
+                            score: 80,
+                            started_at: '2026-04-03 05:00:00',
+                            status: 'completed'
+                        },
+                        exam: {
+                            id: 55,
+                            kkm_percentage: 75,
+                            show_student_result: 1,
+                            title: 'TOBK Biologi'
+                        },
+                        is_passed: 1,
+                        kkm_percentage: 75,
+                        pass_label: 'LULUS',
+                        percentage: 80,
+                        result_tone: 'pass',
+                        result_view_mode: 'full',
+                        review_items: [],
+                        review_summary: null,
+                        show_student_result: 1,
+                        submission_summary: {
+                            answered_questions: 10,
+                            pending_manual_questions: 0,
+                            total_questions: 10
+                        }
+                    };
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.handleViewResult();
+
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.resultProgressVisible
+                && snapshot.resultProgressStepIndex === 1
+                && snapshot.resultProgressStatus.indexOf('status exam') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.resultProgressVisible
+                && snapshot.resultProgressStepIndex === 2
+                && snapshot.resultProgressStatus.indexOf('hasil attempt') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.resultProgressVisible
+                && snapshot.resultProgressStepIndex === 3
+                && snapshot.resultProgressStatus.indexOf('ringkasan nilai') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.resultProgressVisible
+                && snapshot.resultProgressStepIndex === 4
+                && snapshot.resultProgressStatus.indexOf('halaman hasil') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.ensureResultStageRenderer).toEqual([
+            {
+                renderOnResolve: false
+            }
+        ]);
+        expect(fixture.calls.renderSnapshots[fixture.calls.renderSnapshots.length - 1]).toMatchObject({
+            resultProgressPercent: 0,
+            resultProgressStatus: '',
+            resultProgressStepIndex: 0,
+            resultProgressVisible: false,
+            stage: 'result'
+        });
+    });
+
+    it('refreshes the exam list before starting and reroutes to result when the latest attempt is already completed', async function () {
+        var fixture = createFixture({
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        title: 'TOBK Biologi',
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: ''
+                    }
+                ],
+                selectedExamId: 55
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'exams') {
+                    return {
+                        current_user: null,
+                        items: [
+                            {
+                                id: 55,
+                                title: 'TOBK Biologi',
+                                duration_minutes: 60,
+                                is_class_allowed: 1,
+                                latest_attempt_id: 88,
+                                latest_attempt_status: 'completed',
+                                latest_attempt_score: 80,
+                                latest_attempt_max_score: 100,
+                                latest_attempt_percentage: 80,
+                                latest_attempt_is_passed: 1,
+                                latest_attempt_pass_label: 'LULUS',
+                                latest_attempt_result_tone: 'pass',
+                                kkm_percentage: 75,
+                                show_student_result: 1
+                            }
+                        ]
+                    };
+                }
+
+                if (endpoint === 'result') {
+                    return {
+                        attempt: {
+                            exam_id: 55,
+                            id: 88,
+                            max_score: 100,
+                            score: 80,
+                            started_at: '2026-04-03 05:00:00',
+                            status: 'completed'
+                        },
+                        exam: {
+                            id: 55,
+                            kkm_percentage: 75,
+                            show_student_result: 1,
+                            title: 'TOBK Biologi'
+                        },
+                        is_passed: 1,
+                        kkm_percentage: 75,
+                        pass_label: 'LULUS',
+                        percentage: 80,
+                        result_tone: 'pass',
+                        result_view_mode: 'full',
+                        review_items: [],
+                        review_summary: null,
+                        show_student_result: 1,
+                        submission_summary: {
+                            answered_questions: 10,
+                            pending_manual_questions: 0,
+                            total_questions: 10
+                        }
+                    };
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.handleStartExam();
+
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint;
+        })).toEqual(['exams', 'result']);
+        expect(fixture.state.stage).toBe('result');
+        expect(fixture.state.error).toBe('');
+        expect(fixture.state.result && fixture.state.result.attempt_id).toBe(88);
     });
 });

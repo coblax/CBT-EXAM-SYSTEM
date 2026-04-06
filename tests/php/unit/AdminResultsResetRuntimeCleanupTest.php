@@ -56,7 +56,7 @@ final class AdminResultsResetRuntimeCleanupTest extends TestCase
     }
 
     #[RunInSeparateProcess]
-    public function test_handle_bulk_reset_attempts_clears_runtime_and_ui_state_for_targets_and_abandoned_attempts(): void
+    public function test_handle_bulk_reset_attempts_starts_bulk_job_and_redirects_to_token(): void
     {
         $this->bootstrapResultsService();
 
@@ -90,14 +90,20 @@ final class AdminResultsResetRuntimeCleanupTest extends TestCase
             self::assertSame('__cbt_admin_results_redirect__', $runtimeException->getMessage());
         }
 
-        self::assertSame([31, 32, 33, 44, 45], CBT_Runtime::$clearedAttemptIds);
-        self::assertSame([[44, 45, 31, 32, 33]], CBT_Cache::$invalidatedAttemptsBatches);
-        self::assertSame([[7, 8]], CBT_Cache::$invalidatedUsersBatches);
-        self::assertSame([9, 10], CBT_Cache::$invalidatedAnalyticsExamIdsBatch);
-        self::assertSame([[44, 45, 31, 32, 33]], CBT_UI_State::$clearedAttemptStatesByAttemptIds);
-        self::assertSame(44, CBT_Active_Attempt_Index::get_active_attempt_id(7, 9));
-        self::assertSame(45, CBT_Active_Attempt_Index::get_active_attempt_id(8, 10));
-        self::assertStringContainsString('cbt_msg=Berhasil+reset+2+attempt+sesuai+filter.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertSame([], CBT_Runtime::$clearedAttemptIds);
+        self::assertSame([], CBT_Cache::$invalidatedAttemptsBatches);
+        self::assertSame([], CBT_Cache::$invalidatedUsersBatches);
+        self::assertSame([], CBT_UI_State::$clearedAttemptStatesByAttemptIds);
+        self::assertSame(0, CBT_Active_Attempt_Index::get_active_attempt_id(7, 9));
+        self::assertMatchesRegularExpression('/cbt_results_bulk_token=[a-z0-9_-]+/', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+
+        $token = (string) get_transient('cbt_results_bulk_job_active_' . get_current_user_id());
+        self::assertNotSame('', $token);
+
+        $state = get_transient('cbt_results_bulk_job_' . $token);
+        self::assertIsArray($state);
+        self::assertSame('reset', $state['mode'] ?? '');
+        self::assertSame(2, $state['total'] ?? 0);
     }
 
     private function bootstrapResultsService(): void

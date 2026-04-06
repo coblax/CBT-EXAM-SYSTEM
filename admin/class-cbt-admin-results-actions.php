@@ -40,4 +40,14 @@ final class CBT_Admin_Results_Actions
     {
         CBT_Admin_Results_Service::handle_bulk_force_complete_attempts();
     }
+
+    public static function handle_bulk_job_tick_ajax(): void
+    {
+        CBT_Admin_Results_Service::handle_bulk_job_tick_ajax();
+    }
+
+    public static function handle_bulk_job_stop_ajax(): void
+    {
+        CBT_Admin_Results_Service::handle_bulk_job_stop_ajax();
+    }
 }

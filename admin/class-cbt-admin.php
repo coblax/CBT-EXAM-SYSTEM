@@ -31,6 +31,10 @@ class CBT_Admin
         add_action('admin_post_cbt_warm_bulk_exam_delivery_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_exam_delivery_snapshots']);
         add_action('admin_post_cbt_clear_exam_delivery_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_exam_delivery_snapshot']);
         add_action('admin_post_cbt_clear_bulk_exam_delivery_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clear_bulk_exam_delivery_snapshots']);
+        add_action('admin_post_cbt_warm_exam_submission_context_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_warm_exam_submission_context_snapshot']);
+        add_action('admin_post_cbt_warm_bulk_exam_submission_context_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_exam_submission_context_snapshots']);
+        add_action('admin_post_cbt_clear_exam_submission_context_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_exam_submission_context_snapshot']);
+        add_action('admin_post_cbt_clear_bulk_exam_submission_context_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clear_bulk_exam_submission_context_snapshots']);
         add_action('admin_post_cbt_start_exam_availability_auto_warm', [CBT_Admin_Exams_Actions::class, 'handle_start_exam_availability_auto_warm']);
         add_action('admin_post_cbt_stop_exam_availability_auto_warm', [CBT_Admin_Exams_Actions::class, 'handle_stop_exam_availability_auto_warm']);
         add_action('admin_post_cbt_start_exam_preflight', [CBT_Admin_Exams_Actions::class, 'handle_start_exam_preflight']);
@@ -42,6 +46,10 @@ class CBT_Admin
         add_action('admin_post_cbt_clear_student_profile_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_student_profile_snapshot']);
         add_action('admin_post_cbt_warm_bulk_student_profile_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_student_profile_snapshots']);
         add_action('admin_post_cbt_clear_bulk_student_profile_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clear_bulk_student_profile_snapshots']);
+        add_action('admin_post_cbt_warm_student_login_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_warm_student_login_snapshot']);
+        add_action('admin_post_cbt_clear_student_login_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_student_login_snapshot']);
+        add_action('admin_post_cbt_warm_bulk_student_login_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_student_login_snapshots']);
+        add_action('admin_post_cbt_clear_bulk_student_login_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clear_bulk_student_login_snapshots']);
         add_action('admin_post_cbt_save_global_exam_token', [CBT_Admin_Tokens_Actions::class, 'handle_save_global_exam_token']);
         add_action('admin_post_cbt_save_setup_branding', [CBT_Admin_Setup_Actions::class, 'handle_save_setup_branding']);
         add_action('admin_post_cbt_save_setup_security', [CBT_Admin_Security_Actions::class, 'handle_save_setup_security']);
@@ -93,6 +101,8 @@ class CBT_Admin
         add_action('admin_post_cbt_force_complete_attempt', [CBT_Admin_Results_Actions::class, 'handle_force_complete_attempt']);
         add_action('admin_post_cbt_bulk_reset_attempts', [CBT_Admin_Results_Actions::class, 'handle_bulk_reset_attempts']);
         add_action('admin_post_cbt_bulk_force_complete_attempts', [CBT_Admin_Results_Actions::class, 'handle_bulk_force_complete_attempts']);
+        add_action('wp_ajax_cbt_results_bulk_job_tick', [CBT_Admin_Results_Actions::class, 'handle_bulk_job_tick_ajax']);
+        add_action('wp_ajax_cbt_results_bulk_job_stop', [CBT_Admin_Results_Actions::class, 'handle_bulk_job_stop_ajax']);
         add_action('admin_post_cbt_export_exam_report_pdf', [CBT_Admin_Report_Exam_Actions::class, 'handle_export_exam_report_pdf']);
         add_action('admin_post_cbt_save_exam_incident', [CBT_Admin_Report_Exam_Actions::class, 'handle_save_exam_incident']);
         add_action('admin_post_cbt_update_exam_incident', [CBT_Admin_Report_Exam_Actions::class, 'handle_update_exam_incident']);

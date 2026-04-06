@@ -40,6 +40,13 @@ function createLifecycleFixture(overrides = {}) {
     var root = overrides.root || createTimerRoot();
     var state = Object.assign({
         attemptId: 55,
+        authProgressVisible: false,
+        authProgressMode: '',
+        authProgressPercent: 0,
+        authProgressStepIndex: 0,
+        authProgressStepTotal: 0,
+        authProgressStatus: '',
+        authProgressDetail: '',
         busy: false,
         calculatorError: 'bad calc',
         calculatorExpression: '1+1',
@@ -145,6 +152,11 @@ function createLifecycleFixture(overrides = {}) {
         recordTimeline: function () {},
         render: function (reason, meta) {
             calls.render.push({
+                authProgressMode: String(state.authProgressMode || ''),
+                authProgressPercent: Number(state.authProgressPercent) || 0,
+                authProgressStatus: String(state.authProgressStatus || ''),
+                authProgressStepIndex: Number(state.authProgressStepIndex) || 0,
+                authProgressVisible: Boolean(state.authProgressVisible),
                 meta: meta || null,
                 reason: reason || ''
             });
@@ -262,7 +274,17 @@ describe('createSessionLifecycleManager', function () {
     });
 
     it('clears timer, runtime state, and persisted snapshots when authenticated frontend state is reset', function () {
-        var fixture = createLifecycleFixture();
+        var fixture = createLifecycleFixture({
+            state: {
+                authProgressVisible: true,
+                authProgressMode: 'logout',
+                authProgressPercent: 61,
+                authProgressStepIndex: 3,
+                authProgressStepTotal: 4,
+                authProgressStatus: 'Menyinkronkan status',
+                authProgressDetail: 'Sedang sinkron.'
+            }
+        });
 
         fixture.manager.startTimer();
         expect(fixture.state.timerId).not.toBe(0);
@@ -281,6 +303,10 @@ describe('createSessionLifecycleManager', function () {
         expect(fixture.state.richZoomModalGalleryItems).toEqual([]);
         expect(fixture.state.richZoomModalScaleMode).toBe('fit');
         expect(fixture.state.richZoomModalScalePercent).toBe(100);
+        expect(fixture.state.authProgressVisible).toBe(false);
+        expect(fixture.state.authProgressMode).toBe('');
+        expect(fixture.state.authProgressPercent).toBe(0);
+        expect(fixture.state.authProgressStatus).toBe('');
         expect(fixture.calls.stopSessionHeartbeat).toBe(1);
         expect(fixture.calls.clearSecurityLoggingRuntimeState).toBe(1);
         expect(fixture.calls.clearAutoSaveRuntimeState).toBe(1);
@@ -300,6 +326,13 @@ describe('createSessionLifecycleManager', function () {
     it('resets exam session cleanup without leaving calculator or attempt state behind when stage already changed', function () {
         var fixture = createLifecycleFixture({
             state: {
+                authProgressVisible: true,
+                authProgressMode: 'logout',
+                authProgressPercent: 82,
+                authProgressStepIndex: 4,
+                authProgressStepTotal: 4,
+                authProgressStatus: 'Menutup sesi server',
+                authProgressDetail: 'Sedang menutup sesi.',
                 stage: 'result'
             }
         });
@@ -318,6 +351,10 @@ describe('createSessionLifecycleManager', function () {
         expect(fixture.state.richZoomModalGalleryCount).toBe(0);
         expect(fixture.state.richZoomModalScaleMode).toBe('fit');
         expect(fixture.state.richZoomModalScalePercent).toBe(100);
+        expect(fixture.state.authProgressVisible).toBe(false);
+        expect(fixture.state.authProgressMode).toBe('');
+        expect(fixture.state.authProgressPercent).toBe(0);
+        expect(fixture.state.authProgressStatus).toBe('');
         expect(fixture.calls.exitFullscreenSilently).toBe(1);
         expect(fixture.calls.clearPersistedAttemptUiState).toEqual([55]);
         expect(fixture.calls.clearPersistedQuestionCache).toEqual([55]);
@@ -402,6 +439,11 @@ describe('createSessionLifecycleManager', function () {
             recordTimeline: function () {},
             render: function (reason, meta) {
                 fixture.calls.render.push({
+                    authProgressMode: String(fixture.state.authProgressMode || ''),
+                    authProgressPercent: Number(fixture.state.authProgressPercent) || 0,
+                    authProgressStatus: String(fixture.state.authProgressStatus || ''),
+                    authProgressStepIndex: Number(fixture.state.authProgressStepIndex) || 0,
+                    authProgressVisible: Boolean(fixture.state.authProgressVisible),
                     meta: meta || null,
                     reason: reason || ''
                 });
@@ -427,12 +469,24 @@ describe('createSessionLifecycleManager', function () {
 
         expect(fixture.calls.sendLogoutRequestSilently).toEqual(['token-123']);
         expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.authProgressVisible).toBe(true);
+        expect(fixture.state.authProgressMode).toBe('logout');
+        expect(fixture.state.authProgressStepIndex).toBe(4);
+        expect(fixture.state.authProgressStatus).toContain('Menutup sesi server');
         expect(fixture.calls.clearPersistedAuthSession).toBe(0);
+        expect(fixture.calls.render.some(function (entry) {
+            return entry.reason === 'auth-progress-logout'
+                && entry.authProgressVisible
+                && entry.authProgressStepIndex >= 1;
+        })).toBe(true);
 
         resolveLogoutRequest({ ok: true });
         await logoutPromise;
 
         expect(fixture.state.stage).toBe('login');
+        expect(fixture.state.authProgressVisible).toBe(false);
+        expect(fixture.state.authProgressMode).toBe('');
+        expect(fixture.state.authProgressPercent).toBe(0);
         expect(fixture.calls.clearPersistedAuthSession).toBe(1);
     });
 });

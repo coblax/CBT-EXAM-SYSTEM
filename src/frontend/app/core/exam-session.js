@@ -1,5 +1,7 @@
 export function createExamSessionManager(deps) {
+    var LOGIN_PROGRESS_STEP_TOTAL = 4;
     var OPEN_ATTEMPT_PROGRESS_STEP_TOTAL = 5;
+    var RESULT_PROGRESS_STEP_TOTAL = 4;
     var START_ATTEMPT_TIMEOUT_MESSAGE = 'Gagal menyiapkan sesi ujian. Server terlalu lama merespons.';
     var recordTimeline = deps.recordTimeline;
     var state = deps.state;
@@ -38,6 +40,11 @@ export function createExamSessionManager(deps) {
     var persistCurrentAttemptUiStateLocally = deps.persistCurrentAttemptUiStateLocally;
     var persistCurrentQuestionCacheLocally = deps.persistCurrentQuestionCacheLocally;
     var prefetchCalculatorFeature = deps.prefetchCalculatorFeature;
+    var ensureResultStageRenderer = typeof deps.ensureResultStageRenderer === 'function'
+        ? deps.ensureResultStageRenderer
+        : function () {
+            return Promise.resolve(null);
+        };
     var prefetchResultStageRenderer = deps.prefetchResultStageRenderer;
     var queueLoadedQuestionAnswersForFlush = deps.queueLoadedQuestionAnswersForFlush;
     var questionRevisionEquals = deps.questionRevisionEquals;
@@ -66,6 +73,7 @@ export function createExamSessionManager(deps) {
     var startAttemptRecoveryTimeoutMs = Math.max(5000, Number(deps.startAttemptRecoveryTimeoutMs) || 30000);
     var startAttemptRecoveryPollDelayMs = Math.max(0, Number(deps.startAttemptRecoveryPollDelayMs) || 1200);
     var questionWindowSize = Math.max(1, Number(deps.questionWindowSize) || 1);
+    var SESSION_RECOVERY_EXAM_STEP_TOTAL = 7;
 
     function resetOpeningAttemptProgressState() {
         state.openingAttemptProgressPercent = 0;
@@ -73,6 +81,83 @@ export function createExamSessionManager(deps) {
         state.openingAttemptProgressStepTotal = 0;
         state.openingAttemptProgressStatus = '';
         state.openingAttemptProgressDetail = '';
+    }
+
+    function resetAuthProgressState() {
+        state.authProgressVisible = false;
+        state.authProgressMode = '';
+        state.authProgressPercent = 0;
+        state.authProgressStepIndex = 0;
+        state.authProgressStepTotal = 0;
+        state.authProgressStatus = '';
+        state.authProgressDetail = '';
+    }
+
+    function resetResultProgressState() {
+        state.resultProgressVisible = false;
+        state.resultProgressPercent = 0;
+        state.resultProgressStepIndex = 0;
+        state.resultProgressStepTotal = 0;
+        state.resultProgressStatus = '';
+        state.resultProgressDetail = '';
+    }
+
+    function updateAuthProgress(percent, stepIndex, status, detail, options) {
+        var safePercent = Number(percent);
+        var safeStepIndex = Number(stepIndex);
+        var shouldRender = !(options && options.render === false);
+
+        if (!Number.isFinite(safePercent)) {
+            safePercent = 0;
+        }
+        if (!Number.isFinite(safeStepIndex)) {
+            safeStepIndex = 0;
+        }
+
+        state.authProgressVisible = true;
+        state.authProgressMode = 'login';
+        state.authProgressPercent = Math.max(0, Math.min(100, safePercent));
+        state.authProgressStepIndex = Math.max(0, Math.min(LOGIN_PROGRESS_STEP_TOTAL, safeStepIndex));
+        state.authProgressStepTotal = LOGIN_PROGRESS_STEP_TOTAL;
+        state.authProgressStatus = String(status || '');
+        state.authProgressDetail = String(detail || '');
+
+        if (shouldRender && typeof render === 'function') {
+            render('auth-progress-login', {
+                percent: state.authProgressPercent,
+                selectedExamId: Number(state.selectedExamId) || 0,
+                stepIndex: state.authProgressStepIndex
+            });
+        }
+    }
+
+    function updateResultProgress(percent, stepIndex, status, detail, options) {
+        var safePercent = Number(percent);
+        var safeStepIndex = Number(stepIndex);
+        var shouldRender = !(options && options.render === false);
+
+        if (!Number.isFinite(safePercent)) {
+            safePercent = 0;
+        }
+        if (!Number.isFinite(safeStepIndex)) {
+            safeStepIndex = 0;
+        }
+
+        state.resultProgressVisible = true;
+        state.resultProgressPercent = Math.max(0, Math.min(100, safePercent));
+        state.resultProgressStepIndex = Math.max(0, Math.min(RESULT_PROGRESS_STEP_TOTAL, safeStepIndex));
+        state.resultProgressStepTotal = RESULT_PROGRESS_STEP_TOTAL;
+        state.resultProgressStatus = String(status || '');
+        state.resultProgressDetail = String(detail || '');
+
+        if (shouldRender && typeof render === 'function') {
+            render('result-progress', {
+                attemptId: Number(state.attemptId) || 0,
+                percent: state.resultProgressPercent,
+                selectedExamId: Number(state.selectedExamId) || 0,
+                stepIndex: state.resultProgressStepIndex
+            });
+        }
     }
 
     function updateOpeningAttemptProgress(percent, stepIndex, status, detail, options) {
@@ -101,6 +186,44 @@ export function createExamSessionManager(deps) {
                 stepIndex: state.openingAttemptProgressStepIndex
             });
         }
+    }
+
+    function updateSessionRecoveryExamProgress(stepIndex, status, detail, options) {
+        options = options || {};
+        if (!state.sessionRecoveryVisible || String(state.sessionRecoveryMode || '') !== 'exam_restore') {
+            return false;
+        }
+
+        var safeStepIndex = Number(stepIndex);
+        var safePercent = Number(options.percent);
+        var shouldRender = options.render !== false;
+        if (!Number.isFinite(safeStepIndex)) {
+            safeStepIndex = 0;
+        }
+        if (!Number.isFinite(safePercent)) {
+            safePercent = SESSION_RECOVERY_EXAM_STEP_TOTAL > 0
+                ? (safeStepIndex / SESSION_RECOVERY_EXAM_STEP_TOTAL) * 100
+                : 0;
+        }
+
+        state.sessionRecoveryVisible = true;
+        state.sessionRecoveryMode = 'exam_restore';
+        state.sessionRecoveryStepIndex = Math.max(0, Math.min(SESSION_RECOVERY_EXAM_STEP_TOTAL, safeStepIndex));
+        state.sessionRecoveryStepTotal = SESSION_RECOVERY_EXAM_STEP_TOTAL;
+        state.sessionRecoveryPercent = Math.max(0, Math.min(100, safePercent));
+        state.sessionRecoveryStatus = String(status || '');
+        state.sessionRecoveryDetail = String(detail || '');
+
+        if (shouldRender && typeof render === 'function') {
+            render('session-recovery-exam-progress', {
+                attemptId: Number(state.attemptId) || 0,
+                percent: state.sessionRecoveryPercent,
+                selectedExamId: Number(state.selectedExamId) || 0,
+                stepIndex: state.sessionRecoveryStepIndex
+            });
+        }
+
+        return true;
     }
 
     function recordTimelineEntry(kind, summary, meta) {
@@ -207,6 +330,54 @@ export function createExamSessionManager(deps) {
 
     function isRetryableStartAttemptRecoveryError(error) {
         return shouldRecoverSlowStartAttempt(error) || isStartAttemptNotFoundError(error);
+    }
+
+    function getExamLatestAttemptStatus(exam) {
+        return String(exam && exam.latest_attempt_status ? exam.latest_attempt_status : '').toLowerCase();
+    }
+
+    async function resolvePrimaryActionSelection(requestedAction) {
+        var activeSelectedExam = getSelectedExam();
+        var selectedExamId = Number(state.selectedExamId) || Number(activeSelectedExam && activeSelectedExam.id) || 0;
+        if (selectedExamId <= 0) {
+            return {
+                action: String(requestedAction || ''),
+                selectedExam: activeSelectedExam,
+                refreshed: false
+            };
+        }
+
+        recordTimelineEntry('exams:primary-action:refresh', 'Menyegarkan daftar exam sebelum menjalankan aksi utama.', {
+            attemptId: Number(state.attemptId) || 0,
+            selectedExamId: selectedExamId,
+            requestedAction: String(requestedAction || ''),
+            stage: String(state.stage || '')
+        });
+
+        await loadExams();
+
+        var selectedExam = getSelectedExam();
+        var resolvedAction = String(requestedAction || '');
+        var latestAttemptStatus = getExamLatestAttemptStatus(selectedExam);
+        if (resolvedAction === 'view-result' && latestAttemptStatus !== 'completed') {
+            resolvedAction = 'start-exam';
+        } else if (resolvedAction === 'start-exam' && latestAttemptStatus === 'completed') {
+            resolvedAction = 'view-result';
+        }
+
+        recordTimelineEntry('exams:primary-action:resolved', 'Status exam setelah refresh berhasil ditentukan.', {
+            attemptId: Number(state.attemptId) || 0,
+            selectedExamId: Number(selectedExam && selectedExam.id) || selectedExamId,
+            latestAttemptStatus: latestAttemptStatus,
+            resolvedAction: resolvedAction,
+            stage: String(state.stage || '')
+        });
+
+        return {
+            action: resolvedAction,
+            selectedExam: selectedExam,
+            refreshed: true
+        };
     }
 
     async function requestStartAttempt(body, options) {
@@ -391,6 +562,13 @@ export function createExamSessionManager(deps) {
         }
 
         state.busy = true;
+        updateAuthProgress(
+            12,
+            1,
+            'Menghubungi server login',
+            'Identifier dan password Anda sedang diverifikasi.',
+            { render: false }
+        );
         recordTimelineEntry('login:start', 'Login dimulai.', {
             attemptId: Number(state.attemptId) || 0,
             stage: String(state.stage || '')
@@ -407,6 +585,13 @@ export function createExamSessionManager(deps) {
                 }
             });
 
+            updateAuthProgress(
+                42,
+                2,
+                'Menyusun sesi peserta',
+                'Token login dan profil singkat sedang disiapkan.',
+                { render: false }
+            );
             state.token = String(loginPayload.token || '');
             state.user = {
                 user_id: Number(loginPayload.user_id) || 0,
@@ -420,7 +605,20 @@ export function createExamSessionManager(deps) {
                 foto: String(loginPayload.foto || '')
             };
 
+            updateAuthProgress(
+                72,
+                3,
+                'Memuat daftar ujian',
+                'Kami mengambil daftar exam yang tersedia untuk akun ini.'
+            );
             await loadExams();
+            updateAuthProgress(
+                92,
+                4,
+                'Menyiapkan dashboard ujian',
+                'Sesi aktif sedang disinkronkan sebelum Anda masuk ke daftar exam.',
+                { render: false }
+            );
             state.stage = 'confirm';
             state.success = '';
             state.error = '';
@@ -434,14 +632,23 @@ export function createExamSessionManager(deps) {
                 selectedExamId: Number(state.selectedExamId) || 0,
                 stage: 'confirm'
             });
+            updateAuthProgress(
+                100,
+                4,
+                'Login berhasil',
+                'Daftar exam siap ditampilkan.',
+                { render: false }
+            );
         } catch (error) {
             state.error = error instanceof Error ? error.message : 'Login gagal.';
+            resetAuthProgressState();
             recordTimelineEntry('login:error', state.error, {
                 attemptId: Number(state.attemptId) || 0,
                 stage: String(state.stage || '')
             });
         } finally {
             state.busy = false;
+            resetAuthProgressState();
             render();
         }
     }
@@ -462,6 +669,14 @@ export function createExamSessionManager(deps) {
             selectedExamId: Number(selectedExam && selectedExam.id) || 0,
             stage: 'exam'
         });
+        updateSessionRecoveryExamProgress(
+            5,
+            'Memuat window soal',
+            'Kami sedang menyiapkan shell ujian dan jendela soal pertama.',
+            {
+                percent: 68
+            }
+        );
         updateOpeningAttemptProgress(
             28,
             2,
@@ -593,6 +808,14 @@ export function createExamSessionManager(deps) {
                 expectedQuestionRevision: state.questionRevision
             }
         );
+        updateSessionRecoveryExamProgress(
+            6,
+            'Memulihkan jawaban lokal',
+            'Mengembalikan posisi terakhir, cache soal, dan jawaban lokal ke tampilan ujian.',
+            {
+                percent: 84
+            }
+        );
 
         recordTimelineEntry('question-window:load:start', 'Memuat question window awal.', {
             attemptId: Number(state.attemptId) || 0,
@@ -707,6 +930,15 @@ export function createExamSessionManager(deps) {
             pendingSyncCount: Number(state.pendingSyncCount) || 0,
             stage: 'exam'
         });
+        updateSessionRecoveryExamProgress(
+            7,
+            'Menyinkronkan jawaban tertunda',
+            'Jawaban lokal sedang diselaraskan agar sesi ujian kembali aman dipakai.',
+            {
+                percent: 100,
+                render: false
+            }
+        );
         updateOpeningAttemptProgress(
             100,
             OPEN_ATTEMPT_PROGRESS_STEP_TOTAL,
@@ -731,6 +963,14 @@ export function createExamSessionManager(deps) {
         }
 
         try {
+            updateSessionRecoveryExamProgress(
+                4,
+                'Menyambung attempt ujian',
+                'Kami sedang mengecek attempt aktif dan menyiapkan sambungan ke sesi terakhir.',
+                {
+                    percent: 54
+                }
+            );
             recordActionTrailEntry('attempt:resume', 'Resume ujian dipicu.', {
                 selectedExamId: examId
             });
@@ -813,7 +1053,8 @@ export function createExamSessionManager(deps) {
         return false;
     }
 
-    async function handleStartExam() {
+    async function handleStartExam(options) {
+        options = options || {};
         if (state.busy) {
             return;
         }
@@ -824,13 +1065,53 @@ export function createExamSessionManager(deps) {
         state.finishConfirmSummary = null;
         recordActionTrailEntry('attempt:start', 'Mulai ujian dipicu.', {});
 
-        var selectedExam = getSelectedExam();
+        var selectedExam = options.selectedExam || getSelectedExam();
         if (!selectedExam) {
             state.error = 'Pilih exam terlebih dahulu.';
             render('start-exam-error', {
                 reason: 'missing-selected-exam'
             });
             return;
+        }
+
+        if (!options.skipExamRefresh) {
+            state.busy = true;
+            render('start-exam-refresh-selection', {
+                selectedExamId: Number(selectedExam.id) || 0
+            });
+
+            try {
+                var refreshedStartSelection = await resolvePrimaryActionSelection('start-exam');
+                selectedExam = refreshedStartSelection && refreshedStartSelection.selectedExam
+                    ? refreshedStartSelection.selectedExam
+                    : null;
+                state.busy = false;
+
+                if (!selectedExam) {
+                    state.error = 'Exam yang dipilih sudah tidak tersedia.';
+                    render('start-exam-error', {
+                        reason: 'selected-exam-missing-after-refresh'
+                    });
+                    return;
+                }
+
+                if (String(refreshedStartSelection && refreshedStartSelection.action ? refreshedStartSelection.action : '') === 'view-result') {
+                    recordActionTrailEntry('attempt:start:rerouted', 'Status exam berubah menjadi selesai, mengalihkan ke hasil ujian.', {
+                        selectedExamId: Number(selectedExam.id) || 0
+                    });
+                    return handleViewResult({
+                        skipExamRefresh: true,
+                        selectedExam: selectedExam
+                    });
+                }
+            } catch (error) {
+                state.busy = false;
+                state.error = error instanceof Error ? error.message : 'Gagal memperbarui status exam.';
+                render('start-exam-error', {
+                    reason: 'refresh-selection-failed'
+                });
+                return;
+            }
         }
 
         if (selectedExam.is_class_allowed !== undefined && Number(selectedExam.is_class_allowed) !== 1) {
@@ -954,7 +1235,8 @@ export function createExamSessionManager(deps) {
         }
     }
 
-    async function handleViewResult() {
+    async function handleViewResult(options) {
+        options = options || {};
         if (state.busy) {
             return;
         }
@@ -962,13 +1244,62 @@ export function createExamSessionManager(deps) {
         clearMessages();
         recordActionTrailEntry('result:view', 'Lihat hasil ujian dipicu.', {});
 
-        var selectedExam = getSelectedExam();
+        var selectedExam = options.selectedExam || getSelectedExam();
         if (!selectedExam) {
             state.error = 'Pilih exam terlebih dahulu.';
             render('view-result-error', {
                 reason: 'missing-selected-exam'
             });
             return;
+        }
+
+        if (!options.skipExamRefresh) {
+            state.busy = true;
+            updateResultProgress(
+                18,
+                1,
+                'Memperbarui status exam',
+                'Kami sedang mengecek status attempt terbaru sebelum nilai ditampilkan.',
+                {
+                    render: false
+                }
+            );
+            render('view-result-refresh-selection', {
+                selectedExamId: Number(selectedExam.id) || 0
+            });
+
+            try {
+                var refreshedResultSelection = await resolvePrimaryActionSelection('view-result');
+                selectedExam = refreshedResultSelection && refreshedResultSelection.selectedExam
+                    ? refreshedResultSelection.selectedExam
+                    : null;
+                state.busy = false;
+
+                if (!selectedExam) {
+                    state.error = 'Exam yang dipilih sudah tidak tersedia.';
+                    render('view-result-error', {
+                        reason: 'selected-exam-missing-after-refresh'
+                    });
+                    return;
+                }
+
+                if (String(refreshedResultSelection && refreshedResultSelection.action ? refreshedResultSelection.action : '') === 'start-exam') {
+                    recordActionTrailEntry('result:view:rerouted', 'Status exam berubah menjadi aktif, mengalihkan ke sesi ujian.', {
+                        selectedExamId: Number(selectedExam.id) || 0
+                    });
+                    return handleStartExam({
+                        skipExamRefresh: true,
+                        selectedExam: selectedExam
+                    });
+                }
+            } catch (error) {
+                state.busy = false;
+                state.error = error instanceof Error ? error.message : 'Gagal memperbarui status exam.';
+                render('view-result-error', {
+                    reason: 'refresh-selection-failed'
+                });
+                return;
+            }
         }
 
         var attemptId = Number(selectedExam.latest_attempt_id) || 0;
@@ -986,6 +1317,15 @@ export function createExamSessionManager(deps) {
             selectedExamId: Number(selectedExam.id) || 0,
             stage: String(state.stage || '')
         });
+        updateResultProgress(
+            46,
+            2,
+            'Mengambil hasil attempt',
+            'Server sedang mengirim ringkasan nilai, status lulus, dan detail review jawaban.',
+            {
+                render: false
+            }
+        );
         render('result-view-request', {
             attemptId: attemptId,
             selectedExamId: Number(selectedExam.id) || 0
@@ -997,6 +1337,15 @@ export function createExamSessionManager(deps) {
                     attempt_id: attemptId
                 }
             });
+            updateResultProgress(
+                74,
+                3,
+                'Menyusun ringkasan nilai',
+                'Kami sedang menghitung ulang skor aman, status lulus, dan ringkasan review yang akan ditampilkan.',
+                {
+                    render: true
+                }
+            );
 
             var attemptData = reviewPayload && typeof reviewPayload === 'object'
                 ? (reviewPayload.attempt || null)
@@ -1062,6 +1411,20 @@ export function createExamSessionManager(deps) {
                     ? reviewPayload.review_summary
                     : null
             };
+            updateResultProgress(
+                92,
+                4,
+                'Menyiapkan halaman hasil',
+                'Menyusun tampilan nilai akhir, progress jawaban, dan review soal untuk Anda.',
+                {
+                    render: true
+                }
+            );
+            await ensureResultStageRenderer({
+                renderOnResolve: false
+            }).catch(function () {
+                // Keep the result payload intact; result stage fallback can still render score and retry affordances.
+            });
             state.stage = 'result';
             state.success = 'Menampilkan hasil ujian.';
             state.error = '';
@@ -1081,6 +1444,7 @@ export function createExamSessionManager(deps) {
         } finally {
             state.isOpeningAttempt = false;
             state.busy = false;
+            resetResultProgressState();
             render();
         }
     }

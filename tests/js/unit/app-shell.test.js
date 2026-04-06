@@ -3,6 +3,29 @@ import { createAppShellManager } from '../../../src/frontend/app/core/app-shell.
 
 function createFixture(overrides = {}) {
     var state = Object.assign({
+        authProgressVisible: false,
+        authProgressMode: '',
+        authProgressPercent: 0,
+        authProgressStepIndex: 0,
+        authProgressStepTotal: 0,
+        authProgressStatus: '',
+        authProgressDetail: '',
+        resultProgressVisible: false,
+        resultProgressPercent: 0,
+        resultProgressStepIndex: 0,
+        resultProgressStepTotal: 0,
+        resultProgressStatus: '',
+        resultProgressDetail: '',
+        sessionRecoveryVisible: false,
+        sessionRecoveryMode: '',
+        sessionRecoveryPercent: 0,
+        sessionRecoveryStepIndex: 0,
+        sessionRecoveryStepTotal: 0,
+        sessionRecoveryStatus: '',
+        sessionRecoveryDetail: '',
+        sessionRecoveryCanRetry: false,
+        sessionRecoveryRetryCount: 0,
+        sessionRecoverySlowStage: '',
         stage: 'exam',
         uiTheme: 'light',
         richZoomModalOpen: true,
@@ -118,5 +141,114 @@ describe('createAppShellManager rich zoom modal', function () {
         expect(html).not.toContain('data-action="rich-zoom-prev"');
         expect(html).not.toContain('cbt-rich-zoom-scale-badge');
         expect(html).toContain('Gunakan Fit, 100%, atau tombol zoom lalu geser tabel untuk membaca kolom yang lebar.');
+    });
+
+    it('renders auth progress overlay for login with staged progress copy', function () {
+        var manager = createFixture({
+            state: {
+                authProgressVisible: true,
+                authProgressMode: 'login',
+                authProgressPercent: 72,
+                authProgressStepIndex: 3,
+                authProgressStepTotal: 4,
+                authProgressStatus: 'Memuat daftar ujian',
+                authProgressDetail: 'Kami sedang mengambil daftar exam untuk akun ini.'
+            }
+        });
+        var html = manager.renderAuthProgressOverlay();
+
+        expect(html).toContain('Login Sedang Diproses');
+        expect(html).toContain('Mohon jangan refresh halaman saat proses login berjalan.');
+        expect(html).toContain('Langkah 3/4');
+        expect(html).toContain('Progress auth: 72%');
+        expect(html).toContain('aria-label="Progress autentikasi"');
+    });
+
+    it('switches auth progress overlay copy for logout mode', function () {
+        var manager = createFixture({
+            state: {
+                authProgressVisible: true,
+                authProgressMode: 'logout',
+                authProgressPercent: 82,
+                authProgressStepIndex: 4,
+                authProgressStepTotal: 4,
+                authProgressStatus: 'Menutup sesi server',
+                authProgressDetail: 'Token login sedang dinonaktifkan.'
+            }
+        });
+        var html = manager.renderAuthProgressOverlay();
+
+        expect(html).toContain('Logout Sedang Diproses');
+        expect(html).toContain('Mohon jangan tutup halaman sampai proses logout selesai.');
+        expect(html).toContain('Sesi Aman');
+        expect(html).toContain('Progress auth: 82%');
+        expect(html).toContain('cbt-auth-progress-card--logout');
+    });
+
+    it('renders a progress overlay while view-result is preparing the result screen', function () {
+        var manager = createFixture({
+            state: {
+                resultProgressVisible: true,
+                resultProgressPercent: 74,
+                resultProgressStepIndex: 3,
+                resultProgressStepTotal: 4,
+                resultProgressStatus: 'Menyusun ringkasan nilai',
+                resultProgressDetail: 'Kami sedang menyiapkan skor, status lulus, dan review jawaban.'
+            }
+        });
+        var html = manager.renderResultProgressOverlay();
+
+        expect(html).toContain('Menyiapkan Hasil Ujian');
+        expect(html).toContain('Mohon jangan refresh halaman. Sistem sedang mengambil nilai dan review ujian Anda.');
+        expect(html).toContain('Langkah 3/4');
+        expect(html).toContain('Progress hasil: 74%');
+        expect(html).toContain('aria-label="Progress lihat nilai"');
+    });
+
+    it('renders a recovery overlay for confirm restore without exam-only notes', function () {
+        var manager = createFixture({
+            state: {
+                sessionRecoveryVisible: true,
+                sessionRecoveryMode: 'confirm_restore',
+                sessionRecoveryPercent: 58,
+                sessionRecoveryStepIndex: 3,
+                sessionRecoveryStepTotal: 4,
+                sessionRecoveryStatus: 'Mengecek attempt aktif',
+                sessionRecoveryDetail: 'Sistem sedang mencari sesi ujian yang perlu disambungkan lagi.',
+                sessionRecoverySlowStage: 'normal'
+            }
+        });
+        var html = manager.renderSessionRecoveryOverlay();
+
+        expect(html).toContain('Memulihkan Konfirmasi Ujian');
+        expect(html).toContain('Jangan refresh lagi. Sistem sedang menyambung sesi Anda.');
+        expect(html).toContain('Langkah 3/4');
+        expect(html).toContain('Progress pemulihan: 58%');
+        expect(html).toContain('Sedang memulihkan sesi Anda');
+        expect(html).not.toContain('Jawaban lokal tetap aman');
+    });
+
+    it('renders slow recovery retry controls for exam restore mode', function () {
+        var manager = createFixture({
+            state: {
+                sessionRecoveryVisible: true,
+                sessionRecoveryMode: 'exam_restore',
+                sessionRecoveryPercent: 84,
+                sessionRecoveryStepIndex: 6,
+                sessionRecoveryStepTotal: 7,
+                sessionRecoveryStatus: 'Memulihkan jawaban lokal',
+                sessionRecoveryDetail: 'Jawaban tersimpan sedang dikembalikan ke tampilan ujian.',
+                sessionRecoveryCanRetry: true,
+                sessionRecoveryRetryCount: 2,
+                sessionRecoverySlowStage: 'hold'
+            }
+        });
+        var html = manager.renderSessionRecoveryOverlay();
+
+        expect(html).toContain('Menyambung Sesi Ujian');
+        expect(html).toContain('Jangan refresh lagi. Sesi masih dipulihkan.');
+        expect(html).toContain('Jawaban lokal tetap aman dan akan disinkronkan setelah sesi pulih.');
+        expect(html).toContain('data-action="retry-session-recovery"');
+        expect(html).toContain('Percobaan sambung ulang: 2');
     });
 });

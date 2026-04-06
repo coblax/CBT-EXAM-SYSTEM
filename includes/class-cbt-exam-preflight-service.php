@@ -24,6 +24,14 @@ if (!class_exists('CBT_Student_Profile_Cache')) {
     require_once __DIR__ . '/class-cbt-student-profile-cache.php';
 }
 
+if (!class_exists('CBT_Login_Auth_Snapshot_Cache')) {
+    require_once __DIR__ . '/class-cbt-login-auth-snapshot-cache.php';
+}
+
+if (!class_exists('CBT_Question_Submission_Context_Cache')) {
+    require_once __DIR__ . '/class-cbt-question-submission-context-cache.php';
+}
+
 final class CBT_Exam_Preflight_Service
 {
     public const CRON_HOOK = 'cbt_exam_preflight_tick';
@@ -137,6 +145,8 @@ final class CBT_Exam_Preflight_Service
                 $state['status'] = self::STATUS_ACTIVE;
                 $state['exam_id'] = $exam_id;
                 $state['exam_title'] = $exam_title;
+                $state['exam_status'] = sanitize_key((string) ($exam_row['status'] ?? ''));
+                $state['target_kelas_csv'] = sanitize_text_field((string) ($exam_row['target_kelas'] ?? ''));
                 $state['target_student_ids'] = $target_student_ids;
                 $state['target_student_count'] = count($target_student_ids);
                 $state['finished_at'] = '';
@@ -151,13 +161,22 @@ final class CBT_Exam_Preflight_Service
                     'session_id' => self::generate_session_id($exam_id),
                     'exam_id' => $exam_id,
                     'exam_title' => $exam_title,
+                    'exam_status' => sanitize_key((string) ($exam_row['status'] ?? '')),
+                    'target_kelas_csv' => sanitize_text_field((string) ($exam_row['target_kelas'] ?? '')),
                     'target_student_ids' => $target_student_ids,
                     'target_student_count' => count($target_student_ids),
                     'profile_cursor' => 0,
                     'profile_success_count' => 0,
                     'profile_failure_count' => 0,
+                    'login_snapshot_success_count' => 0,
+                    'login_snapshot_failure_count' => 0,
+                    'submission_context_question_count' => 0,
+                    'submission_context_ready_count' => 0,
+                    'submission_context_missing_count' => 0,
+                    'submission_context_invalid_count' => 0,
                     'question_snapshot_ready' => false,
                     'start_snapshot_ready' => false,
+                    'submission_context_ready' => false,
                     'auto_warm_started' => false,
                     'started_at' => current_time('mysql'),
                     'finished_at' => '',
@@ -165,7 +184,9 @@ final class CBT_Exam_Preflight_Service
                     'last_message' => 'Menyiapkan one-click pra ujian.',
                     'stage_question' => 'pending',
                     'stage_start_snapshot' => 'pending',
+                    'stage_submission_context' => 'pending',
                     'stage_profiles' => 'pending',
+                    'stage_login_snapshot' => 'pending',
                     'stage_auto_warm' => 'pending',
                 ]);
             }
@@ -194,19 +215,21 @@ final class CBT_Exam_Preflight_Service
                 ];
             }
 
-            $state = self::ensure_auto_warm_started($state, $exam_row);
-            if ((string) ($state['status'] ?? '') === self::STATUS_FAILED) {
-                self::save_state($state);
-                self::clear_tick_event();
+            $state = self::ensure_submission_context_ready($state, $exam_row);
+            $state = self::run_snapshot_batch($state, $is_same_exam_state ? 'resume' : 'start');
+            if (empty($state['active'])) {
+                $state = self::ensure_auto_warm_started($state, $exam_row);
+                if ((string) ($state['status'] ?? '') === self::STATUS_FAILED) {
+                    self::save_state($state);
+                    self::clear_tick_event();
 
-                return [
-                    'success' => false,
-                    'message' => (string) ($state['last_message'] ?? 'One-click pra ujian gagal saat memulai Auto-Warm Availability.'),
-                    'state' => $state,
-                ];
+                    return [
+                        'success' => false,
+                        'message' => (string) ($state['last_message'] ?? 'One-click pra ujian gagal saat memulai Auto-Warm Availability.'),
+                        'state' => $state,
+                    ];
+                }
             }
-
-            $state = self::run_profile_batch($state, $is_same_exam_state ? 'resume' : 'start');
             self::save_state($state);
 
             if (!empty($state['active'])) {
@@ -243,7 +266,11 @@ final class CBT_Exam_Preflight_Service
                 return $state;
             }
 
-            $state = self::run_profile_batch($state, 'tick');
+            $state = self::run_snapshot_batch($state, 'tick');
+            if (empty($state['active'])) {
+                $exam_row = self::build_exam_row_from_state($state);
+                $state = self::ensure_auto_warm_started($state, $exam_row);
+            }
             self::save_state($state);
 
             if (!empty($state['active'])) {
@@ -296,8 +323,12 @@ final class CBT_Exam_Preflight_Service
         $profile_cache_ready = class_exists('CBT_Student_Profile_Cache')
             && method_exists('CBT_Student_Profile_Cache', 'is_available')
             && CBT_Student_Profile_Cache::is_available();
+        $submission_context_cache_ready = class_exists('CBT_Question_Submission_Context_Cache')
+            && method_exists('CBT_Question_Submission_Context_Cache', 'is_available')
+            && CBT_Question_Submission_Context_Cache::is_available();
         $rest_warm_ready = class_exists('CBT_REST') && method_exists('CBT_REST', 'warm_exam_question_delivery_snapshot');
         $start_warm_ready = class_exists('CBT_REST') && method_exists('CBT_REST', 'warm_exam_start_attempt_snapshot');
+        $submission_context_warm_ready = class_exists('CBT_REST') && method_exists('CBT_REST', 'warm_exam_submission_context_snapshot');
         $auto_warm_state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
         $blocking_auto_warm_exam_id = (!empty($auto_warm_state['active']) && (int) ($auto_warm_state['exam_id'] ?? 0) > 0 && (int) ($auto_warm_state['exam_id'] ?? 0) !== $exam_id)
             ? (int) $auto_warm_state['exam_id']
@@ -313,6 +344,13 @@ final class CBT_Exam_Preflight_Service
         $profile_success_count = $is_same_exam_state ? max(0, (int) ($state['profile_success_count'] ?? 0)) : 0;
         $profile_failure_count = $is_same_exam_state ? max(0, (int) ($state['profile_failure_count'] ?? 0)) : 0;
         $profile_processed_count = $profile_success_count + $profile_failure_count;
+        $login_snapshot_success_count = $is_same_exam_state ? max(0, (int) ($state['login_snapshot_success_count'] ?? 0)) : 0;
+        $login_snapshot_failure_count = $is_same_exam_state ? max(0, (int) ($state['login_snapshot_failure_count'] ?? 0)) : 0;
+        $login_snapshot_missing_count = max(0, $target_student_count - $login_snapshot_success_count);
+        $submission_context_question_count = $is_same_exam_state ? max(0, (int) ($state['submission_context_question_count'] ?? 0)) : 0;
+        $submission_context_ready_count = $is_same_exam_state ? max(0, (int) ($state['submission_context_ready_count'] ?? 0)) : 0;
+        $submission_context_missing_count = $is_same_exam_state ? max(0, (int) ($state['submission_context_missing_count'] ?? 0)) : 0;
+        $submission_context_invalid_count = $is_same_exam_state ? max(0, (int) ($state['submission_context_invalid_count'] ?? 0)) : 0;
         $profile_cursor = $is_same_exam_state ? max(0, (int) ($state['profile_cursor'] ?? 0)) : 0;
         $can_start = $exam_id > 0
             && !$has_blocking_preflight
@@ -358,7 +396,7 @@ final class CBT_Exam_Preflight_Service
         } elseif ($is_same_exam_state && (string) ($state['last_message'] ?? '') !== '') {
             $message = (string) $state['last_message'];
         } else {
-            $message = 'One-click memakai blocker dan warning kesiapan yang sama, lalu menyiapkan Snapshot Soal, Snapshot Profil, dan Auto-Warm Availability dari satu tombol.';
+            $message = 'One-click memakai blocker dan warning kesiapan yang sama, lalu menyiapkan Snapshot Soal, Start Snapshot, Submission Context, Snapshot Profil, Login Snapshot, dan Auto-Warm Availability dari satu tombol.';
         }
 
         $question_stage = $question_snapshot_ready ? 'ready' : 'pending';
@@ -369,6 +407,7 @@ final class CBT_Exam_Preflight_Service
         if ($is_same_exam_state && (string) ($state['stage_start_snapshot'] ?? '') === 'failed') {
             $start_snapshot_stage = 'failed';
         }
+        $submission_context_stage = $is_same_exam_state ? sanitize_key((string) ($state['stage_submission_context'] ?? 'pending')) : 'pending';
 
         $auto_warm_stage = 'pending';
         if ($is_same_exam_state && (string) ($state['stage_auto_warm'] ?? '') === 'failed') {
@@ -392,9 +431,18 @@ final class CBT_Exam_Preflight_Service
             'profile_success_count' => $profile_success_count,
             'profile_failure_count' => $profile_failure_count,
             'profile_processed_count' => $profile_processed_count,
+            'login_snapshot_success_count' => $login_snapshot_success_count,
+            'login_snapshot_failure_count' => $login_snapshot_failure_count,
+            'login_snapshot_ready_count' => $login_snapshot_success_count,
+            'login_snapshot_missing_count' => $login_snapshot_missing_count,
+            'submission_context_question_count' => $submission_context_question_count,
+            'submission_context_ready_count' => $submission_context_ready_count,
+            'submission_context_missing_count' => $submission_context_missing_count,
+            'submission_context_invalid_count' => $submission_context_invalid_count,
             'profile_cursor' => $profile_cursor,
             'question_snapshot_ready' => $question_snapshot_ready || !empty($state['question_snapshot_ready']),
             'start_snapshot_ready' => $start_snapshot_ready || !empty($state['start_snapshot_ready']),
+            'submission_context_ready' => !empty($state['submission_context_ready']),
             'auto_warm_started' => !empty($state['auto_warm_started']),
             'started_at' => $is_same_exam_state ? (string) ($state['started_at'] ?? '') : '',
             'finished_at' => $is_same_exam_state ? (string) ($state['finished_at'] ?? '') : '',
@@ -406,9 +454,15 @@ final class CBT_Exam_Preflight_Service
             'stage_start_snapshot' => $start_snapshot_stage,
             'stage_start_snapshot_label' => self::build_stage_meta($start_snapshot_stage, $start_snapshot_stage === 'ready' ? 'READY' : null)['label'],
             'stage_start_snapshot_tone' => self::build_stage_meta($start_snapshot_stage, $start_snapshot_stage === 'ready' ? 'READY' : null)['tone'],
+            'stage_submission_context' => $submission_context_stage,
+            'stage_submission_context_label' => self::build_stage_meta($submission_context_stage, $submission_context_stage === 'ready' ? 'READY' : null)['label'],
+            'stage_submission_context_tone' => self::build_stage_meta($submission_context_stage, $submission_context_stage === 'ready' ? 'READY' : null)['tone'],
             'stage_profiles' => $is_same_exam_state ? sanitize_key((string) ($state['stage_profiles'] ?? 'pending')) : 'pending',
             'stage_profiles_label' => self::build_stage_meta($is_same_exam_state ? sanitize_key((string) ($state['stage_profiles'] ?? 'pending')) : 'pending')['label'],
             'stage_profiles_tone' => self::build_stage_meta($is_same_exam_state ? sanitize_key((string) ($state['stage_profiles'] ?? 'pending')) : 'pending')['tone'],
+            'stage_login_snapshot' => $is_same_exam_state ? sanitize_key((string) ($state['stage_login_snapshot'] ?? 'pending')) : 'pending',
+            'stage_login_snapshot_label' => self::build_stage_meta($is_same_exam_state ? sanitize_key((string) ($state['stage_login_snapshot'] ?? 'pending')) : 'pending')['label'],
+            'stage_login_snapshot_tone' => self::build_stage_meta($is_same_exam_state ? sanitize_key((string) ($state['stage_login_snapshot'] ?? 'pending')) : 'pending')['tone'],
             'stage_auto_warm' => $auto_warm_stage,
             'stage_auto_warm_label' => self::build_stage_meta($auto_warm_stage, $auto_warm_stage === 'ready' ? 'AKTIF' : null)['label'],
             'stage_auto_warm_tone' => self::build_stage_meta($auto_warm_stage, $auto_warm_stage === 'ready' ? 'AKTIF' : null)['tone'],
@@ -417,8 +471,11 @@ final class CBT_Exam_Preflight_Service
             'start_cache_ready' => $start_cache_ready,
             'availability_cache_ready' => $availability_cache_ready,
             'profile_cache_ready' => $profile_cache_ready,
+            'submission_context_cache_ready' => $submission_context_cache_ready,
+            'login_snapshot_cache_ready' => CBT_Login_Auth_Snapshot_Cache::is_available(),
             'rest_warm_ready' => $rest_warm_ready,
             'start_warm_ready' => $start_warm_ready,
+            'submission_context_warm_ready' => $submission_context_warm_ready,
             'blocking_exam_id' => $has_blocking_preflight ? $active_exam_id : 0,
             'blocking_exam_title' => $has_blocking_preflight ? (string) ($state['exam_title'] ?? ('Exam #' . $active_exam_id)) : '',
             'blocking_auto_warm_exam_id' => $blocking_auto_warm_exam_id,
@@ -455,13 +512,22 @@ final class CBT_Exam_Preflight_Service
             'session_id' => sanitize_text_field((string) ($state['session_id'] ?? '')),
             'exam_id' => absint($state['exam_id'] ?? 0),
             'exam_title' => sanitize_text_field((string) ($state['exam_title'] ?? '')),
+            'exam_status' => sanitize_key((string) ($state['exam_status'] ?? '')),
+            'target_kelas_csv' => sanitize_text_field((string) ($state['target_kelas_csv'] ?? '')),
             'target_student_ids' => $target_student_ids,
             'target_student_count' => max(0, (int) ($state['target_student_count'] ?? count($target_student_ids))),
             'profile_cursor' => max(0, (int) ($state['profile_cursor'] ?? 0)),
             'profile_success_count' => max(0, (int) ($state['profile_success_count'] ?? 0)),
             'profile_failure_count' => max(0, (int) ($state['profile_failure_count'] ?? 0)),
+            'login_snapshot_success_count' => max(0, (int) ($state['login_snapshot_success_count'] ?? 0)),
+            'login_snapshot_failure_count' => max(0, (int) ($state['login_snapshot_failure_count'] ?? 0)),
+            'submission_context_question_count' => max(0, (int) ($state['submission_context_question_count'] ?? 0)),
+            'submission_context_ready_count' => max(0, (int) ($state['submission_context_ready_count'] ?? 0)),
+            'submission_context_missing_count' => max(0, (int) ($state['submission_context_missing_count'] ?? 0)),
+            'submission_context_invalid_count' => max(0, (int) ($state['submission_context_invalid_count'] ?? 0)),
             'question_snapshot_ready' => !empty($state['question_snapshot_ready']),
             'start_snapshot_ready' => !empty($state['start_snapshot_ready']),
+            'submission_context_ready' => !empty($state['submission_context_ready']),
             'auto_warm_started' => !empty($state['auto_warm_started']),
             'started_at' => sanitize_text_field((string) ($state['started_at'] ?? '')),
             'finished_at' => sanitize_text_field((string) ($state['finished_at'] ?? '')),
@@ -469,7 +535,9 @@ final class CBT_Exam_Preflight_Service
             'last_message' => sanitize_text_field((string) ($state['last_message'] ?? '')),
             'stage_question' => sanitize_key((string) ($state['stage_question'] ?? 'pending')),
             'stage_start_snapshot' => sanitize_key((string) ($state['stage_start_snapshot'] ?? 'pending')),
+            'stage_submission_context' => sanitize_key((string) ($state['stage_submission_context'] ?? 'pending')),
             'stage_profiles' => sanitize_key((string) ($state['stage_profiles'] ?? 'pending')),
+            'stage_login_snapshot' => sanitize_key((string) ($state['stage_login_snapshot'] ?? 'pending')),
             'stage_auto_warm' => sanitize_key((string) ($state['stage_auto_warm'] ?? 'pending')),
         ];
     }
@@ -668,6 +736,73 @@ final class CBT_Exam_Preflight_Service
      * @param array<string,mixed> $exam_row
      * @return array<string,mixed>
      */
+    private static function ensure_submission_context_ready(array $state, array $exam_row): array
+    {
+        $state = self::build_state($state);
+        $exam_id = (int) ($exam_row['id'] ?? 0);
+        if ($exam_id <= 0) {
+            $state['submission_context_ready'] = false;
+            $state['submission_context_question_count'] = 0;
+            $state['submission_context_ready_count'] = 0;
+            $state['submission_context_missing_count'] = 0;
+            $state['submission_context_invalid_count'] = 0;
+            $state['stage_submission_context'] = 'warning';
+            return $state;
+        }
+
+        if (class_exists('CBT_REST') && method_exists('CBT_REST', 'warm_exam_submission_context_snapshot')) {
+            CBT_REST::warm_exam_submission_context_snapshot($exam_id);
+        }
+
+        $diagnostics = class_exists('CBT_Question_Submission_Context_Cache')
+            ? CBT_Question_Submission_Context_Cache::get_exam_snapshot_diagnostics($exam_id)
+            : [
+                'question_count' => 0,
+                'ready_count' => 0,
+                'missing_count' => 0,
+                'invalid_count' => 0,
+                'snapshot_status' => 'unavailable',
+            ];
+
+        $question_count = max(0, (int) ($diagnostics['question_count'] ?? 0));
+        $ready_count = max(0, (int) ($diagnostics['ready_count'] ?? 0));
+        $missing_count = max(0, (int) ($diagnostics['missing_count'] ?? 0));
+        $invalid_count = max(0, (int) ($diagnostics['invalid_count'] ?? 0));
+        $snapshot_status = sanitize_key((string) ($diagnostics['snapshot_status'] ?? 'miss'));
+
+        $state['submission_context_question_count'] = $question_count;
+        $state['submission_context_ready_count'] = $ready_count;
+        $state['submission_context_missing_count'] = $missing_count;
+        $state['submission_context_invalid_count'] = $invalid_count;
+        $state['submission_context_ready'] = ($question_count > 0 && $ready_count === $question_count);
+
+        if ($state['submission_context_ready']) {
+            $state['stage_submission_context'] = 'ready';
+            return $state;
+        }
+
+        $state['stage_submission_context'] = in_array($snapshot_status, ['unavailable', 'idle', 'warning', 'invalid', 'miss'], true)
+            ? 'warning'
+            : 'warning';
+
+        if ($state['last_message'] === '' || strpos((string) $state['last_message'], 'Submission Context') === false) {
+            $state['last_message'] = sprintf(
+                'Submission Context parsial. READY %d/%d · MISS %d · INVALID %d. One-click tetap melanjutkan tahap berikutnya.',
+                $ready_count,
+                $question_count,
+                $missing_count,
+                $invalid_count
+            );
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @param array<string,mixed> $exam_row
+     * @return array<string,mixed>
+     */
     private static function ensure_auto_warm_started(array $state, array $exam_row): array
     {
         $state = self::build_state($state);
@@ -692,7 +827,7 @@ final class CBT_Exam_Preflight_Service
      * @param array<string,mixed> $state
      * @return array<string,mixed>
      */
-    private static function run_profile_batch(array $state, string $source): array
+    private static function run_snapshot_batch(array $state, string $source): array
     {
         $state = self::build_state($state);
         $target_student_ids = array_values(array_filter(array_map('absint', (array) ($state['target_student_ids'] ?? []))));
@@ -710,11 +845,14 @@ final class CBT_Exam_Preflight_Service
         $batch_student_ids = array_slice($target_student_ids, $cursor, self::PROFILE_BATCH_SIZE);
         $success_count = max(0, (int) ($state['profile_success_count'] ?? 0));
         $failure_count = max(0, (int) ($state['profile_failure_count'] ?? 0));
+        $login_success_count = max(0, (int) ($state['login_snapshot_success_count'] ?? 0));
+        $login_failure_count = max(0, (int) ($state['login_snapshot_failure_count'] ?? 0));
 
         foreach ($batch_student_ids as $user_id) {
             $user_id = absint($user_id);
             if ($user_id <= 0) {
                 $failure_count++;
+                $login_failure_count++;
                 continue;
             }
 
@@ -729,35 +867,80 @@ final class CBT_Exam_Preflight_Service
             } catch (Throwable $throwable) {
                 $failure_count++;
             }
+
+            try {
+                CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot($user_id, 'preflight');
+                $login_diagnostics = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics($user_id);
+                if (!empty($login_diagnostics['snapshot_valid']) && (string) ($login_diagnostics['snapshot_status'] ?? '') === 'ready') {
+                    $login_success_count++;
+                } else {
+                    $login_failure_count++;
+                }
+            } catch (Throwable $throwable) {
+                $login_failure_count++;
+            }
         }
 
         $processed_count = $success_count + $failure_count;
         $next_cursor = $cursor + count($batch_student_ids);
         $state['profile_success_count'] = $success_count;
         $state['profile_failure_count'] = $failure_count;
+        $state['login_snapshot_success_count'] = $login_success_count;
+        $state['login_snapshot_failure_count'] = $login_failure_count;
         $state['profile_cursor'] = min($next_cursor, $total_targets);
         $state['last_tick_at'] = current_time('mysql');
+        $submission_context_warning = sanitize_key((string) ($state['stage_submission_context'] ?? 'pending')) === 'warning';
+        $submission_context_question_count = max(0, (int) ($state['submission_context_question_count'] ?? 0));
+        $submission_context_ready_count = max(0, (int) ($state['submission_context_ready_count'] ?? 0));
+        $submission_context_missing_count = max(0, (int) ($state['submission_context_missing_count'] ?? 0));
+        $submission_context_invalid_count = max(0, (int) ($state['submission_context_invalid_count'] ?? 0));
 
         if ($processed_count >= $total_targets) {
             $state['active'] = false;
             $state['finished_at'] = current_time('mysql');
-            if ($failure_count > 0) {
+            $has_any_warning = ($failure_count > 0 || $login_failure_count > 0 || $submission_context_warning);
+            if ($has_any_warning) {
                 $state['status'] = self::STATUS_COMPLETED_WITH_WARNINGS;
-                $state['stage_profiles'] = 'warning';
-                $state['last_message'] = sprintf(
-                    'One-click pra ujian selesai dengan catatan. Profil siap %d/%d. Gagal %d.',
+                $state['stage_profiles'] = $failure_count > 0 ? 'warning' : 'ready';
+                $state['stage_login_snapshot'] = $login_failure_count > 0 ? 'warning' : 'ready';
+                $warning_message = sprintf(
+                    'One-click pra ujian selesai dengan catatan. Profil siap %d/%d. Login snapshot siap %d/%d. Gagal profil %d. Gagal login snapshot %d.',
                     $success_count,
                     $total_targets,
-                    $failure_count
+                    $login_success_count,
+                    $total_targets,
+                    $failure_count,
+                    $login_failure_count
                 );
+                if ($submission_context_warning) {
+                    $warning_message .= sprintf(
+                        ' Submission Context READY %d/%d. MISS %d. INVALID %d.',
+                        $submission_context_ready_count,
+                        $submission_context_question_count,
+                        $submission_context_missing_count,
+                        $submission_context_invalid_count
+                    );
+                }
+                $state['last_message'] = $warning_message;
             } else {
                 $state['status'] = self::STATUS_COMPLETED;
                 $state['stage_profiles'] = 'ready';
-                $state['last_message'] = sprintf(
-                    'One-click pra ujian selesai. Profil siap %d/%d.',
+                $state['stage_login_snapshot'] = 'ready';
+                $success_message = sprintf(
+                    'One-click pra ujian selesai. Profil siap %d/%d. Login snapshot siap %d/%d.',
                     $success_count,
+                    $total_targets,
+                    $login_success_count,
                     $total_targets
                 );
+                if ($submission_context_question_count > 0) {
+                    $success_message .= sprintf(
+                        ' Submission Context READY %d/%d.',
+                        $submission_context_ready_count,
+                        $submission_context_question_count
+                    );
+                }
+                $state['last_message'] = $success_message;
             }
 
             return $state;
@@ -766,13 +949,17 @@ final class CBT_Exam_Preflight_Service
         $state['active'] = true;
         $state['status'] = self::STATUS_ACTIVE;
         $state['stage_profiles'] = 'active';
+        $state['stage_login_snapshot'] = 'active';
         $state['last_message'] = sprintf(
-            '%s one-click memproses %d siswa. Profil siap %d/%d. Gagal %d.',
+            '%s one-click memproses %d siswa. Profil siap %d/%d. Login snapshot siap %d/%d. Gagal profil %d. Gagal login snapshot %d.',
             $source === 'start' ? 'Batch awal' : 'Tick',
             count($batch_student_ids),
             $success_count,
             $total_targets,
-            $failure_count
+            $login_success_count,
+            $total_targets,
+            $failure_count,
+            $login_failure_count
         );
 
         return $state;
@@ -795,11 +982,15 @@ final class CBT_Exam_Preflight_Service
             'session_id' => $exam_id > 0 ? self::generate_session_id($exam_id) : '',
             'exam_id' => $exam_id,
             'exam_title' => self::resolve_exam_title($exam_row),
+            'exam_status' => sanitize_key((string) ($exam_row['status'] ?? '')),
+            'target_kelas_csv' => sanitize_text_field((string) ($exam_row['target_kelas'] ?? '')),
             'target_student_ids' => $target_student_ids,
             'target_student_count' => count($target_student_ids),
             'profile_cursor' => 0,
             'profile_success_count' => 0,
             'profile_failure_count' => 0,
+            'login_snapshot_success_count' => 0,
+            'login_snapshot_failure_count' => 0,
             'question_snapshot_ready' => false,
             'start_snapshot_ready' => false,
             'auto_warm_started' => false,
@@ -810,8 +1001,25 @@ final class CBT_Exam_Preflight_Service
             'stage_question' => 'pending',
             'stage_start_snapshot' => 'pending',
             'stage_profiles' => 'pending',
+            'stage_login_snapshot' => 'pending',
             'stage_auto_warm' => 'pending',
         ]);
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private static function build_exam_row_from_state(array $state): array
+    {
+        $state = self::build_state($state);
+
+        return [
+            'id' => (int) ($state['exam_id'] ?? 0),
+            'title' => (string) ($state['exam_title'] ?? ''),
+            'status' => (string) ($state['exam_status'] ?? ''),
+            'target_kelas' => (string) ($state['target_kelas_csv'] ?? ''),
+        ];
     }
 
     private static function resolve_exam_title(array $exam_row): string

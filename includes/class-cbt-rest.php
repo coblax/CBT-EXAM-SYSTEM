@@ -1970,10 +1970,15 @@ class CBT_REST
     private static function get_exam_duration_minutes(int $exam_id): int
     {
         global $wpdb;
+        static $duration_cache = [];
 
         $exam_id = absint($exam_id);
         if ($exam_id <= 0) {
             return 60;
+        }
+
+        if (array_key_exists($exam_id, $duration_cache)) {
+            return (int) $duration_cache[$exam_id];
         }
 
         $exam_table = $wpdb->prefix . 'cbt_exams';
@@ -1986,7 +1991,9 @@ class CBT_REST
             )
         );
 
-        return max(1, $duration);
+        $duration_cache[$exam_id] = max(1, $duration);
+
+        return (int) $duration_cache[$exam_id];
     }
 
     /**
@@ -2347,13 +2354,9 @@ class CBT_REST
                 $wpdb->prepare(
                     "SELECT a.exam_id, a.id, a.status, a.score, a.max_score, a.started_at, a.finished_at
                      FROM {$attempt_table} a
-                     INNER JOIN (
-                        SELECT exam_id, MAX(id) AS latest_attempt_id
-                        FROM {$attempt_table}
-                        WHERE student_id = %d
-                          AND status IN ('in_progress', 'completed')
-                        GROUP BY exam_id
-                     ) latest ON latest.latest_attempt_id = a.id",
+                     WHERE a.student_id = %d
+                       AND a.status IN ('in_progress', 'completed')
+                     ORDER BY a.exam_id ASC, FIELD(a.status, 'in_progress', 'completed'), a.id DESC",
                     $user_id
                 ),
                 ARRAY_A
@@ -2362,7 +2365,7 @@ class CBT_REST
             foreach ((array) $latest_attempt_rows as $attempt_row) {
                 $attempt_row = (array) $attempt_row;
                 $exam_id = (int) ($attempt_row['exam_id'] ?? 0);
-                if ($exam_id > 0) {
+                if ($exam_id > 0 && !isset($latest_attempt_by_exam[$exam_id])) {
                     $latest_attempt_by_exam[$exam_id] = $attempt_row;
                 }
             }
@@ -2554,6 +2557,16 @@ class CBT_REST
         CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot($exam_id, static function (int $target_exam_id): array {
             return self::build_exam_start_attempt_snapshot_from_db($target_exam_id);
         });
+    }
+
+    public static function warm_exam_submission_context_snapshot(int $exam_id): void
+    {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0 || !class_exists('CBT_Question_Submission_Context_Cache')) {
+            return;
+        }
+
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots($exam_id);
     }
 
     /**
@@ -4479,7 +4492,7 @@ class CBT_REST
     /**
      * @return array<string,mixed>|WP_Error
      */
-    public static function finalize_attempt_completion(int $attempt_id, ?string $finished_at = null)
+    public static function finalize_attempt_completion(int $attempt_id, ?string $finished_at = null, array $options = [])
     {
         global $wpdb;
 
@@ -4487,6 +4500,8 @@ class CBT_REST
         if ($attempt_id <= 0) {
             return new WP_Error('invalid_payload', 'attempt_id is required', ['status' => 400]);
         }
+
+        $defer_invalidation = !empty($options['defer_invalidation']);
 
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
         $attempt = $wpdb->get_row(
@@ -4554,12 +4569,14 @@ class CBT_REST
                 $attempt_id
             );
         }
-        CBT_Cache::invalidate_attempt($attempt_id);
-        CBT_Cache::invalidate_analytics();
-        CBT_Cache::invalidate_analytics_exam((int) ($attempt['exam_id'] ?? 0));
-        if ($student_id > 0) {
-            CBT_Cache::invalidate_user($student_id);
-            CBT_UI_State::clear_attempt_state($student_id, $attempt_id);
+        if (!$defer_invalidation) {
+            CBT_Cache::invalidate_attempt($attempt_id);
+            CBT_Cache::invalidate_analytics();
+            CBT_Cache::invalidate_analytics_exam((int) ($attempt['exam_id'] ?? 0));
+            if ($student_id > 0) {
+                CBT_Cache::invalidate_user($student_id);
+                CBT_UI_State::clear_attempt_state($student_id, $attempt_id);
+            }
         }
 
         $response = [
@@ -4764,9 +4781,14 @@ class CBT_REST
     private static function get_exam_show_student_result(int $exam_id): int
     {
         global $wpdb;
+        static $show_result_cache = [];
 
         if ($exam_id <= 0) {
             return 1;
+        }
+
+        if (array_key_exists($exam_id, $show_result_cache)) {
+            return (int) $show_result_cache[$exam_id];
         }
 
         $exam_table = $wpdb->prefix . 'cbt_exams';
@@ -4777,15 +4799,22 @@ class CBT_REST
             )
         );
 
-        return self::normalize_show_student_result($value);
+        $show_result_cache[$exam_id] = self::normalize_show_student_result($value);
+
+        return (int) $show_result_cache[$exam_id];
     }
 
     private static function get_exam_kkm_percentage(int $exam_id): float
     {
         global $wpdb;
+        static $kkm_cache = [];
 
         if ($exam_id <= 0) {
             return 75.0;
+        }
+
+        if (array_key_exists($exam_id, $kkm_cache)) {
+            return (float) $kkm_cache[$exam_id];
         }
 
         $exam_table = $wpdb->prefix . 'cbt_exams';
@@ -4796,7 +4825,9 @@ class CBT_REST
             )
         );
 
-        return self::normalize_exam_kkm_percentage((float) $value);
+        $kkm_cache[$exam_id] = self::normalize_exam_kkm_percentage((float) $value);
+
+        return (float) $kkm_cache[$exam_id];
     }
 
     private static function normalize_exam_kkm_percentage(float $value): float
@@ -5032,6 +5063,9 @@ class CBT_REST
     private static function build_attempt_review_items(array $attempt): array
     {
         global $wpdb;
+        static $exam_review_cache = [];
+        static $question_review_cache = [];
+        static $option_review_cache = [];
 
         $attempt_id = (int) ($attempt['id'] ?? 0);
         $exam_id = (int) ($attempt['exam_id'] ?? 0);
@@ -5043,33 +5077,40 @@ class CBT_REST
         $question_table = $wpdb->prefix . 'cbt_questions';
         $option_table = $wpdb->prefix . 'cbt_options';
         $answer_table = $wpdb->prefix . 'cbt_answers';
-        $exam = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT id, randomize_questions
-                 FROM {$exam_table}
-                 WHERE id = %d
-                 LIMIT 1",
-                $exam_id
-            ),
-            ARRAY_A
-        );
-        if (!is_array($exam)) {
-            $exam = [
-                'id' => $exam_id,
-                'randomize_questions' => 0,
-            ];
+        if (!array_key_exists($exam_id, $exam_review_cache)) {
+            $exam = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT id, randomize_questions
+                     FROM {$exam_table}
+                     WHERE id = %d
+                     LIMIT 1",
+                    $exam_id
+                ),
+                ARRAY_A
+            );
+            if (!is_array($exam)) {
+                $exam = [
+                    'id' => $exam_id,
+                    'randomize_questions' => 0,
+                ];
+            }
+            $exam_review_cache[$exam_id] = $exam;
         }
+        $exam = (array) $exam_review_cache[$exam_id];
 
-        $questions = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT id, question_text, question_type, points, correct_text, explanation, COALESCE(is_active, 1) AS is_active
-                 FROM {$question_table}
-                 WHERE exam_id = %d
-                 ORDER BY id ASC",
-                $exam_id
-            ),
-            ARRAY_A
-        );
+        if (!array_key_exists($exam_id, $question_review_cache)) {
+            $question_review_cache[$exam_id] = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT id, question_text, question_type, points, correct_text, explanation, COALESCE(is_active, 1) AS is_active
+                     FROM {$question_table}
+                     WHERE exam_id = %d
+                     ORDER BY id ASC",
+                    $exam_id
+                ),
+                ARRAY_A
+            );
+        }
+        $questions = is_array($question_review_cache[$exam_id]) ? (array) $question_review_cache[$exam_id] : [];
 
         $attempt_question_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
 
@@ -5115,31 +5156,54 @@ class CBT_REST
 
         $options_by_question = [];
         if (!empty($question_ids)) {
-            $ids_sql = implode(',', $question_ids);
-            $option_rows = $wpdb->get_results(
-                "SELECT id, question_id, option_key, option_text, is_correct
-                 FROM {$option_table}
-                 WHERE question_id IN ({$ids_sql})
-                 ORDER BY question_id ASC, id ASC",
-                ARRAY_A
-            );
+            if (!array_key_exists($exam_id, $option_review_cache) || !is_array($option_review_cache[$exam_id])) {
+                $option_review_cache[$exam_id] = [];
+            }
 
-            foreach ((array) $option_rows as $option_row) {
-                $question_id = (int) ($option_row['question_id'] ?? 0);
+            $missing_option_question_ids = array_values(array_filter(array_diff(
+                $question_ids,
+                array_map('intval', array_keys((array) $option_review_cache[$exam_id]))
+            ), static function (int $question_id): bool {
+                return $question_id > 0;
+            }));
+            if (!empty($missing_option_question_ids)) {
+                $ids_sql = implode(',', $missing_option_question_ids);
+                $option_rows = $wpdb->get_results(
+                    "SELECT id, question_id, option_key, option_text, is_correct
+                     FROM {$option_table}
+                     WHERE question_id IN ({$ids_sql})
+                     ORDER BY question_id ASC, id ASC",
+                    ARRAY_A
+                );
+
+                foreach ((array) $option_rows as $option_row) {
+                    $question_id = (int) ($option_row['question_id'] ?? 0);
+                    if ($question_id <= 0) {
+                        continue;
+                    }
+
+                    if (!isset($option_review_cache[$exam_id][$question_id])) {
+                        $option_review_cache[$exam_id][$question_id] = [];
+                    }
+
+                    $option_review_cache[$exam_id][$question_id][] = [
+                        'id' => (int) ($option_row['id'] ?? 0),
+                        'question_id' => $question_id,
+                        'option_key' => (string) ($option_row['option_key'] ?? ''),
+                        'option_text' => (string) ($option_row['option_text'] ?? ''),
+                        'is_correct' => (int) ($option_row['is_correct'] ?? 0),
+                    ];
+                }
+            }
+
+            foreach ($question_ids as $question_id) {
                 if ($question_id <= 0) {
                     continue;
                 }
 
-                if (!isset($options_by_question[$question_id])) {
-                    $options_by_question[$question_id] = [];
-                }
-
-                $options_by_question[$question_id][] = [
-                    'id' => (int) ($option_row['id'] ?? 0),
-                    'option_key' => (string) ($option_row['option_key'] ?? ''),
-                    'option_text' => (string) ($option_row['option_text'] ?? ''),
-                    'is_correct' => (int) ($option_row['is_correct'] ?? 0),
-                ];
+                $options_by_question[$question_id] = isset($option_review_cache[$exam_id][$question_id]) && is_array($option_review_cache[$exam_id][$question_id])
+                    ? array_values((array) $option_review_cache[$exam_id][$question_id])
+                    : [];
             }
         }
 

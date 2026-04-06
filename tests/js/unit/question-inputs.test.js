@@ -206,11 +206,12 @@ describe('createAnswerInputManager', function () {
                 success: ''
             }
         });
-        var input = document.createElement('input');
-        input.type = 'radio';
-        input.setAttribute('data-action', 'answer-single');
-        input.setAttribute('data-qid', '41');
-        input.setAttribute('data-option-id', '501');
+        fixture.root.innerHTML = [
+            '<div data-cbt-exam-question-region="questionHead"><div class="cbt-question-head"></div></div>',
+            '<label class="cbt-option"><div class="cbt-option-row"><input type="radio" name="cbt_q_41" data-action="answer-single" data-qid="41" data-option-id="501" checked /><span class="cbt-option-key">A</span><div class="cbt-option-label">Alpha</div></div></label>',
+            '<label class="cbt-option is-selected"><div class="cbt-option-row"><input type="radio" name="cbt_q_41" data-action="answer-single" data-qid="41" data-option-id="502" /><span class="cbt-option-key">B</span><div class="cbt-option-label">Beta</div></div></label>'
+        ].join('');
+        var input = fixture.root.querySelector('input[data-option-id="501"]');
 
         fixture.manager.handleChangeTarget(input);
 
@@ -224,13 +225,14 @@ describe('createAnswerInputManager', function () {
                 regions: {
                     navigation: true,
                     questionFooterProgress: true,
-                    questionHead: true,
-                    questionInput: true,
                     questionSaveFeedback: true
                 }
             }
         ]);
         expect(fixture.calls.render).toEqual([]);
+        expect(fixture.root.querySelector('input[data-option-id="501"]').closest('.cbt-option').classList.contains('is-selected')).toBe(true);
+        expect(fixture.root.querySelector('input[data-option-id="502"]').closest('.cbt-option').classList.contains('is-selected')).toBe(false);
+        expect(fixture.root.querySelector('.cbt-question-head').classList.contains('is-answered')).toBe(true);
     });
 
     it('uses a save-feedback partial patch for text input changes without remounting the input region', function () {
@@ -260,7 +262,6 @@ describe('createAnswerInputManager', function () {
                 regions: {
                     navigation: true,
                     questionFooterProgress: true,
-                    questionHead: true,
                     questionSaveFeedback: true
                 }
             }

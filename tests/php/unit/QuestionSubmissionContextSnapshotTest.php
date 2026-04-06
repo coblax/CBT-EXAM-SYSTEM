@@ -74,6 +74,61 @@ final class QuestionSubmissionContextSnapshotTest extends TestCase
         self::assertSame([], $this->storedRedisKeys());
     }
 
+    public function test_warm_exam_snapshots_reports_ready_counts_and_preview_items(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionSubmissionContextSnapshotFakeWpdb();
+
+        $diagnostics = CBT_Question_Submission_Context_Cache::warm_exam_snapshots(55);
+
+        self::assertSame('ready', $diagnostics['snapshot_status']);
+        self::assertSame(2, $diagnostics['question_count']);
+        self::assertSame(2, $diagnostics['ready_count']);
+        self::assertSame(0, $diagnostics['missing_count']);
+        self::assertSame(0, $diagnostics['invalid_count']);
+        self::assertCount(2, $diagnostics['preview_items']);
+        self::assertGreaterThan(0, $diagnostics['payload_bytes_total']);
+    }
+
+    public function test_clear_exam_snapshots_removes_pointer_and_storage_keys(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionSubmissionContextSnapshotFakeWpdb();
+
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots(55);
+        self::assertNotEmpty($this->storedRedisKeys());
+
+        $result = CBT_Question_Submission_Context_Cache::clear_exam_snapshots(55);
+
+        self::assertSame(55, $result['exam_id']);
+        self::assertSame(2, $result['question_count']);
+        self::assertGreaterThan(0, $result['deleted_keys']);
+        self::assertSame([], $this->storedRedisKeys());
+    }
+
+    public function test_exam_snapshot_diagnostics_marks_invalid_and_missing_items(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionSubmissionContextSnapshotFakeWpdb();
+
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots(55);
+        foreach ($this->storedRedisKeys() as $key) {
+            if (strpos($key, 'cbt_submit_context:pointer:question:201') === 0) {
+                $GLOBALS['cbt_test_redis_storage'][$key] = '{broken-json';
+            }
+            if (strpos($key, 'cbt_submit_context:question:202:') === 0) {
+                unset($GLOBALS['cbt_test_redis_storage'][$key]);
+            }
+        }
+
+        $diagnostics = CBT_Question_Submission_Context_Cache::get_exam_snapshot_diagnostics(55);
+
+        self::assertSame('warning', $diagnostics['snapshot_status']);
+        self::assertSame(0, $diagnostics['ready_count']);
+        self::assertSame(1, $diagnostics['missing_count']);
+        self::assertSame(1, $diagnostics['invalid_count']);
+    }
+
     private function useFakeRedisClient(): void
     {
         $reflection = new ReflectionClass(CBT_Question_Submission_Context_Cache::class);
@@ -191,6 +246,24 @@ final class QuestionSubmissionContextSnapshotFakeWpdb
                 if (isset($this->questionRows[$questionId])) {
                     $rows[] = $this->questionRows[$questionId];
                 }
+            }
+
+            return $rows;
+        }
+
+        if (strpos($query, 'FROM wp_cbt_questions') !== false && strpos($query, 'WHERE exam_id = ') !== false) {
+            preg_match('/WHERE exam_id = (\d+)/', $query, $matches);
+            $examId = isset($matches[1]) ? (int) $matches[1] : 0;
+            $rows = [];
+            foreach ($this->questionRows as $questionRow) {
+                if ((int) ($questionRow['exam_id'] ?? 0) !== $examId) {
+                    continue;
+                }
+
+                $rows[] = [
+                    'id' => (int) ($questionRow['id'] ?? 0),
+                    'question_type' => (string) ($questionRow['question_type'] ?? ''),
+                ];
             }
 
             return $rows;

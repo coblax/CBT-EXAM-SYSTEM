@@ -32,6 +32,7 @@ function createFixture(overrides = {}) {
         clearPersistedQuestionCache: [],
         clearQuestionCachePersistTimer: 0,
         clearQuestionPrefetchRuntimeState: 0,
+        ensureResultStageRenderer: [],
         exitFullscreenSilently: 0,
         flushAttemptUiState: [],
         flushPendingAnswerBatch: [],
@@ -221,6 +222,13 @@ function createFixture(overrides = {}) {
         persistCurrentQuestionCacheLocally: function () {
             calls.persistCurrentQuestionCacheLocally += 1;
         },
+        ensureResultStageRenderer: function (options) {
+            calls.ensureResultStageRenderer.push(options || {});
+            if (typeof overrides.ensureResultStageRenderer === 'function') {
+                return overrides.ensureResultStageRenderer(options);
+            }
+            return Promise.resolve(null);
+        },
         prefetchResultStageRenderer: function () {
             calls.prefetchResultStageRenderer += 1;
         },
@@ -293,6 +301,11 @@ describe('createFinishFlowManager', function () {
         expect(fixture.state.exams[0].latest_attempt_pass_label).toBe('LULUS');
         expect(fixture.calls.clearPersistedAttemptUiState).toEqual([88]);
         expect(fixture.calls.clearPersistedQuestionCache).toEqual([88]);
+        expect(fixture.calls.ensureResultStageRenderer).toEqual([
+            {
+                renderOnResolve: false
+            }
+        ]);
     });
 
     it('zeros restricted result details and keeps the exam list from leaking score fields', async function () {
@@ -441,6 +454,39 @@ describe('createFinishFlowManager', function () {
                     && snapshot.finishProgressStatus === 'Menyiapkan hasil ujian';
             })
         ).toBe(true);
+        expect(fixture.state.finishProgressPercent).toBe(0);
+        expect(fixture.state.finishProgressStepIndex).toBe(0);
+    });
+
+    it('keeps finish progress on exam stage until the result renderer is ready', async function () {
+        var resolveRenderer = null;
+        var fixture = createFixture({
+            ensureResultStageRenderer: function () {
+                return new Promise(function (resolve) {
+                    resolveRenderer = resolve;
+                });
+            }
+        });
+
+        var finalizePromise = fixture.manager.maybeFinalizeLockedExam('unit-test');
+
+        await waitForAssertion(function () {
+            expect(fixture.state.finishProgressPercent).toBe(90);
+            expect(fixture.state.finishProgressStepIndex).toBe(4);
+            expect(fixture.state.finishProgressStatus).toBe('Menyiapkan hasil ujian');
+        });
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.calls.ensureResultStageRenderer).toEqual([
+            {
+                renderOnResolve: false
+            }
+        ]);
+
+        resolveRenderer();
+        await finalizePromise;
+
+        expect(fixture.state.stage).toBe('result');
         expect(fixture.state.finishProgressPercent).toBe(0);
         expect(fixture.state.finishProgressStepIndex).toBe(0);
     });

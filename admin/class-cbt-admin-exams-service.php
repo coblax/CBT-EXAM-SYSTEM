@@ -24,6 +24,14 @@ if (!class_exists('CBT_Student_Profile_Cache')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-student-profile-cache.php';
 }
 
+if (!class_exists('CBT_Login_Auth_Snapshot_Cache')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-login-auth-snapshot-cache.php';
+}
+
+if (!class_exists('CBT_Question_Submission_Context_Cache')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-question-submission-context-cache.php';
+}
+
 final class CBT_Admin_Exams_Service
 {
     private const TEST_REDIRECT_SIGNAL = '__cbt_admin_exams_redirect__';
@@ -33,8 +41,10 @@ final class CBT_Admin_Exams_Service
     public const SNAPSHOT_TAB_PREFLIGHT = 'preflight';
     public const SNAPSHOT_TAB_QUESTION_MONITOR = 'question_monitor';
     public const SNAPSHOT_TAB_START_MONITOR = 'start_monitor';
+    public const SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR = 'submission_context_monitor';
     public const SNAPSHOT_TAB_EXAM_MONITOR = 'exam_monitor';
     public const SNAPSHOT_TAB_PROFILE_MONITOR = 'profile_monitor';
+    public const SNAPSHOT_TAB_LOGIN_MONITOR = 'login_monitor';
     public const SNAPSHOT_TAB_QUESTIONS = 'questions';
     public const SNAPSHOT_TAB_STUDENTS = 'students';
 
@@ -1957,6 +1967,223 @@ final class CBT_Admin_Exams_Service
         ]);
     }
 
+    public static function handle_warm_exam_submission_context_snapshot(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_warm_exam_submission_context_snapshot');
+
+        $exam_id = isset($_POST['exam_id']) ? absint(wp_unslash((string) $_POST['exam_id'])) : 0;
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if ($exam_id <= 0) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Exam wajib dipilih untuk menyiapkan submission context.',
+            ]);
+        }
+
+        if (!class_exists('CBT_REST') || !class_exists('CBT_Question_Submission_Context_Cache')) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Runtime submission context belum tersedia lengkap di environment ini.',
+            ]);
+        }
+
+        CBT_REST::warm_exam_submission_context_snapshot($exam_id);
+        $diagnostics = CBT_Question_Submission_Context_Cache::get_exam_snapshot_diagnostics($exam_id);
+        if ((string) ($diagnostics['snapshot_status'] ?? '') === 'ready') {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_msg' => sprintf(
+                    'Submission context exam #%d siap. READY %d/%d.',
+                    $exam_id,
+                    (int) ($diagnostics['ready_count'] ?? 0),
+                    (int) ($diagnostics['question_count'] ?? 0)
+                ),
+            ]);
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            'cbt_err' => sprintf(
+                'Submission context exam #%d belum penuh. READY %d/%d · MISS %d · INVALID %d. %s',
+                $exam_id,
+                (int) ($diagnostics['ready_count'] ?? 0),
+                (int) ($diagnostics['question_count'] ?? 0),
+                (int) ($diagnostics['missing_count'] ?? 0),
+                (int) ($diagnostics['invalid_count'] ?? 0),
+                (string) ($diagnostics['snapshot_message'] ?? '')
+            ),
+        ]);
+    }
+
+    public static function handle_warm_bulk_exam_submission_context_snapshots(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_warm_bulk_exam_submission_context_snapshots');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if (!class_exists('CBT_REST') || !class_exists('CBT_Question_Submission_Context_Cache')) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Runtime submission context belum tersedia lengkap di environment ini.',
+            ]);
+        }
+
+        $rows = self::get_filtered_exam_snapshot_exams(self::is_admin_scope(), get_current_user_id());
+        if (empty($rows)) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Tidak ada exam yang tersedia untuk disiapkan submission context-nya.',
+            ]);
+        }
+
+        $success_count = 0;
+        $failure_count = 0;
+
+        foreach ($rows as $row) {
+            $exam_id = (int) ($row['id'] ?? 0);
+            if ($exam_id <= 0) {
+                continue;
+            }
+
+            CBT_REST::warm_exam_submission_context_snapshot($exam_id);
+            $diagnostics = CBT_Question_Submission_Context_Cache::get_exam_snapshot_diagnostics($exam_id);
+            if ((string) ($diagnostics['snapshot_status'] ?? '') === 'ready') {
+                $success_count++;
+            } else {
+                $failure_count++;
+            }
+        }
+
+        if ($success_count <= 0) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => sprintf(
+                    'Gagal menyiapkan submission context untuk %d exam yang dipilih.',
+                    max(0, $failure_count)
+                ),
+            ]);
+        }
+
+        $message = sprintf('Berhasil menyiapkan submission context untuk %d exam.', $success_count);
+        if ($failure_count > 0) {
+            $message .= ' Belum penuh: ' . $failure_count . '.';
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            'cbt_msg' => $message,
+        ]);
+    }
+
+    public static function handle_clear_exam_submission_context_snapshot(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_clear_exam_submission_context_snapshot');
+
+        $exam_id = isset($_POST['exam_id']) ? absint(wp_unslash((string) $_POST['exam_id'])) : 0;
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if ($exam_id <= 0) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Exam wajib dipilih untuk membersihkan submission context.',
+            ]);
+        }
+
+        if (!class_exists('CBT_Question_Submission_Context_Cache')) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Runtime submission context belum tersedia di environment ini.',
+            ]);
+        }
+
+        $result = CBT_Question_Submission_Context_Cache::clear_exam_snapshots($exam_id);
+        $diagnostics = CBT_Question_Submission_Context_Cache::get_exam_snapshot_diagnostics($exam_id);
+        if ((int) ($result['deleted_keys'] ?? 0) > 0 || in_array((string) ($diagnostics['snapshot_status'] ?? ''), ['miss', 'idle'], true)) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_msg' => (int) ($result['deleted_keys'] ?? 0) > 0
+                    ? sprintf(
+                        'Submission context exam #%d dibersihkan. Keys terhapus %d.',
+                        $exam_id,
+                        (int) ($result['deleted_keys'] ?? 0)
+                    )
+                    : sprintf('Submission context exam #%d sudah kosong.', $exam_id),
+            ]);
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            'cbt_err' => sprintf(
+                'Submission context exam #%d belum berhasil dibersihkan. %s',
+                $exam_id,
+                (string) ($diagnostics['snapshot_message'] ?? '')
+            ),
+        ]);
+    }
+
+    public static function handle_clear_bulk_exam_submission_context_snapshots(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_clear_bulk_exam_submission_context_snapshots');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if (!class_exists('CBT_Question_Submission_Context_Cache')) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Runtime submission context belum tersedia di environment ini.',
+            ]);
+        }
+
+        $rows = self::get_filtered_exam_snapshot_exams(self::is_admin_scope(), get_current_user_id());
+        if (empty($rows)) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Tidak ada exam yang tersedia untuk dibersihkan submission context-nya.',
+            ]);
+        }
+
+        $cleared_exam_count = 0;
+        $empty_exam_count = 0;
+        $deleted_key_count = 0;
+
+        foreach ($rows as $row) {
+            $exam_id = (int) ($row['id'] ?? 0);
+            if ($exam_id <= 0) {
+                continue;
+            }
+
+            $result = CBT_Question_Submission_Context_Cache::clear_exam_snapshots($exam_id);
+            $diagnostics = CBT_Question_Submission_Context_Cache::get_exam_snapshot_diagnostics($exam_id);
+
+            if ((int) ($result['deleted_keys'] ?? 0) > 0) {
+                $cleared_exam_count++;
+                $deleted_key_count += (int) ($result['deleted_keys'] ?? 0);
+                continue;
+            }
+
+            if (in_array((string) ($diagnostics['snapshot_status'] ?? ''), ['miss', 'idle'], true)) {
+                $empty_exam_count++;
+            }
+        }
+
+        if ($cleared_exam_count <= 0 && $empty_exam_count <= 0) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Tidak ada submission context yang berhasil dibersihkan pada exam yang dipilih.',
+            ]);
+        }
+
+        $message = sprintf('Berhasil membersihkan submission context untuk %d exam.', $cleared_exam_count);
+        if ($deleted_key_count > 0) {
+            $message .= ' Keys: ' . $deleted_key_count . '.';
+        }
+        if ($empty_exam_count > 0) {
+            $message .= ' Sudah kosong: ' . $empty_exam_count . '.';
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            'cbt_msg' => $message,
+        ]);
+    }
+
     public static function handle_start_exam_availability_auto_warm(): void
     {
         if (!self::can_manage_exam_snapshots()) {
@@ -2364,6 +2591,184 @@ final class CBT_Admin_Exams_Service
         }
 
         $message = sprintf('Berhasil membersihkan snapshot profil untuk %d siswa.', $cleared_count);
+        if ($empty_count > 0) {
+            $message .= ' Sudah kosong: ' . $empty_count . '.';
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            'cbt_msg' => $message,
+        ]);
+    }
+
+    public static function handle_warm_student_login_snapshot(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_warm_student_login_snapshot');
+
+        $user_id = isset($_POST['user_id']) ? absint(wp_unslash((string) $_POST['user_id'])) : 0;
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if (!self::is_valid_snapshot_student_user_id($user_id)) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Siswa wajib dipilih untuk menyiapkan login snapshot.',
+            ]);
+        }
+
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot($user_id, 'snapshot_page');
+        $diagnostics = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics($user_id);
+        if ((string) ($diagnostics['snapshot_status'] ?? '') === 'ready') {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_msg' => sprintf(
+                    'Login snapshot siswa #%d siap. TTL %d detik.',
+                    $user_id,
+                    max(0, (int) ($diagnostics['ttl_seconds'] ?? 0))
+                ),
+            ]);
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            'cbt_err' => sprintf(
+                'Login snapshot siswa #%d belum valid. %s',
+                $user_id,
+                (string) ($diagnostics['snapshot_message'] ?? '')
+            ),
+        ]);
+    }
+
+    public static function handle_clear_student_login_snapshot(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_clear_student_login_snapshot');
+
+        $user_id = isset($_POST['user_id']) ? absint(wp_unslash((string) $_POST['user_id'])) : 0;
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if (!self::is_valid_snapshot_student_user_id($user_id)) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Siswa wajib dipilih untuk membersihkan login snapshot.',
+            ]);
+        }
+
+        $deleted_count = CBT_Login_Auth_Snapshot_Cache::clear_user_snapshot($user_id);
+        $diagnostics = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics($user_id);
+        if ($deleted_count > 0 || ($diagnostics['snapshot_status'] ?? '') === 'miss') {
+            $message = $deleted_count > 0
+                ? sprintf('Login snapshot siswa #%d berhasil dibersihkan. Keys: %d.', $user_id, $deleted_count)
+                : sprintf('Login snapshot siswa #%d sudah kosong.', $user_id);
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_msg' => $message,
+            ]);
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            'cbt_err' => sprintf(
+                'Login snapshot siswa #%d belum berhasil dibersihkan. %s',
+                $user_id,
+                (string) ($diagnostics['snapshot_message'] ?? '')
+            ),
+        ]);
+    }
+
+    public static function handle_warm_bulk_student_login_snapshots(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_warm_bulk_student_login_snapshots');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        $student_snapshot_filter_state = self::get_student_snapshot_filter_state_from_request($_POST);
+        $users = self::get_filtered_snapshot_student_users($student_snapshot_filter_state);
+        if (empty($users)) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Tidak ada siswa yang cocok dengan filter saat ini untuk disiapkan login snapshot-nya.',
+            ]);
+        }
+
+        $success_count = 0;
+        $failure_count = 0;
+        foreach ($users as $user) {
+            if (!$user instanceof WP_User) {
+                continue;
+            }
+
+            $user_id = (int) $user->ID;
+            CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot($user_id, 'snapshot_page_bulk');
+            $diagnostics = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics($user_id);
+            if ((string) ($diagnostics['snapshot_status'] ?? '') === 'ready') {
+                $success_count++;
+            } else {
+                $failure_count++;
+            }
+        }
+
+        if ($success_count <= 0) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => sprintf('Gagal menyiapkan login snapshot untuk %d siswa yang terfilter.', max(0, $failure_count)),
+            ]);
+        }
+
+        $message = sprintf('Berhasil menyiapkan %d login snapshot.', $success_count);
+        if ($failure_count > 0) {
+            $message .= ' Gagal: ' . $failure_count . '.';
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            'cbt_msg' => $message,
+        ]);
+    }
+
+    public static function handle_clear_bulk_student_login_snapshots(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_clear_bulk_student_login_snapshots');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        $student_snapshot_filter_state = self::get_student_snapshot_filter_state_from_request($_POST);
+        $users = self::get_filtered_snapshot_student_users($student_snapshot_filter_state);
+        if (empty($users)) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Tidak ada siswa yang cocok dengan filter saat ini untuk dibersihkan login snapshot-nya.',
+            ]);
+        }
+
+        $cleared_count = 0;
+        $empty_count = 0;
+        $deleted_key_count = 0;
+        foreach ($users as $user) {
+            if (!$user instanceof WP_User) {
+                continue;
+            }
+
+            $user_id = (int) $user->ID;
+            $deleted_count = CBT_Login_Auth_Snapshot_Cache::clear_user_snapshot($user_id);
+            $diagnostics = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics($user_id);
+            if ($deleted_count > 0) {
+                $cleared_count++;
+                $deleted_key_count += $deleted_count;
+            } elseif (($diagnostics['snapshot_status'] ?? '') === 'miss') {
+                $empty_count++;
+            }
+        }
+
+        if ($cleared_count <= 0 && $empty_count <= 0) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Tidak ada login snapshot yang berhasil dibersihkan pada filter aktif.',
+            ]);
+        }
+
+        $message = sprintf('Berhasil membersihkan login snapshot untuk %d siswa.', $cleared_count);
+        if ($deleted_key_count > 0) {
+            $message .= ' Keys: ' . $deleted_key_count . '.';
+        }
         if ($empty_count > 0) {
             $message .= ' Sudah kosong: ' . $empty_count . '.';
         }
@@ -2804,6 +3209,7 @@ final class CBT_Admin_Exams_Service
                 self::SNAPSHOT_TAB_PREFLIGHT,
                 self::SNAPSHOT_TAB_QUESTION_MONITOR,
                 self::SNAPSHOT_TAB_START_MONITOR,
+                self::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR,
             ],
             true
         );
@@ -2816,6 +3222,7 @@ final class CBT_Admin_Exams_Service
             [
                 self::SNAPSHOT_TAB_EXAM_MONITOR,
                 self::SNAPSHOT_TAB_PROFILE_MONITOR,
+                self::SNAPSHOT_TAB_LOGIN_MONITOR,
             ],
             true
         );
@@ -2973,8 +3380,10 @@ final class CBT_Admin_Exams_Service
         $kode_ruang = self::normalize_snapshot_student_meta_filter((string) get_user_meta($user_id, 'kode_ruang', true));
         $availability = CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics($user_id);
         $profile = CBT_Student_Profile_Cache::get_snapshot_diagnostics($user_id);
+        $login = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics($user_id);
         $availability_status_meta = self::build_availability_snapshot_status_meta($availability, $user_id);
         $profile_status_meta = self::build_snapshot_status_meta((string) ($profile['snapshot_status'] ?? 'miss'));
+        $login_status_meta = self::build_snapshot_status_meta((string) ($login['snapshot_status'] ?? 'miss'));
 
         return [
             'user_id' => $user_id,
@@ -2989,6 +3398,9 @@ final class CBT_Admin_Exams_Service
             'profile' => $profile,
             'profile_status_label' => $profile_status_meta['label'],
             'profile_status_tone' => $profile_status_meta['tone'],
+            'login' => $login,
+            'login_status_label' => $login_status_meta['label'],
+            'login_status_tone' => $login_status_meta['tone'],
         ];
     }
 
@@ -3020,6 +3432,8 @@ final class CBT_Admin_Exams_Service
         switch (sanitize_key($status)) {
             case 'ready':
                 return ['label' => 'READY', 'tone' => 'success'];
+            case 'warning':
+                return ['label' => 'WARNING', 'tone' => 'warning'];
             case 'invalid':
                 return ['label' => 'INVALID', 'tone' => 'error'];
             case 'unavailable':
@@ -3063,8 +3477,10 @@ final class CBT_Admin_Exams_Service
                     self::SNAPSHOT_TAB_PREFLIGHT,
                     self::SNAPSHOT_TAB_QUESTION_MONITOR,
                     self::SNAPSHOT_TAB_START_MONITOR,
+                    self::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR,
                     self::SNAPSHOT_TAB_EXAM_MONITOR,
                     self::SNAPSHOT_TAB_PROFILE_MONITOR,
+                    self::SNAPSHOT_TAB_LOGIN_MONITOR,
                 ],
                 true
             )
@@ -3235,6 +3651,26 @@ final class CBT_Admin_Exams_Service
                 'invalidated_at' => '',
                 'signature' => '',
             ],
+            'submission_context' => [
+                'exam_id' => $exam_id,
+                'redis_available' => false,
+                'redis_error' => '',
+                'redis_host' => '',
+                'redis_database' => 0,
+                'question_count' => 0,
+                'ready_count' => 0,
+                'missing_count' => 0,
+                'invalid_count' => 0,
+                'payload_bytes_total' => 0,
+                'preview_items' => [],
+                'snapshot_exists' => false,
+                'snapshot_valid' => false,
+                'snapshot_status' => 'unavailable',
+                'snapshot_message' => 'Helper submission context belum tersedia.',
+            ],
+            'submission_context_status' => 'unavailable',
+            'submission_context_status_label' => 'UNAVAILABLE',
+            'submission_context_status_tone' => 'error',
             'preview_current_page' => $preview_page,
             'preview_total_pages' => 1,
             'preview_per_page' => self::SNAPSHOT_PREVIEW_PER_PAGE,
@@ -3251,7 +3687,11 @@ final class CBT_Admin_Exams_Service
             'readiness' => self::build_exam_readiness_context($exam_row, false, false, $auto_warm_context, $readiness_page),
         ];
 
-        if ($exam_id <= 0 || !class_exists('CBT_Exam_Question_Delivery_Cache') || !class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
+        if (
+            $exam_id <= 0
+            || !class_exists('CBT_Exam_Question_Delivery_Cache')
+            || !class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')
+        ) {
             return $fallback;
         }
 
@@ -3274,6 +3714,16 @@ final class CBT_Admin_Exams_Service
             $start_tone = 'success';
         } elseif ($start_status === 'invalid' || $start_status === 'unavailable') {
             $start_tone = 'error';
+        }
+        $submission_context_diagnostics = class_exists('CBT_Question_Submission_Context_Cache')
+            ? CBT_Question_Submission_Context_Cache::get_exam_snapshot_diagnostics($exam_id)
+            : $fallback['submission_context'];
+        $submission_context_status = sanitize_key((string) ($submission_context_diagnostics['snapshot_status'] ?? 'unavailable'));
+        $submission_context_tone = 'warning';
+        if ($submission_context_status === 'ready') {
+            $submission_context_tone = 'success';
+        } elseif ($submission_context_status === 'invalid' || $submission_context_status === 'unavailable') {
+            $submission_context_tone = 'error';
         }
 
         return array_merge($fallback, $diagnostics, [
@@ -3305,6 +3755,10 @@ final class CBT_Admin_Exams_Service
             'start_snapshot_revision_meta' => is_array($start_diagnostics['revision_meta'] ?? null)
                 ? $start_diagnostics['revision_meta']
                 : $fallback['start_snapshot_revision_meta'],
+            'submission_context' => $submission_context_diagnostics,
+            'submission_context_status' => $submission_context_status,
+            'submission_context_status_label' => strtoupper($submission_context_status),
+            'submission_context_status_tone' => $submission_context_tone,
             'preflight' => CBT_Exam_Preflight_Service::get_exam_panel_context($exam_row, $status === 'ready', $start_status === 'ready'),
             'readiness' => self::build_exam_readiness_context($exam_row, $status === 'ready', $start_status === 'ready', $auto_warm_context, $readiness_page),
         ]);

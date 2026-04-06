@@ -1,6 +1,6 @@
 {
-  "_frontend-exam-runtime-BnUrHQ7q.js": {
-    "file": "assets/frontend-exam-runtime-BnUrHQ7q.js",
+  "_frontend-exam-runtime-CVSi0Lwj.js": {
+    "file": "assets/frontend-exam-runtime-CVSi0Lwj.js",
     "name": "frontend-exam-runtime",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js"
@@ -416,12 +416,12 @@
     "isDynamicEntry": true
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-But7FyxD.js",
+    "file": "assets/frontend-core-Dsn_F6w0.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
     "dynamicImports": [
-      "_frontend-exam-runtime-BnUrHQ7q.js",
+      "_frontend-exam-runtime-CVSi0Lwj.js",
       "_math-render-z4EJh76n.js",
       "_frontend-stage-exam-DJH6RUM5.js",
       "_frontend-stage-result-CXtg3x37.js",
@@ -429,7 +429,7 @@
       "src/frontend/app/core/debug-panel.js"
     ],
     "css": [
-      "assets/frontend-C6RQhU4v.css"
+      "assets/frontend-BL47lIH-.css"
     ],
     "assets": [
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",

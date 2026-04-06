@@ -27,6 +27,11 @@ export function createAppEventManager(deps) {
     var requestExamFullscreen = deps.requestExamFullscreen;
     var resetExamSession = deps.resetExamSession;
     var root = deps.root;
+    var retrySessionRecovery = typeof deps.retrySessionRecovery === 'function'
+        ? deps.retrySessionRecovery
+        : function () {
+            return Promise.resolve(false);
+        };
     var stageRuntimeManager = deps.stageRuntimeManager;
     var state = deps.state;
     var toggleTheme = deps.toggleTheme;
@@ -758,6 +763,14 @@ export function createAppEventManager(deps) {
 
         if (action === 'view-result') {
             handleViewResult();
+            return true;
+        }
+
+        if (action === 'retry-session-recovery') {
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            retrySessionRecovery();
             return true;
         }
 

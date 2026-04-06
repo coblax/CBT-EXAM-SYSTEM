@@ -28,6 +28,11 @@ class CBT_Question_Submission_Context_Cache
     /** @var string */
     private static $snapshot_redis_last_connection_error = '';
 
+    public static function is_available(): bool
+    {
+        return self::snapshot_redis() instanceof Redis;
+    }
+
     /**
      * @return array<string,mixed>|null
      */
@@ -76,6 +81,253 @@ class CBT_Question_Submission_Context_Cache
         }
 
         return $snapshots;
+    }
+
+    /**
+     * @return array{
+     *   exam_id:int,
+     *   question_count:int,
+     *   ready_count:int,
+     *   missing_count:int,
+     *   invalid_count:int,
+     *   payload_bytes_total:int,
+     *   preview_items:array<int,array{question_id:int,question_type:string,status:string,payload_bytes:int}>,
+     *   snapshot_status:string,
+     *   snapshot_message:string,
+     *   redis_available:bool,
+     *   redis_error:string,
+     *   redis_host:string,
+     *   redis_database:int,
+     *   snapshot_exists:bool,
+     *   snapshot_valid:bool
+     * }
+     */
+    public static function warm_exam_snapshots(int $exam_id): array
+    {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0) {
+            return self::get_exam_snapshot_diagnostics($exam_id);
+        }
+
+        $question_ids = self::get_exam_question_ids($exam_id);
+        if (!empty($question_ids)) {
+            self::get_snapshots($question_ids);
+        }
+
+        return self::get_exam_snapshot_diagnostics($exam_id);
+    }
+
+    /**
+     * @return array{
+     *   exam_id:int,
+     *   question_count:int,
+     *   deleted_keys:int
+     * }
+     */
+    public static function clear_exam_snapshots(int $exam_id): array
+    {
+        $exam_id = absint($exam_id);
+        $question_ids = self::get_exam_question_ids($exam_id);
+        $deleted_keys = 0;
+
+        $redis = self::snapshot_redis();
+        if ($redis instanceof Redis && $exam_id > 0 && !empty($question_ids)) {
+            $catalog_version = self::catalog_version();
+            $exam_version = self::exam_version($exam_id);
+
+            foreach ($question_ids as $question_id) {
+                $keys = [self::pointer_key($question_id)];
+                $keys[] = self::storage_key($question_id, $exam_id, $catalog_version, $exam_version);
+
+                $raw_pointer = $redis->get(self::pointer_key($question_id));
+                if (is_string($raw_pointer) && trim($raw_pointer) !== '') {
+                    $pointer = json_decode($raw_pointer, true);
+                    if (is_array($pointer)) {
+                        $pointer_storage_key = is_scalar($pointer['storage_key'] ?? null) ? trim((string) $pointer['storage_key']) : '';
+                        if ($pointer_storage_key !== '') {
+                            $keys[] = $pointer_storage_key;
+                        }
+                    }
+                }
+
+                $keys = array_values(array_unique(array_filter(array_map('strval', $keys))));
+                if (!empty($keys)) {
+                    $deleted_keys += (int) $redis->del(...$keys);
+                }
+            }
+        }
+
+        return [
+            'exam_id' => $exam_id,
+            'question_count' => count($question_ids),
+            'deleted_keys' => $deleted_keys,
+        ];
+    }
+
+    /**
+     * @return array{
+     *   exam_id:int,
+     *   redis_available:bool,
+     *   redis_error:string,
+     *   redis_host:string,
+     *   redis_database:int,
+     *   question_count:int,
+     *   ready_count:int,
+     *   missing_count:int,
+     *   invalid_count:int,
+     *   payload_bytes_total:int,
+     *   preview_items:array<int,array{question_id:int,question_type:string,status:string,payload_bytes:int}>,
+     *   snapshot_exists:bool,
+     *   snapshot_valid:bool,
+     *   snapshot_status:string,
+     *   snapshot_message:string
+     * }
+     */
+    public static function get_exam_snapshot_diagnostics(int $exam_id): array
+    {
+        $exam_id = absint($exam_id);
+        $settings = self::snapshot_redis_settings();
+        $redis = self::snapshot_redis();
+        $question_rows = $exam_id > 0 ? self::get_exam_question_rows($exam_id) : [];
+        $question_count = count($question_rows);
+        $preview_items = [];
+        $ready_count = 0;
+        $missing_count = 0;
+        $invalid_count = 0;
+        $payload_bytes_total = 0;
+
+        if ($exam_id <= 0) {
+            return [
+                'exam_id' => 0,
+                'redis_available' => $redis instanceof Redis,
+                'redis_error' => self::$snapshot_redis_last_connection_error,
+                'redis_host' => (string) ($settings['host'] ?? self::SNAPSHOT_REDIS_DEFAULT_HOST),
+                'redis_database' => (int) ($settings['database'] ?? self::SNAPSHOT_REDIS_DEFAULT_DATABASE),
+                'question_count' => 0,
+                'ready_count' => 0,
+                'missing_count' => 0,
+                'invalid_count' => 0,
+                'payload_bytes_total' => 0,
+                'preview_items' => [],
+                'snapshot_exists' => false,
+                'snapshot_valid' => false,
+                'snapshot_status' => 'idle',
+                'snapshot_message' => 'Pilih exam dulu untuk memeriksa submission context.',
+            ];
+        }
+
+        if (!$redis instanceof Redis) {
+            return [
+                'exam_id' => $exam_id,
+                'redis_available' => false,
+                'redis_error' => self::$snapshot_redis_last_connection_error,
+                'redis_host' => (string) ($settings['host'] ?? self::SNAPSHOT_REDIS_DEFAULT_HOST),
+                'redis_database' => (int) ($settings['database'] ?? self::SNAPSHOT_REDIS_DEFAULT_DATABASE),
+                'question_count' => $question_count,
+                'ready_count' => 0,
+                'missing_count' => $question_count,
+                'invalid_count' => 0,
+                'payload_bytes_total' => 0,
+                'preview_items' => [],
+                'snapshot_exists' => false,
+                'snapshot_valid' => false,
+                'snapshot_status' => 'unavailable',
+                'snapshot_message' => 'Redis submission context tidak tersedia.',
+            ];
+        }
+
+        if ($question_count <= 0) {
+            return [
+                'exam_id' => $exam_id,
+                'redis_available' => true,
+                'redis_error' => self::$snapshot_redis_last_connection_error,
+                'redis_host' => (string) ($settings['host'] ?? self::SNAPSHOT_REDIS_DEFAULT_HOST),
+                'redis_database' => (int) ($settings['database'] ?? self::SNAPSHOT_REDIS_DEFAULT_DATABASE),
+                'question_count' => 0,
+                'ready_count' => 0,
+                'missing_count' => 0,
+                'invalid_count' => 0,
+                'payload_bytes_total' => 0,
+                'preview_items' => [],
+                'snapshot_exists' => false,
+                'snapshot_valid' => false,
+                'snapshot_status' => 'idle',
+                'snapshot_message' => 'Belum ada soal aktif pada exam ini.',
+            ];
+        }
+
+        $catalog_version = self::catalog_version();
+        $exam_version = self::exam_version($exam_id);
+
+        foreach ($question_rows as $question_row) {
+            $item = self::build_exam_snapshot_item_diagnostics(
+                (int) ($question_row['id'] ?? 0),
+                $exam_id,
+                (string) ($question_row['question_type'] ?? ''),
+                $catalog_version,
+                $exam_version,
+                $redis
+            );
+
+            $payload_bytes_total += (int) ($item['payload_bytes'] ?? 0);
+            $status = sanitize_key((string) ($item['status'] ?? 'miss'));
+            if ($status === 'ready') {
+                $ready_count++;
+            } elseif ($status === 'invalid') {
+                $invalid_count++;
+            } else {
+                $missing_count++;
+            }
+
+            if (count($preview_items) < 10) {
+                $preview_items[] = [
+                    'question_id' => (int) ($item['question_id'] ?? 0),
+                    'question_type' => (string) ($item['question_type'] ?? ''),
+                    'status' => $status,
+                    'payload_bytes' => (int) ($item['payload_bytes'] ?? 0),
+                ];
+            }
+        }
+
+        $snapshot_exists = ($ready_count + $invalid_count) > 0;
+        $snapshot_valid = $question_count > 0 && $ready_count === $question_count;
+        if ($snapshot_valid) {
+            $snapshot_status = 'ready';
+            $snapshot_message = 'Submission context siap dipakai untuk submit jawaban dan scoring objektif.';
+        } elseif ($invalid_count === $question_count) {
+            $snapshot_status = 'invalid';
+            $snapshot_message = 'Submission context ditemukan tetapi ada payload yang tidak valid untuk revision exam saat ini.';
+        } elseif ($missing_count === $question_count) {
+            $snapshot_status = 'miss';
+            $snapshot_message = 'Submission context belum dipanaskan untuk exam ini.';
+        } else {
+            $snapshot_status = 'warning';
+            $snapshot_message = sprintf(
+                'Submission context parsial. READY %d/%d · MISS %d · INVALID %d.',
+                $ready_count,
+                $question_count,
+                $missing_count,
+                $invalid_count
+            );
+        }
+
+        return [
+            'exam_id' => $exam_id,
+            'redis_available' => true,
+            'redis_error' => self::$snapshot_redis_last_connection_error,
+            'redis_host' => (string) ($settings['host'] ?? self::SNAPSHOT_REDIS_DEFAULT_HOST),
+            'redis_database' => (int) ($settings['database'] ?? self::SNAPSHOT_REDIS_DEFAULT_DATABASE),
+            'question_count' => $question_count,
+            'ready_count' => $ready_count,
+            'missing_count' => $missing_count,
+            'invalid_count' => $invalid_count,
+            'payload_bytes_total' => $payload_bytes_total,
+            'preview_items' => $preview_items,
+            'snapshot_exists' => $snapshot_exists,
+            'snapshot_valid' => $snapshot_valid,
+            'snapshot_status' => $snapshot_status,
+            'snapshot_message' => $snapshot_message,
+        ];
     }
 
     /**
@@ -302,6 +554,147 @@ class CBT_Question_Submission_Context_Cache
         }
 
         return $snapshots;
+    }
+
+    /**
+     * @return array<int,array{id:int,question_type:string}>
+     */
+    private static function get_exam_question_rows(int $exam_id): array
+    {
+        global $wpdb;
+
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0 || !is_object($wpdb)) {
+            return [];
+        }
+
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $rows = $wpdb->get_results(
+            "SELECT id, question_type
+             FROM {$question_table}
+             WHERE exam_id = {$exam_id}
+               AND COALESCE(is_active, 1) = 1
+             ORDER BY id ASC",
+            ARRAY_A
+        );
+
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $items = [];
+        foreach ($rows as $row) {
+            $question_id = (int) ($row['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+
+            $items[] = [
+                'id' => $question_id,
+                'question_type' => sanitize_key((string) ($row['question_type'] ?? '')),
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * @return array<int,int>
+     */
+    private static function get_exam_question_ids(int $exam_id): array
+    {
+        return array_values(array_map('intval', wp_list_pluck(self::get_exam_question_rows($exam_id), 'id')));
+    }
+
+    /**
+     * @return array{question_id:int,question_type:string,status:string,payload_bytes:int}
+     */
+    private static function build_exam_snapshot_item_diagnostics(
+        int $question_id,
+        int $exam_id,
+        string $question_type,
+        int $catalog_version,
+        int $exam_version,
+        Redis $redis
+    ): array {
+        $status = 'miss';
+        $payload_bytes = 0;
+        $pointer_key = self::pointer_key($question_id);
+        $raw_pointer = $redis->get($pointer_key);
+
+        if (!is_string($raw_pointer) || trim($raw_pointer) === '') {
+            return [
+                'question_id' => $question_id,
+                'question_type' => $question_type,
+                'status' => $status,
+                'payload_bytes' => 0,
+            ];
+        }
+
+        $pointer = json_decode($raw_pointer, true);
+        if (!is_array($pointer)) {
+            return [
+                'question_id' => $question_id,
+                'question_type' => $question_type,
+                'status' => 'invalid',
+                'payload_bytes' => 0,
+            ];
+        }
+
+        $pointer_exam_id = absint($pointer['exam_id'] ?? 0);
+        $pointer_catalog_version = max(1, (int) ($pointer['catalog_version'] ?? 0));
+        $pointer_exam_version = max(1, (int) ($pointer['exam_version'] ?? 0));
+        $storage_key = is_scalar($pointer['storage_key'] ?? null) ? trim((string) $pointer['storage_key']) : '';
+        if ($pointer_exam_id !== $exam_id || $storage_key === '') {
+            return [
+                'question_id' => $question_id,
+                'question_type' => $question_type,
+                'status' => 'invalid',
+                'payload_bytes' => 0,
+            ];
+        }
+
+        if ($pointer_catalog_version !== $catalog_version || $pointer_exam_version !== $exam_version) {
+            return [
+                'question_id' => $question_id,
+                'question_type' => $question_type,
+                'status' => 'invalid',
+                'payload_bytes' => 0,
+            ];
+        }
+
+        $raw_snapshot = $redis->get($storage_key);
+        if (!is_string($raw_snapshot) || trim($raw_snapshot) === '') {
+            return [
+                'question_id' => $question_id,
+                'question_type' => $question_type,
+                'status' => 'miss',
+                'payload_bytes' => 0,
+            ];
+        }
+
+        $payload_bytes = strlen($raw_snapshot);
+        $decoded = json_decode($raw_snapshot, true);
+        if (!is_array($decoded)) {
+            return [
+                'question_id' => $question_id,
+                'question_type' => $question_type,
+                'status' => 'invalid',
+                'payload_bytes' => $payload_bytes,
+            ];
+        }
+
+        $snapshot = self::sanitize_snapshot($decoded);
+        $is_valid = is_array($snapshot)
+            && (int) ($snapshot['id'] ?? 0) === $question_id
+            && (int) ($snapshot['exam_id'] ?? 0) === $exam_id;
+
+        return [
+            'question_id' => $question_id,
+            'question_type' => $question_type !== '' ? $question_type : (string) ($snapshot['question_type'] ?? ''),
+            'status' => $is_valid ? 'ready' : 'invalid',
+            'payload_bytes' => $payload_bytes,
+        ];
     }
 
     /**

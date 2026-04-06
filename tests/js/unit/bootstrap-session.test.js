@@ -1,10 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { createBootstrapSessionManager } from '../../../src/frontend/app/core/bootstrap-session.js';
 
 function createFixture(overrides = {}) {
     var state = Object.assign({
         busy: false,
         error: '',
+        sessionRecoveryCanRetry: false,
+        sessionRecoveryDetail: '',
+        sessionRecoveryMode: '',
+        sessionRecoveryPercent: 0,
+        sessionRecoveryRetryCount: 0,
+        sessionRecoverySlowStage: '',
+        sessionRecoveryStartedAt: 0,
+        sessionRecoveryStatus: '',
+        sessionRecoveryStepIndex: 0,
+        sessionRecoveryStepTotal: 0,
+        sessionRecoveryVisible: false,
         selectedExamId: 0,
         stage: 'login',
         success: '',
@@ -18,6 +29,7 @@ function createFixture(overrides = {}) {
         persistAuthSession: 0,
         reconcilePendingPageRefreshSecurityEvent: 0,
         render: 0,
+        renderSnapshots: [],
         startSessionHeartbeat: 0,
         triggerPendingSyncLifecycleRetry: [],
         tryResumeActiveAttemptFromExamList: []
@@ -50,6 +62,16 @@ function createFixture(overrides = {}) {
         },
         render: function () {
             calls.render += 1;
+            calls.renderSnapshots.push({
+                busy: Boolean(state.busy),
+                sessionRecoveryCanRetry: Boolean(state.sessionRecoveryCanRetry),
+                sessionRecoveryMode: String(state.sessionRecoveryMode || ''),
+                sessionRecoverySlowStage: String(state.sessionRecoverySlowStage || ''),
+                sessionRecoveryStatus: String(state.sessionRecoveryStatus || ''),
+                sessionRecoveryStepIndex: Number(state.sessionRecoveryStepIndex) || 0,
+                sessionRecoveryVisible: Boolean(state.sessionRecoveryVisible),
+                stage: String(state.stage || '')
+            });
         },
         startSessionHeartbeat: function () {
             calls.startSessionHeartbeat += 1;
@@ -67,7 +89,8 @@ function createFixture(overrides = {}) {
                 return overrides.tryResumeActiveAttemptFromExamList(options);
             }
             return false;
-        }
+        },
+        windowRef: overrides.windowRef || window
     });
 
     return {
@@ -76,6 +99,14 @@ function createFixture(overrides = {}) {
         state
     };
 }
+
+beforeEach(function () {
+    vi.useFakeTimers();
+});
+
+afterEach(function () {
+    vi.useRealTimers();
+});
 
 describe('createBootstrapSessionManager', function () {
     it('restores a valid persisted session, resumes an active attempt, and starts heartbeat safely', async function () {
@@ -88,6 +119,15 @@ describe('createBootstrapSessionManager', function () {
                 },
                 selectedExamId: 44
             },
+            state: {
+                exams: [
+                    {
+                        id: 44,
+                        latest_attempt_id: 91,
+                        latest_attempt_status: 'in_progress'
+                    }
+                ]
+            },
             tryResumeActiveAttemptFromExamList: async function () {
                 return true;
             }
@@ -98,9 +138,14 @@ describe('createBootstrapSessionManager', function () {
         expect(fixture.state.token).toBe('token-123');
         expect(fixture.state.stage).toBe('confirm');
         expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.sessionRecoveryVisible).toBe(false);
         expect(fixture.calls.startSessionHeartbeat).toBe(1);
         expect(fixture.calls.persistAuthSession).toBe(1);
         expect(fixture.calls.reconcilePendingPageRefreshSecurityEvent).toBe(1);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.sessionRecoveryVisible
+                && snapshot.sessionRecoveryMode === 'exam_restore';
+        })).toBe(true);
         expect(fixture.calls.triggerPendingSyncLifecycleRetry).toEqual([
             {
                 options: { delayMs: 220 },
@@ -125,8 +170,14 @@ describe('createBootstrapSessionManager', function () {
 
         expect(fixture.state.stage).toBe('confirm');
         expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.sessionRecoveryVisible).toBe(false);
         expect(fixture.calls.startSessionHeartbeat).toBe(1);
         expect(fixture.calls.reconcilePendingPageRefreshSecurityEvent).toBe(0);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.sessionRecoveryVisible
+                && snapshot.sessionRecoveryMode === 'confirm_restore'
+                && snapshot.sessionRecoveryStepIndex === 4;
+        })).toBe(true);
         expect(fixture.calls.triggerPendingSyncLifecycleRetry).toEqual([
             {
                 options: { delayMs: 220 },
@@ -155,6 +206,7 @@ describe('createBootstrapSessionManager', function () {
         expect(fixture.calls.fullLogout).toBe(1);
         expect(fixture.state.error).toBe('Sesi login ini sudah digantikan oleh login lain.');
         expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.sessionRecoveryVisible).toBe(false);
         expect(fixture.calls.render).toBeGreaterThan(0);
     });
 
@@ -165,5 +217,52 @@ describe('createBootstrapSessionManager', function () {
 
         expect(fixture.calls.render).toBe(1);
         expect(fixture.calls.loadExams).toBe(0);
+    });
+
+    it('exposes a safe retry path that keeps the persisted session and increments retry count', async function () {
+        var firstLoadResolver = null;
+        var fixture = createFixture({
+            persisted: {
+                token: 'token-123',
+                user: {
+                    user_id: 9,
+                    role: 'student'
+                },
+                selectedExamId: 44
+            },
+            state: {
+                exams: [
+                    {
+                        id: 44,
+                        latest_attempt_id: 91,
+                        latest_attempt_status: 'in_progress'
+                    }
+                ]
+            },
+            loadExams: async function () {
+                if (firstLoadResolver === null) {
+                    await new Promise(function (resolve) {
+                        firstLoadResolver = resolve;
+                    });
+                    return null;
+                }
+                return null;
+            }
+        });
+
+        var initialPromise = fixture.manager.bootstrapFromPersistedSession();
+        vi.advanceTimersByTime(15010);
+        await Promise.resolve();
+        var retryPromise = fixture.manager.retrySessionRecovery();
+        firstLoadResolver();
+        await retryPromise;
+        await initialPromise;
+
+        expect(fixture.calls.loadExams).toBe(2);
+        expect(fixture.state.token).toBe('token-123');
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.sessionRecoveryVisible
+                && snapshot.sessionRecoveryCanRetry;
+        })).toBe(true);
     });
 });

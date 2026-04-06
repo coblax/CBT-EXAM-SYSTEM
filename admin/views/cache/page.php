@@ -697,6 +697,78 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
                     <?php wp_nonce_field('cbt_cache_action'); ?>
                     <input type="hidden" name="action" value="cbt_cache_action" />
+                    <input type="hidden" name="operation" value="warm_submission_context_exam" />
+                    <h3 style="margin-top:0;">Warm Submission Context by Exam</h3>
+                    <p style="margin:0 0 8px;"><strong>Kapan dipakai:</strong> sebelum traffic awal ujian padat agar konteks evaluasi jawaban sudah siap di Redis.</p>
+                    <p style="margin:0 0 8px;"><strong>Dampak:</strong> memanaskan context submit/scoring objektif untuk semua soal aktif milik exam yang dipilih.</p>
+                    <p style="margin:0 0 6px;"><label for="cbt-cache-submission-context-exam-id">Exam ID</label></p>
+                    <input type="number" min="1" id="cbt-cache-submission-context-exam-id" name="exam_id" class="small-text" placeholder="contoh: 12" required />
+                    <p><button type="submit" class="button button-primary">Warm Submission Context</button></p>
+                </form>
+
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
+                    <?php wp_nonce_field('cbt_cache_action'); ?>
+                    <input type="hidden" name="action" value="cbt_cache_action" />
+                    <input type="hidden" name="operation" value="clear_submission_context_exam" />
+                    <h3 style="margin-top:0;">Clear Submission Context by Exam</h3>
+                    <p style="margin:0 0 8px;"><strong>Kapan dipakai:</strong> setelah perubahan soal masif atau saat perlu memaksa warm ulang submission context per exam.</p>
+                    <p style="margin:0 0 8px;"><strong>Dampak:</strong> menghapus pointer dan payload submission context untuk semua soal aktif di exam yang dipilih.</p>
+                    <p style="margin:0 0 6px;"><label for="cbt-cache-submission-context-clear-exam-id">Exam ID</label></p>
+                    <input type="number" min="1" id="cbt-cache-submission-context-clear-exam-id" name="exam_id" class="small-text" placeholder="contoh: 12" required />
+                    <p><button type="submit" class="button button-secondary">Clear Submission Context</button></p>
+                </form>
+
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
+                    <?php wp_nonce_field('cbt_cache_action'); ?>
+                    <input type="hidden" name="action" value="cbt_cache_action" />
+                    <input type="hidden" name="operation" value="warm_login_snapshot_exam" />
+                    <h3 style="margin-top:0;">Warm Login Snapshot by Exam</h3>
+                    <p style="margin:0 0 8px;"><strong>Kapan dipakai:</strong> sebelum jam login padat untuk memanaskan full auth snapshot siswa target exam tertentu.</p>
+                    <p style="margin:0 0 8px;"><strong>Dampak:</strong> menulis snapshot login global per siswa, termasuk hash password snapshot dan payload profil yang dipakai response login.</p>
+                    <p style="margin:0 0 6px;"><label for="cbt-cache-login-exam-id">Exam ID</label></p>
+                    <input type="number" min="1" id="cbt-cache-login-exam-id" name="exam_id" class="small-text" placeholder="contoh: 12" required />
+                    <p><button type="submit" class="button button-primary">Warm Login Snapshot</button></p>
+                </form>
+
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
+                    <?php wp_nonce_field('cbt_cache_action'); ?>
+                    <input type="hidden" name="action" value="cbt_cache_action" />
+                    <input type="hidden" name="operation" value="clear_login_snapshot_exam" />
+                    <h3 style="margin-top:0;">Invalidate Login Snapshot by Exam</h3>
+                    <p style="margin:0 0 8px;"><strong>Kapan dipakai:</strong> setelah reset password massal, perubahan akun siswa target, atau saat perlu memaksa warm ulang per exam.</p>
+                    <p style="margin:0 0 8px;"><strong>Dampak:</strong> menghapus snapshot login untuk seluruh siswa target exam yang dipilih.</p>
+                    <p style="margin:0 0 6px;"><label for="cbt-cache-login-clear-exam-id">Exam ID</label></p>
+                    <input type="number" min="1" id="cbt-cache-login-clear-exam-id" name="exam_id" class="small-text" placeholder="contoh: 12" required />
+                    <p><button type="submit" class="button button-secondary">Invalidate Login Snapshot</button></p>
+                </form>
+
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
+                    <?php wp_nonce_field('cbt_cache_action'); ?>
+                    <input type="hidden" name="action" value="cbt_cache_action" />
+                    <input type="hidden" name="operation" value="warm_login_snapshot_user" />
+                    <h3 style="margin-top:0;">Warm Login Snapshot by User</h3>
+                    <p style="margin:0 0 8px;"><strong>Kapan dipakai:</strong> untuk debug atau pre-warm satu siswa tertentu tanpa menyentuh target exam lain.</p>
+                    <p style="margin:0 0 8px;"><strong>Dampak:</strong> hanya snapshot login user tersebut yang diperbarui.</p>
+                    <p style="margin:0 0 6px;"><label for="cbt-cache-login-user-id">User ID</label></p>
+                    <input type="number" min="1" id="cbt-cache-login-user-id" name="user_id" class="small-text" placeholder="contoh: 45" required />
+                    <p><button type="submit" class="button button-secondary">Warm Login User</button></p>
+                </form>
+
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
+                    <?php wp_nonce_field('cbt_cache_action'); ?>
+                    <input type="hidden" name="action" value="cbt_cache_action" />
+                    <input type="hidden" name="operation" value="clear_login_snapshot_user" />
+                    <h3 style="margin-top:0;">Invalidate Login Snapshot by User</h3>
+                    <p style="margin:0 0 8px;"><strong>Kapan dipakai:</strong> saat satu akun siswa baru direset password, ganti email/login, atau perlu dipaksa login lewat jalur canonical.</p>
+                    <p style="margin:0 0 8px;"><strong>Dampak:</strong> hanya snapshot login user tersebut yang dibersihkan.</p>
+                    <p style="margin:0 0 6px;"><label for="cbt-cache-login-clear-user-id">User ID</label></p>
+                    <input type="number" min="1" id="cbt-cache-login-clear-user-id" name="user_id" class="small-text" placeholder="contoh: 45" required />
+                    <p><button type="submit" class="button button-secondary">Invalidate Login User</button></p>
+                </form>
+
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
+                    <?php wp_nonce_field('cbt_cache_action'); ?>
+                    <input type="hidden" name="action" value="cbt_cache_action" />
                     <input type="hidden" name="operation" value="invalidate_attempt" />
                     <h3 style="margin-top:0;">Attempt Namespace</h3>
                     <p style="margin:0 0 8px;"><strong>Kapan dipakai:</strong> jika satu attempt ujian macet, jawaban terasa tidak sinkron, atau state attempt perlu dipaksa baca ulang.</p>
@@ -1114,4 +1186,3 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 </script>
             </div>
         </div>
-        

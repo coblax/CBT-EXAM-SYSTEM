@@ -34,7 +34,7 @@ function createFixture(overrides) {
     overrides = overrides || {};
     var root = document.createElement('div');
     document.body.appendChild(root);
-    var state = {
+    var state = Object.assign({
         attemptId: 55,
         currentIndex: 0,
         navPanelVisible: false,
@@ -42,7 +42,7 @@ function createFixture(overrides) {
         selectedExamId: 9,
         stage: 'exam',
         totalQuestions: 1
-    };
+    }, overrides.state || {});
     var currentRegions = {
         navigation: '<aside>Nav</aside>',
         notice: '',
@@ -63,7 +63,7 @@ function createFixture(overrides) {
         documentRef: document,
         enhanceRichMath: overrides.enhanceRichMath || function () {},
         getEffectiveNavPanelPosition: function () {
-            return 'right';
+            return overrides.navPanelPosition || 'right';
         },
         maybePrefetchExamRuntime: overrides.maybePrefetchExamRuntime || function () {},
         recordRenderPerformed: overrides.recordRenderPerformed || function () {},
@@ -76,6 +76,12 @@ function createFixture(overrides) {
         },
         renderBody: function () {
             return createExamShellMarkup(currentRegions);
+        },
+        renderResultProgressOverlay: overrides.renderResultProgressOverlay || function () {
+            return '';
+        },
+        renderSessionRecoveryOverlay: overrides.renderSessionRecoveryOverlay || function () {
+            return '';
         },
         renderFinishConfirmModal: function () {
             return '';
@@ -94,7 +100,7 @@ function createFixture(overrides) {
         syncIdleDetectionState: function () {},
         updateQuestionPrefetchIndicator: function () {},
         updateTimerLabel: function () {},
-        windowRef: window
+        windowRef: overrides.windowRef || window
     });
 
     return {
@@ -200,5 +206,113 @@ describe('createRenderCycleManager patchExamRegions', function () {
         expect(applyUiPreferences).toHaveBeenCalledTimes(1);
         expect(recordRenderPerformed).toHaveBeenCalledTimes(1);
         expect(document.querySelector('[data-cbt-exam-shell="1"]')).not.toBeNull();
+    });
+
+    it('scrolls only the navigation container when the current nav item is outside the mobile top-layout viewport', function () {
+        var rafCallbacks = [];
+        var windowRef = Object.create(window);
+        windowRef.innerWidth = 480;
+        windowRef.requestAnimationFrame = function (callback) {
+            rafCallbacks.push(callback);
+            return rafCallbacks.length;
+        };
+        windowRef.cancelAnimationFrame = function () {};
+        var fixture = createFixture({
+            navPanelPosition: 'top',
+            state: {
+                navPanelVisible: true
+            },
+            windowRef: windowRef
+        });
+
+        fixture.setRegions({
+            navigation: [
+                '<aside class="cbt-side-card">',
+                '<div class="cbt-exam-layout cbt-nav-pos-top">',
+                '<div class="cbt-nav-grid">',
+                '<button type="button" class="cbt-nav-btn">1</button>',
+                '<button type="button" class="cbt-nav-btn">2</button>',
+                '<button type="button" class="cbt-nav-btn is-current">3</button>',
+                '</div>',
+                '</div>',
+                '</aside>'
+            ].join('')
+        });
+
+        fixture.manager.render('initial');
+
+        var navGrid = fixture.root.querySelector('.cbt-nav-grid');
+        var navButtons = fixture.root.querySelectorAll('.cbt-nav-btn');
+        var currentItem = fixture.root.querySelector('.cbt-nav-btn.is-current');
+        Object.defineProperty(navGrid, 'clientWidth', {
+            configurable: true,
+            value: 120
+        });
+        Object.defineProperty(navGrid, 'scrollWidth', {
+            configurable: true,
+            value: 400
+        });
+        navGrid.scrollLeft = 0;
+        Object.defineProperty(navButtons[0], 'offsetWidth', {
+            configurable: true,
+            value: 40
+        });
+        Object.defineProperty(currentItem, 'offsetLeft', {
+            configurable: true,
+            value: 220
+        });
+        Object.defineProperty(currentItem, 'offsetWidth', {
+            configurable: true,
+            value: 40
+        });
+        currentItem.scrollIntoView = vi.fn();
+
+        expect(rafCallbacks).toHaveLength(1);
+        rafCallbacks[0]();
+
+        expect(navGrid.scrollLeft).toBeGreaterThan(0);
+        expect(currentItem.scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it('suppresses generic loading copy while the session recovery overlay is active', function () {
+        var fixture = createFixture({
+            state: {
+                busy: true,
+                sessionRecoveryVisible: true,
+                stage: 'confirm'
+            },
+            renderBody: function () {
+                return '<section class="cbt-card"><p>Confirm</p></section>';
+            },
+            renderSessionRecoveryOverlay: function () {
+                return '<div class="cbt-auth-progress-overlay">Recovery</div>';
+            }
+        });
+
+        fixture.manager.render('recovery');
+
+        expect(fixture.root.innerHTML).not.toContain('Memproses...');
+        expect(fixture.root.innerHTML).toContain('Recovery');
+    });
+
+    it('suppresses generic loading copy while the result progress overlay is active', function () {
+        var fixture = createFixture({
+            state: {
+                busy: true,
+                resultProgressVisible: true,
+                stage: 'confirm'
+            },
+            renderBody: function () {
+                return '<section class="cbt-card"><p>Confirm</p></section>';
+            },
+            renderResultProgressOverlay: function () {
+                return '<div class="cbt-auth-progress-overlay">Result Progress</div>';
+            }
+        });
+
+        fixture.manager.render('result-progress');
+
+        expect(fixture.root.innerHTML).not.toContain('Memproses...');
+        expect(fixture.root.innerHTML).toContain('Result Progress');
     });
 });

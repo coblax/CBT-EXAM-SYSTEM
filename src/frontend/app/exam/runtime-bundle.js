@@ -280,6 +280,7 @@ export function createExamRuntimeBundle(deps) {
         },
         isRetryableAnswerSyncError: answerSyncManager.isRetryableAnswerSyncError,
         persistCurrentQuestionCacheLocally: questionCacheStorage.persistCurrentQuestionCacheLocally,
+        ensureResultStageRenderer: deps.ensureResultStageRenderer,
         prefetchResultStageRenderer: deps.prefetchResultStageRenderer,
         queueQuestionAnswer: answerSyncManager.queueQuestionAnswer,
         recordActionTrail: deps.recordActionTrail,

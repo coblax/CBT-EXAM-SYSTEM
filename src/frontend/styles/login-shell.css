@@ -153,6 +153,174 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     display: none;
 }
 
+.cbt-auth-progress-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background:
+        radial-gradient(circle at top, rgba(96, 165, 250, 0.18), transparent 42%),
+        linear-gradient(180deg, rgba(5, 18, 34, 0.62), rgba(7, 23, 43, 0.78));
+    backdrop-filter: blur(10px);
+}
+
+.cbt-auth-progress-shell {
+    width: min(100%, 540px);
+}
+
+.cbt-auth-progress-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    padding: 22px;
+    color: #fff;
+    box-shadow: 0 28px 60px rgba(15, 23, 42, 0.34);
+}
+
+.cbt-auth-progress-card::before {
+    content: '';
+    position: absolute;
+    inset: auto auto 0 -10%;
+    width: 120%;
+    height: 58%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.08));
+    pointer-events: none;
+}
+
+.cbt-auth-progress-card > * {
+    position: relative;
+    z-index: 1;
+}
+
+.cbt-auth-progress-card--login {
+    background:
+        linear-gradient(135deg, rgba(18, 66, 128, 0.98), rgba(22, 111, 196, 0.94)),
+        #154d8b;
+}
+
+.cbt-auth-progress-card--logout {
+    background:
+        linear-gradient(135deg, rgba(12, 66, 92, 0.98), rgba(18, 117, 122, 0.94)),
+        #145f67;
+}
+
+.cbt-auth-progress-card--result {
+    background:
+        linear-gradient(135deg, rgba(12, 57, 98, 0.98), rgba(22, 132, 117, 0.92)),
+        #145f67;
+}
+
+.cbt-auth-progress-card--recovery {
+    background:
+        linear-gradient(135deg, rgba(11, 54, 96, 0.98), rgba(31, 102, 173, 0.94)),
+        #154d8b;
+}
+
+.cbt-auth-progress-kicker {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.cbt-auth-progress-title {
+    margin: 14px 0 6px;
+    font-size: clamp(24px, 3vw, 32px);
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+}
+
+.cbt-auth-progress-subtitle {
+    margin: 0;
+    max-width: 42ch;
+    font-size: 13px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.82);
+}
+
+.cbt-auth-progress-card .cbt-finish-live-card {
+    margin-top: 18px;
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.cbt-auth-progress-card .cbt-finish-live-copy strong,
+.cbt-auth-progress-card .cbt-muted {
+    color: #fff;
+}
+
+.cbt-auth-progress-card .cbt-finish-live-copy span {
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.cbt-auth-progress-card .cbt-finish-live-step {
+    background: rgba(255, 255, 255, 0.14);
+    color: #f8fbff;
+}
+
+.cbt-auth-progress-card .cbt-finish-live-spinner {
+    border-color: rgba(255, 255, 255, 0.18);
+    border-top-color: #fff;
+}
+
+.cbt-auth-progress-card .cbt-finish-live-progress {
+    border-color: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.cbt-auth-progress-card .cbt-finish-live-progress-fill {
+    background: linear-gradient(90deg, #ffffff, #c9e7ff 54%, #7dd3fc 100%);
+}
+
+.cbt-session-recovery-slow-copy {
+    margin: 16px 0 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.cbt-session-recovery-note {
+    margin: 12px 0 0;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.1);
+    font-size: 12px;
+    line-height: 1.65;
+    color: rgba(255, 255, 255, 0.84);
+}
+
+.cbt-session-recovery-actions {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.cbt-session-recovery-actions .cbt-button {
+    min-height: 46px;
+    border-radius: 14px;
+}
+
+.cbt-session-recovery-retry-meta {
+    font-size: 12px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.78);
+}
+
 @media (max-width: 1080px) {
     .cbt-login-panel .cbt-login-panel-title {
         display: block;
@@ -525,6 +693,35 @@ body.cbt-exam-page.cbt-stage-login .cbt-login-shell {
     font-size: 12px;
     line-height: 1.6;
     color: #5b6e82;
+}
+
+@media (max-width: 640px) {
+    .cbt-auth-progress-overlay {
+        padding: 16px;
+    }
+
+    .cbt-auth-progress-card {
+        border-radius: 20px;
+        padding: 18px;
+    }
+
+    .cbt-auth-progress-title {
+        font-size: 22px;
+    }
+
+    .cbt-auth-progress-card .cbt-finish-live-head {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .cbt-auth-progress-card .cbt-finish-live-step {
+        grid-column: 1 / -1;
+        justify-self: start;
+    }
+
+    .cbt-session-recovery-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-picker-mobile {

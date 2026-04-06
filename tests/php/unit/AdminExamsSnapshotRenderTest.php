@@ -18,11 +18,15 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('One-Click Pra Ujian', $html);
         self::assertStringContainsString('Monitor Snapshot Soal', $html);
         self::assertStringContainsString('Monitor Snapshot Start', $html);
+        self::assertStringContainsString('Monitor Snapshot Submit', $html);
         self::assertStringContainsString('Monitor Snapshot Exam', $html);
         self::assertStringContainsString('Monitor Snapshot Profile', $html);
+        self::assertStringContainsString('Monitor Snapshot Login', $html);
         self::assertStringContainsString('Jalankan One-Click Pra Ujian', $html);
         self::assertStringContainsString('Siswa Bermasalah', $html);
         self::assertStringContainsString('Auto-Warm Availability', $html);
+        self::assertStringContainsString('Login Snapshot', $html);
+        self::assertStringContainsString('Submission Context', $html);
         self::assertStringNotContainsString('Preview Soal (8-8 dari 8)', $html);
         self::assertStringNotContainsString('name="cbt_exam_snapshot_tab" value="preflight"', $html);
     }
@@ -57,6 +61,23 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringNotContainsString('Jalankan One-Click Pra Ujian', $html);
     }
 
+    public function test_render_snapshot_panel_renders_submission_context_monitor_tab(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR,
+        ]));
+
+        self::assertStringContainsString('Monitor Snapshot Submit', $html);
+        self::assertStringContainsString('konteks evaluasi jawaban', $html);
+        self::assertStringContainsString('Siapkan Semua Submission Context', $html);
+        self::assertStringContainsString('Bersihkan Semua Submission Context', $html);
+        self::assertStringContainsString('Siapkan Submission Context', $html);
+        self::assertStringContainsString('Bersihkan Submission Context', $html);
+        self::assertStringContainsString('Q#901', $html);
+        self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="submission_context_monitor"', $html);
+        self::assertStringNotContainsString('Snapshot ini memuat katalog exam siswa yang tersedia, bukan snapshot satu exam tunggal.', $html);
+    }
+
     public function test_render_snapshot_panel_renders_exam_monitor_tab(): void
     {
         $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
@@ -86,6 +107,23 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Bersihkan Profil', $html);
         self::assertStringContainsString('https://example.com/salsa.jpg', $html);
         self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="profile_monitor"', $html);
+        self::assertStringNotContainsString('Snapshot ini memuat katalog exam siswa yang tersedia, bukan snapshot satu exam tunggal.', $html);
+    }
+
+    public function test_render_snapshot_panel_renders_login_monitor_tab(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR,
+        ]));
+
+        self::assertStringContainsString('<th>Snapshot Login</th>', $html);
+        self::assertStringContainsString('auth/login accelerator per siswa', $html);
+        self::assertStringContainsString('Siapkan Semua Login Snapshot', $html);
+        self::assertStringContainsString('Bersihkan Semua Login Snapshot', $html);
+        self::assertStringContainsString('Siapkan Login Snapshot', $html);
+        self::assertStringContainsString('Bersihkan Login Snapshot', $html);
+        self::assertStringContainsString('login:salsa', $html);
+        self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="login_monitor"', $html);
         self::assertStringNotContainsString('Snapshot ini memuat katalog exam siswa yang tersedia, bukan snapshot satu exam tunggal.', $html);
     }
 
@@ -229,6 +267,37 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                             'nisn' => '20260071',
                         ],
                     ],
+                    'login_status_label' => 'READY',
+                    'login_status_tone' => 'success',
+                    'login' => [
+                        'ttl_seconds' => 14400,
+                        'payload_bytes' => 768,
+                        'generated_at' => '2026-04-04 07:35:00',
+                        'redis_host' => '127.0.0.1',
+                        'redis_database' => 2,
+                        'snapshot_source' => 'preflight',
+                        'snapshot_exists' => true,
+                        'snapshot_valid' => true,
+                        'storage_key' => 'cbt_login_auth:user:71',
+                        'snapshot_message' => 'Login snapshot siap dipakai untuk login siswa.',
+                        'identifiers' => [
+                            'login:salsa',
+                            'email:salsa@example.com',
+                            'fallback:salsa',
+                            'nisn:20260071',
+                        ],
+                        'preview' => [
+                            'user_login' => 'salsa',
+                            'user_email' => 'salsa@example.com',
+                            'role' => 'siswa',
+                            'nisn' => '20260071',
+                            'kode_kelas' => 'XI-A',
+                            'kode_ruang' => 'R1',
+                            'agama' => 'Islam',
+                            'foto' => 'https://example.com/salsa.jpg',
+                            'jenis_kelamin' => 'Perempuan',
+                        ],
+                    ],
                 ],
             ],
             'exam_snapshot_rows' => [
@@ -243,6 +312,8 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                     'start_snapshot_status_label' => 'READY',
                     'start_snapshot_status_tone' => 'success',
                     'start_snapshot_message' => 'Start snapshot Redis siap dipakai.',
+                    'submission_context_status_label' => 'READY',
+                    'submission_context_status_tone' => 'success',
                     'revision_meta' => [
                         'version' => 4,
                         'invalidated_at' => '2026-04-03 10:00:00',
@@ -269,6 +340,23 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                     'redis_database' => 2,
                     'start_snapshot_redis_host' => '127.0.0.1',
                     'start_snapshot_redis_database' => 2,
+                    'submission_context' => [
+                        'question_count' => 8,
+                        'ready_count' => 8,
+                        'missing_count' => 0,
+                        'invalid_count' => 0,
+                        'payload_bytes_total' => 1024,
+                        'snapshot_exists' => true,
+                        'snapshot_valid' => true,
+                        'snapshot_status' => 'ready',
+                        'snapshot_message' => 'Submission context siap dipakai untuk submit jawaban dan scoring objektif.',
+                        'redis_host' => '127.0.0.1',
+                        'redis_database' => 2,
+                        'preview_items' => [
+                            ['question_id' => 901, 'question_type' => 'multiple_choice', 'status' => 'ready', 'payload_bytes' => 128],
+                            ['question_id' => 902, 'question_type' => 'short_answer', 'status' => 'ready', 'payload_bytes' => 128],
+                        ],
+                    ],
                     'preview_question_ids' => [908],
                     'preview_items' => [
                         [
@@ -345,6 +433,14 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                         'profile_success_count' => 12,
                         'profile_failure_count' => 1,
                         'profile_processed_count' => 13,
+                        'login_snapshot_success_count' => 11,
+                        'login_snapshot_failure_count' => 2,
+                        'login_snapshot_ready_count' => 11,
+                        'login_snapshot_missing_count' => 7,
+                        'submission_context_question_count' => 8,
+                        'submission_context_ready_count' => 8,
+                        'submission_context_missing_count' => 0,
+                        'submission_context_invalid_count' => 0,
                         'started_at' => '2026-04-04 07:31:00',
                         'finished_at' => '',
                         'last_tick_at' => '2026-04-04 07:41:00',
@@ -353,8 +449,12 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                         'stage_question_tone' => 'success',
                         'stage_start_snapshot_label' => 'READY',
                         'stage_start_snapshot_tone' => 'success',
+                        'stage_submission_context_label' => 'READY',
+                        'stage_submission_context_tone' => 'success',
                         'stage_profiles_label' => 'AKTIF',
                         'stage_profiles_tone' => 'success',
+                        'stage_login_snapshot_label' => 'AKTIF',
+                        'stage_login_snapshot_tone' => 'success',
                         'stage_auto_warm_label' => 'AKTIF',
                         'stage_auto_warm_tone' => 'success',
                         'can_start' => true,
@@ -362,8 +462,11 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                         'start_cache_ready' => true,
                         'availability_cache_ready' => true,
                         'profile_cache_ready' => true,
+                        'submission_context_cache_ready' => true,
+                        'login_snapshot_cache_ready' => true,
                         'rest_warm_ready' => true,
                         'start_warm_ready' => true,
+                        'submission_context_warm_ready' => true,
                         'blocking_exam_id' => 0,
                         'blocking_exam_title' => '',
                         'blocking_auto_warm_exam_id' => 0,

@@ -1824,6 +1824,9 @@
                 .cbt-student-snapshot-col--profile {
                     width: 32%;
                 }
+                .cbt-student-snapshot-col--login {
+                    width: 32%;
+                }
                 .cbt-student-snapshot-col--actions {
                     width: 13%;
                 }

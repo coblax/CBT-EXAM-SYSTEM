@@ -20,12 +20,15 @@ export function createAnswerInputManager(deps) {
             var regions = {
                 navigation: true,
                 questionFooterProgress: true,
-                questionHead: true,
                 questionSaveFeedback: true
             };
 
             if (options.includeInput !== false) {
                 regions.questionInput = true;
+            }
+
+            if (options.includeQuestionHead !== false) {
+                regions.questionHead = true;
             }
 
             if (options.includeNotice) {
@@ -38,6 +41,43 @@ export function createAnswerInputManager(deps) {
         }
 
         render(reason, meta);
+    }
+
+    function syncChoiceSelectionUi(questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        if (safeQuestionId <= 0 || !(root instanceof HTMLElement)) {
+            return;
+        }
+
+        var selector = '.cbt-option input[data-qid="' + safeQuestionId + '"][data-action="answer-single"], .cbt-option input[data-qid="' + safeQuestionId + '"][data-action="answer-multi"]';
+        var optionInputs = root.querySelectorAll(selector);
+        optionInputs.forEach(function (node) {
+            if (!(node instanceof HTMLInputElement)) {
+                return;
+            }
+
+            var optionNode = node.closest('.cbt-option');
+            if (optionNode instanceof HTMLElement) {
+                optionNode.classList.toggle('is-selected', !!node.checked);
+            }
+        });
+    }
+
+    function syncCurrentQuestionHeadUi(questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        if (safeQuestionId <= 0 || !(root instanceof HTMLElement)) {
+            return;
+        }
+
+        var questionHeadNode = root.querySelector('[data-cbt-exam-question-region="questionHead"] .cbt-question-head');
+        if (!(questionHeadNode instanceof HTMLElement)) {
+            return;
+        }
+
+        var isDoubtful = !!(state.doubtful && state.doubtful[safeQuestionId]);
+        var isAnswered = !!(state.answeredQuestionLookup && state.answeredQuestionLookup[safeQuestionId]);
+        questionHeadNode.classList.toggle('is-doubtful', isDoubtful);
+        questionHeadNode.classList.toggle('is-answered', !isDoubtful && isAnswered);
     }
 
     function handleChangeTarget(target) {
@@ -61,11 +101,14 @@ export function createAnswerInputManager(deps) {
                 scheduleQuestionCachePersist(200);
                 clearMessages();
                 scheduleAutoSave(singleQid, autoSaveChoiceDelayMs);
+                syncChoiceSelectionUi(singleQid);
+                syncCurrentQuestionHeadUi(singleQid);
                 renderAnswerChangePatch('answer-change', {
                     questionId: singleQid,
                     inputType: 'single'
                 }, {
-                    includeInput: true,
+                    includeInput: false,
+                    includeQuestionHead: false,
                     includeNotice: hadVisibleMessages
                 });
             }
@@ -111,11 +154,14 @@ export function createAnswerInputManager(deps) {
             scheduleQuestionCachePersist(200);
             clearMessages();
             scheduleAutoSave(multiQid, autoSaveChoiceDelayMs);
+            syncChoiceSelectionUi(multiQid);
+            syncCurrentQuestionHeadUi(multiQid);
             renderAnswerChangePatch('answer-change', {
                 questionId: multiQid,
                 inputType: 'multi'
             }, {
-                includeInput: true,
+                includeInput: false,
+                includeQuestionHead: false,
                 includeNotice: hadVisibleMessages
             });
             return true;
@@ -137,11 +183,13 @@ export function createAnswerInputManager(deps) {
             scheduleQuestionCachePersist(240);
             clearMessages();
             scheduleAutoSave(matrixQid, autoSaveChoiceDelayMs);
+            syncCurrentQuestionHeadUi(matrixQid);
             renderAnswerChangePatch('answer-change', {
                 questionId: matrixQid,
                 inputType: 'true-false-matrix'
             }, {
-                includeInput: true,
+                includeInput: false,
+                includeQuestionHead: false,
                 includeNotice: hadVisibleMessages
             });
             return true;
@@ -224,11 +272,13 @@ export function createAnswerInputManager(deps) {
             syncMirroredShortAnswerInputs(shortQid, shortKey, shortValue, target);
             scheduleQuestionCachePersist(500);
             scheduleAutoSave(shortQid, autoSaveTextDelayMs);
+            syncCurrentQuestionHeadUi(shortQid);
             renderAnswerChangePatch('answer-input', {
                 questionId: shortQid,
                 inputType: 'short'
             }, {
-                includeInput: false
+                includeInput: false,
+                includeQuestionHead: false
             });
             return true;
         }
@@ -248,11 +298,13 @@ export function createAnswerInputManager(deps) {
             }
             scheduleQuestionCachePersist(500);
             scheduleAutoSave(textQid, autoSaveTextDelayMs);
+            syncCurrentQuestionHeadUi(textQid);
             renderAnswerChangePatch('answer-input', {
                 questionId: textQid,
                 inputType: 'text'
             }, {
-                includeInput: false
+                includeInput: false,
+                includeQuestionHead: false
             });
             return true;
         }

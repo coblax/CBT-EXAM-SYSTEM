@@ -6,12 +6,14 @@ if (!defined('ABSPATH')) {
 ?>
         <div class="wrap cbt-results-page">
             <div class="cbt-results-shell">
-            <?php if ($notice): ?>
-                <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
-            <?php endif; ?>
-            <?php if ($error): ?>
-                <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
-            <?php endif; ?>
+            <div id="cbt-results-notices">
+                <?php if ($notice): ?>
+                    <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+                <?php endif; ?>
+                <?php if ($error): ?>
+                    <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+                <?php endif; ?>
+            </div>
             <section class="cbt-results-hero">
                 <div class="cbt-results-hero-copy">
                     <span class="cbt-results-kicker">RESULTS</span>
@@ -399,6 +401,183 @@ if (!defined('ABSPATH')) {
                     grid-template-columns: repeat(2, minmax(0, 1fr));
                     gap: 10px;
                 }
+                .cbt-results-progress-card {
+                    grid-column: 1 / -1;
+                    display: grid;
+                    gap: 14px;
+                    padding: 18px 20px;
+                    border: 1px solid #cfe1f2;
+                    border-radius: 18px;
+                    background: linear-gradient(135deg, #f7fbff 0%, #edf5ff 56%, #e6f0fb 100%);
+                    box-shadow: 0 16px 30px rgba(34, 113, 177, 0.08);
+                }
+                .cbt-results-progress-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 14px;
+                    flex-wrap: wrap;
+                }
+                .cbt-results-progress-head-actions {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: flex-end;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .cbt-results-progress-copy {
+                    display: grid;
+                    gap: 6px;
+                }
+                .cbt-results-progress-copy h3 {
+                    margin: 0;
+                    color: #0f172a;
+                    font-size: 18px;
+                    line-height: 1.2;
+                }
+                .cbt-results-progress-copy p {
+                    margin: 0;
+                    color: #526174;
+                    font-size: 13px;
+                    line-height: 1.6;
+                }
+                .cbt-results-progress-status {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 36px;
+                    padding: 0 14px;
+                    border-radius: 999px;
+                    background: rgba(34, 113, 177, 0.12);
+                    color: #135e96;
+                    font-size: 12px;
+                    font-weight: 800;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                }
+                .cbt-results-progress-stop {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 36px;
+                    padding: 0 14px;
+                    border-radius: 999px;
+                    border: 1px solid rgba(185, 28, 28, 0.18);
+                    background: linear-gradient(180deg, #fff7f7 0%, #fff1f1 100%);
+                    color: #b91c1c;
+                    font-size: 12px;
+                    font-weight: 800;
+                    line-height: 1;
+                    box-shadow: 0 10px 20px rgba(185, 28, 28, 0.08);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+                }
+                .cbt-results-progress-stop:not(:disabled):hover,
+                .cbt-results-progress-stop:not(:disabled):focus {
+                    transform: translateY(-1px);
+                    box-shadow: 0 14px 24px rgba(185, 28, 28, 0.12);
+                    outline: none;
+                }
+                .cbt-results-progress-stop:disabled {
+                    cursor: default;
+                    opacity: 0.72;
+                }
+                .cbt-results-progress-body {
+                    display: grid;
+                    gap: 12px;
+                }
+                .cbt-results-progress-metrics {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                }
+                .cbt-results-progress-counts {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                }
+                .cbt-results-progress-chip {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    min-height: 34px;
+                    padding: 0 12px;
+                    border: 1px solid #d4e1ee;
+                    border-radius: 999px;
+                    background: rgba(255, 255, 255, 0.88);
+                    color: #31506b;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+                .cbt-results-progress-chip strong {
+                    font-weight: 800;
+                }
+                .cbt-results-progress-chip.is-success {
+                    border-color: rgba(22, 163, 74, 0.22);
+                    color: #166534;
+                }
+                .cbt-results-progress-chip.is-danger {
+                    border-color: rgba(220, 38, 38, 0.22);
+                    color: #b91c1c;
+                }
+                .cbt-results-progress-chip.is-muted {
+                    color: #526174;
+                }
+                .cbt-results-progress-bar {
+                    display: grid;
+                    gap: 8px;
+                }
+                .cbt-results-progress-bar-top {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    color: #31506b;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+                .cbt-results-progress-track {
+                    position: relative;
+                    display: block;
+                    width: 100%;
+                    height: 12px;
+                    overflow: hidden;
+                    border-radius: 999px;
+                    background: rgba(34, 113, 177, 0.12);
+                }
+                .cbt-results-progress-fill {
+                    display: block;
+                    width: 0;
+                    height: 100%;
+                    border-radius: inherit;
+                    background: linear-gradient(135deg, #2271b1 0%, #31a1ff 100%);
+                    transition: width 0.25s ease;
+                }
+                .cbt-results-progress-resume {
+                    display: none;
+                    margin: 0;
+                    color: #9a3412;
+                    font-size: 12px;
+                    line-height: 1.6;
+                    font-weight: 700;
+                }
+                .cbt-results-progress-card.is-paused .cbt-results-progress-resume {
+                    display: block;
+                }
+                .cbt-results-progress-card.is-stopping {
+                    border-color: rgba(180, 83, 9, 0.24);
+                    background: linear-gradient(135deg, #fffdf6 0%, #fff7e6 100%);
+                }
+                .cbt-results-progress-card.is-stopping .cbt-results-progress-status {
+                    background: rgba(180, 83, 9, 0.14);
+                    color: #9a3412;
+                }
+                .cbt-results-progress-card.is-error {
+                    border-color: rgba(220, 38, 38, 0.2);
+                    background: linear-gradient(135deg, #fff7f7 0%, #fff2f2 100%);
+                }
                 .cbt-results-op-card {
                     display: flex;
                     align-items: center;
@@ -508,6 +687,13 @@ if (!defined('ABSPATH')) {
                     font-size: 12px;
                     line-height: 1.4;
                     white-space: nowrap;
+                }
+                .cbt-results-filter-actions .button.cbt-results-filter-reset.is-disabled {
+                    opacity: 0.7;
+                    cursor: not-allowed;
+                    pointer-events: none;
+                    transform: none;
+                    box-shadow: none;
                 }
                 .cbt-results-attempts-topbar {
                     display: flex;
@@ -1795,6 +1981,12 @@ if (!defined('ABSPATH')) {
                         align-items: flex-start;
                         flex-wrap: wrap;
                     }
+                    .cbt-results-progress-head,
+                    .cbt-results-progress-metrics,
+                    .cbt-results-progress-bar-top {
+                        flex-direction: column;
+                        align-items: flex-start;
+                    }
                     .cbt-results-op-form {
                         width: 100%;
                         justify-content: flex-start;
@@ -1870,6 +2062,9 @@ if (!defined('ABSPATH')) {
                 <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-results-filter-form">
                     <input type="hidden" name="page" value="cbt-results" />
                     <input type="hidden" name="cbt_results_paged" value="1" />
+                    <?php if ($results_bulk_job_active && $results_bulk_job_token !== ''): ?>
+                        <input type="hidden" name="cbt_results_bulk_token" value="<?php echo esc_attr($results_bulk_job_token); ?>" />
+                    <?php endif; ?>
                     <div class="cbt-results-field-grid">
                         <div class="cbt-results-field">
                             <label for="cbt-result-filter-exam">Filter Exam</label>
@@ -1914,13 +2109,72 @@ if (!defined('ABSPATH')) {
                     </div>
                     <div class="cbt-results-filter-actions">
                         <button class="button button-secondary screen-reader-text" type="submit">Terapkan Filter</button>
-                        <a class="button cbt-results-filter-reset" data-cbt-filter-reset="1" href="<?php echo esc_url(admin_url('admin.php?page=cbt-results')); ?>">
+                        <a class="button cbt-results-filter-reset<?php echo $results_bulk_job_active ? ' is-disabled' : ''; ?>" data-cbt-filter-reset="1" href="<?php echo esc_url(admin_url('admin.php?page=cbt-results')); ?>"<?php echo $results_bulk_job_active ? ' aria-disabled="true"' : ''; ?>>
                             <span class="cbt-results-reset-icon" aria-hidden="true"></span>
                             <span>Reset Filter</span>
                         </a>
                     </div>
                 </form>
                 <div id="cbt-results-batch-card" class="cbt-results-ops-grid">
+                    <?php if ($results_bulk_job_active): ?>
+                        <article
+                            id="cbt-results-bulk-progress-card"
+                            class="cbt-results-progress-card"
+                            data-cbt-results-bulk-job="1"
+                            data-cbt-results-bulk-token="<?php echo esc_attr((string) ($results_bulk_job['token'] ?? '')); ?>"
+                            data-cbt-results-bulk-ajax-url="<?php echo esc_url((string) ($results_bulk_job['ajax_url'] ?? admin_url('admin-ajax.php'))); ?>"
+                            data-cbt-results-bulk-action="<?php echo esc_attr((string) ($results_bulk_job['ajax_action'] ?? 'cbt_results_bulk_job_tick')); ?>"
+                            data-cbt-results-bulk-nonce="<?php echo esc_attr((string) ($results_bulk_job['nonce'] ?? '')); ?>"
+                            data-cbt-results-bulk-mode="<?php echo esc_attr((string) ($results_bulk_job['mode'] ?? '')); ?>"
+                            data-cbt-results-bulk-stop-action="<?php echo esc_attr((string) ($results_bulk_job['stop_action'] ?? 'cbt_results_bulk_job_stop')); ?>"
+                            data-cbt-results-bulk-stop-nonce="<?php echo esc_attr((string) ($results_bulk_job['stop_nonce'] ?? '')); ?>"
+                            data-cbt-results-bulk-status="<?php echo esc_attr((string) ($results_bulk_job['status'] ?? 'pending')); ?>"
+                            data-cbt-results-bulk-resume-url="<?php echo esc_url((string) ($results_bulk_job['resume_url'] ?? '')); ?>"
+                        >
+                            <div class="cbt-results-progress-head">
+                                <div class="cbt-results-progress-copy">
+                                    <h3><?php echo esc_html((string) ($results_bulk_job['mode_label'] ?? 'Batch Results')); ?></h3>
+                                    <p data-cbt-results-bulk-role="message"><?php echo esc_html((string) ($results_bulk_job['status_message'] ?? 'Batch results sedang berjalan.')); ?></p>
+                                </div>
+                                <div class="cbt-results-progress-head-actions">
+                                    <span class="cbt-results-progress-status" data-cbt-results-bulk-role="status"><?php echo esc_html((string) ($results_bulk_job['status_label'] ?? 'Berjalan')); ?></span>
+                                    <button
+                                        type="button"
+                                        class="button cbt-results-progress-stop"
+                                        data-cbt-results-bulk-stop="1"
+                                        data-cbt-results-bulk-role="stop-button"
+                                        <?php disabled(empty($results_bulk_job['can_stop'])); ?>
+                                    >
+                                        <?php echo !empty($results_bulk_job['stop_requested']) ? 'Menghentikan...' : 'Stop Batch'; ?>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="cbt-results-progress-body">
+                                <div class="cbt-results-progress-metrics">
+                                    <div class="cbt-results-progress-counts">
+                                        <span class="cbt-results-progress-chip is-success">Sukses <strong data-cbt-results-bulk-role="success"><?php echo (int) ($results_bulk_job['success_count'] ?? 0); ?></strong></span>
+                                        <span class="cbt-results-progress-chip is-danger">Gagal <strong data-cbt-results-bulk-role="failure"><?php echo (int) ($results_bulk_job['failure_count'] ?? 0); ?></strong></span>
+                                        <span class="cbt-results-progress-chip is-muted">Reset <strong data-cbt-results-bulk-role="reset-count"><?php echo (int) ($results_bulk_job['reset_count'] ?? 0); ?></strong></span>
+                                        <span class="cbt-results-progress-chip is-muted">Abandoned <strong data-cbt-results-bulk-role="abandoned-count"><?php echo (int) ($results_bulk_job['abandoned_count'] ?? 0); ?></strong></span>
+                                        <span class="cbt-results-progress-chip is-muted">Completed <strong data-cbt-results-bulk-role="completed-count"><?php echo (int) ($results_bulk_job['completed_count'] ?? 0); ?></strong></span>
+                                    </div>
+                                    <div class="cbt-results-progress-counts">
+                                        <span class="cbt-results-progress-chip">Diproses <strong data-cbt-results-bulk-role="processed"><?php echo (int) ($results_bulk_job['processed_count'] ?? 0); ?></strong> / <span data-cbt-results-bulk-role="total"><?php echo (int) ($results_bulk_job['total'] ?? 0); ?></span></span>
+                                    </div>
+                                </div>
+                                <div class="cbt-results-progress-bar">
+                                    <div class="cbt-results-progress-bar-top">
+                                        <span data-cbt-results-bulk-role="detail"><?php echo esc_html((string) ($results_bulk_job['status_detail'] ?? '')); ?></span>
+                                        <strong data-cbt-results-bulk-role="percent"><?php echo esc_html(number_format_i18n((float) ($results_bulk_job['progress_percent'] ?? 0), 2)); ?>%</strong>
+                                    </div>
+                                    <span class="cbt-results-progress-track" aria-hidden="true">
+                                        <span class="cbt-results-progress-fill" data-cbt-results-bulk-role="progress-fill" style="width: <?php echo esc_attr(number_format((float) ($results_bulk_job['progress_percent'] ?? 0), 2, '.', '')); ?>%;"></span>
+                                    </span>
+                                </div>
+                                <p class="cbt-results-progress-resume" data-cbt-results-bulk-role="resume">Koneksi admin terputus. Reload halaman ini untuk melanjutkan job yang masih tersimpan.</p>
+                            </div>
+                        </article>
+                    <?php endif; ?>
                     <article class="cbt-results-op-card is-secondary">
                         <div class="cbt-results-op-copy">
                             <h3>Reset Sesuai Filter</h3>
@@ -1934,11 +2188,11 @@ if (!defined('ABSPATH')) {
                             <input type="hidden" name="cbt_result_kelas" value="<?php echo esc_attr($selected_kelas); ?>" />
                             <input type="hidden" name="cbt_student_q" value="<?php echo esc_attr($student_keyword); ?>" />
                             <input type="hidden" name="cbt_results_paged" value="<?php echo (int) $current_page; ?>" />
-                            <button class="button button-secondary cbt-results-op-button--reset" type="submit" <?php disabled($resettable_attempts_count <= 0); ?>>
+                            <button class="button button-secondary cbt-results-op-button--reset" type="submit" <?php disabled($resettable_attempts_count <= 0 || $results_bulk_job_active); ?>>
                                 <span class="cbt-results-reset-icon" aria-hidden="true"></span>
                                 <span><?php echo esc_html(sprintf('Reset (%d)', $resettable_attempts_count)); ?></span>
                             </button>
-                            <span class="cbt-results-op-meta">Jawaban tetap aman.</span>
+                            <span class="cbt-results-op-meta"><?php echo esc_html($results_bulk_job_active ? 'Batch aktif sedang berjalan.' : 'Jawaban tetap aman.'); ?></span>
                         </form>
                     </article>
                     <article class="cbt-results-op-card is-primary">
@@ -1954,10 +2208,10 @@ if (!defined('ABSPATH')) {
                             <input type="hidden" name="cbt_result_kelas" value="<?php echo esc_attr($selected_kelas); ?>" />
                             <input type="hidden" name="cbt_student_q" value="<?php echo esc_attr($student_keyword); ?>" />
                             <input type="hidden" name="cbt_results_paged" value="<?php echo (int) $current_page; ?>" />
-                            <button class="button button-primary cbt-results-op-button--primary" type="submit" <?php disabled($completable_attempts_count <= 0); ?>>
+                            <button class="button button-primary cbt-results-op-button--primary" type="submit" <?php disabled($completable_attempts_count <= 0 || $results_bulk_job_active); ?>>
                                 <span><?php echo esc_html(sprintf('Paksa Complete (%d)', $completable_attempts_count)); ?></span>
                             </button>
-                            <span class="cbt-results-op-meta">Attempt langsung ditutup.</span>
+                            <span class="cbt-results-op-meta"><?php echo esc_html($results_bulk_job_active ? 'Menunggu batch aktif selesai.' : 'Attempt langsung ditutup.'); ?></span>
                         </form>
                     </article>
                 </div>
@@ -2328,6 +2582,9 @@ if (!defined('ABSPATH')) {
             if ($student_keyword !== '') {
                 $results_pagination_args['cbt_student_q'] = $student_keyword;
             }
+            if ($results_bulk_job_active && $results_bulk_job_token !== '') {
+                $results_pagination_args['cbt_results_bulk_token'] = $results_bulk_job_token;
+            }
             $results_pagination_links = [];
             if ($total_pages > 1) {
                 $results_pagination_links = paginate_links([
@@ -2367,11 +2624,13 @@ if (!defined('ABSPATH')) {
                     var searchSubmitTimer = 0;
                     var panelRequestSeq = 0;
                     var panelIds = [
+                        'cbt-results-notices',
                         'cbt-results-batch-card',
                         'cbt-results-filter-card',
                         'cbt-results-attempts-card',
                         'cbt-results-essay-card'
                     ];
+                    sharedState.resultsBulkJobActive = !!document.getElementById('cbt-results-bulk-progress-card');
 
                     function isFilterField(target) {
                         return !!(
@@ -2627,6 +2886,7 @@ if (!defined('ABSPATH')) {
                             }
                         }
                     }
+                    sharedState.refreshResultsPanels = refreshResultsPanels;
 
                     function scheduleFilterRefresh(form) {
                         window.clearTimeout(searchSubmitTimer);
@@ -2710,6 +2970,10 @@ if (!defined('ABSPATH')) {
                     document.addEventListener('click', function (event) {
                         var resetLink = event.target && event.target.closest ? event.target.closest('[data-cbt-filter-reset]') : null;
                         if (resetLink) {
+                            if (resetLink.getAttribute('aria-disabled') === 'true' || resetLink.classList.contains('is-disabled')) {
+                                event.preventDefault();
+                                return;
+                            }
                             event.preventDefault();
                             window.clearTimeout(searchSubmitTimer);
                             refreshResultsPanels(new URL(resetLink.getAttribute('href') || window.location.href, window.location.href));
@@ -2724,6 +2988,265 @@ if (!defined('ABSPATH')) {
                         event.preventDefault();
                         refreshResultsPanels(new URL(paginationLink.getAttribute('href') || window.location.href, window.location.href));
                     });
+                })();
+
+                (function () {
+                    if (!window.fetch) {
+                        return;
+                    }
+
+                    var sharedState = window.cbtResultsPageState || (window.cbtResultsPageState = {});
+                    var retryCount = 0;
+                    var maxRetryCount = 2;
+                    var retryDelayMs = 1500;
+                    var nextTickTimer = 0;
+                    var isTickInFlight = false;
+                    var isStopRequestInFlight = false;
+
+                    function getProgressCard() {
+                        return document.getElementById('cbt-results-bulk-progress-card');
+                    }
+
+                    function setBulkJobActive(active) {
+                        sharedState.resultsBulkJobActive = !!active;
+                    }
+
+                    function setCardState(stateName) {
+                        var card = getProgressCard();
+                        if (!card) {
+                            return;
+                        }
+
+                        card.classList.toggle('is-paused', stateName === 'paused');
+                        card.classList.toggle('is-error', stateName === 'error');
+                        card.classList.toggle('is-stopping', stateName === 'stopping');
+                    }
+
+                    function updateRoleText(roleName, value) {
+                        var card = getProgressCard();
+                        if (!card) {
+                            return;
+                        }
+
+                        var target = card.querySelector('[data-cbt-results-bulk-role="' + roleName + '"]');
+                        if (target) {
+                            target.textContent = String(value);
+                        }
+                    }
+
+                    function updateProgressPayload(payload) {
+                        var card = getProgressCard();
+                        if (!card || !payload) {
+                            return;
+                        }
+
+                        var percent = Math.max(0, Math.min(100, Number(payload.progress_percent || 0)));
+                        var stopRequested = !!payload.stop_requested;
+                        var canStop = !!payload.can_stop && !stopRequested && !payload.complete;
+                        card.setAttribute('data-cbt-results-bulk-status', String(payload.status || 'running'));
+                        updateRoleText('status', payload.status_label || 'Berjalan');
+                        updateRoleText('message', payload.message || 'Batch results sedang berjalan.');
+                        updateRoleText('detail', payload.status_detail || '');
+                        updateRoleText('processed', payload.processed_count || 0);
+                        updateRoleText('total', payload.total || 0);
+                        updateRoleText('success', payload.success_count || 0);
+                        updateRoleText('failure', payload.failure_count || 0);
+                        updateRoleText('reset-count', payload.reset_count || 0);
+                        updateRoleText('abandoned-count', payload.abandoned_count || 0);
+                        updateRoleText('completed-count', payload.completed_count || 0);
+                        updateRoleText('percent', percent.toFixed(2) + '%');
+
+                        var fill = card.querySelector('[data-cbt-results-bulk-role="progress-fill"]');
+                        if (fill) {
+                            fill.style.width = percent.toFixed(2) + '%';
+                        }
+
+                        var stopButton = card.querySelector('[data-cbt-results-bulk-role="stop-button"]');
+                        if (stopButton) {
+                            stopButton.disabled = !canStop || isStopRequestInFlight;
+                            stopButton.textContent = stopRequested ? 'Menghentikan...' : 'Stop Batch';
+                        }
+
+                        setCardState(stopRequested && !payload.complete ? 'stopping' : '');
+                    }
+
+                    function scheduleNextTick(delayMs) {
+                        window.clearTimeout(nextTickTimer);
+                        nextTickTimer = window.setTimeout(runTick, typeof delayMs === 'number' ? delayMs : 350);
+                    }
+
+                    function buildRequestBody(card, actionAttr, nonceAttr) {
+                        var formData = new FormData();
+                        formData.append('action', String(card.getAttribute(actionAttr || 'data-cbt-results-bulk-action') || 'cbt_results_bulk_job_tick'));
+                        formData.append('token', String(card.getAttribute('data-cbt-results-bulk-token') || ''));
+                        formData.append('nonce', String(card.getAttribute(nonceAttr || 'data-cbt-results-bulk-nonce') || ''));
+                        return formData;
+                    }
+
+                    function resumeWithReload(card) {
+                        setCardState('paused');
+                        updateRoleText('message', 'Koneksi admin terputus. Job server tetap tersimpan.');
+                        updateRoleText('detail', 'Reload halaman yang sama untuk melanjutkan polling progress.');
+                        setBulkJobActive(true);
+                        if (card) {
+                            var resumeUrl = String(card.getAttribute('data-cbt-results-bulk-resume-url') || window.location.href);
+                            card.setAttribute('data-cbt-results-bulk-resume-url', resumeUrl);
+                        }
+                    }
+
+                    async function completeAndRefresh(redirectUrl) {
+                        setBulkJobActive(false);
+                        window.clearTimeout(nextTickTimer);
+
+                        if (sharedState.refreshResultsPanels && typeof sharedState.refreshResultsPanels === 'function' && redirectUrl) {
+                            sharedState.refreshResultsPanels(new URL(redirectUrl, window.location.href));
+                            return;
+                        }
+
+                        window.location.assign(redirectUrl || window.location.href);
+                    }
+
+                    async function runTick() {
+                        var card = getProgressCard();
+                        if (!card || isTickInFlight) {
+                            setBulkJobActive(!!card);
+                            return;
+                        }
+
+                        isTickInFlight = true;
+                        setBulkJobActive(true);
+
+                        try {
+                            var response = await fetch(String(card.getAttribute('data-cbt-results-bulk-ajax-url') || ''), {
+                                method: 'POST',
+                                body: buildRequestBody(card, 'data-cbt-results-bulk-action', 'data-cbt-results-bulk-nonce'),
+                                credentials: 'same-origin',
+                                cache: 'no-store',
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
+                            });
+
+                            var result = null;
+                            try {
+                                result = await response.json();
+                            } catch (jsonError) {
+                                result = null;
+                            }
+
+                            if (!response.ok || !result || !result.data) {
+                                throw new Error('invalid_results_bulk_response');
+                            }
+
+                            retryCount = 0;
+                            updateProgressPayload(result.data);
+
+                            if (result.data.complete) {
+                                await completeAndRefresh(String(result.data.redirect_url || ''));
+                                return;
+                            }
+
+                            scheduleNextTick(350);
+                        } catch (error) {
+                            retryCount += 1;
+                            if (retryCount <= maxRetryCount) {
+                                setCardState('paused');
+                                updateRoleText('detail', 'Koneksi admin tersendat. Mencoba ulang...');
+                                scheduleNextTick(retryDelayMs);
+                                return;
+                            }
+
+                            resumeWithReload(card);
+                        } finally {
+                            isTickInFlight = false;
+                        }
+                    }
+
+                    async function requestStop(card) {
+                        if (!card || isStopRequestInFlight) {
+                            return;
+                        }
+
+                        isStopRequestInFlight = true;
+                        try {
+                            var stopButton = card.querySelector('[data-cbt-results-bulk-role="stop-button"]');
+                            if (stopButton) {
+                                stopButton.disabled = true;
+                                stopButton.textContent = 'Menghentikan...';
+                            }
+
+                            var response = await fetch(String(card.getAttribute('data-cbt-results-bulk-ajax-url') || ''), {
+                                method: 'POST',
+                                body: buildRequestBody(card, 'data-cbt-results-bulk-stop-action', 'data-cbt-results-bulk-stop-nonce'),
+                                credentials: 'same-origin',
+                                cache: 'no-store',
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
+                            });
+
+                            var result = null;
+                            try {
+                                result = await response.json();
+                            } catch (jsonError) {
+                                result = null;
+                            }
+
+                            if (!response.ok || !result || !result.data) {
+                                throw new Error('invalid_results_bulk_stop_response');
+                            }
+
+                            updateProgressPayload(result.data);
+                            if (result.data.complete) {
+                                await completeAndRefresh(String(result.data.redirect_url || ''));
+                                return;
+                            }
+
+                            if (!isTickInFlight) {
+                                scheduleNextTick(120);
+                            }
+                        } catch (error) {
+                            setCardState('error');
+                            updateRoleText('message', 'Permintaan stop gagal dikirim.');
+                            updateRoleText('detail', 'Coba tekan Stop lagi atau reload halaman results ini.');
+                        } finally {
+                            isStopRequestInFlight = false;
+                        }
+                    }
+
+                    document.addEventListener('click', function (event) {
+                        var stopButton = event.target && event.target.closest ? event.target.closest('[data-cbt-results-bulk-stop="1"]') : null;
+                        if (!stopButton) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        var card = getProgressCard();
+                        if (!card || stopButton.disabled) {
+                            return;
+                        }
+
+                        requestStop(card);
+                    });
+
+                    document.addEventListener('cbt-results-panels-updated', function () {
+                        var card = getProgressCard();
+                        setBulkJobActive(!!card);
+                        if (!card) {
+                            window.clearTimeout(nextTickTimer);
+                            retryCount = 0;
+                            return;
+                        }
+
+                        retryCount = 0;
+                        scheduleNextTick(350);
+                    });
+
+                    if (getProgressCard()) {
+                        scheduleNextTick(120);
+                    } else {
+                        setBulkJobActive(false);
+                    }
                 })();
 
                 (function () {
@@ -2913,6 +3436,11 @@ if (!defined('ABSPATH')) {
                     }
 
                     async function refreshAttemptsTable() {
+                        if (sharedState.resultsBulkJobActive) {
+                            setLiveStatus('Auto refresh ditahan selama batch results aktif.');
+                            return;
+                        }
+
                         if (!autoRefreshEnabled || inFlight || document.hidden || sharedState.panelRefreshInFlight) {
                             return;
                         }
@@ -2993,6 +3521,11 @@ if (!defined('ABSPATH')) {
                     document.addEventListener('cbt-results-panels-updated', function (event) {
                         syncBodySnapshot();
                         tickRemainingTimeCells();
+                        if (document.getElementById('cbt-results-bulk-progress-card')) {
+                            sharedState.resultsBulkJobActive = true;
+                        } else if (!sharedState.resultsBulkJobActive) {
+                            sharedState.resultsBulkJobActive = false;
+                        }
                         var feedbackMessage = event && event.detail && event.detail.message ? String(event.detail.message) : '';
                         if (feedbackMessage !== '') {
                             showTransientLiveStatus(feedbackMessage);

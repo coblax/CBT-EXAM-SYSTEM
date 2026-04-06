@@ -1238,6 +1238,12 @@ export function bootstrapFrontendApp() {
                 navQuestionFilterUnanswered: NAV_QUESTION_FILTER_UNANSWERED,
                 navigationQuestionTypeBadgeConfig: navigationQuestionTypeBadgeConfig,
                 normalizeExamToken: normalizeExamToken,
+                ensureResultStageRenderer: function (options) {
+                    if (stageRuntimeManager) {
+                        return stageRuntimeManager.ensureResultStageRenderer(options);
+                    }
+                    return Promise.resolve(null);
+                },
                 prefetchResultStageRenderer: function () {
                     if (stageRuntimeManager) {
                         stageRuntimeManager.prefetchResultStageRenderer();
@@ -1376,6 +1382,12 @@ export function bootstrapFrontendApp() {
         persistAuthSession: persistAuthSession,
         persistCurrentAttemptUiStateLocally: persistCurrentAttemptUiStateLocally,
         persistCurrentQuestionCacheLocally: persistCurrentQuestionCacheLocally,
+        ensureResultStageRenderer: function (options) {
+            if (stageRuntimeManager) {
+                return stageRuntimeManager.ensureResultStageRenderer(options);
+            }
+            return Promise.resolve(null);
+        },
         prefetchCalculatorFeature: function () {
             if (stageRuntimeManager) {
                 stageRuntimeManager.prefetchCalculatorFeature();
@@ -1471,9 +1483,12 @@ export function bootstrapFrontendApp() {
         state: state
     });
     var renderBody = appShellManager.renderBody;
+    var renderAuthProgressOverlay = appShellManager.renderAuthProgressOverlay;
     var renderFinishConfirmModal = appShellManager.renderFinishConfirmModal;
     var renderQuestionFontControls = appShellManager.renderQuestionFontControls;
     var renderRichZoomModal = appShellManager.renderRichZoomModal;
+    var renderResultProgressOverlay = appShellManager.renderResultProgressOverlay;
+    var renderSessionRecoveryOverlay = appShellManager.renderSessionRecoveryOverlay;
     var renderThemeToggleControl = appShellManager.renderThemeToggleControl;
     var renderTopbar = appShellManager.renderTopbar;
     var renderUserPhotoModal = appShellManager.renderUserPhotoModal;
@@ -1633,8 +1648,11 @@ export function bootstrapFrontendApp() {
             return stageRuntimeManager ? stageRuntimeManager.renderExamRegions() : null;
         },
         renderBody: renderBody,
+        renderAuthProgressOverlay: renderAuthProgressOverlay,
         renderFinishConfirmModal: renderFinishConfirmModal,
         renderRichZoomModal: renderRichZoomModal,
+        renderResultProgressOverlay: renderResultProgressOverlay,
+        renderSessionRecoveryOverlay: renderSessionRecoveryOverlay,
         renderTopbar: renderTopbar,
         renderUserPhotoModal: renderUserPhotoModal,
         root: root,
@@ -1645,6 +1663,10 @@ export function bootstrapFrontendApp() {
         windowRef: window
     });
     setBootProgress(68, 'Merangkai modul antarmuka', 'Preparing interface modules');
+
+    var retrySessionRecovery = function () {
+        return Promise.resolve(false);
+    };
 
     appEventManager = createAppEventManager({
         clearMessages: clearMessages,
@@ -1679,6 +1701,9 @@ export function bootstrapFrontendApp() {
         render: render,
         requestExamFullscreen: requestExamFullscreen,
         resetExamSession: resetExamSession,
+        retrySessionRecovery: function () {
+            return retrySessionRecovery();
+        },
         root: root,
         stageRuntimeManager: stageRuntimeManager,
         state: state,
@@ -1698,8 +1723,10 @@ export function bootstrapFrontendApp() {
         startSessionHeartbeat: startSessionHeartbeat,
         state: state,
         triggerPendingSyncLifecycleRetry: triggerPendingSyncLifecycleRetry,
-        tryResumeActiveAttemptFromExamList: tryResumeActiveAttemptFromExamList
+        tryResumeActiveAttemptFromExamList: tryResumeActiveAttemptFromExamList,
+        windowRef: window
     });
+    retrySessionRecovery = startupManager.retrySessionRecovery;
     setBootProgress(82, 'Memasang listener aplikasi', 'Mounting application listeners');
 
     mountFrontendAppRuntime({

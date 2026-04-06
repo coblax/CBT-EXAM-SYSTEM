@@ -162,6 +162,57 @@ final class RestExamAvailabilitySnapshotTest extends TestCase
         self::assertSame('prepared', \CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(7)['snapshot_source']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_get_exams_student_prefers_in_progress_attempt_even_when_completed_attempt_has_higher_id(): void
+    {
+        $this->bootstrapRestSnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->setExamAvailabilityRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = [
+            'token' => '',
+            'refresh_minutes' => 15,
+            'generated_at' => 1774353600,
+            'next_refresh_at' => 1774354500,
+            'frontend_auto_apply' => 0,
+        ];
+
+        $fakeWpdb = new RestExamAvailabilitySnapshotFakeWpdb();
+        $fakeWpdb->attemptRows = [
+            [
+                'exam_id' => 15,
+                'id' => 99,
+                'status' => 'in_progress',
+                'score' => 0,
+                'max_score' => 100,
+                'started_at' => '2026-03-24 11:05:00',
+                'finished_at' => '',
+            ],
+            [
+                'exam_id' => 15,
+                'id' => 120,
+                'status' => 'completed',
+                'score' => 75,
+                'max_score' => 100,
+                'started_at' => '2026-03-24 09:00:00',
+                'finished_at' => '2026-03-24 10:30:00',
+            ],
+        ];
+
+        global $wpdb;
+        $wpdb = $fakeWpdb;
+
+        $response = CBT_REST::get_exams(new WP_REST_Request([], [], [], '/cbt/v1/exams', 'GET'));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame(1, $wpdb->latestAttemptQueryCount);
+        self::assertSame(99, $response['items'][0]['latest_attempt_id']);
+        self::assertSame('in_progress', $response['items'][0]['latest_attempt_status']);
+        self::assertSame('', $response['items'][0]['latest_attempt_finished_at']);
+    }
+
     private function bootstrapRestSnapshotScaffold(): void
     {
         if (!class_exists('CBT_Auth')) {
@@ -262,6 +313,18 @@ final class RestExamAvailabilitySnapshotFakeWpdb
     public string $prefix = 'wp_';
     public int $examQueryCount = 0;
     public int $latestAttemptQueryCount = 0;
+    /** @var array<int,array<string,mixed>> */
+    public array $attemptRows = [
+        [
+            'exam_id' => 15,
+            'id' => 88,
+            'status' => 'in_progress',
+            'score' => 0,
+            'max_score' => 100,
+            'started_at' => '2026-03-24 11:00:00',
+            'finished_at' => '',
+        ],
+    ];
 
     /**
      * @return array<string,mixed>
@@ -311,15 +374,7 @@ final class RestExamAvailabilitySnapshotFakeWpdb
         if (strpos($query, 'FROM wp_cbt_attempts a') !== false) {
             $this->latestAttemptQueryCount++;
 
-            return [[
-                'exam_id' => 15,
-                'id' => 88,
-                'status' => 'in_progress',
-                'score' => 0,
-                'max_score' => 100,
-                'started_at' => '2026-03-24 11:00:00',
-                'finished_at' => '',
-            ]];
+            return $this->attemptRows;
         }
 
         return [];

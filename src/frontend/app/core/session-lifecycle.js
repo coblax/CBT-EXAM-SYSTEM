@@ -1,4 +1,5 @@
 export function createSessionLifecycleManager(deps) {
+    var AUTH_PROGRESS_STEP_TOTAL = 4;
     var recordTimeline = deps.recordTimeline;
     var state = deps.state;
     var root = deps.root;
@@ -64,6 +65,45 @@ export function createSessionLifecycleManager(deps) {
                     reject(error);
                 });
         });
+    }
+
+    function resetAuthProgressState() {
+        state.authProgressVisible = false;
+        state.authProgressMode = '';
+        state.authProgressPercent = 0;
+        state.authProgressStepIndex = 0;
+        state.authProgressStepTotal = 0;
+        state.authProgressStatus = '';
+        state.authProgressDetail = '';
+    }
+
+    function updateAuthProgress(percent, stepIndex, status, detail, options) {
+        var safePercent = Number(percent);
+        var safeStepIndex = Number(stepIndex);
+        var shouldRender = !(options && options.render === false);
+
+        if (!Number.isFinite(safePercent)) {
+            safePercent = 0;
+        }
+        if (!Number.isFinite(safeStepIndex)) {
+            safeStepIndex = 0;
+        }
+
+        state.authProgressVisible = true;
+        state.authProgressMode = 'logout';
+        state.authProgressPercent = Math.max(0, Math.min(100, safePercent));
+        state.authProgressStepIndex = Math.max(0, Math.min(AUTH_PROGRESS_STEP_TOTAL, safeStepIndex));
+        state.authProgressStepTotal = AUTH_PROGRESS_STEP_TOTAL;
+        state.authProgressStatus = String(status || '');
+        state.authProgressDetail = String(detail || '');
+
+        if (shouldRender && typeof render === 'function') {
+            render('auth-progress-logout', {
+                attemptId: Number(state.attemptId) || 0,
+                percent: state.authProgressPercent,
+                stepIndex: state.authProgressStepIndex
+            });
+        }
     }
 
     function startTimer() {
@@ -153,6 +193,7 @@ export function createSessionLifecycleManager(deps) {
         state.finishProgressStepTotal = 0;
         state.finishProgressStatus = '';
         state.finishProgressDetail = '';
+        resetAuthProgressState();
         state.result = null;
         state.finishConfirmOpen = false;
         state.finishConfirmSummary = null;
@@ -222,6 +263,7 @@ export function createSessionLifecycleManager(deps) {
         state.finishProgressStepTotal = 0;
         state.finishProgressStatus = '';
         state.finishProgressDetail = '';
+        resetAuthProgressState();
         state.result = null;
         state.finishConfirmOpen = false;
         state.finishConfirmSummary = null;
@@ -277,6 +319,14 @@ export function createSessionLifecycleManager(deps) {
             attemptId: Number(state.attemptId) || 0,
             stage: String(state.stage || '')
         });
+        state.busy = true;
+        clearMessages();
+        updateAuthProgress(
+            14,
+            1,
+            'Menutup sesi',
+            'Kami sedang menutup sesi Anda dengan aman.'
+        );
 
         if (isOpeningExamShell) {
             sendLogoutRequestSilently(activeToken);
@@ -292,6 +342,8 @@ export function createSessionLifecycleManager(deps) {
         }
 
         if (state.stage === 'exam' && state.examLockedForPendingFinish) {
+            state.busy = false;
+            resetAuthProgressState();
             state.error = 'Logout diblokir sementara jawaban terakhir masih menunggu sinkronisasi/finalisasi.';
             render();
             return;
@@ -301,6 +353,12 @@ export function createSessionLifecycleManager(deps) {
             state.busy = true;
             clearMessages();
             state.notice = 'Menyimpan jawaban terakhir sebelum logout...';
+            updateAuthProgress(
+                34,
+                2,
+                'Menyimpan jawaban terakhir',
+                'Jawaban yang belum tersinkron sedang dikirim ke server.'
+            );
             render();
 
             try {
@@ -312,6 +370,12 @@ export function createSessionLifecycleManager(deps) {
                     }),
                     logoutSyncTimeoutMs,
                     'Sinkronisasi jawaban terlalu lama. Coba lagi sebentar.'
+                );
+                updateAuthProgress(
+                    58,
+                    3,
+                    'Menyinkronkan status ujian',
+                    'Status attempt terakhir sedang disimpan agar sesi tetap konsisten.'
                 );
                 await withTimeout(
                     flushAttemptUiState({
@@ -325,6 +389,7 @@ export function createSessionLifecycleManager(deps) {
             } catch (error) {
                 state.busy = false;
                 state.notice = '';
+                resetAuthProgressState();
                 state.error = error instanceof Error
                     ? ('Logout dibatalkan karena jawaban terakhir belum tersimpan: ' + error.message)
                     : 'Logout dibatalkan karena jawaban terakhir belum tersimpan.';
@@ -333,6 +398,12 @@ export function createSessionLifecycleManager(deps) {
             }
         }
 
+        updateAuthProgress(
+            82,
+            4,
+            'Menutup sesi server',
+            'Token login sedang dinonaktifkan dan sesi lokal akan dibersihkan.'
+        );
         try {
             await withTimeout(
                 Promise.resolve(sendLogoutRequestSilently(activeToken)).catch(function () {

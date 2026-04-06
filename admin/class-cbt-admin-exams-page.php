@@ -46,8 +46,10 @@ final class CBT_Admin_Exams_Page
                     CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT,
                     CBT_Admin_Exams_Service::SNAPSHOT_TAB_QUESTION_MONITOR,
                     CBT_Admin_Exams_Service::SNAPSHOT_TAB_START_MONITOR,
+                    CBT_Admin_Exams_Service::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR,
                     CBT_Admin_Exams_Service::SNAPSHOT_TAB_EXAM_MONITOR,
                     CBT_Admin_Exams_Service::SNAPSHOT_TAB_PROFILE_MONITOR,
+                    CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR,
                 ],
                 true
             )
@@ -152,6 +154,13 @@ final class CBT_Admin_Exams_Page
         int $exam_readiness_page,
         string $copy
     ): void {
+        $is_submission_context_mode = $tab === CBT_Admin_Exams_Service::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR;
+        $warm_action = $is_submission_context_mode ? 'cbt_warm_bulk_exam_submission_context_snapshots' : 'cbt_warm_bulk_exam_delivery_snapshots';
+        $clear_action = $is_submission_context_mode ? 'cbt_clear_bulk_exam_submission_context_snapshots' : 'cbt_clear_bulk_exam_delivery_snapshots';
+        $warm_nonce = $is_submission_context_mode ? 'cbt_warm_bulk_exam_submission_context_snapshots' : 'cbt_warm_bulk_exam_delivery_snapshots';
+        $clear_nonce = $is_submission_context_mode ? 'cbt_clear_bulk_exam_submission_context_snapshots' : 'cbt_clear_bulk_exam_delivery_snapshots';
+        $warm_label = $is_submission_context_mode ? 'Siapkan Semua Submission Context' : 'Siapkan Semua Snapshot';
+        $clear_label = $is_submission_context_mode ? 'Bersihkan Semua Submission Context' : 'Bersihkan Semua Snapshot';
         ?>
         <div class="cbt-exam-snapshot-actions-bar">
             <div class="cbt-exam-snapshot-actions-copy">
@@ -160,26 +169,26 @@ final class CBT_Admin_Exams_Page
             </div>
             <div class="cbt-exam-snapshot-bulk-actions">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-bulk-form">
-                    <?php wp_nonce_field('cbt_warm_bulk_exam_delivery_snapshots'); ?>
-                    <input type="hidden" name="action" value="cbt_warm_bulk_exam_delivery_snapshots" />
+                    <?php wp_nonce_field($warm_nonce); ?>
+                    <input type="hidden" name="action" value="<?php echo esc_attr($warm_action); ?>" />
                     <?php self::render_snapshot_tab_hidden_field($tab); ?>
                     <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
                     <?php self::render_snapshot_filter_state_hidden_fields($exam_snapshot_filter_state); ?>
                     <?php self::render_snapshot_preview_page_hidden_fields($exam_snapshot_preview_pages); ?>
                     <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                     <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                    <button type="submit" class="button button-primary" <?php echo empty($exam_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Siapkan Semua Snapshot</button>
+                    <button type="submit" class="button button-primary" <?php echo empty($exam_snapshot_rows) ? 'disabled="disabled"' : ''; ?>><?php echo esc_html($warm_label); ?></button>
                 </form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-bulk-form">
-                    <?php wp_nonce_field('cbt_clear_bulk_exam_delivery_snapshots'); ?>
-                    <input type="hidden" name="action" value="cbt_clear_bulk_exam_delivery_snapshots" />
+                    <?php wp_nonce_field($clear_nonce); ?>
+                    <input type="hidden" name="action" value="<?php echo esc_attr($clear_action); ?>" />
                     <?php self::render_snapshot_tab_hidden_field($tab); ?>
                     <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
                     <?php self::render_snapshot_filter_state_hidden_fields($exam_snapshot_filter_state); ?>
                     <?php self::render_snapshot_preview_page_hidden_fields($exam_snapshot_preview_pages); ?>
                     <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                     <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                    <button type="submit" class="button" <?php echo empty($exam_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Bersihkan Semua Snapshot</button>
+                    <button type="submit" class="button" <?php echo empty($exam_snapshot_rows) ? 'disabled="disabled"' : ''; ?>><?php echo esc_html($clear_label); ?></button>
                 </form>
             </div>
         </div>
@@ -269,9 +278,12 @@ final class CBT_Admin_Exams_Page
         string $mode
     ): void {
         $is_exam_mode = $mode === 'exam';
+        $is_profile_mode = $mode === 'profile';
         $copy = $is_exam_mode
             ? 'Bulk action di tab ini menyiapkan atau membersihkan snapshot exam siswa sesuai filter aktif.'
-            : 'Bulk action di tab ini menyiapkan atau membersihkan snapshot profil siswa sesuai filter aktif.';
+            : ($is_profile_mode
+                ? 'Bulk action di tab ini menyiapkan atau membersihkan snapshot profil siswa sesuai filter aktif.'
+                : 'Bulk action di tab ini menyiapkan atau membersihkan login snapshot siswa sesuai filter aktif.');
         ?>
         <div class="cbt-exam-snapshot-actions-bar cbt-exam-snapshot-actions-bar--students">
             <div class="cbt-exam-snapshot-actions-copy">
@@ -302,7 +314,7 @@ final class CBT_Admin_Exams_Page
                         <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
                         <button type="submit" class="button" <?php echo empty($student_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Bersihkan Semua Snapshot Exam</button>
                     </form>
-                <?php else: ?>
+                <?php elseif ($is_profile_mode): ?>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-bulk-form">
                         <?php wp_nonce_field('cbt_warm_bulk_student_profile_snapshots'); ?>
                         <input type="hidden" name="action" value="cbt_warm_bulk_student_profile_snapshots" />
@@ -324,6 +336,29 @@ final class CBT_Admin_Exams_Page
                         <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                         <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
                         <button type="submit" class="button" <?php echo empty($student_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Bersihkan Semua Profil</button>
+                    </form>
+                <?php else: ?>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-bulk-form">
+                        <?php wp_nonce_field('cbt_warm_bulk_student_login_snapshots'); ?>
+                        <input type="hidden" name="action" value="cbt_warm_bulk_student_login_snapshots" />
+                        <?php self::render_snapshot_tab_hidden_field($tab); ?>
+                        <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                        <?php self::render_snapshot_filter_state_hidden_fields($exam_snapshot_filter_state); ?>
+                        <?php self::render_snapshot_preview_page_hidden_fields($exam_snapshot_preview_pages); ?>
+                        <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
+                        <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                        <button type="submit" class="button button-primary" <?php echo empty($student_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Siapkan Semua Login Snapshot</button>
+                    </form>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-bulk-form">
+                        <?php wp_nonce_field('cbt_clear_bulk_student_login_snapshots'); ?>
+                        <input type="hidden" name="action" value="cbt_clear_bulk_student_login_snapshots" />
+                        <?php self::render_snapshot_tab_hidden_field($tab); ?>
+                        <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                        <?php self::render_snapshot_filter_state_hidden_fields($exam_snapshot_filter_state); ?>
+                        <?php self::render_snapshot_preview_page_hidden_fields($exam_snapshot_preview_pages); ?>
+                        <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
+                        <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                        <button type="submit" class="button" <?php echo empty($student_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Bersihkan Semua Login Snapshot</button>
                     </form>
                 <?php endif; ?>
             </div>
@@ -513,6 +548,10 @@ final class CBT_Admin_Exams_Page
                 'label' => 'Monitor Snapshot Start',
                 'description' => 'Pantau kontrak start attempt per exam.',
             ],
+            CBT_Admin_Exams_Service::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR => [
+                'label' => 'Monitor Snapshot Submit',
+                'description' => 'Pantau submission context per exam.',
+            ],
             CBT_Admin_Exams_Service::SNAPSHOT_TAB_EXAM_MONITOR => [
                 'label' => 'Monitor Snapshot Exam',
                 'description' => 'Pantau katalog exam siswa per user.',
@@ -520,6 +559,10 @@ final class CBT_Admin_Exams_Page
             CBT_Admin_Exams_Service::SNAPSHOT_TAB_PROFILE_MONITOR => [
                 'label' => 'Monitor Snapshot Profile',
                 'description' => 'Pantau snapshot profil siswa per user.',
+            ],
+            CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR => [
+                'label' => 'Monitor Snapshot Login',
+                'description' => 'Pantau login auth snapshot siswa per user.',
             ],
         ];
         ?>
@@ -629,6 +672,38 @@ final class CBT_Admin_Exams_Page
                         <?php endif; ?>
                         <?php break; ?>
 
+                    <?php case CBT_Admin_Exams_Service::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR: ?>
+                        <div class="cbt-exam-snapshot-section-head">
+                            <div>
+                                <h3>Monitor Snapshot Submit</h3>
+                                <p class="description cbt-exam-list-description">Pantau submission context per exam untuk memastikan konteks evaluasi jawaban sudah siap sebelum autosave awal, submit jawaban, dan scoring objektif mulai ramai.</p>
+                            </div>
+                        </div>
+                        <?php self::render_exam_snapshot_bulk_actions_bar(
+                            $exam_snapshot_tab,
+                            $has_selected_exam_snapshot,
+                            $exam_snapshot_total,
+                            $exam_snapshot_rows,
+                            $exam_list_state,
+                            $exam_snapshot_filter_state,
+                            $exam_snapshot_preview_pages,
+                            $student_snapshot_filter_state,
+                            $exam_readiness_page,
+                            'Bulk action di tab ini menyiapkan atau membersihkan submission context untuk semua soal aktif milik exam yang sedang dipilih.'
+                        ); ?>
+                        <?php if (empty($exam_snapshot_rows)): ?>
+                            <div class="cbt-exam-snapshot-empty-state">
+                                <?php echo esc_html($has_selected_exam_snapshot ? 'Belum ada exam yang bisa diperiksa submission context-nya.' : 'Pilih satu atau beberapa exam pada dropdown di atas untuk memantau submission context.'); ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="cbt-exam-snapshot-monitor-list">
+                                <?php foreach ($exam_snapshot_rows as $row): ?>
+                                    <?php self::render_snapshot_row($row, $exam_list_state, $exam_snapshot_filter_state, $exam_snapshot_preview_pages, $student_snapshot_filter_state, $exam_readiness_page, CBT_Admin_Exams_Service::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR); ?>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                        <?php break; ?>
+
                     <?php case CBT_Admin_Exams_Service::SNAPSHOT_TAB_EXAM_MONITOR: ?>
                         <div class="cbt-exam-snapshot-section-head">
                             <div>
@@ -727,12 +802,61 @@ final class CBT_Admin_Exams_Page
                         <?php self::render_student_snapshot_pagination($exam_snapshot_tab, $student_snapshot_total_pages, $student_snapshot_current_page, $student_snapshot_total, $exam_list_state, $exam_snapshot_filter_state, $exam_snapshot_preview_pages, $student_snapshot_filter_state, $exam_readiness_page); ?>
                         <?php break; ?>
 
+                    <?php case CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR: ?>
+                        <div class="cbt-exam-snapshot-section-head">
+                            <div>
+                                <h3>Monitor Snapshot Login</h3>
+                                <p class="description cbt-exam-list-description">Pantau login auth snapshot per siswa sebagai akselerator auth/login. Snapshot ini membantu lookup dan payload login siswa, tetapi bukan active session, JWT, atau state login yang sedang hidup.</p>
+                            </div>
+                        </div>
+                        <?php self::render_student_snapshot_bulk_actions_bar(
+                            $exam_snapshot_tab,
+                            $student_snapshot_total,
+                            $student_snapshot_rows,
+                            $exam_list_state,
+                            $exam_snapshot_filter_state,
+                            $exam_snapshot_preview_pages,
+                            $student_snapshot_filter_state,
+                            $exam_readiness_page,
+                            'login'
+                        ); ?>
+                        <?php self::render_student_snapshot_active_filters($student_snapshot_active_filters, $student_snapshot_total); ?>
+                        <div class="cbt-exam-list-table-wrap">
+                            <table class="widefat striped cbt-student-snapshot-table cbt-student-snapshot-table--single">
+                                <colgroup>
+                                    <col class="cbt-student-snapshot-col cbt-student-snapshot-col--user" />
+                                    <col class="cbt-student-snapshot-col cbt-student-snapshot-col--login" />
+                                    <col class="cbt-student-snapshot-col cbt-student-snapshot-col--actions" />
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>Siswa</th>
+                                        <th>Snapshot Login</th>
+                                        <th>Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($student_snapshot_rows)): ?>
+                                        <tr>
+                                            <td colspan="3"><?php echo !empty($student_snapshot_active_filters) ? 'Tidak ada siswa yang cocok dengan filter saat ini.' : 'Belum ada siswa yang bisa dipantau login snapshot-nya.'; ?></td>
+                                        </tr>
+                                    <?php else: ?>
+                                        <?php foreach ($student_snapshot_rows as $student_snapshot_row): ?>
+                                            <?php self::render_student_snapshot_row($student_snapshot_row, $exam_list_state, $exam_snapshot_filter_state, $exam_snapshot_preview_pages, $student_snapshot_filter_state, $exam_readiness_page, CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR); ?>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php self::render_student_snapshot_pagination($exam_snapshot_tab, $student_snapshot_total_pages, $student_snapshot_current_page, $student_snapshot_total, $exam_list_state, $exam_snapshot_filter_state, $exam_snapshot_preview_pages, $student_snapshot_filter_state, $exam_readiness_page); ?>
+                        <?php break; ?>
+
                     <?php case CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT:
                     default: ?>
                         <div class="cbt-exam-snapshot-section-head">
                             <div>
                                 <h3>One-Click Pra Ujian</h3>
-                                <p class="description cbt-exam-list-description">Pilih satu atau beberapa exam untuk meninjau kesiapan, blocker, warning, peserta target, start snapshot, snapshot soal, snapshot profil, dan auto-warm availability sebelum ujian dimulai.</p>
+                                <p class="description cbt-exam-list-description">Pilih satu atau beberapa exam untuk meninjau kesiapan, blocker, warning, peserta target, start snapshot, snapshot soal, snapshot profil, login snapshot, dan auto-warm availability sebelum ujian dimulai.</p>
                             </div>
                         </div>
                         <div class="cbt-exam-snapshot-actions-bar cbt-exam-snapshot-actions-bar--quiet">
@@ -881,6 +1005,10 @@ final class CBT_Admin_Exams_Page
         $preflight_profile_success_count = max(0, (int) ($preflight['profile_success_count'] ?? 0));
         $preflight_profile_failure_count = max(0, (int) ($preflight['profile_failure_count'] ?? 0));
         $preflight_profile_processed_count = max(0, (int) ($preflight['profile_processed_count'] ?? ($preflight_profile_success_count + $preflight_profile_failure_count)));
+        $preflight_login_snapshot_success_count = max(0, (int) ($preflight['login_snapshot_success_count'] ?? 0));
+        $preflight_login_snapshot_failure_count = max(0, (int) ($preflight['login_snapshot_failure_count'] ?? 0));
+        $preflight_login_snapshot_ready_count = max(0, (int) ($preflight['login_snapshot_ready_count'] ?? $preflight_login_snapshot_success_count));
+        $preflight_login_snapshot_missing_count = max(0, (int) ($preflight['login_snapshot_missing_count'] ?? max(0, $preflight_target_student_count - $preflight_login_snapshot_ready_count)));
         $preflight_started_at = trim((string) ($preflight['started_at'] ?? ''));
         $preflight_finished_at = trim((string) ($preflight['finished_at'] ?? ''));
         $preflight_last_tick_at = trim((string) ($preflight['last_tick_at'] ?? ''));
@@ -893,24 +1021,59 @@ final class CBT_Admin_Exams_Page
         $preflight_start_snapshot_stage_tone = sanitize_html_class((string) ($preflight['stage_start_snapshot_tone'] ?? 'warning'), 'warning');
         $preflight_profile_stage_label = trim((string) ($preflight['stage_profiles_label'] ?? 'BELUM'));
         $preflight_profile_stage_tone = sanitize_html_class((string) ($preflight['stage_profiles_tone'] ?? 'warning'), 'warning');
+        $preflight_login_snapshot_stage_label = trim((string) ($preflight['stage_login_snapshot_label'] ?? 'BELUM'));
+        $preflight_login_snapshot_stage_tone = sanitize_html_class((string) ($preflight['stage_login_snapshot_tone'] ?? 'warning'), 'warning');
         $preflight_auto_warm_stage_label = trim((string) ($preflight['stage_auto_warm_label'] ?? 'BELUM'));
         $preflight_auto_warm_stage_tone = sanitize_html_class((string) ($preflight['stage_auto_warm_tone'] ?? 'warning'), 'warning');
         $preflight_question_cache_ready = !empty($preflight['question_cache_ready']);
         $preflight_start_cache_ready = !empty($preflight['start_cache_ready']);
         $preflight_availability_cache_ready = !empty($preflight['availability_cache_ready']);
         $preflight_profile_cache_ready = !empty($preflight['profile_cache_ready']);
+        $preflight_login_snapshot_cache_ready = !empty($preflight['login_snapshot_cache_ready']);
         $preflight_rest_warm_ready = !empty($preflight['rest_warm_ready']);
         $preflight_start_warm_ready = !empty($preflight['start_warm_ready']);
         $preflight_blocking_exam_id = max(0, (int) ($preflight['blocking_exam_id'] ?? 0));
         $preflight_blocking_exam_title = trim((string) ($preflight['blocking_exam_title'] ?? ''));
         $preflight_blocking_auto_warm_exam_id = max(0, (int) ($preflight['blocking_auto_warm_exam_id'] ?? 0));
         $preflight_blocking_auto_warm_exam_title = trim((string) ($preflight['blocking_auto_warm_exam_title'] ?? ''));
+        $preflight_submission_context_question_count = max(0, (int) ($preflight['submission_context_question_count'] ?? 0));
+        $preflight_submission_context_ready_count = max(0, (int) ($preflight['submission_context_ready_count'] ?? 0));
+        $preflight_submission_context_missing_count = max(0, (int) ($preflight['submission_context_missing_count'] ?? 0));
+        $preflight_submission_context_invalid_count = max(0, (int) ($preflight['submission_context_invalid_count'] ?? 0));
+        $preflight_submission_context_stage_label = trim((string) ($preflight['stage_submission_context_label'] ?? 'BELUM'));
+        $preflight_submission_context_stage_tone = sanitize_html_class((string) ($preflight['stage_submission_context_tone'] ?? 'warning'), 'warning');
+        $preflight_submission_context_cache_ready = !empty($preflight['submission_context_cache_ready']);
+        $preflight_submission_context_warm_ready = !empty($preflight['submission_context_warm_ready']);
+        $submission_context = is_array($row['submission_context'] ?? null) ? $row['submission_context'] : [];
+        $submission_context_status_label = trim((string) ($row['submission_context_status_label'] ?? 'MISS')) !== ''
+            ? (string) ($row['submission_context_status_label'] ?? 'MISS')
+            : 'MISS';
+        $submission_context_status_tone = sanitize_html_class((string) ($row['submission_context_status_tone'] ?? 'warning'), 'warning');
+        $submission_context_question_count = max(0, (int) ($submission_context['question_count'] ?? 0));
+        $submission_context_ready_count = max(0, (int) ($submission_context['ready_count'] ?? 0));
+        $submission_context_missing_count = max(0, (int) ($submission_context['missing_count'] ?? 0));
+        $submission_context_invalid_count = max(0, (int) ($submission_context['invalid_count'] ?? 0));
+        $submission_context_payload_bytes_total = max(0, (int) ($submission_context['payload_bytes_total'] ?? 0));
+        $submission_context_payload_bytes_label = $submission_context_payload_bytes_total > 0 ? number_format_i18n($submission_context_payload_bytes_total) . ' bytes' : '0 bytes';
+        $submission_context_message = trim((string) ($submission_context['snapshot_message'] ?? ''));
+        $submission_context_preview_items = array_values(array_filter((array) ($submission_context['preview_items'] ?? []), static function ($item): bool {
+            return is_array($item);
+        }));
+        $submission_context_redis_host = trim((string) ($submission_context['redis_host'] ?? ''));
+        $submission_context_redis_database = (int) ($submission_context['redis_database'] ?? 0);
+        $submission_context_redis_error = trim((string) ($submission_context['redis_error'] ?? ''));
+        $submission_context_snapshot_exists = !empty($submission_context['snapshot_exists']);
+        $submission_context_snapshot_valid = !empty($submission_context['snapshot_valid']);
         $primary_status_label = $mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_START_MONITOR
             ? $start_snapshot_status_label
-            : ($mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT ? $readiness_overall_label : $snapshot_status_label);
+            : ($mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR
+                ? $submission_context_status_label
+                : ($mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT ? $readiness_overall_label : $snapshot_status_label));
         $primary_status_tone = $mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_START_MONITOR
             ? $start_snapshot_status_tone
-            : ($mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT ? $readiness_overall_tone : $snapshot_status_tone);
+            : ($mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR
+                ? $submission_context_status_tone
+                : ($mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT ? $readiness_overall_tone : $snapshot_status_tone));
         ?>
         <article class="cbt-exam-snapshot-monitor-card" data-cbt-exam-snapshot-monitor-card="<?php echo esc_attr((string) $exam_id); ?>">
             <div class="cbt-exam-snapshot-monitor-card-head">
@@ -1107,12 +1270,94 @@ final class CBT_Admin_Exams_Page
                         <button type="submit" class="button">Bersihkan Snapshot Exam + Start</button>
                     </form>
                 </div>
+            <?php elseif ($mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR): ?>
+                <div class="cbt-exam-snapshot-summary-grid">
+                    <div class="cbt-exam-snapshot-summary-card">
+                        <span class="cbt-exam-snapshot-summary-label">Status</span>
+                        <div class="cbt-exam-snapshot-summary-stack">
+                            <strong><?php echo esc_html($submission_context_status_label); ?></strong>
+                            <span><?php echo esc_html('READY ' . $submission_context_ready_count . ' / ' . $submission_context_question_count); ?></span>
+                        </div>
+                    </div>
+                    <div class="cbt-exam-snapshot-summary-card">
+                        <span class="cbt-exam-snapshot-summary-label">Soal Aktif</span>
+                        <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html((string) $submission_context_question_count); ?></strong>
+                    </div>
+                    <div class="cbt-exam-snapshot-summary-card">
+                        <span class="cbt-exam-snapshot-summary-label">MISS / INVALID</span>
+                        <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html('MISS ' . $submission_context_missing_count . ' · INVALID ' . $submission_context_invalid_count); ?></strong>
+                    </div>
+                    <div class="cbt-exam-snapshot-summary-card">
+                        <span class="cbt-exam-snapshot-summary-label">Total Payload</span>
+                        <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($submission_context_payload_bytes_label); ?></strong>
+                    </div>
+                </div>
+                <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle">Snapshot ini mempercepat konteks evaluasi jawaban untuk submit/autosave/scoring objektif. Ini bukan delivery soal ke siswa.</p>
+                <?php if (!empty($submission_context_preview_items)): ?>
+                    <div class="cbt-student-snapshot-preview-list cbt-student-snapshot-preview-list--expanded">
+                        <?php foreach ($submission_context_preview_items as $preview_item): ?>
+                            <?php
+                            $preview_question_id = (int) ($preview_item['question_id'] ?? 0);
+                            $preview_question_type = (string) ($preview_item['question_type'] ?? '');
+                            $preview_status = strtoupper((string) ($preview_item['status'] ?? 'miss'));
+                            $preview_payload_bytes = max(0, (int) ($preview_item['payload_bytes'] ?? 0));
+                            ?>
+                            <span class="cbt-student-snapshot-preview-pill">
+                                <?php echo esc_html('Q#' . $preview_question_id . ' · ' . ($preview_question_type !== '' ? $preview_question_type : 'unknown') . ' · ' . $preview_status . ' · ' . number_format_i18n($preview_payload_bytes) . ' bytes'); ?>
+                            </span>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <p class="cbt-exam-snapshot-note">Belum ada preview submission context pada exam ini.</p>
+                <?php endif; ?>
+                <?php if ($submission_context_question_count > count($submission_context_preview_items)): ?>
+                    <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Preview dibatasi ' . count($submission_context_preview_items) . ' soal pertama dari ' . $submission_context_question_count . ' soal aktif.'); ?></p>
+                <?php endif; ?>
+                <div class="cbt-exam-snapshot-detail-grid">
+                    <span><strong>Snapshot Exists:</strong> <?php echo esc_html($submission_context_snapshot_exists ? 'Ya' : 'Tidak'); ?></span>
+                    <span><strong>Snapshot Valid:</strong> <?php echo esc_html($submission_context_snapshot_valid ? 'Ya' : 'Tidak'); ?></span>
+                    <span><strong>Host Redis:</strong> <code><?php echo esc_html($submission_context_redis_host !== '' ? $submission_context_redis_host : '-'); ?></code></span>
+                    <span><strong>Database Redis:</strong> <?php echo esc_html((string) $submission_context_redis_database); ?></span>
+                    <span><strong>READY / MISS / INVALID:</strong> <?php echo esc_html($submission_context_ready_count . ' / ' . $submission_context_missing_count . ' / ' . $submission_context_invalid_count); ?></span>
+                    <?php if ($submission_context_redis_error !== ''): ?>
+                        <span><strong>Error Redis:</strong> <code><?php echo esc_html($submission_context_redis_error); ?></code></span>
+                    <?php endif; ?>
+                </div>
+                <?php if ($submission_context_message !== ''): ?>
+                    <p class="cbt-exam-snapshot-note"><?php echo esc_html($submission_context_message); ?></p>
+                <?php endif; ?>
+                <div class="cbt-exam-snapshot-row-actions">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form">
+                        <?php wp_nonce_field('cbt_warm_exam_submission_context_snapshot'); ?>
+                        <input type="hidden" name="action" value="cbt_warm_exam_submission_context_snapshot" />
+                        <input type="hidden" name="exam_id" value="<?php echo esc_attr((string) $exam_id); ?>" />
+                        <?php self::render_snapshot_tab_hidden_field($mode); ?>
+                        <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                        <?php self::render_snapshot_filter_state_hidden_fields($snapshot_filter_state); ?>
+                        <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
+                        <?php self::render_exam_readiness_page_hidden_field($readiness_problem_page); ?>
+                        <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                        <button type="submit" class="button button-secondary">Siapkan Submission Context</button>
+                    </form>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form">
+                        <?php wp_nonce_field('cbt_clear_exam_submission_context_snapshot'); ?>
+                        <input type="hidden" name="action" value="cbt_clear_exam_submission_context_snapshot" />
+                        <input type="hidden" name="exam_id" value="<?php echo esc_attr((string) $exam_id); ?>" />
+                        <?php self::render_snapshot_tab_hidden_field($mode); ?>
+                        <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                        <?php self::render_snapshot_filter_state_hidden_fields($snapshot_filter_state); ?>
+                        <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
+                        <?php self::render_exam_readiness_page_hidden_field($readiness_problem_page); ?>
+                        <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                        <button type="submit" class="button">Bersihkan Submission Context</button>
+                    </form>
+                </div>
             <?php else: ?>
                 <div class="cbt-exam-preflight-panel">
                     <div class="cbt-exam-preflight-panel-head">
                         <div>
                             <strong>One-Click Pra Ujian</strong>
-                            <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle">Pusat aksi dan ringkasan kesiapan pra-ujian untuk exam terpilih. Panel ini menggabungkan status kesiapan, blocker, warning, serta eksekusi Snapshot Soal, Start Snapshot, Snapshot Profil, dan Auto-Warm Availability.</p>
+                            <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle">Pusat aksi dan ringkasan kesiapan pra-ujian untuk exam terpilih. Panel ini menggabungkan status kesiapan, blocker, warning, serta eksekusi Snapshot Soal, Start Snapshot, Submission Context, Snapshot Profil, Login Snapshot, dan Auto-Warm Availability.</p>
                         </div>
                         <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_status_tone); ?>"><?php echo esc_html($preflight_status_label); ?></span>
                     </div>
@@ -1134,13 +1379,23 @@ final class CBT_Admin_Exams_Page
                             <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Diproses ' . $preflight_profile_processed_count . ' · Gagal ' . $preflight_profile_failure_count . ' · MISS ' . $readiness_profile_missing_count); ?></span>
                         </div>
                         <div class="cbt-exam-readiness-summary-card">
+                            <span class="cbt-exam-snapshot-summary-label">Login Snapshot</span>
+                            <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($preflight_login_snapshot_ready_count . ' / ' . $preflight_target_student_count); ?></strong>
+                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('MISS ' . $preflight_login_snapshot_missing_count . ' · Gagal ' . $preflight_login_snapshot_failure_count); ?></span>
+                        </div>
+                        <div class="cbt-exam-readiness-summary-card">
+                            <span class="cbt-exam-snapshot-summary-label">Submission Context</span>
+                            <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($preflight_submission_context_ready_count . ' / ' . $preflight_submission_context_question_count); ?></strong>
+                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('MISS ' . $preflight_submission_context_missing_count . ' · INVALID ' . $preflight_submission_context_invalid_count); ?></span>
+                        </div>
+                        <div class="cbt-exam-readiness-summary-card">
                             <span class="cbt-exam-snapshot-summary-label">Ringkasan Availability</span>
                             <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html('READY ' . $readiness_availability_ready_count . ' · AUTO ' . $readiness_availability_auto_warm_count); ?></strong>
                             <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('MISS ' . $readiness_availability_missing_count . ' · Auto-Warm ' . $auto_warm_status_label); ?></span>
                         </div>
                         <div class="cbt-exam-readiness-summary-card">
                             <span class="cbt-exam-snapshot-summary-label">Status Operasional</span>
-                            <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html('Soal ' . $snapshot_status_label . ' · Start ' . $start_snapshot_status_label . ' · Token ' . $readiness_token_label); ?></strong>
+                            <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html('Soal ' . $snapshot_status_label . ' · Start ' . $start_snapshot_status_label . ' · Submit ' . $preflight_submission_context_stage_label . ' · Token ' . $readiness_token_label); ?></strong>
                             <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Result ' . $readiness_show_student_result . ' · Calculator ' . $readiness_enable_calculator); ?></span>
                         </div>
                         <div class="cbt-exam-readiness-summary-card">
@@ -1177,8 +1432,16 @@ final class CBT_Admin_Exams_Page
                             <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_start_snapshot_stage_tone); ?>"><?php echo esc_html($preflight_start_snapshot_stage_label); ?></span>
                         </div>
                         <div class="cbt-exam-preflight-stage-card">
+                            <span class="cbt-exam-snapshot-summary-label">Submission Context</span>
+                            <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_submission_context_stage_tone); ?>"><?php echo esc_html($preflight_submission_context_stage_label); ?></span>
+                        </div>
+                        <div class="cbt-exam-preflight-stage-card">
                             <span class="cbt-exam-snapshot-summary-label">Snapshot Profil</span>
                             <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_profile_stage_tone); ?>"><?php echo esc_html($preflight_profile_stage_label); ?></span>
+                        </div>
+                        <div class="cbt-exam-preflight-stage-card">
+                            <span class="cbt-exam-snapshot-summary-label">Login Snapshot</span>
+                            <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_login_snapshot_stage_tone); ?>"><?php echo esc_html($preflight_login_snapshot_stage_label); ?></span>
                         </div>
                         <div class="cbt-exam-preflight-stage-card">
                             <span class="cbt-exam-snapshot-summary-label">Auto-Warm Availability</span>
@@ -1225,8 +1488,11 @@ final class CBT_Admin_Exams_Page
                             <span><strong>Start Cache:</strong> <?php echo esc_html($preflight_start_cache_ready ? 'Siap' : 'Tidak siap'); ?></span>
                             <span><strong>Availability Cache:</strong> <?php echo esc_html($preflight_availability_cache_ready ? 'Siap' : 'Tidak siap'); ?></span>
                             <span><strong>Profile Cache:</strong> <?php echo esc_html($preflight_profile_cache_ready ? 'Siap' : 'Tidak siap'); ?></span>
+                            <span><strong>Submission Context Cache:</strong> <?php echo esc_html($preflight_submission_context_cache_ready ? 'Siap' : 'Tidak siap'); ?></span>
+                            <span><strong>Login Snapshot Cache:</strong> <?php echo esc_html($preflight_login_snapshot_cache_ready ? 'Siap' : 'Tidak siap'); ?></span>
                             <span><strong>REST Warm:</strong> <?php echo esc_html($preflight_rest_warm_ready ? 'Siap' : 'Tidak siap'); ?></span>
                             <span><strong>Start Warm:</strong> <?php echo esc_html($preflight_start_warm_ready ? 'Siap' : 'Tidak siap'); ?></span>
+                            <span><strong>Submission Context Warm:</strong> <?php echo esc_html($preflight_submission_context_warm_ready ? 'Siap' : 'Tidak siap'); ?></span>
                             <span><strong>Blocking One-Click:</strong> <?php echo esc_html($preflight_blocking_exam_id > 0 ? (($preflight_blocking_exam_title !== '' ? $preflight_blocking_exam_title : ('Exam #' . $preflight_blocking_exam_id)) . ' (#' . $preflight_blocking_exam_id . ')') : '-'); ?></span>
                             <span><strong>Blocking Auto-Warm:</strong> <?php echo esc_html($preflight_blocking_auto_warm_exam_id > 0 ? (($preflight_blocking_auto_warm_exam_title !== '' ? $preflight_blocking_auto_warm_exam_title : ('Exam #' . $preflight_blocking_auto_warm_exam_id)) . ' (#' . $preflight_blocking_auto_warm_exam_id . ')') : '-'); ?></span>
                         </div>
@@ -1395,6 +1661,9 @@ final class CBT_Admin_Exams_Page
         $availability_status_tone = sanitize_html_class((string) ($row['availability_status_tone'] ?? 'warning'), 'warning');
         $profile_status_label = (string) ($row['profile_status_label'] ?? 'MISS');
         $profile_status_tone = sanitize_html_class((string) ($row['profile_status_tone'] ?? 'warning'), 'warning');
+        $login = is_array($row['login'] ?? null) ? $row['login'] : [];
+        $login_status_label = (string) ($row['login_status_label'] ?? 'MISS');
+        $login_status_tone = sanitize_html_class((string) ($row['login_status_tone'] ?? 'warning'), 'warning');
         $availability_items = max(0, (int) ($availability['item_count'] ?? 0));
         $availability_ttl = (int) ($availability['ttl_seconds'] ?? -2);
         $availability_payload_bytes = max(0, (int) ($availability['payload_bytes'] ?? 0));
@@ -1416,6 +1685,28 @@ final class CBT_Admin_Exams_Page
         $profile_snapshot_valid = !empty($profile['snapshot_valid']);
         $profile_photo_source = trim((string) ($profile_preview['foto'] ?? ''));
         $profile_photo_url = self::get_student_snapshot_photo_url($profile_preview);
+        $login_ttl = (int) ($login['ttl_seconds'] ?? -2);
+        $login_payload_bytes = max(0, (int) ($login['payload_bytes'] ?? 0));
+        $login_storage_key = (string) ($login['storage_key'] ?? '');
+        $login_message = (string) ($login['snapshot_message'] ?? '');
+        $login_snapshot_exists = !empty($login['snapshot_exists']);
+        $login_snapshot_valid = !empty($login['snapshot_valid']);
+        $login_preview = is_array($login['preview'] ?? null) ? $login['preview'] : [];
+        $login_generated_at = trim((string) ($login['generated_at'] ?? ''));
+        $login_snapshot_source = sanitize_key((string) ($login['snapshot_source'] ?? ''));
+        $login_identifiers = array_values(array_filter(array_map('strval', (array) ($login['identifiers'] ?? []))));
+        $login_identifiers_visible = array_slice($login_identifiers, 0, 4);
+        $login_identifiers_remaining = max(0, count($login_identifiers) - count($login_identifiers_visible));
+        $login_photo_url = self::get_student_snapshot_photo_url($login_preview);
+        $login_preview_role = trim((string) ($login_preview['role'] ?? ''));
+        $login_preview_nisn = trim((string) ($login_preview['nisn'] ?? ''));
+        $login_preview_kelas = trim((string) ($login_preview['kode_kelas'] ?? $kode_kelas));
+        $login_preview_ruang = trim((string) ($login_preview['kode_ruang'] ?? $kode_ruang));
+        $login_preview_agama = trim((string) ($login_preview['agama'] ?? ''));
+        $login_preview_gender = trim((string) ($login_preview['jenis_kelamin'] ?? ''));
+        $login_redis_host = trim((string) ($login['redis_host'] ?? ''));
+        $login_redis_database = (int) ($login['redis_database'] ?? 0);
+        $login_redis_error = trim((string) ($login['redis_error'] ?? ''));
         $availability_preview_items_visible = array_slice($availability_preview_items, 0, 2);
         $availability_preview_items_remaining = max(0, count($availability_preview_items) - count($availability_preview_items_visible));
         $availability_preparation_hint = self::build_availability_preparation_hint(
@@ -1423,6 +1714,7 @@ final class CBT_Admin_Exams_Page
             $availability_snapshot_source
         );
         $is_profile_mode = $mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_PROFILE_MONITOR;
+        $is_login_mode = $mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR;
         ?>
         <tr class="cbt-student-snapshot-row">
             <td class="cbt-student-snapshot-user-cell">
@@ -1507,6 +1799,102 @@ final class CBT_Admin_Exams_Page
                             <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                             <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
                             <button type="submit" class="button">Bersihkan Profil</button>
+                        </form>
+                    </div>
+                </td>
+            <?php elseif ($is_login_mode): ?>
+                <td class="cbt-student-snapshot-status-cell">
+                    <div class="cbt-student-snapshot-card">
+                        <div class="cbt-student-snapshot-card-head">
+                            <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($login_status_tone); ?>"><?php echo esc_html($login_status_label); ?></span>
+                            <span class="cbt-student-snapshot-mini-meta"><?php echo esc_html('TTL ' . ($login_ttl >= 0 ? $login_ttl . 's' : 'N/A')); ?></span>
+                            <span class="cbt-student-snapshot-mini-meta"><?php echo esc_html('Payload ' . number_format_i18n($login_payload_bytes) . ' bytes'); ?></span>
+                            <span class="cbt-student-snapshot-mini-meta"><?php echo esc_html('Source ' . ($login_snapshot_source !== '' ? $login_snapshot_source : 'miss')); ?></span>
+                        </div>
+                        <div class="cbt-student-snapshot-compact-copy">
+                            <strong>Generated:</strong>
+                            <span><?php echo esc_html($login_generated_at !== '' ? $login_generated_at : '-'); ?></span>
+                        </div>
+                        <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle">Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.</p>
+                        <div class="cbt-student-snapshot-profile-top">
+                            <img
+                                src="<?php echo esc_url($login_photo_url); ?>"
+                                alt="<?php echo esc_attr('Foto login snapshot ' . $display_name); ?>"
+                                class="cbt-student-snapshot-photo"
+                                loading="lazy"
+                                decoding="async"
+                            />
+                            <div class="cbt-student-snapshot-preview-list">
+                                <span class="cbt-student-snapshot-preview-pill cbt-student-snapshot-preview-pill--muted"><?php echo esc_html('Role: ' . ($login_preview_role !== '' ? $login_preview_role : '-')); ?></span>
+                                <span class="cbt-student-snapshot-preview-pill cbt-student-snapshot-preview-pill--muted"><?php echo esc_html('NISN: ' . ($login_preview_nisn !== '' ? $login_preview_nisn : '-')); ?></span>
+                                <span class="cbt-student-snapshot-preview-pill cbt-student-snapshot-preview-pill--muted"><?php echo esc_html('Kelas: ' . ($login_preview_kelas !== '' ? $login_preview_kelas : '-')); ?></span>
+                                <span class="cbt-student-snapshot-preview-pill cbt-student-snapshot-preview-pill--muted"><?php echo esc_html('Ruang: ' . ($login_preview_ruang !== '' ? $login_preview_ruang : '-')); ?></span>
+                                <span class="cbt-student-snapshot-preview-pill cbt-student-snapshot-preview-pill--muted"><?php echo esc_html('Agama: ' . ($login_preview_agama !== '' ? $login_preview_agama : '-')); ?></span>
+                                <span class="cbt-student-snapshot-preview-pill cbt-student-snapshot-preview-pill--muted"><?php echo esc_html('Gender: ' . ($login_preview_gender !== '' ? $login_preview_gender : '-')); ?></span>
+                            </div>
+                        </div>
+                        <?php if (!empty($login_identifiers_visible)): ?>
+                            <div class="cbt-student-snapshot-preview-list">
+                                <?php foreach ($login_identifiers_visible as $identifier): ?>
+                                    <span class="cbt-student-snapshot-preview-pill"><?php echo esc_html($identifier); ?></span>
+                                <?php endforeach; ?>
+                                <?php if ($login_identifiers_remaining > 0): ?>
+                                    <span class="cbt-student-snapshot-preview-pill cbt-student-snapshot-preview-pill--muted"><?php echo esc_html('+' . $login_identifiers_remaining . ' identifier'); ?></span>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+                        <?php if ($login_storage_key !== '' || $login_generated_at !== '' || !empty($login_identifiers) || $login_redis_host !== '' || $login_redis_error !== ''): ?>
+                            <details class="cbt-student-snapshot-tech">
+                                <summary>Detail teknis</summary>
+                                <div class="cbt-student-snapshot-tech-body">
+                                    <span><strong>User ID:</strong> <?php echo esc_html((string) $user_id); ?></span>
+                                    <span><strong>Snapshot Source:</strong> <?php echo esc_html($login_snapshot_source !== '' ? $login_snapshot_source : 'miss'); ?></span>
+                                    <span><strong>Generated At:</strong> <?php echo esc_html($login_generated_at !== '' ? $login_generated_at : '-'); ?></span>
+                                    <span><strong>Snapshot Exists:</strong> <?php echo esc_html($login_snapshot_exists ? 'Ya' : 'Tidak'); ?></span>
+                                    <span><strong>Snapshot Valid:</strong> <?php echo esc_html($login_snapshot_valid ? 'Ya' : 'Tidak'); ?></span>
+                                    <span><strong>Host Redis:</strong> <code><?php echo esc_html($login_redis_host !== '' ? $login_redis_host : '-'); ?></code></span>
+                                    <span><strong>Database Redis:</strong> <?php echo esc_html((string) $login_redis_database); ?></span>
+                                    <span><strong>Identifiers:</strong></span>
+                                    <code class="cbt-student-snapshot-storage-key"><?php echo esc_html(!empty($login_identifiers) ? implode(', ', $login_identifiers) : '-'); ?></code>
+                                    <span><strong>Storage Key:</strong></span>
+                                    <code class="cbt-student-snapshot-storage-key"><?php echo esc_html($login_storage_key !== '' ? $login_storage_key : '-'); ?></code>
+                                    <?php if ($login_redis_error !== ''): ?>
+                                        <span><strong>Error Redis:</strong></span>
+                                        <code class="cbt-student-snapshot-storage-key"><?php echo esc_html($login_redis_error); ?></code>
+                                    <?php endif; ?>
+                                </div>
+                            </details>
+                        <?php endif; ?>
+                        <?php if ($login_message !== ''): ?>
+                            <p class="cbt-exam-snapshot-note"><?php echo esc_html($login_message); ?></p>
+                        <?php endif; ?>
+                    </div>
+                </td>
+                <td class="cbt-student-snapshot-actions-cell">
+                    <div class="cbt-student-snapshot-row-actions">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form">
+                            <?php wp_nonce_field('cbt_warm_student_login_snapshot'); ?>
+                            <input type="hidden" name="action" value="cbt_warm_student_login_snapshot" />
+                            <input type="hidden" name="user_id" value="<?php echo esc_attr((string) $user_id); ?>" />
+                            <?php self::render_snapshot_tab_hidden_field($mode); ?>
+                            <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                            <?php self::render_snapshot_filter_state_hidden_fields($snapshot_filter_state); ?>
+                            <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
+                            <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
+                            <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                            <button type="submit" class="button button-secondary">Siapkan Login Snapshot</button>
+                        </form>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form">
+                            <?php wp_nonce_field('cbt_clear_student_login_snapshot'); ?>
+                            <input type="hidden" name="action" value="cbt_clear_student_login_snapshot" />
+                            <input type="hidden" name="user_id" value="<?php echo esc_attr((string) $user_id); ?>" />
+                            <?php self::render_snapshot_tab_hidden_field($mode); ?>
+                            <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                            <?php self::render_snapshot_filter_state_hidden_fields($snapshot_filter_state); ?>
+                            <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
+                            <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
+                            <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                            <button type="submit" class="button">Bersihkan Login Snapshot</button>
                         </form>
                     </div>
                 </td>

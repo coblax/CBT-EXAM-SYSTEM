@@ -15,6 +15,13 @@ if (!class_exists('CBT_Live_Proctoring_Presence')) {
 final class CBT_Admin_Results_Service
 {
     private const TEST_REDIRECT_SIGNAL = '__cbt_admin_results_redirect__';
+    private const TEST_AJAX_SIGNAL = '__cbt_admin_results_ajax__';
+    private const BULK_JOB_QUERY_ARG = 'cbt_results_bulk_token';
+    private const BULK_JOB_TTL = HOUR_IN_SECONDS;
+    private const BULK_RESET_BATCH_SIZE = 100;
+    private const BULK_FORCE_COMPLETE_BATCH_SIZE = 20;
+    private const BULK_JOB_MAX_BATCH_SECONDS = 6.0;
+    private const BULK_JOB_FAILURE_SAMPLE_LIMIT = 10;
 
     public static function can_view_results(): bool
     {
@@ -46,6 +53,7 @@ final class CBT_Admin_Results_Service
         $selected_kelas = isset($query['cbt_result_kelas']) ? sanitize_text_field(wp_unslash((string) $query['cbt_result_kelas'])) : '';
         $student_keyword = isset($query['cbt_student_q']) ? sanitize_text_field(wp_unslash((string) $query['cbt_student_q'])) : '';
         $current_page = isset($query['cbt_results_paged']) ? max(1, absint(wp_unslash((string) $query['cbt_results_paged']))) : 1;
+        $results_bulk_job_token = isset($query[self::BULK_JOB_QUERY_ARG]) ? sanitize_key((string) wp_unslash((string) $query[self::BULK_JOB_QUERY_ARG])) : '';
         $results_per_page = 20;
         $allowed_statuses = ['in_progress', 'completed'];
         if (!in_array($selected_status, $allowed_statuses, true)) {
@@ -307,10 +315,1211 @@ final class CBT_Admin_Results_Service
                 'value' => count((array) $essay_rows),
             ],
         ];
+        $results_bulk_job = self::get_results_bulk_job_ui_state_from_query($query);
+        $results_bulk_job_active = !empty($results_bulk_job['active']);
+        if ($results_bulk_job_token === '' && !empty($results_bulk_job['token'])) {
+            $results_bulk_job_token = (string) $results_bulk_job['token'];
+        }
 
         unset($query, $wpdb);
 
         return get_defined_vars();
+    }
+
+    /**
+     * @return array{
+     *     exam_id:int,
+     *     status:string,
+     *     kelas:string,
+     *     student_keyword:string,
+     *     paged:int
+     * }
+     */
+    private static function get_results_page_return_context_from_request(): array
+    {
+        $return_exam_id = isset($_POST['cbt_exam_id']) ? absint($_POST['cbt_exam_id']) : 0;
+        $return_status = isset($_POST['cbt_attempt_status']) ? sanitize_key((string) wp_unslash($_POST['cbt_attempt_status'])) : '';
+        $return_kelas = isset($_POST['cbt_result_kelas']) ? sanitize_text_field(wp_unslash($_POST['cbt_result_kelas'])) : '';
+        $return_student_keyword = isset($_POST['cbt_student_q']) ? sanitize_text_field(wp_unslash($_POST['cbt_student_q'])) : '';
+        $return_paged = isset($_POST['cbt_results_paged']) ? max(1, absint(wp_unslash($_POST['cbt_results_paged']))) : 1;
+        $allowed_statuses = ['in_progress', 'completed'];
+        if (!in_array($return_status, $allowed_statuses, true)) {
+            $return_status = '';
+        }
+
+        return [
+            'exam_id' => $return_exam_id,
+            'status' => $return_status,
+            'kelas' => $return_kelas,
+            'student_keyword' => $return_student_keyword,
+            'paged' => $return_paged,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     * @param array<string,mixed> $extra_args
+     */
+    private static function build_results_page_url(array $context, ?string $message = null, ?string $error = null, array $extra_args = []): string
+    {
+        $normalized_context = self::normalize_results_bulk_return_context($context);
+        $args = ['page' => 'cbt-results'];
+        if ((int) ($normalized_context['exam_id'] ?? 0) > 0) {
+            $args['cbt_exam_id'] = (int) $normalized_context['exam_id'];
+        }
+        if ((string) ($normalized_context['status'] ?? '') !== '') {
+            $args['cbt_attempt_status'] = (string) $normalized_context['status'];
+        }
+        if ((string) ($normalized_context['kelas'] ?? '') !== '') {
+            $args['cbt_result_kelas'] = (string) $normalized_context['kelas'];
+        }
+        if ((string) ($normalized_context['student_keyword'] ?? '') !== '') {
+            $args['cbt_student_q'] = (string) $normalized_context['student_keyword'];
+        }
+        if ((int) ($normalized_context['paged'] ?? 1) > 1) {
+            $args['cbt_results_paged'] = (int) $normalized_context['paged'];
+        }
+        if ($message !== null && $message !== '') {
+            $args['cbt_msg'] = $message;
+        }
+        if ($error !== null && $error !== '') {
+            $args['cbt_err'] = $error;
+        }
+
+        foreach ($extra_args as $extra_key => $extra_value) {
+            if (!is_scalar($extra_key) || $extra_key === '') {
+                continue;
+            }
+            if ($extra_value === null || $extra_value === '') {
+                continue;
+            }
+            $args[(string) $extra_key] = $extra_value;
+        }
+
+        return add_query_arg($args, admin_url('admin.php'));
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     * @return array{
+     *     exam_id:int,
+     *     status:string,
+     *     kelas:string,
+     *     student_keyword:string,
+     *     paged:int
+     * }
+     */
+    private static function normalize_results_bulk_return_context(array $context): array
+    {
+        $status = sanitize_key((string) ($context['status'] ?? ''));
+        if (!in_array($status, ['in_progress', 'completed'], true)) {
+            $status = '';
+        }
+
+        return [
+            'exam_id' => max(0, (int) ($context['exam_id'] ?? 0)),
+            'status' => $status,
+            'kelas' => sanitize_text_field((string) ($context['kelas'] ?? '')),
+            'student_keyword' => sanitize_text_field((string) ($context['student_keyword'] ?? '')),
+            'paged' => max(1, (int) ($context['paged'] ?? 1)),
+        ];
+    }
+
+    private static function get_results_bulk_job_state_key(string $token): string
+    {
+        return 'cbt_results_bulk_job_' . sanitize_key($token);
+    }
+
+    private static function get_results_bulk_job_active_key(int $user_id): string
+    {
+        return 'cbt_results_bulk_job_active_' . max(0, $user_id);
+    }
+
+    private static function get_results_bulk_job_stop_key(string $token): string
+    {
+        return 'cbt_results_bulk_job_stop_' . sanitize_key($token);
+    }
+
+    private static function get_active_results_bulk_job_token_for_user(int $user_id): string
+    {
+        $user_id = max(0, $user_id);
+        if ($user_id <= 0) {
+            return '';
+        }
+
+        $token = get_transient(self::get_results_bulk_job_active_key($user_id));
+        return is_scalar($token) ? sanitize_key((string) $token) : '';
+    }
+
+    private static function clear_active_results_bulk_job_token(int $user_id, string $expected_token = ''): void
+    {
+        $user_id = max(0, $user_id);
+        if ($user_id <= 0) {
+            return;
+        }
+
+        $lock_key = self::get_results_bulk_job_active_key($user_id);
+        $current_token = get_transient($lock_key);
+        $current_token = is_scalar($current_token) ? sanitize_key((string) $current_token) : '';
+        if ($expected_token !== '' && $current_token !== '' && $current_token !== sanitize_key($expected_token)) {
+            return;
+        }
+
+        delete_transient($lock_key);
+    }
+
+    private static function is_results_bulk_job_stop_requested(string $token): bool
+    {
+        $token = sanitize_key($token);
+        if ($token === '') {
+            return false;
+        }
+
+        return (bool) get_transient(self::get_results_bulk_job_stop_key($token));
+    }
+
+    private static function request_results_bulk_job_stop(string $token): bool
+    {
+        $token = sanitize_key($token);
+        if ($token === '') {
+            return false;
+        }
+
+        return (bool) set_transient(self::get_results_bulk_job_stop_key($token), 1, self::BULK_JOB_TTL);
+    }
+
+    private static function clear_results_bulk_job_stop_request(string $token): void
+    {
+        $token = sanitize_key($token);
+        if ($token === '') {
+            return;
+        }
+
+        delete_transient(self::get_results_bulk_job_stop_key($token));
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     */
+    private static function is_results_bulk_job_terminal(array $state): bool
+    {
+        $status = sanitize_key((string) ($state['status'] ?? ''));
+        return in_array($status, ['completed', 'completed_with_errors', 'failed', 'stopped'], true);
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return array{attempt_id:int,exam_id:int,student_id:int}
+     */
+    private static function normalize_results_bulk_target_row(array $row): array
+    {
+        return [
+            'attempt_id' => max(0, (int) ($row['attempt_id'] ?? $row['id'] ?? 0)),
+            'exam_id' => max(0, (int) ($row['exam_id'] ?? 0)),
+            'student_id' => max(0, (int) ($row['student_id'] ?? 0)),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_results_bulk_job_state(string $token): ?array
+    {
+        $token = sanitize_key($token);
+        if ($token === '') {
+            return null;
+        }
+
+        $state = get_transient(self::get_results_bulk_job_state_key($token));
+        if (!is_array($state)) {
+            return null;
+        }
+
+        $state['token'] = $token;
+        $state['mode'] = sanitize_key((string) ($state['mode'] ?? ''));
+        $state['status'] = sanitize_key((string) ($state['status'] ?? 'pending'));
+        $state['created_by'] = max(0, (int) ($state['created_by'] ?? 0));
+        $state['created_at'] = max(0, (int) ($state['created_at'] ?? time()));
+        $state['updated_at'] = max(0, (int) ($state['updated_at'] ?? $state['created_at']));
+        $state['cursor'] = max(0, (int) ($state['cursor'] ?? 0));
+        $state['total'] = max(0, (int) ($state['total'] ?? 0));
+        $state['processed_count'] = max(0, (int) ($state['processed_count'] ?? 0));
+        $state['success_count'] = max(0, (int) ($state['success_count'] ?? 0));
+        $state['failure_count'] = max(0, (int) ($state['failure_count'] ?? 0));
+        $state['reset_count'] = max(0, (int) ($state['reset_count'] ?? 0));
+        $state['abandoned_count'] = max(0, (int) ($state['abandoned_count'] ?? 0));
+        $state['completed_count'] = max(0, (int) ($state['completed_count'] ?? 0));
+        $state['last_message'] = sanitize_text_field((string) ($state['last_message'] ?? ''));
+        $state['last_detail'] = sanitize_text_field((string) ($state['last_detail'] ?? ''));
+        $state['last_error_message'] = sanitize_text_field((string) ($state['last_error_message'] ?? ''));
+        $state['return_context'] = self::normalize_results_bulk_return_context(
+            is_array($state['return_context'] ?? null) ? (array) $state['return_context'] : []
+        );
+        $state['failed_attempt_ids_sample'] = array_values(array_filter(array_map('absint', (array) ($state['failed_attempt_ids_sample'] ?? []))));
+        $state['affected_exam_ids'] = array_values(array_filter(array_map('absint', (array) ($state['affected_exam_ids'] ?? []))));
+        $state['affected_user_ids'] = array_values(array_filter(array_map('absint', (array) ($state['affected_user_ids'] ?? []))));
+        $state['affected_attempt_ids'] = array_values(array_filter(array_map('absint', (array) ($state['affected_attempt_ids'] ?? []))));
+        $state['stop_requested'] = self::is_results_bulk_job_stop_requested($token);
+        $state['target_rows'] = array_values(array_filter(array_map(
+            static function ($row): array {
+                return self::normalize_results_bulk_target_row(is_array($row) ? $row : []);
+            },
+            (array) ($state['target_rows'] ?? [])
+        ), static function (array $row): bool {
+            return $row['attempt_id'] > 0 && $row['exam_id'] > 0 && $row['student_id'] > 0;
+        }));
+        $state['total'] = max($state['total'], count($state['target_rows']));
+
+        return $state;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_results_bulk_job_state_for_current_user(string $token): ?array
+    {
+        $state = self::get_results_bulk_job_state($token);
+        if (!is_array($state)) {
+            return null;
+        }
+
+        if ((int) ($state['created_by'] ?? 0) !== get_current_user_id()) {
+            return null;
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     */
+    private static function persist_results_bulk_job_state(array $state): bool
+    {
+        $token = sanitize_key((string) ($state['token'] ?? ''));
+        if ($token === '') {
+            return false;
+        }
+
+        $state['token'] = $token;
+        $state['updated_at'] = time();
+        $saved = set_transient(self::get_results_bulk_job_state_key($token), $state, self::BULK_JOB_TTL);
+        if ($saved && (int) ($state['created_by'] ?? 0) > 0) {
+            set_transient(
+                self::get_results_bulk_job_active_key((int) $state['created_by']),
+                $token,
+                self::BULK_JOB_TTL
+            );
+        }
+
+        return (bool) $saved;
+    }
+
+    /**
+     * @param array<string,mixed>|null $state
+     */
+    private static function clear_results_bulk_job_state(string $token, ?array $state = null): void
+    {
+        $token = sanitize_key($token);
+        if ($token === '') {
+            return;
+        }
+
+        delete_transient(self::get_results_bulk_job_state_key($token));
+        self::clear_results_bulk_job_stop_request($token);
+        if (is_array($state) && (int) ($state['created_by'] ?? 0) > 0) {
+            self::clear_active_results_bulk_job_token((int) ($state['created_by'] ?? 0), $token);
+            return;
+        }
+
+        self::clear_active_results_bulk_job_token(get_current_user_id(), $token);
+    }
+
+    /**
+     * @param array<string,mixed> $query
+     * @return array<string,mixed>
+     */
+    private static function get_results_bulk_job_ui_state_from_query(array $query): array
+    {
+        $token = isset($query[self::BULK_JOB_QUERY_ARG])
+            ? sanitize_key((string) wp_unslash((string) $query[self::BULK_JOB_QUERY_ARG]))
+            : '';
+        if ($token === '') {
+            return [
+                'active' => false,
+                'token' => '',
+            ];
+        }
+
+        $state = self::get_results_bulk_job_state_for_current_user($token);
+        if (!is_array($state)) {
+            return [
+                'active' => false,
+                'token' => $token,
+            ];
+        }
+
+        return self::build_results_bulk_job_ui_state($state);
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private static function build_results_bulk_job_ui_state(array $state): array
+    {
+        $token = sanitize_key((string) ($state['token'] ?? ''));
+        $mode = sanitize_key((string) ($state['mode'] ?? ''));
+        $processed_count = max(0, (int) ($state['processed_count'] ?? 0));
+        $total = max(0, (int) ($state['total'] ?? 0));
+        $success_count = max(0, (int) ($state['success_count'] ?? 0));
+        $failure_count = max(0, (int) ($state['failure_count'] ?? 0));
+        $percent = $total > 0 ? min(100, max(0, ($processed_count / $total) * 100)) : 0.0;
+        $status = sanitize_key((string) ($state['status'] ?? 'pending'));
+        $stop_requested = !self::is_results_bulk_job_terminal($state) && !empty($state['stop_requested']);
+        if ($status === 'completed') {
+            $status_label = 'Selesai';
+        } elseif ($status === 'completed_with_errors') {
+            $status_label = 'Selesai Parsial';
+        } elseif ($status === 'failed') {
+            $status_label = 'Gagal';
+        } elseif ($status === 'stopped') {
+            $status_label = 'Dihentikan';
+        } elseif ($stop_requested) {
+            $status_label = 'Menghentikan';
+        } else {
+            $status_label = 'Berjalan';
+        }
+        $status_message = sanitize_text_field((string) ($state['last_message'] ?? ''));
+        if ($stop_requested) {
+            $status_message = 'Permintaan stop diterima. Batch akan dihentikan setelah chunk aktif selesai.';
+        } elseif ($status_message === '') {
+            $status_message = $mode === 'force_complete'
+                ? 'Paksa complete sedang berjalan.'
+                : 'Reset attempt sedang berjalan.';
+        }
+        $status_detail = sanitize_text_field((string) ($state['last_detail'] ?? ''));
+        if ($stop_requested) {
+            $status_detail = sprintf(
+                '%d dari %d attempt sudah diproses. Tidak ada chunk baru yang akan dimulai.',
+                $processed_count,
+                $total
+            );
+        } elseif ($status_detail === '') {
+            $status_detail = sprintf('%d dari %d attempt sudah diproses.', $processed_count, $total);
+        }
+
+        return [
+            'active' => true,
+            'ajax_action' => 'cbt_results_bulk_job_tick',
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'can_stop' => !$stop_requested && !self::is_results_bulk_job_terminal($state),
+            'failure_count' => $failure_count,
+            'mode' => $mode,
+            'mode_label' => $mode === 'force_complete' ? 'Paksa Complete' : 'Reset Sesuai Filter',
+            'nonce' => wp_create_nonce('cbt_results_bulk_job_tick'),
+            'processed_count' => $processed_count,
+            'progress_percent' => round($percent, 2),
+            'reset_count' => max(0, (int) ($state['reset_count'] ?? 0)),
+            'abandoned_count' => max(0, (int) ($state['abandoned_count'] ?? 0)),
+            'completed_count' => max(0, (int) ($state['completed_count'] ?? 0)),
+            'resume_url' => self::build_results_page_url(
+                (array) ($state['return_context'] ?? []),
+                null,
+                null,
+                [self::BULK_JOB_QUERY_ARG => $token]
+            ),
+            'status' => $status,
+            'status_detail' => $status_detail,
+            'status_label' => $status_label,
+            'status_message' => $status_message,
+            'stop_action' => 'cbt_results_bulk_job_stop',
+            'stop_nonce' => wp_create_nonce('cbt_results_bulk_job_stop'),
+            'stop_requested' => $stop_requested,
+            'success_count' => $success_count,
+            'token' => $token,
+            'total' => $total,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function start_results_bulk_job(string $mode, array $context): void
+    {
+        $mode = sanitize_key($mode);
+        if (!in_array($mode, ['reset', 'force_complete'], true)) {
+            self::dispatch_redirect(self::build_results_page_url($context, null, 'Mode batch results tidak valid.'));
+        }
+
+        $current_user_id = get_current_user_id();
+        $active_token = self::get_active_results_bulk_job_token_for_user($current_user_id);
+        if ($active_token !== '') {
+            $active_state = self::get_results_bulk_job_state($active_token);
+            if (is_array($active_state) && !self::is_results_bulk_job_terminal($active_state)) {
+                self::dispatch_redirect(self::build_results_page_url($context, null, null, [
+                    self::BULK_JOB_QUERY_ARG => $active_token,
+                ]));
+            }
+
+            self::clear_results_bulk_job_state($active_token, $active_state);
+        }
+
+        $target_rows = self::query_results_bulk_target_rows($mode, $context);
+        if (empty($target_rows)) {
+            $error_message = $mode === 'force_complete'
+                ? 'Tidak ada attempt in_progress sesuai filter yang bisa dipaksa selesai.'
+                : 'Tidak ada attempt completed sesuai filter yang bisa di-reset.';
+            self::dispatch_redirect(self::build_results_page_url($context, null, $error_message));
+        }
+
+        $state = self::create_results_bulk_job_state($mode, $context, $target_rows);
+        if (!self::persist_results_bulk_job_state($state)) {
+            self::dispatch_redirect(self::build_results_page_url($context, null, 'Gagal menyiapkan batch results.'));
+        }
+
+        self::dispatch_redirect(self::build_results_page_url($context, null, null, [
+            self::BULK_JOB_QUERY_ARG => (string) ($state['token'] ?? ''),
+        ]));
+    }
+
+    private static function prepare_runtime_for_results_bulk_job(): void
+    {
+        if (function_exists('ignore_user_abort')) {
+            @ignore_user_abort(true);
+        }
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+        @ini_set('memory_limit', '512M');
+    }
+
+    /**
+     * @param int[] $base
+     * @param int[] $extra
+     * @return int[]
+     */
+    private static function merge_unique_positive_ints(array $base, array $extra): array
+    {
+        $merged = [];
+        foreach (array_merge($base, $extra) as $value) {
+            $value = absint($value);
+            if ($value > 0) {
+                $merged[$value] = $value;
+            }
+        }
+
+        return array_values($merged);
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @param int[] $attempt_ids
+     */
+    private static function append_results_bulk_failure_sample(array &$state, array $attempt_ids): void
+    {
+        $sample = array_values(array_filter(array_map('absint', (array) ($state['failed_attempt_ids_sample'] ?? []))));
+        foreach ($attempt_ids as $attempt_id) {
+            $attempt_id = absint($attempt_id);
+            if ($attempt_id <= 0 || in_array($attempt_id, $sample, true)) {
+                continue;
+            }
+            $sample[] = $attempt_id;
+            if (count($sample) >= self::BULK_JOB_FAILURE_SAMPLE_LIMIT) {
+                break;
+            }
+        }
+
+        $state['failed_attempt_ids_sample'] = $sample;
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     * @return array<int,array{attempt_id:int,exam_id:int,student_id:int}>
+     */
+    private static function query_results_bulk_target_rows(string $mode, array $context): array
+    {
+        global $wpdb;
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        $normalized_context = self::normalize_results_bulk_return_context($context);
+        $filter_kelas = trim((string) ($normalized_context['kelas'] ?? ''));
+        $filter_student_keyword = trim((string) ($normalized_context['student_keyword'] ?? ''));
+
+        $where_parts = ['1=1'];
+        $where_params = [];
+        if (!$is_admin_scope) {
+            $where_parts[] = 'e.created_by = %d';
+            $where_params[] = $current_user_id;
+        }
+        if ((int) ($normalized_context['exam_id'] ?? 0) > 0) {
+            $where_parts[] = 'a.exam_id = %d';
+            $where_params[] = (int) $normalized_context['exam_id'];
+        }
+        if ($filter_kelas !== '') {
+            $where_parts[] = 'kelas_meta.meta_value = %s';
+            $where_params[] = $filter_kelas;
+        }
+        if ($filter_student_keyword !== '') {
+            $student_like = '%' . $wpdb->esc_like($filter_student_keyword) . '%';
+            $where_parts[] = '(u.user_login LIKE %s OR nisn_meta.meta_value LIKE %s)';
+            $where_params[] = $student_like;
+            $where_params[] = $student_like;
+        }
+        $where_parts[] = $mode === 'force_complete'
+            ? "a.status = 'in_progress'"
+            : "a.status = 'completed'";
+        $where_sql = ' WHERE ' . implode(' AND ', $where_parts);
+
+        $target_sql = "SELECT a.id AS attempt_id, a.exam_id, a.student_id
+                       FROM {$attempt_table} a
+                       INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                       INNER JOIN {$wpdb->users} u ON u.ID = a.student_id
+                       LEFT JOIN (
+                           SELECT user_id, MAX(meta_value) AS meta_value
+                           FROM {$wpdb->usermeta}
+                           WHERE meta_key = 'kode_kelas'
+                           GROUP BY user_id
+                       ) kelas_meta ON kelas_meta.user_id = u.ID
+                       LEFT JOIN (
+                           SELECT user_id, MAX(meta_value) AS meta_value
+                           FROM {$wpdb->usermeta}
+                           WHERE meta_key = 'nisn'
+                           GROUP BY user_id
+                       ) nisn_meta ON nisn_meta.user_id = u.ID
+                       {$where_sql}
+                       ORDER BY a.id DESC";
+        if (!empty($where_params)) {
+            $target_sql = $wpdb->prepare($target_sql, $where_params);
+        }
+
+        $rows = $wpdb->get_results($target_sql, ARRAY_A);
+
+        return array_values(array_filter(array_map(static function ($row): array {
+            return self::normalize_results_bulk_target_row(is_array($row) ? $row : []);
+        }, is_array($rows) ? $rows : []), static function (array $row): bool {
+            return $row['attempt_id'] > 0 && $row['exam_id'] > 0 && $row['student_id'] > 0;
+        }));
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     * @param array<int,array{attempt_id:int,exam_id:int,student_id:int}> $target_rows
+     * @return array<string,mixed>
+     */
+    private static function create_results_bulk_job_state(string $mode, array $context, array $target_rows): array
+    {
+        $token = sanitize_key(strtolower((string) wp_generate_password(24, false, false)));
+        if ($token === '') {
+            $token = sanitize_key(strtolower((string) uniqid('cbtr', true)));
+        }
+
+        return [
+            'token' => $token,
+            'mode' => $mode,
+            'status' => 'pending',
+            'created_by' => get_current_user_id(),
+            'created_at' => time(),
+            'updated_at' => time(),
+            'return_context' => self::normalize_results_bulk_return_context($context),
+            'target_rows' => array_values($target_rows),
+            'cursor' => 0,
+            'total' => count($target_rows),
+            'processed_count' => 0,
+            'success_count' => 0,
+            'failure_count' => 0,
+            'reset_count' => 0,
+            'abandoned_count' => 0,
+            'completed_count' => 0,
+            'failed_attempt_ids_sample' => [],
+            'last_error_message' => '',
+            'last_message' => $mode === 'force_complete'
+                ? 'Batch paksa complete siap dijalankan.'
+                : 'Batch reset siap dijalankan.',
+            'last_detail' => sprintf('%d attempt masuk antrean.', count($target_rows)),
+            'affected_exam_ids' => [],
+            'affected_user_ids' => [],
+            'affected_attempt_ids' => [],
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private static function build_results_bulk_job_response(array $state): array
+    {
+        $ui_state = self::build_results_bulk_job_ui_state($state);
+        $response = [
+            'can_stop' => !empty($ui_state['can_stop']),
+            'complete' => self::is_results_bulk_job_terminal($state),
+            'failure_count' => (int) ($ui_state['failure_count'] ?? 0),
+            'message' => (string) ($ui_state['status_message'] ?? ''),
+            'mode' => (string) ($ui_state['mode'] ?? ''),
+            'mode_label' => (string) ($ui_state['mode_label'] ?? ''),
+            'processed_count' => (int) ($ui_state['processed_count'] ?? 0),
+            'progress_percent' => (float) ($ui_state['progress_percent'] ?? 0),
+            'reset_count' => (int) ($ui_state['reset_count'] ?? 0),
+            'abandoned_count' => (int) ($ui_state['abandoned_count'] ?? 0),
+            'completed_count' => (int) ($ui_state['completed_count'] ?? 0),
+            'resume_url' => (string) ($ui_state['resume_url'] ?? ''),
+            'status' => (string) ($ui_state['status'] ?? ''),
+            'status_detail' => (string) ($ui_state['status_detail'] ?? ''),
+            'status_label' => (string) ($ui_state['status_label'] ?? ''),
+            'stop_requested' => !empty($ui_state['stop_requested']),
+            'success_count' => (int) ($ui_state['success_count'] ?? 0),
+            'token' => (string) ($ui_state['token'] ?? ''),
+            'total' => (int) ($ui_state['total'] ?? 0),
+        ];
+
+        if (self::is_results_bulk_job_terminal($state)) {
+            $feedback = self::build_results_bulk_job_terminal_feedback($state);
+            $response['final_message'] = (string) ($feedback['message'] ?? '');
+            $response['final_error'] = (string) ($feedback['error'] ?? '');
+            $response['redirect_url'] = self::build_results_page_url(
+                (array) ($state['return_context'] ?? []),
+                $response['final_message'] !== '' ? $response['final_message'] : null,
+                $response['final_error'] !== '' ? $response['final_error'] : null
+            );
+        }
+
+        return $response;
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array{message:string,error:string}
+     */
+    private static function build_results_bulk_job_terminal_feedback(array $state): array
+    {
+        $mode = sanitize_key((string) ($state['mode'] ?? ''));
+        $status = sanitize_key((string) ($state['status'] ?? ''));
+        $success_count = max(0, (int) ($state['success_count'] ?? 0));
+        $failure_count = max(0, (int) ($state['failure_count'] ?? 0));
+        $message = '';
+        $error = '';
+
+        if ($status === 'stopped') {
+            if ($mode === 'force_complete') {
+                if ($success_count > 0) {
+                    $message = sprintf('Batch paksa complete dihentikan. %d attempt sudah selesai diproses sebelum stop.', $success_count);
+                }
+            } else {
+                if ($success_count > 0) {
+                    $message = sprintf('Batch reset dihentikan. %d attempt sudah di-reset sebelum stop.', max(0, (int) ($state['reset_count'] ?? $success_count)));
+                    $abandoned_count = max(0, (int) ($state['abandoned_count'] ?? 0));
+                    if ($abandoned_count > 0) {
+                        $message .= ' ' . sprintf('%d attempt in_progress lama sempat ditutup otomatis.', $abandoned_count);
+                    }
+                }
+            }
+        } else {
+            if ($mode === 'force_complete') {
+                if ($success_count > 0) {
+                    $message = sprintf('Berhasil memaksa %d attempt in_progress menjadi completed.', $success_count);
+                }
+            } else {
+                if ($success_count > 0) {
+                    $message = sprintf('Berhasil reset %d attempt sesuai filter.', max(0, (int) ($state['reset_count'] ?? $success_count)));
+                    $abandoned_count = max(0, (int) ($state['abandoned_count'] ?? 0));
+                    if ($abandoned_count > 0) {
+                        $message .= ' ' . sprintf('%d attempt in_progress lama ditutup otomatis.', $abandoned_count);
+                    }
+                }
+            }
+        }
+
+        if ($failure_count > 0) {
+            $sample = array_values(array_filter(array_map('absint', (array) ($state['failed_attempt_ids_sample'] ?? []))));
+            $error = sprintf('%d attempt gagal diproses.', $failure_count);
+            if (!empty($sample)) {
+                $sample_labels = array_map(static function (int $attempt_id): string {
+                    return '#' . $attempt_id;
+                }, array_slice($sample, 0, self::BULK_JOB_FAILURE_SAMPLE_LIMIT));
+                $error .= ' Sample: ' . implode(', ', $sample_labels) . '.';
+            }
+        } elseif ($status === 'stopped' && $success_count <= 0) {
+            $error = $mode === 'force_complete'
+                ? 'Batch paksa complete dihentikan sebelum ada attempt yang diproses.'
+                : 'Batch reset dihentikan sebelum ada attempt yang diproses.';
+        } elseif ($success_count <= 0) {
+            $error = sanitize_text_field((string) ($state['last_error_message'] ?? ''));
+            if ($error === '') {
+                $error = $mode === 'force_complete'
+                    ? 'Tidak ada attempt yang berhasil dipaksa selesai.'
+                    : 'Tidak ada attempt yang berhasil di-reset.';
+            }
+        }
+
+        return [
+            'message' => $message,
+            'error' => $error,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     */
+    private static function finalize_results_bulk_job_state(array &$state, string $terminal_status = ''): void
+    {
+        if (max(0, (int) ($state['success_count'] ?? 0)) > 0) {
+            CBT_Cache::invalidate_analytics();
+            $exam_ids = array_values(array_filter(array_map('absint', (array) ($state['affected_exam_ids'] ?? []))));
+            if (!empty($exam_ids)) {
+                if (method_exists('CBT_Cache', 'invalidate_analytics_exams')) {
+                    CBT_Cache::invalidate_analytics_exams($exam_ids);
+                } else {
+                    foreach ($exam_ids as $exam_id) {
+                        CBT_Cache::invalidate_analytics_exam($exam_id);
+                    }
+                }
+            }
+        }
+
+        $success_count = max(0, (int) ($state['success_count'] ?? 0));
+        $failure_count = max(0, (int) ($state['failure_count'] ?? 0));
+        $terminal_status = sanitize_key($terminal_status);
+        if ($terminal_status === 'stopped') {
+            $state['status'] = 'stopped';
+        } elseif ($success_count > 0 && $failure_count > 0) {
+            $state['status'] = 'completed_with_errors';
+        } elseif ($success_count > 0) {
+            $state['status'] = 'completed';
+        } else {
+            $state['status'] = 'failed';
+        }
+
+        $feedback = self::build_results_bulk_job_terminal_feedback($state);
+        $state['last_message'] = (string) ($feedback['message'] ?? $state['last_message'] ?? '');
+        $state['last_detail'] = $failure_count > 0
+            ? (string) ($feedback['error'] ?? '')
+            : sprintf('%d dari %d attempt selesai diproses.', max(0, (int) ($state['processed_count'] ?? 0)), max(0, (int) ($state['total'] ?? 0)));
+        if ($success_count <= 0 && (string) ($feedback['error'] ?? '') !== '') {
+            $state['last_error_message'] = (string) $feedback['error'];
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function continue_results_bulk_job_state(array $state)
+    {
+        $token = sanitize_key((string) ($state['token'] ?? ''));
+        $state['status'] = 'running';
+        $state['stop_requested'] = self::is_results_bulk_job_stop_requested($token);
+
+        if (!empty($state['stop_requested'])) {
+            self::finalize_results_bulk_job_state($state, 'stopped');
+            return $state;
+        }
+
+        if ((int) ($state['cursor'] ?? 0) >= (int) ($state['total'] ?? 0)) {
+            self::finalize_results_bulk_job_state($state);
+            return $state;
+        }
+
+        if (sanitize_key((string) ($state['mode'] ?? '')) === 'force_complete') {
+            $state = self::continue_results_bulk_force_complete_job_state($state);
+        } else {
+            $state = self::continue_results_bulk_reset_job_state($state);
+        }
+        if (is_wp_error($state)) {
+            return $state;
+        }
+
+        $state['stop_requested'] = self::is_results_bulk_job_stop_requested($token);
+        if (!empty($state['stop_requested'])) {
+            self::finalize_results_bulk_job_state($state, 'stopped');
+            return $state;
+        }
+
+        if ((int) ($state['cursor'] ?? 0) >= (int) ($state['total'] ?? 0)) {
+            self::finalize_results_bulk_job_state($state);
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function continue_results_bulk_reset_job_state(array $state)
+    {
+        global $wpdb;
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $cursor = max(0, (int) ($state['cursor'] ?? 0));
+        $target_rows = is_array($state['target_rows'] ?? null) ? array_values((array) $state['target_rows']) : [];
+        $chunk_rows = array_slice($target_rows, $cursor, self::BULK_RESET_BATCH_SIZE);
+        if (empty($chunk_rows)) {
+            $state['cursor'] = count($target_rows);
+            return $state;
+        }
+
+        $chunk_attempt_ids = array_values(array_filter(array_map(static function ($row): int {
+            return absint(is_array($row) ? ($row['attempt_id'] ?? 0) : 0);
+        }, $chunk_rows)));
+        if (empty($chunk_attempt_ids)) {
+            $state['cursor'] = min(count($target_rows), $cursor + count($chunk_rows));
+            return $state;
+        }
+
+        $attempt_ids_sql = implode(',', $chunk_attempt_ids);
+        $eligible_rows = $wpdb->get_results(
+            "SELECT id AS attempt_id, exam_id, student_id
+             FROM {$attempt_table}
+             WHERE status = 'completed'
+               AND id IN ({$attempt_ids_sql})",
+            ARRAY_A
+        );
+        $eligible_rows = array_values(array_filter(array_map(static function ($row): array {
+            return self::normalize_results_bulk_target_row(is_array($row) ? $row : []);
+        }, is_array($eligible_rows) ? $eligible_rows : []), static function (array $row): bool {
+            return $row['attempt_id'] > 0 && $row['exam_id'] > 0 && $row['student_id'] > 0;
+        }));
+        $eligible_attempt_ids = array_values(array_filter(array_map(static function (array $row): int {
+            return (int) ($row['attempt_id'] ?? 0);
+        }, $eligible_rows)));
+        $missing_attempt_ids = array_values(array_diff($chunk_attempt_ids, $eligible_attempt_ids));
+
+        $abandoned_attempt_ids = [];
+        $abandoned_total = 0;
+        if (!empty($eligible_rows)) {
+            $pair_clauses = [];
+            $pair_params = [];
+            foreach ($eligible_rows as $eligible_row) {
+                $pair_clauses[] = '(exam_id = %d AND student_id = %d)';
+                $pair_params[] = (int) ($eligible_row['exam_id'] ?? 0);
+                $pair_params[] = (int) ($eligible_row['student_id'] ?? 0);
+            }
+
+            $select_abandoned_sql = "SELECT id
+                                     FROM {$attempt_table}
+                                     WHERE status = 'in_progress'
+                                       AND (" . implode(' OR ', $pair_clauses) . ')';
+            $select_abandoned_sql = $wpdb->prepare($select_abandoned_sql, $pair_params);
+            $abandoned_attempt_ids = array_values(array_filter(array_map('absint', (array) $wpdb->get_col($select_abandoned_sql))));
+
+            $update_abandoned_sql = $wpdb->prepare(
+                "UPDATE {$attempt_table}
+                 SET status = 'abandoned',
+                     updated_at = %s
+                 WHERE status = 'in_progress'
+                   AND (" . implode(' OR ', $pair_clauses) . ')',
+                array_merge([current_time('mysql')], $pair_params)
+            );
+            $abandoned_result = $wpdb->query($update_abandoned_sql);
+            if ($abandoned_result === false) {
+                return new WP_Error('results_bulk_reset_abandon_failed', 'Gagal menutup attempt in_progress lama untuk batch reset.');
+            }
+            $abandoned_total = is_int($abandoned_result) ? max(0, $abandoned_result) : count($abandoned_attempt_ids);
+
+            $reset_now = current_time('mysql');
+            $reset_sql = $wpdb->prepare(
+                "UPDATE {$attempt_table}
+                 SET status = 'in_progress',
+                     score = 0,
+                     max_score = 0,
+                     finished_at = NULL,
+                     duration_seconds = 0,
+                     started_at = %s,
+                     updated_at = %s
+                 WHERE status = 'completed'
+                   AND id IN ({$attempt_ids_sql})",
+                $reset_now,
+                $reset_now
+            );
+            $reset_result = $wpdb->query($reset_sql);
+            if ($reset_result === false) {
+                return new WP_Error('results_bulk_reset_failed', 'Gagal melakukan reset attempt untuk batch ini.');
+            }
+
+            if (class_exists('CBT_Runtime')) {
+                foreach ($abandoned_attempt_ids as $abandoned_attempt_id) {
+                    CBT_Runtime::clear_attempt_runtime((int) $abandoned_attempt_id);
+                }
+                foreach ($eligible_attempt_ids as $eligible_attempt_id) {
+                    CBT_Runtime::clear_attempt_runtime((int) $eligible_attempt_id);
+                }
+            }
+            if (class_exists('CBT_Active_Attempt_Index')) {
+                foreach ($eligible_rows as $eligible_row) {
+                    CBT_Active_Attempt_Index::set_active_attempt([
+                        'id' => (int) ($eligible_row['attempt_id'] ?? 0),
+                        'exam_id' => (int) ($eligible_row['exam_id'] ?? 0),
+                        'student_id' => (int) ($eligible_row['student_id'] ?? 0),
+                        'status' => 'in_progress',
+                    ]);
+                }
+            }
+
+            $chunk_affected_attempt_ids = self::merge_unique_positive_ints($eligible_attempt_ids, $abandoned_attempt_ids);
+            if (!empty($chunk_affected_attempt_ids)) {
+                CBT_Cache::invalidate_attempts($chunk_affected_attempt_ids);
+                CBT_UI_State::clear_attempt_states_by_attempt_ids($chunk_affected_attempt_ids);
+                $state['affected_attempt_ids'] = self::merge_unique_positive_ints(
+                    (array) ($state['affected_attempt_ids'] ?? []),
+                    $chunk_affected_attempt_ids
+                );
+            }
+
+            $chunk_user_ids = array_values(array_filter(array_map(static function (array $row): int {
+                return (int) ($row['student_id'] ?? 0);
+            }, $eligible_rows)));
+            if (!empty($chunk_user_ids)) {
+                CBT_Cache::invalidate_users($chunk_user_ids);
+                $state['affected_user_ids'] = self::merge_unique_positive_ints(
+                    (array) ($state['affected_user_ids'] ?? []),
+                    $chunk_user_ids
+                );
+            }
+
+            $chunk_exam_ids = array_values(array_filter(array_map(static function (array $row): int {
+                return (int) ($row['exam_id'] ?? 0);
+            }, $eligible_rows)));
+            if (!empty($chunk_exam_ids)) {
+                $state['affected_exam_ids'] = self::merge_unique_positive_ints(
+                    (array) ($state['affected_exam_ids'] ?? []),
+                    $chunk_exam_ids
+                );
+            }
+        }
+
+        if (!empty($missing_attempt_ids)) {
+            self::append_results_bulk_failure_sample($state, $missing_attempt_ids);
+        }
+
+        $state['cursor'] = min(count($target_rows), $cursor + count($chunk_rows));
+        $state['processed_count'] = max(0, (int) ($state['processed_count'] ?? 0)) + count($chunk_rows);
+        $state['success_count'] = max(0, (int) ($state['success_count'] ?? 0)) + count($eligible_attempt_ids);
+        $state['failure_count'] = max(0, (int) ($state['failure_count'] ?? 0)) + count($missing_attempt_ids);
+        $state['reset_count'] = max(0, (int) ($state['reset_count'] ?? 0)) + count($eligible_attempt_ids);
+        $state['abandoned_count'] = max(0, (int) ($state['abandoned_count'] ?? 0)) + count($abandoned_attempt_ids);
+        $state['last_message'] = 'Batch reset sedang berjalan.';
+        $state['last_detail'] = sprintf(
+            '%d dari %d attempt sudah diproses. Reset berhasil: %d. Attempt lama ditutup: %d.',
+            (int) $state['processed_count'],
+            (int) ($state['total'] ?? 0),
+            (int) $state['reset_count'],
+            (int) $state['abandoned_count']
+        );
+
+        return $state;
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function continue_results_bulk_force_complete_job_state(array $state)
+    {
+        $cursor = max(0, (int) ($state['cursor'] ?? 0));
+        $target_rows = is_array($state['target_rows'] ?? null) ? array_values((array) $state['target_rows']) : [];
+        $batch_rows = array_slice($target_rows, $cursor, self::BULK_FORCE_COMPLETE_BATCH_SIZE);
+        if (empty($batch_rows)) {
+            $state['cursor'] = count($target_rows);
+            return $state;
+        }
+
+        $started_at = microtime(true);
+        $processed_rows = [];
+        $successful_rows = [];
+        $failed_attempt_ids = [];
+        foreach ($batch_rows as $batch_index => $batch_row) {
+            $row = self::normalize_results_bulk_target_row(is_array($batch_row) ? $batch_row : []);
+            if ($row['attempt_id'] <= 0) {
+                continue;
+            }
+
+            $processed_rows[] = $row;
+            $completion_result = CBT_REST::finalize_attempt_completion(
+                $row['attempt_id'],
+                current_time('mysql'),
+                ['defer_invalidation' => true]
+            );
+            if (is_wp_error($completion_result)) {
+                $failed_attempt_ids[] = $row['attempt_id'];
+            } else {
+                $successful_rows[] = $row;
+            }
+
+            if (($batch_index + 1) < count($batch_rows) && (microtime(true) - $started_at) >= self::BULK_JOB_MAX_BATCH_SECONDS) {
+                break;
+            }
+        }
+
+        $processed_count = count($processed_rows);
+        if (!empty($successful_rows)) {
+            $successful_attempt_ids = array_values(array_filter(array_map(static function (array $row): int {
+                return (int) ($row['attempt_id'] ?? 0);
+            }, $successful_rows)));
+            $successful_user_ids = array_values(array_filter(array_map(static function (array $row): int {
+                return (int) ($row['student_id'] ?? 0);
+            }, $successful_rows)));
+            $successful_exam_ids = array_values(array_filter(array_map(static function (array $row): int {
+                return (int) ($row['exam_id'] ?? 0);
+            }, $successful_rows)));
+
+            if (!empty($successful_attempt_ids)) {
+                CBT_Cache::invalidate_attempts($successful_attempt_ids);
+                CBT_UI_State::clear_attempt_states_by_attempt_ids($successful_attempt_ids);
+                $state['affected_attempt_ids'] = self::merge_unique_positive_ints(
+                    (array) ($state['affected_attempt_ids'] ?? []),
+                    $successful_attempt_ids
+                );
+            }
+            if (!empty($successful_user_ids)) {
+                CBT_Cache::invalidate_users($successful_user_ids);
+                $state['affected_user_ids'] = self::merge_unique_positive_ints(
+                    (array) ($state['affected_user_ids'] ?? []),
+                    $successful_user_ids
+                );
+            }
+            if (!empty($successful_exam_ids)) {
+                $state['affected_exam_ids'] = self::merge_unique_positive_ints(
+                    (array) ($state['affected_exam_ids'] ?? []),
+                    $successful_exam_ids
+                );
+            }
+        }
+
+        if (!empty($failed_attempt_ids)) {
+            self::append_results_bulk_failure_sample($state, $failed_attempt_ids);
+            $state['last_error_message'] = sprintf('%d attempt gagal difinalisasi pada batch terakhir.', count($failed_attempt_ids));
+        }
+
+        $state['cursor'] = min(count($target_rows), $cursor + $processed_count);
+        $state['processed_count'] = max(0, (int) ($state['processed_count'] ?? 0)) + $processed_count;
+        $state['success_count'] = max(0, (int) ($state['success_count'] ?? 0)) + count($successful_rows);
+        $state['failure_count'] = max(0, (int) ($state['failure_count'] ?? 0)) + count($failed_attempt_ids);
+        $state['completed_count'] = max(0, (int) ($state['completed_count'] ?? 0)) + count($successful_rows);
+        $state['last_message'] = 'Batch paksa complete sedang berjalan.';
+        $state['last_detail'] = sprintf(
+            '%d dari %d attempt sudah diproses. Completed berhasil: %d. Gagal: %d.',
+            (int) $state['processed_count'],
+            (int) ($state['total'] ?? 0),
+            (int) $state['completed_count'],
+            (int) ($state['failure_count'] ?? 0)
+        );
+
+        return $state;
+    }
+
+    private static function dispatch_results_bulk_job_ajax(bool $success, array $payload, int $status_code = 200): void
+    {
+        if (defined('PHPUNIT_COMPOSER_INSTALL')) {
+            $GLOBALS['cbt_test_last_ajax_response'] = [
+                'success' => $success,
+                'status_code' => $status_code,
+                'payload' => $payload,
+            ];
+            throw new RuntimeException(self::TEST_AJAX_SIGNAL);
+        }
+
+        if ($success) {
+            wp_send_json_success($payload, $status_code);
+        }
+
+        wp_send_json_error($payload, $status_code);
+    }
+
+    public static function handle_bulk_job_tick_ajax(): void
+    {
+        if (!current_user_can('cbt_view_results')) {
+            self::dispatch_results_bulk_job_ajax(false, ['message' => 'Unauthorized'], 403);
+        }
+
+        check_admin_referer('cbt_results_bulk_job_tick', 'nonce');
+
+        $token = isset($_POST['token']) ? sanitize_key((string) wp_unslash($_POST['token'])) : '';
+        $state = self::get_results_bulk_job_state_for_current_user($token);
+        if (!is_array($state)) {
+            self::clear_active_results_bulk_job_token(get_current_user_id(), $token);
+            self::dispatch_results_bulk_job_ajax(false, [
+                'message' => 'Sesi progress results tidak ditemukan atau sudah berakhir.',
+                'redirect_url' => self::build_results_page_url(self::get_results_page_return_context_from_request()),
+            ], 404);
+        }
+
+        if (self::is_results_bulk_job_terminal($state)) {
+            $response = self::build_results_bulk_job_response($state);
+            self::clear_results_bulk_job_state($token, $state);
+            self::dispatch_results_bulk_job_ajax(true, $response);
+        }
+
+        self::prepare_runtime_for_results_bulk_job();
+        $continued_state = self::continue_results_bulk_job_state($state);
+        if (is_wp_error($continued_state)) {
+            $state['status'] = 'failed';
+            $state['last_error_message'] = $continued_state->get_error_message();
+            self::finalize_results_bulk_job_state($state);
+            $response = self::build_results_bulk_job_response($state);
+            self::clear_results_bulk_job_state($token, $state);
+            self::dispatch_results_bulk_job_ajax(false, $response, 500);
+        }
+
+        $state = $continued_state;
+        $response = self::build_results_bulk_job_response($state);
+        if (self::is_results_bulk_job_terminal($state)) {
+            self::clear_results_bulk_job_state($token, $state);
+            self::dispatch_results_bulk_job_ajax(true, $response);
+        }
+
+        if (!self::persist_results_bulk_job_state($state)) {
+            self::clear_results_bulk_job_state($token, $state);
+            self::dispatch_results_bulk_job_ajax(false, [
+                'message' => 'Gagal menyimpan progres batch results.',
+                'redirect_url' => self::build_results_page_url((array) ($state['return_context'] ?? [])),
+            ], 500);
+        }
+
+        self::dispatch_results_bulk_job_ajax(true, $response);
+    }
+
+    public static function handle_bulk_job_stop_ajax(): void
+    {
+        if (!current_user_can('cbt_view_results')) {
+            self::dispatch_results_bulk_job_ajax(false, ['message' => 'Unauthorized'], 403);
+        }
+
+        check_admin_referer('cbt_results_bulk_job_stop', 'nonce');
+
+        $token = isset($_POST['token']) ? sanitize_key((string) wp_unslash($_POST['token'])) : '';
+        $state = self::get_results_bulk_job_state_for_current_user($token);
+        if (!is_array($state)) {
+            self::clear_active_results_bulk_job_token(get_current_user_id(), $token);
+            self::dispatch_results_bulk_job_ajax(false, [
+                'message' => 'Sesi progress results tidak ditemukan atau sudah berakhir.',
+                'redirect_url' => self::build_results_page_url(self::get_results_page_return_context_from_request()),
+            ], 404);
+        }
+
+        if (self::is_results_bulk_job_terminal($state)) {
+            $response = self::build_results_bulk_job_response($state);
+            self::clear_results_bulk_job_state($token, $state);
+            self::dispatch_results_bulk_job_ajax(true, $response);
+        }
+
+        if (!self::request_results_bulk_job_stop($token)) {
+            self::dispatch_results_bulk_job_ajax(false, [
+                'message' => 'Gagal mengirim permintaan stop batch results.',
+            ], 500);
+        }
+
+        $state['stop_requested'] = true;
+        $state['last_message'] = 'Permintaan stop diterima. Batch akan dihentikan setelah chunk aktif selesai.';
+        $state['last_detail'] = sprintf(
+            '%d dari %d attempt sudah diproses. Tidak ada chunk baru yang akan dimulai.',
+            max(0, (int) ($state['processed_count'] ?? 0)),
+            max(0, (int) ($state['total'] ?? 0))
+        );
+
+        self::dispatch_results_bulk_job_ajax(true, self::build_results_bulk_job_response($state));
     }
 
     /**
@@ -1130,245 +2339,16 @@ final class CBT_Admin_Results_Service
 
         check_admin_referer('cbt_bulk_reset_attempts');
 
-        $return_exam_id = isset($_POST['cbt_exam_id']) ? absint($_POST['cbt_exam_id']) : 0;
-        $return_status = isset($_POST['cbt_attempt_status']) ? sanitize_key((string) wp_unslash($_POST['cbt_attempt_status'])) : '';
-        $return_kelas = isset($_POST['cbt_result_kelas']) ? sanitize_text_field(wp_unslash($_POST['cbt_result_kelas'])) : '';
-        $return_student_keyword = isset($_POST['cbt_student_q']) ? sanitize_text_field(wp_unslash($_POST['cbt_student_q'])) : '';
-        $return_paged = isset($_POST['cbt_results_paged']) ? max(1, absint(wp_unslash($_POST['cbt_results_paged']))) : 1;
-        $allowed_statuses = ['in_progress', 'completed'];
-        if (!in_array($return_status, $allowed_statuses, true)) {
-            $return_status = '';
+        $return_context = self::get_results_page_return_context_from_request();
+        if ((string) ($return_context['status'] ?? '') === 'in_progress') {
+            self::dispatch_redirect(self::build_results_page_url(
+                $return_context,
+                null,
+                'Filter status in_progress tidak memiliki attempt completed untuk di-reset.'
+            ));
         }
 
-        $redirect_with = static function (?string $message = null, ?string $error = null) use ($return_exam_id, $return_status, $return_kelas, $return_student_keyword, $return_paged): void {
-            $args = ['page' => 'cbt-results'];
-            if ($return_exam_id > 0) {
-                $args['cbt_exam_id'] = $return_exam_id;
-            }
-            if ($return_status !== '') {
-                $args['cbt_attempt_status'] = $return_status;
-            }
-            if ($return_kelas !== '') {
-                $args['cbt_result_kelas'] = $return_kelas;
-            }
-            if ($return_student_keyword !== '') {
-                $args['cbt_student_q'] = $return_student_keyword;
-            }
-            if ($return_paged > 1) {
-                $args['cbt_results_paged'] = $return_paged;
-            }
-            if ($message !== null && $message !== '') {
-                $args['cbt_msg'] = $message;
-            }
-            if ($error !== null && $error !== '') {
-                $args['cbt_err'] = $error;
-            }
-
-            self::dispatch_redirect(add_query_arg($args, admin_url('admin.php')));
-        };
-
-        if ($return_status === 'in_progress') {
-            $redirect_with(null, 'Filter status in_progress tidak memiliki attempt completed untuk di-reset.');
-        }
-
-        global $wpdb;
-
-        $attempt_table = $wpdb->prefix . 'cbt_attempts';
-        $exam_table = $wpdb->prefix . 'cbt_exams';
-        $is_admin_scope = self::is_admin_scope();
-        $current_user_id = get_current_user_id();
-        $filter_kelas = trim($return_kelas);
-        $filter_student_keyword = trim($return_student_keyword);
-
-        $where_parts = ['1=1'];
-        $where_params = [];
-        if (!$is_admin_scope) {
-            $where_parts[] = 'e.created_by = %d';
-            $where_params[] = $current_user_id;
-        }
-        if ($return_exam_id > 0) {
-            $where_parts[] = 'a.exam_id = %d';
-            $where_params[] = $return_exam_id;
-        }
-        if ($filter_kelas !== '') {
-            $where_parts[] = 'kelas_meta.meta_value = %s';
-            $where_params[] = $filter_kelas;
-        }
-        if ($filter_student_keyword !== '') {
-            $student_like = '%' . $wpdb->esc_like($filter_student_keyword) . '%';
-            $where_parts[] = '(u.user_login LIKE %s OR nisn_meta.meta_value LIKE %s)';
-            $where_params[] = $student_like;
-            $where_params[] = $student_like;
-        }
-        $where_parts[] = "a.status = 'completed'";
-        $where_sql = ' WHERE ' . implode(' AND ', $where_parts);
-
-        $target_sql = "SELECT a.id, a.exam_id, a.student_id
-                       FROM {$attempt_table} a
-                       INNER JOIN {$exam_table} e ON e.id = a.exam_id
-                       INNER JOIN {$wpdb->users} u ON u.ID = a.student_id
-                       LEFT JOIN (
-                           SELECT user_id, MAX(meta_value) AS meta_value
-                           FROM {$wpdb->usermeta}
-                           WHERE meta_key = 'kode_kelas'
-                           GROUP BY user_id
-                       ) kelas_meta ON kelas_meta.user_id = u.ID
-                       LEFT JOIN (
-                           SELECT user_id, MAX(meta_value) AS meta_value
-                           FROM {$wpdb->usermeta}
-                           WHERE meta_key = 'nisn'
-                           GROUP BY user_id
-                       ) nisn_meta ON nisn_meta.user_id = u.ID
-                       {$where_sql}
-                       ORDER BY a.id DESC";
-        if (!empty($where_params)) {
-            $target_sql = $wpdb->prepare($target_sql, $where_params);
-        }
-
-        $target_rows = $wpdb->get_results($target_sql, ARRAY_A);
-        if (empty($target_rows)) {
-            $redirect_with(null, 'Tidak ada attempt completed sesuai filter yang bisa di-reset.');
-        }
-
-        $target_attempt_ids = [];
-        $target_pairs = [];
-        $affected_user_ids = [];
-        foreach ((array) $target_rows as $target_row) {
-            $attempt_id = (int) ($target_row['id'] ?? 0);
-            $exam_id = (int) ($target_row['exam_id'] ?? 0);
-            $student_id = (int) ($target_row['student_id'] ?? 0);
-            if ($attempt_id <= 0 || $exam_id <= 0 || $student_id <= 0) {
-                continue;
-            }
-
-            $target_attempt_ids[$attempt_id] = $attempt_id;
-            $affected_user_ids[$student_id] = $student_id;
-            $pair_key = $exam_id . ':' . $student_id;
-            $existing_target_attempt_id = isset($target_pairs[$pair_key]['target_attempt_id'])
-                ? (int) ($target_pairs[$pair_key]['target_attempt_id'] ?? 0)
-                : 0;
-            $target_pairs[$pair_key] = [
-                'exam_id' => $exam_id,
-                'student_id' => $student_id,
-                'target_attempt_id' => max($attempt_id, $existing_target_attempt_id),
-            ];
-        }
-        if (empty($target_attempt_ids)) {
-            $redirect_with(null, 'Tidak ada attempt valid yang bisa di-reset.');
-        }
-
-        $now = current_time('mysql');
-        $abandoned_total = 0;
-        $abandoned_attempt_ids = [];
-        foreach ($target_pairs as $pair) {
-            $pair_attempt_ids = $wpdb->get_col(
-                $wpdb->prepare(
-                    "SELECT id
-                     FROM {$attempt_table}
-                     WHERE exam_id = %d
-                       AND student_id = %d
-                       AND status = 'in_progress'",
-                    (int) ($pair['exam_id'] ?? 0),
-                    (int) ($pair['student_id'] ?? 0)
-                )
-            );
-            if (is_array($pair_attempt_ids)) {
-                foreach ($pair_attempt_ids as $pair_attempt_id) {
-                    $safe_attempt_id = absint($pair_attempt_id);
-                    if ($safe_attempt_id > 0) {
-                        $abandoned_attempt_ids[$safe_attempt_id] = $safe_attempt_id;
-                    }
-                }
-            }
-
-            $affected = $wpdb->query(
-                $wpdb->prepare(
-                    "UPDATE {$attempt_table}
-                     SET status = 'abandoned', updated_at = %s
-                     WHERE exam_id = %d
-                       AND student_id = %d
-                       AND status = 'in_progress'",
-                    $now,
-                    (int) ($pair['exam_id'] ?? 0),
-                    (int) ($pair['student_id'] ?? 0)
-                )
-            );
-            if (is_int($affected) && $affected > 0) {
-                $abandoned_total += $affected;
-            }
-        }
-
-        $reset_total = 0;
-        $attempt_id_chunks = array_chunk(array_values($target_attempt_ids), 200);
-        foreach ($attempt_id_chunks as $attempt_id_chunk) {
-            $clean_chunk = array_values(array_filter(array_map('absint', (array) $attempt_id_chunk)));
-            if (empty($clean_chunk)) {
-                continue;
-            }
-
-            $attempt_ids_sql = implode(',', $clean_chunk);
-            $reset_sql = $wpdb->prepare(
-                "UPDATE {$attempt_table}
-                 SET status = 'in_progress',
-                     score = 0,
-                     max_score = 0,
-                     finished_at = NULL,
-                     duration_seconds = 0,
-                     started_at = %s,
-                     updated_at = %s
-                 WHERE id IN ({$attempt_ids_sql})
-                   AND status = 'completed'",
-                $now,
-                $now
-            );
-            $affected = $wpdb->query($reset_sql);
-            if ($affected === false) {
-                $redirect_with(null, 'Gagal melakukan reset attempt secara massal.');
-            }
-            if (is_int($affected) && $affected > 0) {
-                $reset_total += $affected;
-            }
-        }
-
-        if ($reset_total <= 0) {
-            $redirect_with(null, 'Tidak ada attempt yang berhasil di-reset.');
-        }
-
-        if (class_exists('CBT_Runtime')) {
-            foreach (array_values($abandoned_attempt_ids) as $abandoned_attempt_id) {
-                CBT_Runtime::clear_attempt_runtime((int) $abandoned_attempt_id);
-            }
-            foreach (array_values($target_attempt_ids) as $target_attempt_id) {
-                CBT_Runtime::clear_attempt_runtime((int) $target_attempt_id);
-            }
-        }
-        if (class_exists('CBT_Active_Attempt_Index')) {
-            foreach ($target_pairs as $pair) {
-                CBT_Active_Attempt_Index::set_active_attempt([
-                    'id' => (int) ($pair['target_attempt_id'] ?? 0),
-                    'exam_id' => (int) ($pair['exam_id'] ?? 0),
-                    'student_id' => (int) ($pair['student_id'] ?? 0),
-                    'status' => 'in_progress',
-                ]);
-            }
-        }
-        $affected_attempt_ids = array_values(array_unique(array_merge(
-            array_values($target_attempt_ids),
-            array_values($abandoned_attempt_ids)
-        )));
-        CBT_Cache::invalidate_attempts($affected_attempt_ids);
-        CBT_Cache::invalidate_users(array_values($affected_user_ids));
-        CBT_Cache::invalidate_analytics();
-        CBT_Cache::invalidate_analytics_exams(array_values(array_unique(array_map(static function (array $pair): int {
-            return (int) ($pair['exam_id'] ?? 0);
-        }, array_values($target_pairs)))));
-        CBT_UI_State::clear_attempt_states_by_attempt_ids($affected_attempt_ids);
-
-        $message = sprintf('Berhasil reset %d attempt sesuai filter.', $reset_total);
-        if ($abandoned_total > 0) {
-            $message .= ' ' . sprintf('%d attempt in_progress lama ditutup otomatis.', $abandoned_total);
-        }
-        $redirect_with($message);
+        self::start_results_bulk_job('reset', $return_context);
     }
 
     public static function handle_bulk_force_complete_attempts(): void
@@ -1379,141 +2359,16 @@ final class CBT_Admin_Results_Service
 
         check_admin_referer('cbt_bulk_force_complete_attempts');
 
-        $return_exam_id = isset($_POST['cbt_exam_id']) ? absint($_POST['cbt_exam_id']) : 0;
-        $return_status = isset($_POST['cbt_attempt_status']) ? sanitize_key((string) wp_unslash($_POST['cbt_attempt_status'])) : '';
-        $return_kelas = isset($_POST['cbt_result_kelas']) ? sanitize_text_field(wp_unslash($_POST['cbt_result_kelas'])) : '';
-        $return_student_keyword = isset($_POST['cbt_student_q']) ? sanitize_text_field(wp_unslash($_POST['cbt_student_q'])) : '';
-        $return_paged = isset($_POST['cbt_results_paged']) ? max(1, absint(wp_unslash($_POST['cbt_results_paged']))) : 1;
-        $allowed_statuses = ['in_progress', 'completed'];
-        if (!in_array($return_status, $allowed_statuses, true)) {
-            $return_status = '';
+        $return_context = self::get_results_page_return_context_from_request();
+        if ((string) ($return_context['status'] ?? '') === 'completed') {
+            self::dispatch_redirect(self::build_results_page_url(
+                $return_context,
+                null,
+                'Filter status completed tidak memiliki attempt in_progress untuk dipaksa selesai.'
+            ));
         }
 
-        $redirect_with = static function (?string $message = null, ?string $error = null) use ($return_exam_id, $return_status, $return_kelas, $return_student_keyword, $return_paged): void {
-            $args = ['page' => 'cbt-results'];
-            if ($return_exam_id > 0) {
-                $args['cbt_exam_id'] = $return_exam_id;
-            }
-            if ($return_status !== '') {
-                $args['cbt_attempt_status'] = $return_status;
-            }
-            if ($return_kelas !== '') {
-                $args['cbt_result_kelas'] = $return_kelas;
-            }
-            if ($return_student_keyword !== '') {
-                $args['cbt_student_q'] = $return_student_keyword;
-            }
-            if ($return_paged > 1) {
-                $args['cbt_results_paged'] = $return_paged;
-            }
-            if ($message !== null && $message !== '') {
-                $args['cbt_msg'] = $message;
-            }
-            if ($error !== null && $error !== '') {
-                $args['cbt_err'] = $error;
-            }
-
-            wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
-            exit;
-        };
-
-        if ($return_status === 'completed') {
-            $redirect_with(null, 'Filter status completed tidak memiliki attempt in_progress untuk dipaksa selesai.');
-        }
-
-        global $wpdb;
-
-        $attempt_table = $wpdb->prefix . 'cbt_attempts';
-        $exam_table = $wpdb->prefix . 'cbt_exams';
-        $is_admin_scope = self::is_admin_scope();
-        $current_user_id = get_current_user_id();
-        $filter_kelas = trim($return_kelas);
-        $filter_student_keyword = trim($return_student_keyword);
-
-        $where_parts = ['1=1'];
-        $where_params = [];
-        if (!$is_admin_scope) {
-            $where_parts[] = 'e.created_by = %d';
-            $where_params[] = $current_user_id;
-        }
-        if ($return_exam_id > 0) {
-            $where_parts[] = 'a.exam_id = %d';
-            $where_params[] = $return_exam_id;
-        }
-        if ($filter_kelas !== '') {
-            $where_parts[] = 'kelas_meta.meta_value = %s';
-            $where_params[] = $filter_kelas;
-        }
-        if ($filter_student_keyword !== '') {
-            $student_like = '%' . $wpdb->esc_like($filter_student_keyword) . '%';
-            $where_parts[] = '(u.user_login LIKE %s OR nisn_meta.meta_value LIKE %s)';
-            $where_params[] = $student_like;
-            $where_params[] = $student_like;
-        }
-        $where_parts[] = "a.status = 'in_progress'";
-        $where_sql = ' WHERE ' . implode(' AND ', $where_parts);
-
-        $target_sql = "SELECT a.id
-                       FROM {$attempt_table} a
-                       INNER JOIN {$exam_table} e ON e.id = a.exam_id
-                       INNER JOIN {$wpdb->users} u ON u.ID = a.student_id
-                       LEFT JOIN (
-                           SELECT user_id, MAX(meta_value) AS meta_value
-                           FROM {$wpdb->usermeta}
-                           WHERE meta_key = 'kode_kelas'
-                           GROUP BY user_id
-                       ) kelas_meta ON kelas_meta.user_id = u.ID
-                       LEFT JOIN (
-                           SELECT user_id, MAX(meta_value) AS meta_value
-                           FROM {$wpdb->usermeta}
-                           WHERE meta_key = 'nisn'
-                           GROUP BY user_id
-                       ) nisn_meta ON nisn_meta.user_id = u.ID
-                       {$where_sql}
-                       ORDER BY a.id DESC";
-        if (!empty($where_params)) {
-            $target_sql = $wpdb->prepare($target_sql, $where_params);
-        }
-
-        $target_rows = $wpdb->get_results($target_sql, ARRAY_A);
-        if (empty($target_rows)) {
-            $redirect_with(null, 'Tidak ada attempt in_progress sesuai filter yang bisa dipaksa selesai.');
-        }
-
-        $target_attempt_ids = [];
-        foreach ((array) $target_rows as $target_row) {
-            $attempt_id = (int) ($target_row['id'] ?? 0);
-            if ($attempt_id <= 0) {
-                continue;
-            }
-
-            $target_attempt_ids[$attempt_id] = $attempt_id;
-        }
-        if (empty($target_attempt_ids)) {
-            $redirect_with(null, 'Tidak ada attempt valid yang bisa dipaksa selesai.');
-        }
-
-        $now = current_time('mysql');
-        $completed_total = 0;
-        foreach (array_values($target_attempt_ids) as $attempt_id) {
-            $completion_result = CBT_REST::finalize_attempt_completion((int) $attempt_id, $now);
-            if (is_wp_error($completion_result)) {
-                continue;
-            }
-
-            $completed_total++;
-        }
-
-        if ($completed_total <= 0) {
-            $redirect_with(null, 'Tidak ada attempt yang berhasil dipaksa selesai.');
-        }
-
-        $failed_total = max(0, count($target_attempt_ids) - $completed_total);
-        if ($failed_total > 0) {
-            $redirect_with(sprintf('Berhasil memaksa %d attempt in_progress menjadi completed.', $completed_total), sprintf('%d attempt gagal diselesaikan. Coba ulang lagi untuk attempt yang tersisa.', $failed_total));
-        }
-
-        $redirect_with(sprintf('Berhasil memaksa %d attempt in_progress menjadi completed.', $completed_total));
+        self::start_results_bulk_job('force_complete', $return_context);
     }
 
 }

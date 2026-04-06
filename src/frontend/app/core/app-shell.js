@@ -15,6 +15,7 @@ export function createAppShellManager(deps) {
     var renderExamStageShell = deps.renderExamStageShell;
     var renderLoginStage = deps.renderLoginStage;
     var renderResultStageShell = deps.renderResultStageShell;
+    var RESULT_PROGRESS_STEP_TOTAL = 4;
 
     function renderThemeToggleControl() {
         var isDark = state.uiTheme === 'dark';
@@ -115,6 +116,170 @@ export function createAppShellManager(deps) {
         }
 
         return '<section class="cbt-card"><p class="cbt-subtitle">Stage tidak dikenali.</p></section>';
+    }
+
+    function renderAuthProgressOverlay() {
+        if (!state.authProgressVisible) {
+            return '';
+        }
+
+        var mode = String(state.authProgressMode || 'login').toLowerCase() === 'logout' ? 'logout' : 'login';
+        var progressPercent = Math.max(0, Math.min(100, Number(state.authProgressPercent) || 0));
+        var progressWidth = progressPercent.toFixed(2);
+        var progressLabel = formatScoreValue(progressPercent);
+        var stepIndex = Math.max(1, Number(state.authProgressStepIndex) || 1);
+        var stepTotal = Math.max(4, Number(state.authProgressStepTotal) || 4);
+        var status = String(state.authProgressStatus || (mode === 'logout' ? 'Menutup sesi...' : 'Memverifikasi login...'));
+        var detail = String(state.authProgressDetail || (mode === 'logout'
+            ? 'Mohon tunggu sebentar, kami sedang memastikan sesi Anda ditutup dengan aman.'
+            : 'Mohon tunggu sebentar, kami sedang memverifikasi akun dan menyiapkan sesi Anda.'
+        ));
+        var title = mode === 'logout' ? 'Logout Sedang Diproses' : 'Login Sedang Diproses';
+        var subtitle = mode === 'logout'
+            ? 'Mohon jangan tutup halaman sampai proses logout selesai.'
+            : 'Mohon jangan refresh halaman saat proses login berjalan.';
+
+        return [
+            '<div class="cbt-auth-progress-overlay" aria-live="polite" aria-busy="true">',
+            '<section class="cbt-auth-progress-shell" role="status" aria-label="' + escapeHtml(title) + '">',
+            '<div class="cbt-auth-progress-card cbt-auth-progress-card--' + escapeHtml(mode) + '">',
+            '<div class="cbt-auth-progress-kicker">' + escapeHtml(mode === 'logout' ? 'Sesi Aman' : 'Auth Progress') + '</div>',
+            '<h3 class="cbt-auth-progress-title">' + escapeHtml(title) + '</h3>',
+            '<p class="cbt-auth-progress-subtitle">' + escapeHtml(subtitle) + '</p>',
+            '<div class="cbt-finish-live-card">',
+            '<div class="cbt-finish-live-head">',
+            '<span class="cbt-finish-live-spinner" aria-hidden="true"></span>',
+            '<div class="cbt-finish-live-copy">',
+            '<strong>' + escapeHtml(status) + '</strong>',
+            '<span>' + escapeHtml(detail) + '</span>',
+            '</div>',
+            '<span class="cbt-finish-live-step">Langkah ' + escapeHtml(stepIndex) + '/' + escapeHtml(stepTotal) + '</span>',
+            '</div>',
+            '<div class="cbt-finish-live-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + escapeHtml(progressWidth) + '" aria-label="Progress autentikasi">',
+            '<span class="cbt-finish-live-progress-fill" style="width: ' + escapeHtml(progressWidth) + '%;"></span>',
+            '</div>',
+            '<p class="cbt-muted">Progress auth: ' + escapeHtml(progressLabel) + '%</p>',
+            '</div>',
+            '</div>',
+            '</section>',
+            '</div>'
+        ].join('');
+    }
+
+    function renderResultProgressOverlay() {
+        if (!state.resultProgressVisible) {
+            return '';
+        }
+
+        var progressPercent = Math.max(0, Math.min(100, Number(state.resultProgressPercent) || 0));
+        var progressWidth = progressPercent.toFixed(2);
+        var progressLabel = formatScoreValue(progressPercent);
+        var stepIndex = Math.max(1, Number(state.resultProgressStepIndex) || 1);
+        var stepTotal = Math.max(RESULT_PROGRESS_STEP_TOTAL, Number(state.resultProgressStepTotal) || RESULT_PROGRESS_STEP_TOTAL);
+        var status = String(state.resultProgressStatus || 'Mengambil hasil attempt');
+        var detail = String(state.resultProgressDetail || 'Mohon tunggu sebentar, kami sedang menyiapkan nilai dan review ujian Anda.');
+
+        return [
+            '<div class="cbt-auth-progress-overlay cbt-result-progress-overlay" aria-live="polite" aria-busy="true">',
+            '<section class="cbt-auth-progress-shell cbt-result-progress-shell" role="status" aria-label="Menyiapkan Hasil Ujian">',
+            '<div class="cbt-auth-progress-card cbt-auth-progress-card--result">',
+            '<div class="cbt-auth-progress-kicker">Result Progress</div>',
+            '<h3 class="cbt-auth-progress-title">Menyiapkan Hasil Ujian</h3>',
+            '<p class="cbt-auth-progress-subtitle">Mohon jangan refresh halaman. Sistem sedang mengambil nilai dan review ujian Anda.</p>',
+            '<div class="cbt-finish-live-card">',
+            '<div class="cbt-finish-live-head">',
+            '<span class="cbt-finish-live-spinner" aria-hidden="true"></span>',
+            '<div class="cbt-finish-live-copy">',
+            '<strong>' + escapeHtml(status) + '</strong>',
+            '<span>' + escapeHtml(detail) + '</span>',
+            '</div>',
+            '<span class="cbt-finish-live-step">Langkah ' + escapeHtml(stepIndex) + '/' + escapeHtml(stepTotal) + '</span>',
+            '</div>',
+            '<div class="cbt-finish-live-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + escapeHtml(progressWidth) + '" aria-label="Progress lihat nilai">',
+            '<span class="cbt-finish-live-progress-fill" style="width: ' + escapeHtml(progressWidth) + '%;"></span>',
+            '</div>',
+            '<p class="cbt-muted">Progress hasil: ' + escapeHtml(progressLabel) + '%</p>',
+            '</div>',
+            '</div>',
+            '</section>',
+            '</div>'
+        ].join('');
+    }
+
+    function renderSessionRecoveryOverlay() {
+        if (!state.sessionRecoveryVisible) {
+            return '';
+        }
+
+        var mode = String(state.sessionRecoveryMode || 'confirm_restore').toLowerCase() === 'exam_restore'
+            ? 'exam_restore'
+            : 'confirm_restore';
+        var progressPercent = Math.max(0, Math.min(100, Number(state.sessionRecoveryPercent) || 0));
+        var progressWidth = progressPercent.toFixed(2);
+        var progressLabel = formatScoreValue(progressPercent);
+        var stepTotal = Math.max(mode === 'exam_restore' ? 7 : 4, Number(state.sessionRecoveryStepTotal) || 0);
+        var stepIndex = Math.max(1, Math.min(stepTotal, Number(state.sessionRecoveryStepIndex) || 1));
+        var status = String(state.sessionRecoveryStatus || (mode === 'exam_restore'
+            ? 'Menyambung attempt ujian'
+            : 'Memulihkan sesi login'
+        ));
+        var detail = String(state.sessionRecoveryDetail || (mode === 'exam_restore'
+            ? 'Kami sedang menyambungkan kembali sesi ujian terakhir Anda.'
+            : 'Kami sedang memulihkan token login dan daftar ujian Anda.'
+        ));
+        var title = mode === 'exam_restore'
+            ? 'Menyambung Sesi Ujian'
+            : 'Memulihkan Konfirmasi Ujian';
+        var slowStage = String(state.sessionRecoverySlowStage || 'normal');
+        var slowCopy = 'Sedang memulihkan sesi Anda';
+        if (slowStage === 'busy') {
+            slowCopy = 'Server sedang padat, kami masih mencoba otomatis';
+        } else if (slowStage === 'hold') {
+            slowCopy = 'Jangan refresh lagi. Sesi masih dipulihkan.';
+        }
+        var retryCount = Math.max(0, Number(state.sessionRecoveryRetryCount) || 0);
+        var retryMarkup = state.sessionRecoveryCanRetry
+            ? [
+                '<div class="cbt-session-recovery-actions">',
+                '<button class="cbt-button cbt-button-primary" data-action="retry-session-recovery" type="button">Coba Sambung Lagi</button>',
+                retryCount > 0
+                    ? '<span class="cbt-session-recovery-retry-meta">Percobaan sambung ulang: ' + escapeHtml(retryCount) + '</span>'
+                    : '',
+                '</div>'
+            ].join('')
+            : '';
+        var examNoteMarkup = mode === 'exam_restore'
+            ? '<p class="cbt-session-recovery-note">Jawaban lokal tetap aman dan akan disinkronkan setelah sesi pulih.</p>'
+            : '';
+
+        return [
+            '<div class="cbt-auth-progress-overlay cbt-session-recovery-overlay" aria-live="polite" aria-busy="true">',
+            '<section class="cbt-auth-progress-shell cbt-session-recovery-shell" role="status" aria-label="' + escapeHtml(title) + '">',
+            '<div class="cbt-auth-progress-card cbt-auth-progress-card--recovery">',
+            '<div class="cbt-auth-progress-kicker">Session Recovery</div>',
+            '<h3 class="cbt-auth-progress-title">' + escapeHtml(title) + '</h3>',
+            '<p class="cbt-auth-progress-subtitle">Jangan refresh lagi. Sistem sedang menyambung sesi Anda.</p>',
+            '<div class="cbt-finish-live-card">',
+            '<div class="cbt-finish-live-head">',
+            '<span class="cbt-finish-live-spinner" aria-hidden="true"></span>',
+            '<div class="cbt-finish-live-copy">',
+            '<strong>' + escapeHtml(status) + '</strong>',
+            '<span>' + escapeHtml(detail) + '</span>',
+            '</div>',
+            '<span class="cbt-finish-live-step">Langkah ' + escapeHtml(stepIndex) + '/' + escapeHtml(stepTotal) + '</span>',
+            '</div>',
+            '<div class="cbt-finish-live-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + escapeHtml(progressWidth) + '" aria-label="Progress pemulihan sesi">',
+            '<span class="cbt-finish-live-progress-fill" style="width: ' + escapeHtml(progressWidth) + '%;"></span>',
+            '</div>',
+            '<p class="cbt-muted">Progress pemulihan: ' + escapeHtml(progressLabel) + '%</p>',
+            '</div>',
+            '<p class="cbt-session-recovery-slow-copy">' + escapeHtml(slowCopy) + '</p>',
+            examNoteMarkup,
+            retryMarkup,
+            '</div>',
+            '</section>',
+            '</div>'
+        ].join('');
     }
 
     function renderFinishConfirmModal() {
@@ -290,9 +455,12 @@ export function createAppShellManager(deps) {
 
     return {
         renderBody: renderBody,
+        renderAuthProgressOverlay: renderAuthProgressOverlay,
         renderFinishConfirmModal: renderFinishConfirmModal,
         renderQuestionFontControls: renderQuestionFontControls,
         renderRichZoomModal: renderRichZoomModal,
+        renderResultProgressOverlay: renderResultProgressOverlay,
+        renderSessionRecoveryOverlay: renderSessionRecoveryOverlay,
         renderThemeToggleControl: renderThemeToggleControl,
         renderTopbar: renderTopbar,
         renderUserPhotoModal: renderUserPhotoModal

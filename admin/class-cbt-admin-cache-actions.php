@@ -4,8 +4,18 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Login_Auth_Snapshot_Cache')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-login-auth-snapshot-cache.php';
+}
+
+if (!class_exists('CBT_Question_Submission_Context_Cache')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-question-submission-context-cache.php';
+}
+
 final class CBT_Admin_Cache_Actions
 {
+    private const TEST_REDIRECT_SIGNAL = '__cbt_admin_cache_redirect__';
+
     public static function handle_cache_action(): void
     {
         if (!CBT_Admin_Cache_Service::can_manage_cache()) {
@@ -50,6 +60,103 @@ final class CBT_Admin_Cache_Actions
                 }
                 CBT_Cache::invalidate_user($user_id);
                 self::redirect_cache_page('Namespace user berhasil di-invalidate.');
+                break;
+            case 'warm_login_snapshot_exam':
+                if ($exam_id <= 0) {
+                    self::redirect_cache_page(null, 'Exam ID tidak valid.');
+                }
+                $exam_row = self::get_cache_exam_row_by_id($exam_id);
+                if (!is_array($exam_row)) {
+                    self::redirect_cache_page(null, 'Exam tidak ditemukan.');
+                }
+                $result = CBT_Login_Auth_Snapshot_Cache::warm_exam_target_snapshots($exam_row, 'cache_exam');
+                self::redirect_cache_page(sprintf(
+                    'Warm login snapshot exam #%d selesai. READY %d/%d. Gagal %d.',
+                    $exam_id,
+                    (int) ($result['ready_count'] ?? 0),
+                    (int) ($result['target_student_count'] ?? 0),
+                    (int) ($result['failure_count'] ?? 0)
+                ));
+                break;
+            case 'clear_login_snapshot_exam':
+                if ($exam_id <= 0) {
+                    self::redirect_cache_page(null, 'Exam ID tidak valid.');
+                }
+                $exam_row = self::get_cache_exam_row_by_id($exam_id);
+                if (!is_array($exam_row)) {
+                    self::redirect_cache_page(null, 'Exam tidak ditemukan.');
+                }
+                $result = CBT_Login_Auth_Snapshot_Cache::clear_exam_target_snapshots($exam_row);
+                self::redirect_cache_page(sprintf(
+                    'Login snapshot exam #%d dibersihkan untuk %d siswa. Keys terhapus %d.',
+                    $exam_id,
+                    (int) ($result['target_student_count'] ?? 0),
+                    (int) ($result['deleted_keys'] ?? 0)
+                ));
+                break;
+            case 'warm_submission_context_exam':
+                if ($exam_id <= 0) {
+                    self::redirect_cache_page(null, 'Exam ID tidak valid.');
+                }
+                $diagnostics = CBT_Question_Submission_Context_Cache::warm_exam_snapshots($exam_id);
+                if ((string) ($diagnostics['snapshot_status'] ?? '') === 'ready') {
+                    self::redirect_cache_page(sprintf(
+                        'Submission context exam #%d siap. READY %d/%d.',
+                        $exam_id,
+                        (int) ($diagnostics['ready_count'] ?? 0),
+                        (int) ($diagnostics['question_count'] ?? 0)
+                    ));
+                }
+                self::redirect_cache_page(null, sprintf(
+                    'Submission context exam #%d belum penuh. READY %d/%d · MISS %d · INVALID %d.',
+                    $exam_id,
+                    (int) ($diagnostics['ready_count'] ?? 0),
+                    (int) ($diagnostics['question_count'] ?? 0),
+                    (int) ($diagnostics['missing_count'] ?? 0),
+                    (int) ($diagnostics['invalid_count'] ?? 0)
+                ));
+                break;
+            case 'clear_submission_context_exam':
+                if ($exam_id <= 0) {
+                    self::redirect_cache_page(null, 'Exam ID tidak valid.');
+                }
+                $result = CBT_Question_Submission_Context_Cache::clear_exam_snapshots($exam_id);
+                self::redirect_cache_page(sprintf(
+                    'Submission context exam #%d dibersihkan. Soal aktif %d. Keys terhapus %d.',
+                    $exam_id,
+                    (int) ($result['question_count'] ?? 0),
+                    (int) ($result['deleted_keys'] ?? 0)
+                ));
+                break;
+            case 'warm_login_snapshot_user':
+                if ($user_id <= 0) {
+                    self::redirect_cache_page(null, 'User ID tidak valid.');
+                }
+                CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot($user_id, 'cache_user');
+                $diagnostics = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics($user_id);
+                if ((string) ($diagnostics['snapshot_status'] ?? '') === 'ready') {
+                    self::redirect_cache_page(sprintf(
+                        'Login snapshot siswa #%d siap. TTL %d detik.',
+                        $user_id,
+                        (int) ($diagnostics['ttl_seconds'] ?? 0)
+                    ));
+                }
+                self::redirect_cache_page(null, sprintf(
+                    'Login snapshot siswa #%d belum valid. %s',
+                    $user_id,
+                    (string) ($diagnostics['snapshot_message'] ?? '')
+                ));
+                break;
+            case 'clear_login_snapshot_user':
+                if ($user_id <= 0) {
+                    self::redirect_cache_page(null, 'User ID tidak valid.');
+                }
+                $deleted = CBT_Login_Auth_Snapshot_Cache::clear_user_snapshot($user_id);
+                self::redirect_cache_page(sprintf(
+                    'Login snapshot siswa #%d dibersihkan. Keys terhapus %d.',
+                    $user_id,
+                    $deleted
+                ));
                 break;
             case 'invalidate_attempt':
                 if ($attempt_id <= 0) {
@@ -107,6 +214,37 @@ final class CBT_Admin_Cache_Actions
         }
 
         wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+        if (defined('PHPUNIT_COMPOSER_INSTALL')) {
+            throw new RuntimeException(self::TEST_REDIRECT_SIGNAL);
+        }
         exit;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_cache_exam_row_by_id(int $exam_id): ?array
+    {
+        global $wpdb;
+
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0 || !is_object($wpdb)) {
+            return null;
+        }
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $subject_table = $wpdb->prefix . 'cbt_subjects';
+        $sql = "SELECT e.id, e.title, e.status, e.target_kelas, s.name AS subject_name
+            FROM {$exam_table} e
+            LEFT JOIN {$subject_table} s ON s.id = e.subject_id
+            WHERE e.id = %d
+            LIMIT 1";
+        $prepared = method_exists($wpdb, 'prepare') ? $wpdb->prepare($sql, $exam_id) : $sql;
+        $rows = method_exists($wpdb, 'get_results') ? $wpdb->get_results($prepared, ARRAY_A) : [];
+        if (!is_array($rows) || !isset($rows[0]) || !is_array($rows[0])) {
+            return null;
+        }
+
+        return $rows[0];
     }
 }

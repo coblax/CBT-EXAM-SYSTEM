@@ -8,6 +8,10 @@ if (!class_exists('CBT_Student_Profile_Cache')) {
     require_once __DIR__ . '/class-cbt-student-profile-cache.php';
 }
 
+if (!class_exists('CBT_Login_Auth_Snapshot_Cache')) {
+    require_once __DIR__ . '/class-cbt-login-auth-snapshot-cache.php';
+}
+
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
@@ -52,38 +56,12 @@ class CBT_Auth
         }
 
         $identifier = trim((string) $identifier);
-        $user = self::find_user_by_identifier($identifier);
-
-        if (!$user || !wp_check_password($password, $user->user_pass, $user->ID)) {
-            return new WP_Error('invalid_credentials', 'Invalid identifier or password', ['status' => 401]);
+        $snapshot_login = self::login_via_auth_snapshot($identifier, $password);
+        if ($snapshot_login !== null) {
+            return $snapshot_login;
         }
 
-        $role = self::resolve_primary_role($user);
-        $user_id = (int) $user->ID;
-        if (self::has_recent_active_login_session($user_id)) {
-            return new WP_Error(
-                'session_already_active',
-                'Akun ini masih aktif di browser lain. Logout dulu dari browser sebelumnya atau minta admin reset login.',
-                ['status' => 409]
-            );
-        }
-
-        $session_key = self::reset_login_session($user_id);
-        $token = self::generate_token($user_id, $role, $session_key);
-        $profile_snapshot = CBT_Student_Profile_Cache::get_snapshot($user_id);
-
-        return [
-            'token' => $token,
-            'user_id' => $user_id,
-            'role' => $role,
-            'display_name' => (string) $user->display_name,
-            'username' => (string) $user->user_login,
-            'email' => (string) $user->user_email,
-            'kode_kelas' => (string) ($profile_snapshot['kode_kelas'] ?? ''),
-            'kode_ruang' => (string) ($profile_snapshot['kode_ruang'] ?? ''),
-            'agama' => (string) ($profile_snapshot['agama'] ?? ''),
-            'foto' => (string) ($profile_snapshot['foto'] ?? ''),
-        ];
+        return self::login_via_canonical_auth($identifier, $password, true);
     }
 
     public static function generate_token(int $user_id, string $role, string $session_key): string
@@ -435,6 +413,122 @@ class CBT_Auth
         }
 
         return $token;
+    }
+
+    /**
+     * @return array<string,mixed>|WP_Error|null
+     */
+    private static function login_via_auth_snapshot(string $identifier, string $password)
+    {
+        if (!class_exists('CBT_Login_Auth_Snapshot_Cache')
+            || !method_exists('CBT_Login_Auth_Snapshot_Cache', 'get_snapshot_by_identifier')) {
+            return null;
+        }
+
+        $snapshot = CBT_Login_Auth_Snapshot_Cache::get_snapshot_by_identifier($identifier);
+        if (!is_array($snapshot)) {
+            return null;
+        }
+
+        $user_id = (int) ($snapshot['user_id'] ?? 0);
+        $password_hash = (string) ($snapshot['password_hash'] ?? '');
+        $role = sanitize_key((string) ($snapshot['role'] ?? ''));
+        if ($user_id <= 0 || $password_hash === '' || $role === '') {
+            return null;
+        }
+
+        if (!wp_check_password($password, $password_hash, $user_id)) {
+            return null;
+        }
+
+        return self::complete_login(
+            $user_id,
+            $role,
+            [
+                'display_name' => (string) ($snapshot['display_name'] ?? ''),
+                'username' => (string) ($snapshot['user_login'] ?? ''),
+                'email' => (string) ($snapshot['user_email'] ?? ''),
+            ],
+            [
+                'kode_kelas' => (string) ($snapshot['kode_kelas'] ?? ''),
+                'kode_ruang' => (string) ($snapshot['kode_ruang'] ?? ''),
+                'agama' => (string) ($snapshot['agama'] ?? ''),
+                'foto' => (string) ($snapshot['foto'] ?? ''),
+            ]
+        );
+    }
+
+    /**
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function login_via_canonical_auth(string $identifier, string $password, bool $rewrite_snapshot_on_success = false)
+    {
+        $user = self::find_user_by_identifier($identifier);
+
+        if (!$user || !wp_check_password($password, $user->user_pass, $user->ID)) {
+            return new WP_Error('invalid_credentials', 'Invalid identifier or password', ['status' => 401]);
+        }
+
+        $role = self::resolve_primary_role($user);
+        $user_id = (int) $user->ID;
+        $profile_snapshot = CBT_Student_Profile_Cache::get_snapshot($user_id);
+        $result = self::complete_login(
+            $user_id,
+            $role,
+            [
+                'display_name' => (string) $user->display_name,
+                'username' => (string) $user->user_login,
+                'email' => (string) $user->user_email,
+            ],
+            $profile_snapshot
+        );
+
+        if (!is_wp_error($result) && $rewrite_snapshot_on_success && $role === 'siswa') {
+            try {
+                CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot($user_id, 'canonical_login');
+            } catch (Throwable $throwable) {
+                // Snapshot login bersifat akselerator, jadi kegagalannya tidak boleh memblokir auth utama.
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array{display_name:string,username:string,email:string} $identity
+     * @param array<string,mixed> $profile_snapshot
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function complete_login(int $user_id, string $role, array $identity, array $profile_snapshot)
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return new WP_Error('invalid_credentials', 'Invalid identifier or password', ['status' => 401]);
+        }
+
+        if (self::has_recent_active_login_session($user_id)) {
+            return new WP_Error(
+                'session_already_active',
+                'Akun ini masih aktif di browser lain. Logout dulu dari browser sebelumnya atau minta admin reset login.',
+                ['status' => 409]
+            );
+        }
+
+        $session_key = self::reset_login_session($user_id);
+        $token = self::generate_token($user_id, $role, $session_key);
+
+        return [
+            'token' => $token,
+            'user_id' => $user_id,
+            'role' => $role,
+            'display_name' => (string) ($identity['display_name'] ?? ''),
+            'username' => (string) ($identity['username'] ?? ''),
+            'email' => (string) ($identity['email'] ?? ''),
+            'kode_kelas' => (string) ($profile_snapshot['kode_kelas'] ?? ''),
+            'kode_ruang' => (string) ($profile_snapshot['kode_ruang'] ?? ''),
+            'agama' => (string) ($profile_snapshot['agama'] ?? ''),
+            'foto' => (string) ($profile_snapshot['foto'] ?? ''),
+        ];
     }
 
     private static function generate_exam_token(int $length = self::EXAM_TOKEN_LENGTH): string

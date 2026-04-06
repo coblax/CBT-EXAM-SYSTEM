@@ -13,6 +13,21 @@ export function createRenderCycleManager(deps) {
     var refreshDebugPanel = deps.refreshDebugPanel;
     var renderExamRegions = deps.renderExamRegions;
     var renderBody = deps.renderBody;
+    var renderAuthProgressOverlay = typeof deps.renderAuthProgressOverlay === 'function'
+        ? deps.renderAuthProgressOverlay
+        : function () {
+            return '';
+        };
+    var renderResultProgressOverlay = typeof deps.renderResultProgressOverlay === 'function'
+        ? deps.renderResultProgressOverlay
+        : function () {
+            return '';
+        };
+    var renderSessionRecoveryOverlay = typeof deps.renderSessionRecoveryOverlay === 'function'
+        ? deps.renderSessionRecoveryOverlay
+        : function () {
+            return '';
+        };
     var renderFinishConfirmModal = deps.renderFinishConfirmModal;
     var renderRichZoomModal = deps.renderRichZoomModal;
     var renderTopbar = deps.renderTopbar;
@@ -39,6 +54,42 @@ export function createRenderCycleManager(deps) {
         'questionFooterProgress',
         'questionFooterSync'
     ];
+
+    function clampScrollOffset(value, maxOffset) {
+        var safeValue = Number(value);
+        var safeMaxOffset = Math.max(0, Number(maxOffset) || 0);
+
+        if (!Number.isFinite(safeValue)) {
+            safeValue = 0;
+        }
+
+        return Math.max(0, Math.min(safeMaxOffset, safeValue));
+    }
+
+    function setElementScrollPosition(element, axis, nextOffset) {
+        if (!(element instanceof HTMLElement)) {
+            return;
+        }
+
+        var isHorizontal = axis === 'left';
+        var maxOffset = isHorizontal
+            ? Math.max(0, (Number(element.scrollWidth) || 0) - (Number(element.clientWidth) || 0))
+            : Math.max(0, (Number(element.scrollHeight) || 0) - (Number(element.clientHeight) || 0));
+        var safeOffset = clampScrollOffset(nextOffset, maxOffset);
+
+        if (isHorizontal) {
+            if (Math.abs((Number(element.scrollLeft) || 0) - safeOffset) < 1) {
+                return;
+            }
+            element.scrollLeft = safeOffset;
+            return;
+        }
+
+        if (Math.abs((Number(element.scrollTop) || 0) - safeOffset) < 1) {
+            return;
+        }
+        element.scrollTop = safeOffset;
+    }
 
     function ensureCurrentNavigationItemVisible() {
         if (state.stage !== 'exam' || !state.navPanelVisible) {
@@ -68,24 +119,47 @@ export function createRenderCycleManager(deps) {
             return;
         }
 
-        var gridRect = navGrid.getBoundingClientRect();
-        var itemRect = currentItem.getBoundingClientRect();
         var gutter = 14;
-        var outsideViewport;
         if (treatAsTopLayout) {
-            outsideViewport = itemRect.left < (gridRect.left + gutter) || itemRect.right > (gridRect.right - gutter);
-        } else {
-            outsideViewport = itemRect.top < (gridRect.top + gutter) || itemRect.bottom > (gridRect.bottom - gutter);
-        }
+            var itemLeft = Number(currentItem.offsetLeft) || 0;
+            var itemWidth = Number(currentItem.offsetWidth) || 0;
+            var viewportLeft = Number(navGrid.scrollLeft) || 0;
+            var viewportRight = viewportLeft + (Number(navGrid.clientWidth) || 0);
+            var itemRight = itemLeft + itemWidth;
 
-        if (!outsideViewport) {
+            if (itemLeft < (viewportLeft + gutter)) {
+                setElementScrollPosition(navGrid, 'left', itemLeft - gutter);
+                return;
+            }
+
+            if (itemRight > (viewportRight - gutter)) {
+                setElementScrollPosition(
+                    navGrid,
+                    'left',
+                    itemLeft - (((Number(navGrid.clientWidth) || 0) - itemWidth) / 2)
+                );
+            }
             return;
         }
 
-        currentItem.scrollIntoView({
-            block: 'nearest',
-            inline: treatAsTopLayout ? 'center' : 'nearest'
-        });
+        var itemTop = Number(currentItem.offsetTop) || 0;
+        var itemHeight = Number(currentItem.offsetHeight) || 0;
+        var viewportTop = Number(navGrid.scrollTop) || 0;
+        var viewportBottom = viewportTop + (Number(navGrid.clientHeight) || 0);
+        var itemBottom = itemTop + itemHeight;
+
+        if (itemTop < (viewportTop + gutter)) {
+            setElementScrollPosition(navGrid, 'top', itemTop - gutter);
+            return;
+        }
+
+        if (itemBottom > (viewportBottom - gutter)) {
+            setElementScrollPosition(
+                navGrid,
+                'top',
+                itemTop - (((Number(navGrid.clientHeight) || 0) - itemHeight) / 2)
+            );
+        }
     }
 
     function updateNavigationGridRows() {
@@ -306,7 +380,7 @@ export function createRenderCycleManager(deps) {
         pendingRenderReason = 'unknown';
         pendingRenderMeta = {};
 
-        var loadingMarkup = state.busy && state.stage !== 'exam' && state.stage !== 'login'
+        var loadingMarkup = state.busy && !state.sessionRecoveryVisible && !state.resultProgressVisible && state.stage !== 'exam' && state.stage !== 'login'
             ? '<div class="cbt-loading" role="status" aria-live="polite"><span class="cbt-loading-dot" aria-hidden="true"></span><span>Memproses...</span></div>'
             : '';
         var showTopbar = state.stage !== 'login';
@@ -326,6 +400,9 @@ export function createRenderCycleManager(deps) {
             renderFinishConfirmModal(),
             renderRichZoomModal(),
             renderUserPhotoModal(),
+            renderAuthProgressOverlay(),
+            renderResultProgressOverlay(),
+            renderSessionRecoveryOverlay(),
             '</div>'
         ].join('');
 
