@@ -1173,6 +1173,16 @@ final class CBT_Admin_Exams_Page
             $session_runtime_delivery_status_label = 'MISS';
         }
         $session_runtime_delivery_status_tone = sanitize_html_class((string) ($session_runtime['delivery_status_tone'] ?? 'warning'), 'warning');
+        $session_runtime_start_gate = is_array($session_runtime['start_gate'] ?? null) ? $session_runtime['start_gate'] : [];
+        $session_runtime_start_gate_status_label = trim((string) ($session_runtime_start_gate['status_label'] ?? 'DISABLED'));
+        if ($session_runtime_start_gate_status_label === '') {
+            $session_runtime_start_gate_status_label = 'DISABLED';
+        }
+        $session_runtime_start_gate_status_tone = sanitize_html_class((string) ($session_runtime_start_gate['status_tone'] ?? 'warning'), 'warning');
+        $session_runtime_start_gate_queue_depth = max(0, (int) ($session_runtime_start_gate['queue_depth'] ?? 0));
+        $session_runtime_start_gate_bucket_tokens = max(0, (float) ($session_runtime_start_gate['bucket_tokens'] ?? 0));
+        $session_runtime_start_gate_release_rate = trim((string) ($session_runtime_start_gate['release_rate_label'] ?? '50 / 5 detik'));
+        $session_runtime_start_gate_oldest_wait = max(0, (int) ($session_runtime_start_gate['oldest_wait_seconds'] ?? 0));
         $session_runtime_redis_first_count = max(0, (int) ($session_runtime['redis_first_count'] ?? 0));
         $session_runtime_legacy_count = max(0, (int) ($session_runtime['legacy_count'] ?? max(0, $session_runtime_attempt_total - $session_runtime_redis_first_count)));
         $session_runtime_session_ready_count = max(0, (int) ($session_runtime['session_ready_count'] ?? 0));
@@ -1237,6 +1247,26 @@ final class CBT_Admin_Exams_Page
                         <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html((string) $session_runtime_attempt_total); ?></strong>
                     </div>
                     <div class="cbt-exam-snapshot-summary-card">
+                        <span class="cbt-exam-snapshot-summary-label">Start Gate</span>
+                        <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($session_runtime_start_gate_status_label); ?></strong>
+                    </div>
+                    <div class="cbt-exam-snapshot-summary-card">
+                        <span class="cbt-exam-snapshot-summary-label">Queue Depth</span>
+                        <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html((string) $session_runtime_start_gate_queue_depth); ?></strong>
+                    </div>
+                    <div class="cbt-exam-snapshot-summary-card">
+                        <span class="cbt-exam-snapshot-summary-label">Bucket Tokens</span>
+                        <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html(number_format_i18n($session_runtime_start_gate_bucket_tokens, 1)); ?></strong>
+                    </div>
+                    <div class="cbt-exam-snapshot-summary-card">
+                        <span class="cbt-exam-snapshot-summary-label">Release Rate</span>
+                        <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($session_runtime_start_gate_release_rate !== '' ? $session_runtime_start_gate_release_rate : '50 / 5 detik'); ?></strong>
+                    </div>
+                    <div class="cbt-exam-snapshot-summary-card">
+                        <span class="cbt-exam-snapshot-summary-label">Oldest Wait</span>
+                        <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($session_runtime_start_gate_oldest_wait > 0 ? gmdate('i:s', $session_runtime_start_gate_oldest_wait) : '00:00'); ?></strong>
+                    </div>
+                    <div class="cbt-exam-snapshot-summary-card">
                         <span class="cbt-exam-snapshot-summary-label">Redis-First</span>
                         <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($session_runtime_redis_first_count . ' / ' . $session_runtime_attempt_total); ?></strong>
                     </div>
@@ -1266,7 +1296,7 @@ final class CBT_Admin_Exams_Page
                         <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Exam-level · ' . (int) ($session_runtime_delivery_snapshot['snapshot_item_count'] ?? 0) . ' soal'); ?></span>
                     </div>
                 </div>
-                <p class="cbt-exam-snapshot-note">Gunakan tab ini untuk memeriksa apakah session snapshot dan contract snapshot per attempt sudah siap dipakai oleh request live siswa. Delivery snapshot diringkas sekali di level exam karena sumbernya memang shared untuk seluruh attempt exam ini.</p>
+                <p class="cbt-exam-snapshot-note">Gunakan tab ini untuk memeriksa apakah session snapshot dan contract snapshot per attempt sudah siap dipakai oleh request live siswa. Start gate diringkas di level exam untuk menunjukkan apakah burst `start_attempt` sedang dibuka normal atau sedang melepas antrean bertahap. Delivery snapshot diringkas sekali di level exam karena sumbernya memang shared untuk seluruh attempt exam ini.</p>
                 <div class="cbt-exam-snapshot-row-actions">
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form">
                         <?php wp_nonce_field('cbt_warm_exam_delivery_snapshot'); ?>
@@ -1284,9 +1314,14 @@ final class CBT_Admin_Exams_Page
                 <?php if (!empty($session_runtime_issue_flags)): ?>
                     <div class="cbt-exam-snapshot-detail-grid">
                         <span><strong>Actionable Flags:</strong> <?php echo esc_html(implode(' · ', $session_runtime_issue_flags)); ?></span>
+                        <span><strong>Start Gate:</strong> <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($session_runtime_start_gate_status_tone); ?>"><?php echo esc_html($session_runtime_start_gate_status_label); ?></span></span>
                         <?php if ($session_runtime_low_remaining_count > 0): ?>
                             <span><strong>Low Remaining:</strong> <?php echo esc_html((string) $session_runtime_low_remaining_count); ?></span>
                         <?php endif; ?>
+                    </div>
+                <?php else: ?>
+                    <div class="cbt-exam-snapshot-detail-grid">
+                        <span><strong>Start Gate:</strong> <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($session_runtime_start_gate_status_tone); ?>"><?php echo esc_html($session_runtime_start_gate_status_label); ?></span></span>
                     </div>
                 <?php endif; ?>
                 <?php if (!empty($session_runtime_fallback_breakdown)): ?>

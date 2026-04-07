@@ -117,6 +117,11 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Monitor Session Runtime', $html);
         self::assertStringContainsString('Pantau attempt siswa yang sedang `in_progress`', $html);
         self::assertStringContainsString('Attempt Aktif', $html);
+        self::assertStringContainsString('Start Gate', $html);
+        self::assertStringContainsString('Queue Depth', $html);
+        self::assertStringContainsString('Bucket Tokens', $html);
+        self::assertStringContainsString('Release Rate', $html);
+        self::assertStringContainsString('Oldest Wait', $html);
         self::assertStringContainsString('Redis-First', $html);
         self::assertStringContainsString('Legacy', $html);
         self::assertStringContainsString('Session Ready', $html);
@@ -129,6 +134,8 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Detail Delivery Snapshot', $html);
         self::assertStringContainsString('Actionable Flags:', $html);
         self::assertStringContainsString('Fallback Breakdown:', $html);
+        self::assertStringContainsString('GATED', $html);
+        self::assertStringContainsString('50 / 5 detik', $html);
         self::assertStringContainsString('Delivery Storage Key:', $html);
         self::assertStringContainsString('<th>Runtime Answers</th>', $html);
         self::assertStringContainsString('<th>Issue Summary</th>', $html);
@@ -557,6 +564,14 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                     ],
                     'session_runtime' => [
                         'attempt_total' => 1,
+                        'start_gate' => [
+                            'status_label' => 'GATED',
+                            'status_tone' => 'warning',
+                            'queue_depth' => 14,
+                            'bucket_tokens' => 3.0,
+                            'release_rate_label' => '50 / 5 detik',
+                            'oldest_wait_seconds' => 11,
+                        ],
                         'redis_first_count' => 0,
                         'legacy_count' => 1,
                         'session_ready_count' => 1,

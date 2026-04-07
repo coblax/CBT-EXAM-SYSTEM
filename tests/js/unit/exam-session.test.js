@@ -662,6 +662,89 @@ describe('createExamSessionManager', function () {
         expect(fixture.calls.loadQuestionWindow).toHaveLength(1);
     });
 
+    it('waits on queued start_attempt responses and continues automatically when admitted', async function () {
+        var restoredSnapshot = buildCachedQuestionSnapshot(40);
+        var fixture = createFixture({
+            restoredSnapshot,
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: ''
+                    }
+                ],
+                selectedExamId: 55
+            },
+            apiRequest: async function (endpoint, options) {
+                if (endpoint === 'exams') {
+                    return {
+                        current_user: null,
+                        items: [
+                            {
+                                id: 55,
+                                duration_minutes: 60,
+                                is_class_allowed: 1,
+                                latest_attempt_id: 0,
+                                latest_attempt_status: ''
+                            }
+                        ]
+                    };
+                }
+
+                if (endpoint === 'ui_state') {
+                    return { attempt_state: null };
+                }
+
+                if (endpoint !== 'start_attempt') {
+                    throw new Error('Unexpected endpoint: ' + String(endpoint));
+                }
+
+                var body = options && options.body ? options.body : {};
+                if (String(body.queue_ticket || '') === 'gate-ticket-1') {
+                    return {
+                        attempt_id: 77,
+                        duration_minutes: 60,
+                        started_at: '2026-04-03 05:00:00',
+                        status: 'started',
+                        question_order_signature: restoredSnapshot.questionOrderSignature,
+                        question_revision: restoredSnapshot.questionRevision
+                    };
+                }
+
+                return {
+                    status: 'queued',
+                    queue_ticket: 'gate-ticket-1',
+                    queue_position: 14,
+                    poll_after_ms: 0,
+                    estimated_wait_seconds: 2,
+                    gate_capacity: 50,
+                    gate_window_seconds: 5
+                };
+            }
+        });
+
+        await fixture.manager.handleStartExam();
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.error).toBe('');
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint + ':' + String(
+                entry.options && entry.options.body && entry.options.body.queue_ticket ? 'queue' : 'fresh'
+            );
+        })).toEqual([
+            'exams:fresh',
+            'start_attempt:fresh',
+            'start_attempt:queue',
+            'ui_state:fresh'
+        ]);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return String(snapshot.openingAttemptProgressStatus || '').indexOf('Menunggu giliran masuk ujian') >= 0;
+        })).toBe(true);
+    });
+
     it('refreshes the exam list before viewing results and reroutes to start when an admin reset makes the attempt active again', async function () {
         var restoredSnapshot = buildCachedQuestionSnapshot(40);
         var fixture = createFixture({

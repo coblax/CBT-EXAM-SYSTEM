@@ -239,6 +239,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         $this->bootstrapStartAttemptScaffold();
         $this->useFakeRuntimeRedisClient();
         $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartAttemptGateRedis();
         $this->useFakeStartSnapshotRedis();
         $this->useFakeAttemptSessionSnapshotRedis();
         $this->useFakeAttemptContractSnapshotRedis();
@@ -304,6 +305,112 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertCount(1, $optionOrder);
         self::assertCount(3, $optionOrder['201']);
         self::assertSame(123, CBT_Active_Attempt_Index::get_active_attempt_id(7, 15));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_returns_queued_payload_when_gate_capacity_is_exhausted(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartAttemptGateRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+        $GLOBALS['cbt_test_start_attempt_gate_now'] = 1000.0;
+
+        for ($index = 1; $index <= 50; $index++) {
+            CBT_Start_Attempt_Gate_Service::evaluate_request(15, 1000 + $index);
+        }
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [],
+            insertId: 123
+        );
+
+        $response = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('queued', $response['status']);
+        self::assertNotSame('', (string) $response['queue_ticket']);
+        self::assertSame(1, $response['queue_position']);
+        self::assertSame(0, $wpdb->latestAttemptQueryCount);
+        self::assertSame(0, $wpdb->insertCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_with_queue_ticket_is_admitted_when_ticket_reaches_head(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartAttemptGateRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+        $GLOBALS['cbt_test_start_attempt_gate_now'] = 1000.0;
+
+        for ($index = 1; $index <= 50; $index++) {
+            CBT_Start_Attempt_Gate_Service::evaluate_request(15, 2000 + $index);
+        }
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [],
+            insertId: 123
+        );
+
+        $queued = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+        ]));
+
+        $GLOBALS['cbt_test_start_attempt_gate_now'] = 1000.6;
+
+        $started = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+            'queue_ticket' => (string) ($queued['queue_ticket'] ?? ''),
+        ]));
+
+        self::assertFalse(is_wp_error($queued));
+        self::assertSame('queued', $queued['status']);
+        self::assertFalse(is_wp_error($started));
+        self::assertSame('started', $started['status']);
+        self::assertSame(123, $started['attempt_id']);
+        self::assertSame(1, $wpdb->latestAttemptQueryCount);
+        self::assertSame(1, $wpdb->insertCalls);
     }
 
     private function bootstrapStartAttemptScaffold(): void
@@ -389,6 +496,7 @@ PHP);
 
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-runtime.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-active-attempt-index.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-gate-service.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
     }
 
@@ -473,6 +581,23 @@ PHP);
         $attemptedProperty->setValue(null, true);
 
         $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeStartAttemptGateRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Start_Attempt_Gate_Service::class);
+
+        $redisProperty = $reflection->getProperty('gate_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('gate_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('gate_redis_last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, '');
     }

@@ -332,6 +332,29 @@ export function createExamSessionManager(deps) {
         return shouldRecoverSlowStartAttempt(error) || isStartAttemptNotFoundError(error);
     }
 
+    function isQueuedStartAttemptPayload(payload) {
+        return !!payload
+            && typeof payload === 'object'
+            && String(payload.status || '').toLowerCase() === 'queued'
+            && String(payload.queue_ticket || '').trim() !== '';
+    }
+
+    function buildQueuedStartAttemptDetail(payload) {
+        var queuePosition = Math.max(0, Number(payload && payload.queue_position) || 0);
+        var estimatedWaitSeconds = Math.max(0, Number(payload && payload.estimated_wait_seconds) || 0);
+        var parts = [];
+
+        if (queuePosition > 0) {
+            parts.push('Posisi antrean ' + String(queuePosition) + '.');
+        }
+        if (estimatedWaitSeconds > 0) {
+            parts.push('Perkiraan tunggu sekitar ' + String(estimatedWaitSeconds) + ' detik.');
+        }
+        parts.push('Server sedang melepas sesi masuk secara bertahap agar tetap stabil.');
+
+        return parts.join(' ');
+    }
+
     function getExamLatestAttemptStatus(exam) {
         return String(exam && exam.latest_attempt_status ? exam.latest_attempt_status : '').toLowerCase();
     }
@@ -457,6 +480,83 @@ export function createExamSessionManager(deps) {
         }
 
         throw new Error('Server masih sibuk menyiapkan sesi ujian. Coba lagi beberapa saat.');
+    }
+
+    async function waitForQueuedStartAttempt(selectedExam, submittedToken, queuedPayload) {
+        var examId = Number(selectedExam && selectedExam.id) || 0;
+        var activePayload = queuedPayload;
+        var hasRetriedFreshStart = false;
+        var hasLoggedQueueState = false;
+        var pollTimeoutMs = Math.max(5000, Math.min(startAttemptTimeoutMs, 8000));
+        var queueDeadlineAt = Date.now() + Math.max(startAttemptRecoveryTimeoutMs, 30000);
+
+        while (isQueuedStartAttemptPayload(activePayload)) {
+            if (Date.now() > queueDeadlineAt) {
+                return await recoverSlowStartAttempt(
+                    selectedExam,
+                    submittedToken,
+                    new Error('Server masih menahan antrean start attempt.')
+                );
+            }
+
+            var queueTicket = String(activePayload && activePayload.queue_ticket ? activePayload.queue_ticket : '').trim();
+            var queuePosition = Math.max(0, Number(activePayload && activePayload.queue_position) || 0);
+            var pollAfterMs = Math.max(0, Number(activePayload && activePayload.poll_after_ms) || 1000);
+            var estimatedWaitSeconds = Math.max(0, Number(activePayload && activePayload.estimated_wait_seconds) || 0);
+
+            updateOpeningAttemptProgress(
+                20,
+                1,
+                'Menunggu giliran masuk ujian',
+                buildQueuedStartAttemptDetail(activePayload)
+            );
+
+            if (!hasLoggedQueueState) {
+                recordTimelineEntry('attempt:start:queued', 'Start attempt masuk antrean gate exam.', {
+                    attemptId: Number(state.attemptId) || 0,
+                    selectedExamId: examId,
+                    queuePosition: queuePosition,
+                    estimatedWaitSeconds: estimatedWaitSeconds,
+                    stage: 'exam'
+                });
+                recordActionTrailEntry('attempt:start:queued', 'Menunggu giliran masuk ujian.', {
+                    selectedExamId: examId,
+                    queuePosition: queuePosition,
+                    estimatedWaitSeconds: estimatedWaitSeconds
+                });
+                hasLoggedQueueState = true;
+            }
+
+            await delay(pollAfterMs);
+
+            try {
+                activePayload = await requestStartAttempt({
+                    exam_id: examId,
+                    exam_token: submittedToken,
+                    queue_ticket: queueTicket
+                }, {
+                    timeoutMs: pollTimeoutMs,
+                    timeoutMessage: 'Masih menunggu giliran sesi ujian.'
+                });
+            } catch (pollError) {
+                if (shouldRecoverSlowStartAttempt(pollError)) {
+                    return await recoverSlowStartAttempt(selectedExam, submittedToken, pollError);
+                }
+
+                if (!hasRetriedFreshStart && isStartAttemptNotFoundError(pollError)) {
+                    hasRetriedFreshStart = true;
+                    activePayload = await requestStartAttempt({
+                        exam_id: examId,
+                        exam_token: submittedToken
+                    });
+                    continue;
+                }
+
+                throw pollError;
+            }
+        }
+
+        return activePayload;
     }
 
     function resetOpeningAttemptState() {
@@ -1182,6 +1282,9 @@ export function createExamSessionManager(deps) {
                     exam_id: Number(selectedExam.id) || 0,
                     exam_token: submittedToken
                 });
+                if (isQueuedStartAttemptPayload(startPayload)) {
+                    startPayload = await waitForQueuedStartAttempt(selectedExam, submittedToken, startPayload);
+                }
             } catch (startError) {
                 if (!shouldRecoverSlowStartAttempt(startError)) {
                     throw startError;

@@ -16,6 +16,10 @@ if (!class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-exam-start-attempt-snapshot-cache.php';
 }
 
+if (!class_exists('CBT_Start_Attempt_Gate_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-start-attempt-gate-service.php';
+}
+
 if (!class_exists('CBT_Attempt_Session_Snapshot_Cache')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-attempt-session-snapshot-cache.php';
 }
@@ -4259,9 +4263,25 @@ final class CBT_Admin_Exams_Service
 
         $exam_id = (int) ($exam_row['id'] ?? 0);
         $exam_duration_minutes = max(0, (int) ($exam_row['duration_minutes'] ?? 0));
+        $start_gate = class_exists('CBT_Start_Attempt_Gate_Service')
+            ? CBT_Start_Attempt_Gate_Service::get_exam_diagnostics($exam_id)
+            : [
+                'redis_available' => false,
+                'redis_error' => '',
+                'status_label' => 'DISABLED',
+                'status_tone' => 'warning',
+                'status_slug' => 'disabled',
+                'queue_depth' => 0,
+                'bucket_tokens' => 50.0,
+                'gate_capacity' => 50,
+                'gate_window_seconds' => 5,
+                'release_rate_label' => '50 / 5 detik',
+                'oldest_wait_seconds' => 0,
+            ];
         if ($exam_id <= 0) {
             return [
                 'attempt_total' => 0,
+                'start_gate' => $start_gate,
                 'delivery_snapshot' => [],
                 'delivery_status_label' => 'UNAVAILABLE',
                 'delivery_status_tone' => 'error',
@@ -4295,6 +4315,7 @@ final class CBT_Admin_Exams_Service
         if (empty($attempt_rows)) {
             return [
                 'attempt_total' => 0,
+                'start_gate' => $start_gate,
                 'delivery_snapshot' => [],
                 'delivery_status_label' => 'MISS',
                 'delivery_status_tone' => 'warning',
@@ -4522,6 +4543,7 @@ final class CBT_Admin_Exams_Service
 
         return [
             'attempt_total' => count($rows),
+            'start_gate' => $start_gate,
             'delivery_snapshot' => $delivery_diagnostics,
             'delivery_status_label' => (string) $delivery_status_meta['label'],
             'delivery_status_tone' => (string) $delivery_status_meta['tone'],

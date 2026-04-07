@@ -20,6 +20,10 @@ if (!class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
     require_once __DIR__ . '/class-cbt-exam-start-attempt-snapshot-cache.php';
 }
 
+if (!class_exists('CBT_Start_Attempt_Gate_Service')) {
+    require_once __DIR__ . '/class-cbt-start-attempt-gate-service.php';
+}
+
 if (!class_exists('CBT_Attempt_Question_Contract_Cache')) {
     require_once __DIR__ . '/class-cbt-attempt-question-contract-cache.php';
 }
@@ -914,6 +918,8 @@ class CBT_REST
 
         $exam_id = (int) $request->get_param('exam_id');
         $exam_token_input = (string) $request->get_param('exam_token');
+        $queue_ticket = sanitize_text_field((string) $request->get_param('queue_ticket'));
+        $queue_ticket = preg_replace('/[^a-zA-Z0-9\\-]/', '', $queue_ticket) ?: '';
         $resume_only = ((int) $request->get_param('resume_only') === 1);
         if ($exam_token_input === '') {
             $exam_token_input = (string) $request->get_param('token');
@@ -987,6 +993,35 @@ class CBT_REST
                 $exam_token_input,
                 $validate_token_submission
             );
+        }
+
+        if ($resume_only) {
+            return new WP_Error(
+                'attempt_not_found',
+                'Tidak ada attempt ujian aktif untuk dilanjutkan.',
+                ['status' => 404]
+            );
+        }
+
+        $now = current_time('mysql');
+        $within_schedule = (
+            (empty($exam['starts_at']) || (string) $exam['starts_at'] <= $now) &&
+            (empty($exam['ends_at']) || (string) $exam['ends_at'] >= $now)
+        );
+        if ((string) ($exam['status'] ?? 'draft') !== 'published' || !$within_schedule) {
+            return new WP_Error('forbidden', 'Exam is not active', ['status' => 403]);
+        }
+
+        $token_check = $validate_token_submission($exam_token_input);
+        if (is_wp_error($token_check)) {
+            return $token_check;
+        }
+
+        if (class_exists('CBT_Start_Attempt_Gate_Service')) {
+            $gate_result = CBT_Start_Attempt_Gate_Service::evaluate_request($exam_id, $user_id, $queue_ticket);
+            if ((string) ($gate_result['mode'] ?? '') === 'queued') {
+                return self::build_start_attempt_gate_queue_response($gate_result);
+            }
         }
 
         $lock_key = 'start_attempt:user:' . $user_id . ':exam:' . $exam_id;
@@ -1070,28 +1105,6 @@ class CBT_REST
                         'finished_at' => (string) ($latest_attempt['finished_at'] ?? ''),
                     ]
                 );
-            }
-
-            if ($resume_only) {
-                return new WP_Error(
-                    'attempt_not_found',
-                    'Tidak ada attempt ujian aktif untuk dilanjutkan.',
-                    ['status' => 404]
-                );
-            }
-
-            $now = current_time('mysql');
-            $within_schedule = (
-                (empty($exam['starts_at']) || (string) $exam['starts_at'] <= $now) &&
-                (empty($exam['ends_at']) || (string) $exam['ends_at'] >= $now)
-            );
-            if ((string) ($exam['status'] ?? 'draft') !== 'published' || !$within_schedule) {
-                return new WP_Error('forbidden', 'Exam is not active', ['status' => 403]);
-            }
-
-            $token_check = $validate_token_submission($exam_token_input);
-            if (is_wp_error($token_check)) {
-                return $token_check;
             }
 
             $question_ids = [];
@@ -1215,6 +1228,29 @@ class CBT_REST
         } finally {
             CBT_Cache::release_lock($lock_key);
         }
+    }
+
+    /**
+     * @param array<string,mixed> $gate_result
+     * @return array<string,mixed>|WP_REST_Response
+     */
+    private static function build_start_attempt_gate_queue_response(array $gate_result)
+    {
+        $payload = [
+            'status' => 'queued',
+            'queue_ticket' => (string) ($gate_result['queue_ticket'] ?? ''),
+            'queue_position' => max(1, (int) ($gate_result['queue_position'] ?? 0)),
+            'poll_after_ms' => max(250, (int) ($gate_result['poll_after_ms'] ?? 1000)),
+            'estimated_wait_seconds' => max(1, (int) ($gate_result['estimated_wait_seconds'] ?? 1)),
+            'gate_capacity' => max(1, (int) ($gate_result['gate_capacity'] ?? 50)),
+            'gate_window_seconds' => max(1, (int) ($gate_result['gate_window_seconds'] ?? 5)),
+        ];
+
+        if (class_exists('WP_REST_Response')) {
+            return new WP_REST_Response($payload, 202);
+        }
+
+        return $payload;
     }
 
     private static function validate_exam_token_or_error(string $expected_token, string $submitted_token)

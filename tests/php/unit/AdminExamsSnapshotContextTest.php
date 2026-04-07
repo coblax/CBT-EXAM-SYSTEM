@@ -11,6 +11,7 @@ require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-availability-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-question-delivery-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-start-attempt-snapshot-cache.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-gate-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-session-snapshot-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-question-contract-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-question-submission-context-cache.php';
@@ -26,6 +27,7 @@ final class AdminExamsSnapshotContextTest extends TestCase
         parent::setUp();
         $this->useFakeDeliveryRedis();
         $this->useFakeStartSnapshotRedis();
+        $this->useFakeStartAttemptGateRedis();
         $this->useFakeAvailabilityRedis();
         $this->useFakeProfileRedis();
         $this->useFakeLoginSnapshotRedis();
@@ -783,6 +785,11 @@ final class AdminExamsSnapshotContextTest extends TestCase
             'question_manifest' => [['id' => 901, 'question_number' => 1]],
             'option_order_map' => [],
         ]);
+        $GLOBALS['cbt_test_start_attempt_gate_now'] = 1000.0;
+        for ($index = 1; $index <= 50; $index++) {
+            \CBT_Start_Attempt_Gate_Service::evaluate_request(77, 9000 + $index);
+        }
+        \CBT_Start_Attempt_Gate_Service::evaluate_request(77, 71);
         $context = \CBT_Admin_Exams_Service::build_page_context([
             'cbt_exam_panel' => 'snapshot',
             'cbt_exam_snapshot_tab' => 'session_runtime_monitor',
@@ -794,6 +801,8 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertStringContainsString('cbt_exam_snapshot_tab=session_runtime_monitor', (string) $context['exam_snapshot_reset_url']);
         self::assertCount(1, $context['exam_snapshot_rows']);
         self::assertSame(1, $context['exam_snapshot_rows'][0]['session_runtime']['attempt_total']);
+        self::assertSame('GATED', $context['exam_snapshot_rows'][0]['session_runtime']['start_gate']['status_label']);
+        self::assertSame(1, $context['exam_snapshot_rows'][0]['session_runtime']['start_gate']['queue_depth']);
         self::assertSame(0, $context['exam_snapshot_rows'][0]['session_runtime']['redis_first_count']);
         self::assertSame(1, $context['exam_snapshot_rows'][0]['session_runtime']['legacy_count']);
         self::assertSame(1, $context['exam_snapshot_rows'][0]['session_runtime']['session_ready_count']);
@@ -856,6 +865,23 @@ final class AdminExamsSnapshotContextTest extends TestCase
         $attemptedProperty->setValue(null, true);
 
         $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeStartAttemptGateRedis(): void
+    {
+        $reflection = new ReflectionClass(\CBT_Start_Attempt_Gate_Service::class);
+
+        $redisProperty = $reflection->getProperty('gate_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new \CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('gate_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('gate_redis_last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, '');
     }
