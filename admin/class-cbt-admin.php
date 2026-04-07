@@ -31,6 +31,7 @@ class CBT_Admin
         add_action('admin_post_cbt_warm_bulk_exam_delivery_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_exam_delivery_snapshots']);
         add_action('admin_post_cbt_clear_exam_delivery_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_exam_delivery_snapshot']);
         add_action('admin_post_cbt_clear_bulk_exam_delivery_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clear_bulk_exam_delivery_snapshots']);
+        add_action('admin_post_cbt_refresh_attempt_runtime_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_refresh_attempt_runtime_snapshot']);
         add_action('admin_post_cbt_warm_exam_submission_context_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_warm_exam_submission_context_snapshot']);
         add_action('admin_post_cbt_warm_bulk_exam_submission_context_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_exam_submission_context_snapshots']);
         add_action('admin_post_cbt_clear_exam_submission_context_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_exam_submission_context_snapshot']);

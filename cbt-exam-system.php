@@ -27,6 +27,7 @@ require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-availability-cache.
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-availability-auto-warm-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-preflight-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-question-delivery-cache.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-attempt-runtime-snapshot-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-question-submission-context-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-security-live-counters.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-live-proctoring-presence.php';

@@ -36,6 +36,11 @@ final class CBT_Admin_Exams_Actions
         CBT_Admin_Exams_Service::handle_clear_bulk_exam_delivery_snapshots();
     }
 
+    public static function handle_refresh_attempt_runtime_snapshot(): void
+    {
+        CBT_Admin_Exams_Service::handle_refresh_attempt_runtime_snapshot();
+    }
+
     public static function handle_warm_exam_submission_context_snapshot(): void
     {
         CBT_Admin_Exams_Service::handle_warm_exam_submission_context_snapshot();

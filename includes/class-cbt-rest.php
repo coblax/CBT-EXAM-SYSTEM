@@ -2882,6 +2882,138 @@ class CBT_REST
     }
 
     /**
+     * @return array{
+     *   ok:bool,
+     *   attempt_id:int,
+     *   exam_id:int,
+     *   message:string,
+     *   session_snapshot:array<string,mixed>,
+     *   contract_snapshot:array<string,mixed>
+     * }
+     */
+    public static function rebuild_attempt_runtime_snapshots(int $attempt_id, int $expected_exam_id = 0): array
+    {
+        global $wpdb;
+
+        $attempt_id = absint($attempt_id);
+        $expected_exam_id = absint($expected_exam_id);
+        if ($attempt_id <= 0) {
+            return [
+                'ok' => false,
+                'attempt_id' => 0,
+                'exam_id' => 0,
+                'message' => 'Attempt wajib dipilih untuk refresh runtime snapshot.',
+                'session_snapshot' => [],
+                'contract_snapshot' => [],
+            ];
+        }
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $attempt = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, exam_id, student_id, status, started_at, extra_time_minutes, question_order, option_order
+                 FROM {$attempt_table}
+                 WHERE id = %d",
+                $attempt_id
+            ),
+            ARRAY_A
+        );
+        if (!is_array($attempt) || empty($attempt)) {
+            return [
+                'ok' => false,
+                'attempt_id' => $attempt_id,
+                'exam_id' => 0,
+                'message' => 'Attempt tidak ditemukan.',
+                'session_snapshot' => [],
+                'contract_snapshot' => [],
+            ];
+        }
+
+        $exam_id = (int) ($attempt['exam_id'] ?? 0);
+        if ($expected_exam_id > 0 && $exam_id !== $expected_exam_id) {
+            return [
+                'ok' => false,
+                'attempt_id' => $attempt_id,
+                'exam_id' => $exam_id,
+                'message' => 'Attempt tidak termasuk exam yang sedang dipantau.',
+                'session_snapshot' => [],
+                'contract_snapshot' => [],
+            ];
+        }
+
+        if (sanitize_key((string) ($attempt['status'] ?? '')) !== 'in_progress') {
+            return [
+                'ok' => false,
+                'attempt_id' => $attempt_id,
+                'exam_id' => $exam_id,
+                'message' => 'Hanya attempt in_progress yang bisa direfresh runtime snapshot-nya.',
+                'session_snapshot' => class_exists('CBT_Attempt_Session_Snapshot_Cache')
+                    ? CBT_Attempt_Session_Snapshot_Cache::get_attempt_snapshot_diagnostics($attempt_id)
+                    : [],
+                'contract_snapshot' => class_exists('CBT_Attempt_Question_Contract_Cache')
+                    ? CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot_diagnostics($attempt_id)
+                    : [],
+            ];
+        }
+
+        $exam = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, duration_minutes, show_student_result, enable_calculator
+                 FROM {$exam_table}
+                 WHERE id = %d",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+        if (!is_array($exam) || empty($exam)) {
+            return [
+                'ok' => false,
+                'attempt_id' => $attempt_id,
+                'exam_id' => $exam_id,
+                'message' => 'Exam sumber attempt tidak ditemukan.',
+                'session_snapshot' => [],
+                'contract_snapshot' => [],
+            ];
+        }
+
+        $questions = self::get_cached_exam_question_payload($exam_id);
+        $questions = self::append_missing_attempt_questions(
+            $questions,
+            $exam_id,
+            (string) ($attempt['question_order'] ?? '')
+        );
+        $contract = self::build_attempt_runtime_snapshot_contract($attempt, $exam, $questions, $attempt_table);
+        self::sync_attempt_runtime_snapshots(
+            $attempt,
+            $exam,
+            (array) ($contract['question_order_ids'] ?? []),
+            (array) ($contract['question_number_map'] ?? []),
+            (array) ($contract['option_order_map'] ?? []),
+            (array) ($contract['question_manifest'] ?? [])
+        );
+
+        $session_snapshot = class_exists('CBT_Attempt_Session_Snapshot_Cache')
+            ? CBT_Attempt_Session_Snapshot_Cache::get_attempt_snapshot_diagnostics($attempt_id)
+            : [];
+        $contract_snapshot = class_exists('CBT_Attempt_Question_Contract_Cache')
+            ? CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot_diagnostics($attempt_id)
+            : [];
+        $ok = !empty($session_snapshot['snapshot_valid']) && !empty($contract_snapshot['snapshot_valid']);
+
+        return [
+            'ok' => $ok,
+            'attempt_id' => $attempt_id,
+            'exam_id' => $exam_id,
+            'message' => $ok
+                ? 'Runtime snapshot berhasil diperbarui dari sumber live.'
+                : 'Runtime snapshot diperbarui tetapi hasilnya belum valid.',
+            'session_snapshot' => $session_snapshot,
+            'contract_snapshot' => $contract_snapshot,
+        ];
+    }
+
+    /**
      * @return array<string,mixed>
      */
     private static function get_cached_exam_start_attempt_snapshot(int $exam_id): array

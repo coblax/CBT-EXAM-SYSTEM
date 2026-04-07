@@ -315,6 +315,7 @@ final class AdminExamsSnapshotContextTest extends TestCase
         ]);
 
         self::assertSame(2, $context['exam_readiness_page']);
+        self::assertSame([77 => 2], $context['exam_readiness_pages']);
         self::assertCount(1, $context['exam_snapshot_rows']);
         $readiness = $context['exam_snapshot_rows'][0]['readiness'];
         self::assertSame('PERLU PERHATIAN', $readiness['overall_label']);
@@ -600,6 +601,48 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertCount(2, $context['exam_snapshot_rows']);
     }
 
+    public function test_build_page_context_keeps_exam_readiness_page_state_per_exam(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        for ($index = 0; $index < 11; $index++) {
+            $xi_a_user_id = 400 + $index;
+            cbt_test_register_user([
+                'ID' => $xi_a_user_id,
+                'display_name' => 'XI-A Extra ' . $index,
+                'user_login' => 'xia_extra_' . $index,
+                'user_email' => 'xia_extra_' . $index . '@example.com',
+                'user_pass' => 'pass-' . $index,
+                'roles' => ['student'],
+            ]);
+            update_user_meta($xi_a_user_id, 'kode_kelas', 'XI-A');
+            update_user_meta($xi_a_user_id, 'kode_ruang', 'R1');
+
+            $xi_b_user_id = 500 + $index;
+            cbt_test_register_user([
+                'ID' => $xi_b_user_id,
+                'display_name' => 'XI-B Extra ' . $index,
+                'user_login' => 'xib_extra_' . $index,
+                'user_email' => 'xib_extra_' . $index . '@example.com',
+                'user_pass' => 'pass-b-' . $index,
+                'roles' => ['student'],
+            ]);
+            update_user_meta($xi_b_user_id, 'kode_kelas', 'XI-B');
+            update_user_meta($xi_b_user_id, 'kode_ruang', 'R2');
+        }
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_exam_ids' => ['77', '54'],
+            'cbt_exam_readiness_page_77' => '2',
+        ]);
+
+        self::assertSame([77 => 2], $context['exam_readiness_pages']);
+        self::assertCount(2, $context['exam_snapshot_rows']);
+        self::assertSame(2, $context['exam_snapshot_rows'][0]['readiness']['problem_page']);
+        self::assertSame(1, $context['exam_snapshot_rows'][1]['readiness']['problem_page']);
+    }
+
     public function test_build_page_context_falls_back_to_list_panel_for_non_admin_snapshot_request(): void
     {
         $GLOBALS['cbt_test_current_user_caps']['manage_options'] = false;
@@ -751,11 +794,19 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertStringContainsString('cbt_exam_snapshot_tab=session_runtime_monitor', (string) $context['exam_snapshot_reset_url']);
         self::assertCount(1, $context['exam_snapshot_rows']);
         self::assertSame(1, $context['exam_snapshot_rows'][0]['session_runtime']['attempt_total']);
+        self::assertSame(0, $context['exam_snapshot_rows'][0]['session_runtime']['redis_first_count']);
+        self::assertSame(1, $context['exam_snapshot_rows'][0]['session_runtime']['legacy_count']);
+        self::assertSame(1, $context['exam_snapshot_rows'][0]['session_runtime']['session_ready_count']);
+        self::assertSame(1, $context['exam_snapshot_rows'][0]['session_runtime']['contract_ready_count']);
+        self::assertSame(0, $context['exam_snapshot_rows'][0]['session_runtime']['runtime_ready_count']);
+        self::assertNotEmpty($context['exam_snapshot_rows'][0]['session_runtime']['fallback_breakdown']);
+        self::assertContains('1 runtime miss', $context['exam_snapshot_rows'][0]['session_runtime']['issue_flags']);
         self::assertCount(1, $context['exam_snapshot_rows'][0]['session_runtime']['rows']);
         self::assertSame('READY', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['session_status_label']);
         self::assertSame('READY', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['contract_status_label']);
         self::assertSame('MISS', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['runtime_answers_status_label']);
         self::assertSame('LEGACY runtime', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['fallback_mode']);
+        self::assertSame('runtime miss', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['issue_summary']);
     }
 
     private function useFakeDeliveryRedis(): void

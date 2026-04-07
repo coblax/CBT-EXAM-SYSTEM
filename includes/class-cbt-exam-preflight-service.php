@@ -52,9 +52,10 @@ final class CBT_Exam_Preflight_Service
     private const GLOBAL_LAYER_PROFILES = 'profiles';
     private const GLOBAL_LAYER_LOGIN = 'login';
     private const GLOBAL_LAYER_AVAILABILITY = 'availability';
+    private const GLOBAL_LAYER_PARALLEL = 'parallel';
     private const MAX_NONTERMINAL_EXAMS = 10;
-    private const PROFILE_BATCH_SIZE = 50;
-    private const PROFILE_LOGIN_INITIAL_BURST_SECONDS = 2.5;
+    private const PROFILE_BATCH_SIZE = 150;
+    private const PROFILE_LOGIN_INITIAL_BURST_SECONDS = 8.0;
     private const PROFILE_LOGIN_INITIAL_BURST_MAX_BATCHES = 12;
 
     public static function init(): void
@@ -658,7 +659,7 @@ final class CBT_Exam_Preflight_Service
         } elseif ($target_student_count <= 0) {
             $message = 'Belum ada siswa target yang cocok dengan target_kelas exam ini.';
         } else {
-            $message = 'One-click memakai blocker dan warning kesiapan yang sama, lalu menyiapkan Snapshot Soal, Start Snapshot, Submission Context, Snapshot Profil, Login Snapshot, dan Auto-Warm Availability dari satu tombol.';
+            $message = 'One-click memakai blocker dan warning kesiapan yang sama, lalu menyiapkan Snapshot Soal, Start Snapshot, Submission Context, Snapshot Profil, Login Snapshot, dan Auto-Warm Availability dengan mode global paralel batch 150.';
         }
 
         $question_stage = $question_snapshot_ready ? 'ready' : 'pending';
@@ -755,6 +756,9 @@ final class CBT_Exam_Preflight_Service
             'queued_exam_titles' => $queued_exam_titles,
             'global_runner_exam_id' => $active_runner_exam_id,
             'global_runner_exam_title' => (string) ($runner['active_exam_title'] ?? ''),
+            'global_mode' => self::GLOBAL_LAYER_PARALLEL,
+            'global_mode_label' => 'PARALEL',
+            'global_batch_size' => self::PROFILE_BATCH_SIZE,
             'active_global_layer' => (string) ($runner['active_layer'] ?? ''),
         ];
     }
@@ -1658,7 +1662,7 @@ final class CBT_Exam_Preflight_Service
         if (is_array($existing_job) && trim((string) ($existing_job['last_message'] ?? '')) !== '') {
             $job['last_message'] = (string) $existing_job['last_message'];
         } else {
-            $job['last_message'] = 'Snapshot exam-local sudah siap. Menyiapkan layer global untuk peserta exam ini.';
+            $job['last_message'] = 'Snapshot exam-local sudah siap. Mode global paralel mulai menyiapkan Snapshot Profil, Login Snapshot, dan Auto-Warm Availability untuk peserta exam ini.';
         }
 
         return self::build_state($job);
@@ -1911,7 +1915,7 @@ final class CBT_Exam_Preflight_Service
         $job['active_global_layer'] = '';
         $job['last_tick_at'] = current_time('mysql');
         $job = self::apply_global_stage_statuses($job, 'queued');
-        $job['last_message'] = 'Snapshot exam-local sudah siap. Layer global menunggu giliran setelah exam aktif selesai.';
+        $job['last_message'] = 'Snapshot exam-local sudah siap. Mode global paralel menunggu giliran setelah exam aktif selesai.';
 
         return self::build_state($job);
     }
@@ -2094,32 +2098,18 @@ final class CBT_Exam_Preflight_Service
                 continue;
             }
 
-            $next_layer = self::next_pending_global_layer($job);
-            if ($next_layer === '') {
+            if (!self::job_has_pending_global_work($job)) {
                 $jobs[$active_exam_id] = self::finalize_completed_job($job);
                 $runner = self::release_runner_owner($runner, $active_exam_id);
                 continue;
             }
 
-            $runner['active_layer'] = $next_layer;
+            $runner['active_layer'] = self::GLOBAL_LAYER_PARALLEL;
             $runner['last_tick_at'] = current_time('mysql');
             $job['status'] = self::STATUS_ACTIVE;
             $job['active'] = true;
-            $job['active_global_layer'] = $next_layer;
-
-            if ($next_layer === self::GLOBAL_LAYER_PROFILES) {
-                $job = self::apply_global_stage_statuses($job, 'active', self::GLOBAL_LAYER_PROFILES);
-                $job = $source === 'start'
-                    ? self::run_profiles_burst($job)
-                    : self::run_profiles_batch($job);
-            } elseif ($next_layer === self::GLOBAL_LAYER_LOGIN) {
-                $job = self::apply_global_stage_statuses($job, 'active', self::GLOBAL_LAYER_LOGIN);
-                $job = $source === 'start'
-                    ? self::run_login_burst($job)
-                    : self::run_login_batch($job);
-            } else {
-                $job = self::run_availability_step($job);
-            }
+            $job['active_global_layer'] = self::GLOBAL_LAYER_PARALLEL;
+            $job = self::run_parallel_global_lanes($job, $source);
 
             $jobs[$active_exam_id] = self::build_state($job);
             $runner = self::build_global_runner_state($runner);
@@ -2131,23 +2121,45 @@ final class CBT_Exam_Preflight_Service
                 continue;
             }
 
-            $same_layer_still_pending = false;
-            if ($next_layer === self::GLOBAL_LAYER_PROFILES) {
-                $same_layer_still_pending = max(0, (int) ($updated_job['profiles_pending_count'] ?? 0)) > 0;
-            } elseif ($next_layer === self::GLOBAL_LAYER_LOGIN) {
-                $same_layer_still_pending = max(0, (int) ($updated_job['login_pending_count'] ?? 0)) > 0;
-            } elseif ($next_layer === self::GLOBAL_LAYER_AVAILABILITY) {
-                $same_layer_still_pending = max(0, (int) ($updated_job['availability_pending_count'] ?? 0)) > 0;
-            }
-
-            if (!$same_layer_still_pending) {
-                continue;
-            }
-
             return [$jobs, $runner];
         }
 
         return [$jobs, self::build_global_runner_state($runner)];
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     * @return array<string,mixed>
+     */
+    private static function run_parallel_global_lanes(array $job, string $source): array
+    {
+        $job = self::build_state($job);
+        $source = sanitize_key($source);
+
+        if (max(0, (int) ($job['profiles_pending_count'] ?? 0)) > 0) {
+            $job = $source === 'start'
+                ? self::run_profiles_burst($job)
+                : self::run_profiles_batch($job);
+        }
+
+        if (max(0, (int) ($job['login_pending_count'] ?? 0)) > 0) {
+            $job = $source === 'start'
+                ? self::run_login_burst($job)
+                : self::run_login_batch($job);
+        }
+
+        if (max(0, (int) ($job['availability_pending_count'] ?? 0)) > 0) {
+            $job = self::run_availability_step($job);
+        }
+
+        $job['active'] = true;
+        $job['status'] = self::STATUS_ACTIVE;
+        $job['active_global_layer'] = self::GLOBAL_LAYER_PARALLEL;
+        $job['last_tick_at'] = current_time('mysql');
+        $job = self::apply_parallel_stage_statuses($job);
+        $job['last_message'] = self::build_parallel_progress_message($job, $source, (string) ($job['last_message'] ?? ''));
+
+        return self::build_state($job);
     }
 
     /**
@@ -2280,15 +2292,10 @@ final class CBT_Exam_Preflight_Service
 
         $batch_user_ids = array_slice($pending_user_ids, 0, self::PROFILE_BATCH_SIZE);
         $remaining_user_ids = array_slice($pending_user_ids, count($batch_user_ids));
-        $profile_snapshots_by_user = [];
-        foreach ($batch_user_ids as $user_id) {
-            $profile_snapshots_by_user[$user_id] = CBT_Student_Profile_Cache::get_snapshot($user_id);
-        }
-
         $success_count = 0;
         $failure_count = 0;
         try {
-            $results = CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot_results($batch_user_ids, 'preflight', $profile_snapshots_by_user);
+            $results = CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot_results($batch_user_ids, 'preflight');
         } catch (Throwable $throwable) {
             $results = [];
         }
@@ -2319,6 +2326,78 @@ final class CBT_Exam_Preflight_Service
         );
 
         return self::build_state($job);
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     * @return array<string,mixed>
+     */
+    private static function apply_parallel_stage_statuses(array $job): array
+    {
+        $job = self::build_state($job);
+        $job['stage_profiles'] = self::resolve_parallel_stage_status(
+            max(0, (int) ($job['profiles_pending_count'] ?? 0)),
+            max(0, (int) ($job['profiles_failure_count'] ?? 0)),
+            (string) ($job['stage_profiles'] ?? 'pending')
+        );
+        $job['stage_login_snapshot'] = self::resolve_parallel_stage_status(
+            max(0, (int) ($job['login_pending_count'] ?? 0)),
+            max(0, (int) ($job['login_failure_count'] ?? 0)),
+            (string) ($job['stage_login_snapshot'] ?? 'pending')
+        );
+        $job['stage_auto_warm'] = self::resolve_parallel_stage_status(
+            max(0, (int) ($job['availability_pending_count'] ?? 0)),
+            max(0, (int) ($job['availability_failure_count'] ?? 0)),
+            (string) ($job['stage_auto_warm'] ?? 'pending')
+        );
+
+        return self::build_state($job);
+    }
+
+    private static function resolve_parallel_stage_status(int $pending_count, int $failure_count, string $current_stage): string
+    {
+        $current_stage = sanitize_key($current_stage);
+        if ($pending_count <= 0) {
+            return $failure_count > 0 ? 'warning' : 'ready';
+        }
+
+        if ($current_stage === self::STATUS_QUEUED) {
+            return self::STATUS_QUEUED;
+        }
+
+        return self::STATUS_ACTIVE;
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     */
+    private static function build_parallel_progress_message(array $job, string $source, string $lead_message = ''): string
+    {
+        $job = self::build_state($job);
+        $source = sanitize_key($source);
+        $lead_message = trim($lead_message);
+        $summary = sprintf(
+            '%s mode paralel Aggressive 150+. Profil %d/%d siap (pending %d, gagal %d). Login snapshot %d/%d siap (pending %d, gagal %d). Availability %d/%d siap (pending %d, gagal %d).',
+            $source === 'start' ? 'Burst awal' : 'Tick',
+            max(0, (int) ($job['profiles_ready_count'] ?? 0)),
+            max(0, (int) ($job['target_student_count'] ?? 0)),
+            max(0, (int) ($job['profiles_pending_count'] ?? 0)),
+            max(0, (int) ($job['profiles_failure_count'] ?? 0)),
+            max(0, (int) ($job['login_ready_count'] ?? 0)),
+            max(0, (int) ($job['target_student_count'] ?? 0)),
+            max(0, (int) ($job['login_pending_count'] ?? 0)),
+            max(0, (int) ($job['login_failure_count'] ?? 0)),
+            max(0, (int) ($job['availability_ready_count'] ?? 0)),
+            max(0, (int) ($job['target_student_count'] ?? 0)),
+            max(0, (int) ($job['availability_pending_count'] ?? 0)),
+            max(0, (int) ($job['availability_failure_count'] ?? 0))
+        );
+
+        if ($lead_message === '') {
+            return $summary;
+        }
+
+        return $lead_message . ' ' . $summary;
     }
 
     /**

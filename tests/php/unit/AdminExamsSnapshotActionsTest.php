@@ -223,6 +223,57 @@ final class AdminExamsSnapshotActionsTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_handle_refresh_attempt_runtime_snapshot_rebuilds_attempt_snapshots_and_preserves_runtime_tab_state(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeAttemptSessionRedis();
+        $this->useFakeAttemptContractRedis();
+        $this->useFakeAvailabilityRedis();
+        $this->useFakeProfileRedis();
+        $this->useFakeLoginSnapshotRedis();
+
+        CBT_Student_Profile_Cache::warm_snapshot(71);
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(71, 'action_test');
+        CBT_Exam_Availability_Cache::warm_student_snapshot(71, static function (): array {
+            return [
+                'items' => [
+                    ['id' => 77, 'title' => 'Ujian Matematika'],
+                ],
+                'current_user' => [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'username' => 'salsa',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+
+        $_POST = [
+            'attempt_id' => '501',
+            'exam_id' => '77',
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_tab' => 'session_runtime_monitor',
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_page_77' => '3',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_refresh_attempt_runtime_snapshot']);
+
+        self::assertSame('ready', CBT_Attempt_Session_Snapshot_Cache::get_attempt_snapshot_diagnostics(501)['snapshot_status']);
+        self::assertSame('ready', CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot_diagnostics(501)['snapshot_status']);
+        self::assertTrue(CBT_Student_Profile_Cache::get_snapshot_diagnostics(71)['snapshot_exists']);
+        self::assertTrue(CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(71)['snapshot_exists']);
+        self::assertTrue(CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(71)['snapshot_exists']);
+        self::assertStringContainsString('cbt_exam_snapshot_tab=session_runtime_monitor', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_page_77=3', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Runtime+snapshot+attempt+%23501+berhasil+direfresh.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
     public function test_handle_warm_and_clear_exam_submission_context_snapshot_redirects_back_to_submission_tab(): void
     {
         $this->bootstrapSnapshotActionScaffold();
@@ -511,14 +562,15 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertSame([], $this->storedExamSnapshotKeysFor(77));
         self::assertSame([], $this->storedStartSnapshotKeysFor(77));
         self::assertSame([], $this->storedSubmissionContextKeysFor(77));
-        self::assertSame('', $this->storedProfileSnapshotPayloadFor(71));
-        self::assertSame('', $this->storedLoginSnapshotPayloadFor(71));
-        self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(71));
+        self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(71));
+        self::assertNotSame('', $this->storedLoginSnapshotPayloadFor(71));
+        self::assertNotSame([], $this->storedAvailabilitySnapshotKeysFor(71));
         self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(72));
         self::assertNotSame('', $this->storedLoginSnapshotPayloadFor(72));
         self::assertNotSame([], $this->storedAvailabilitySnapshotKeysFor(72));
         self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Snapshot+pra+ujian+untuk+Ujian+Matematika+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
@@ -583,23 +635,48 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertSame([], $this->storedExamSnapshotKeysFor(77));
         self::assertSame([], $this->storedStartSnapshotKeysFor(77));
         self::assertSame([], $this->storedSubmissionContextKeysFor(77));
-        self::assertSame('', $this->storedProfileSnapshotPayloadFor(71));
-        self::assertSame('', $this->storedLoginSnapshotPayloadFor(71));
-        self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(71));
+        self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(71));
+        self::assertNotSame('', $this->storedLoginSnapshotPayloadFor(71));
+        self::assertNotSame([], $this->storedAvailabilitySnapshotKeysFor(71));
         self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(72));
         self::assertNotSame('', $this->storedLoginSnapshotPayloadFor(72));
         self::assertNotSame([], $this->storedAvailabilitySnapshotKeysFor(72));
+        self::assertStringContainsString('cbt_exam_readiness_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Snapshot+pra+ujian+untuk+Ujian+Matematika+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
-    public function test_handle_clean_exam_snapshots_rejects_when_other_exam_preflight_is_active(): void
+    public function test_handle_clean_exam_snapshots_keeps_other_exam_preflight_active(): void
     {
         $this->bootstrapSnapshotActionScaffold();
-        $this->useFakeProfileRedis();
+        $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeSubmissionContextRedis();
         global $wpdb;
         $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
-        CBT_Student_Profile_Cache::warm_snapshot(71);
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(77, static function (int $examId): array {
+            return [
+                [
+                    'id' => 900 + $examId,
+                    'exam_id' => $examId,
+                    'question_text' => 'Snapshot exam ' . $examId,
+                    'question_type' => 'multiple_choice',
+                    'points' => 1,
+                    'options' => [],
+                ],
+            ];
+        });
+        CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot(77, static function (int $examId): array {
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [900 + $examId],
+                'question_number_map' => [900 + $examId => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'option_randomization_tokens_by_question' => [],
+            ];
+        });
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots(77);
         $this->seedActivePreflightState(54, 'Ujian Biologi', [72]);
 
         $_POST = [
@@ -610,18 +687,47 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_clean_exam_snapshots']);
 
-        self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(71));
+        self::assertSame([], $this->storedExamSnapshotKeysFor(77));
+        self::assertSame([], $this->storedStartSnapshotKeysFor(77));
+        self::assertSame([], $this->storedSubmissionContextKeysFor(77));
         self::assertTrue(CBT_Exam_Preflight_Service::get_state()['active']);
-        self::assertStringContainsString('cbt_err=Tidak+bisa+membersihkan+snapshot+karena+one-click+pra+ujian+exam+lain+masih+aktif%3A+Ujian+Biologi.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertSame(54, CBT_Exam_Preflight_Service::get_state()['exam_id']);
+        self::assertStringContainsString('cbt_msg=Snapshot+pra+ujian+untuk+Ujian+Matematika+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
-    public function test_handle_clean_exam_snapshots_rejects_when_other_exam_auto_warm_is_active(): void
+    public function test_handle_clean_exam_snapshots_keeps_other_exam_auto_warm_active(): void
     {
         $this->bootstrapSnapshotActionScaffold();
-        $this->useFakeAvailabilityRedis();
+        $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeSubmissionContextRedis();
         global $wpdb;
         $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(77, static function (int $examId): array {
+            return [
+                [
+                    'id' => 900 + $examId,
+                    'exam_id' => $examId,
+                    'question_text' => 'Snapshot exam ' . $examId,
+                    'question_type' => 'multiple_choice',
+                    'points' => 1,
+                    'options' => [],
+                ],
+            ];
+        });
+        CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot(77, static function (int $examId): array {
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [900 + $examId],
+                'question_number_map' => [900 + $examId => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'option_randomization_tokens_by_question' => [],
+            ];
+        });
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots(77);
 
         CBT_Exam_Availability_Auto_Warm_Service::start_for_exam([
             'id' => 54,
@@ -638,9 +744,12 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_clean_exam_snapshots']);
 
+        self::assertSame([], $this->storedExamSnapshotKeysFor(77));
+        self::assertSame([], $this->storedStartSnapshotKeysFor(77));
+        self::assertSame([], $this->storedSubmissionContextKeysFor(77));
         self::assertTrue(CBT_Exam_Availability_Auto_Warm_Service::get_state()['active']);
         self::assertSame(54, CBT_Exam_Availability_Auto_Warm_Service::get_state()['exam_id']);
-        self::assertStringContainsString('cbt_err=Tidak+bisa+membersihkan+snapshot+karena+auto-warm+availability+exam+lain+masih+aktif%3A+Ujian+Biologi.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Snapshot+pra+ujian+untuk+Ujian+Matematika+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
@@ -912,6 +1021,9 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-availability-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-question-delivery-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-start-attempt-snapshot-cache.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-session-snapshot-cache.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-question-contract-cache.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-runtime-snapshot-service.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-question-submission-context-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-auth-snapshot-cache.php';
@@ -961,6 +1073,59 @@ class CBT_REST
     {
         self::$warmedSubmissionContextExamIds[] = $exam_id;
         CBT_Question_Submission_Context_Cache::warm_exam_snapshots($exam_id);
+    }
+
+    public static function rebuild_attempt_runtime_snapshots(int $attempt_id, int $expected_exam_id = 0): array
+    {
+        if ($attempt_id !== 501 || ($expected_exam_id > 0 && $expected_exam_id !== 77)) {
+            return [
+                'ok' => false,
+                'attempt_id' => $attempt_id,
+                'exam_id' => $expected_exam_id,
+                'message' => 'Attempt tidak termasuk exam yang sedang dipantau.',
+                'session_snapshot' => [],
+                'contract_snapshot' => [],
+            ];
+        }
+
+        CBT_Attempt_Session_Snapshot_Cache::write_attempt_snapshot(501, [
+            'attempt_id' => 501,
+            'exam_id' => 77,
+            'student_id' => 71,
+            'status' => 'in_progress',
+            'started_at' => '2026-04-04 07:00:00',
+            'duration_minutes' => 90,
+            'extra_time_minutes' => 5,
+            'question_count' => 2,
+            'question_order_signature' => 'runtime-sig-501',
+            'show_student_result' => 1,
+            'enable_calculator' => 1,
+        ]);
+        CBT_Attempt_Question_Contract_Cache::write_attempt_snapshot(501, [
+            'attempt_id' => 501,
+            'exam_id' => 77,
+            'student_id' => 71,
+            'status' => 'in_progress',
+            'question_order_ids' => [901, 902],
+            'question_number_map' => [901 => 1, 902 => 2],
+            'question_order_signature' => 'runtime-sig-501',
+            'question_manifest' => [
+                ['id' => 901, 'question_number' => 1],
+                ['id' => 902, 'question_number' => 2],
+            ],
+            'option_order_map' => [
+                901 => ['A', 'B'],
+            ],
+        ]);
+
+        return [
+            'ok' => true,
+            'attempt_id' => 501,
+            'exam_id' => 77,
+            'message' => 'Runtime snapshot berhasil diperbarui dari sumber live.',
+            'session_snapshot' => CBT_Attempt_Session_Snapshot_Cache::get_attempt_snapshot_diagnostics(501),
+            'contract_snapshot' => CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot_diagnostics(501),
+        ];
     }
 
     public static function build_student_exam_availability_snapshot_payload(int $user_id): array
@@ -1091,6 +1256,40 @@ PHP);
     private function useFakeAvailabilityRedis(): void
     {
         $reflection = new ReflectionClass(CBT_Exam_Availability_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeAttemptSessionRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Attempt_Session_Snapshot_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeAttemptContractRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Attempt_Question_Contract_Cache::class);
 
         $redisProperty = $reflection->getProperty('snapshot_redis');
         $redisProperty->setAccessible(true);

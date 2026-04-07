@@ -12,6 +12,8 @@ final class ExamPreflightServiceTest extends TestCase
         parent::setUp();
         $GLOBALS['cbt_test_preflight_initial_burst_seconds'] = 60.0;
         $GLOBALS['cbt_test_preflight_initial_burst_max_batches'] = 3;
+        $GLOBALS['cbt_test_availability_initial_burst_seconds'] = 60.0;
+        $GLOBALS['cbt_test_availability_initial_burst_max_batches'] = 3;
         $this->bootstrapServiceScaffold();
         global $wpdb;
         $wpdb = new ExamPreflightSubmissionContextFakeWpdb();
@@ -52,6 +54,8 @@ final class ExamPreflightServiceTest extends TestCase
     #[RunInSeparateProcess]
     public function test_start_for_exam_warms_question_snapshot_and_batches_profile_plus_login_snapshot(): void
     {
+        $this->registerAdditionalXiAStudents(300);
+
         $result = CBT_Exam_Preflight_Service::start_for_exam([
             'id' => 77,
             'title' => 'Ujian Matematika',
@@ -67,35 +71,39 @@ final class ExamPreflightServiceTest extends TestCase
         self::assertTrue($state['question_snapshot_ready']);
         self::assertTrue($state['start_snapshot_ready']);
         self::assertTrue($state['submission_context_ready']);
-        self::assertFalse($state['auto_warm_started']);
         self::assertSame('ready', $state['stage_question']);
         self::assertSame('ready', $state['stage_start_snapshot']);
         self::assertSame('ready', $state['stage_submission_context']);
         self::assertSame('active', $state['stage_profiles']);
-        self::assertSame('pending', $state['stage_login_snapshot']);
-        self::assertSame('pending', $state['stage_auto_warm']);
-        self::assertSame(152, $state['target_student_count']);
+        self::assertSame('active', $state['stage_login_snapshot']);
+        self::assertSame('active', $state['stage_auto_warm']);
+        self::assertSame(452, $state['target_student_count']);
         self::assertSame(1, $state['submission_context_question_count']);
         self::assertSame(1, $state['submission_context_ready_count']);
         self::assertSame(0, $state['submission_context_missing_count']);
         self::assertSame(0, $state['submission_context_invalid_count']);
-        self::assertSame(150, $state['profile_success_count']);
-        self::assertSame(0, $state['login_snapshot_success_count']);
+        self::assertTrue($state['auto_warm_started']);
+        self::assertSame(450, $state['profile_success_count']);
+        self::assertSame(450, $state['login_snapshot_success_count']);
         self::assertSame(0, $state['profile_failure_count']);
         self::assertGreaterThan(0, count($this->storedExamSnapshotKeysFor(77)));
         self::assertGreaterThan(0, count($this->storedStartSnapshotKeysFor(77)));
         self::assertGreaterThan(0, count($this->storedSubmissionContextKeysFor(77)));
         self::assertNotSame('', $this->storedProfileSnapshotPayloadFor(701));
-        self::assertSame('', $this->storedLoginSnapshotPayloadFor(701));
+        self::assertNotSame('', $this->storedLoginSnapshotPayloadFor(701));
         self::assertGreaterThan(0, count((array) ($GLOBALS['cbt_test_redis_pipeline_batches'] ?? [])));
+        self::assertStringContainsString('mode paralel Aggressive 150+', (string) $state['last_message']);
 
         $auto_warm_state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
-        self::assertFalse($auto_warm_state['active']);
+        self::assertTrue($auto_warm_state['active']);
+        self::assertSame(77, $auto_warm_state['exam_id']);
     }
 
     #[RunInSeparateProcess]
     public function test_tick_marks_session_completed_with_warnings_when_remaining_profile_batch_fails(): void
     {
+        $this->registerAdditionalXiAStudents(300);
+
         CBT_Exam_Preflight_Service::start_for_exam([
             'id' => 77,
             'title' => 'Ujian Matematika',
@@ -110,15 +118,15 @@ final class ExamPreflightServiceTest extends TestCase
         self::assertSame('active', $state['status']);
         self::assertSame('ready', $state['stage_submission_context']);
         self::assertSame('warning', $state['stage_profiles']);
-        self::assertSame('active', $state['stage_login_snapshot']);
-        self::assertSame('pending', $state['stage_auto_warm']);
-        self::assertSame(150, $state['profile_success_count']);
-        self::assertSame(50, $state['login_snapshot_success_count']);
+        self::assertSame('ready', $state['stage_login_snapshot']);
+        self::assertSame('active', $state['stage_auto_warm']);
+        self::assertSame(450, $state['profile_success_count']);
+        self::assertSame(452, $state['login_snapshot_success_count']);
         self::assertSame(2, $state['profile_failure_count']);
-        self::assertStringContainsString('Login 50/152 siap', (string) $state['last_message']);
+        self::assertStringContainsString('mode paralel Aggressive 150+', (string) $state['last_message']);
 
         $auto_warm_state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
-        self::assertFalse($auto_warm_state['active']);
+        self::assertTrue($auto_warm_state['active']);
     }
 
     #[RunInSeparateProcess]
@@ -145,6 +153,8 @@ final class ExamPreflightServiceTest extends TestCase
     public function test_start_for_exam_can_finish_large_target_in_initial_burst_when_budget_allows_more_batches(): void
     {
         $GLOBALS['cbt_test_preflight_initial_burst_max_batches'] = 4;
+        $GLOBALS['cbt_test_availability_initial_burst_max_batches'] = 4;
+        $this->registerAdditionalXiAStudents(300);
 
         $result = CBT_Exam_Preflight_Service::start_for_exam([
             'id' => 77,
@@ -158,13 +168,15 @@ final class ExamPreflightServiceTest extends TestCase
         self::assertFalse($state['active']);
         self::assertSame('completed', $state['status']);
         self::assertTrue($state['auto_warm_started']);
-        self::assertSame(152, $state['profile_success_count']);
-        self::assertSame(152, $state['login_snapshot_success_count']);
+        self::assertSame(452, $state['profile_success_count']);
+        self::assertSame(452, $state['login_snapshot_success_count']);
     }
 
     #[RunInSeparateProcess]
     public function test_start_for_exam_remains_allowed_when_other_auto_warm_exam_is_active(): void
     {
+        $this->registerAdditionalXiAStudents(300);
+
         CBT_Exam_Availability_Auto_Warm_Service::start_for_exam([
             'id' => 54,
             'title' => 'Ujian Biologi',
@@ -184,11 +196,13 @@ final class ExamPreflightServiceTest extends TestCase
         self::assertTrue(CBT_Exam_Preflight_Service::get_state()['question_snapshot_ready']);
         self::assertTrue(CBT_Exam_Availability_Auto_Warm_Service::get_state()['active']);
         self::assertSame(54, CBT_Exam_Availability_Auto_Warm_Service::get_state()['exam_id']);
+        self::assertSame('queued', CBT_Exam_Preflight_Service::get_state()['stage_auto_warm']);
     }
 
     #[RunInSeparateProcess]
     public function test_start_for_exam_marks_submission_context_as_warning_without_blocking_when_cache_is_unavailable(): void
     {
+        $this->registerAdditionalXiAStudents(300);
         $this->useUnavailableSubmissionContextRedis();
 
         $result = CBT_Exam_Preflight_Service::start_for_exam([
@@ -210,12 +224,15 @@ final class ExamPreflightServiceTest extends TestCase
         self::assertSame('ready', $state['stage_question']);
         self::assertSame('ready', $state['stage_start_snapshot']);
         self::assertSame('active', $state['stage_profiles']);
-        self::assertSame('pending', $state['stage_login_snapshot']);
+        self::assertSame('active', $state['stage_login_snapshot']);
+        self::assertSame('active', $state['stage_auto_warm']);
     }
 
     #[RunInSeparateProcess]
     public function test_stop_for_exam_marks_active_session_as_stopped(): void
     {
+        $this->registerAdditionalXiAStudents(300);
+
         CBT_Exam_Preflight_Service::start_for_exam([
             'id' => 77,
             'title' => 'Ujian Matematika',
@@ -243,6 +260,8 @@ final class ExamPreflightServiceTest extends TestCase
     #[RunInSeparateProcess]
     public function test_stop_for_exam_is_rejected_when_other_exam_is_active(): void
     {
+        $this->registerAdditionalXiAStudents(300);
+
         CBT_Exam_Preflight_Service::start_for_exam([
             'id' => 77,
             'title' => 'Ujian Matematika',
@@ -265,6 +284,8 @@ final class ExamPreflightServiceTest extends TestCase
     #[RunInSeparateProcess]
     public function test_start_for_exam_queues_second_exam_while_first_exam_owns_global_runner(): void
     {
+        $this->registerAdditionalXiAStudents(300);
+
         CBT_Exam_Preflight_Service::start_for_exam([
             'id' => 77,
             'title' => 'Ujian Matematika',
@@ -295,6 +316,25 @@ final class ExamPreflightServiceTest extends TestCase
         $runner = CBT_Exam_Preflight_Service::get_global_runner_state();
         self::assertSame(77, $runner['active_exam_id']);
         self::assertSame([54], $runner['queue_exam_ids']);
+    }
+
+    private function registerAdditionalXiAStudents(int $count): void
+    {
+        $count = max(0, $count);
+        for ($index = 0; $index < $count; $index++) {
+            $user_id = 1000 + $index;
+            cbt_test_register_user([
+                'ID' => $user_id,
+                'display_name' => 'XI-A Extra ' . $index,
+                'user_login' => 'xia_extra_' . $index,
+                'user_email' => 'xia_extra_' . $index . '@example.com',
+                'user_pass' => 'pass-extra-' . $index,
+                'roles' => ['student'],
+            ]);
+            update_user_meta($user_id, 'kode_kelas', 'XI-A');
+            update_user_meta($user_id, 'kode_ruang', 'R1');
+            update_user_meta($user_id, 'agama', 'Islam');
+        }
     }
 
     private function bootstrapServiceScaffold(): void

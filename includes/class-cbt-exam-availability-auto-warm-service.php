@@ -25,8 +25,8 @@ final class CBT_Exam_Availability_Auto_Warm_Service
     private const STATUS_INACTIVE = 'inactive';
     private const STATUS_STOPPED = 'stopped';
     private const WINDOW_SECONDS = 1800;
-    private const BATCH_SIZE = 50;
-    private const INITIAL_BURST_SECONDS = 2.0;
+    private const BATCH_SIZE = 150;
+    private const INITIAL_BURST_SECONDS = 6.0;
     private const INITIAL_BURST_MAX_BATCHES = 8;
 
     public static function init(): void

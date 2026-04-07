@@ -935,6 +935,7 @@
                         'exam_snapshot_rows' => $exam_snapshot_rows,
                         'exam_snapshot_preview_pages' => $exam_snapshot_preview_pages ?? [],
                         'exam_readiness_page' => $exam_readiness_page ?? 1,
+                        'exam_readiness_pages' => $exam_readiness_pages ?? [],
                         'exam_snapshot_reset_url' => $exam_snapshot_reset_url,
                         'student_snapshot_filter_state' => $student_snapshot_filter_state ?? ['search' => '', 'kelas' => '', 'ruang' => '', 'paged' => 1, 'per_page' => 25],
                         'student_snapshot_kelas_options' => $student_snapshot_kelas_options ?? [],
@@ -5603,8 +5604,8 @@
                     const targetCountValue = Number.parseInt(String(formElement.getAttribute('data-cbt-clean-target-count') || '0'), 10);
                     const targetCount = Number.isInteger(targetCountValue) ? Math.max(0, targetCountValue) : 0;
                     const statsLabel = targetCount > 0
-                        ? `${targetCount} siswa target · clean only`
-                        : 'Target siswa mengikuti konfigurasi exam';
+                        ? `${targetCount} siswa target · snapshot siswa dipertahankan`
+                        : 'Clean aman per exam';
                     const steps = [
                         {
                             percent: 8,
@@ -5623,13 +5624,13 @@
                         },
                         {
                             percent: 74,
-                            phase: 'Membersihkan snapshot siswa',
-                            message: 'Menghapus Snapshot Profil dan Login untuk siswa target exam ini.',
+                            phase: 'Menjaga snapshot siswa',
+                            message: 'Snapshot Profil, Login, dan Availability siswa tetap dipertahankan agar exam lain tidak ikut terdampak.',
                         },
                         {
                             percent: 92,
-                            phase: 'Membersihkan availability',
-                            message: 'Menghapus prepared dan minute snapshot availability untuk siswa target exam ini.',
+                            phase: 'Mereset state exam',
+                            message: 'Mereset state one-click atau auto-warm untuk exam ini bila sebelumnya aktif.',
                         },
                     ];
 

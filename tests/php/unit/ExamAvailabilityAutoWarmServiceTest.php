@@ -72,7 +72,7 @@ final class ExamAvailabilityAutoWarmServiceTest extends TestCase
     #[RunInSeparateProcess]
     public function test_start_for_exam_runs_two_initial_bursts_for_large_target_batches(): void
     {
-        for ($index = 0; $index < 58; $index++) {
+        for ($index = 0; $index < 158; $index++) {
             $user_id = 80 + $index;
             cbt_test_register_user([
                 'ID' => $user_id,
@@ -94,10 +94,10 @@ final class ExamAvailabilityAutoWarmServiceTest extends TestCase
 
         self::assertTrue($result['success']);
         $state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
-        self::assertSame(60, $state['target_student_count']);
-        self::assertSame(60, $state['prepared_count']);
+        self::assertSame(160, $state['target_student_count']);
+        self::assertSame(160, $state['prepared_count']);
         self::assertCount(2, CBT_REST::$batchAvailabilityPayloadRequests);
-        self::assertCount(50, CBT_REST::$batchAvailabilityPayloadRequests[0]);
+        self::assertCount(150, CBT_REST::$batchAvailabilityPayloadRequests[0]);
         self::assertCount(10, CBT_REST::$batchAvailabilityPayloadRequests[1]);
     }
 
@@ -106,7 +106,7 @@ final class ExamAvailabilityAutoWarmServiceTest extends TestCase
     {
         $GLOBALS['cbt_test_availability_initial_burst_max_batches'] = 3;
 
-        for ($index = 0; $index < 108; $index++) {
+        for ($index = 0; $index < 308; $index++) {
             $user_id = 200 + $index;
             cbt_test_register_user([
                 'ID' => $user_id,
@@ -128,11 +128,11 @@ final class ExamAvailabilityAutoWarmServiceTest extends TestCase
 
         self::assertTrue($result['success']);
         $state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
-        self::assertSame(110, $state['target_student_count']);
-        self::assertSame(110, $state['prepared_count']);
+        self::assertSame(310, $state['target_student_count']);
+        self::assertSame(310, $state['prepared_count']);
         self::assertCount(3, CBT_REST::$batchAvailabilityPayloadRequests);
-        self::assertCount(50, CBT_REST::$batchAvailabilityPayloadRequests[0]);
-        self::assertCount(50, CBT_REST::$batchAvailabilityPayloadRequests[1]);
+        self::assertCount(150, CBT_REST::$batchAvailabilityPayloadRequests[0]);
+        self::assertCount(150, CBT_REST::$batchAvailabilityPayloadRequests[1]);
         self::assertCount(10, CBT_REST::$batchAvailabilityPayloadRequests[2]);
     }
 
