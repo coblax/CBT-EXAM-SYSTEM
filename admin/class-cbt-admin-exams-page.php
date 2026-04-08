@@ -1356,6 +1356,9 @@ final class CBT_Admin_Exams_Page
         $payload_bytes = max(0, (int) ($row['snapshot_payload_bytes'] ?? 0));
         $payload_bytes_label = $payload_bytes > 0 ? number_format_i18n($payload_bytes) . ' bytes' : '0 bytes';
         $snapshot_message = trim((string) ($row['snapshot_message'] ?? ''));
+        $snapshot_miss_reason_label = trim((string) ($row['snapshot_miss_reason_label'] ?? ''));
+        $snapshot_repair_status = sanitize_key((string) ($row['repair_status'] ?? ''));
+        $snapshot_repair_message = trim((string) ($row['repair_message'] ?? ''));
         $redis_host = trim((string) ($row['redis_host'] ?? ''));
         $redis_database = (int) ($row['redis_database'] ?? 0);
         $redis_error = trim((string) ($row['redis_error'] ?? ''));
@@ -1365,6 +1368,9 @@ final class CBT_Admin_Exams_Page
             : 'MISS';
         $start_snapshot_status_tone = sanitize_html_class((string) ($row['start_snapshot_status_tone'] ?? 'warning'), 'warning');
         $start_snapshot_message = trim((string) ($row['start_snapshot_message'] ?? ''));
+        $start_snapshot_miss_reason_label = trim((string) ($row['start_snapshot_miss_reason_label'] ?? ''));
+        $start_snapshot_repair_status = sanitize_key((string) ($row['start_snapshot_repair_status'] ?? ''));
+        $start_snapshot_repair_message = trim((string) ($row['start_snapshot_repair_message'] ?? ''));
         $start_snapshot_storage_key = trim((string) ($row['start_snapshot_storage_key'] ?? ''));
         $start_snapshot_payload_bytes = max(0, (int) ($row['start_snapshot_payload_bytes'] ?? 0));
         $start_snapshot_payload_bytes_label = $start_snapshot_payload_bytes > 0 ? number_format_i18n($start_snapshot_payload_bytes) . ' bytes' : '0 bytes';
@@ -1505,6 +1511,9 @@ final class CBT_Admin_Exams_Page
         $submission_context_invalid_count = max(0, (int) ($submission_context['invalid_count'] ?? 0));
         $submission_context_payload_bytes_total = max(0, (int) ($submission_context['payload_bytes_total'] ?? 0));
         $submission_context_payload_bytes_label = $submission_context_payload_bytes_total > 0 ? number_format_i18n($submission_context_payload_bytes_total) . ' bytes' : '0 bytes';
+        $submission_context_miss_reason_label = trim((string) ($submission_context['snapshot_miss_reason_label'] ?? ''));
+        $submission_context_repair_status = sanitize_key((string) ($submission_context['repair_status'] ?? ''));
+        $submission_context_repair_message = trim((string) ($submission_context['repair_message'] ?? ''));
         $submission_context_message = trim((string) ($submission_context['snapshot_message'] ?? ''));
         $submission_context_preview_items = array_values(array_filter((array) ($submission_context['preview_items'] ?? []), static function ($item): bool {
             return is_array($item);
@@ -1856,6 +1865,12 @@ final class CBT_Admin_Exams_Page
                         <span><strong>Error Redis:</strong> <code><?php echo esc_html($redis_error); ?></code></span>
                     <?php endif; ?>
                 </div>
+                <?php if ($snapshot_status_label === 'MISS' && $snapshot_miss_reason_label !== ''): ?>
+                    <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Alasan MISS: ' . $snapshot_miss_reason_label); ?></p>
+                <?php endif; ?>
+                <?php if (($snapshot_repair_status === 'auto_healed' || $snapshot_repair_status === 'repaired' || $snapshot_repair_status === 'queued_auto_heal') && $snapshot_repair_message !== ''): ?>
+                    <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html($snapshot_repair_message); ?></p>
+                <?php endif; ?>
                 <?php if ($snapshot_message !== ''): ?>
                     <p class="cbt-exam-snapshot-note"><?php echo esc_html($snapshot_message); ?></p>
                 <?php endif; ?>
@@ -1971,6 +1986,12 @@ final class CBT_Admin_Exams_Page
                         <span><strong>Error Start Redis:</strong> <code><?php echo esc_html($start_snapshot_redis_error); ?></code></span>
                     <?php endif; ?>
                 </div>
+                <?php if ($start_snapshot_status_label === 'MISS' && $start_snapshot_miss_reason_label !== ''): ?>
+                    <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Alasan MISS: ' . $start_snapshot_miss_reason_label); ?></p>
+                <?php endif; ?>
+                <?php if (($start_snapshot_repair_status === 'auto_healed' || $start_snapshot_repair_status === 'repaired' || $start_snapshot_repair_status === 'queued_auto_heal') && $start_snapshot_repair_message !== ''): ?>
+                    <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html($start_snapshot_repair_message); ?></p>
+                <?php endif; ?>
                 <?php if ($start_snapshot_message !== ''): ?>
                     <p class="cbt-exam-snapshot-note"><?php echo esc_html($start_snapshot_message); ?></p>
                 <?php endif; ?>
@@ -2032,9 +2053,21 @@ final class CBT_Admin_Exams_Page
                             $preview_question_type = (string) ($preview_item['question_type'] ?? '');
                             $preview_status = strtoupper((string) ($preview_item['status'] ?? 'miss'));
                             $preview_payload_bytes = max(0, (int) ($preview_item['payload_bytes'] ?? 0));
+                            $preview_reason_label = trim((string) ($preview_item['reason_label'] ?? ''));
                             ?>
                             <span class="cbt-student-snapshot-preview-pill">
-                                <?php echo esc_html('Q#' . $preview_question_id . ' · ' . ($preview_question_type !== '' ? $preview_question_type : 'unknown') . ' · ' . $preview_status . ' · ' . number_format_i18n($preview_payload_bytes) . ' bytes'); ?>
+                                <?php
+                                $preview_chunks = [
+                                    'Q#' . $preview_question_id,
+                                    ($preview_question_type !== '' ? $preview_question_type : 'unknown'),
+                                    $preview_status,
+                                ];
+                                if ($preview_reason_label !== '' && $preview_status !== 'READY') {
+                                    $preview_chunks[] = $preview_reason_label;
+                                }
+                                $preview_chunks[] = number_format_i18n($preview_payload_bytes) . ' bytes';
+                                echo esc_html(implode(' · ', $preview_chunks));
+                                ?>
                             </span>
                         <?php endforeach; ?>
                     </div>
@@ -2054,6 +2087,16 @@ final class CBT_Admin_Exams_Page
                         <span><strong>Error Redis:</strong> <code><?php echo esc_html($submission_context_redis_error); ?></code></span>
                     <?php endif; ?>
                 </div>
+                <?php if ($submission_context_status_label === 'MISS' && $submission_context_miss_reason_label !== ''): ?>
+                    <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Alasan MISS: ' . $submission_context_miss_reason_label); ?></p>
+                <?php elseif ($submission_context_status_label === 'INVALID' && $submission_context_miss_reason_label !== ''): ?>
+                    <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Alasan INVALID: ' . $submission_context_miss_reason_label); ?></p>
+                <?php elseif ($submission_context_status_label === 'WARNING' && $submission_context_miss_reason_label !== ''): ?>
+                    <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Diagnosa: ' . $submission_context_miss_reason_label); ?></p>
+                <?php endif; ?>
+                <?php if (($submission_context_repair_status === 'auto_healed' || $submission_context_repair_status === 'repaired' || $submission_context_repair_status === 'queued_auto_heal') && $submission_context_repair_message !== ''): ?>
+                    <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html($submission_context_repair_message); ?></p>
+                <?php endif; ?>
                 <?php if ($submission_context_message !== ''): ?>
                     <p class="cbt-exam-snapshot-note"><?php echo esc_html($submission_context_message); ?></p>
                 <?php endif; ?>
@@ -2446,6 +2489,8 @@ final class CBT_Admin_Exams_Page
         $profile_storage_key = (string) ($profile['storage_key'] ?? '');
         $profile_message = (string) ($profile['snapshot_message'] ?? '');
         $profile_miss_reason_label = trim((string) ($profile['snapshot_miss_reason_label'] ?? ''));
+        $profile_repair_status = sanitize_key((string) ($profile['repair_status'] ?? ''));
+        $profile_repair_message = trim((string) ($profile['repair_message'] ?? ''));
         $profile_snapshot_exists = !empty($profile['snapshot_exists']);
         $profile_snapshot_valid = !empty($profile['snapshot_valid']);
         $profile_photo_source = trim((string) ($profile_preview['foto'] ?? ''));
@@ -2454,6 +2499,9 @@ final class CBT_Admin_Exams_Page
         $login_payload_bytes = max(0, (int) ($login['payload_bytes'] ?? 0));
         $login_storage_key = (string) ($login['storage_key'] ?? '');
         $login_message = (string) ($login['snapshot_message'] ?? '');
+        $login_miss_reason_label = trim((string) ($login['snapshot_miss_reason_label'] ?? ''));
+        $login_repair_status = sanitize_key((string) ($login['repair_status'] ?? ''));
+        $login_repair_message = trim((string) ($login['repair_message'] ?? ''));
         $login_snapshot_exists = !empty($login['snapshot_exists']);
         $login_snapshot_valid = !empty($login['snapshot_valid']);
         $login_preview = is_array($login['preview'] ?? null) ? $login['preview'] : [];
@@ -2536,6 +2584,9 @@ final class CBT_Admin_Exams_Page
                         <?php endif; ?>
                         <?php if ($profile_status_label === 'MISS' && $profile_miss_reason_label !== ''): ?>
                             <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Alasan MISS: ' . $profile_miss_reason_label); ?></p>
+                        <?php endif; ?>
+                        <?php if (($profile_repair_status === 'auto_healed' || $profile_repair_status === 'repaired' || $profile_repair_status === 'queued_auto_heal') && $profile_repair_message !== ''): ?>
+                            <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html($profile_repair_message); ?></p>
                         <?php endif; ?>
                         <?php if ($profile_message !== ''): ?>
                             <p class="cbt-exam-snapshot-note"><?php echo esc_html($profile_message); ?></p>
@@ -2633,6 +2684,12 @@ final class CBT_Admin_Exams_Page
                                 </div>
                             </details>
                         <?php endif; ?>
+                        <?php if ($login_status_label === 'MISS' && $login_miss_reason_label !== ''): ?>
+                            <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Alasan MISS: ' . $login_miss_reason_label); ?></p>
+                        <?php endif; ?>
+                        <?php if (($login_repair_status === 'auto_healed' || $login_repair_status === 'repaired' || $login_repair_status === 'queued_auto_heal') && $login_repair_message !== ''): ?>
+                            <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html($login_repair_message); ?></p>
+                        <?php endif; ?>
                         <?php if ($login_message !== ''): ?>
                             <p class="cbt-exam-snapshot-note"><?php echo esc_html($login_message); ?></p>
                         <?php endif; ?>
@@ -2684,7 +2741,7 @@ final class CBT_Admin_Exams_Page
                         <?php if ($availability_status_label === 'MISS' && $availability_miss_reason_label !== ''): ?>
                             <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Alasan MISS: ' . $availability_miss_reason_label); ?></p>
                         <?php endif; ?>
-                        <?php if ($availability_repair_status === 'queued_rewarm'): ?>
+                        <?php if ($availability_repair_status === 'queued_rewarm' || $availability_repair_status === 'queued_auto_heal'): ?>
                             <p class="cbt-exam-snapshot-note"><?php echo esc_html($availability_repair_message !== '' ? $availability_repair_message : 'MISS karena Version berubah. Siswa ini sudah masuk antrean rewarm.'); ?></p>
                             <?php if ($availability_repair_queued_at !== '' || $availability_repair_source !== ''): ?>
                                 <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Queued rewarm' . ($availability_repair_source !== '' ? ' · Source ' . $availability_repair_source : '') . ($availability_repair_queued_at !== '' ? ' · ' . $availability_repair_queued_at : '')); ?></p>

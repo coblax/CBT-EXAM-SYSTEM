@@ -60,6 +60,10 @@ if (!class_exists('CBT_Runtime')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-runtime.php';
 }
 
+if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-snapshot-auto-heal-queue-service.php';
+}
+
 final class CBT_Admin_Exams_Service
 {
     private const TEST_REDIRECT_SIGNAL = '__cbt_admin_exams_redirect__';
@@ -1327,9 +1331,7 @@ final class CBT_Admin_Exams_Service
                 'page' => 1,
                 'per_page' => self::STUDENT_SNAPSHOT_PER_PAGE,
             ];
-        $availability_rewarm_queue = $can_manage_exam_snapshots && class_exists('CBT_Exam_Availability_Auto_Warm_Service')
-            ? CBT_Exam_Availability_Auto_Warm_Service::get_rewarm_queue_state()
-            : [];
+        $availability_rewarm_queue = self::build_compat_availability_rewarm_queue_context($can_manage_exam_snapshots);
         $student_snapshot_rows = (array) ($student_snapshot_table['items'] ?? []);
         $student_snapshot_total = max(0, (int) ($student_snapshot_table['total'] ?? 0));
         $student_snapshot_total_pages = max(1, (int) ($student_snapshot_table['total_pages'] ?? 1));
@@ -1658,6 +1660,16 @@ final class CBT_Admin_Exams_Service
                 'release_rate_label' => '-',
                 'oldest_wait_seconds' => 0,
             ];
+        $auto_heal_queue = class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')
+            ? CBT_Snapshot_Auto_Heal_Queue_Service::get_summary()
+            : [
+                'queue_depth' => 0,
+                'last_tick_at' => '',
+                'last_success_count' => 0,
+                'last_failed_count' => 0,
+                'last_skipped_count' => 0,
+                'last_message' => '',
+            ];
         $preflight_jobs = class_exists('CBT_Exam_Preflight_Service')
             ? CBT_Exam_Preflight_Service::get_jobs_state()
             : [];
@@ -1757,6 +1769,18 @@ final class CBT_Admin_Exams_Service
                 ]))),
                 'hint' => 'Per exam gate',
                 'tone' => sanitize_key((string) ($gate_diagnostics['status_tone'] ?? 'warning')),
+            ],
+            [
+                'label' => 'Auto-Heal Queue',
+                'value' => number_format_i18n((int) ($auto_heal_queue['queue_depth'] ?? 0)),
+                'meta' => trim(implode(' · ', array_filter([
+                    ((int) ($auto_heal_queue['last_success_count'] ?? 0) > 0) ? ('OK ' . number_format_i18n((int) $auto_heal_queue['last_success_count'])) : '',
+                    ((int) ($auto_heal_queue['last_skipped_count'] ?? 0) > 0) ? ('Skip ' . number_format_i18n((int) $auto_heal_queue['last_skipped_count'])) : '',
+                    ((int) ($auto_heal_queue['last_failed_count'] ?? 0) > 0) ? ('Fail ' . number_format_i18n((int) $auto_heal_queue['last_failed_count'])) : '',
+                    ((string) ($auto_heal_queue['last_tick_at'] ?? '') !== '') ? ('Tick ' . (string) $auto_heal_queue['last_tick_at']) : '',
+                ]))),
+                'hint' => 'Background repair',
+                'tone' => ((int) ($auto_heal_queue['queue_depth'] ?? 0)) > 0 ? 'success' : 'neutral',
             ],
             [
                 'label' => 'Warm Jobs',
@@ -4269,7 +4293,13 @@ final class CBT_Admin_Exams_Service
             $availability = self::maybe_prepare_admin_availability_snapshot($user_id, $availability);
         }
         $profile = CBT_Student_Profile_Cache::get_snapshot_diagnostics($user_id);
+        if ($mode === self::SNAPSHOT_TAB_PROFILE_MONITOR) {
+            $profile = self::maybe_prepare_admin_profile_snapshot($user_id, $profile);
+        }
         $login = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics($user_id);
+        if ($mode === self::SNAPSHOT_TAB_LOGIN_MONITOR) {
+            $login = self::maybe_prepare_admin_login_snapshot($user_id, $login);
+        }
         $availability_status_meta = self::build_availability_snapshot_status_meta($availability, $user_id);
         $profile_status_meta = self::build_snapshot_status_meta((string) ($profile['snapshot_status'] ?? 'miss'));
         $login_status_meta = self::build_snapshot_status_meta((string) ($login['snapshot_status'] ?? 'miss'));
@@ -4302,7 +4332,7 @@ final class CBT_Admin_Exams_Service
         $status = (string) ($availability['snapshot_status'] ?? 'miss');
         $source = sanitize_key((string) ($availability['snapshot_source'] ?? ''));
         $repair_status = sanitize_key((string) ($availability['repair_status'] ?? ''));
-        if ($repair_status === 'queued_rewarm') {
+        if ($repair_status === 'queued_rewarm' || $repair_status === 'queued_auto_heal') {
             return ['label' => 'QUEUED REWARM', 'tone' => 'warning'];
         }
 
@@ -4339,14 +4369,176 @@ final class CBT_Admin_Exams_Service
 
         if (
             $miss_reason === 'version_changed'
-            && class_exists('CBT_Exam_Availability_Auto_Warm_Service')
-            && method_exists('CBT_Exam_Availability_Auto_Warm_Service', 'enqueue_rewarm_users')
+            && class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')
+            && method_exists('CBT_Snapshot_Auto_Heal_Queue_Service', 'maybe_enqueue')
         ) {
-            CBT_Exam_Availability_Auto_Warm_Service::enqueue_rewarm_users([$user_id], 'version_changed', 'admin');
+            CBT_Snapshot_Auto_Heal_Queue_Service::maybe_enqueue('availability_user', $user_id, 'version_changed', 'admin');
             return CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics($user_id);
         }
 
         return $availability;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function build_compat_availability_rewarm_queue_context(bool $can_manage_exam_snapshots): array
+    {
+        $legacy_queue = $can_manage_exam_snapshots && class_exists('CBT_Exam_Availability_Auto_Warm_Service')
+            ? CBT_Exam_Availability_Auto_Warm_Service::get_rewarm_queue_state()
+            : [];
+        if (!$can_manage_exam_snapshots || !class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+            return is_array($legacy_queue) ? $legacy_queue : [];
+        }
+
+        $legacy_queue = is_array($legacy_queue) ? $legacy_queue : [];
+        $shared_state = CBT_Snapshot_Auto_Heal_Queue_Service::get_state();
+        $shared_summary = CBT_Snapshot_Auto_Heal_Queue_Service::get_summary();
+        $shared_items = isset($shared_state['items']) && is_array($shared_state['items'])
+            ? $shared_state['items']
+            : [];
+        $shared_queue_count = 0;
+
+        foreach ($shared_items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            if (sanitize_key((string) ($item['type'] ?? '')) !== 'availability_user') {
+                continue;
+            }
+
+            $shared_queue_count++;
+        }
+
+        if ($shared_queue_count <= 0) {
+            return $legacy_queue;
+        }
+
+        return array_merge(
+            [
+                'queued_count' => 0,
+                'last_processed_count' => 0,
+                'last_success_count' => 0,
+                'last_failure_count' => 0,
+                'last_skip_count' => 0,
+                'last_tick_at' => '',
+                'last_message' => '',
+            ],
+            $legacy_queue,
+            [
+                'queued_count' => max($shared_queue_count, (int) ($legacy_queue['queued_count'] ?? 0)),
+                'last_success_count' => max(
+                    (int) ($legacy_queue['last_success_count'] ?? 0),
+                    (int) ($shared_summary['last_success_count'] ?? 0)
+                ),
+                'last_failure_count' => max(
+                    (int) ($legacy_queue['last_failure_count'] ?? 0),
+                    (int) ($shared_summary['last_failed_count'] ?? 0)
+                ),
+                'last_skip_count' => max(
+                    (int) ($legacy_queue['last_skip_count'] ?? 0),
+                    (int) ($shared_summary['last_skipped_count'] ?? 0)
+                ),
+                'last_tick_at' => (string) ($shared_summary['last_tick_at'] ?? ($legacy_queue['last_tick_at'] ?? '')),
+                'last_message' => (string) ($shared_summary['last_message'] ?? ($legacy_queue['last_message'] ?? '')),
+            ]
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $profile
+     * @return array<string,mixed>
+     */
+    private static function maybe_prepare_admin_profile_snapshot(int $user_id, array $profile): array
+    {
+        $snapshot_status = sanitize_key((string) ($profile['snapshot_status'] ?? 'miss'));
+        if (!in_array($snapshot_status, ['miss', 'invalid'], true)) {
+            return $profile;
+        }
+
+        $repair = CBT_Student_Profile_Cache::maybe_auto_heal_snapshot($user_id, 'admin');
+        if (!empty($repair['success']) && is_array($repair['diagnostics'] ?? null)) {
+            return $repair['diagnostics'];
+        }
+
+        return $profile;
+    }
+
+    /**
+     * @param array<string,mixed> $login
+     * @return array<string,mixed>
+     */
+    private static function maybe_prepare_admin_login_snapshot(int $user_id, array $login): array
+    {
+        $snapshot_status = sanitize_key((string) ($login['snapshot_status'] ?? 'miss'));
+        if (!in_array($snapshot_status, ['miss', 'invalid'], true)) {
+            return $login;
+        }
+
+        $repair = CBT_Login_Auth_Snapshot_Cache::maybe_auto_heal_snapshot($user_id, 'admin');
+        if (!empty($repair['success']) && is_array($repair['diagnostics'] ?? null)) {
+            return $repair['diagnostics'];
+        }
+
+        return $login;
+    }
+
+    /**
+     * @param array<string,mixed> $diagnostics
+     * @return array<string,mixed>
+     */
+    private static function maybe_prepare_admin_question_snapshot(int $exam_id, array $diagnostics): array
+    {
+        $snapshot_status = sanitize_key((string) ($diagnostics['snapshot_status'] ?? 'miss'));
+        if (!in_array($snapshot_status, ['miss', 'invalid'], true)) {
+            return $diagnostics;
+        }
+
+        $repair = CBT_Exam_Question_Delivery_Cache::maybe_auto_heal_snapshot($exam_id, 'admin');
+        if (!empty($repair['success']) && is_array($repair['diagnostics'] ?? null)) {
+            return $repair['diagnostics'];
+        }
+
+        return $diagnostics;
+    }
+
+    /**
+     * @param array<string,mixed> $diagnostics
+     * @return array<string,mixed>
+     */
+    private static function maybe_prepare_admin_start_snapshot(int $exam_id, array $diagnostics): array
+    {
+        $snapshot_status = sanitize_key((string) ($diagnostics['snapshot_status'] ?? 'miss'));
+        if (!in_array($snapshot_status, ['miss', 'invalid'], true)) {
+            return $diagnostics;
+        }
+
+        $repair = CBT_Exam_Start_Attempt_Snapshot_Cache::maybe_auto_heal_snapshot($exam_id, 'admin');
+        if (!empty($repair['success']) && is_array($repair['diagnostics'] ?? null)) {
+            return $repair['diagnostics'];
+        }
+
+        return $diagnostics;
+    }
+
+    /**
+     * @param array<string,mixed> $diagnostics
+     * @return array<string,mixed>
+     */
+    private static function maybe_prepare_admin_submission_context_snapshot(int $exam_id, array $diagnostics): array
+    {
+        $snapshot_status = sanitize_key((string) ($diagnostics['snapshot_status'] ?? 'miss'));
+        if (!in_array($snapshot_status, ['miss', 'invalid', 'warning'], true)) {
+            return $diagnostics;
+        }
+
+        $repair = CBT_Question_Submission_Context_Cache::maybe_auto_heal_exam_snapshots($exam_id, 'admin');
+        if (!empty($repair['success']) && is_array($repair['diagnostics'] ?? null)) {
+            return $repair['diagnostics'];
+        }
+
+        return $diagnostics;
     }
 
     /**
@@ -4437,12 +4629,28 @@ final class CBT_Admin_Exams_Service
         }
 
         $rows = self::get_filtered_exam_snapshot_exams($is_admin_scope, $current_user_id, $selected_exam_ids);
+        $normalized_tab = self::sanitize_exam_snapshot_tab($tab);
+        $allow_question_snapshot_auto_heal = $normalized_tab === self::SNAPSHOT_TAB_QUESTION_MONITOR
+            && count($selected_exam_ids) === 1;
+        $allow_start_snapshot_auto_heal = $normalized_tab === self::SNAPSHOT_TAB_START_MONITOR
+            && count($selected_exam_ids) === 1;
+        $allow_submission_context_auto_heal = $normalized_tab === self::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR
+            && count($selected_exam_ids) === 1;
         $snapshot_rows = [];
 
         foreach ($rows as $row) {
             $exam_id = (int) ($row['id'] ?? 0);
             $row_readiness_page = max(1, (int) ($readiness_pages[$exam_id] ?? $legacy_readiness_page));
-            $snapshot_rows[] = self::build_exam_snapshot_row($row, $preview_pages, $row_readiness_page, $tab, $student_snapshot_filter_state);
+            $snapshot_rows[] = self::build_exam_snapshot_row(
+                $row,
+                $preview_pages,
+                $row_readiness_page,
+                $tab,
+                $student_snapshot_filter_state,
+                $allow_question_snapshot_auto_heal,
+                $allow_start_snapshot_auto_heal,
+                $allow_submission_context_auto_heal
+            );
         }
 
         return $snapshot_rows;
@@ -4673,7 +4881,10 @@ final class CBT_Admin_Exams_Service
         array $preview_pages = [],
         int $readiness_page = 1,
         string $tab = self::SNAPSHOT_TAB_PREFLIGHT,
-        array $student_snapshot_filter_state = []
+        array $student_snapshot_filter_state = [],
+        bool $allow_question_snapshot_auto_heal = false,
+        bool $allow_start_snapshot_auto_heal = false,
+        bool $allow_submission_context_auto_heal = false
     ): array
     {
         $exam_id = (int) ($exam_row['id'] ?? 0);
@@ -4766,6 +4977,10 @@ final class CBT_Admin_Exams_Service
             'start_snapshot_status_label' => 'UNAVAILABLE',
             'start_snapshot_status_tone' => 'error',
             'start_snapshot_message' => 'Helper start snapshot belum tersedia.',
+            'start_snapshot_miss_reason' => '',
+            'start_snapshot_miss_reason_label' => '',
+            'start_snapshot_repair_status' => '',
+            'start_snapshot_repair_message' => '',
             'start_snapshot_valid' => false,
             'start_snapshot_exists' => false,
             'start_snapshot_item_count' => 0,
@@ -4797,6 +5012,10 @@ final class CBT_Admin_Exams_Service
                 'snapshot_exists' => false,
                 'snapshot_valid' => false,
                 'snapshot_status' => 'unavailable',
+                'snapshot_miss_reason' => 'redis_unavailable',
+                'snapshot_miss_reason_label' => 'Redis tidak tersedia',
+                'repair_status' => '',
+                'repair_message' => '',
                 'snapshot_message' => 'Helper submission context belum tersedia.',
             ],
             'submission_context_status' => 'unavailable',
@@ -4832,6 +5051,9 @@ final class CBT_Admin_Exams_Service
             $preview_page,
             self::SNAPSHOT_PREVIEW_PER_PAGE
         );
+        if ($allow_question_snapshot_auto_heal) {
+            $diagnostics = self::maybe_prepare_admin_question_snapshot($exam_id, $diagnostics);
+        }
         $status = sanitize_key((string) ($diagnostics['snapshot_status'] ?? 'unavailable'));
         $tone = 'warning';
         if ($status === 'ready') {
@@ -4840,6 +5062,9 @@ final class CBT_Admin_Exams_Service
             $tone = 'error';
         }
         $start_diagnostics = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot_diagnostics($exam_id);
+        if ($allow_start_snapshot_auto_heal) {
+            $start_diagnostics = self::maybe_prepare_admin_start_snapshot($exam_id, $start_diagnostics);
+        }
         $start_status = sanitize_key((string) ($start_diagnostics['snapshot_status'] ?? 'unavailable'));
         $start_tone = 'warning';
         if ($start_status === 'ready') {
@@ -4850,6 +5075,9 @@ final class CBT_Admin_Exams_Service
         $submission_context_diagnostics = class_exists('CBT_Question_Submission_Context_Cache')
             ? CBT_Question_Submission_Context_Cache::get_exam_snapshot_diagnostics($exam_id)
             : $fallback['submission_context'];
+        if ($allow_submission_context_auto_heal) {
+            $submission_context_diagnostics = self::maybe_prepare_admin_submission_context_snapshot($exam_id, $submission_context_diagnostics);
+        }
         $submission_context_status = sanitize_key((string) ($submission_context_diagnostics['snapshot_status'] ?? 'unavailable'));
         $submission_context_tone = 'warning';
         if ($submission_context_status === 'ready') {
@@ -4880,6 +5108,10 @@ final class CBT_Admin_Exams_Service
             'start_snapshot_status_label' => strtoupper($start_status),
             'start_snapshot_status_tone' => $start_tone,
             'start_snapshot_message' => (string) ($start_diagnostics['snapshot_message'] ?? $fallback['start_snapshot_message']),
+            'start_snapshot_miss_reason' => (string) ($start_diagnostics['snapshot_miss_reason'] ?? ''),
+            'start_snapshot_miss_reason_label' => (string) ($start_diagnostics['snapshot_miss_reason_label'] ?? ''),
+            'start_snapshot_repair_status' => (string) ($start_diagnostics['repair_status'] ?? ''),
+            'start_snapshot_repair_message' => (string) ($start_diagnostics['repair_message'] ?? ''),
             'start_snapshot_valid' => !empty($start_diagnostics['snapshot_valid']),
             'start_snapshot_exists' => !empty($start_diagnostics['snapshot_exists']),
             'start_snapshot_item_count' => (int) ($start_diagnostics['snapshot_item_count'] ?? 0),

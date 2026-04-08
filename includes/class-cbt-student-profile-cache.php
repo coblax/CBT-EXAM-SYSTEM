@@ -8,6 +8,10 @@ if (!class_exists('CBT_Redis_Pipeline_Helper')) {
     require_once __DIR__ . '/class-cbt-redis-pipeline-helper.php';
 }
 
+if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+    require_once __DIR__ . '/class-cbt-snapshot-auto-heal-queue-service.php';
+}
+
 class CBT_Student_Profile_Cache
 {
     private const PROFILE_REDIS_TTL_SECONDS = 44100;
@@ -201,6 +205,8 @@ class CBT_Student_Profile_Cache
      *   snapshot_miss_reason:string,
      *   snapshot_miss_reason_label:string,
      *   snapshot_message:string,
+     *   repair_status:string,
+     *   repair_message:string,
      *   payload_bytes:int,
      *   ttl_seconds:int,
      *   preview:array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string}
@@ -227,6 +233,8 @@ class CBT_Student_Profile_Cache
                 'snapshot_miss_reason' => 'idle',
                 'snapshot_miss_reason_label' => 'Belum dipilih',
                 'snapshot_message' => 'User siswa belum dipilih.',
+                'repair_status' => '',
+                'repair_message' => '',
                 'payload_bytes' => 0,
                 'ttl_seconds' => -2,
                 'preview' => self::empty_snapshot(),
@@ -247,6 +255,8 @@ class CBT_Student_Profile_Cache
                 'snapshot_miss_reason' => 'redis_unavailable',
                 'snapshot_miss_reason_label' => 'Redis tidak tersedia',
                 'snapshot_message' => 'Redis profile tidak tersedia.',
+                'repair_status' => '',
+                'repair_message' => '',
                 'payload_bytes' => 0,
                 'ttl_seconds' => -2,
                 'preview' => self::empty_snapshot(),
@@ -274,13 +284,19 @@ class CBT_Student_Profile_Cache
             $snapshot_message = 'Snapshot profil siswa siap dipakai untuk live payload.';
         } elseif ($snapshot_exists) {
             $snapshot_status = 'invalid';
-            $miss_reason = ['code' => '', 'label' => ''];
-            $snapshot_message = 'Snapshot profil ditemukan tetapi payload-nya tidak valid dan akan diabaikan.';
+            $miss_reason = ['code' => 'invalid_payload', 'label' => 'Payload invalid'];
+            $snapshot_message = self::build_snapshot_miss_message($miss_reason);
         } else {
             $snapshot_status = 'miss';
             $miss_reason = self::detect_snapshot_miss_reason($user_id, $redis);
             $snapshot_message = self::build_snapshot_miss_message($miss_reason);
         }
+
+        $snapshot_miss_reason = (string) ($miss_reason['code'] ?? '');
+        if (in_array($snapshot_status, ['miss', 'invalid'], true)) {
+            self::maybe_enqueue_auto_heal($user_id, $snapshot_miss_reason, 'diagnostics');
+        }
+        $queue_meta = self::build_queue_repair_meta($user_id);
 
         return [
             'user_id' => $user_id,
@@ -292,12 +308,87 @@ class CBT_Student_Profile_Cache
             'snapshot_exists' => $snapshot_exists,
             'snapshot_valid' => $snapshot_valid,
             'snapshot_status' => $snapshot_status,
-            'snapshot_miss_reason' => (string) ($miss_reason['code'] ?? ''),
+            'snapshot_miss_reason' => $snapshot_miss_reason,
             'snapshot_miss_reason_label' => (string) ($miss_reason['label'] ?? ''),
             'snapshot_message' => $snapshot_message,
+            'repair_status' => (string) ($queue_meta['status'] ?? ''),
+            'repair_message' => (string) ($queue_meta['message'] ?? ''),
             'payload_bytes' => $payload_bytes,
             'ttl_seconds' => $ttl_seconds,
             'preview' => $preview,
+        ];
+    }
+
+    /**
+     * @return array{
+     *   success:bool,
+     *   status:string,
+     *   message:string,
+     *   diagnostics:array{
+     *     user_id:int,
+     *     redis_available:bool,
+     *     redis_error:string,
+     *     redis_host:string,
+     *     redis_database:int,
+     *     storage_key:string,
+     *     snapshot_exists:bool,
+     *     snapshot_valid:bool,
+     *     snapshot_status:string,
+     *     snapshot_miss_reason:string,
+     *     snapshot_miss_reason_label:string,
+     *     snapshot_message:string,
+     *     repair_status:string,
+     *     repair_message:string,
+     *     payload_bytes:int,
+     *     ttl_seconds:int,
+     *     preview:array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string}
+     *   }
+     * }
+     */
+    public static function maybe_auto_heal_snapshot(int $user_id, string $source = 'admin'): array
+    {
+        $user_id = absint($user_id);
+        $diagnostics = self::get_snapshot_diagnostics($user_id);
+        $default = [
+            'success' => false,
+            'status' => '',
+            'message' => '',
+            'diagnostics' => $diagnostics,
+        ];
+
+        if ($user_id <= 0) {
+            return $default;
+        }
+
+        $snapshot_status = sanitize_key((string) ($diagnostics['snapshot_status'] ?? 'miss'));
+        $miss_reason = sanitize_key((string) ($diagnostics['snapshot_miss_reason'] ?? ''));
+        if (!in_array($snapshot_status, ['miss', 'invalid'], true)) {
+            return $default;
+        }
+
+        if (!self::is_auto_heal_miss_reason($miss_reason)) {
+            return $default;
+        }
+
+        if (!(get_user_by('id', $user_id) instanceof WP_User)) {
+            return $default;
+        }
+
+        $snapshot = self::build_snapshot_from_usermeta($user_id);
+        if (!self::write_profile_redis_snapshot($user_id, $snapshot)) {
+            return $default;
+        }
+
+        $message = 'Dipulihkan otomatis dari usermeta';
+        $healed_diagnostics = self::get_snapshot_diagnostics($user_id);
+        $healed_diagnostics['repair_status'] = 'auto_healed';
+        $healed_diagnostics['repair_message'] = $message;
+
+        return [
+            'success' => true,
+            'status' => 'auto_healed',
+            'message' => $message,
+            'diagnostics' => $healed_diagnostics,
         ];
     }
 
@@ -315,6 +406,7 @@ class CBT_Student_Profile_Cache
 
         $redis->del(self::profile_storage_key($user_id));
         self::write_profile_event_marker($user_id, $reason);
+        self::maybe_enqueue_auto_heal($user_id, $reason, 'invalidation');
     }
 
     public static function handle_delete_user(int $user_id): void
@@ -678,6 +770,60 @@ class CBT_Student_Profile_Cache
     private static function is_relevant_meta_key(string $meta_key): bool
     {
         return in_array(trim($meta_key), self::SNAPSHOT_FIELDS, true);
+    }
+
+    private static function is_auto_heal_miss_reason(string $miss_reason): bool
+    {
+        return in_array(
+            sanitize_key($miss_reason),
+            [
+                'meta_changed',
+                'user_invalidated',
+                'invalid_payload',
+                'expired_or_evicted',
+                'not_prepared',
+            ],
+            true
+        );
+    }
+
+    private static function maybe_enqueue_auto_heal(int $user_id, string $reason, string $source = 'system'): void
+    {
+        $user_id = absint($user_id);
+        $reason = sanitize_key($reason);
+        if ($user_id <= 0 || $reason === '' || !self::is_auto_heal_miss_reason($reason)) {
+            return;
+        }
+
+        if (class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+            CBT_Snapshot_Auto_Heal_Queue_Service::maybe_enqueue('profile_user', $user_id, $reason, $source);
+        }
+    }
+
+    /**
+     * @return array{status:string,message:string}
+     */
+    private static function build_queue_repair_meta(int $user_id): array
+    {
+        if ($user_id <= 0 || !class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+            return [
+                'status' => '',
+                'message' => '',
+            ];
+        }
+
+        $queue_meta = CBT_Snapshot_Auto_Heal_Queue_Service::get_target_repair_state('profile_user', $user_id);
+        if (empty($queue_meta['queued'])) {
+            return [
+                'status' => '',
+                'message' => '',
+            ];
+        }
+
+        return [
+            'status' => (string) ($queue_meta['status'] ?? 'queued_auto_heal'),
+            'message' => (string) ($queue_meta['message'] ?? ''),
+        ];
     }
 
     /**

@@ -12,13 +12,19 @@ if (!class_exists('CBT_Admin_Questions_Helper')) {
     require_once dirname(__DIR__) . '/admin/class-cbt-admin-questions-helper.php';
 }
 
+if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+    require_once __DIR__ . '/class-cbt-snapshot-auto-heal-queue-service.php';
+}
+
 class CBT_Question_Submission_Context_Cache
 {
     private const SNAPSHOT_REDIS_TTL_SECONDS = 44100;
+    private const SNAPSHOT_EVENT_REDIS_TTL_SECONDS = 604800;
     private const SNAPSHOT_REDIS_DEFAULT_HOST = '127.0.0.1';
     private const SNAPSHOT_REDIS_DEFAULT_PORT = 6379;
     private const SNAPSHOT_REDIS_DEFAULT_DATABASE = 2;
     private const SNAPSHOT_REDIS_PREFIX = 'cbt_submit_context:';
+    private const SNAPSHOT_EVENT_REDIS_PREFIX = 'cbt_submit_context_meta:';
     private const SNAPSHOT_REDIS_TIMEOUT = 1.5;
 
     /** @var Redis|false|null */
@@ -91,8 +97,17 @@ class CBT_Question_Submission_Context_Cache
      *   missing_count:int,
      *   invalid_count:int,
      *   payload_bytes_total:int,
-     *   preview_items:array<int,array{question_id:int,question_type:string,status:string,payload_bytes:int}>,
+     *   preview_items:array<int,array{
+     *     question_id:int,
+     *     question_type:string,
+     *     status:string,
+     *     payload_bytes:int,
+     *     reason:string,
+     *     reason_label:string
+     *   }>,
      *   snapshot_status:string,
+     *   snapshot_miss_reason:string,
+     *   snapshot_miss_reason_label:string,
      *   snapshot_message:string,
      *   redis_available:bool,
      *   redis_error:string,
@@ -157,6 +172,10 @@ class CBT_Question_Submission_Context_Cache
             }
         }
 
+        if ($exam_id > 0) {
+            self::write_snapshot_event_marker($exam_id, 'manual_clear');
+        }
+
         return [
             'exam_id' => $exam_id,
             'question_count' => count($question_ids),
@@ -180,6 +199,10 @@ class CBT_Question_Submission_Context_Cache
      *   snapshot_exists:bool,
      *   snapshot_valid:bool,
      *   snapshot_status:string,
+     *   snapshot_miss_reason:string,
+     *   snapshot_miss_reason_label:string,
+     *   repair_status:string,
+     *   repair_message:string,
      *   snapshot_message:string
      * }
      */
@@ -212,6 +235,10 @@ class CBT_Question_Submission_Context_Cache
                 'snapshot_exists' => false,
                 'snapshot_valid' => false,
                 'snapshot_status' => 'idle',
+                'snapshot_miss_reason' => 'idle',
+                'snapshot_miss_reason_label' => 'Belum dipilih',
+                'repair_status' => '',
+                'repair_message' => '',
                 'snapshot_message' => 'Pilih exam dulu untuk memeriksa submission context.',
             ];
         }
@@ -232,6 +259,10 @@ class CBT_Question_Submission_Context_Cache
                 'snapshot_exists' => false,
                 'snapshot_valid' => false,
                 'snapshot_status' => 'unavailable',
+                'snapshot_miss_reason' => 'redis_unavailable',
+                'snapshot_miss_reason_label' => 'Redis tidak tersedia',
+                'repair_status' => '',
+                'repair_message' => '',
                 'snapshot_message' => 'Redis submission context tidak tersedia.',
             ];
         }
@@ -252,12 +283,17 @@ class CBT_Question_Submission_Context_Cache
                 'snapshot_exists' => false,
                 'snapshot_valid' => false,
                 'snapshot_status' => 'idle',
+                'snapshot_miss_reason' => 'no_active_questions',
+                'snapshot_miss_reason_label' => 'Belum ada soal aktif',
+                'repair_status' => '',
+                'repair_message' => '',
                 'snapshot_message' => 'Belum ada soal aktif pada exam ini.',
             ];
         }
 
         $catalog_version = self::catalog_version();
         $exam_version = self::exam_version($exam_id);
+        $reason_counts = [];
 
         foreach ($question_rows as $question_row) {
             $item = self::build_exam_snapshot_item_diagnostics(
@@ -271,6 +307,10 @@ class CBT_Question_Submission_Context_Cache
 
             $payload_bytes_total += (int) ($item['payload_bytes'] ?? 0);
             $status = sanitize_key((string) ($item['status'] ?? 'miss'));
+            $reason_code = sanitize_key((string) ($item['reason'] ?? ''));
+            if ($reason_code !== '') {
+                $reason_counts[$reason_code] = (int) ($reason_counts[$reason_code] ?? 0) + 1;
+            }
             if ($status === 'ready') {
                 $ready_count++;
             } elseif ($status === 'invalid') {
@@ -285,31 +325,48 @@ class CBT_Question_Submission_Context_Cache
                     'question_type' => (string) ($item['question_type'] ?? ''),
                     'status' => $status,
                     'payload_bytes' => (int) ($item['payload_bytes'] ?? 0),
+                    'reason' => $reason_code,
+                    'reason_label' => (string) ($item['reason_label'] ?? ''),
                 ];
             }
         }
 
         $snapshot_exists = ($ready_count + $invalid_count) > 0;
         $snapshot_valid = $question_count > 0 && $ready_count === $question_count;
+        $snapshot_reason = self::detect_exam_snapshot_reason(
+            $exam_id,
+            $reason_counts,
+            $ready_count,
+            $missing_count,
+            $invalid_count,
+            $question_count,
+            $redis
+        );
+        $snapshot_miss_reason = (string) ($snapshot_reason['code'] ?? '');
+        $snapshot_miss_reason_label = (string) ($snapshot_reason['label'] ?? '');
         if ($snapshot_valid) {
             $snapshot_status = 'ready';
             $snapshot_message = 'Submission context siap dipakai untuk submit jawaban dan scoring objektif.';
         } elseif ($invalid_count === $question_count) {
             $snapshot_status = 'invalid';
-            $snapshot_message = 'Submission context ditemukan tetapi ada payload yang tidak valid untuk revision exam saat ini.';
+            $snapshot_message = self::build_exam_snapshot_reason_message('invalid', $snapshot_reason);
         } elseif ($missing_count === $question_count) {
             $snapshot_status = 'miss';
-            $snapshot_message = 'Submission context belum dipanaskan untuk exam ini.';
+            $snapshot_message = self::build_exam_snapshot_reason_message('miss', $snapshot_reason);
         } else {
             $snapshot_status = 'warning';
-            $snapshot_message = sprintf(
-                'Submission context parsial. READY %d/%d · MISS %d · INVALID %d.',
-                $ready_count,
-                $question_count,
-                $missing_count,
-                $invalid_count
-            );
+            $snapshot_message = self::build_exam_snapshot_reason_message('warning', $snapshot_reason, [
+                'ready_count' => $ready_count,
+                'question_count' => $question_count,
+                'missing_count' => $missing_count,
+                'invalid_count' => $invalid_count,
+            ]);
         }
+
+        if (in_array($snapshot_status, ['miss', 'invalid', 'warning'], true)) {
+            self::maybe_enqueue_auto_heal($exam_id, $snapshot_miss_reason, 'diagnostics');
+        }
+        $queue_meta = self::build_queue_repair_meta($exam_id);
 
         return [
             'exam_id' => $exam_id,
@@ -326,7 +383,67 @@ class CBT_Question_Submission_Context_Cache
             'snapshot_exists' => $snapshot_exists,
             'snapshot_valid' => $snapshot_valid,
             'snapshot_status' => $snapshot_status,
+            'snapshot_miss_reason' => $snapshot_miss_reason,
+            'snapshot_miss_reason_label' => $snapshot_miss_reason_label,
+            'repair_status' => (string) ($queue_meta['status'] ?? ''),
+            'repair_message' => (string) ($queue_meta['message'] ?? ''),
             'snapshot_message' => $snapshot_message,
+        ];
+    }
+
+    /**
+     * @return array{
+     *   success:bool,
+     *   status:string,
+     *   message:string,
+     *   diagnostics:array<string,mixed>
+     * }
+     */
+    public static function maybe_auto_heal_exam_snapshots(int $exam_id, string $source = 'admin'): array
+    {
+        $exam_id = absint($exam_id);
+        $diagnostics = self::get_exam_snapshot_diagnostics($exam_id);
+        $default = [
+            'success' => false,
+            'status' => '',
+            'message' => '',
+            'diagnostics' => $diagnostics,
+        ];
+
+        if ($exam_id <= 0) {
+            return $default;
+        }
+
+        $snapshot_status = sanitize_key((string) ($diagnostics['snapshot_status'] ?? 'miss'));
+        $miss_reason = sanitize_key((string) ($diagnostics['snapshot_miss_reason'] ?? ''));
+        if (!in_array($snapshot_status, ['miss', 'invalid', 'warning'], true)) {
+            return $default;
+        }
+
+        if (!self::is_auto_heal_miss_reason($miss_reason)) {
+            return $default;
+        }
+
+        $result = self::warm_exam_snapshots($exam_id);
+        $healed_diagnostics = is_array($result) ? $result : self::get_exam_snapshot_diagnostics($exam_id);
+        if (sanitize_key((string) ($healed_diagnostics['snapshot_status'] ?? 'miss')) !== 'ready') {
+            return [
+                'success' => false,
+                'status' => '',
+                'message' => '',
+                'diagnostics' => $healed_diagnostics,
+            ];
+        }
+
+        $message = 'Dipulihkan otomatis dari data submit canonical';
+        $healed_diagnostics['repair_status'] = 'auto_healed';
+        $healed_diagnostics['repair_message'] = $message;
+
+        return [
+            'success' => true,
+            'status' => 'auto_healed',
+            'message' => $message,
+            'diagnostics' => $healed_diagnostics,
         ];
     }
 
@@ -426,6 +543,7 @@ class CBT_Question_Submission_Context_Cache
 
         $catalog_version = self::catalog_version();
         $exam_version_cache = [];
+        $touched_exam_ids = [];
 
         foreach ($snapshots as $snapshot) {
             $sanitized = self::sanitize_snapshot(is_array($snapshot) ? $snapshot : []);
@@ -459,6 +577,11 @@ class CBT_Question_Submission_Context_Cache
 
             $redis->setEx($storage_key, self::SNAPSHOT_REDIS_TTL_SECONDS, $encoded_snapshot);
             $redis->setEx(self::pointer_key($question_id), self::SNAPSHOT_REDIS_TTL_SECONDS, $encoded_pointer);
+            $touched_exam_ids[$exam_id] = $exam_id;
+        }
+
+        foreach ($touched_exam_ids as $exam_id) {
+            self::write_snapshot_event_marker((int) $exam_id, 'written');
         }
     }
 
@@ -607,7 +730,14 @@ class CBT_Question_Submission_Context_Cache
     }
 
     /**
-     * @return array{question_id:int,question_type:string,status:string,payload_bytes:int}
+     * @return array{
+     *   question_id:int,
+     *   question_type:string,
+     *   status:string,
+     *   payload_bytes:int,
+     *   reason:string,
+     *   reason_label:string
+     * }
      */
     private static function build_exam_snapshot_item_diagnostics(
         int $question_id,
@@ -628,6 +758,8 @@ class CBT_Question_Submission_Context_Cache
                 'question_type' => $question_type,
                 'status' => $status,
                 'payload_bytes' => 0,
+                'reason' => 'pointer_missing',
+                'reason_label' => 'Pointer belum ada',
             ];
         }
 
@@ -638,6 +770,8 @@ class CBT_Question_Submission_Context_Cache
                 'question_type' => $question_type,
                 'status' => 'invalid',
                 'payload_bytes' => 0,
+                'reason' => 'invalid_payload',
+                'reason_label' => 'Pointer invalid',
             ];
         }
 
@@ -651,6 +785,8 @@ class CBT_Question_Submission_Context_Cache
                 'question_type' => $question_type,
                 'status' => 'invalid',
                 'payload_bytes' => 0,
+                'reason' => 'invalid_payload',
+                'reason_label' => 'Pointer invalid',
             ];
         }
 
@@ -660,6 +796,8 @@ class CBT_Question_Submission_Context_Cache
                 'question_type' => $question_type,
                 'status' => 'invalid',
                 'payload_bytes' => 0,
+                'reason' => 'revision_changed',
+                'reason_label' => 'Revision berubah',
             ];
         }
 
@@ -670,6 +808,8 @@ class CBT_Question_Submission_Context_Cache
                 'question_type' => $question_type,
                 'status' => 'miss',
                 'payload_bytes' => 0,
+                'reason' => 'storage_missing',
+                'reason_label' => 'Payload hilang',
             ];
         }
 
@@ -681,6 +821,8 @@ class CBT_Question_Submission_Context_Cache
                 'question_type' => $question_type,
                 'status' => 'invalid',
                 'payload_bytes' => $payload_bytes,
+                'reason' => 'invalid_payload',
+                'reason_label' => 'Payload invalid',
             ];
         }
 
@@ -694,6 +836,176 @@ class CBT_Question_Submission_Context_Cache
             'question_type' => $question_type !== '' ? $question_type : (string) ($snapshot['question_type'] ?? ''),
             'status' => $is_valid ? 'ready' : 'invalid',
             'payload_bytes' => $payload_bytes,
+            'reason' => $is_valid ? '' : 'invalid_payload',
+            'reason_label' => $is_valid ? '' : 'Payload invalid',
+        ];
+    }
+
+    /**
+     * @param array<string,int> $reason_counts
+     * @return array{code:string,label:string}
+     */
+    private static function detect_exam_snapshot_reason(
+        int $exam_id,
+        array $reason_counts,
+        int $ready_count,
+        int $missing_count,
+        int $invalid_count,
+        int $question_count,
+        Redis $redis
+    ): array {
+        if ($question_count <= 0) {
+            return ['code' => 'no_active_questions', 'label' => 'Belum ada soal aktif'];
+        }
+
+        $event = self::read_snapshot_event_marker($exam_id, $redis);
+        $event_code = sanitize_key((string) ($event['event'] ?? ''));
+
+        if ($missing_count === $question_count) {
+            if ($event_code === 'manual_clear') {
+                return ['code' => 'manual_clear', 'label' => 'Dibersihkan manual'];
+            }
+
+            if (!empty($reason_counts['storage_missing'])) {
+                return ['code' => 'expired_or_evicted', 'label' => 'TTL habis / ter-evict'];
+            }
+
+            if (!empty($reason_counts['pointer_missing'])) {
+                if ($event_code === 'written') {
+                    return ['code' => 'expired_or_evicted', 'label' => 'TTL habis / ter-evict'];
+                }
+
+                return ['code' => 'not_prepared', 'label' => 'Belum disiapkan'];
+            }
+        }
+
+        if ($invalid_count === $question_count) {
+            if (!empty($reason_counts['revision_changed'])) {
+                return ['code' => 'revision_changed', 'label' => 'Revision berubah'];
+            }
+
+            return ['code' => 'invalid_payload', 'label' => 'Payload invalid'];
+        }
+
+        if ($missing_count > 0 && $invalid_count > 0) {
+            return ['code' => 'partial_mixed', 'label' => 'Parsial campuran'];
+        }
+        if ($invalid_count > 0) {
+            return ['code' => 'partial_invalid', 'label' => 'Parsial invalid'];
+        }
+        if ($missing_count > 0) {
+            return ['code' => 'partial_missing', 'label' => 'Parsial belum siap'];
+        }
+
+        return ['code' => '', 'label' => ''];
+    }
+
+    /**
+     * @param array{code:string,label:string} $reason
+     * @param array{ready_count?:int,question_count?:int,missing_count?:int,invalid_count?:int} $counts
+     */
+    private static function build_exam_snapshot_reason_message(string $status, array $reason, array $counts = []): string
+    {
+        $code = sanitize_key((string) ($reason['code'] ?? ''));
+
+        if ($status === 'miss') {
+            if ($code === 'manual_clear') {
+                return 'Submission context dibersihkan manual. Jalankan warm lagi sebelum submit/autosave mulai ramai.';
+            }
+            if ($code === 'expired_or_evicted') {
+                return 'Submission context MISS karena key sebelumnya kemungkinan sudah expired atau ter-evict. Read berikutnya bisa menghydrate ulang dari data canonical.';
+            }
+
+            return 'Submission context belum dipanaskan untuk exam ini.';
+        }
+
+        if ($status === 'invalid') {
+            if ($code === 'revision_changed') {
+                return 'Submission context INVALID karena revision exam berubah. Warm ulang diperlukan agar kontrak evaluasi jawaban sinkron dengan revision terbaru.';
+            }
+
+            return 'Submission context ditemukan tetapi ada pointer/payload yang tidak valid untuk revision exam saat ini.';
+        }
+
+        $ready_count = max(0, (int) ($counts['ready_count'] ?? 0));
+        $question_count = max(0, (int) ($counts['question_count'] ?? 0));
+        $missing_count = max(0, (int) ($counts['missing_count'] ?? 0));
+        $invalid_count = max(0, (int) ($counts['invalid_count'] ?? 0));
+
+        if ($code === 'partial_invalid') {
+            return sprintf(
+                'Submission context parsial invalid. READY %d/%d · INVALID %d.',
+                $ready_count,
+                $question_count,
+                $invalid_count
+            );
+        }
+        if ($code === 'partial_missing') {
+            return sprintf(
+                'Submission context parsial belum siap. READY %d/%d · MISS %d.',
+                $ready_count,
+                $question_count,
+                $missing_count
+            );
+        }
+
+        return sprintf(
+            'Submission context parsial. READY %d/%d · MISS %d · INVALID %d.',
+            $ready_count,
+            $question_count,
+            $missing_count,
+            $invalid_count
+        );
+    }
+
+    private static function is_auto_heal_miss_reason(string $miss_reason): bool
+    {
+        return in_array(sanitize_key($miss_reason), [
+            'expired_or_evicted',
+            'revision_changed',
+            'invalid_payload',
+            'partial_missing',
+            'partial_invalid',
+            'partial_mixed',
+        ], true);
+    }
+
+    private static function maybe_enqueue_auto_heal(int $exam_id, string $reason, string $source = 'system'): void
+    {
+        $exam_id = absint($exam_id);
+        $reason = sanitize_key($reason);
+        if ($exam_id <= 0 || $reason === '' || !self::is_auto_heal_miss_reason($reason)) {
+            return;
+        }
+
+        if (class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+            CBT_Snapshot_Auto_Heal_Queue_Service::maybe_enqueue('submit_exam', $exam_id, $reason, $source);
+        }
+    }
+
+    /**
+     * @return array{status:string,message:string}
+     */
+    private static function build_queue_repair_meta(int $exam_id): array
+    {
+        if ($exam_id <= 0 || !class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+            return [
+                'status' => '',
+                'message' => '',
+            ];
+        }
+
+        $queue_meta = CBT_Snapshot_Auto_Heal_Queue_Service::get_target_repair_state('submit_exam', $exam_id);
+        if (empty($queue_meta['queued'])) {
+            return [
+                'status' => '',
+                'message' => '',
+            ];
+        }
+
+        return [
+            'status' => (string) ($queue_meta['status'] ?? 'queued_auto_heal'),
+            'message' => (string) ($queue_meta['message'] ?? ''),
         ];
     }
 
@@ -971,6 +1283,60 @@ class CBT_Question_Submission_Context_Cache
             . ':exam:' . max(0, $exam_id)
             . ':catalog:' . max(1, $catalog_version)
             . ':version:' . max(1, $exam_version);
+    }
+
+    private static function event_key(int $exam_id): string
+    {
+        return self::SNAPSHOT_EVENT_REDIS_PREFIX . 'exam:' . max(0, $exam_id);
+    }
+
+    private static function write_snapshot_event_marker(int $exam_id, string $event): void
+    {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0) {
+            return;
+        }
+
+        $redis = self::snapshot_redis();
+        if (!$redis instanceof Redis) {
+            return;
+        }
+
+        $payload = wp_json_encode([
+            'event' => sanitize_key($event),
+            'recorded_at' => current_time('mysql'),
+        ]);
+        if (!is_string($payload) || $payload === '') {
+            return;
+        }
+
+        $redis->setEx(self::event_key($exam_id), self::SNAPSHOT_EVENT_REDIS_TTL_SECONDS, $payload);
+    }
+
+    /**
+     * @return array{event:string,recorded_at:string}|null
+     */
+    private static function read_snapshot_event_marker(int $exam_id, Redis $redis): ?array
+    {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0) {
+            return null;
+        }
+
+        $raw = $redis->get(self::event_key($exam_id));
+        if (!is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        return [
+            'event' => sanitize_key((string) ($decoded['event'] ?? '')),
+            'recorded_at' => is_scalar($decoded['recorded_at'] ?? null) ? (string) ($decoded['recorded_at'] ?? '') : '',
+        ];
     }
 
     /**

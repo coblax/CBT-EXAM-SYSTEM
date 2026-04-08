@@ -81,6 +81,51 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringNotContainsString('Jalankan One-Click Pra Ujian', $html);
     }
 
+    public function test_render_snapshot_panel_shows_question_monitor_miss_reason_note(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_QUESTION_MONITOR,
+            'exam_snapshot_rows' => [
+                array_replace_recursive($this->snapshotPanelArgs()['exam_snapshot_rows'][0], [
+                    'snapshot_status_label' => 'MISS',
+                    'snapshot_status_tone' => 'warning',
+                    'snapshot_exists' => false,
+                    'snapshot_valid' => false,
+                    'snapshot_miss_reason_label' => 'Revision berubah',
+                    'snapshot_message' => 'Snapshot MISS karena revision exam berubah. Key revision sebelumnya tidak lagi dianggap current dan perlu dihangatkan ulang.',
+                    'snapshot_item_count' => 0,
+                    'snapshot_payload_bytes' => 0,
+                    'snapshot_ttl_seconds' => -2,
+                    'preview_question_ids' => [],
+                    'preview_items' => [],
+                ]),
+            ],
+        ]));
+
+        self::assertStringContainsString('Alasan MISS: Revision berubah', $html);
+        self::assertStringContainsString('Snapshot MISS karena revision exam berubah', $html);
+    }
+
+    public function test_render_snapshot_panel_shows_question_monitor_repair_note(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_QUESTION_MONITOR,
+            'exam_snapshot_rows' => [
+                array_replace_recursive($this->snapshotPanelArgs()['exam_snapshot_rows'][0], [
+                    'snapshot_status' => 'ready',
+                    'snapshot_status_label' => 'READY',
+                    'snapshot_status_tone' => 'success',
+                    'repair_status' => 'auto_healed',
+                    'repair_message' => 'Dipulihkan otomatis dari revision exam terbaru',
+                    'snapshot_message' => 'Snapshot Redis siap dipakai untuk base payload student GET /questions.',
+                ]),
+            ],
+        ]));
+
+        self::assertStringContainsString('Dipulihkan otomatis dari revision exam terbaru', $html);
+        self::assertStringNotContainsString('Alasan MISS:', $html);
+    }
+
     public function test_render_snapshot_panel_renders_start_monitor_tab(): void
     {
         $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
@@ -94,6 +139,50 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="start_monitor"', $html);
         self::assertStringNotContainsString('Preview Soal (8-8 dari 8)', $html);
         self::assertStringNotContainsString('Jalankan One-Click Pra Ujian', $html);
+    }
+
+    public function test_render_snapshot_panel_shows_start_monitor_miss_reason_note(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_START_MONITOR,
+            'exam_snapshot_rows' => [
+                array_replace_recursive($this->snapshotPanelArgs()['exam_snapshot_rows'][0], [
+                    'start_snapshot_status' => 'miss',
+                    'start_snapshot_status_label' => 'MISS',
+                    'start_snapshot_status_tone' => 'warning',
+                    'start_snapshot_exists' => false,
+                    'start_snapshot_valid' => false,
+                    'start_snapshot_miss_reason_label' => 'Dibersihkan manual',
+                    'start_snapshot_message' => 'Start snapshot MISS karena dibersihkan manual dari panel admin. Start attempt berikutnya akan fallback lalu dapat dipanaskan ulang.',
+                    'start_snapshot_item_count' => 0,
+                    'start_snapshot_payload_bytes' => 0,
+                    'start_snapshot_ttl_seconds' => -2,
+                ]),
+            ],
+        ]));
+
+        self::assertStringContainsString('Alasan MISS: Dibersihkan manual', $html);
+        self::assertStringContainsString('Start snapshot MISS karena dibersihkan manual', $html);
+    }
+
+    public function test_render_snapshot_panel_shows_start_monitor_repair_note(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_START_MONITOR,
+            'exam_snapshot_rows' => [
+                array_replace_recursive($this->snapshotPanelArgs()['exam_snapshot_rows'][0], [
+                    'start_snapshot_status' => 'ready',
+                    'start_snapshot_status_label' => 'READY',
+                    'start_snapshot_status_tone' => 'success',
+                    'start_snapshot_repair_status' => 'auto_healed',
+                    'start_snapshot_repair_message' => 'Dipulihkan otomatis dari revision exam terbaru',
+                    'start_snapshot_message' => 'Start snapshot Redis siap dipakai.',
+                ]),
+            ],
+        ]));
+
+        self::assertStringContainsString('Dipulihkan otomatis dari revision exam terbaru', $html);
+        self::assertStringNotContainsString('Alasan MISS:', $html);
     }
 
     public function test_render_snapshot_panel_renders_submission_context_monitor_tab(): void
@@ -111,6 +200,68 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Q#901', $html);
         self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="submission_context_monitor"', $html);
         self::assertStringNotContainsString('Snapshot ini memuat katalog exam siswa yang tersedia, bukan snapshot satu exam tunggal.', $html);
+    }
+
+    public function test_render_snapshot_panel_renders_submission_context_reason_notes(): void
+    {
+        $args = $this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR,
+        ]);
+
+        $args['exam_snapshot_rows'][0]['submission_context_status_label'] = 'MISS';
+        $args['exam_snapshot_rows'][0]['submission_context_status_tone'] = 'warning';
+        $args['exam_snapshot_rows'][0]['submission_context'] = [
+            'question_count' => 8,
+            'ready_count' => 0,
+            'missing_count' => 8,
+            'invalid_count' => 0,
+            'payload_bytes_total' => 0,
+            'snapshot_exists' => false,
+            'snapshot_valid' => false,
+            'snapshot_status' => 'miss',
+            'snapshot_miss_reason' => 'expired_or_evicted',
+            'snapshot_miss_reason_label' => 'TTL habis / ter-evict',
+            'snapshot_message' => 'Submission context MISS karena key sebelumnya kemungkinan sudah expired atau ter-evict.',
+            'redis_host' => '127.0.0.1',
+            'redis_database' => 2,
+            'preview_items' => [
+                ['question_id' => 901, 'question_type' => 'multiple_choice', 'status' => 'miss', 'payload_bytes' => 0, 'reason' => 'storage_missing', 'reason_label' => 'Payload hilang'],
+            ],
+        ];
+
+        $html = $this->renderSnapshotPanel($args);
+
+        self::assertStringContainsString('Alasan MISS: TTL habis / ter-evict', $html);
+        self::assertStringContainsString('Payload hilang', $html);
+
+        $args['exam_snapshot_rows'][0]['submission_context_status_label'] = 'INVALID';
+        $args['exam_snapshot_rows'][0]['submission_context_status_tone'] = 'error';
+        $args['exam_snapshot_rows'][0]['submission_context']['snapshot_status'] = 'invalid';
+        $args['exam_snapshot_rows'][0]['submission_context']['snapshot_miss_reason'] = 'revision_changed';
+        $args['exam_snapshot_rows'][0]['submission_context']['snapshot_miss_reason_label'] = 'Revision berubah';
+        $args['exam_snapshot_rows'][0]['submission_context']['snapshot_message'] = 'Submission context INVALID karena revision exam berubah.';
+        $args['exam_snapshot_rows'][0]['submission_context']['missing_count'] = 0;
+        $args['exam_snapshot_rows'][0]['submission_context']['invalid_count'] = 8;
+        $args['exam_snapshot_rows'][0]['submission_context']['preview_items'][0]['status'] = 'invalid';
+        $args['exam_snapshot_rows'][0]['submission_context']['preview_items'][0]['reason'] = 'revision_changed';
+        $args['exam_snapshot_rows'][0]['submission_context']['preview_items'][0]['reason_label'] = 'Revision berubah';
+
+        $htmlInvalid = $this->renderSnapshotPanel($args);
+
+        self::assertStringContainsString('Alasan INVALID: Revision berubah', $htmlInvalid);
+
+        $args['exam_snapshot_rows'][0]['submission_context_status_label'] = 'READY';
+        $args['exam_snapshot_rows'][0]['submission_context_status_tone'] = 'success';
+        $args['exam_snapshot_rows'][0]['submission_context']['snapshot_status'] = 'ready';
+        $args['exam_snapshot_rows'][0]['submission_context']['snapshot_miss_reason'] = '';
+        $args['exam_snapshot_rows'][0]['submission_context']['snapshot_miss_reason_label'] = '';
+        $args['exam_snapshot_rows'][0]['submission_context']['repair_status'] = 'auto_healed';
+        $args['exam_snapshot_rows'][0]['submission_context']['repair_message'] = 'Dipulihkan otomatis dari data submit canonical';
+        $args['exam_snapshot_rows'][0]['submission_context']['snapshot_message'] = 'Submission context siap dipakai untuk submit jawaban dan scoring objektif.';
+
+        $htmlHealed = $this->renderSnapshotPanel($args);
+
+        self::assertStringContainsString('Dipulihkan otomatis dari data submit canonical', $htmlHealed);
     }
 
     public function test_render_snapshot_panel_renders_session_runtime_monitor_tab(): void
@@ -377,6 +528,51 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Snapshot profil MISS karena meta profil siswa berubah', $html);
     }
 
+    public function test_render_snapshot_panel_shows_profile_auto_heal_note(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_PROFILE_MONITOR,
+            'student_snapshot_rows' => [
+                [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'user_login' => 'salsa',
+                    'user_email' => 'salsa@example.com',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                    'profile_status_label' => 'READY',
+                    'profile_status_tone' => 'success',
+                    'profile' => [
+                        'ttl_seconds' => 44100,
+                        'payload_bytes' => 164,
+                        'storage_key' => 'cbt_profile:user:71',
+                        'snapshot_exists' => true,
+                        'snapshot_valid' => true,
+                        'snapshot_message' => 'Snapshot profil siswa siap dipakai untuk live payload.',
+                        'repair_status' => 'auto_healed',
+                        'repair_message' => 'Dipulihkan otomatis dari usermeta',
+                        'preview' => [
+                            'foto' => '',
+                            'agama' => 'Islam',
+                            'jenis_kelamin' => 'Perempuan',
+                            'nisn' => '71001',
+                        ],
+                    ],
+                    'availability_status_label' => 'READY',
+                    'availability_status_tone' => 'success',
+                    'availability' => [],
+                    'login_status_label' => 'READY',
+                    'login_status_tone' => 'success',
+                    'login' => [],
+                ],
+            ],
+            'student_snapshot_total' => 1,
+        ]));
+
+        self::assertStringContainsString('Dipulihkan otomatis dari usermeta', $html);
+        self::assertStringNotContainsString('Alasan MISS:', $html);
+    }
+
     public function test_render_snapshot_panel_renders_login_monitor_tab(): void
     {
         $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
@@ -410,6 +606,89 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('login:salsa', $html);
         self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="login_monitor"', $html);
         self::assertStringNotContainsString('Snapshot ini memuat katalog exam siswa yang tersedia, bukan snapshot satu exam tunggal.', $html);
+    }
+
+    public function test_render_snapshot_panel_shows_login_miss_reason_note(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR,
+            'student_snapshot_rows' => [
+                [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'user_login' => 'salsa',
+                    'user_email' => 'salsa@example.com',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                    'profile_status_label' => 'READY',
+                    'profile_status_tone' => 'success',
+                    'profile' => [],
+                    'availability_status_label' => 'READY',
+                    'availability_status_tone' => 'success',
+                    'availability' => [],
+                    'login_status_label' => 'MISS',
+                    'login_status_tone' => 'warning',
+                    'login' => [
+                        'ttl_seconds' => -2,
+                        'payload_bytes' => 0,
+                        'storage_key' => 'cbt_login_auth:user:71',
+                        'snapshot_exists' => false,
+                        'snapshot_valid' => false,
+                        'snapshot_miss_reason_label' => 'TTL habis / ter-evict',
+                        'snapshot_message' => 'Login snapshot MISS karena key sebelumnya kemungkinan sudah expired atau ter-evict. Login berikutnya akan fallback ke auth WordPress lalu mencoba hydrate ulang.',
+                        'preview' => [
+                            'foto' => '',
+                        ],
+                    ],
+                ],
+            ],
+            'student_snapshot_total' => 1,
+        ]));
+
+        self::assertStringContainsString('Alasan MISS: TTL habis / ter-evict', $html);
+        self::assertStringContainsString('Login snapshot MISS karena key sebelumnya kemungkinan sudah expired atau ter-evict', $html);
+    }
+
+    public function test_render_snapshot_panel_shows_login_auto_heal_note(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR,
+            'student_snapshot_rows' => [
+                [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'user_login' => 'salsa',
+                    'user_email' => 'salsa@example.com',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                    'profile_status_label' => 'READY',
+                    'profile_status_tone' => 'success',
+                    'profile' => [],
+                    'availability_status_label' => 'READY',
+                    'availability_status_tone' => 'success',
+                    'availability' => [],
+                    'login_status_label' => 'READY',
+                    'login_status_tone' => 'success',
+                    'login' => [
+                        'ttl_seconds' => 14400,
+                        'payload_bytes' => 768,
+                        'storage_key' => 'cbt_login_auth:user:71',
+                        'snapshot_exists' => true,
+                        'snapshot_valid' => true,
+                        'snapshot_message' => 'Login snapshot siap dipakai untuk login siswa.',
+                        'repair_status' => 'auto_healed',
+                        'repair_message' => 'Dipulihkan otomatis dari data login canonical',
+                        'preview' => [
+                            'foto' => '',
+                        ],
+                    ],
+                ],
+            ],
+            'student_snapshot_total' => 1,
+        ]));
+
+        self::assertStringContainsString('Dipulihkan otomatis dari data login canonical', $html);
+        self::assertStringNotContainsString('Alasan MISS:', $html);
     }
 
     public function test_render_snapshot_panel_renders_bulk_preflight_mode_for_multiple_selected_exams(): void

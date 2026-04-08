@@ -1590,10 +1590,10 @@ export function bootstrapFrontendApp() {
         }
     }
 
-    function render(reason, meta) {
+    function render(reason, meta, options) {
         if (renderCycleManager) {
             try {
-                renderCycleManager.render(reason, meta);
+                renderCycleManager.render(reason, meta, options);
                 nativeBridgeManager.sync(reason || 'render');
             } catch (error) {
                 renderFatalRuntimeError('render', error);

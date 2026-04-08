@@ -86,6 +86,8 @@ final class QuestionSubmissionContextSnapshotTest extends TestCase
         self::assertSame(2, $diagnostics['ready_count']);
         self::assertSame(0, $diagnostics['missing_count']);
         self::assertSame(0, $diagnostics['invalid_count']);
+        self::assertSame('', $diagnostics['snapshot_miss_reason']);
+        self::assertSame('', $diagnostics['snapshot_miss_reason_label']);
         self::assertCount(2, $diagnostics['preview_items']);
         self::assertGreaterThan(0, $diagnostics['payload_bytes_total']);
     }
@@ -104,6 +106,11 @@ final class QuestionSubmissionContextSnapshotTest extends TestCase
         self::assertSame(2, $result['question_count']);
         self::assertGreaterThan(0, $result['deleted_keys']);
         self::assertSame([], $this->storedRedisKeys());
+
+        $diagnostics = CBT_Question_Submission_Context_Cache::get_exam_snapshot_diagnostics(55);
+        self::assertSame('miss', $diagnostics['snapshot_status']);
+        self::assertSame('manual_clear', $diagnostics['snapshot_miss_reason']);
+        self::assertSame('Dibersihkan manual', $diagnostics['snapshot_miss_reason_label']);
     }
 
     public function test_exam_snapshot_diagnostics_marks_invalid_and_missing_items(): void
@@ -127,6 +134,78 @@ final class QuestionSubmissionContextSnapshotTest extends TestCase
         self::assertSame(0, $diagnostics['ready_count']);
         self::assertSame(1, $diagnostics['missing_count']);
         self::assertSame(1, $diagnostics['invalid_count']);
+        self::assertSame('partial_mixed', $diagnostics['snapshot_miss_reason']);
+        self::assertSame('Parsial campuran', $diagnostics['snapshot_miss_reason_label']);
+        self::assertSame('invalid_payload', $diagnostics['preview_items'][0]['reason']);
+        self::assertSame('Payload hilang', $diagnostics['preview_items'][1]['reason_label']);
+    }
+
+    public function test_exam_snapshot_diagnostics_marks_revision_changed_when_exam_version_is_invalidated(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionSubmissionContextSnapshotFakeWpdb();
+
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots(55);
+        CBT_Cache::invalidate_exam(55);
+
+        $diagnostics = CBT_Question_Submission_Context_Cache::get_exam_snapshot_diagnostics(55);
+
+        self::assertSame('invalid', $diagnostics['snapshot_status']);
+        self::assertSame('revision_changed', $diagnostics['snapshot_miss_reason']);
+        self::assertSame('Revision berubah', $diagnostics['snapshot_miss_reason_label']);
+    }
+
+    public function test_maybe_auto_heal_exam_snapshots_repairs_whitelisted_submit_snapshot_reasons(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionSubmissionContextSnapshotFakeWpdb();
+
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots(55);
+
+        foreach ($this->storedRedisKeys() as $key) {
+            if (strpos($key, 'cbt_submit_context:question:201:') === 0) {
+                unset($GLOBALS['cbt_test_redis_storage'][$key]);
+            }
+        }
+
+        $expiredRepair = CBT_Question_Submission_Context_Cache::maybe_auto_heal_exam_snapshots(55, 'admin');
+        self::assertTrue($expiredRepair['success']);
+        self::assertSame('ready', $expiredRepair['diagnostics']['snapshot_status']);
+        self::assertSame('auto_healed', $expiredRepair['diagnostics']['repair_status']);
+
+        CBT_Cache::invalidate_exam(55);
+        $revisionRepair = CBT_Question_Submission_Context_Cache::maybe_auto_heal_exam_snapshots(55, 'admin');
+        self::assertTrue($revisionRepair['success']);
+        self::assertSame('ready', $revisionRepair['diagnostics']['snapshot_status']);
+
+        foreach ($this->storedRedisKeys() as $key) {
+            if (strpos($key, 'cbt_submit_context:pointer:question:201') === 0) {
+                $GLOBALS['cbt_test_redis_storage'][$key] = '{broken-json';
+            }
+        }
+
+        $invalidRepair = CBT_Question_Submission_Context_Cache::maybe_auto_heal_exam_snapshots(55, 'admin');
+        self::assertTrue($invalidRepair['success']);
+        self::assertSame('ready', $invalidRepair['diagnostics']['snapshot_status']);
+    }
+
+    public function test_maybe_auto_heal_exam_snapshots_skips_blacklisted_submit_snapshot_reasons(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionSubmissionContextSnapshotFakeWpdb();
+
+        $notPrepared = CBT_Question_Submission_Context_Cache::maybe_auto_heal_exam_snapshots(55, 'admin');
+        self::assertFalse($notPrepared['success']);
+        self::assertSame('miss', $notPrepared['diagnostics']['snapshot_status']);
+        self::assertSame('not_prepared', $notPrepared['diagnostics']['snapshot_miss_reason']);
+
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots(55);
+        CBT_Question_Submission_Context_Cache::clear_exam_snapshots(55);
+
+        $manualClear = CBT_Question_Submission_Context_Cache::maybe_auto_heal_exam_snapshots(55, 'admin');
+        self::assertFalse($manualClear['success']);
+        self::assertSame('miss', $manualClear['diagnostics']['snapshot_status']);
+        self::assertSame('manual_clear', $manualClear['diagnostics']['snapshot_miss_reason']);
     }
 
     private function useFakeRedisClient(): void

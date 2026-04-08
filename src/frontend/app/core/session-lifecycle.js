@@ -81,6 +81,9 @@ export function createSessionLifecycleManager(deps) {
         var safePercent = Number(percent);
         var safeStepIndex = Number(stepIndex);
         var shouldRender = !(options && options.render === false);
+        var renderOptions = options && options.renderOptions && typeof options.renderOptions === 'object'
+            ? options.renderOptions
+            : null;
 
         if (!Number.isFinite(safePercent)) {
             safePercent = 0;
@@ -102,7 +105,7 @@ export function createSessionLifecycleManager(deps) {
                 attemptId: Number(state.attemptId) || 0,
                 percent: state.authProgressPercent,
                 stepIndex: state.authProgressStepIndex
-            });
+            }, renderOptions);
         }
     }
 
@@ -325,7 +328,13 @@ export function createSessionLifecycleManager(deps) {
             14,
             1,
             'Menutup sesi',
-            'Kami sedang menutup sesi Anda dengan aman.'
+            'Kami sedang menutup sesi Anda dengan aman.',
+            {
+                renderOptions: {
+                    immediate: true,
+                    skipPostRenderEffects: true
+                }
+            }
         );
 
         if (isOpeningExamShell) {

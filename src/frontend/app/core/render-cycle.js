@@ -45,6 +45,7 @@ export function createRenderCycleManager(deps) {
     var renderFrameId = 0;
     var pendingRenderReason = 'bootstrap';
     var pendingRenderMeta = {};
+    var pendingRenderOptions = {};
     var QUESTION_SUBREGION_NAMES = [
         'questionHead',
         'questionQuickNav',
@@ -375,10 +376,14 @@ export function createRenderCycleManager(deps) {
         var currentMeta = pendingRenderMeta && typeof pendingRenderMeta === 'object'
             ? pendingRenderMeta
             : {};
+        var currentOptions = pendingRenderOptions && typeof pendingRenderOptions === 'object'
+            ? pendingRenderOptions
+            : {};
 
         renderFrameId = 0;
         pendingRenderReason = 'unknown';
         pendingRenderMeta = {};
+        pendingRenderOptions = {};
 
         var loadingMarkup = state.busy && !state.sessionRecoveryVisible && !state.resultProgressVisible && state.stage !== 'exam' && state.stage !== 'login'
             ? '<div class="cbt-loading" role="status" aria-live="polite"><span class="cbt-loading-dot" aria-hidden="true"></span><span>Memproses...</span></div>'
@@ -420,7 +425,9 @@ export function createRenderCycleManager(deps) {
         }
 
         lastRenderedStage = currentStage;
-        runPostRenderEffects(currentStage, currentReason, currentMeta);
+        if (!(currentOptions && currentOptions.skipPostRenderEffects)) {
+            runPostRenderEffects(currentStage, currentReason, currentMeta);
+        }
     }
 
     function cancelPendingRender() {
@@ -540,15 +547,22 @@ export function createRenderCycleManager(deps) {
         return true;
     }
 
-    function render(reason, meta) {
+    function render(reason, meta, options) {
         if (typeof recordRenderScheduled === 'function') {
             recordRenderScheduled(reason, meta, String(state.stage || 'login'));
         }
 
         pendingRenderReason = String(reason || 'unknown');
         pendingRenderMeta = meta && typeof meta === 'object' ? meta : {};
+        pendingRenderOptions = options && typeof options === 'object' ? options : {};
 
         if (lastRenderedMarkup === '' && !renderFrameId) {
+            performRender();
+            return;
+        }
+
+        if (pendingRenderOptions.immediate) {
+            cancelPendingRender();
             performRender();
             return;
         }

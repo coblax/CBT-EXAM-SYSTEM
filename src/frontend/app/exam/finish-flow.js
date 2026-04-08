@@ -53,6 +53,9 @@ export function createFinishFlowManager(deps) {
         var safePercent = Number(percent);
         var safeStepIndex = Number(stepIndex);
         var shouldRender = !(options && options.render === false);
+        var renderOptions = options && options.renderOptions && typeof options.renderOptions === 'object'
+            ? options.renderOptions
+            : null;
 
         if (!Number.isFinite(safePercent)) {
             safePercent = 0;
@@ -72,7 +75,7 @@ export function createFinishFlowManager(deps) {
                 attemptId: Number(state.attemptId) || 0,
                 percent: state.finishProgressPercent,
                 stepIndex: state.finishProgressStepIndex
-            });
+            }, renderOptions);
         }
     }
 
@@ -622,7 +625,13 @@ export function createFinishFlowManager(deps) {
             12,
             1,
             'Mengecek jawaban terakhir',
-            'Menyimpan posisi terakhir dan memastikan semua jawaban yang sudah diisi ikut tersinkron.'
+            'Menyimpan posisi terakhir dan memastikan semua jawaban yang sudah diisi ikut tersinkron.',
+            {
+                renderOptions: {
+                    immediate: true,
+                    skipPostRenderEffects: true
+                }
+            }
         );
         recordTimelineEntry('finish:requested', autoSubmit ? 'Auto-finish dipicu.' : 'User mengonfirmasi finish ujian.', {
             attemptId: Number(state.attemptId) || 0,

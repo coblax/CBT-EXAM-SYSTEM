@@ -76,7 +76,10 @@ final class LoginAuthSnapshotCacheTest extends TestCase
         self::assertSame('XI-A', $diagnostics['preview']['kode_kelas']);
 
         self::assertGreaterThan(0, CBT_Login_Auth_Snapshot_Cache::clear_user_snapshot(11));
-        self::assertSame('miss', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11)['snapshot_status']);
+        $afterClear = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11);
+        self::assertSame('miss', $afterClear['snapshot_status']);
+        self::assertSame('manual_clear', $afterClear['snapshot_miss_reason']);
+        self::assertSame('Dibersihkan manual', $afterClear['snapshot_miss_reason_label']);
     }
 
     public function test_warm_user_snapshot_result_accepts_prewarmed_profile_snapshot(): void
@@ -127,7 +130,10 @@ final class LoginAuthSnapshotCacheTest extends TestCase
         self::assertFalse($results[12]['ready']);
         self::assertSame('write_failed', $results[12]['reason']);
         self::assertSame('ready', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11)['snapshot_status']);
-        self::assertSame('miss', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(12)['snapshot_status']);
+        $failedDiagnostics = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(12);
+        self::assertSame('miss', $failedDiagnostics['snapshot_status']);
+        self::assertSame('write_failed', $failedDiagnostics['snapshot_miss_reason']);
+        self::assertSame('Gagal menulis ke Redis', $failedDiagnostics['snapshot_miss_reason_label']);
     }
 
     public function test_clear_user_snapshots_for_rewrite_only_touches_requested_users(): void
@@ -146,6 +152,10 @@ final class LoginAuthSnapshotCacheTest extends TestCase
         $teacherResult = CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot_result(21, 'manual');
         self::assertFalse($teacherResult['ready']);
         self::assertSame('ineligible_user', $teacherResult['reason']);
+        $teacherDiagnostics = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(21);
+        self::assertSame('miss', $teacherDiagnostics['snapshot_status']);
+        self::assertSame('ineligible_user', $teacherDiagnostics['snapshot_miss_reason']);
+        self::assertSame('User bukan siswa', $teacherDiagnostics['snapshot_miss_reason_label']);
 
         $this->useUnavailableLoginSnapshotRedis();
         $studentResult = CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot_result(11, 'manual');
@@ -200,13 +210,82 @@ final class LoginAuthSnapshotCacheTest extends TestCase
         self::assertSame(0, $diagnostics['missing_count']);
     }
 
+    public function test_login_snapshot_diagnostics_report_identifier_change_and_expired_or_evicted_miss_reasons(): void
+    {
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'diag');
+
+        CBT_Login_Auth_Snapshot_Cache::handle_user_meta_change(1, 11, 'nisn', '20260011');
+        $afterIdentifierChange = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11);
+        self::assertSame('miss', $afterIdentifierChange['snapshot_status']);
+        self::assertSame('identifier_changed', $afterIdentifierChange['snapshot_miss_reason']);
+        self::assertSame('Identifier login berubah', $afterIdentifierChange['snapshot_miss_reason_label']);
+
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'diag');
+        unset($GLOBALS['cbt_test_redis_storage']['cbt_login_auth:user:11']);
+        $afterKeyMissing = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11);
+        self::assertSame('miss', $afterKeyMissing['snapshot_status']);
+        self::assertSame('expired_or_evicted', $afterKeyMissing['snapshot_miss_reason']);
+        self::assertSame('TTL habis / ter-evict', $afterKeyMissing['snapshot_miss_reason_label']);
+    }
+
+    public function test_login_snapshot_diagnostics_report_invalid_payload_reason(): void
+    {
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'diag');
+        $GLOBALS['cbt_test_redis_storage']['cbt_login_auth:user:11'] = '{"broken":';
+
+        $diagnostics = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11);
+
+        self::assertSame('invalid', $diagnostics['snapshot_status']);
+        self::assertSame('invalid_payload', $diagnostics['snapshot_miss_reason']);
+        self::assertSame('Payload invalid', $diagnostics['snapshot_miss_reason_label']);
+    }
+
+    public function test_maybe_auto_heal_snapshot_repairs_whitelisted_login_miss_reasons(): void
+    {
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'heal');
+        CBT_Login_Auth_Snapshot_Cache::handle_password_reset(get_user_by('id', 11), 'baru');
+
+        $repair = CBT_Login_Auth_Snapshot_Cache::maybe_auto_heal_snapshot(11, 'admin');
+
+        self::assertTrue($repair['success']);
+        self::assertSame('auto_healed', $repair['status']);
+        self::assertSame('Dipulihkan otomatis dari data login canonical', $repair['message']);
+        self::assertSame('ready', $repair['diagnostics']['snapshot_status']);
+        self::assertSame('auto_healed', $repair['diagnostics']['repair_status']);
+        self::assertSame('Dipulihkan otomatis dari data login canonical', $repair['diagnostics']['repair_message']);
+
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'heal');
+        unset($GLOBALS['cbt_test_redis_storage']['cbt_login_auth:user:11']);
+        $expiredRepair = CBT_Login_Auth_Snapshot_Cache::maybe_auto_heal_snapshot(11, 'admin');
+        self::assertTrue($expiredRepair['success']);
+        self::assertSame('ready', $expiredRepair['diagnostics']['snapshot_status']);
+    }
+
+    public function test_maybe_auto_heal_snapshot_does_not_repair_blacklisted_or_ineligible_states(): void
+    {
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'heal');
+        CBT_Login_Auth_Snapshot_Cache::clear_user_snapshot(11, 'manual_clear');
+
+        $manualRepair = CBT_Login_Auth_Snapshot_Cache::maybe_auto_heal_snapshot(11, 'admin');
+        self::assertFalse($manualRepair['success']);
+        self::assertSame('miss', $manualRepair['diagnostics']['snapshot_status']);
+        self::assertSame('manual_clear', $manualRepair['diagnostics']['snapshot_miss_reason']);
+
+        $teacherRepair = CBT_Login_Auth_Snapshot_Cache::maybe_auto_heal_snapshot(21, 'admin');
+        self::assertFalse($teacherRepair['success']);
+        self::assertSame('miss', $teacherRepair['diagnostics']['snapshot_status']);
+        self::assertSame('ineligible_user', $teacherRepair['diagnostics']['snapshot_miss_reason']);
+    }
+
     public function test_critical_invalidation_handlers_clear_login_snapshot(): void
     {
         CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'critical');
         self::assertSame('ready', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11)['snapshot_status']);
 
         CBT_Login_Auth_Snapshot_Cache::handle_user_meta_change(1, 11, 'nisn', '20260011');
-        self::assertSame('miss', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11)['snapshot_status']);
+        $afterMetaChange = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11);
+        self::assertSame('miss', $afterMetaChange['snapshot_status']);
+        self::assertSame('identifier_changed', $afterMetaChange['snapshot_miss_reason']);
 
         CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'critical');
         $currentUser = get_user_by('id', 11);
@@ -215,21 +294,29 @@ final class LoginAuthSnapshotCacheTest extends TestCase
         $currentUser->user_email = 'salsa-baru@example.com';
         $GLOBALS['cbt_test_wp_users'][11] = $currentUser;
         CBT_Login_Auth_Snapshot_Cache::handle_profile_update(11, $oldUser, []);
-        self::assertSame('miss', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11)['snapshot_status']);
+        $afterProfileUpdate = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11);
+        self::assertSame('miss', $afterProfileUpdate['snapshot_status']);
+        self::assertSame('identifier_changed', $afterProfileUpdate['snapshot_miss_reason']);
 
         CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'critical');
         CBT_Login_Auth_Snapshot_Cache::handle_user_role_change(11, 'teacher', ['student']);
-        self::assertSame('miss', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11)['snapshot_status']);
+        $afterRoleChange = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(11);
+        self::assertSame('miss', $afterRoleChange['snapshot_status']);
+        self::assertSame('role_changed', $afterRoleChange['snapshot_miss_reason']);
 
         CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(12, 'critical');
         $passwordUser = get_user_by('id', 12);
         self::assertInstanceOf(WP_User::class, $passwordUser);
         CBT_Login_Auth_Snapshot_Cache::handle_password_reset($passwordUser, 'secret-baru');
-        self::assertSame('miss', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(12)['snapshot_status']);
+        $afterPasswordReset = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(12);
+        self::assertSame('miss', $afterPasswordReset['snapshot_status']);
+        self::assertSame('password_changed', $afterPasswordReset['snapshot_miss_reason']);
 
         CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(12, 'critical');
         CBT_Login_Auth_Snapshot_Cache::handle_delete_user(12);
-        self::assertSame('miss', CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(12)['snapshot_status']);
+        $afterDelete = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics(12);
+        self::assertSame('miss', $afterDelete['snapshot_status']);
+        self::assertSame('user_deleted', $afterDelete['snapshot_miss_reason']);
     }
 
     private function useFakeProfileRedis(): void

@@ -12,6 +12,10 @@ if (!class_exists('CBT_Redis_Pipeline_Helper')) {
     require_once __DIR__ . '/class-cbt-redis-pipeline-helper.php';
 }
 
+if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+    require_once __DIR__ . '/class-cbt-snapshot-auto-heal-queue-service.php';
+}
+
 class CBT_Exam_Availability_Cache
 {
     private const SNAPSHOT_REDIS_TTL_SECONDS = 44100;
@@ -446,6 +450,9 @@ class CBT_Exam_Availability_Cache
                 'minute_bucket' => max(0, (int) ($miss_reason['detected_minute_bucket'] ?? 0)),
             ];
             $snapshot_message = self::build_student_snapshot_miss_message($miss_reason);
+            if (sanitize_key((string) ($miss_reason['code'] ?? '')) === 'version_changed') {
+                self::maybe_enqueue_auto_heal_version_changed($user_id, 'diagnostics');
+            }
         }
 
         $repair_meta = self::build_student_snapshot_repair_meta($user_id, $snapshot_status);
@@ -1116,6 +1123,18 @@ class CBT_Exam_Availability_Cache
             return $default;
         }
 
+        if (class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+            $queue_meta = CBT_Snapshot_Auto_Heal_Queue_Service::get_target_repair_state('availability_user', $user_id);
+            if (!empty($queue_meta['queued'])) {
+                return [
+                    'status' => 'queued_auto_heal',
+                    'message' => trim((string) ($queue_meta['message'] ?? 'Snapshot availability sedang menunggu background auto-heal.')),
+                    'queued_at' => trim((string) ($queue_meta['queued_at'] ?? '')),
+                    'source' => trim((string) ($queue_meta['source'] ?? 'system')),
+                ];
+            }
+        }
+
         if (
             class_exists('CBT_Exam_Availability_Auto_Warm_Service')
             && method_exists('CBT_Exam_Availability_Auto_Warm_Service', 'get_rewarm_user_state')
@@ -1146,6 +1165,16 @@ class CBT_Exam_Availability_Cache
             'queued_at' => trim((string) ($recent_repair['completed_at'] ?? '')),
             'source' => trim((string) ($recent_repair['source'] ?? '')),
         ];
+    }
+
+    private static function maybe_enqueue_auto_heal_version_changed(int $user_id, string $source = 'system'): void
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0 || !class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+            return;
+        }
+
+        CBT_Snapshot_Auto_Heal_Queue_Service::maybe_enqueue('availability_user', $user_id, 'version_changed', $source);
     }
 
     /**

@@ -150,7 +150,7 @@ function createLifecycleFixture(overrides = {}) {
             calls.queueLoadedQuestionAnswersForFlush += 1;
         },
         recordTimeline: function () {},
-        render: function (reason, meta) {
+        render: function (reason, meta, options) {
             calls.render.push({
                 authProgressMode: String(state.authProgressMode || ''),
                 authProgressPercent: Number(state.authProgressPercent) || 0,
@@ -158,6 +158,7 @@ function createLifecycleFixture(overrides = {}) {
                 authProgressStepIndex: Number(state.authProgressStepIndex) || 0,
                 authProgressVisible: Boolean(state.authProgressVisible),
                 meta: meta || null,
+                options: options || null,
                 reason: reason || ''
             });
         },
@@ -437,7 +438,7 @@ describe('createSessionLifecycleManager', function () {
                 fixture.calls.queueLoadedQuestionAnswersForFlush += 1;
             },
             recordTimeline: function () {},
-            render: function (reason, meta) {
+            render: function (reason, meta, options) {
                 fixture.calls.render.push({
                     authProgressMode: String(fixture.state.authProgressMode || ''),
                     authProgressPercent: Number(fixture.state.authProgressPercent) || 0,
@@ -445,6 +446,7 @@ describe('createSessionLifecycleManager', function () {
                     authProgressStepIndex: Number(fixture.state.authProgressStepIndex) || 0,
                     authProgressVisible: Boolean(fixture.state.authProgressVisible),
                     meta: meta || null,
+                    options: options || null,
                     reason: reason || ''
                 });
             },
@@ -478,6 +480,12 @@ describe('createSessionLifecycleManager', function () {
             return entry.reason === 'auth-progress-logout'
                 && entry.authProgressVisible
                 && entry.authProgressStepIndex >= 1;
+        })).toBe(true);
+        expect(fixture.calls.render.some(function (entry) {
+            return entry.reason === 'auth-progress-logout'
+                && entry.options
+                && entry.options.immediate === true
+                && entry.options.skipPostRenderEffects === true;
         })).toBe(true);
 
         resolveLogoutRequest({ ok: true });

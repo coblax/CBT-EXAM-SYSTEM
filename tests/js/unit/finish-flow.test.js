@@ -237,7 +237,7 @@ function createFixture(overrides = {}) {
         },
         recordActionTrail: function () {},
         recordTimeline: function () {},
-        render: function (reason, meta) {
+        render: function (reason, meta, options) {
             calls.render += 1;
             calls.renderSnapshots.push({
                 finishProgressDetail: String(state.finishProgressDetail || ''),
@@ -246,6 +246,7 @@ function createFixture(overrides = {}) {
                 finishProgressStepIndex: Number(state.finishProgressStepIndex) || 0,
                 isFinishing: !!state.isFinishing,
                 meta: meta || null,
+                options: options || null,
                 reason: typeof reason === 'string' ? reason : '',
                 stage: String(state.stage || '')
             });
@@ -429,7 +430,10 @@ describe('createFinishFlowManager', function () {
             fixture.calls.renderSnapshots.some(function (snapshot) {
                 return snapshot.finishProgressPercent === 12
                     && snapshot.finishProgressStepIndex === 1
-                    && snapshot.finishProgressStatus === 'Mengecek jawaban terakhir';
+                    && snapshot.finishProgressStatus === 'Mengecek jawaban terakhir'
+                    && snapshot.options
+                    && snapshot.options.immediate === true
+                    && snapshot.options.skipPostRenderEffects === true;
             })
         ).toBe(true);
         expect(

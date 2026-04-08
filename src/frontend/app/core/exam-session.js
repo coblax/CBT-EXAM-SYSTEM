@@ -136,6 +136,9 @@ export function createExamSessionManager(deps) {
         var safePercent = Number(percent);
         var safeStepIndex = Number(stepIndex);
         var shouldRender = !(options && options.render === false);
+        var renderOptions = options && options.renderOptions && typeof options.renderOptions === 'object'
+            ? options.renderOptions
+            : null;
 
         if (!Number.isFinite(safePercent)) {
             safePercent = 0;
@@ -157,7 +160,7 @@ export function createExamSessionManager(deps) {
                 percent: state.resultProgressPercent,
                 selectedExamId: Number(state.selectedExamId) || 0,
                 stepIndex: state.resultProgressStepIndex
-            });
+            }, renderOptions);
         }
     }
 
@@ -165,6 +168,9 @@ export function createExamSessionManager(deps) {
         var safePercent = Number(percent);
         var safeStepIndex = Number(stepIndex);
         var shouldRender = !(options && options.render === false);
+        var renderOptions = options && options.renderOptions && typeof options.renderOptions === 'object'
+            ? options.renderOptions
+            : null;
 
         if (!Number.isFinite(safePercent)) {
             safePercent = 0;
@@ -185,7 +191,7 @@ export function createExamSessionManager(deps) {
                 percent: state.openingAttemptProgressPercent,
                 selectedExamId: Number(state.selectedExamId) || 0,
                 stepIndex: state.openingAttemptProgressStepIndex
-            });
+            }, renderOptions);
         }
     }
 
@@ -738,7 +744,12 @@ export function createExamSessionManager(deps) {
             attemptId: Number(state.attemptId) || 0,
             stage: String(state.stage || '')
         });
-        render();
+        render('login-submit', {
+            phase: 'auth-progress-initial'
+        }, {
+            immediate: true,
+            skipPostRenderEffects: true
+        });
 
         try {
             var loginPayload = await apiRequest('login', {
@@ -1243,6 +1254,9 @@ export function createExamSessionManager(deps) {
             state.busy = true;
             render('start-exam-refresh-selection', {
                 selectedExamId: Number(selectedExam.id) || 0
+            }, {
+                immediate: true,
+                skipPostRenderEffects: true
             });
 
             try {
@@ -1330,7 +1344,13 @@ export function createExamSessionManager(deps) {
             12,
             1,
             'Meminta sesi ujian dari server',
-            'Membuat attempt dan memeriksa token ujian.'
+            'Membuat attempt dan memeriksa token ujian.',
+            {
+                renderOptions: {
+                    immediate: true,
+                    skipPostRenderEffects: true
+                }
+            }
         );
         recordTimelineEntry('attempt:start:request', 'Memulai attempt baru.', {
             attemptId: Number(state.attemptId) || 0,
@@ -1455,6 +1475,9 @@ export function createExamSessionManager(deps) {
             );
             render('view-result-refresh-selection', {
                 selectedExamId: Number(selectedExam.id) || 0
+            }, {
+                immediate: true,
+                skipPostRenderEffects: true
             });
 
             try {
@@ -1518,6 +1541,9 @@ export function createExamSessionManager(deps) {
         render('result-view-request', {
             attemptId: attemptId,
             selectedExamId: Number(selectedExam.id) || 0
+        }, {
+            immediate: true,
+            skipPostRenderEffects: true
         });
 
         try {

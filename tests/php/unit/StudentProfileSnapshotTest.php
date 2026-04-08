@@ -132,6 +132,64 @@ final class StudentProfileSnapshotTest extends TestCase
         self::assertSame('TTL habis / ter-evict', $afterKeyMissing['snapshot_miss_reason_label']);
     }
 
+    public function test_profile_snapshot_diagnostics_report_invalid_payload_reason(): void
+    {
+        CBT_Student_Profile_Cache::warm_snapshot(11);
+        $GLOBALS['cbt_test_redis_storage']['cbt_profile:user:11'] = '{"broken":';
+
+        $diagnostics = CBT_Student_Profile_Cache::get_snapshot_diagnostics(11);
+
+        self::assertSame('invalid', $diagnostics['snapshot_status']);
+        self::assertSame('invalid_payload', $diagnostics['snapshot_miss_reason']);
+        self::assertSame('Payload invalid', $diagnostics['snapshot_miss_reason_label']);
+    }
+
+    public function test_maybe_auto_heal_snapshot_repairs_eligible_profile_miss_inline(): void
+    {
+        CBT_Student_Profile_Cache::warm_snapshot(11);
+        CBT_Student_Profile_Cache::handle_user_meta_change(2, 11, 'kode_kelas', 'XI-A');
+
+        $repair = CBT_Student_Profile_Cache::maybe_auto_heal_snapshot(11, 'admin');
+
+        self::assertTrue($repair['success']);
+        self::assertSame('auto_healed', $repair['status']);
+        self::assertSame('Dipulihkan otomatis dari usermeta', $repair['message']);
+        self::assertSame('ready', $repair['diagnostics']['snapshot_status']);
+        self::assertSame('auto_healed', $repair['diagnostics']['repair_status']);
+        self::assertSame('Dipulihkan otomatis dari usermeta', $repair['diagnostics']['repair_message']);
+        self::assertSame('XI-A', $repair['diagnostics']['preview']['kode_kelas']);
+        self::assertNotSame('', $this->readStoredSnapshotPayload(11));
+    }
+
+    public function test_maybe_auto_heal_snapshot_does_not_repair_user_deleted_or_redis_unavailable_states(): void
+    {
+        CBT_Student_Profile_Cache::warm_snapshot(11);
+        CBT_Student_Profile_Cache::handle_delete_user(11);
+        unset($GLOBALS['cbt_test_wp_users'][11]);
+
+        $deletedRepair = CBT_Student_Profile_Cache::maybe_auto_heal_snapshot(11, 'admin');
+
+        self::assertFalse($deletedRepair['success']);
+        self::assertSame('miss', $deletedRepair['diagnostics']['snapshot_status']);
+        self::assertSame('user_deleted', $deletedRepair['diagnostics']['snapshot_miss_reason']);
+
+        cbt_test_register_user([
+            'ID' => 11,
+            'display_name' => 'Salsa',
+            'roles' => ['student'],
+            'user_email' => 'salsa@example.com',
+            'user_login' => 'salsa',
+            'user_pass' => 'secret',
+        ]);
+        $this->setProfileRedisUnavailable();
+
+        $unavailableRepair = CBT_Student_Profile_Cache::maybe_auto_heal_snapshot(11, 'admin');
+
+        self::assertFalse($unavailableRepair['success']);
+        self::assertSame('unavailable', $unavailableRepair['diagnostics']['snapshot_status']);
+        self::assertSame('redis_unavailable', $unavailableRepair['diagnostics']['snapshot_miss_reason']);
+    }
+
     public function test_warm_snapshot_result_reports_ready_and_redis_unavailable_states(): void
     {
         $readyResult = CBT_Student_Profile_Cache::warm_snapshot_result(11);

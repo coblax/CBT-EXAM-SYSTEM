@@ -6,6 +6,59 @@ use CbtExamSystem\Tests\TestCase;
 
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-question-delivery-cache.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-start-attempt-snapshot-cache.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-question-submission-context-cache.php';
+
+if (!class_exists('CBT_REST')) {
+    class CBT_REST
+    {
+        public static array $warmedExamIds = [];
+        public static array $warmedStartExamIds = [];
+        public static array $warmedSubmissionContextExamIds = [];
+
+        public static function warm_exam_question_delivery_snapshot(int $exam_id): void
+        {
+            self::$warmedExamIds[] = $exam_id;
+            CBT_Exam_Question_Delivery_Cache::warm_exam_payload($exam_id, static function (int $target_exam_id): array {
+                return [
+                    [
+                        'id' => 900 + $target_exam_id,
+                        'exam_id' => $target_exam_id,
+                        'question_text' => 'Snapshot exam ' . $target_exam_id,
+                        'question_type' => 'multiple_choice',
+                        'points' => 1,
+                        'options' => [],
+                    ],
+                ];
+            });
+        }
+
+        public static function warm_exam_start_attempt_snapshot(int $exam_id): void
+        {
+            self::$warmedStartExamIds[] = $exam_id;
+            CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot($exam_id, static function (int $target_exam_id): array {
+                return [
+                    'exam_id' => $target_exam_id,
+                    'question_ids' => [2000 + $target_exam_id],
+                    'question_count' => 1,
+                    'question_number_map' => [2000 + $target_exam_id => 1],
+                    'randomize_questions' => 0,
+                    'randomize_options' => 0,
+                    'duration_minutes' => 75,
+                    'show_student_result' => 0,
+                    'enable_calculator' => 1,
+                    'option_randomization_tokens_by_question' => [],
+                ];
+            });
+        }
+
+        public static function warm_exam_submission_context_snapshot(int $exam_id): void
+        {
+            self::$warmedSubmissionContextExamIds[] = $exam_id;
+            CBT_Question_Submission_Context_Cache::warm_exam_snapshots($exam_id);
+        }
+    }
+}
 
 final class ExamQuestionDeliverySnapshotTest extends TestCase
 {
@@ -98,6 +151,8 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
         self::assertTrue($diagnostics['snapshot_exists']);
         self::assertTrue($diagnostics['snapshot_valid']);
         self::assertSame('ready', $diagnostics['snapshot_status']);
+        self::assertSame('', $diagnostics['snapshot_miss_reason']);
+        self::assertSame('', $diagnostics['snapshot_miss_reason_label']);
         self::assertSame(1, $diagnostics['snapshot_item_count']);
         self::assertSame([201], $diagnostics['preview_question_ids']);
         self::assertSame([
@@ -164,6 +219,74 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
         self::assertSame([], $this->storedRedisKeys());
     }
 
+    public function test_get_exam_payload_diagnostics_reports_manual_clear_revision_changed_expired_and_not_prepared_reasons(): void
+    {
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(55, static function (int $examId): array {
+            return [
+                [
+                    'id' => 201,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal 1',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [],
+                ],
+            ];
+        });
+
+        CBT_Exam_Question_Delivery_Cache::clear_exam_payload(55);
+        $afterManualClear = CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics(55);
+        self::assertSame('miss', $afterManualClear['snapshot_status']);
+        self::assertSame('manual_clear', $afterManualClear['snapshot_miss_reason']);
+        self::assertSame('Dibersihkan manual', $afterManualClear['snapshot_miss_reason_label']);
+
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(55, static function (int $examId): array {
+            return [
+                [
+                    'id' => 201,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal 1',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [],
+                ],
+            ];
+        });
+        CBT_Cache::invalidate_exam(55);
+        $afterRevisionChanged = CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics(55);
+        self::assertSame('miss', $afterRevisionChanged['snapshot_status']);
+        self::assertSame('revision_changed', $afterRevisionChanged['snapshot_miss_reason']);
+        self::assertSame('Revision berubah', $afterRevisionChanged['snapshot_miss_reason_label']);
+
+        foreach ($this->storedRedisKeys() as $storedKey) {
+            unset($GLOBALS['cbt_test_redis_storage'][$storedKey]);
+        }
+
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(55, static function (int $examId): array {
+            return [
+                [
+                    'id' => 201,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal 1',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [],
+                ],
+            ];
+        });
+        $currentStorageKey = (string) CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics(55)['storage_key'];
+        unset($GLOBALS['cbt_test_redis_storage'][$currentStorageKey]);
+        $afterKeyMissing = CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics(55);
+        self::assertSame('miss', $afterKeyMissing['snapshot_status']);
+        self::assertSame('expired_or_evicted', $afterKeyMissing['snapshot_miss_reason']);
+        self::assertSame('TTL habis / ter-evict', $afterKeyMissing['snapshot_miss_reason_label']);
+
+        $freshExamDiagnostics = CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics(77);
+        self::assertSame('miss', $freshExamDiagnostics['snapshot_status']);
+        self::assertSame('not_prepared', $freshExamDiagnostics['snapshot_miss_reason']);
+        self::assertSame('Belum disiapkan', $freshExamDiagnostics['snapshot_miss_reason_label']);
+    }
+
     public function test_get_exam_payload_diagnostics_reports_unavailable_state(): void
     {
         $this->setDeliveryRedisUnavailable();
@@ -174,6 +297,112 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
         self::assertFalse($diagnostics['snapshot_exists']);
         self::assertFalse($diagnostics['snapshot_valid']);
         self::assertSame('unavailable', $diagnostics['snapshot_status']);
+        self::assertSame('redis_unavailable', $diagnostics['snapshot_miss_reason']);
+        self::assertSame('Redis tidak tersedia', $diagnostics['snapshot_miss_reason_label']);
+    }
+
+    public function test_maybe_auto_heal_snapshot_repairs_revision_changed_reason(): void
+    {
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(55, static function (int $examId): array {
+            return [
+                [
+                    'id' => 201,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal 1',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [],
+                ],
+            ];
+        });
+        CBT_Cache::invalidate_exam(55);
+
+        $repair = CBT_Exam_Question_Delivery_Cache::maybe_auto_heal_snapshot(55, 'admin');
+
+        self::assertTrue($repair['success']);
+        self::assertSame('auto_healed', $repair['status']);
+        self::assertSame('Dipulihkan otomatis dari revision exam terbaru', $repair['message']);
+        self::assertSame('ready', $repair['diagnostics']['snapshot_status']);
+        self::assertSame('auto_healed', $repair['diagnostics']['repair_status']);
+        self::assertSame('Dipulihkan otomatis dari revision exam terbaru', $repair['diagnostics']['repair_message']);
+    }
+
+    public function test_maybe_auto_heal_snapshot_repairs_invalid_payload_and_expired_snapshot(): void
+    {
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(55, static function (int $examId): array {
+            return [
+                [
+                    'id' => 201,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal 1',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [],
+                ],
+            ];
+        });
+        $currentStorageKey = (string) CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics(55)['storage_key'];
+        $GLOBALS['cbt_test_redis_storage'][$currentStorageKey] = '{"broken":';
+
+        $invalidRepair = CBT_Exam_Question_Delivery_Cache::maybe_auto_heal_snapshot(55, 'admin');
+
+        self::assertTrue($invalidRepair['success']);
+        self::assertSame('ready', $invalidRepair['diagnostics']['snapshot_status']);
+        self::assertSame('Dipulihkan otomatis dari payload soal current', $invalidRepair['message']);
+
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(55, static function (int $examId): array {
+            return [
+                [
+                    'id' => 201,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal 1',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [],
+                ],
+            ];
+        });
+        $currentStorageKey = (string) CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics(55)['storage_key'];
+        unset($GLOBALS['cbt_test_redis_storage'][$currentStorageKey]);
+
+        $expiredRepair = CBT_Exam_Question_Delivery_Cache::maybe_auto_heal_snapshot(55, 'admin');
+
+        self::assertTrue($expiredRepair['success']);
+        self::assertSame('ready', $expiredRepair['diagnostics']['snapshot_status']);
+        self::assertSame('Dipulihkan otomatis dari payload soal current', $expiredRepair['message']);
+    }
+
+    public function test_maybe_auto_heal_snapshot_skips_manual_clear_not_prepared_and_unavailable_states(): void
+    {
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(55, static function (int $examId): array {
+            return [
+                [
+                    'id' => 201,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal 1',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [],
+                ],
+            ];
+        });
+        CBT_Exam_Question_Delivery_Cache::clear_exam_payload(55);
+
+        $manualClearRepair = CBT_Exam_Question_Delivery_Cache::maybe_auto_heal_snapshot(55, 'admin');
+        self::assertFalse($manualClearRepair['success']);
+        self::assertSame('miss', $manualClearRepair['diagnostics']['snapshot_status']);
+        self::assertSame('manual_clear', $manualClearRepair['diagnostics']['snapshot_miss_reason']);
+
+        $notPreparedRepair = CBT_Exam_Question_Delivery_Cache::maybe_auto_heal_snapshot(77, 'admin');
+        self::assertFalse($notPreparedRepair['success']);
+        self::assertSame('miss', $notPreparedRepair['diagnostics']['snapshot_status']);
+        self::assertSame('not_prepared', $notPreparedRepair['diagnostics']['snapshot_miss_reason']);
+
+        $this->setDeliveryRedisUnavailable();
+        $unavailableRepair = CBT_Exam_Question_Delivery_Cache::maybe_auto_heal_snapshot(55, 'admin');
+        self::assertFalse($unavailableRepair['success']);
+        self::assertSame('unavailable', $unavailableRepair['diagnostics']['snapshot_status']);
+        self::assertSame('redis_unavailable', $unavailableRepair['diagnostics']['snapshot_miss_reason']);
     }
 
     private function useFakeDeliveryRedis(): void
