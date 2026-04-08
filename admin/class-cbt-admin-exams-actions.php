@@ -76,9 +76,24 @@ final class CBT_Admin_Exams_Actions
         CBT_Admin_Exams_Service::handle_start_exam_preflight();
     }
 
+    public static function handle_start_bulk_exam_preflight(): void
+    {
+        CBT_Admin_Exams_Service::handle_start_bulk_exam_preflight();
+    }
+
+    public static function handle_clean_bulk_exam_snapshots(): void
+    {
+        CBT_Admin_Exams_Service::handle_clean_bulk_exam_snapshots();
+    }
+
     public static function handle_clean_exam_snapshots(): void
     {
         CBT_Admin_Exams_Service::handle_clean_exam_snapshots();
+    }
+
+    public static function handle_hard_reset_cbt_redis(): void
+    {
+        CBT_Admin_Exams_Service::handle_hard_reset_cbt_redis();
     }
 
     public static function handle_warm_student_exam_availability_snapshot(): void

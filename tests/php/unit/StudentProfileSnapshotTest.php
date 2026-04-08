@@ -108,7 +108,28 @@ final class StudentProfileSnapshotTest extends TestCase
         self::assertSame('XI-A', $diagnostics['preview']['kode_kelas']);
         self::assertSame('20260011', $diagnostics['preview']['nisn']);
         self::assertGreaterThan(0, CBT_Student_Profile_Cache::clear_snapshot(11));
-        self::assertSame('miss', CBT_Student_Profile_Cache::get_snapshot_diagnostics(11)['snapshot_status']);
+        $afterClear = CBT_Student_Profile_Cache::get_snapshot_diagnostics(11);
+        self::assertSame('miss', $afterClear['snapshot_status']);
+        self::assertSame('manual_clear', $afterClear['snapshot_miss_reason']);
+        self::assertSame('Dibersihkan manual', $afterClear['snapshot_miss_reason_label']);
+    }
+
+    public function test_profile_snapshot_diagnostics_report_meta_change_and_expired_or_evicted_miss_reasons(): void
+    {
+        CBT_Student_Profile_Cache::warm_snapshot(11);
+
+        CBT_Student_Profile_Cache::handle_user_meta_change(2, 11, 'kode_kelas', 'XI-A');
+        $afterMetaChange = CBT_Student_Profile_Cache::get_snapshot_diagnostics(11);
+        self::assertSame('miss', $afterMetaChange['snapshot_status']);
+        self::assertSame('meta_changed', $afterMetaChange['snapshot_miss_reason']);
+        self::assertSame('Meta profil berubah', $afterMetaChange['snapshot_miss_reason_label']);
+
+        CBT_Student_Profile_Cache::warm_snapshot(11);
+        unset($GLOBALS['cbt_test_redis_storage']['cbt_profile:user:11']);
+        $afterKeyMissing = CBT_Student_Profile_Cache::get_snapshot_diagnostics(11);
+        self::assertSame('miss', $afterKeyMissing['snapshot_status']);
+        self::assertSame('expired_or_evicted', $afterKeyMissing['snapshot_miss_reason']);
+        self::assertSame('TTL habis / ter-evict', $afterKeyMissing['snapshot_miss_reason_label']);
     }
 
     public function test_warm_snapshot_result_reports_ready_and_redis_unavailable_states(): void

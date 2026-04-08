@@ -48,6 +48,10 @@ if (!class_exists('CBT_Question_Submission_Context_Cache')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-question-submission-context-cache.php';
 }
 
+if (!class_exists('CBT_Plugin_Redis_Reset_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-plugin-redis-reset-service.php';
+}
+
 if (!class_exists('CBT_Live_Proctoring_Presence')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-live-proctoring-presence.php';
 }
@@ -62,6 +66,7 @@ final class CBT_Admin_Exams_Service
     private const SNAPSHOT_PREVIEW_PER_PAGE = 7;
     private const STUDENT_SNAPSHOT_PER_PAGE = 25;
     private const EXAM_READINESS_PROBLEM_PER_PAGE = 10;
+    private const HERO_OPERATIONAL_STATS_TTL = 20;
     public const SNAPSHOT_TAB_PREFLIGHT = 'preflight';
     public const SNAPSHOT_TAB_QUESTION_MONITOR = 'question_monitor';
     public const SNAPSHOT_TAB_START_MONITOR = 'start_monitor';
@@ -1186,10 +1191,17 @@ final class CBT_Admin_Exams_Service
         if (!empty($selected_snapshot_exam_ids)) {
             $selected_snapshot_exam_ids = array_values(array_intersect($selected_snapshot_exam_ids, $valid_snapshot_exam_ids));
         }
+        $selected_snapshot_exam_ids = self::normalize_snapshot_exam_selection_for_tab($selected_snapshot_exam_ids, $exam_snapshot_tab);
         $exam_snapshot_filter_state['exam_ids'] = $selected_snapshot_exam_ids;
         $exam_snapshot_filter_state['exam_id'] = !empty($selected_snapshot_exam_ids) ? (int) $selected_snapshot_exam_ids[0] : 0;
         $exam_readiness_pages = self::get_exam_readiness_pages_from_request($query, $selected_snapshot_exam_ids);
-        $exam_snapshot_rows = $can_manage_exam_snapshots
+        $is_bulk_preflight_mode = $can_manage_exam_snapshots
+            && $exam_snapshot_tab === self::SNAPSHOT_TAB_PREFLIGHT
+            && count($selected_snapshot_exam_ids) > 1;
+        $bulk_preflight = $is_bulk_preflight_mode
+            ? self::build_bulk_preflight_context($is_admin_scope, $current_user_id, $selected_snapshot_exam_ids)
+            : [];
+        $exam_snapshot_rows = ($can_manage_exam_snapshots && !$is_bulk_preflight_mode)
             ? self::build_filtered_exam_snapshot_rows(
                 $is_admin_scope,
                 $current_user_id,
@@ -1197,10 +1209,13 @@ final class CBT_Admin_Exams_Service
                 $selected_snapshot_exam_ids,
                 $exam_readiness_pages,
                 $exam_readiness_page,
-                $exam_snapshot_tab
+                $exam_snapshot_tab,
+                $student_snapshot_filter_state
             )
             : [];
-        $exam_snapshot_total = count($exam_snapshot_rows);
+        $exam_snapshot_total = $is_bulk_preflight_mode
+            ? count((array) ($bulk_preflight['rows'] ?? []))
+            : count($exam_snapshot_rows);
         foreach ($exam_snapshot_rows as $snapshot_row) {
             $snapshot_exam_id = (int) ($snapshot_row['exam_id'] ?? 0);
             $snapshot_problem_page = max(1, (int) ($snapshot_row['readiness']['problem_page'] ?? 1));
@@ -1280,21 +1295,31 @@ final class CBT_Admin_Exams_Service
                     : (count($selected_snapshot_exam_titles) . ' exam dipilih'),
             ];
         }
-        $student_snapshot_filter_options = $can_manage_exam_snapshots
-            ? self::build_snapshot_student_filter_options()
-            : ['kelas' => [], 'ruang' => []];
+        $student_snapshot_filter_options = ['kelas' => [], 'ruang' => []];
+        if ($can_manage_exam_snapshots) {
+            if (self::is_exam_snapshot_student_tab($exam_snapshot_tab)) {
+                $student_snapshot_filter_options = self::build_snapshot_student_filter_options();
+            } elseif ($exam_snapshot_tab === self::SNAPSHOT_TAB_SESSION_RUNTIME_MONITOR) {
+                $student_snapshot_filter_options = self::build_session_runtime_filter_options($selected_snapshot_exam_ids);
+            }
+        }
         $student_snapshot_kelas_options = array_values(array_map('strval', (array) ($student_snapshot_filter_options['kelas'] ?? [])));
         $student_snapshot_ruang_options = array_values(array_map('strval', (array) ($student_snapshot_filter_options['ruang'] ?? [])));
+        $student_snapshot_status_options = self::get_student_snapshot_status_filter_options($exam_snapshot_tab);
         $valid_student_snapshot_kelas_options = $student_snapshot_kelas_options;
         $valid_student_snapshot_ruang_options = $student_snapshot_ruang_options;
+        $valid_student_snapshot_status_options = array_values(array_filter(array_map('strval', wp_list_pluck($student_snapshot_status_options, 'value'))));
         if (($student_snapshot_filter_state['kelas'] ?? '') !== '' && !in_array((string) $student_snapshot_filter_state['kelas'], $valid_student_snapshot_kelas_options, true)) {
             $student_snapshot_filter_state['kelas'] = '';
         }
         if (($student_snapshot_filter_state['ruang'] ?? '') !== '' && !in_array((string) $student_snapshot_filter_state['ruang'], $valid_student_snapshot_ruang_options, true)) {
             $student_snapshot_filter_state['ruang'] = '';
         }
-        $student_snapshot_table = $can_manage_exam_snapshots
-            ? self::build_snapshot_student_table_context($student_snapshot_filter_state)
+        if (($student_snapshot_filter_state['status'] ?? '') !== '' && !in_array((string) $student_snapshot_filter_state['status'], $valid_student_snapshot_status_options, true)) {
+            $student_snapshot_filter_state['status'] = '';
+        }
+        $student_snapshot_table = ($can_manage_exam_snapshots && self::is_exam_snapshot_student_tab($exam_snapshot_tab))
+            ? self::build_snapshot_student_table_context($student_snapshot_filter_state, $exam_snapshot_tab)
             : [
                 'items' => [],
                 'total' => 0,
@@ -1302,6 +1327,9 @@ final class CBT_Admin_Exams_Service
                 'page' => 1,
                 'per_page' => self::STUDENT_SNAPSHOT_PER_PAGE,
             ];
+        $availability_rewarm_queue = $can_manage_exam_snapshots && class_exists('CBT_Exam_Availability_Auto_Warm_Service')
+            ? CBT_Exam_Availability_Auto_Warm_Service::get_rewarm_queue_state()
+            : [];
         $student_snapshot_rows = (array) ($student_snapshot_table['items'] ?? []);
         $student_snapshot_total = max(0, (int) ($student_snapshot_table['total'] ?? 0));
         $student_snapshot_total_pages = max(1, (int) ($student_snapshot_table['total_pages'] ?? 1));
@@ -1324,6 +1352,23 @@ final class CBT_Admin_Exams_Service
             $student_snapshot_active_filters[] = [
                 'label' => 'Ruang',
                 'value' => (string) $student_snapshot_filter_state['ruang'],
+            ];
+        }
+        if (($student_snapshot_filter_state['status'] ?? '') !== '') {
+            $status_filter_value = (string) $student_snapshot_filter_state['status'];
+            $status_filter_label = $status_filter_value;
+            foreach ($student_snapshot_status_options as $status_option) {
+                if ((string) ($status_option['value'] ?? '') !== $status_filter_value) {
+                    continue;
+                }
+
+                $status_filter_label = (string) ($status_option['label'] ?? $status_filter_value);
+                break;
+            }
+
+            $student_snapshot_active_filters[] = [
+                'label' => 'Status Snapshot',
+                'value' => $status_filter_label,
             ];
         }
         $selected_question_total = count($selected_question_ids);
@@ -1550,8 +1595,201 @@ final class CBT_Admin_Exams_Service
             }
             unset($exam);
         }
+        $exam_operational_stats = $can_manage_exam_snapshots
+            ? self::build_exam_operational_stats_context($is_admin_scope, $current_user_id)
+            : [];
 
         return get_defined_vars();
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function build_exam_operational_stats_context(bool $is_admin_scope, int $current_user_id): array
+    {
+        $transient_key = 'cbt_exam_operational_stats_' . ($is_admin_scope ? 'global' : ('user_' . $current_user_id));
+        $cached = get_transient($transient_key);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        global $wpdb;
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $where_parts = [
+            $wpdb->prepare('e.title NOT LIKE %s', 'Bank Soal - %'),
+        ];
+        $where_params = [];
+        if (!$is_admin_scope) {
+            $where_parts[] = 'e.created_by = %d';
+            $where_params[] = $current_user_id;
+        }
+
+        $where_sql = ' WHERE ' . implode(' AND ', $where_parts);
+        $exam_ids_sql = "SELECT e.id FROM {$exam_table} e {$where_sql} ORDER BY e.id DESC";
+        $prepared_exam_ids_sql = !empty($where_params) ? $wpdb->prepare($exam_ids_sql, ...$where_params) : $exam_ids_sql;
+        $exam_ids = array_values(array_filter(array_map('intval', (array) $wpdb->get_col($prepared_exam_ids_sql))));
+
+        $attempt_where_parts = $where_parts;
+        $attempt_where_parts[] = "a.status = 'in_progress'";
+        $attempt_where_sql = ' WHERE ' . implode(' AND ', $attempt_where_parts);
+        $active_attempt_sql = "SELECT COUNT(*) FROM {$attempt_table} a INNER JOIN {$exam_table} e ON e.id = a.exam_id {$attempt_where_sql}";
+        $prepared_active_attempt_sql = !empty($where_params) ? $wpdb->prepare($active_attempt_sql, ...$where_params) : $active_attempt_sql;
+        $active_attempt_count = (int) $wpdb->get_var($prepared_active_attempt_sql);
+
+        $redis_diagnostics = class_exists('CBT_Plugin_Redis_Reset_Service')
+            ? CBT_Plugin_Redis_Reset_Service::get_plugin_diagnostics()
+            : [
+                'redis_available' => false,
+                'memory_used_human' => '-',
+                'memory_peak_human' => '-',
+                'connected_clients' => 0,
+                'total_keys' => 0,
+                'database_summaries' => [],
+                'prefix_counts' => [],
+            ];
+        $gate_diagnostics = class_exists('CBT_Start_Attempt_Gate_Service')
+            ? CBT_Start_Attempt_Gate_Service::get_global_diagnostics($exam_ids)
+            : [
+                'status_label' => 'DISABLED',
+                'status_tone' => 'warning',
+                'queue_depth_total' => 0,
+                'release_rate_label' => '-',
+                'oldest_wait_seconds' => 0,
+            ];
+        $preflight_jobs = class_exists('CBT_Exam_Preflight_Service')
+            ? CBT_Exam_Preflight_Service::get_jobs_state()
+            : [];
+        $preflight_runner = class_exists('CBT_Exam_Preflight_Service')
+            ? CBT_Exam_Preflight_Service::get_global_runner_state()
+            : ['active_exam_id' => 0, 'queue_exam_ids' => []];
+        $auto_warm_state = class_exists('CBT_Exam_Availability_Auto_Warm_Service')
+            ? CBT_Exam_Availability_Auto_Warm_Service::get_state()
+            : ['active' => false, 'exam_id' => 0];
+
+        $tracked_exam_lookup = [];
+        foreach ($exam_ids as $exam_id) {
+            $tracked_exam_lookup[$exam_id] = true;
+        }
+
+        $preflight_active_count = 0;
+        $preflight_queued_count = 0;
+        foreach ((array) $preflight_jobs as $job) {
+            if (!is_array($job)) {
+                continue;
+            }
+
+            $job_exam_id = (int) ($job['exam_id'] ?? 0);
+            if (!empty($tracked_exam_lookup) && $job_exam_id > 0 && !isset($tracked_exam_lookup[$job_exam_id])) {
+                continue;
+            }
+
+            $job_status = sanitize_key((string) ($job['status'] ?? 'inactive'));
+            if ($job_status === 'active') {
+                $preflight_active_count++;
+            } elseif ($job_status === 'queued') {
+                $preflight_queued_count++;
+            }
+        }
+
+        $auto_warm_active = !empty($auto_warm_state['active'])
+            && (
+                empty($tracked_exam_lookup)
+                || isset($tracked_exam_lookup[(int) ($auto_warm_state['exam_id'] ?? 0)])
+            );
+
+        $prefix_counts = is_array($redis_diagnostics['prefix_counts'] ?? null) ? $redis_diagnostics['prefix_counts'] : [];
+        $database_summaries = array_values(array_filter((array) ($redis_diagnostics['database_summaries'] ?? []), static function ($summary): bool {
+            return is_array($summary);
+        }));
+        $database_summary_bits = [];
+        foreach (array_slice($database_summaries, 0, 2) as $summary) {
+            $database_summary_bits[] = 'DB' . (int) ($summary['database'] ?? 0) . ' ' . number_format_i18n((int) ($summary['key_count'] ?? 0));
+        }
+        if (count($database_summaries) > 2) {
+            $database_summary_bits[] = '+' . (count($database_summaries) - 2) . ' DB';
+        }
+
+        $session_snapshot_count = max(0, (int) ($prefix_counts['attempt_session'] ?? 0));
+        $contract_snapshot_count = max(0, (int) ($prefix_counts['attempt_contract'] ?? 0));
+        $active_attempt_index_count = max(0, (int) ($prefix_counts['active_attempt'] ?? 0));
+        $profile_snapshot_count = max(0, (int) ($prefix_counts['profile'] ?? 0));
+        $login_snapshot_count = max(0, (int) ($prefix_counts['login'] ?? 0));
+        $availability_snapshot_count = max(0, (int) ($prefix_counts['exam_availability'] ?? 0));
+
+        $cards = [
+            [
+                'label' => 'Redis RAM',
+                'value' => (string) ($redis_diagnostics['memory_used_human'] ?? '-'),
+                'meta' => trim(implode(' · ', array_filter([
+                    (($redis_diagnostics['memory_peak_human'] ?? '-') !== '-') ? ('Peak ' . (string) $redis_diagnostics['memory_peak_human']) : '',
+                    ((int) ($redis_diagnostics['connected_clients'] ?? 0) > 0) ? ('Clients ' . number_format_i18n((int) $redis_diagnostics['connected_clients'])) : '',
+                ]))),
+                'hint' => 'Global Redis instance',
+                'tone' => !empty($redis_diagnostics['redis_available']) ? 'success' : 'warning',
+            ],
+            [
+                'label' => 'CBT Redis Keys',
+                'value' => number_format_i18n((int) ($redis_diagnostics['total_keys'] ?? 0)),
+                'meta' => !empty($database_summary_bits) ? implode(' · ', $database_summary_bits) : 'Belum ada key CBT',
+                'hint' => 'Plugin only',
+                'tone' => 'neutral',
+            ],
+            [
+                'label' => 'Active Attempts',
+                'value' => number_format_i18n($active_attempt_count),
+                'meta' => trim(implode(' · ', array_filter([
+                    $session_snapshot_count > 0 ? ('Session ' . number_format_i18n($session_snapshot_count)) : '',
+                    $contract_snapshot_count > 0 ? ('Contract ' . number_format_i18n($contract_snapshot_count)) : '',
+                    $active_attempt_index_count > 0 ? ('Index ' . number_format_i18n($active_attempt_index_count)) : '',
+                ]))),
+                'hint' => 'Runtime live',
+                'tone' => $active_attempt_count > 0 ? 'success' : 'neutral',
+            ],
+            [
+                'label' => 'Start Queue',
+                'value' => number_format_i18n((int) ($gate_diagnostics['queue_depth_total'] ?? 0)),
+                'meta' => trim(implode(' · ', array_filter([
+                    (string) ($gate_diagnostics['status_label'] ?? 'DISABLED'),
+                    (string) ($gate_diagnostics['release_rate_label'] ?? '-'),
+                    ((int) ($gate_diagnostics['oldest_wait_seconds'] ?? 0) > 0) ? ('Oldest ' . number_format_i18n((int) $gate_diagnostics['oldest_wait_seconds']) . 's') : '',
+                ]))),
+                'hint' => 'Per exam gate',
+                'tone' => sanitize_key((string) ($gate_diagnostics['status_tone'] ?? 'warning')),
+            ],
+            [
+                'label' => 'Warm Jobs',
+                'value' => number_format_i18n($preflight_active_count + $preflight_queued_count + ($auto_warm_active ? 1 : 0)),
+                'meta' => trim(implode(' · ', array_filter([
+                    'Preflight ' . number_format_i18n($preflight_active_count) . ' aktif',
+                    $preflight_queued_count > 0 ? ('Antrean ' . number_format_i18n($preflight_queued_count)) : '',
+                    $auto_warm_active ? 'Auto-Warm aktif' : 'Auto-Warm idle',
+                ]))),
+                'hint' => 'Pra-ujian',
+                'tone' => ($preflight_active_count + $preflight_queued_count + ($auto_warm_active ? 1 : 0)) > 0 ? 'success' : 'neutral',
+            ],
+            [
+                'label' => 'User Snapshots',
+                'value' => number_format_i18n($profile_snapshot_count + $login_snapshot_count + $availability_snapshot_count),
+                'meta' => trim(implode(' · ', array_filter([
+                    $profile_snapshot_count > 0 ? ('Profile ' . number_format_i18n($profile_snapshot_count)) : '',
+                    $login_snapshot_count > 0 ? ('Login ' . number_format_i18n($login_snapshot_count)) : '',
+                    $availability_snapshot_count > 0 ? ('Availability ' . number_format_i18n($availability_snapshot_count)) : '',
+                ]))),
+                'hint' => 'Redis CBT only',
+                'tone' => 'neutral',
+            ],
+        ];
+
+        $context = [
+            'cards' => $cards,
+            'refreshed_every_seconds' => self::HERO_OPERATIONAL_STATS_TTL,
+        ];
+
+        set_transient($transient_key, $context, self::HERO_OPERATIONAL_STATS_TTL);
+
+        return $context;
     }
 
     /**
@@ -2382,6 +2620,183 @@ final class CBT_Admin_Exams_Service
         ]);
     }
 
+    public static function handle_start_bulk_exam_preflight(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_start_bulk_exam_preflight');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        $snapshot_filter_state = self::get_exam_snapshot_filter_state_from_request($_POST);
+        $selected_exam_ids = array_values(array_filter(array_map('intval', (array) ($snapshot_filter_state['exam_ids'] ?? []))));
+
+        if (count($selected_exam_ids) < 2) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Bulk One-Click membutuhkan minimal 2 exam yang dipilih.',
+            ]);
+        }
+
+        if (count($selected_exam_ids) > 10) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Bulk One-Click dibatasi maksimal 10 exam per run.',
+            ]);
+        }
+
+        $rows = self::get_filtered_exam_snapshot_exams(self::is_admin_scope(), get_current_user_id(), $selected_exam_ids);
+        $row_map = [];
+        foreach ($rows as $row) {
+            $row_exam_id = (int) ($row['id'] ?? 0);
+            if ($row_exam_id > 0) {
+                $row_map[$row_exam_id] = $row;
+            }
+        }
+
+        $ordered_rows = [];
+        foreach ($selected_exam_ids as $selected_exam_id) {
+            if (!isset($row_map[$selected_exam_id])) {
+                self::redirect_exam_snapshot_page($exam_list_state, [
+                    'cbt_err' => 'Ada exam pada bulk selection yang tidak ditemukan atau tidak tersedia.',
+                ]);
+            }
+
+            $ordered_rows[] = $row_map[$selected_exam_id];
+        }
+
+        $counts = [
+            'active' => 0,
+            'queued' => 0,
+            'completed' => 0,
+            'completed_with_warnings' => 0,
+            'failed' => 0,
+            'other' => 0,
+        ];
+
+        foreach ($ordered_rows as $exam_row) {
+            $result = CBT_Exam_Preflight_Service::start_for_exam($exam_row);
+            $state = isset($result['state']) && is_array($result['state']) ? $result['state'] : [];
+            $status = sanitize_key((string) ($state['status'] ?? ''));
+
+            if (!$result['success']) {
+                $status = 'failed';
+            }
+
+            if (!isset($counts[$status])) {
+                $status = 'other';
+            }
+
+            $counts[$status]++;
+        }
+
+        $processed_total = count($ordered_rows);
+        $message = sprintf(
+            'Bulk one-click memproses %1$d exam: aktif %2$d, antre %3$d, selesai %4$d, selesai dengan catatan %5$d, gagal %6$d.',
+            $processed_total,
+            $counts['active'],
+            $counts['queued'],
+            $counts['completed'],
+            $counts['completed_with_warnings'],
+            $counts['failed']
+        );
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            ($counts['failed'] >= $processed_total) ? 'cbt_err' : 'cbt_msg' => $message,
+        ]);
+    }
+
+    public static function handle_clean_bulk_exam_snapshots(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_clean_bulk_exam_snapshots');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        $snapshot_filter_state = self::get_exam_snapshot_filter_state_from_request($_POST);
+        $selected_exam_ids = array_values(array_filter(array_map('intval', (array) ($snapshot_filter_state['exam_ids'] ?? []))));
+
+        if (count($selected_exam_ids) < 2) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Bulk clean snapshot membutuhkan minimal 2 exam yang dipilih.',
+            ]);
+        }
+
+        if (count($selected_exam_ids) > 10) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Bulk clean snapshot dibatasi maksimal 10 exam per run.',
+            ]);
+        }
+
+        $rows = self::get_filtered_exam_snapshot_exams(self::is_admin_scope(), get_current_user_id(), $selected_exam_ids);
+        $row_map = [];
+        foreach ($rows as $row) {
+            $row_exam_id = (int) ($row['id'] ?? 0);
+            if ($row_exam_id > 0) {
+                $row_map[$row_exam_id] = $row;
+            }
+        }
+
+        $ordered_rows = [];
+        foreach ($selected_exam_ids as $selected_exam_id) {
+            if (!isset($row_map[$selected_exam_id])) {
+                self::redirect_exam_snapshot_page($exam_list_state, [
+                    'cbt_err' => 'Ada exam pada bulk selection yang tidak ditemukan atau tidak tersedia.',
+                ]);
+            }
+
+            $ordered_rows[] = $row_map[$selected_exam_id];
+        }
+
+        $success_count = 0;
+        $failure_count = 0;
+        $failure_messages = [];
+
+        foreach ($ordered_rows as $exam_row) {
+            $result = self::clean_exam_snapshot_stack($exam_row);
+            if (!empty($result['success'])) {
+                $success_count++;
+                continue;
+            }
+
+            $failure_count++;
+            if (count($failure_messages) < 3) {
+                $exam_title = trim((string) ($exam_row['title'] ?? ''));
+                $exam_label = $exam_title !== '' ? $exam_title : ('Exam #' . (int) ($exam_row['id'] ?? 0));
+                $failure_messages[] = $exam_label . ': ' . trim((string) ($result['message'] ?? 'Gagal membersihkan snapshot.'));
+            }
+        }
+
+        if ($success_count <= 0) {
+            $message = sprintf(
+                'Bulk clean snapshot gagal untuk %d exam terpilih.',
+                count($ordered_rows)
+            );
+            if (!empty($failure_messages)) {
+                $message .= ' ' . implode(' · ', $failure_messages);
+            }
+
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => $message,
+            ]);
+        }
+
+        $message = sprintf(
+            'Bulk clean snapshot memproses %1$d exam: berhasil %2$d, gagal %3$d.',
+            count($ordered_rows),
+            $success_count,
+            $failure_count
+        );
+        if (!empty($failure_messages)) {
+            $message .= ' ' . implode(' · ', $failure_messages);
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            ($failure_count >= count($ordered_rows)) ? 'cbt_err' : 'cbt_msg' => $message,
+        ]);
+    }
+
     public static function handle_clean_exam_snapshots(): void
     {
         if (!self::can_manage_exam_snapshots()) {
@@ -2402,6 +2817,39 @@ final class CBT_Admin_Exams_Service
         $result = self::clean_exam_snapshot_stack($exam_row);
         self::redirect_exam_snapshot_page($exam_list_state, [
             !empty($result['success']) ? 'cbt_msg' : 'cbt_err' => (string) ($result['message'] ?? 'Gagal membersihkan snapshot pra ujian.'),
+        ]);
+    }
+
+    public static function handle_hard_reset_cbt_redis(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_hard_reset_cbt_redis');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if (!class_exists('CBT_Plugin_Redis_Reset_Service')) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Helper reset Redis CBT belum tersedia di environment ini.',
+            ]);
+        }
+
+        $result = CBT_Plugin_Redis_Reset_Service::reset_all_plugin_keys();
+        $message_key = !empty($result['success']) ? 'cbt_msg' : 'cbt_err';
+        $message = (string) ($result['message'] ?? 'Gagal membersihkan Redis CBT.');
+        $database_parts = [];
+        foreach ((array) ($result['databases'] ?? []) as $database_summary) {
+            $database = max(0, (int) ($database_summary['database'] ?? 0));
+            $deleted_keys = max(0, (int) ($database_summary['deleted_keys'] ?? 0));
+            $database_parts[] = 'DB ' . $database . ': ' . $deleted_keys . ' key';
+        }
+        if (!empty($database_parts)) {
+            $message .= ' ' . implode(' · ', $database_parts) . '.';
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            $message_key => $message,
         ]);
     }
 
@@ -3240,6 +3688,20 @@ final class CBT_Admin_Exams_Service
     }
 
     /**
+     * @param array<int,int> $exam_ids
+     * @return array<int,int>
+     */
+    private static function normalize_snapshot_exam_selection_for_tab(array $exam_ids, string $tab): array
+    {
+        $exam_ids = array_values(array_unique(array_filter(array_map('intval', $exam_ids))));
+        if (self::sanitize_exam_snapshot_tab($tab) === self::SNAPSHOT_TAB_SESSION_RUNTIME_MONITOR && !empty($exam_ids)) {
+            return [(int) $exam_ids[0]];
+        }
+
+        return $exam_ids;
+    }
+
+    /**
      * @param array<string,mixed> $args
      * @param array{exam_id:int,exam_ids?:array<int,int>} $state
      * @return array<string,mixed>
@@ -3365,7 +3827,7 @@ final class CBT_Admin_Exams_Service
 
     /**
      * @param array<string,mixed> $request
-     * @return array{search:string,kelas:string,ruang:string,paged:int,per_page:int}
+     * @return array{search:string,kelas:string,ruang:string,status:string,paged:int,per_page:int}
      */
     private static function get_student_snapshot_filter_state_from_request(array $request): array
     {
@@ -3379,6 +3841,9 @@ final class CBT_Admin_Exams_Service
             'ruang' => isset($request['cbt_student_snapshot_ruang'])
                 ? self::normalize_snapshot_student_meta_filter((string) wp_unslash((string) $request['cbt_student_snapshot_ruang']))
                 : '',
+            'status' => isset($request['cbt_student_snapshot_status'])
+                ? self::normalize_student_snapshot_status_filter((string) wp_unslash((string) $request['cbt_student_snapshot_status']))
+                : '',
             'paged' => isset($request['cbt_student_snapshot_paged'])
                 ? max(1, absint(wp_unslash((string) $request['cbt_student_snapshot_paged'])))
                 : 1,
@@ -3388,7 +3853,7 @@ final class CBT_Admin_Exams_Service
 
     /**
      * @param array<string,mixed> $args
-     * @param array{search:string,kelas:string,ruang:string,paged:int,per_page:int} $state
+     * @param array{search:string,kelas:string,ruang:string,status:string,paged:int,per_page:int} $state
      * @return array<string,mixed>
      */
     public static function add_student_snapshot_filter_state_args(array $args, array $state, bool $include_paged = true): array
@@ -3401,6 +3866,9 @@ final class CBT_Admin_Exams_Service
         }
         if (($state['ruang'] ?? '') !== '') {
             $args['cbt_student_snapshot_ruang'] = (string) $state['ruang'];
+        }
+        if (($state['status'] ?? '') !== '') {
+            $args['cbt_student_snapshot_status'] = (string) $state['status'];
         }
         if ($include_paged) {
             $args['cbt_student_snapshot_paged'] = max(1, (int) ($state['paged'] ?? 1));
@@ -3454,26 +3922,60 @@ final class CBT_Admin_Exams_Service
     }
 
     /**
-     * @param array{search:string,kelas:string,ruang:string,paged:int,per_page:int} $state
+     * @param array{search:string,kelas:string,ruang:string,status:string,paged:int,per_page:int} $state
      * @return array{items:array<int,array<string,mixed>>,total:int,total_pages:int,page:int,per_page:int}
      */
-    private static function build_snapshot_student_table_context(array $state): array
+    private static function build_snapshot_student_table_context(array $state, string $mode = self::SNAPSHOT_TAB_EXAM_MONITOR): array
     {
         $page = max(1, (int) ($state['paged'] ?? 1));
         $per_page = self::STUDENT_SNAPSHOT_PER_PAGE;
+        $status_filter = self::normalize_student_snapshot_status_filter((string) ($state['status'] ?? ''));
+        $negate_status_filter = $status_filter !== '' && str_starts_with($status_filter, '!');
+        $status_filter_value = $negate_status_filter ? substr($status_filter, 1) : $status_filter;
         $users = self::get_filtered_snapshot_student_users($state);
-        $total = count($users);
-        $total_pages = max(1, (int) ceil($total / $per_page));
-        if ($total > 0 && $page > $total_pages) {
-            $page = $total_pages;
-        }
-
-        $page_users = array_slice($users, ($page - 1) * $per_page, $per_page);
         $rows = [];
-        foreach ($page_users as $user) {
-            if ($user instanceof WP_User) {
-                $rows[] = self::build_snapshot_student_row($user);
+
+        if ($status_filter_value === '') {
+            $total = count($users);
+            $total_pages = max(1, (int) ceil($total / $per_page));
+            if ($total > 0 && $page > $total_pages) {
+                $page = $total_pages;
             }
+
+            $page_users = array_slice($users, ($page - 1) * $per_page, $per_page);
+            foreach ($page_users as $user) {
+                if ($user instanceof WP_User) {
+                    $rows[] = self::build_snapshot_student_row($user, $mode);
+                }
+            }
+        } else {
+            $filtered_rows = [];
+            foreach ($users as $user) {
+                if (!$user instanceof WP_User) {
+                    continue;
+                }
+
+                $row = self::build_snapshot_student_row($user, $mode);
+                $row_status_filter_value = self::get_student_snapshot_row_status_filter_slug($row, $mode);
+                $is_matching_status = $row_status_filter_value === $status_filter_value;
+                if ((!$negate_status_filter && !$is_matching_status) || ($negate_status_filter && $is_matching_status)) {
+                    continue;
+                }
+
+                $filtered_rows[] = $row;
+            }
+
+            $total = count($filtered_rows);
+            $total_pages = max(1, (int) ceil($total / $per_page));
+            if ($total > 0 && $page > $total_pages) {
+                $page = $total_pages;
+            } elseif ($total === 0) {
+                $page = 1;
+            }
+
+            $rows = $total > 0
+                ? array_slice($filtered_rows, ($page - 1) * $per_page, $per_page)
+                : [];
         }
 
         return [
@@ -3483,6 +3985,101 @@ final class CBT_Admin_Exams_Service
             'page' => $page,
             'per_page' => $per_page,
         ];
+    }
+
+    /**
+     * @return array<int,array{value:string,label:string}>
+     */
+    private static function get_student_snapshot_status_filter_options(string $mode): array
+    {
+        $normalized_mode = self::sanitize_exam_snapshot_tab($mode);
+        $options = [];
+
+        if ($normalized_mode === self::SNAPSHOT_TAB_EXAM_MONITOR) {
+            $options = [
+                ['value' => 'ready', 'label' => 'READY'],
+                ['value' => 'auto_warm', 'label' => 'AUTO-WARM'],
+                ['value' => 'queued_rewarm', 'label' => 'QUEUED REWARM'],
+                ['value' => 'miss', 'label' => 'MISS'],
+                ['value' => 'invalid', 'label' => 'INVALID'],
+                ['value' => 'unavailable', 'label' => 'UNAVAILABLE'],
+            ];
+        } elseif ($normalized_mode === self::SNAPSHOT_TAB_SESSION_RUNTIME_MONITOR) {
+            $options = [
+                ['value' => 'ready', 'label' => 'READY'],
+                ['value' => 'session_miss', 'label' => 'SESSION MISS'],
+                ['value' => 'contract_miss', 'label' => 'CONTRACT MISS'],
+                ['value' => 'runtime_miss', 'label' => 'RUNTIME MISS'],
+                ['value' => 'stale', 'label' => 'STALE LAST SEEN'],
+                ['value' => 'low_remaining', 'label' => 'LOW REMAINING'],
+            ];
+        } elseif (in_array($normalized_mode, [self::SNAPSHOT_TAB_PROFILE_MONITOR, self::SNAPSHOT_TAB_LOGIN_MONITOR], true)) {
+            $options = [
+                ['value' => 'ready', 'label' => 'READY'],
+                ['value' => 'warning', 'label' => 'WARNING'],
+                ['value' => 'miss', 'label' => 'MISS'],
+                ['value' => 'invalid', 'label' => 'INVALID'],
+                ['value' => 'unavailable', 'label' => 'UNAVAILABLE'],
+                ['value' => 'idle', 'label' => 'IDLE'],
+            ];
+        }
+
+        if (empty($options)) {
+            return [];
+        }
+
+        $negative_options = [];
+        foreach ($options as $option) {
+            $option_value = (string) ($option['value'] ?? '');
+            $option_label = (string) ($option['label'] ?? $option_value);
+            if ($option_value === '') {
+                continue;
+            }
+
+            $negative_options[] = [
+                'value' => '!' . $option_value,
+                'label' => '! ' . $option_label,
+            ];
+        }
+
+        return array_merge($options, $negative_options);
+    }
+
+    private static function normalize_student_snapshot_status_filter(string $value): string
+    {
+        $value = trim($value);
+        $is_negated = str_starts_with($value, '!');
+        if ($is_negated) {
+            $value = ltrim(substr($value, 1));
+        }
+
+        $value = strtolower($value);
+        $value = str_replace([' ', '-'], '_', $value);
+        $value = preg_replace('/[^a-z0-9_]/', '', $value) ?? '';
+        if ($value === '') {
+            return '';
+        }
+
+        return $is_negated ? '!' . $value : $value;
+    }
+
+    private static function get_student_snapshot_row_status_filter_slug(array $row, string $mode): string
+    {
+        $normalized_mode = self::sanitize_exam_snapshot_tab($mode);
+
+        if ($normalized_mode === self::SNAPSHOT_TAB_EXAM_MONITOR) {
+            return self::normalize_student_snapshot_status_filter((string) ($row['availability_status_label'] ?? 'miss'));
+        }
+
+        if ($normalized_mode === self::SNAPSHOT_TAB_PROFILE_MONITOR) {
+            return self::normalize_student_snapshot_status_filter((string) ($row['profile_status_label'] ?? 'miss'));
+        }
+
+        if ($normalized_mode === self::SNAPSHOT_TAB_LOGIN_MONITOR) {
+            return self::normalize_student_snapshot_status_filter((string) ($row['login_status_label'] ?? 'miss'));
+        }
+
+        return '';
     }
 
     /**
@@ -3544,6 +4141,70 @@ final class CBT_Admin_Exams_Service
     }
 
     /**
+     * @param array<int,int> $selected_exam_ids
+     * @return array{kelas:string[],ruang:string[]}
+     */
+    private static function build_session_runtime_filter_options(array $selected_exam_ids = []): array
+    {
+        global $wpdb;
+
+        $selected_exam_ids = array_values(array_filter(array_map('intval', $selected_exam_ids)));
+        if (empty($selected_exam_ids)) {
+            return ['kelas' => [], 'ruang' => []];
+        }
+
+        $exam_id = (int) $selected_exam_ids[0];
+        if ($exam_id <= 0) {
+            return ['kelas' => [], 'ruang' => []];
+        }
+
+        $attempt_rows = (array) $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT student_id
+                 FROM {$wpdb->prefix}cbt_attempts
+                 WHERE exam_id = %d
+                   AND status = 'in_progress'
+                 ORDER BY id DESC",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+
+        $student_ids = array_values(array_unique(array_filter(array_map('intval', wp_list_pluck($attempt_rows, 'student_id')))));
+        if (empty($student_ids)) {
+            return ['kelas' => [], 'ruang' => []];
+        }
+
+        if (function_exists('cache_users')) {
+            cache_users($student_ids);
+        }
+        if (function_exists('update_meta_cache')) {
+            update_meta_cache('user', $student_ids);
+        }
+
+        $kelas_options = [];
+        $ruang_options = [];
+        foreach ($student_ids as $student_id) {
+            $kode_kelas = self::normalize_snapshot_student_meta_filter((string) get_user_meta($student_id, 'kode_kelas', true));
+            $kode_ruang = self::normalize_snapshot_student_meta_filter((string) get_user_meta($student_id, 'kode_ruang', true));
+            if ($kode_kelas !== '') {
+                $kelas_options[$kode_kelas] = $kode_kelas;
+            }
+            if ($kode_ruang !== '') {
+                $ruang_options[$kode_ruang] = $kode_ruang;
+            }
+        }
+
+        natcasesort($kelas_options);
+        natcasesort($ruang_options);
+
+        return [
+            'kelas' => array_values($kelas_options),
+            'ruang' => array_values($ruang_options),
+        ];
+    }
+
+    /**
      * @return array{kelas:string[],ruang:string[]}
      */
     private static function build_snapshot_student_filter_options(): array
@@ -3598,12 +4259,15 @@ final class CBT_Admin_Exams_Service
     /**
      * @return array<string,mixed>
      */
-    private static function build_snapshot_student_row(WP_User $user): array
+    private static function build_snapshot_student_row(WP_User $user, string $mode = self::SNAPSHOT_TAB_EXAM_MONITOR): array
     {
         $user_id = (int) $user->ID;
         $kode_kelas = self::normalize_snapshot_student_meta_filter((string) get_user_meta($user_id, 'kode_kelas', true));
         $kode_ruang = self::normalize_snapshot_student_meta_filter((string) get_user_meta($user_id, 'kode_ruang', true));
         $availability = CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics($user_id);
+        if ($mode === self::SNAPSHOT_TAB_EXAM_MONITOR) {
+            $availability = self::maybe_prepare_admin_availability_snapshot($user_id, $availability);
+        }
         $profile = CBT_Student_Profile_Cache::get_snapshot_diagnostics($user_id);
         $login = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics($user_id);
         $availability_status_meta = self::build_availability_snapshot_status_meta($availability, $user_id);
@@ -3637,6 +4301,11 @@ final class CBT_Admin_Exams_Service
     {
         $status = (string) ($availability['snapshot_status'] ?? 'miss');
         $source = sanitize_key((string) ($availability['snapshot_source'] ?? ''));
+        $repair_status = sanitize_key((string) ($availability['repair_status'] ?? ''));
+        if ($repair_status === 'queued_rewarm') {
+            return ['label' => 'QUEUED REWARM', 'tone' => 'warning'];
+        }
+
         if (
             $source === 'prepared'
             && sanitize_key($status) === 'ready'
@@ -3647,6 +4316,37 @@ final class CBT_Admin_Exams_Service
         }
 
         return self::build_snapshot_status_meta($status);
+    }
+
+    /**
+     * @param array<string,mixed> $availability
+     * @return array<string,mixed>
+     */
+    private static function maybe_prepare_admin_availability_snapshot(int $user_id, array $availability): array
+    {
+        $snapshot_status = sanitize_key((string) ($availability['snapshot_status'] ?? 'miss'));
+        $miss_reason = sanitize_key((string) ($availability['snapshot_miss_reason'] ?? ''));
+        if ($snapshot_status !== 'miss') {
+            return $availability;
+        }
+
+        if ($miss_reason === 'minute_rollover') {
+            $repair = CBT_Exam_Availability_Cache::maybe_auto_heal_minute_rollover($user_id);
+            if (!empty($repair['success'])) {
+                return CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics($user_id);
+            }
+        }
+
+        if (
+            $miss_reason === 'version_changed'
+            && class_exists('CBT_Exam_Availability_Auto_Warm_Service')
+            && method_exists('CBT_Exam_Availability_Auto_Warm_Service', 'enqueue_rewarm_users')
+        ) {
+            CBT_Exam_Availability_Auto_Warm_Service::enqueue_rewarm_users([$user_id], 'version_changed', 'admin');
+            return CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics($user_id);
+        }
+
+        return $availability;
     }
 
     /**
@@ -3727,7 +4427,8 @@ final class CBT_Admin_Exams_Service
         array $selected_exam_ids = [],
         array $readiness_pages = [],
         int $legacy_readiness_page = 1,
-        string $tab = self::SNAPSHOT_TAB_PREFLIGHT
+        string $tab = self::SNAPSHOT_TAB_PREFLIGHT,
+        array $student_snapshot_filter_state = []
     ): array
     {
         $selected_exam_ids = array_values(array_filter(array_map('intval', $selected_exam_ids)));
@@ -3741,10 +4442,136 @@ final class CBT_Admin_Exams_Service
         foreach ($rows as $row) {
             $exam_id = (int) ($row['id'] ?? 0);
             $row_readiness_page = max(1, (int) ($readiness_pages[$exam_id] ?? $legacy_readiness_page));
-            $snapshot_rows[] = self::build_exam_snapshot_row($row, $preview_pages, $row_readiness_page, $tab);
+            $snapshot_rows[] = self::build_exam_snapshot_row($row, $preview_pages, $row_readiness_page, $tab, $student_snapshot_filter_state);
         }
 
         return $snapshot_rows;
+    }
+
+    /**
+     * @param array<int,int> $selected_exam_ids
+     * @return array<string,mixed>
+     */
+    private static function build_bulk_preflight_context(bool $is_admin_scope, int $current_user_id, array $selected_exam_ids): array
+    {
+        $selected_exam_ids = array_values(array_filter(array_map('intval', $selected_exam_ids)));
+        $rows = self::get_filtered_exam_snapshot_exams($is_admin_scope, $current_user_id, $selected_exam_ids);
+        $row_map = [];
+
+        foreach ($rows as $row) {
+            $exam_id = (int) ($row['id'] ?? 0);
+            if ($exam_id > 0) {
+                $row_map[$exam_id] = $row;
+            }
+        }
+
+        $compact_rows = [];
+        $status_counts = [
+            'queued' => 0,
+            'completed' => 0,
+            'completed_with_warnings' => 0,
+            'failed' => 0,
+        ];
+
+        foreach ($selected_exam_ids as $exam_id) {
+            if (!isset($row_map[$exam_id])) {
+                continue;
+            }
+
+            $compact_row = self::build_bulk_preflight_row($row_map[$exam_id]);
+            $compact_rows[] = $compact_row;
+
+            $status_key = sanitize_key((string) ($compact_row['preflight_status'] ?? 'inactive'));
+            if (isset($status_counts[$status_key])) {
+                $status_counts[$status_key]++;
+            }
+        }
+
+        $runner = CBT_Exam_Preflight_Service::get_global_runner_state();
+
+        return [
+            'selected_exam_ids' => $selected_exam_ids,
+            'selected_exam_total' => count($selected_exam_ids),
+            'queued_exam_total' => $status_counts['queued'],
+            'active_exam_id' => (int) ($runner['active_exam_id'] ?? 0),
+            'completed_count' => $status_counts['completed'],
+            'completed_with_warnings_count' => $status_counts['completed_with_warnings'],
+            'failed_count' => $status_counts['failed'],
+            'can_start_bulk' => count($selected_exam_ids) >= 2 && count($selected_exam_ids) <= 10 && count($compact_rows) === count($selected_exam_ids),
+            'limit_max_exams' => 10,
+            'rows' => $compact_rows,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $exam_row
+     * @return array<string,mixed>
+     */
+    private static function build_bulk_preflight_row(array $exam_row): array
+    {
+        $exam_id = (int) ($exam_row['id'] ?? 0);
+        $question_ready = false;
+        $start_ready = false;
+        $question_count = 0;
+        $start_count = 0;
+        $submission_question_count = 0;
+        $submission_ready_count = 0;
+        $submission_invalid_count = 0;
+
+        if ($exam_id > 0 && class_exists('CBT_Exam_Question_Delivery_Cache')) {
+            $question_diagnostics = CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics($exam_id, 1, 1);
+            $question_ready = sanitize_key((string) ($question_diagnostics['snapshot_status'] ?? '')) === 'ready';
+            $question_count = max(0, (int) ($question_diagnostics['snapshot_item_count'] ?? 0));
+        }
+
+        if ($exam_id > 0 && class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
+            $start_diagnostics = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot_diagnostics($exam_id);
+            $start_ready = sanitize_key((string) ($start_diagnostics['snapshot_status'] ?? '')) === 'ready';
+            $start_count = max(0, (int) ($start_diagnostics['snapshot_item_count'] ?? 0));
+        }
+
+        if ($exam_id > 0 && class_exists('CBT_Question_Submission_Context_Cache')) {
+            $submission_diagnostics = CBT_Question_Submission_Context_Cache::get_exam_snapshot_diagnostics($exam_id);
+            $submission_question_count = max(0, (int) ($submission_diagnostics['question_count'] ?? 0));
+            $submission_ready_count = max(0, (int) ($submission_diagnostics['ready_count'] ?? 0));
+            $submission_invalid_count = max(0, (int) ($submission_diagnostics['invalid_count'] ?? 0));
+        }
+
+        $preflight = CBT_Exam_Preflight_Service::get_exam_panel_context($exam_row, $question_ready, $start_ready);
+
+        return [
+            'exam_id' => $exam_id,
+            'title' => trim((string) ($exam_row['title'] ?? '')) !== '' ? (string) ($exam_row['title'] ?? '') : ('Exam #' . $exam_id),
+            'subject_name' => trim((string) ($exam_row['subject_name'] ?? '')),
+            'status' => trim((string) ($exam_row['status'] ?? '')),
+            'queue_position' => max(0, (int) ($preflight['queue_position'] ?? 0)),
+            'preflight_status' => sanitize_key((string) ($preflight['status'] ?? 'inactive')),
+            'preflight_status_label' => (string) ($preflight['status_label'] ?? 'NONAKTIF'),
+            'preflight_status_tone' => (string) ($preflight['status_tone'] ?? 'warning'),
+            'target_student_count' => max(0, (int) ($preflight['target_student_count'] ?? 0)),
+            'last_message' => trim((string) ($preflight['last_message'] ?? '')),
+            'started_at' => trim((string) ($preflight['started_at'] ?? '')),
+            'finished_at' => trim((string) ($preflight['finished_at'] ?? '')),
+            'last_tick_at' => trim((string) ($preflight['last_tick_at'] ?? '')),
+            'stage_question_label' => (string) ($preflight['stage_question_label'] ?? 'BELUM'),
+            'stage_question_tone' => (string) ($preflight['stage_question_tone'] ?? 'warning'),
+            'stage_start_snapshot_label' => (string) ($preflight['stage_start_snapshot_label'] ?? 'BELUM'),
+            'stage_start_snapshot_tone' => (string) ($preflight['stage_start_snapshot_tone'] ?? 'warning'),
+            'stage_submission_context_label' => (string) ($preflight['stage_submission_context_label'] ?? 'BELUM'),
+            'stage_submission_context_tone' => (string) ($preflight['stage_submission_context_tone'] ?? 'warning'),
+            'stage_profiles_label' => (string) ($preflight['stage_profiles_label'] ?? 'BELUM'),
+            'stage_profiles_tone' => (string) ($preflight['stage_profiles_tone'] ?? 'warning'),
+            'stage_login_snapshot_label' => (string) ($preflight['stage_login_snapshot_label'] ?? 'BELUM'),
+            'stage_login_snapshot_tone' => (string) ($preflight['stage_login_snapshot_tone'] ?? 'warning'),
+            'stage_auto_warm_label' => (string) ($preflight['stage_auto_warm_label'] ?? 'BELUM'),
+            'stage_auto_warm_tone' => (string) ($preflight['stage_auto_warm_tone'] ?? 'warning'),
+            'question_stage_summary' => 'Total ' . $question_count . ' soal',
+            'start_stage_summary' => 'Total ' . $start_count . ' item',
+            'submission_stage_summary' => 'Siap ' . $submission_ready_count . '/' . $submission_question_count . ' · Invalid ' . $submission_invalid_count,
+            'profiles_stage_summary' => 'Siap ' . max(0, (int) ($preflight['profile_success_count'] ?? 0)) . '/' . max(0, (int) ($preflight['target_student_count'] ?? 0)),
+            'login_stage_summary' => 'Siap ' . max(0, (int) ($preflight['login_snapshot_ready_count'] ?? 0)) . '/' . max(0, (int) ($preflight['target_student_count'] ?? 0)),
+            'availability_stage_summary' => 'Siap ' . max(0, (int) ($preflight['availability_ready_count'] ?? 0)) . '/' . max(0, (int) ($preflight['target_student_count'] ?? 0)),
+        ];
     }
 
     /**
@@ -3841,16 +4668,78 @@ final class CBT_Admin_Exams_Service
      * @param array<string,mixed> $exam_row
      * @return array<string,mixed>
      */
-    private static function build_exam_snapshot_row(array $exam_row, array $preview_pages = [], int $readiness_page = 1, string $tab = self::SNAPSHOT_TAB_PREFLIGHT): array
+    private static function build_exam_snapshot_row(
+        array $exam_row,
+        array $preview_pages = [],
+        int $readiness_page = 1,
+        string $tab = self::SNAPSHOT_TAB_PREFLIGHT,
+        array $student_snapshot_filter_state = []
+    ): array
     {
         $exam_id = (int) ($exam_row['id'] ?? 0);
+        $normalized_tab = self::sanitize_exam_snapshot_tab($tab);
+        $is_preflight_tab = $normalized_tab === self::SNAPSHOT_TAB_PREFLIGHT;
         $preview_page = max(1, (int) ($preview_pages[$exam_id] ?? 1));
-        $auto_warm_context = CBT_Exam_Availability_Auto_Warm_Service::get_exam_panel_context($exam_row);
-        $preflight_context = CBT_Exam_Preflight_Service::get_exam_panel_context($exam_row);
-        $session_runtime_context = self::sanitize_exam_snapshot_tab($tab) === self::SNAPSHOT_TAB_SESSION_RUNTIME_MONITOR
-            ? self::build_session_runtime_context($exam_row)
+        $empty_auto_warm_context = [
+            'status' => 'inactive',
+            'status_label' => 'NONAKTIF',
+            'status_tone' => 'warning',
+            'last_message' => '',
+        ];
+        $empty_preflight_context = [
+            'status' => 'inactive',
+            'status_label' => 'NONAKTIF',
+            'status_tone' => 'warning',
+            'last_message' => '',
+        ];
+        $empty_readiness_context = [
+            'overall_status' => 'idle',
+            'overall_label' => 'BELUM DIPERIKSA',
+            'overall_tone' => 'warning',
+            'blockers' => [],
+            'warnings' => [],
+            'target_kelas' => [],
+            'target_student_count' => 0,
+            'profile_ready_count' => 0,
+            'profile_missing_count' => 0,
+            'availability_ready_count' => 0,
+            'availability_auto_warm_count' => 0,
+            'availability_missing_count' => 0,
+            'question_snapshot_ready' => false,
+            'start_snapshot_ready' => false,
+            'auto_warm_status' => 'inactive',
+            'token_enabled' => false,
+            'token_frontend_auto_apply' => false,
+            'token_label' => 'OFF',
+            'starts_at' => '',
+            'ends_at' => '',
+            'schedule_label' => '-',
+            'duration_minutes' => 0,
+            'show_student_result' => 0,
+            'enable_calculator' => 0,
+            'problem_students' => [],
+            'problem_total' => 0,
+            'problem_page' => max(1, $readiness_page),
+            'problem_total_pages' => 1,
+        ];
+        $auto_warm_context = $is_preflight_tab
+            ? CBT_Exam_Availability_Auto_Warm_Service::get_exam_panel_context($exam_row)
+            : $empty_auto_warm_context;
+        $preflight_context = $is_preflight_tab
+            ? CBT_Exam_Preflight_Service::get_exam_panel_context($exam_row)
+            : $empty_preflight_context;
+        $session_runtime_context = $normalized_tab === self::SNAPSHOT_TAB_SESSION_RUNTIME_MONITOR
+            ? self::build_session_runtime_context($exam_row, $student_snapshot_filter_state)
             : [
                 'attempt_total' => 0,
+                'attempt_total_overall' => 0,
+                'visible_count' => 0,
+                'rows_total' => 0,
+                'rows_total_pages' => 1,
+                'rows_current_page' => 1,
+                'rows_per_page' => self::STUDENT_SNAPSHOT_PER_PAGE,
+                'filters_applied' => false,
+                'empty_message' => '',
                 'rows' => [],
             ];
         $fallback = [
@@ -3926,7 +4815,7 @@ final class CBT_Admin_Exams_Service
             'preview_items' => [],
             'auto_warm' => $auto_warm_context,
             'preflight' => $preflight_context,
-            'readiness' => self::build_exam_readiness_context($exam_row, false, false, $auto_warm_context, $readiness_page),
+            'readiness' => $empty_readiness_context,
             'session_runtime' => $session_runtime_context,
         ];
 
@@ -3968,6 +4857,12 @@ final class CBT_Admin_Exams_Service
         } elseif ($submission_context_status === 'invalid' || $submission_context_status === 'unavailable') {
             $submission_context_tone = 'error';
         }
+        $resolved_preflight_context = $is_preflight_tab
+            ? CBT_Exam_Preflight_Service::get_exam_panel_context($exam_row, $status === 'ready', $start_status === 'ready')
+            : $empty_preflight_context;
+        $resolved_readiness_context = $is_preflight_tab
+            ? self::build_exam_readiness_context($exam_row, $status === 'ready', $start_status === 'ready', $auto_warm_context, $readiness_page)
+            : $empty_readiness_context;
 
         return array_merge($fallback, $diagnostics, [
             'exam_id' => $exam_id,
@@ -4002,8 +4897,8 @@ final class CBT_Admin_Exams_Service
             'submission_context_status' => $submission_context_status,
             'submission_context_status_label' => strtoupper($submission_context_status),
             'submission_context_status_tone' => $submission_context_tone,
-            'preflight' => CBT_Exam_Preflight_Service::get_exam_panel_context($exam_row, $status === 'ready', $start_status === 'ready'),
-            'readiness' => self::build_exam_readiness_context($exam_row, $status === 'ready', $start_status === 'ready', $auto_warm_context, $readiness_page),
+            'preflight' => $resolved_preflight_context,
+            'readiness' => $resolved_readiness_context,
             'session_runtime' => $session_runtime_context,
         ]);
     }
@@ -4043,6 +4938,7 @@ final class CBT_Admin_Exams_Service
             $availability_meta = self::build_availability_snapshot_status_meta($availability, $user_id);
             $profile_meta = self::build_snapshot_status_meta((string) ($profile['snapshot_status'] ?? 'miss'));
             $availability_label = (string) ($availability_meta['label'] ?? 'MISS');
+            $availability_miss_reason_label = trim((string) ($availability['snapshot_miss_reason_label'] ?? ''));
             $profile_label = (string) ($profile_meta['label'] ?? 'MISS');
             $is_profile_ready = $profile_label === 'READY';
             $is_availability_ready = in_array($availability_label, ['READY', 'AUTO-WARM'], true);
@@ -4070,7 +4966,11 @@ final class CBT_Admin_Exams_Service
                 $reasons[] = 'Profil ' . $profile_label;
             }
             if (!$is_availability_ready) {
-                $reasons[] = 'Availability ' . $availability_label;
+                $availability_reason_copy = 'Availability ' . $availability_label;
+                if ($availability_label === 'MISS' && $availability_miss_reason_label !== '') {
+                    $availability_reason_copy .= ' (' . $availability_miss_reason_label . ')';
+                }
+                $reasons[] = $availability_reason_copy;
             }
 
             $problem_students[] = [
@@ -4257,7 +5157,7 @@ final class CBT_Admin_Exams_Service
      * @param array<string,mixed> $exam_row
      * @return array<string,mixed>
      */
-    private static function build_session_runtime_context(array $exam_row): array
+    private static function build_session_runtime_context(array $exam_row, array $filter_state = []): array
     {
         global $wpdb;
 
@@ -4278,27 +5178,36 @@ final class CBT_Admin_Exams_Service
                 'release_rate_label' => '50 / 5 detik',
                 'oldest_wait_seconds' => 0,
             ];
+        $empty_context = [
+            'attempt_total' => 0,
+            'attempt_total_overall' => 0,
+            'visible_count' => 0,
+            'rows_total' => 0,
+            'rows_total_pages' => 1,
+            'rows_current_page' => 1,
+            'rows_per_page' => self::STUDENT_SNAPSHOT_PER_PAGE,
+            'filters_applied' => false,
+            'empty_message' => 'Belum ada attempt siswa yang sedang `in_progress` untuk exam ini.',
+            'start_gate' => $start_gate,
+            'delivery_snapshot' => [],
+            'delivery_status_label' => 'UNAVAILABLE',
+            'delivery_status_tone' => 'error',
+            'redis_first_count' => 0,
+            'legacy_count' => 0,
+            'session_ready_count' => 0,
+            'session_nonready_count' => 0,
+            'contract_ready_count' => 0,
+            'contract_nonready_count' => 0,
+            'runtime_ready_count' => 0,
+            'runtime_missing_count' => 0,
+            'stale_last_seen_count' => 0,
+            'low_remaining_count' => 0,
+            'fallback_breakdown' => [],
+            'issue_flags' => [],
+            'rows' => [],
+        ];
         if ($exam_id <= 0) {
-            return [
-                'attempt_total' => 0,
-                'start_gate' => $start_gate,
-                'delivery_snapshot' => [],
-                'delivery_status_label' => 'UNAVAILABLE',
-                'delivery_status_tone' => 'error',
-                'redis_first_count' => 0,
-                'legacy_count' => 0,
-                'session_ready_count' => 0,
-                'session_nonready_count' => 0,
-                'contract_ready_count' => 0,
-                'contract_nonready_count' => 0,
-                'runtime_ready_count' => 0,
-                'runtime_missing_count' => 0,
-                'stale_last_seen_count' => 0,
-                'low_remaining_count' => 0,
-                'fallback_breakdown' => [],
-                'issue_flags' => [],
-                'rows' => [],
-            ];
+            return $empty_context;
         }
 
         $attempt_rows = (array) $wpdb->get_results(
@@ -4313,32 +5222,75 @@ final class CBT_Admin_Exams_Service
             ARRAY_A
         );
         if (empty($attempt_rows)) {
-            return [
-                'attempt_total' => 0,
-                'start_gate' => $start_gate,
-                'delivery_snapshot' => [],
-                'delivery_status_label' => 'MISS',
-                'delivery_status_tone' => 'warning',
-                'redis_first_count' => 0,
-                'legacy_count' => 0,
-                'session_ready_count' => 0,
-                'session_nonready_count' => 0,
-                'contract_ready_count' => 0,
-                'contract_nonready_count' => 0,
-                'runtime_ready_count' => 0,
-                'runtime_missing_count' => 0,
-                'stale_last_seen_count' => 0,
-                'low_remaining_count' => 0,
-                'fallback_breakdown' => [],
-                'issue_flags' => [],
-                'rows' => [],
-            ];
+            $empty_context['delivery_status_label'] = 'MISS';
+            $empty_context['delivery_status_tone'] = 'warning';
+
+            return $empty_context;
         }
 
-        $attempt_ids = array_values(array_filter(array_map('intval', wp_list_pluck($attempt_rows, 'id'))));
-        $presence_payloads = class_exists('CBT_Live_Proctoring_Presence')
-            ? CBT_Live_Proctoring_Presence::get_attempt_payloads($attempt_ids)
-            : [];
+        $search = strtolower(trim((string) ($filter_state['search'] ?? '')));
+        $kelas_filter = self::normalize_snapshot_student_meta_filter((string) ($filter_state['kelas'] ?? ''));
+        $ruang_filter = self::normalize_snapshot_student_meta_filter((string) ($filter_state['ruang'] ?? ''));
+        $status_filter = self::normalize_student_snapshot_status_filter((string) ($filter_state['status'] ?? ''));
+        $negate_status_filter = $status_filter !== '' && str_starts_with($status_filter, '!');
+        $status_filter_value = $negate_status_filter ? substr($status_filter, 1) : $status_filter;
+        $page = max(1, (int) ($filter_state['paged'] ?? 1));
+        $per_page = self::STUDENT_SNAPSHOT_PER_PAGE;
+        $filters_applied = ($search !== '' || $kelas_filter !== '' || $ruang_filter !== '' || $status_filter_value !== '');
+        $attempt_total_overall = count($attempt_rows);
+
+        $student_ids = array_values(array_unique(array_filter(array_map('intval', wp_list_pluck($attempt_rows, 'student_id')))));
+        if (!empty($student_ids)) {
+            if (function_exists('cache_users')) {
+                cache_users($student_ids);
+            }
+            if (function_exists('update_meta_cache')) {
+                update_meta_cache('user', $student_ids);
+            }
+        }
+
+        $filtered_attempt_rows = [];
+        foreach ($attempt_rows as $attempt_row) {
+            $attempt = (array) $attempt_row;
+            $student_id = (int) ($attempt['student_id'] ?? 0);
+            if ($student_id <= 0) {
+                continue;
+            }
+
+            $user = get_user_by('id', $student_id);
+            $display_name = $user instanceof WP_User
+                ? trim((string) ($user->display_name !== '' ? $user->display_name : $user->user_login))
+                : ('Siswa #' . $student_id);
+            $user_login = $user instanceof WP_User ? (string) $user->user_login : '';
+            $kode_kelas = self::normalize_snapshot_student_meta_filter((string) get_user_meta($student_id, 'kode_kelas', true));
+            $kode_ruang = self::normalize_snapshot_student_meta_filter((string) get_user_meta($student_id, 'kode_ruang', true));
+
+            if ($kelas_filter !== '' && $kode_kelas !== $kelas_filter) {
+                continue;
+            }
+            if ($ruang_filter !== '' && $kode_ruang !== $ruang_filter) {
+                continue;
+            }
+            if ($search !== '') {
+                $haystack = strtolower(implode(' ', [
+                    $display_name,
+                    $user_login,
+                    $kode_kelas,
+                    $kode_ruang,
+                    (string) $student_id,
+                ]));
+                if (!str_contains($haystack, $search)) {
+                    continue;
+                }
+            }
+
+            $attempt['display_name'] = $display_name;
+            $attempt['user_login'] = $user_login;
+            $attempt['kode_kelas'] = $kode_kelas;
+            $attempt['kode_ruang'] = $kode_ruang;
+            $filtered_attempt_rows[] = $attempt;
+        }
+
         $delivery_diagnostics = class_exists('CBT_Exam_Question_Delivery_Cache')
             ? CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics($exam_id, 1, 1)
             : [
@@ -4350,6 +5302,55 @@ final class CBT_Admin_Exams_Service
         $delivery_status_meta = self::build_snapshot_status_meta((string) ($delivery_diagnostics['snapshot_status'] ?? 'miss'));
 
         $rows = [];
+        if ($status_filter_value !== '') {
+            $filtered_attempt_ids = array_values(array_filter(array_map('intval', wp_list_pluck($filtered_attempt_rows, 'id'))));
+            $presence_payloads = class_exists('CBT_Live_Proctoring_Presence')
+                ? CBT_Live_Proctoring_Presence::get_attempt_payloads($filtered_attempt_ids)
+                : [];
+
+            $candidate_rows = [];
+            foreach ($filtered_attempt_rows as $attempt) {
+                $row = self::build_session_runtime_row_context($attempt, $exam_duration_minutes, $presence_payloads, $delivery_diagnostics);
+                if (!self::matches_session_runtime_status_filter($row, $status_filter_value, $negate_status_filter)) {
+                    continue;
+                }
+
+                $candidate_rows[] = $row;
+            }
+
+            $filtered_total = count($candidate_rows);
+            $total_pages = max(1, (int) ceil($filtered_total / $per_page));
+            if ($filtered_total > 0 && $page > $total_pages) {
+                $page = $total_pages;
+            } elseif ($filtered_total <= 0) {
+                $page = 1;
+            }
+
+            $rows = $filtered_total > 0
+                ? array_slice($candidate_rows, ($page - 1) * $per_page, $per_page)
+                : [];
+        } else {
+            $filtered_total = count($filtered_attempt_rows);
+            $total_pages = max(1, (int) ceil($filtered_total / $per_page));
+            if ($filtered_total > 0 && $page > $total_pages) {
+                $page = $total_pages;
+            } elseif ($filtered_total <= 0) {
+                $page = 1;
+            }
+
+            $page_attempt_rows = $filtered_total > 0
+                ? array_slice($filtered_attempt_rows, ($page - 1) * $per_page, $per_page)
+                : [];
+            $page_attempt_ids = array_values(array_filter(array_map('intval', wp_list_pluck($page_attempt_rows, 'id'))));
+            $presence_payloads = class_exists('CBT_Live_Proctoring_Presence')
+                ? CBT_Live_Proctoring_Presence::get_attempt_payloads($page_attempt_ids)
+                : [];
+
+            foreach ($page_attempt_rows as $attempt) {
+                $rows[] = self::build_session_runtime_row_context($attempt, $exam_duration_minutes, $presence_payloads, $delivery_diagnostics);
+            }
+        }
+
         $redis_first_count = 0;
         $legacy_count = 0;
         $session_ready_count = 0;
@@ -4363,81 +5364,13 @@ final class CBT_Admin_Exams_Service
         $fallback_breakdown = [];
         $session_status_counts = [];
         $contract_status_counts = [];
-        foreach ($attempt_rows as $attempt_row) {
-            $attempt = (array) $attempt_row;
-            $attempt_id = (int) ($attempt['id'] ?? 0);
-            $student_id = (int) ($attempt['student_id'] ?? 0);
-            if ($attempt_id <= 0 || $student_id <= 0) {
-                continue;
-            }
-
-            $user = get_user_by('id', $student_id);
-            $display_name = $user instanceof WP_User
-                ? trim((string) ($user->display_name !== '' ? $user->display_name : $user->user_login))
-                : ('Siswa #' . $student_id);
-            $user_login = $user instanceof WP_User ? (string) $user->user_login : '';
-            $kode_kelas = self::normalize_snapshot_student_meta_filter((string) get_user_meta($student_id, 'kode_kelas', true));
-            $kode_ruang = self::normalize_snapshot_student_meta_filter((string) get_user_meta($student_id, 'kode_ruang', true));
-
-            $session_snapshot = class_exists('CBT_Attempt_Session_Snapshot_Cache')
-                ? CBT_Attempt_Session_Snapshot_Cache::get_attempt_snapshot_diagnostics($attempt_id)
-                : [
-                    'snapshot_status' => 'unavailable',
-                    'snapshot_exists' => false,
-                    'snapshot_valid' => false,
-                    'storage_key' => '',
-                    'question_count' => 0,
-                    'question_order_signature' => '',
-                ];
-            $contract_snapshot = class_exists('CBT_Attempt_Question_Contract_Cache')
-                ? CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot_diagnostics($attempt_id)
-                : [
-                    'snapshot_status' => 'unavailable',
-                    'snapshot_exists' => false,
-                    'snapshot_valid' => false,
-                    'storage_key' => '',
-                    'question_count' => 0,
-                    'question_order_signature' => '',
-                ];
-            $session_status_meta = self::build_snapshot_status_meta((string) ($session_snapshot['snapshot_status'] ?? 'miss'));
-            $contract_status_meta = self::build_snapshot_status_meta((string) ($contract_snapshot['snapshot_status'] ?? 'miss'));
-
-            $runtime_ready = class_exists('CBT_Runtime') && CBT_Runtime::is_ready() && CBT_Runtime::has_attempt_state($attempt_id);
-            $runtime_answers_status_label = $runtime_ready ? 'READY' : 'MISS';
-            $runtime_answers_status_tone = $runtime_ready ? 'success' : 'warning';
-            $presence = isset($presence_payloads[$attempt_id]) && is_array($presence_payloads[$attempt_id])
-                ? $presence_payloads[$attempt_id]
-                : [];
-
-            $duration_minutes = max(
-                0,
-                (int) ($session_snapshot['duration_minutes'] ?? 0),
-                $exam_duration_minutes
-            );
-            $extra_time_minutes = max(0, (int) ($attempt['extra_time_minutes'] ?? 0));
-            $remaining_seconds = self::build_session_runtime_remaining_seconds(
-                (string) ($attempt['started_at'] ?? ''),
-                $duration_minutes + $extra_time_minutes
-            );
-            $session_snapshot_status = sanitize_key((string) ($session_snapshot['snapshot_status'] ?? 'miss'));
-            $contract_snapshot_status = sanitize_key((string) ($contract_snapshot['snapshot_status'] ?? 'miss'));
-            $delivery_snapshot_status = sanitize_key((string) ($delivery_diagnostics['snapshot_status'] ?? 'miss'));
-            $last_seen_is_stale = self::is_session_runtime_last_seen_stale((string) ($presence['last_seen_at'] ?? ''));
-            $low_remaining = $remaining_seconds > 0 && $remaining_seconds <= (5 * MINUTE_IN_SECONDS);
-            $fallback_mode = self::build_session_runtime_fallback_mode(
-                $session_snapshot_status,
-                $contract_snapshot_status,
-                $delivery_snapshot_status,
-                $runtime_ready
-            );
-            $issue_reasons = self::build_session_runtime_issue_reasons(
-                $session_snapshot_status,
-                $contract_snapshot_status,
-                $delivery_snapshot_status,
-                $runtime_ready,
-                $last_seen_is_stale,
-                $low_remaining
-            );
+        foreach ($rows as $row) {
+            $session_snapshot_status = sanitize_key((string) ($row['session_status_key'] ?? 'miss'));
+            $contract_snapshot_status = sanitize_key((string) ($row['contract_status_key'] ?? 'miss'));
+            $runtime_answers_status = sanitize_key((string) ($row['runtime_answers_status_key'] ?? 'miss'));
+            $fallback_mode = trim((string) ($row['fallback_mode'] ?? 'LEGACY'));
+            $last_seen_is_stale = !empty($row['last_seen_is_stale']);
+            $low_remaining = !empty($row['low_remaining']);
 
             if ($fallback_mode === 'REDIS-FIRST') {
                 $redis_first_count++;
@@ -4459,7 +5392,7 @@ final class CBT_Admin_Exams_Service
                 $contract_status_counts[$contract_snapshot_status] = (int) ($contract_status_counts[$contract_snapshot_status] ?? 0) + 1;
             }
 
-            if ($runtime_ready) {
+            if ($runtime_answers_status === 'ready') {
                 $runtime_ready_count++;
             } else {
                 $runtime_missing_count++;
@@ -4474,31 +5407,6 @@ final class CBT_Admin_Exams_Service
             }
 
             $fallback_breakdown[$fallback_mode] = (int) ($fallback_breakdown[$fallback_mode] ?? 0) + 1;
-
-            $rows[] = [
-                'attempt_id' => $attempt_id,
-                'student_id' => $student_id,
-                'display_name' => $display_name,
-                'user_login' => $user_login,
-                'kode_kelas' => $kode_kelas,
-                'kode_ruang' => $kode_ruang,
-                'status' => (string) ($attempt['status'] ?? 'in_progress'),
-                'session_snapshot' => $session_snapshot,
-                'session_status_label' => (string) $session_status_meta['label'],
-                'session_status_tone' => (string) $session_status_meta['tone'],
-                'contract_snapshot' => $contract_snapshot,
-                'contract_status_label' => (string) $contract_status_meta['label'],
-                'contract_status_tone' => (string) $contract_status_meta['tone'],
-                'runtime_answers_status_label' => $runtime_answers_status_label,
-                'runtime_answers_status_tone' => $runtime_answers_status_tone,
-                'last_seen_at' => (string) ($presence['last_seen_at'] ?? ''),
-                'last_seen_is_stale' => $last_seen_is_stale,
-                'remaining_seconds' => $remaining_seconds,
-                'remaining_label' => self::format_session_runtime_remaining($remaining_seconds),
-                'low_remaining' => $low_remaining,
-                'fallback_mode' => $fallback_mode,
-                'issue_summary' => !empty($issue_reasons) ? implode(' · ', $issue_reasons) : 'Healthy',
-            ];
         }
 
         ksort($fallback_breakdown);
@@ -4541,8 +5449,22 @@ final class CBT_Admin_Exams_Service
             $issue_flags[] = sprintf('%d stale last seen', $stale_last_seen_count);
         }
 
+        $empty_message = $filtered_total > 0
+            ? ''
+            : ($attempt_total_overall > 0 && $filters_applied
+                ? 'Tidak ada attempt aktif yang cocok dengan filter saat ini.'
+                : 'Belum ada attempt siswa yang sedang `in_progress` untuk exam ini.');
+
         return [
-            'attempt_total' => count($rows),
+            'attempt_total' => $filtered_total,
+            'attempt_total_overall' => $attempt_total_overall,
+            'visible_count' => count($rows),
+            'rows_total' => $filtered_total,
+            'rows_total_pages' => $total_pages,
+            'rows_current_page' => $page,
+            'rows_per_page' => $per_page,
+            'filters_applied' => $filters_applied,
+            'empty_message' => $empty_message,
             'start_gate' => $start_gate,
             'delivery_snapshot' => $delivery_diagnostics,
             'delivery_status_label' => (string) $delivery_status_meta['label'],
@@ -4561,6 +5483,146 @@ final class CBT_Admin_Exams_Service
             'issue_flags' => $issue_flags,
             'rows' => $rows,
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<int,array<string,mixed>> $presence_payloads
+     * @param array<string,mixed> $delivery_diagnostics
+     * @return array<string,mixed>
+     */
+    private static function build_session_runtime_row_context(array $attempt, int $exam_duration_minutes, array $presence_payloads, array $delivery_diagnostics): array
+    {
+        $attempt_id = (int) ($attempt['id'] ?? 0);
+        $student_id = (int) ($attempt['student_id'] ?? 0);
+        $display_name = (string) ($attempt['display_name'] ?? ('Siswa #' . $student_id));
+        $user_login = (string) ($attempt['user_login'] ?? '');
+        $kode_kelas = (string) ($attempt['kode_kelas'] ?? '');
+        $kode_ruang = (string) ($attempt['kode_ruang'] ?? '');
+
+        $session_snapshot = class_exists('CBT_Attempt_Session_Snapshot_Cache')
+            ? CBT_Attempt_Session_Snapshot_Cache::get_attempt_snapshot_diagnostics($attempt_id)
+            : [
+                'snapshot_status' => 'unavailable',
+                'snapshot_exists' => false,
+                'snapshot_valid' => false,
+                'storage_key' => '',
+                'question_count' => 0,
+                'question_order_signature' => '',
+            ];
+        $contract_snapshot = class_exists('CBT_Attempt_Question_Contract_Cache')
+            ? CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot_diagnostics($attempt_id)
+            : [
+                'snapshot_status' => 'unavailable',
+                'snapshot_exists' => false,
+                'snapshot_valid' => false,
+                'storage_key' => '',
+                'question_count' => 0,
+                'question_order_signature' => '',
+            ];
+        $session_status_meta = self::build_snapshot_status_meta((string) ($session_snapshot['snapshot_status'] ?? 'miss'));
+        $contract_status_meta = self::build_snapshot_status_meta((string) ($contract_snapshot['snapshot_status'] ?? 'miss'));
+
+        $runtime_ready = class_exists('CBT_Runtime') && CBT_Runtime::is_ready() && CBT_Runtime::has_attempt_state($attempt_id);
+        $runtime_answers_status_label = $runtime_ready ? 'READY' : 'MISS';
+        $runtime_answers_status_tone = $runtime_ready ? 'success' : 'warning';
+        $presence = isset($presence_payloads[$attempt_id]) && is_array($presence_payloads[$attempt_id])
+            ? $presence_payloads[$attempt_id]
+            : [];
+
+        $duration_minutes = max(
+            0,
+            (int) ($session_snapshot['duration_minutes'] ?? 0),
+            $exam_duration_minutes
+        );
+        $extra_time_minutes = max(0, (int) ($attempt['extra_time_minutes'] ?? 0));
+        $remaining_seconds = self::build_session_runtime_remaining_seconds(
+            (string) ($attempt['started_at'] ?? ''),
+            $duration_minutes + $extra_time_minutes
+        );
+        $session_snapshot_status = sanitize_key((string) ($session_snapshot['snapshot_status'] ?? 'miss'));
+        $contract_snapshot_status = sanitize_key((string) ($contract_snapshot['snapshot_status'] ?? 'miss'));
+        $delivery_snapshot_status = sanitize_key((string) ($delivery_diagnostics['snapshot_status'] ?? 'miss'));
+        $last_seen_is_stale = self::is_session_runtime_last_seen_stale((string) ($presence['last_seen_at'] ?? ''));
+        $low_remaining = $remaining_seconds > 0 && $remaining_seconds <= (5 * MINUTE_IN_SECONDS);
+        $fallback_mode = self::build_session_runtime_fallback_mode(
+            $session_snapshot_status,
+            $contract_snapshot_status,
+            $delivery_snapshot_status,
+            $runtime_ready
+        );
+        $issue_reasons = self::build_session_runtime_issue_reasons(
+            $session_snapshot_status,
+            $contract_snapshot_status,
+            $delivery_snapshot_status,
+            $runtime_ready,
+            $last_seen_is_stale,
+            $low_remaining
+        );
+
+        return [
+            'attempt_id' => $attempt_id,
+            'student_id' => $student_id,
+            'display_name' => $display_name,
+            'user_login' => $user_login,
+            'kode_kelas' => $kode_kelas,
+            'kode_ruang' => $kode_ruang,
+            'status' => (string) ($attempt['status'] ?? 'in_progress'),
+            'session_snapshot' => $session_snapshot,
+            'session_status_key' => $session_snapshot_status,
+            'session_status_label' => (string) $session_status_meta['label'],
+            'session_status_tone' => (string) $session_status_meta['tone'],
+            'contract_snapshot' => $contract_snapshot,
+            'contract_status_key' => $contract_snapshot_status,
+            'contract_status_label' => (string) $contract_status_meta['label'],
+            'contract_status_tone' => (string) $contract_status_meta['tone'],
+            'runtime_answers_status_key' => $runtime_ready ? 'ready' : 'miss',
+            'runtime_answers_status_label' => $runtime_answers_status_label,
+            'runtime_answers_status_tone' => $runtime_answers_status_tone,
+            'last_seen_at' => (string) ($presence['last_seen_at'] ?? ''),
+            'last_seen_is_stale' => $last_seen_is_stale,
+            'remaining_seconds' => $remaining_seconds,
+            'remaining_label' => self::format_session_runtime_remaining($remaining_seconds),
+            'low_remaining' => $low_remaining,
+            'fallback_mode' => $fallback_mode,
+            'issue_summary' => !empty($issue_reasons) ? implode(' · ', $issue_reasons) : 'Healthy',
+        ];
+    }
+
+    private static function matches_session_runtime_status_filter(array $row, string $status_filter_value, bool $negate_status_filter = false): bool
+    {
+        $status_filter_value = self::normalize_student_snapshot_status_filter($status_filter_value);
+        $session_ready = sanitize_key((string) ($row['session_status_key'] ?? 'miss')) === 'ready';
+        $contract_ready = sanitize_key((string) ($row['contract_status_key'] ?? 'miss')) === 'ready';
+        $runtime_ready = sanitize_key((string) ($row['runtime_answers_status_key'] ?? 'miss')) === 'ready';
+        $last_seen_is_stale = !empty($row['last_seen_is_stale']);
+        $low_remaining = !empty($row['low_remaining']);
+
+        switch ($status_filter_value) {
+            case 'ready':
+                $matches = $session_ready && $contract_ready && $runtime_ready && !$last_seen_is_stale && !$low_remaining;
+                break;
+            case 'session_miss':
+                $matches = !$session_ready;
+                break;
+            case 'contract_miss':
+                $matches = !$contract_ready;
+                break;
+            case 'runtime_miss':
+                $matches = !$runtime_ready;
+                break;
+            case 'stale':
+                $matches = $last_seen_is_stale;
+                break;
+            case 'low_remaining':
+                $matches = $low_remaining;
+                break;
+            default:
+                $matches = true;
+                break;
+        }
+
+        return $negate_status_filter ? !$matches : $matches;
     }
 
     private static function build_session_runtime_fallback_mode(string $session_status, string $contract_status, string $delivery_status, bool $runtime_ready): string
@@ -6250,6 +7312,12 @@ final class CBT_Admin_Exams_Service
     {
         $preview_request = array_merge((array) $_GET, (array) $_POST, (array) $_REQUEST);
         $snapshot_filter_state = self::get_exam_snapshot_filter_state_from_request($preview_request);
+        $snapshot_tab = self::get_exam_snapshot_tab_from_request($preview_request);
+        $snapshot_filter_state['exam_ids'] = self::normalize_snapshot_exam_selection_for_tab(
+            (array) ($snapshot_filter_state['exam_ids'] ?? []),
+            $snapshot_tab
+        );
+        $snapshot_filter_state['exam_id'] = !empty($snapshot_filter_state['exam_ids']) ? (int) $snapshot_filter_state['exam_ids'][0] : 0;
         $selected_exam_ids = array_values(array_filter(array_map('intval', (array) ($snapshot_filter_state['exam_ids'] ?? []))));
         if (empty($selected_exam_ids) && !empty($snapshot_filter_state['exam_id'])) {
             $selected_exam_ids[] = (int) $snapshot_filter_state['exam_id'];
@@ -6270,9 +7338,9 @@ final class CBT_Admin_Exams_Service
                                 ),
                                 $exam_list_state
                             ),
-                            self::get_exam_snapshot_filter_state_from_request($preview_request)
+                            $snapshot_filter_state
                         ),
-                        self::get_exam_snapshot_tab_from_request($preview_request)
+                        $snapshot_tab
                     ),
                     self::get_student_snapshot_filter_state_from_request($preview_request)
                 ),

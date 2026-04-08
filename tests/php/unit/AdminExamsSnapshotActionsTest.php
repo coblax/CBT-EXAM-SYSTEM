@@ -497,6 +497,181 @@ final class AdminExamsSnapshotActionsTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_handle_start_bulk_exam_preflight_starts_first_exam_and_queues_second_exam(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAvailabilityRedis();
+        $this->useFakeProfileRedis();
+        $this->useFakeLoginSnapshotRedis();
+        $this->useFakeSubmissionContextRedis();
+        $GLOBALS['cbt_test_preflight_initial_burst_seconds'] = 60.0;
+        $GLOBALS['cbt_test_preflight_initial_burst_max_batches'] = 1;
+        $GLOBALS['cbt_test_availability_initial_burst_seconds'] = 60.0;
+        $GLOBALS['cbt_test_availability_initial_burst_max_batches'] = 1;
+        $this->registerAdditionalXiAStudents(220);
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        $_POST = [
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_tab' => 'preflight',
+            'cbt_exam_snapshot_exam_ids' => ['77', '54'],
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_page_77' => '3',
+            'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
+            'cbt_student_snapshot_paged' => '2',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_start_bulk_exam_preflight']);
+
+        $jobs = CBT_Exam_Preflight_Service::get_jobs_state();
+        self::assertSame('active', $jobs[77]['status']);
+        self::assertSame('queued', $jobs[54]['status']);
+
+        $runner = CBT_Exam_Preflight_Service::get_global_runner_state();
+        self::assertSame(77, $runner['active_exam_id']);
+        self::assertSame([54], $runner['queue_exam_ids']);
+
+        self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_ids%5B0%5D=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_ids%5B1%5D=54', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_page_77=3', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Bulk+one-click+memproses+2+exam%3A+aktif+1%2C+antre+1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_start_bulk_exam_preflight_rejects_more_than_ten_selected_exams(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+
+        $_POST = [
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_tab' => 'preflight',
+            'cbt_exam_snapshot_exam_ids' => ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'],
+            'cbt_exam_snapshot_exam_id' => '1',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_start_bulk_exam_preflight']);
+
+        self::assertSame([], CBT_Exam_Preflight_Service::get_jobs_state());
+        self::assertStringContainsString('cbt_err=Bulk+One-Click+dibatasi+maksimal+10+exam+per+run.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_start_bulk_exam_preflight_continues_when_one_exam_fails_eligibility(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAvailabilityRedis();
+        $this->useFakeProfileRedis();
+        $this->useFakeLoginSnapshotRedis();
+        $this->useFakeSubmissionContextRedis();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsBulkFailureFakeWpdb();
+
+        $_POST = [
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_tab' => 'preflight',
+            'cbt_exam_snapshot_exam_ids' => ['88', '54'],
+            'cbt_exam_snapshot_exam_id' => '88',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_start_bulk_exam_preflight']);
+
+        $jobs = CBT_Exam_Preflight_Service::get_jobs_state();
+        self::assertSame('failed', $jobs[88]['status']);
+        self::assertSame('completed', $jobs[54]['status']);
+        self::assertStringContainsString('cbt_msg=Bulk+one-click+memproses+2+exam', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('gagal+1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_clean_bulk_exam_snapshots_clears_selected_exam_snapshots_only(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeSubmissionContextRedis();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(77, static function (int $examId): array {
+            return [
+                [
+                    'id' => 900 + $examId,
+                    'exam_id' => $examId,
+                    'question_text' => 'Snapshot exam ' . $examId,
+                    'question_type' => 'multiple_choice',
+                    'points' => 1,
+                    'options' => [],
+                ],
+            ];
+        });
+        CBT_Exam_Question_Delivery_Cache::warm_exam_payload(54, static function (int $examId): array {
+            return [
+                [
+                    'id' => 900 + $examId,
+                    'exam_id' => $examId,
+                    'question_text' => 'Snapshot exam ' . $examId,
+                    'question_type' => 'multiple_choice',
+                    'points' => 1,
+                    'options' => [],
+                ],
+            ];
+        });
+        CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot(77, static function (int $examId): array {
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [900 + $examId],
+                'question_number_map' => [900 + $examId => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'option_randomization_tokens_by_question' => [],
+            ];
+        });
+        CBT_Exam_Start_Attempt_Snapshot_Cache::warm_exam_snapshot(54, static function (int $examId): array {
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [900 + $examId],
+                'question_number_map' => [900 + $examId => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'option_randomization_tokens_by_question' => [],
+            ];
+        });
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots(77);
+        CBT_Question_Submission_Context_Cache::warm_exam_snapshots(54);
+
+        $_POST = [
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_tab' => 'preflight',
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_exam_snapshot_exam_ids' => ['77', '54'],
+            'cbt_exam_readiness_paged' => '2',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_clean_bulk_exam_snapshots']);
+
+        self::assertSame([], $this->storedExamSnapshotKeysFor(77));
+        self::assertSame([], $this->storedExamSnapshotKeysFor(54));
+        self::assertSame([], $this->storedStartSnapshotKeysFor(77));
+        self::assertSame([], $this->storedStartSnapshotKeysFor(54));
+        self::assertSame([], $this->storedSubmissionContextKeysFor(77));
+        self::assertSame([], $this->storedSubmissionContextKeysFor(54));
+        self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_ids%5B0%5D=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_ids%5B1%5D=54', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Bulk+clean+snapshot+memproses+2+exam%3A+berhasil+2%2C+gagal+0.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
     public function test_handle_clean_exam_snapshots_stops_same_exam_auto_warm_and_clears_target_snapshot_stack(): void
     {
         $this->bootstrapSnapshotActionScaffold();
@@ -750,6 +925,65 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertTrue(CBT_Exam_Availability_Auto_Warm_Service::get_state()['active']);
         self::assertSame(54, CBT_Exam_Availability_Auto_Warm_Service::get_state()['exam_id']);
         self::assertStringContainsString('cbt_msg=Snapshot+pra+ujian+untuk+Ujian+Matematika+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_hard_reset_cbt_redis_clears_all_cbt_keys_and_state_options(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-plugin-redis-reset-service.php';
+
+        $GLOBALS['cbt_test_redis_storage']['cbt_exam_delivery:exam:77:payload'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_exam_start_attempt:exam:77:snapshot'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_submit_context:pointer:question:901'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_profile:user:71'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_login_auth:user:71'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_exam_availability:student:user:71:prepared'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_attempt_session:attempt:501'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_attempt_contract:attempt:501'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_active_attempt:user:71:exam:77'] = '501';
+        $GLOBALS['cbt_test_redis_storage']['cbt_auth:user:71:session'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_runtime:attempt:501'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_roster_live:active_attempts'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_presence_live:attempt:501'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_security_live:attempt:501:summary'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['other_cache_marker_should_stay'] = '';
+        $GLOBALS['cbt_test_redis_zsets']['cbt_start_attempt_gate:queue:exam:77'] = ['ticket-1' => 100.0];
+
+        update_option('cbt_exam_preflight_state', ['active' => true, 'exam_id' => 77]);
+        update_option('cbt_exam_preflight_jobs', [77 => ['active' => true]]);
+        update_option('cbt_exam_preflight_global_runner', ['active_exam_id' => 77]);
+        update_option('cbt_exam_availability_auto_warm_state', ['active' => true, 'exam_id' => 77]);
+
+        $_POST = [
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_tab' => CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT,
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_page_77' => '3',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_hard_reset_cbt_redis']);
+
+        foreach (array_keys((array) ($GLOBALS['cbt_test_redis_storage'] ?? [])) as $key) {
+            self::assertFalse(strpos((string) $key, 'cbt_') === 0, 'Unexpected CBT redis storage key remains: ' . $key);
+        }
+        foreach (array_keys((array) ($GLOBALS['cbt_test_redis_zsets'] ?? [])) as $key) {
+            self::assertFalse(strpos((string) $key, 'cbt_') === 0, 'Unexpected CBT redis zset key remains: ' . $key);
+        }
+        self::assertArrayHasKey('other_cache_marker_should_stay', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+
+        self::assertSame(false, get_option('cbt_exam_preflight_state', false));
+        self::assertSame(false, get_option('cbt_exam_preflight_jobs', false));
+        self::assertSame(false, get_option('cbt_exam_preflight_global_runner', false));
+        self::assertSame(false, get_option('cbt_exam_availability_auto_warm_state', false));
+
+        self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_page_77=3', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Redis+CBT+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
@@ -1219,6 +1453,25 @@ PHP);
         ]);
     }
 
+    private function registerAdditionalXiAStudents(int $count): void
+    {
+        $count = max(0, $count);
+        for ($index = 0; $index < $count; $index++) {
+            $user_id = 1000 + $index;
+            cbt_test_register_user([
+                'ID' => $user_id,
+                'display_name' => 'XI-A Extra ' . $index,
+                'user_login' => 'xia_extra_' . $index,
+                'user_email' => 'xia_extra_' . $index . '@example.com',
+                'user_pass' => 'pass-extra-' . $index,
+                'roles' => ['student'],
+            ]);
+            update_user_meta($user_id, 'kode_kelas', 'XI-A');
+            update_user_meta($user_id, 'kode_ruang', 'R1');
+            update_user_meta($user_id, 'agama', 'Islam');
+        }
+    }
+
     private function useFakeDeliveryRedis(): void
     {
         $reflection = new ReflectionClass(CBT_Exam_Question_Delivery_Cache::class);
@@ -1432,7 +1685,7 @@ PHP);
     }
 }
 
-final class AdminExamsSnapshotActionsFakeWpdb
+class AdminExamsSnapshotActionsFakeWpdb
 {
     public string $prefix = 'wp_';
 
@@ -1518,5 +1771,26 @@ final class AdminExamsSnapshotActionsFakeWpdb
         }
 
         return [];
+    }
+}
+
+final class AdminExamsSnapshotActionsBulkFailureFakeWpdb extends AdminExamsSnapshotActionsFakeWpdb
+{
+    /**
+     * @param string $prepared
+     * @return array<int,array<string,mixed>>
+     */
+    public function get_results($prepared, $output = null): array
+    {
+        $query = (string) $prepared;
+
+        if (strpos($query, 'SELECT e.id, e.title, e.status, e.target_kelas, s.name AS subject_name') !== false) {
+            return [
+                ['id' => 88, 'title' => 'Ujian Draft', 'status' => 'draft', 'target_kelas' => 'XI-A', 'subject_name' => 'Fisika', 'duration_minutes' => 90, 'show_student_result' => 1, 'enable_calculator' => 1, 'starts_at' => '', 'ends_at' => ''],
+                ['id' => 54, 'title' => 'Ujian Biologi', 'status' => 'published', 'target_kelas' => 'XI-B', 'subject_name' => 'Biologi', 'duration_minutes' => 60, 'show_student_result' => 1, 'enable_calculator' => 1, 'starts_at' => '', 'ends_at' => ''],
+            ];
+        }
+
+        return parent::get_results($prepared, $output);
     }
 }

@@ -198,6 +198,63 @@ class CBT_Start_Attempt_Gate_Service
     }
 
     /**
+     * @param array<int,int> $exam_ids
+     * @return array<string,mixed>
+     */
+    public static function get_global_diagnostics(array $exam_ids): array
+    {
+        $exam_ids = array_values(array_filter(array_map('intval', $exam_ids)));
+        $default = [
+            'redis_available' => self::is_available(),
+            'redis_error' => self::$gate_redis_last_connection_error,
+            'status_label' => self::is_available() ? 'OPEN' : 'DISABLED',
+            'status_tone' => self::is_available() ? 'success' : 'warning',
+            'queue_depth_total' => 0,
+            'gated_exam_count' => 0,
+            'bucket_tokens_min' => self::BUCKET_CAPACITY,
+            'release_rate_label' => (int) self::BUCKET_CAPACITY . ' / ' . (int) self::BUCKET_WINDOW_SECONDS . ' detik',
+            'oldest_wait_seconds' => 0,
+            'exam_count' => count($exam_ids),
+        ];
+
+        if (empty($exam_ids) || !self::is_available()) {
+            return $default;
+        }
+
+        $queue_depth_total = 0;
+        $gated_exam_count = 0;
+        $bucket_tokens_min = self::BUCKET_CAPACITY;
+        $oldest_wait_seconds = 0;
+        $redis_error = '';
+
+        foreach ($exam_ids as $exam_id) {
+            $diagnostics = self::get_exam_diagnostics($exam_id);
+            $queue_depth_total += max(0, (int) ($diagnostics['queue_depth'] ?? 0));
+            if (sanitize_key((string) ($diagnostics['status_slug'] ?? '')) === 'gated') {
+                $gated_exam_count++;
+            }
+            $bucket_tokens_min = min($bucket_tokens_min, (float) ($diagnostics['bucket_tokens'] ?? self::BUCKET_CAPACITY));
+            $oldest_wait_seconds = max($oldest_wait_seconds, max(0, (int) ($diagnostics['oldest_wait_seconds'] ?? 0)));
+            if ($redis_error === '') {
+                $redis_error = (string) ($diagnostics['redis_error'] ?? '');
+            }
+        }
+
+        return [
+            'redis_available' => true,
+            'redis_error' => $redis_error,
+            'status_label' => $queue_depth_total > 0 ? 'GATED' : 'OPEN',
+            'status_tone' => $queue_depth_total > 0 ? 'warning' : 'success',
+            'queue_depth_total' => $queue_depth_total,
+            'gated_exam_count' => $gated_exam_count,
+            'bucket_tokens_min' => round($bucket_tokens_min, 1),
+            'release_rate_label' => (int) self::BUCKET_CAPACITY . ' / ' . (int) self::BUCKET_WINDOW_SECONDS . ' detik',
+            'oldest_wait_seconds' => $oldest_wait_seconds,
+            'exam_count' => count($exam_ids),
+        ];
+    }
+
+    /**
      * @param array<string,mixed> $bucket
      * @return array{tokens:float,last_refill_at:float}
      */

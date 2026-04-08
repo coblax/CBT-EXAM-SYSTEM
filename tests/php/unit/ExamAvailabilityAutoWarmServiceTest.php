@@ -159,6 +159,80 @@ final class ExamAvailabilityAutoWarmServiceTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_enqueue_rewarm_users_dedupes_and_repairs_queue_when_idle(): void
+    {
+        CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(71, static function (): array {
+            return [
+                'items' => [
+                    ['id' => 77, 'title' => 'Ujian Matematika', 'availability_reason' => 'ok', 'is_available_now' => 1],
+                ],
+                'current_user' => [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+        CBT_Cache::invalidate_user(71);
+
+        $first = CBT_Exam_Availability_Auto_Warm_Service::enqueue_rewarm_users([71], 'version_changed', 'admin');
+        $second = CBT_Exam_Availability_Auto_Warm_Service::enqueue_rewarm_users([71], 'version_changed', 'admin');
+
+        self::assertSame(1, $first['enqueued_count']);
+        self::assertSame(0, $first['updated_count']);
+        self::assertSame(0, $first['rejected_count']);
+        self::assertSame(0, $second['enqueued_count']);
+        self::assertSame(1, $second['updated_count']);
+        self::assertSame(1, CBT_Exam_Availability_Auto_Warm_Service::get_rewarm_queue_state()['queued_count']);
+
+        CBT_Exam_Availability_Auto_Warm_Service::tick();
+
+        $queueState = CBT_Exam_Availability_Auto_Warm_Service::get_rewarm_queue_state();
+        $diagnostics = CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(71);
+
+        self::assertSame(0, $queueState['queued_count']);
+        self::assertSame(1, $queueState['last_success_count']);
+        self::assertSame('ready', $diagnostics['snapshot_status']);
+        self::assertSame('prepared', $diagnostics['snapshot_source']);
+        self::assertSame('repaired', $diagnostics['repair_status']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_rewarm_queue_waits_while_exam_auto_warm_is_active(): void
+    {
+        CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(71, static function (): array {
+            return [
+                'items' => [
+                    ['id' => 77, 'title' => 'Ujian Matematika', 'availability_reason' => 'ok', 'is_available_now' => 1],
+                ],
+                'current_user' => [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+        CBT_Cache::invalidate_user(71);
+        CBT_Exam_Availability_Auto_Warm_Service::enqueue_rewarm_users([71], 'version_changed', 'admin');
+
+        CBT_Exam_Availability_Auto_Warm_Service::start_for_exam([
+            'id' => 77,
+            'title' => 'Ujian Matematika',
+            'status' => 'published',
+            'target_kelas' => 'XI-A',
+        ]);
+
+        CBT_Exam_Availability_Auto_Warm_Service::tick();
+
+        $queueState = CBT_Exam_Availability_Auto_Warm_Service::get_rewarm_queue_state();
+        self::assertSame(1, $queueState['queued_count']);
+        self::assertSame(0, $queueState['last_success_count']);
+        self::assertSame('', $queueState['last_tick_at']);
+    }
+
+    #[RunInSeparateProcess]
     public function test_tick_and_stop_update_operational_state_and_expire_after_window(): void
     {
         CBT_Exam_Availability_Auto_Warm_Service::start_for_exam([

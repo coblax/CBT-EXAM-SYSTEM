@@ -26,6 +26,38 @@
                         </article>
                     </div>
                 </section>
+                <?php if (!empty($exam_operational_stats['cards']) && is_array($exam_operational_stats['cards'])): ?>
+                    <section class="cbt-exams-operational-strip" aria-label="Operational overview">
+                        <div class="cbt-exams-operational-head">
+                            <div>
+                                <span class="cbt-exams-operational-kicker">Operational</span>
+                                <p>Diperbarui sekitar tiap <?php echo esc_html((string) max(1, (int) ($exam_operational_stats['refreshed_every_seconds'] ?? 20))); ?> detik untuk memberi ringkasan kondisi Redis dan runtime CBT saat ini.</p>
+                            </div>
+                        </div>
+                        <div class="cbt-exams-operational-grid">
+                            <?php foreach ((array) $exam_operational_stats['cards'] as $operational_card): ?>
+                                <?php
+                                if (!is_array($operational_card)) {
+                                    continue;
+                                }
+                                $operational_tone = sanitize_html_class((string) ($operational_card['tone'] ?? 'neutral'), 'neutral');
+                                $operational_meta = trim((string) ($operational_card['meta'] ?? ''));
+                                $operational_hint = trim((string) ($operational_card['hint'] ?? ''));
+                                ?>
+                                <article class="cbt-exams-operational-card is-<?php echo esc_attr($operational_tone); ?>">
+                                    <span class="cbt-exams-operational-card-label"><?php echo esc_html((string) ($operational_card['label'] ?? '-')); ?></span>
+                                    <strong><?php echo esc_html((string) ($operational_card['value'] ?? '-')); ?></strong>
+                                    <?php if ($operational_meta !== ''): ?>
+                                        <small><?php echo esc_html($operational_meta); ?></small>
+                                    <?php endif; ?>
+                                    <?php if ($operational_hint !== ''): ?>
+                                        <span class="cbt-exams-operational-card-hint"><?php echo esc_html($operational_hint); ?></span>
+                                    <?php endif; ?>
+                                </article>
+                            <?php endforeach; ?>
+                        </div>
+                    </section>
+                <?php endif; ?>
 
             <?php if ($notice): ?>
                 <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
@@ -921,6 +953,21 @@
                             <p class="description cbt-exam-save-progress-help">Jawaban, nilai, attempt, dan sesi login tetap aman. Jangan tutup halaman ini selama proses clean berjalan.</p>
                         </div>
                     </div>
+                    <div id="cbt-exam-bulk-progress-overlay" class="cbt-exam-save-progress-overlay cbt-exam-bulk-progress-overlay" hidden aria-hidden="true" style="display:none;">
+                        <div class="cbt-exam-save-progress-card cbt-exam-bulk-progress-card">
+                            <h3 id="cbt-exam-bulk-progress-title">Menjalankan Bulk One-Click</h3>
+                            <p id="cbt-exam-bulk-progress-message">Menyiapkan antrean bulk pra ujian untuk exam terpilih.</p>
+                            <div class="cbt-exam-save-progress-meta">
+                                <span id="cbt-exam-bulk-progress-phase">Menyiapkan proses</span>
+                                <span id="cbt-exam-bulk-progress-stats"></span>
+                            </div>
+                            <div class="cbt-exam-save-progress-bar" aria-hidden="true">
+                                <div id="cbt-exam-bulk-progress-fill" class="cbt-exam-save-progress-fill cbt-exam-bulk-progress-fill"></div>
+                            </div>
+                            <div id="cbt-exam-bulk-progress-percent" class="cbt-exam-save-progress-percent">0%</div>
+                            <p class="description cbt-exam-save-progress-help">Bulk One-Click akan memasukkan exam terpilih ke antrean preflight yang sama. Jangan tutup halaman ini selama proses berjalan.</p>
+                        </div>
+                    </div>
                     <?php CBT_Admin_Exams_Page::render_snapshot_panel([
                         'subjects' => $subjects,
                         'exam_status_labels' => $exam_status_labels,
@@ -936,10 +983,12 @@
                         'exam_snapshot_preview_pages' => $exam_snapshot_preview_pages ?? [],
                         'exam_readiness_page' => $exam_readiness_page ?? 1,
                         'exam_readiness_pages' => $exam_readiness_pages ?? [],
+                        'bulk_preflight' => $bulk_preflight ?? [],
                         'exam_snapshot_reset_url' => $exam_snapshot_reset_url,
-                        'student_snapshot_filter_state' => $student_snapshot_filter_state ?? ['search' => '', 'kelas' => '', 'ruang' => '', 'paged' => 1, 'per_page' => 25],
+                        'student_snapshot_filter_state' => $student_snapshot_filter_state ?? ['search' => '', 'kelas' => '', 'ruang' => '', 'status' => '', 'paged' => 1, 'per_page' => 25],
                         'student_snapshot_kelas_options' => $student_snapshot_kelas_options ?? [],
                         'student_snapshot_ruang_options' => $student_snapshot_ruang_options ?? [],
+                        'student_snapshot_status_options' => $student_snapshot_status_options ?? [],
                         'student_snapshot_rows' => $student_snapshot_rows ?? [],
                         'student_snapshot_total' => $student_snapshot_total ?? 0,
                         'student_snapshot_total_pages' => $student_snapshot_total_pages ?? 1,
@@ -1082,6 +1131,91 @@
                     font-size: 24px;
                     line-height: 1.1;
                 }
+                .cbt-exams-operational-strip {
+                    display: grid;
+                    gap: 12px;
+                    padding: 14px 18px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 20px;
+                    background: #fbfdff;
+                    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.04);
+                }
+                .cbt-exams-operational-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 12px;
+                }
+                .cbt-exams-operational-kicker {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 24px;
+                    padding: 0 10px;
+                    border-radius: 999px;
+                    background: #eef5ff;
+                    color: #0f4fa8;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.05em;
+                    text-transform: uppercase;
+                }
+                .cbt-exams-operational-head p {
+                    margin: 8px 0 0;
+                    color: #64748b;
+                    font-size: 12px;
+                    line-height: 1.5;
+                }
+                .cbt-exams-operational-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+                    gap: 10px;
+                }
+                .cbt-exams-operational-card {
+                    display: grid;
+                    gap: 4px;
+                    min-height: 88px;
+                    padding: 12px 14px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 16px;
+                    background: #ffffff;
+                }
+                .cbt-exams-operational-card.is-success {
+                    border-color: #cce7d8;
+                    background: #f6fffa;
+                }
+                .cbt-exams-operational-card.is-warning {
+                    border-color: #f5d7aa;
+                    background: #fffaf2;
+                }
+                .cbt-exams-operational-card-label {
+                    color: #64748b;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                }
+                .cbt-exams-operational-card strong {
+                    color: #0f172a;
+                    font-size: 22px;
+                    line-height: 1.1;
+                }
+                .cbt-exams-operational-card small {
+                    color: #475569;
+                    font-size: 12px;
+                    line-height: 1.45;
+                }
+                .cbt-exams-operational-card-hint {
+                    display: inline-flex;
+                    align-items: center;
+                    width: fit-content;
+                    min-height: 22px;
+                    padding: 0 8px;
+                    border-radius: 999px;
+                    background: #f1f5f9;
+                    color: #475569;
+                    font-size: 11px;
+                    font-weight: 600;
+                }
                 .cbt-exams-page .notice {
                     margin: 0;
                 }
@@ -1161,25 +1295,24 @@
                 }
                 .cbt-exam-snapshot-shell {
                     display: grid;
-                    gap: 18px;
+                    gap: 14px;
                 }
                 .cbt-exam-snapshot-subtabs {
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                    flex-wrap: wrap;
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+                    gap: 8px;
                 }
                 .cbt-exam-snapshot-subtab {
                     display: inline-flex;
                     flex-direction: column;
                     align-items: flex-start;
                     justify-content: center;
-                    gap: 4px;
-                    min-height: 64px;
-                    min-width: 210px;
-                    padding: 12px 16px;
+                    gap: 3px;
+                    min-height: 52px;
+                    min-width: 0;
+                    padding: 10px 14px;
                     border: 1px solid #c9d8ea;
-                    border-radius: 18px;
+                    border-radius: 14px;
                     background: #f8fbff;
                     color: #274c77;
                     text-decoration: none;
@@ -1187,15 +1320,19 @@
                     transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
                 }
                 .cbt-exam-snapshot-subtab-label {
-                    font-size: 14px;
+                    font-size: 13px;
                     font-weight: 700;
-                    line-height: 1.25;
+                    line-height: 1.2;
                 }
                 .cbt-exam-snapshot-subtab small {
                     display: block;
-                    font-size: 12px;
-                    line-height: 1.45;
+                    max-width: 100%;
+                    overflow: hidden;
+                    font-size: 11px;
+                    line-height: 1.3;
                     opacity: 0.84;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
                 }
                 .cbt-exam-snapshot-subtab:hover,
                 .cbt-exam-snapshot-subtab:focus {
@@ -1209,7 +1346,7 @@
                     border-color: #2271b1;
                     background: linear-gradient(135deg, #2271b1 0%, #135e96 100%);
                     color: #ffffff;
-                    box-shadow: 0 10px 22px rgba(34, 113, 177, 0.18);
+                    box-shadow: 0 8px 18px rgba(34, 113, 177, 0.16);
                 }
                 .cbt-exam-snapshot-section {
                     display: grid;
@@ -1248,6 +1385,32 @@
                     align-items: flex-start;
                     justify-content: space-between;
                     gap: 16px;
+                }
+                .cbt-exam-snapshot-card {
+                    display: grid;
+                    gap: 14px;
+                    padding: 18px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 20px;
+                    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+                    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+                }
+                .cbt-exam-snapshot-card-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 14px 18px;
+                    flex-wrap: wrap;
+                }
+                .cbt-exam-snapshot-card-head h4 {
+                    margin: 0 0 8px;
+                    color: #0f172a;
+                    font-size: 18px;
+                    line-height: 1.3;
+                }
+                .cbt-exam-snapshot-card-head .cbt-exam-snapshot-status {
+                    flex: 0 0 auto;
+                    align-self: flex-start;
                 }
                 .cbt-exam-snapshot-empty-state {
                     padding: 20px 22px;
@@ -1325,6 +1488,29 @@
                     font-size: 12px;
                     line-height: 1.5;
                 }
+                .cbt-exam-snapshot-card .cbt-exam-snapshot-detail-grid {
+                    gap: 12px 16px;
+                    margin: 2px 0 0;
+                }
+                .cbt-exam-snapshot-card .cbt-exam-snapshot-detail-grid > span {
+                    display: flex;
+                    align-items: flex-start;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    padding: 10px 12px;
+                    border: 1px solid #e3edf8;
+                    border-radius: 14px;
+                    background: rgba(255, 255, 255, 0.82);
+                }
+                .cbt-exam-snapshot-card .cbt-exam-snapshot-detail-grid > span > strong {
+                    color: #334155;
+                }
+                .cbt-exam-snapshot-card .cbt-exam-snapshot-detail-grid .cbt-exam-snapshot-status {
+                    min-width: 92px;
+                    min-height: 30px;
+                    padding-inline: 12px;
+                    font-size: 11px;
+                }
                 .cbt-exam-snapshot-detail-grid code {
                     font-size: 11px;
                 }
@@ -1334,10 +1520,25 @@
                     font-size: 12px;
                     line-height: 1.6;
                 }
+                .cbt-exam-snapshot-card .cbt-exam-snapshot-note {
+                    margin: 0;
+                }
                 .cbt-exam-snapshot-summary-grid {
                     display: grid;
                     grid-template-columns: repeat(2, minmax(0, 1fr));
                     gap: 10px;
+                }
+                .cbt-exam-snapshot-card .cbt-exam-snapshot-summary-grid {
+                    gap: 12px;
+                    margin-top: 2px;
+                }
+                .cbt-exam-snapshot-summary-grid--start {
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                    gap: 8px;
+                }
+                .cbt-exam-snapshot-summary-grid--runtime {
+                    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+                    gap: 8px;
                 }
                 .cbt-exam-snapshot-summary-card {
                     display: grid;
@@ -1346,6 +1547,23 @@
                     border: 1px solid #dbe6f1;
                     border-radius: 16px;
                     background: #f8fbff;
+                }
+                .cbt-exam-snapshot-card .cbt-exam-snapshot-summary-card {
+                    min-height: 84px;
+                    align-content: start;
+                    padding: 14px 16px;
+                }
+                .cbt-exam-snapshot-card .cbt-exam-snapshot-summary-grid--start .cbt-exam-snapshot-summary-card {
+                    min-height: 64px;
+                    gap: 4px;
+                    padding: 10px 12px;
+                    border-radius: 14px;
+                }
+                .cbt-exam-snapshot-card .cbt-exam-snapshot-summary-grid--runtime .cbt-exam-snapshot-summary-card {
+                    min-height: 68px;
+                    gap: 4px;
+                    padding: 10px 12px;
+                    border-radius: 14px;
                 }
                 .cbt-exam-snapshot-summary-card--status {
                     grid-column: 1 / -1;
@@ -1362,6 +1580,32 @@
                     font-size: 16px;
                     font-weight: 700;
                     line-height: 1.3;
+                }
+                .cbt-exam-snapshot-card .cbt-exam-snapshot-summary-value {
+                    word-break: break-word;
+                }
+                .cbt-exam-snapshot-summary-grid--start .cbt-exam-snapshot-summary-value {
+                    font-size: 14px;
+                    line-height: 1.25;
+                }
+                .cbt-exam-snapshot-summary-grid--runtime .cbt-exam-snapshot-summary-value {
+                    font-size: 14px;
+                    line-height: 1.25;
+                }
+                .cbt-exam-snapshot-monitor-card--compact-start .cbt-exam-snapshot-meta {
+                    margin-bottom: 8px;
+                }
+                .cbt-exam-snapshot-monitor-card--compact-start .cbt-exam-snapshot-summary-stack {
+                    gap: 4px;
+                    font-size: 11px;
+                    line-height: 1.35;
+                }
+                .cbt-exam-snapshot-monitor-card--compact-start .cbt-exam-snapshot-summary-stack strong {
+                    font-size: 13px;
+                }
+                .cbt-exam-snapshot-summary-grid--runtime .cbt-exam-readiness-summary-meta {
+                    font-size: 11px;
+                    line-height: 1.45;
                 }
                 .cbt-exam-snapshot-preview-row td {
                     padding-top: 0;
@@ -1519,6 +1763,54 @@
                     background: #fee2e2;
                     color: #b91c1c;
                 }
+                .cbt-exam-snapshot-queue-panel {
+                    display: grid;
+                    gap: 10px;
+                    margin: 0 0 12px;
+                    padding: 12px 14px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 16px;
+                    background: #f8fbff;
+                }
+                .cbt-exam-snapshot-queue-panel-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .cbt-exam-snapshot-queue-panel-copy {
+                    display: grid;
+                    gap: 4px;
+                }
+                .cbt-exam-snapshot-queue-panel-copy strong {
+                    color: #0f172a;
+                    font-size: 13px;
+                }
+                .cbt-exam-snapshot-queue-panel-copy span {
+                    color: #475569;
+                    font-size: 12px;
+                    line-height: 1.5;
+                }
+                .cbt-exam-snapshot-queue-stats {
+                    display: grid;
+                    gap: 8px;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                }
+                .cbt-exam-snapshot-queue-stat {
+                    display: grid;
+                    gap: 4px;
+                    padding: 10px 12px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 14px;
+                    background: rgba(255, 255, 255, 0.92);
+                    min-height: 64px;
+                    align-content: start;
+                }
+                .cbt-exam-snapshot-queue-stat .cbt-exam-snapshot-summary-value {
+                    font-size: 14px;
+                    line-height: 1.25;
+                }
                 .cbt-exam-snapshot-summary-stack {
                     display: grid;
                     gap: 6px;
@@ -1535,9 +1827,17 @@
                     align-items: center;
                     justify-content: flex-start;
                 }
+                .cbt-exam-snapshot-note--queue {
+                    margin: 0;
+                    font-size: 11px;
+                    line-height: 1.5;
+                }
                 .cbt-exam-snapshot-row-actions {
                     display: grid;
                     gap: 8px;
+                }
+                .cbt-exam-snapshot-card .cbt-exam-snapshot-row-actions {
+                    padding-top: 2px;
                 }
                 .cbt-exam-auto-warm-panel {
                     display: grid;
@@ -3823,6 +4123,11 @@
                     .cbt-exam-list-toolbar-grid {
                         grid-template-columns: repeat(2, minmax(0, 1fr));
                     }
+                    .cbt-exam-snapshot-queue-stats,
+                    .cbt-exam-snapshot-summary-grid--start,
+                    .cbt-exam-snapshot-summary-grid--runtime {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
                     #cbt-exam-snapshot-filter-form .cbt-exam-list-toolbar-grid {
                         grid-template-columns: minmax(0, 1fr) auto;
                     }
@@ -3959,6 +4264,9 @@
                     .cbt-exam-snapshot-summary-grid {
                         grid-template-columns: 1fr;
                     }
+                    .cbt-exam-snapshot-queue-stats {
+                        grid-template-columns: 1fr;
+                    }
                     .cbt-exam-snapshot-detail-grid {
                         grid-template-columns: 1fr;
                     }
@@ -4006,6 +4314,10 @@
                     .cbt-exam-snapshot-preview-pagination .button {
                         width: 100%;
                         text-align: center;
+                    }
+                    .cbt-exam-snapshot-summary-grid--start,
+                    .cbt-exam-snapshot-summary-grid--runtime {
+                        grid-template-columns: 1fr;
                     }
                     .cbt-exam-question-shell {
                         padding: 16px;
@@ -4141,6 +4453,9 @@
                 const examSnapshotPickerMeta = examSnapshotFilterForm
                     ? examSnapshotFilterForm.querySelector('[data-cbt-exam-snapshot-picker-meta]')
                     : null;
+                const examSnapshotPickerDetails = examSnapshotFilterForm
+                    ? examSnapshotFilterForm.querySelector('[data-cbt-exam-snapshot-picker]')
+                    : null;
                 const examSnapshotPickerCheckboxes = examSnapshotFilterForm
                     ? Array.from(examSnapshotFilterForm.querySelectorAll('[data-cbt-exam-snapshot-checkbox]'))
                     : [];
@@ -4194,6 +4509,13 @@
                 const cleanProgressStats = document.getElementById('cbt-exam-clean-progress-stats');
                 const cleanProgressFill = document.getElementById('cbt-exam-clean-progress-fill');
                 const cleanProgressPercent = document.getElementById('cbt-exam-clean-progress-percent');
+                const bulkProgressOverlay = document.getElementById('cbt-exam-bulk-progress-overlay');
+                const bulkProgressTitle = document.getElementById('cbt-exam-bulk-progress-title');
+                const bulkProgressMessage = document.getElementById('cbt-exam-bulk-progress-message');
+                const bulkProgressPhase = document.getElementById('cbt-exam-bulk-progress-phase');
+                const bulkProgressStats = document.getElementById('cbt-exam-bulk-progress-stats');
+                const bulkProgressFill = document.getElementById('cbt-exam-bulk-progress-fill');
+                const bulkProgressPercent = document.getElementById('cbt-exam-bulk-progress-percent');
                 const selectedSidebarList = document.getElementById('cbt-exam-selected-sidebar-list');
                 const selectedSidebarTotal = document.getElementById('cbt-exam-selected-total');
                 const selectedSidebarAdded = document.getElementById('cbt-exam-selected-added');
@@ -4210,10 +4532,12 @@
                 let isFinalFormSubmit = false;
                 let isExamSaveRunning = false;
                 let isSnapshotCleanRunning = false;
+                let isBulkPreflightRunning = false;
                 let examListFilterTimer = null;
                 let examSnapshotFilterTimer = null;
                 let snapshotAutoRefreshTimer = null;
                 let snapshotCleanProgressTimer = null;
+                let bulkProgressTimer = null;
                 let isPageNavigating = false;
                 let questionFilterTimer = 0;
                 let questionCatalogRequestSeq = 0;
@@ -4239,12 +4563,36 @@
                     }
                 }
 
+                function clearBulkProgressTimer() {
+                    if (bulkProgressTimer) {
+                        window.clearInterval(bulkProgressTimer);
+                        bulkProgressTimer = null;
+                    }
+                }
+
+                function isSnapshotFilterInteractionActive() {
+                    if (!examSnapshotFilterForm) {
+                        return false;
+                    }
+
+                    if (examSnapshotPickerDetails instanceof HTMLDetailsElement && examSnapshotPickerDetails.open) {
+                        return true;
+                    }
+
+                    const activeElement = document.activeElement;
+                    return activeElement instanceof HTMLElement && examSnapshotFilterForm.contains(activeElement);
+                }
+
                 function isPreflightSnapshotAutoRefreshActive() {
                     if (!snapshotPanel || snapshotAutoRefreshSeconds <= 0 || isPageNavigating) {
                         return false;
                     }
 
                     if (!snapshotPanel.classList.contains('cbt-active') || document.hidden) {
+                        return false;
+                    }
+
+                    if (isSnapshotFilterInteractionActive()) {
                         return false;
                     }
 
@@ -4574,6 +4922,19 @@
                     examSnapshotPickerCheckboxes.forEach((checkbox) => {
                         checkbox.addEventListener('change', updateExamSnapshotPickerSummary);
                     });
+                    examSnapshotFilterForm.addEventListener('focusin', () => {
+                        handleSnapshotAutoRefreshState();
+                    });
+                    examSnapshotFilterForm.addEventListener('focusout', () => {
+                        window.setTimeout(() => {
+                            handleSnapshotAutoRefreshState();
+                        }, 0);
+                    });
+                    if (examSnapshotPickerDetails instanceof HTMLDetailsElement) {
+                        examSnapshotPickerDetails.addEventListener('toggle', () => {
+                            handleSnapshotAutoRefreshState();
+                        });
+                    }
                     updateExamSnapshotPickerSummary();
                 }
 
@@ -5489,6 +5850,18 @@
 
                 toggleSnapshotCleanOverlay(false);
 
+                function toggleBulkPreflightOverlay(isVisible) {
+                    if (!bulkProgressOverlay) {
+                        return;
+                    }
+
+                    bulkProgressOverlay.hidden = !isVisible;
+                    bulkProgressOverlay.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+                    bulkProgressOverlay.style.display = isVisible ? 'flex' : 'none';
+                }
+
+                toggleBulkPreflightOverlay(false);
+
                 function navigateBuilderPanel(targetId) {
                     const normalizedTargetId = String(targetId || '');
                     if (normalizedTargetId === '') {
@@ -5590,6 +5963,40 @@
                     }
                 }
 
+                function updateBulkPreflightProgressUi(payload) {
+                    const progressData = payload && typeof payload === 'object' ? payload : {};
+                    const titleText = typeof progressData.title === 'string' && progressData.title !== ''
+                        ? progressData.title
+                        : 'Menjalankan Bulk One-Click';
+                    const messageText = typeof progressData.message === 'string' && progressData.message !== ''
+                        ? progressData.message
+                        : 'Menyiapkan antrean bulk pra ujian untuk exam terpilih.';
+                    const phaseText = typeof progressData.phase === 'string' && progressData.phase !== ''
+                        ? progressData.phase
+                        : 'Menyiapkan proses';
+                    const statsText = typeof progressData.stats === 'string' ? progressData.stats : '';
+                    const percentValue = Number.isFinite(Number(progressData.percent)) ? Math.max(0, Math.min(100, Number(progressData.percent))) : 0;
+
+                    if (bulkProgressTitle) {
+                        bulkProgressTitle.textContent = titleText;
+                    }
+                    if (bulkProgressMessage) {
+                        bulkProgressMessage.textContent = messageText;
+                    }
+                    if (bulkProgressPhase) {
+                        bulkProgressPhase.textContent = phaseText;
+                    }
+                    if (bulkProgressStats) {
+                        bulkProgressStats.textContent = statsText;
+                    }
+                    if (bulkProgressFill) {
+                        bulkProgressFill.style.width = `${percentValue}%`;
+                    }
+                    if (bulkProgressPercent) {
+                        bulkProgressPercent.textContent = `${Math.round(percentValue)}%`;
+                    }
+                }
+
                 function startSnapshotCleanProgress(formElement) {
                     if (!formElement || !cleanProgressOverlay) {
                         return;
@@ -5665,6 +6072,84 @@
                             stats: statsLabel,
                         });
                     }, 720);
+                }
+
+                function startBulkPreflightProgress(formElement) {
+                    if (!formElement || !bulkProgressOverlay) {
+                        return;
+                    }
+
+                    clearBulkProgressTimer();
+                    isBulkPreflightRunning = true;
+                    isPageNavigating = true;
+                    clearSnapshotAutoRefreshTimer();
+
+                    const selectedTotalValue = Number.parseInt(String(formElement.getAttribute('data-cbt-bulk-selected-total') || '0'), 10);
+                    const queuedTotalValue = Number.parseInt(String(formElement.getAttribute('data-cbt-bulk-queued-total') || '0'), 10);
+                    const completedTotalValue = Number.parseInt(String(formElement.getAttribute('data-cbt-bulk-completed-total') || '0'), 10);
+                    const selectedTotal = Number.isInteger(selectedTotalValue) ? Math.max(0, selectedTotalValue) : 0;
+                    const queuedTotal = Number.isInteger(queuedTotalValue) ? Math.max(0, queuedTotalValue) : 0;
+                    const completedTotal = Number.isInteger(completedTotalValue) ? Math.max(0, completedTotalValue) : 0;
+                    const statsLabel = `${selectedTotal} exam dipilih · antrean ${queuedTotal} · selesai ${completedTotal}`;
+                    const steps = [
+                        {
+                            percent: 10,
+                            phase: 'Memvalidasi pilihan',
+                            message: 'Memastikan daftar exam yang dipilih siap dimasukkan ke bulk preflight.',
+                        },
+                        {
+                            percent: 28,
+                            phase: 'Menyusun antrean',
+                            message: 'Menyusun urutan bulk one-click agar exam aktif tetap jalan dan exam lain masuk antrean dengan aman.',
+                        },
+                        {
+                            percent: 52,
+                            phase: 'Menjalankan layer lokal',
+                            message: 'Snapshot Soal, Start Snapshot, dan Submission Context akan diprioritaskan lebih dulu untuk exam yang bisa langsung diproses.',
+                        },
+                        {
+                            percent: 78,
+                            phase: 'Menjaga runner global',
+                            message: 'Snapshot Profil, Login, dan Availability tetap dijalankan serial agar tidak bentrok antar exam.',
+                        },
+                        {
+                            percent: 94,
+                            phase: 'Mengarahkan ke monitor',
+                            message: 'Halaman akan kembali ke panel bulk agar progres antrean bisa dipantau langsung.',
+                        },
+                    ];
+
+                    toggleBulkPreflightOverlay(true);
+                    updateBulkPreflightProgressUi({
+                        title: 'Menjalankan Bulk One-Click',
+                        message: steps[0].message,
+                        phase: steps[0].phase,
+                        percent: steps[0].percent,
+                        stats: statsLabel,
+                    });
+
+                    const submitButton = formElement.querySelector('button[type="submit"]');
+                    if (submitButton) {
+                        submitButton.disabled = true;
+                    }
+
+                    let stepIndex = 0;
+                    bulkProgressTimer = window.setInterval(() => {
+                        if (stepIndex >= steps.length - 1) {
+                            clearBulkProgressTimer();
+                            return;
+                        }
+
+                        stepIndex += 1;
+                        const step = steps[stepIndex];
+                        updateBulkPreflightProgressUi({
+                            title: 'Menjalankan Bulk One-Click',
+                            message: step.message,
+                            phase: step.phase,
+                            percent: step.percent,
+                            stats: statsLabel,
+                        });
+                    }, 760);
                 }
 
                 function fallbackSubmitExamForm() {
@@ -6529,6 +7014,16 @@
                         }
 
                         startSnapshotCleanProgress(cleanForm);
+                    });
+                });
+
+                Array.from(document.querySelectorAll('[data-cbt-bulk-preflight-form="1"]')).forEach((bulkForm) => {
+                    bulkForm.addEventListener('submit', (event) => {
+                        if (event.defaultPrevented || isBulkPreflightRunning) {
+                            return;
+                        }
+
+                        startBulkPreflightProgress(bulkForm);
                     });
                 });
 

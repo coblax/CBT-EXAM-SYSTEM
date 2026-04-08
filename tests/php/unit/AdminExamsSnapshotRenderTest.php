@@ -25,8 +25,10 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Monitor Snapshot Login', $html);
         self::assertStringContainsString('Jalankan One-Click Pra Ujian', $html);
         self::assertStringContainsString('Bersihkan Semua Snapshot', $html);
+        self::assertStringContainsString('Bersihkan Semua Redis CBT', $html);
         self::assertStringContainsString('data-cbt-preflight-clean-form="1"', $html);
         self::assertStringContainsString('data-cbt-clean-target-count="18"', $html);
+        self::assertStringContainsString('reset runtime harian antar beberapa exam', $html);
         self::assertStringContainsString('Siswa Bermasalah', $html);
         self::assertStringContainsString('Auto-Warm Availability', $html);
         self::assertStringContainsString('Login Snapshot', $html);
@@ -48,6 +50,9 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Reuse 7 · Gagal 0 · Queue 1', $html);
         self::assertStringContainsString('Mode Global', $html);
         self::assertStringContainsString('Batch 150', $html);
+        self::assertStringContainsString('Queue Rewarm Availability', $html);
+        self::assertStringContainsString('Diproses Batch Terakhir', $html);
+        self::assertStringContainsString('Queue rewarm memproses 2 user.', $html);
         self::assertStringContainsString('Global Runner Owner:', $html);
         self::assertStringContainsString('Mode Global:', $html);
         self::assertStringContainsString('Batch Size:', $html);
@@ -112,10 +117,30 @@ final class AdminExamsSnapshotRenderTest extends TestCase
     {
         $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
             'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_SESSION_RUNTIME_MONITOR,
+            'student_snapshot_status_options' => [
+                ['value' => 'ready', 'label' => 'READY'],
+                ['value' => 'session_miss', 'label' => 'SESSION MISS'],
+                ['value' => 'contract_miss', 'label' => 'CONTRACT MISS'],
+                ['value' => 'runtime_miss', 'label' => 'RUNTIME MISS'],
+                ['value' => 'stale', 'label' => 'STALE LAST SEEN'],
+                ['value' => 'low_remaining', 'label' => 'LOW REMAINING'],
+                ['value' => '!ready', 'label' => '! READY'],
+                ['value' => '!session_miss', 'label' => '! SESSION MISS'],
+                ['value' => '!contract_miss', 'label' => '! CONTRACT MISS'],
+                ['value' => '!runtime_miss', 'label' => '! RUNTIME MISS'],
+                ['value' => '!stale', 'label' => '! STALE LAST SEEN'],
+                ['value' => '!low_remaining', 'label' => '! LOW REMAINING'],
+            ],
         ]));
 
         self::assertStringContainsString('Monitor Session Runtime', $html);
         self::assertStringContainsString('Pantau attempt siswa yang sedang `in_progress`', $html);
+        self::assertStringContainsString('Cari Siswa', $html);
+        self::assertStringContainsString('Semua kelas', $html);
+        self::assertStringContainsString('Semua ruang', $html);
+        self::assertStringContainsString('Status', $html);
+        self::assertStringContainsString('RUNTIME MISS', $html);
+        self::assertStringContainsString('! READY', $html);
         self::assertStringContainsString('Attempt Aktif', $html);
         self::assertStringContainsString('Start Gate', $html);
         self::assertStringContainsString('Queue Depth', $html);
@@ -149,6 +174,52 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="session_runtime_monitor"', $html);
     }
 
+    public function test_render_snapshot_panel_renders_session_runtime_pagination_and_filter_summary(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_SESSION_RUNTIME_MONITOR,
+            'student_snapshot_active_filters' => [
+                ['label' => 'Cari Siswa', 'value' => 'Salsa'],
+                ['label' => 'Kelas', 'value' => 'XI-A'],
+            ],
+            'student_snapshot_status_options' => [
+                ['value' => 'ready', 'label' => 'READY'],
+                ['value' => 'session_miss', 'label' => 'SESSION MISS'],
+                ['value' => 'contract_miss', 'label' => 'CONTRACT MISS'],
+                ['value' => 'runtime_miss', 'label' => 'RUNTIME MISS'],
+                ['value' => 'stale', 'label' => 'STALE LAST SEEN'],
+                ['value' => 'low_remaining', 'label' => 'LOW REMAINING'],
+            ],
+            'student_snapshot_filter_state' => [
+                'search' => 'Salsa',
+                'kelas' => 'XI-A',
+                'ruang' => '',
+                'status' => '',
+                'paged' => 2,
+                'per_page' => 25,
+            ],
+            'exam_snapshot_rows' => [
+                array_replace_recursive($this->snapshotPanelArgs()['exam_snapshot_rows'][0], [
+                    'session_runtime' => [
+                        'attempt_total' => 40,
+                        'attempt_total_overall' => 75,
+                        'visible_count' => 25,
+                        'rows_total' => 40,
+                        'rows_total_pages' => 2,
+                        'rows_current_page' => 2,
+                        'filters_applied' => true,
+                    ],
+                ]),
+            ],
+        ]));
+
+        self::assertStringContainsString('40 attempt cocok', $html);
+        self::assertStringContainsString('Ringkasan pada kartu ini mengikuti attempt yang tampil pada halaman dan filter aktif', $html);
+        self::assertStringContainsString('Halaman 2 dari 2 · 40 attempt', $html);
+        self::assertStringContainsString('25 / 40', $html);
+        self::assertStringContainsString('Total exam · 75', $html);
+    }
+
     public function test_render_snapshot_panel_renders_exam_monitor_tab(): void
     {
         $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
@@ -156,22 +227,103 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         ]));
 
         self::assertStringContainsString('<th>Snapshot Exam</th>', $html);
+        self::assertStringContainsString('Status', $html);
+        self::assertStringContainsString('Semua status', $html);
+        self::assertStringContainsString('! READY', $html);
+        self::assertStringContainsString('name="cbt_student_snapshot_status"', $html);
         self::assertStringContainsString('Snapshot ini memuat katalog exam siswa yang tersedia, bukan snapshot satu exam tunggal.', $html);
         self::assertStringContainsString('Siapkan Semua Snapshot Exam', $html);
         self::assertStringContainsString('Bersihkan Semua Snapshot Exam', $html);
         self::assertStringContainsString('Siapkan Snapshot Exam', $html);
         self::assertStringContainsString('Bersihkan Snapshot Exam', $html);
         self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="exam_monitor"', $html);
+        self::assertStringContainsString('Alasan MISS: Minute rollover', $html);
+        self::assertStringContainsString('Snapshot MISS karena minute rollover.', $html);
+        self::assertStringContainsString('Version Current:</strong> catalog 5 · user 9', $html);
+        self::assertStringContainsString('Minute Current:</strong> 29572561', $html);
+        self::assertStringContainsString('Key Terdeteksi:</strong> minute · catalog 5 · user 9 · minute 29572560', $html);
+        self::assertStringContainsString('Queue Rewarm Availability', $html);
         self::assertStringContainsString('gunakan Auto-Warm Availability di tab One-Click Pra Ujian.', $html);
+    }
+
+    public function test_render_snapshot_panel_shows_exam_monitor_repair_status_notes(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_EXAM_MONITOR,
+            'student_snapshot_rows' => [
+                [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'user_login' => 'salsa',
+                    'user_email' => 'salsa@example.com',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                    'availability_status_label' => 'QUEUED REWARM',
+                    'availability_status_tone' => 'warning',
+                    'availability' => [
+                        'item_count' => 0,
+                        'ttl_seconds' => -2,
+                        'payload_bytes' => 0,
+                        'snapshot_source' => 'miss',
+                        'snapshot_exists' => false,
+                        'snapshot_valid' => false,
+                        'storage_key' => 'cbt_exam_availability:student:user:71',
+                        'snapshot_miss_reason_label' => 'Version berubah',
+                        'snapshot_message' => 'Snapshot MISS karena version berubah.',
+                        'repair_status' => 'queued_rewarm',
+                        'repair_message' => 'MISS karena Version berubah. Siswa ini sudah masuk antrean rewarm.',
+                        'repair_queued_at' => '2026-04-08 09:00:00',
+                        'repair_source' => 'admin',
+                        'current_catalog_version' => 6,
+                        'current_user_version' => 10,
+                        'current_minute_bucket' => 29592561,
+                        'detected_snapshot_source' => 'prepared',
+                        'detected_catalog_version' => 5,
+                        'detected_user_version' => 9,
+                        'detected_minute_bucket' => 0,
+                        'preview_items' => [],
+                    ],
+                    'profile_status_label' => 'READY',
+                    'profile_status_tone' => 'success',
+                    'profile' => [],
+                    'login_status_label' => 'READY',
+                    'login_status_tone' => 'success',
+                    'login' => [],
+                ],
+            ],
+            'student_snapshot_total' => 1,
+        ]));
+
+        self::assertStringContainsString('QUEUED REWARM', $html);
+        self::assertStringContainsString('MISS karena Version berubah. Siswa ini sudah masuk antrean rewarm.', $html);
+        self::assertStringContainsString('Queued rewarm · Source admin · 2026-04-08 09:00:00', $html);
     }
 
     public function test_render_snapshot_panel_renders_profile_monitor_tab(): void
     {
         $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
             'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_PROFILE_MONITOR,
+            'student_snapshot_status_options' => [
+                ['value' => 'ready', 'label' => 'READY'],
+                ['value' => 'warning', 'label' => 'WARNING'],
+                ['value' => 'miss', 'label' => 'MISS'],
+                ['value' => 'invalid', 'label' => 'INVALID'],
+                ['value' => 'unavailable', 'label' => 'UNAVAILABLE'],
+                ['value' => 'idle', 'label' => 'IDLE'],
+                ['value' => '!ready', 'label' => '! READY'],
+                ['value' => '!warning', 'label' => '! WARNING'],
+                ['value' => '!miss', 'label' => '! MISS'],
+                ['value' => '!invalid', 'label' => '! INVALID'],
+                ['value' => '!unavailable', 'label' => '! UNAVAILABLE'],
+                ['value' => '!idle', 'label' => '! IDLE'],
+            ],
         ]));
 
         self::assertStringContainsString('<th>Snapshot Profile</th>', $html);
+        self::assertStringContainsString('Status', $html);
+        self::assertStringContainsString('Semua status', $html);
+        self::assertStringContainsString('WARNING', $html);
+        self::assertStringContainsString('! WARNING', $html);
         self::assertStringContainsString('Siapkan Semua Profil', $html);
         self::assertStringContainsString('Bersihkan Semua Profil', $html);
         self::assertStringContainsString('Siapkan Profil', $html);
@@ -181,13 +333,75 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringNotContainsString('Snapshot ini memuat katalog exam siswa yang tersedia, bukan snapshot satu exam tunggal.', $html);
     }
 
+    public function test_render_snapshot_panel_shows_profile_miss_reason_note(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_PROFILE_MONITOR,
+            'student_snapshot_rows' => [
+                [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'user_login' => 'salsa',
+                    'user_email' => 'salsa@example.com',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                    'profile_status_label' => 'MISS',
+                    'profile_status_tone' => 'warning',
+                    'profile' => [
+                        'ttl_seconds' => -2,
+                        'payload_bytes' => 0,
+                        'storage_key' => 'cbt_profile:user:71',
+                        'snapshot_exists' => false,
+                        'snapshot_valid' => false,
+                        'snapshot_miss_reason_label' => 'Meta profil berubah',
+                        'snapshot_message' => 'Snapshot profil MISS karena meta profil siswa berubah, jadi key sebelumnya sengaja dihapus dan akan dihydrate ulang pada pembacaan berikutnya.',
+                        'preview' => [
+                            'foto' => '',
+                            'agama' => '',
+                            'jenis_kelamin' => '',
+                            'nisn' => '',
+                        ],
+                    ],
+                    'availability_status_label' => 'READY',
+                    'availability_status_tone' => 'success',
+                    'availability' => [],
+                    'login_status_label' => 'READY',
+                    'login_status_tone' => 'success',
+                    'login' => [],
+                ],
+            ],
+            'student_snapshot_total' => 1,
+        ]));
+
+        self::assertStringContainsString('Alasan MISS: Meta profil berubah', $html);
+        self::assertStringContainsString('Snapshot profil MISS karena meta profil siswa berubah', $html);
+    }
+
     public function test_render_snapshot_panel_renders_login_monitor_tab(): void
     {
         $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
             'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR,
+            'student_snapshot_status_options' => [
+                ['value' => 'ready', 'label' => 'READY'],
+                ['value' => 'warning', 'label' => 'WARNING'],
+                ['value' => 'miss', 'label' => 'MISS'],
+                ['value' => 'invalid', 'label' => 'INVALID'],
+                ['value' => 'unavailable', 'label' => 'UNAVAILABLE'],
+                ['value' => 'idle', 'label' => 'IDLE'],
+                ['value' => '!ready', 'label' => '! READY'],
+                ['value' => '!warning', 'label' => '! WARNING'],
+                ['value' => '!miss', 'label' => '! MISS'],
+                ['value' => '!invalid', 'label' => '! INVALID'],
+                ['value' => '!unavailable', 'label' => '! UNAVAILABLE'],
+                ['value' => '!idle', 'label' => '! IDLE'],
+            ],
         ]));
 
         self::assertStringContainsString('<th>Snapshot Login</th>', $html);
+        self::assertStringContainsString('Status', $html);
+        self::assertStringContainsString('Semua status', $html);
+        self::assertStringContainsString('IDLE', $html);
+        self::assertStringContainsString('! IDLE', $html);
         self::assertStringContainsString('auth/login accelerator per siswa', $html);
         self::assertStringContainsString('Siapkan Semua Login Snapshot', $html);
         self::assertStringContainsString('Bersihkan Semua Login Snapshot', $html);
@@ -196,6 +410,112 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('login:salsa', $html);
         self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="login_monitor"', $html);
         self::assertStringNotContainsString('Snapshot ini memuat katalog exam siswa yang tersedia, bukan snapshot satu exam tunggal.', $html);
+    }
+
+    public function test_render_snapshot_panel_renders_bulk_preflight_mode_for_multiple_selected_exams(): void
+    {
+        $html = $this->renderSnapshotPanel($this->snapshotPanelArgs([
+            'exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT,
+            'exam_snapshot_filter_state' => [
+                'exam_id' => 77,
+                'exam_ids' => [77, 54],
+            ],
+            'exam_snapshot_rows' => [],
+            'exam_snapshot_total' => 2,
+            'bulk_preflight' => [
+                'selected_exam_total' => 2,
+                'queued_exam_total' => 1,
+                'active_exam_id' => 77,
+                'completed_count' => 0,
+                'completed_with_warnings_count' => 0,
+                'failed_count' => 0,
+                'can_start_bulk' => true,
+                'limit_max_exams' => 10,
+                'rows' => [
+                    [
+                        'exam_id' => 77,
+                        'title' => 'Ujian Matematika',
+                        'subject_name' => 'Matematika',
+                        'status' => 'published',
+                        'queue_position' => 0,
+                        'preflight_status_label' => 'AKTIF',
+                        'preflight_status_tone' => 'success',
+                        'target_student_count' => 18,
+                        'last_message' => 'Exam pertama sedang diproses.',
+                        'started_at' => '2026-04-04 07:30:00',
+                        'finished_at' => '',
+                        'last_tick_at' => '2026-04-04 07:31:00',
+                        'stage_question_label' => 'READY',
+                        'stage_question_tone' => 'success',
+                        'stage_start_snapshot_label' => 'READY',
+                        'stage_start_snapshot_tone' => 'success',
+                        'stage_submission_context_label' => 'READY',
+                        'stage_submission_context_tone' => 'success',
+                        'stage_profiles_label' => 'AKTIF',
+                        'stage_profiles_tone' => 'success',
+                        'stage_login_snapshot_label' => 'AKTIF',
+                        'stage_login_snapshot_tone' => 'success',
+                        'stage_auto_warm_label' => 'AKTIF',
+                        'stage_auto_warm_tone' => 'success',
+                        'question_stage_summary' => 'Total 8 soal',
+                        'start_stage_summary' => 'Total 8 item',
+                        'submission_stage_summary' => 'Siap 8/8 · Invalid 0',
+                        'profiles_stage_summary' => 'Siap 12/18',
+                        'login_stage_summary' => 'Siap 11/18',
+                        'availability_stage_summary' => 'Siap 9/18',
+                    ],
+                    [
+                        'exam_id' => 54,
+                        'title' => 'Ujian Biologi',
+                        'subject_name' => 'Biologi',
+                        'status' => 'published',
+                        'queue_position' => 1,
+                        'preflight_status_label' => 'MENUNGGU',
+                        'preflight_status_tone' => 'warning',
+                        'target_student_count' => 12,
+                        'last_message' => 'Exam kedua masuk antrean preflight.',
+                        'started_at' => '2026-04-04 07:32:00',
+                        'finished_at' => '',
+                        'last_tick_at' => '2026-04-04 07:32:00',
+                        'stage_question_label' => 'READY',
+                        'stage_question_tone' => 'success',
+                        'stage_start_snapshot_label' => 'READY',
+                        'stage_start_snapshot_tone' => 'success',
+                        'stage_submission_context_label' => 'READY',
+                        'stage_submission_context_tone' => 'success',
+                        'stage_profiles_label' => 'MENUNGGU',
+                        'stage_profiles_tone' => 'warning',
+                        'stage_login_snapshot_label' => 'MENUNGGU',
+                        'stage_login_snapshot_tone' => 'warning',
+                        'stage_auto_warm_label' => 'MENUNGGU',
+                        'stage_auto_warm_tone' => 'warning',
+                        'question_stage_summary' => 'Total 6 soal',
+                        'start_stage_summary' => 'Total 6 item',
+                        'submission_stage_summary' => 'Siap 6/6 · Invalid 0',
+                        'profiles_stage_summary' => 'Siap 0/12',
+                        'login_stage_summary' => 'Siap 0/12',
+                        'availability_stage_summary' => 'Siap 0/12',
+                    ],
+                ],
+            ],
+        ]));
+
+        self::assertStringContainsString('Bulk One-Click Pra Ujian', $html);
+        self::assertStringContainsString('Jalankan Bulk One-Click', $html);
+        self::assertStringContainsString('data-cbt-bulk-preflight-form="1"', $html);
+        self::assertStringContainsString('Bersihkan Bulk Snapshot', $html);
+        self::assertStringContainsString('name="action" value="cbt_clean_bulk_exam_snapshots"', $html);
+        self::assertStringContainsString('dijalankan berurutan', $html);
+        self::assertStringContainsString('Fokuskan exam ini', $html);
+        self::assertStringContainsString('2 exam dipilih', $html);
+        self::assertStringContainsString('Dalam Antrean', $html);
+        self::assertStringContainsString('Queue', $html);
+        self::assertStringContainsString('Exam kedua masuk antrean preflight.', $html);
+        self::assertStringContainsString('Mode bulk dibatasi maksimal 10 exam per run.', $html);
+        self::assertStringContainsString('Bersihkan Semua Redis CBT', $html);
+        self::assertStringContainsString('reset runtime harian antar beberapa exam', $html);
+        self::assertStringNotContainsString('Siswa Bermasalah', $html);
+        self::assertStringNotContainsString('Bersihkan Semua Snapshot', $html);
     }
 
     public function test_render_snapshot_panel_shows_empty_exam_monitor_state_before_exam_is_selected(): void
@@ -263,6 +583,15 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                 ['id' => 54, 'title' => 'Ujian Biologi'],
             ],
             'exam_snapshot_total' => 1,
+            'availability_rewarm_queue' => [
+                'queued_count' => 3,
+                'last_processed_count' => 2,
+                'last_success_count' => 1,
+                'last_failure_count' => 1,
+                'last_skip_count' => 0,
+                'last_tick_at' => '2026-04-08 08:45:00',
+                'last_message' => 'Queue rewarm memproses 2 user.',
+            ],
             'exam_snapshot_preview_pages' => [
                 77 => 2,
             ],
@@ -274,11 +603,26 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                 'search' => 'salsa',
                 'kelas' => 'XI-A',
                 'ruang' => 'R1',
+                'status' => '',
                 'paged' => 2,
                 'per_page' => 25,
             ],
             'student_snapshot_kelas_options' => ['XI-A', 'XI-B'],
             'student_snapshot_ruang_options' => ['R1', 'R2'],
+            'student_snapshot_status_options' => [
+                ['value' => 'ready', 'label' => 'READY'],
+                ['value' => 'auto_warm', 'label' => 'AUTO-WARM'],
+                ['value' => 'queued_rewarm', 'label' => 'QUEUED REWARM'],
+                ['value' => 'miss', 'label' => 'MISS'],
+                ['value' => 'invalid', 'label' => 'INVALID'],
+                ['value' => 'unavailable', 'label' => 'UNAVAILABLE'],
+                ['value' => '!ready', 'label' => '! READY'],
+                ['value' => '!auto_warm', 'label' => '! AUTO-WARM'],
+                ['value' => '!queued_rewarm', 'label' => '! QUEUED REWARM'],
+                ['value' => '!miss', 'label' => '! MISS'],
+                ['value' => '!invalid', 'label' => '! INVALID'],
+                ['value' => '!unavailable', 'label' => '! UNAVAILABLE'],
+            ],
             'student_snapshot_total' => 1,
             'student_snapshot_total_pages' => 1,
             'student_snapshot_current_page' => 1,
@@ -309,7 +653,15 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                         'snapshot_exists' => true,
                         'snapshot_valid' => true,
                         'storage_key' => 'cbt_exam_availability:student:user:71',
-                        'snapshot_message' => 'Snapshot ketersediaan exam siap dipakai untuk student GET /exams.',
+                        'snapshot_miss_reason_label' => 'Minute rollover',
+                        'snapshot_message' => 'Snapshot MISS karena minute rollover. Bucket menit saat ini sudah berganti, jadi key minute sebelumnya tidak lagi dianggap current.',
+                        'current_catalog_version' => 5,
+                        'current_user_version' => 9,
+                        'current_minute_bucket' => 29572561,
+                        'detected_snapshot_source' => 'minute',
+                        'detected_catalog_version' => 5,
+                        'detected_user_version' => 9,
+                        'detected_minute_bucket' => 29572560,
                         'current_user_preview' => [
                             'display_name' => 'Salsa',
                             'kode_kelas' => 'XI-A',
@@ -639,6 +991,7 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                     ],
                 ],
             ],
+            'bulk_preflight' => [],
         ];
 
         $args = array_replace_recursive($base, $overrides);

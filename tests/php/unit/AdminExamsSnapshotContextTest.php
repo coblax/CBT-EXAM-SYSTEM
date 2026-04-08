@@ -17,6 +17,7 @@ require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-question-contrac
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-question-submission-context-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-auth-snapshot-cache.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-plugin-redis-reset-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-runtime.php';
 require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-exams-service.php';
 
@@ -25,6 +26,9 @@ final class AdminExamsSnapshotContextTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        delete_transient('cbt_exam_operational_stats_global');
+        delete_transient('cbt_exam_operational_stats_user_0');
+        delete_transient('cbt_exam_operational_stats_user_1');
         $this->useFakeDeliveryRedis();
         $this->useFakeStartSnapshotRedis();
         $this->useFakeStartAttemptGateRedis();
@@ -59,6 +63,49 @@ final class AdminExamsSnapshotContextTest extends TestCase
         update_user_meta(72, 'kode_kelas', 'XI-B');
         update_user_meta(72, 'kode_ruang', 'R2');
         $GLOBALS['wpdb'] = new AdminExamsSnapshotContextFakeWpdb();
+    }
+
+    public function test_build_page_context_includes_operational_stats_cards_for_admin(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+        $GLOBALS['cbt_test_redis_storage']['cbt_profile:user:71'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_login_auth:user:71'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_exam_availability:student:user:71:prepared'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_attempt_session:attempt:501'] = '{"ok":true}';
+        $GLOBALS['cbt_test_redis_storage']['cbt_attempt_contract:attempt:501'] = '{"ok":true}';
+        update_option('cbt_exam_preflight_jobs', [
+            77 => [
+                'exam_id' => 77,
+                'status' => 'active',
+                'exam_title' => 'Ujian Matematika',
+            ],
+        ]);
+        update_option('cbt_exam_preflight_global_runner', [
+            'active_exam_id' => 77,
+            'queue_exam_ids' => [54],
+        ]);
+        update_option('cbt_exam_availability_auto_warm_state', [
+            'active' => true,
+            'status' => 'active',
+            'exam_id' => 77,
+            'exam_title' => 'Ujian Matematika',
+        ]);
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+        ]);
+
+        self::assertNotEmpty($context['exam_operational_stats']);
+        self::assertSame(20, $context['exam_operational_stats']['refreshed_every_seconds']);
+        self::assertCount(6, $context['exam_operational_stats']['cards']);
+        self::assertSame('Redis RAM', $context['exam_operational_stats']['cards'][0]['label']);
+        self::assertSame('CBT Redis Keys', $context['exam_operational_stats']['cards'][1]['label']);
+        self::assertSame('Active Attempts', $context['exam_operational_stats']['cards'][2]['label']);
+        self::assertSame('Start Queue', $context['exam_operational_stats']['cards'][3]['label']);
+        self::assertSame('Warm Jobs', $context['exam_operational_stats']['cards'][4]['label']);
+        self::assertSame('User Snapshots', $context['exam_operational_stats']['cards'][5]['label']);
+        self::assertSame('5', (string) $context['exam_operational_stats']['cards'][1]['value']);
+        self::assertSame('1', (string) $context['exam_operational_stats']['cards'][2]['value']);
     }
 
     public function test_build_page_context_includes_snapshot_rows_for_admin_snapshot_tab(): void
@@ -123,28 +170,13 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertCount(2, $context['exam_snapshot_exam_options']);
         self::assertSame([], $context['exam_snapshot_rows']);
         self::assertSame(0, $context['exam_snapshot_total']);
-        self::assertCount(2, $context['student_snapshot_rows']);
-        self::assertSame(2, $context['student_snapshot_total']);
+        self::assertSame([], $context['student_snapshot_rows']);
+        self::assertSame(0, $context['student_snapshot_total']);
         self::assertSame(1, $context['student_snapshot_current_page']);
         self::assertSame(1, $context['student_snapshot_total_pages']);
         self::assertSame(25, $context['student_snapshot_per_page']);
-        self::assertSame(['XI-A', 'XI-B'], $context['student_snapshot_kelas_options']);
-        self::assertSame(['R1', 'R2'], $context['student_snapshot_ruang_options']);
-        self::assertSame('Bimo', $context['student_snapshot_rows'][0]['display_name']);
-        self::assertSame('XI-B', $context['student_snapshot_rows'][0]['kode_kelas']);
-        self::assertSame('R2', $context['student_snapshot_rows'][0]['kode_ruang']);
-        self::assertSame('MISS', $context['student_snapshot_rows'][0]['availability_status_label']);
-        self::assertSame('MISS', $context['student_snapshot_rows'][0]['profile_status_label']);
-        self::assertSame('MISS', $context['student_snapshot_rows'][0]['login_status_label']);
-        self::assertSame('Salsa', $context['student_snapshot_rows'][1]['display_name']);
-        self::assertSame('XI-A', $context['student_snapshot_rows'][1]['kode_kelas']);
-        self::assertSame('R1', $context['student_snapshot_rows'][1]['kode_ruang']);
-        self::assertSame('READY', $context['student_snapshot_rows'][1]['availability_status_label']);
-        self::assertSame('READY', $context['student_snapshot_rows'][1]['profile_status_label']);
-        self::assertSame('READY', $context['student_snapshot_rows'][1]['login_status_label']);
-        self::assertSame('prepared', $context['student_snapshot_rows'][1]['availability']['snapshot_source']);
-        self::assertSame('test', $context['student_snapshot_rows'][1]['login']['snapshot_source']);
-        self::assertContains('login:salsa', $context['student_snapshot_rows'][1]['login']['identifiers']);
+        self::assertSame([], $context['student_snapshot_kelas_options']);
+        self::assertSame([], $context['student_snapshot_ruang_options']);
     }
 
     public function test_build_page_context_marks_prepared_snapshot_as_auto_warm_only_when_session_is_still_active_for_student(): void
@@ -194,9 +226,59 @@ final class AdminExamsSnapshotContextTest extends TestCase
 
         $context = \CBT_Admin_Exams_Service::build_page_context([
             'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => 'students',
         ]);
 
         self::assertSame('AUTO-WARM', $context['student_snapshot_rows'][1]['availability_status_label']);
+    }
+
+    public function test_build_page_context_exam_monitor_enqueues_version_changed_availability_once(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        \CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(71, static function (): array {
+            return [
+                'items' => [
+                    [
+                        'id' => 77,
+                        'title' => 'Ujian Matematika',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
+                ],
+                'current_user' => [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'username' => 'salsa',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+        \CBT_Cache::invalidate_user(71);
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_EXAM_MONITOR,
+        ]);
+        $contextSecond = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_EXAM_MONITOR,
+        ]);
+
+        $salsaRow = null;
+        foreach ((array) $context['student_snapshot_rows'] as $studentRow) {
+            if ((int) ($studentRow['user_id'] ?? 0) === 71) {
+                $salsaRow = $studentRow;
+                break;
+            }
+        }
+
+        self::assertIsArray($salsaRow);
+        self::assertSame('QUEUED REWARM', $salsaRow['availability_status_label']);
+        self::assertSame('queued_rewarm', $salsaRow['availability']['repair_status']);
+        self::assertSame(1, $context['availability_rewarm_queue']['queued_count']);
+        self::assertSame(1, $contextSecond['availability_rewarm_queue']['queued_count']);
     }
 
     public function test_build_page_context_honors_snapshot_preview_page_request_per_exam(): void
@@ -588,12 +670,13 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertSame('Ujian Biologi', $context['exam_snapshot_rows'][0]['title']);
     }
 
-    public function test_build_page_context_supports_multiple_selected_snapshot_exams(): void
+    public function test_build_page_context_supports_multiple_selected_snapshot_exams_for_monitor_tab(): void
     {
         $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
 
         $context = \CBT_Admin_Exams_Service::build_page_context([
             'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_EXAM_MONITOR,
             'cbt_exam_snapshot_exam_ids' => ['77', '54'],
         ]);
 
@@ -601,6 +684,28 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertSame([77, 54], $context['exam_snapshot_filter_state']['exam_ids']);
         self::assertSame(2, $context['exam_snapshot_total']);
         self::assertCount(2, $context['exam_snapshot_rows']);
+    }
+
+    public function test_build_page_context_builds_bulk_preflight_context_for_multiple_selected_exams(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT,
+            'cbt_exam_snapshot_exam_ids' => ['77', '54'],
+        ]);
+
+        self::assertSame(77, $context['exam_snapshot_filter_state']['exam_id']);
+        self::assertSame([77, 54], $context['exam_snapshot_filter_state']['exam_ids']);
+        self::assertSame(2, $context['exam_snapshot_total']);
+        self::assertSame([], $context['exam_snapshot_rows']);
+        self::assertSame(2, $context['bulk_preflight']['selected_exam_total']);
+        self::assertSame(10, $context['bulk_preflight']['limit_max_exams']);
+        self::assertTrue($context['bulk_preflight']['can_start_bulk']);
+        self::assertCount(2, $context['bulk_preflight']['rows']);
+        self::assertSame(77, (int) ($context['bulk_preflight']['rows'][0]['exam_id'] ?? 0));
+        self::assertSame(54, (int) ($context['bulk_preflight']['rows'][1]['exam_id'] ?? 0));
     }
 
     public function test_build_page_context_keeps_exam_readiness_page_state_per_exam(): void
@@ -635,6 +740,7 @@ final class AdminExamsSnapshotContextTest extends TestCase
 
         $context = \CBT_Admin_Exams_Service::build_page_context([
             'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_EXAM_MONITOR,
             'cbt_exam_snapshot_exam_ids' => ['77', '54'],
             'cbt_exam_readiness_page_77' => '2',
         ]);
@@ -696,6 +802,132 @@ final class AdminExamsSnapshotContextTest extends TestCase
                 'label' => 'Ruang',
                 'value' => 'R2',
             ],
+        ], $context['student_snapshot_active_filters']);
+    }
+
+    public function test_build_page_context_filters_exam_monitor_rows_by_status(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        \CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(71, static function (): array {
+            return [
+                'items' => [
+                    [
+                        'id' => 77,
+                        'title' => 'Ujian Matematika',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
+                ],
+                'current_user' => [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'username' => 'salsa',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_EXAM_MONITOR,
+            'cbt_student_snapshot_status' => 'ready',
+        ]);
+
+        self::assertSame('ready', $context['student_snapshot_filter_state']['status']);
+        self::assertCount(1, $context['student_snapshot_rows']);
+        self::assertSame('Salsa', $context['student_snapshot_rows'][0]['display_name']);
+        self::assertSame('READY', $context['student_snapshot_rows'][0]['availability_status_label']);
+        self::assertContains([
+            'label' => 'Status Snapshot',
+            'value' => 'READY',
+        ], $context['student_snapshot_active_filters']);
+    }
+
+    public function test_build_page_context_filters_exam_monitor_rows_by_negated_status(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        \CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(71, static function (): array {
+            return [
+                'items' => [
+                    [
+                        'id' => 77,
+                        'title' => 'Ujian Matematika',
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
+                ],
+                'current_user' => [
+                    'user_id' => 71,
+                    'display_name' => 'Salsa',
+                    'username' => 'salsa',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_EXAM_MONITOR,
+            'cbt_student_snapshot_status' => '!ready',
+        ]);
+
+        self::assertSame('!ready', $context['student_snapshot_filter_state']['status']);
+        self::assertCount(1, $context['student_snapshot_rows']);
+        self::assertSame('Bimo', $context['student_snapshot_rows'][0]['display_name']);
+        self::assertSame('MISS', $context['student_snapshot_rows'][0]['availability_status_label']);
+        self::assertContains([
+            'label' => 'Status Snapshot',
+            'value' => '! READY',
+        ], $context['student_snapshot_active_filters']);
+    }
+
+    public function test_build_page_context_filters_login_monitor_rows_by_status(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        \CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(71, 'context_login_ready');
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR,
+            'cbt_student_snapshot_status' => 'ready',
+        ]);
+
+        self::assertSame(\CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR, $context['exam_snapshot_tab']);
+        self::assertSame('ready', $context['student_snapshot_filter_state']['status']);
+        self::assertCount(1, $context['student_snapshot_rows']);
+        self::assertSame('Salsa', $context['student_snapshot_rows'][0]['display_name']);
+        self::assertSame('READY', $context['student_snapshot_rows'][0]['login_status_label']);
+        self::assertContains([
+            'label' => 'Status Snapshot',
+            'value' => 'READY',
+        ], $context['student_snapshot_active_filters']);
+    }
+
+    public function test_build_page_context_filters_login_monitor_rows_by_negated_status(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        \CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(71, 'context_login_ready');
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => \CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR,
+            'cbt_student_snapshot_status' => '!ready',
+        ]);
+
+        self::assertSame(\CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR, $context['exam_snapshot_tab']);
+        self::assertSame('!ready', $context['student_snapshot_filter_state']['status']);
+        self::assertCount(1, $context['student_snapshot_rows']);
+        self::assertSame('Bimo', $context['student_snapshot_rows'][0]['display_name']);
+        self::assertSame('MISS', $context['student_snapshot_rows'][0]['login_status_label']);
+        self::assertContains([
+            'label' => 'Status Snapshot',
+            'value' => '! READY',
         ], $context['student_snapshot_active_filters']);
     }
 
@@ -816,6 +1048,79 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertSame('MISS', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['runtime_answers_status_label']);
         self::assertSame('LEGACY runtime', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['fallback_mode']);
         self::assertSame('runtime miss', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['issue_summary']);
+    }
+
+    public function test_build_page_context_filters_session_runtime_rows_by_status(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        \CBT_Exam_Question_Delivery_Cache::get_exam_payload(77, static function (int $examId): array {
+            return [
+                [
+                    'id' => 901,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal Redis Siap',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [],
+                ],
+            ];
+        });
+        \CBT_Attempt_Session_Snapshot_Cache::write_attempt_snapshot(501, [
+            'attempt_id' => 501,
+            'exam_id' => 77,
+            'student_id' => 71,
+            'status' => 'in_progress',
+            'started_at' => '2026-04-04 07:00:00',
+            'duration_minutes' => 90,
+            'extra_time_minutes' => 5,
+            'question_count' => 8,
+            'question_order_signature' => 'runtime-sig-501',
+        ]);
+        \CBT_Attempt_Question_Contract_Cache::write_attempt_snapshot(501, [
+            'attempt_id' => 501,
+            'exam_id' => 77,
+            'student_id' => 71,
+            'status' => 'in_progress',
+            'question_order_ids' => [901],
+            'question_number_map' => [901 => 1],
+            'question_order_signature' => 'runtime-sig-501',
+            'question_manifest' => [['id' => 901, 'question_number' => 1]],
+            'option_order_map' => [],
+        ]);
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => 'session_runtime_monitor',
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_student_snapshot_status' => 'runtime_miss',
+        ]);
+
+        self::assertSame('runtime_miss', $context['student_snapshot_filter_state']['status']);
+        self::assertContains([
+            'label' => 'Status Snapshot',
+            'value' => 'RUNTIME MISS',
+        ], $context['student_snapshot_active_filters']);
+        self::assertCount(1, $context['exam_snapshot_rows']);
+        self::assertSame(1, $context['exam_snapshot_rows'][0]['session_runtime']['attempt_total']);
+        self::assertCount(1, $context['exam_snapshot_rows'][0]['session_runtime']['rows']);
+        self::assertSame('MISS', $context['exam_snapshot_rows'][0]['session_runtime']['rows'][0]['runtime_answers_status_label']);
+    }
+
+    public function test_build_page_context_normalizes_session_runtime_selection_to_single_exam(): void
+    {
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+
+        $context = \CBT_Admin_Exams_Service::build_page_context([
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => 'session_runtime_monitor',
+            'cbt_exam_snapshot_exam_ids' => ['77', '54'],
+        ]);
+
+        self::assertSame([77], array_values(array_map('intval', (array) ($context['exam_snapshot_filter_state']['exam_ids'] ?? []))));
+        self::assertSame(77, (int) ($context['exam_snapshot_filter_state']['exam_id'] ?? 0));
+        self::assertCount(1, $context['exam_snapshot_rows']);
+        self::assertSame(77, (int) ($context['exam_snapshot_rows'][0]['exam_id'] ?? 0));
     }
 
     private function useFakeDeliveryRedis(): void
@@ -1135,6 +1440,10 @@ final class AdminExamsSnapshotContextFakeWpdb
             return 2;
         }
 
+        if (strpos($query, 'COUNT(*) FROM wp_cbt_attempts a INNER JOIN wp_cbt_exams e') !== false && strpos($query, "a.status = 'in_progress'") !== false) {
+            return 1;
+        }
+
         return 0;
     }
 
@@ -1148,6 +1457,10 @@ final class AdminExamsSnapshotContextFakeWpdb
 
         if (strpos($query, 'SELECT e.target_kelas FROM wp_cbt_exams e') !== false) {
             return ['XI-A', 'XI-B'];
+        }
+
+        if (strpos($query, 'SELECT e.id FROM wp_cbt_exams e') !== false) {
+            return ['77', '54'];
         }
 
         return [];

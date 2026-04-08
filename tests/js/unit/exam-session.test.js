@@ -745,6 +745,99 @@ describe('createExamSessionManager', function () {
         })).toBe(true);
     });
 
+    it('rechecks the exam list and auto-resumes when the server finishes creating the attempt after a busy recovery timeout', async function () {
+        var restoredSnapshot = buildCachedQuestionSnapshot(40);
+        var examsRequestCount = 0;
+        var fixture = createFixture({
+            restoredSnapshot,
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: ''
+                    }
+                ],
+                selectedExamId: 55
+            },
+            apiRequest: async function (endpoint, options) {
+                if (endpoint === 'exams') {
+                    examsRequestCount += 1;
+                    if (examsRequestCount === 1) {
+                        return {
+                            current_user: null,
+                            items: [
+                                {
+                                    id: 55,
+                                    duration_minutes: 60,
+                                    is_class_allowed: 1,
+                                    latest_attempt_id: 0,
+                                    latest_attempt_status: ''
+                                }
+                            ]
+                        };
+                    }
+
+                    return {
+                        current_user: null,
+                        items: [
+                            {
+                                id: 55,
+                                duration_minutes: 60,
+                                is_class_allowed: 1,
+                                latest_attempt_id: 77,
+                                latest_attempt_status: 'in_progress'
+                            }
+                        ]
+                    };
+                }
+
+                if (endpoint === 'ui_state') {
+                    return { attempt_state: null };
+                }
+
+                if (endpoint !== 'start_attempt') {
+                    throw new Error('Unexpected endpoint: ' + String(endpoint));
+                }
+
+                var body = options && options.body ? options.body : {};
+                if (Number(body.resume_only) === 1) {
+                    return {
+                        attempt_id: 77,
+                        duration_minutes: 60,
+                        started_at: '2026-04-03 05:00:00',
+                        status: 'resumed',
+                        question_order_signature: restoredSnapshot.questionOrderSignature,
+                        question_revision: restoredSnapshot.questionRevision
+                    };
+                }
+
+                throw new Error('Server masih sibuk menyiapkan sesi ujian. Coba lagi beberapa saat.');
+            }
+        });
+
+        await fixture.manager.handleStartExam();
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.error).toBe('');
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint + ':' + String(
+                entry.options && entry.options.body && entry.options.body.resume_only ? 1 : 0
+            );
+        })).toEqual([
+            'exams:0',
+            'start_attempt:0',
+            'exams:0',
+            'start_attempt:1',
+            'ui_state:0'
+        ]);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return String(snapshot.openingAttemptProgressStatus || '').indexOf('Attempt aktif ditemukan') >= 0;
+        })).toBe(true);
+    });
+
     it('refreshes the exam list before viewing results and reroutes to start when an admin reset makes the attempt active again', async function () {
         var restoredSnapshot = buildCachedQuestionSnapshot(40);
         var fixture = createFixture({

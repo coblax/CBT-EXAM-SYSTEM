@@ -11,10 +11,12 @@ if (!class_exists('CBT_Redis_Pipeline_Helper')) {
 class CBT_Student_Profile_Cache
 {
     private const PROFILE_REDIS_TTL_SECONDS = 44100;
+    private const PROFILE_EVENT_REDIS_TTL_SECONDS = 604800;
     private const PROFILE_REDIS_DEFAULT_HOST = '127.0.0.1';
     private const PROFILE_REDIS_DEFAULT_PORT = 6379;
     private const PROFILE_REDIS_DEFAULT_DATABASE = 2;
     private const PROFILE_REDIS_PREFIX = 'cbt_profile:';
+    private const PROFILE_EVENT_REDIS_PREFIX = 'cbt_profile_meta:';
     private const PROFILE_REDIS_TIMEOUT = 1.5;
     /** @var array<int,string> */
     private const SNAPSHOT_FIELDS = [
@@ -159,6 +161,9 @@ class CBT_Student_Profile_Cache
             $results[$user_id]['ready'] = $write_success;
             $results[$user_id]['write_success'] = $write_success;
             $results[$user_id]['reason'] = $write_success ? 'ready' : 'write_failed';
+            if ($write_success) {
+                self::write_profile_event_marker($user_id, 'written');
+            }
         }
 
         return $results;
@@ -176,7 +181,10 @@ class CBT_Student_Profile_Cache
             return 0;
         }
 
-        return (int) $redis->del(self::profile_storage_key($user_id));
+        $deleted = (int) $redis->del(self::profile_storage_key($user_id));
+        self::write_profile_event_marker($user_id, 'manual_clear');
+
+        return $deleted;
     }
 
     /**
@@ -190,6 +198,8 @@ class CBT_Student_Profile_Cache
      *   snapshot_exists:bool,
      *   snapshot_valid:bool,
      *   snapshot_status:string,
+     *   snapshot_miss_reason:string,
+     *   snapshot_miss_reason_label:string,
      *   snapshot_message:string,
      *   payload_bytes:int,
      *   ttl_seconds:int,
@@ -214,6 +224,8 @@ class CBT_Student_Profile_Cache
                 'snapshot_exists' => false,
                 'snapshot_valid' => false,
                 'snapshot_status' => 'idle',
+                'snapshot_miss_reason' => 'idle',
+                'snapshot_miss_reason_label' => 'Belum dipilih',
                 'snapshot_message' => 'User siswa belum dipilih.',
                 'payload_bytes' => 0,
                 'ttl_seconds' => -2,
@@ -232,6 +244,8 @@ class CBT_Student_Profile_Cache
                 'snapshot_exists' => false,
                 'snapshot_valid' => false,
                 'snapshot_status' => 'unavailable',
+                'snapshot_miss_reason' => 'redis_unavailable',
+                'snapshot_miss_reason_label' => 'Redis tidak tersedia',
                 'snapshot_message' => 'Redis profile tidak tersedia.',
                 'payload_bytes' => 0,
                 'ttl_seconds' => -2,
@@ -256,13 +270,16 @@ class CBT_Student_Profile_Cache
 
         if ($snapshot_valid) {
             $snapshot_status = 'ready';
+            $miss_reason = ['code' => '', 'label' => ''];
             $snapshot_message = 'Snapshot profil siswa siap dipakai untuk live payload.';
         } elseif ($snapshot_exists) {
             $snapshot_status = 'invalid';
+            $miss_reason = ['code' => '', 'label' => ''];
             $snapshot_message = 'Snapshot profil ditemukan tetapi payload-nya tidak valid dan akan diabaikan.';
         } else {
             $snapshot_status = 'miss';
-            $snapshot_message = 'Snapshot profil belum ada. Pembacaan profile berikutnya akan hydrate ke Redis.';
+            $miss_reason = self::detect_snapshot_miss_reason($user_id, $redis);
+            $snapshot_message = self::build_snapshot_miss_message($miss_reason);
         }
 
         return [
@@ -275,6 +292,8 @@ class CBT_Student_Profile_Cache
             'snapshot_exists' => $snapshot_exists,
             'snapshot_valid' => $snapshot_valid,
             'snapshot_status' => $snapshot_status,
+            'snapshot_miss_reason' => (string) ($miss_reason['code'] ?? ''),
+            'snapshot_miss_reason_label' => (string) ($miss_reason['label'] ?? ''),
             'snapshot_message' => $snapshot_message,
             'payload_bytes' => $payload_bytes,
             'ttl_seconds' => $ttl_seconds,
@@ -282,7 +301,7 @@ class CBT_Student_Profile_Cache
         ];
     }
 
-    public static function invalidate(int $user_id): void
+    public static function invalidate(int $user_id, string $reason = 'invalidated'): void
     {
         $user_id = absint($user_id);
         if ($user_id <= 0) {
@@ -295,11 +314,12 @@ class CBT_Student_Profile_Cache
         }
 
         $redis->del(self::profile_storage_key($user_id));
+        self::write_profile_event_marker($user_id, $reason);
     }
 
     public static function handle_delete_user(int $user_id): void
     {
-        self::invalidate($user_id);
+        self::invalidate($user_id, 'user_deleted');
     }
 
     /**
@@ -316,7 +336,7 @@ class CBT_Student_Profile_Cache
             return;
         }
 
-        self::invalidate($user_id);
+        self::invalidate($user_id, 'meta_changed');
     }
 
     /**
@@ -461,7 +481,7 @@ class CBT_Student_Profile_Cache
 
         $decoded = json_decode($raw_snapshot, true);
         if (!is_array($decoded)) {
-            self::invalidate($user_id);
+            self::invalidate($user_id, 'invalid_payload');
             return null;
         }
 
@@ -490,11 +510,17 @@ class CBT_Student_Profile_Cache
             return false;
         }
 
-        return $redis->setEx(
+        $write_success = $redis->setEx(
             (string) $operation['key'],
             (int) $operation['ttl'],
             (string) $operation['value']
         ) !== false;
+
+        if ($write_success) {
+            self::write_profile_event_marker($user_id, 'written');
+        }
+
+        return $write_success;
     }
 
     /**
@@ -644,9 +670,126 @@ class CBT_Student_Profile_Cache
         return self::PROFILE_REDIS_PREFIX . 'user:' . max(0, $user_id);
     }
 
+    private static function profile_event_storage_key(int $user_id): string
+    {
+        return self::PROFILE_EVENT_REDIS_PREFIX . 'user:' . max(0, $user_id);
+    }
+
     private static function is_relevant_meta_key(string $meta_key): bool
     {
         return in_array(trim($meta_key), self::SNAPSHOT_FIELDS, true);
+    }
+
+    /**
+     * @return array{code:string,label:string}
+     */
+    private static function detect_snapshot_miss_reason(int $user_id, Redis $redis): array
+    {
+        $event = self::read_profile_event_marker($user_id, $redis);
+        $event_code = sanitize_key((string) ($event['event'] ?? ''));
+
+        if ($event_code === 'meta_changed') {
+            return ['code' => 'meta_changed', 'label' => 'Meta profil berubah'];
+        }
+
+        if ($event_code === 'user_invalidated' || $event_code === 'invalidated') {
+            return ['code' => 'user_invalidated', 'label' => 'Invalidasi user'];
+        }
+
+        if ($event_code === 'manual_clear') {
+            return ['code' => 'manual_clear', 'label' => 'Dibersihkan manual'];
+        }
+
+        if ($event_code === 'user_deleted') {
+            return ['code' => 'user_deleted', 'label' => 'User dihapus'];
+        }
+
+        if ($event_code === 'invalid_payload') {
+            return ['code' => 'invalid_payload', 'label' => 'Payload invalid'];
+        }
+
+        if ($event_code === 'written') {
+            return ['code' => 'expired_or_evicted', 'label' => 'TTL habis / ter-evict'];
+        }
+
+        return ['code' => 'not_prepared', 'label' => 'Belum disiapkan'];
+    }
+
+    /**
+     * @param array{code:string,label:string} $miss_reason
+     */
+    private static function build_snapshot_miss_message(array $miss_reason): string
+    {
+        $code = sanitize_key((string) ($miss_reason['code'] ?? ''));
+
+        if ($code === 'meta_changed') {
+            return 'Snapshot profil MISS karena meta profil siswa berubah, jadi key sebelumnya sengaja dihapus dan akan dihydrate ulang pada pembacaan berikutnya.';
+        }
+
+        if ($code === 'user_invalidated') {
+            return 'Snapshot profil MISS karena namespace user diinvalidasi oleh runtime, jadi key profile lama ikut dibersihkan dan akan dihydrate ulang.';
+        }
+
+        if ($code === 'manual_clear') {
+            return 'Snapshot profil MISS karena dibersihkan manual dari panel admin. Pembacaan profile berikutnya akan hydrate ke Redis.';
+        }
+
+        if ($code === 'user_deleted') {
+            return 'Snapshot profil MISS karena user siswa sudah dihapus.';
+        }
+
+        if ($code === 'invalid_payload') {
+            return 'Snapshot profil MISS karena payload Redis sebelumnya tidak valid, sehingga key lama dibuang dan akan dihydrate ulang.';
+        }
+
+        if ($code === 'expired_or_evicted') {
+            return 'Snapshot profil MISS karena key sebelumnya kemungkinan sudah expired atau ter-evict. Pembacaan profile berikutnya akan hydrate ke Redis.';
+        }
+
+        return 'Snapshot profil belum ada. Pembacaan profile berikutnya akan hydrate ke Redis.';
+    }
+
+    private static function write_profile_event_marker(int $user_id, string $event): void
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return;
+        }
+
+        $redis = self::profile_redis();
+        if (!$redis instanceof Redis) {
+            return;
+        }
+
+        $payload = wp_json_encode([
+            'event' => sanitize_key($event),
+            'recorded_at' => gmdate('Y-m-d H:i:s'),
+        ]);
+        if (!is_string($payload) || $payload === '') {
+            return;
+        }
+
+        $redis->setEx(
+            self::profile_event_storage_key($user_id),
+            self::PROFILE_EVENT_REDIS_TTL_SECONDS,
+            $payload
+        );
+    }
+
+    private static function read_profile_event_marker(int $user_id, Redis $redis): ?array
+    {
+        $raw_event = $redis->get(self::profile_event_storage_key($user_id));
+        if (!is_string($raw_event) || trim($raw_event) === '') {
+            return null;
+        }
+
+        $decoded = json_decode($raw_event, true);
+        if (!is_array($decoded)) {
+            $redis->del(self::profile_event_storage_key($user_id));
+            return null;
+        }
+
+        return $decoded;
     }
 
     /**

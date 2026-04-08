@@ -24,6 +24,8 @@ class CBT_Exam_Availability_Cache
     private const SNAPSHOT_SOURCE_MINUTE = 'minute';
     private const SNAPSHOT_SOURCE_MISS = 'miss';
     private const SNAPSHOT_SOURCE_INVALID = 'invalid';
+    private const OPTION_RECENT_REPAIRS = 'cbt_exam_availability_recent_repairs';
+    private const RECENT_REPAIR_LIMIT = 200;
 
     /** @var Redis|false|null */
     private static $snapshot_redis = null;
@@ -54,10 +56,42 @@ class CBT_Exam_Availability_Cache
             return $snapshot;
         }
 
+        $miss_reason = [
+            'code' => '',
+            'label' => '',
+            'detected_snapshot_source' => '',
+            'detected_catalog_version' => 0,
+            'detected_user_version' => 0,
+            'detected_minute_bucket' => 0,
+        ];
+        if ($redis_available) {
+            $redis = self::snapshot_redis();
+            if ($redis instanceof Redis) {
+                $miss_reason = self::detect_student_snapshot_miss_reason($user_id, $redis);
+                if (sanitize_key((string) ($miss_reason['code'] ?? '')) === 'minute_rollover') {
+                    $repair = self::maybe_auto_heal_minute_rollover($user_id);
+                    if (!empty($repair['success']) && isset($repair['snapshot']) && is_array($repair['snapshot'])) {
+                        return $repair['snapshot'];
+                    }
+                }
+            }
+        }
+
         $produced_payload = $producer();
         $snapshot = self::sanitize_payload(is_array($produced_payload) ? $produced_payload : []);
         if ($redis_available) {
-            self::write_student_redis_snapshot($user_id, $snapshot);
+            self::write_current_minute_student_snapshot($user_id, $snapshot);
+            if (sanitize_key((string) ($miss_reason['code'] ?? '')) === 'version_changed') {
+                $prepared_written = self::write_prepared_student_snapshot($user_id, $snapshot);
+                if ($prepared_written) {
+                    self::record_recent_repair_event(
+                        $user_id,
+                        'repaired',
+                        'Snapshot availability dipulihkan sinkron oleh runtime dan prepared current ikut diperbarui.',
+                        'runtime_sync'
+                    );
+                }
+            }
         }
 
         return $snapshot;
@@ -128,6 +162,90 @@ class CBT_Exam_Availability_Cache
         return self::write_student_redis_snapshots($payloads_by_user, self::SNAPSHOT_SOURCE_PREPARED);
     }
 
+    /**
+     * @param array<string,mixed> $payload
+     */
+    public static function write_current_minute_student_snapshot(int $user_id, array $payload): bool
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return false;
+        }
+
+        $results = self::write_current_minute_student_snapshots([
+            $user_id => $payload,
+        ]);
+
+        return !empty($results[$user_id]);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $payloads_by_user
+     * @return array<int,bool>
+     */
+    public static function write_current_minute_student_snapshots(array $payloads_by_user): array
+    {
+        return self::write_student_redis_snapshots($payloads_by_user, self::SNAPSHOT_SOURCE_MINUTE);
+    }
+
+    /**
+     * @return array{
+     *   success:bool,
+     *   snapshot:array{items:array<int,array<string,mixed>>,current_user:array<string,mixed>|null},
+     *   message:string,
+     *   source_key:string
+     * }
+     */
+    public static function maybe_auto_heal_minute_rollover(int $user_id): array
+    {
+        $default = [
+            'success' => false,
+            'snapshot' => self::empty_payload(),
+            'message' => '',
+            'source_key' => '',
+        ];
+
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return $default;
+        }
+
+        $redis = self::snapshot_redis();
+        if (!$redis instanceof Redis) {
+            return $default;
+        }
+
+        $stale_candidate = self::find_current_version_stale_minute_candidate($user_id, $redis);
+        if (!is_array($stale_candidate) || empty($stale_candidate['snapshot']) || !is_array($stale_candidate['snapshot'])) {
+            return $default;
+        }
+
+        $snapshot = self::refresh_dynamic_payload((array) $stale_candidate['snapshot']);
+        $written = self::write_current_minute_student_snapshot($user_id, $snapshot);
+        if (!$written) {
+            return $default;
+        }
+
+        self::record_recent_repair_event(
+            $user_id,
+            'auto_healed',
+            'Minute rollover dipulihkan otomatis dari snapshot menit sebelumnya.',
+            'minute_auto_heal'
+        );
+
+        return [
+            'success' => true,
+            'snapshot' => $snapshot,
+            'message' => 'Minute rollover dipulihkan otomatis dari snapshot menit sebelumnya.',
+            'source_key' => (string) ($stale_candidate['storage_key'] ?? ''),
+        ];
+    }
+
+    public static function record_repair_event(int $user_id, string $status, string $message, string $source): void
+    {
+        self::record_recent_repair_event($user_id, $status, $message, $source);
+    }
+
     public static function has_current_prepared_snapshot(int $user_id): bool
     {
         $user_id = absint($user_id);
@@ -170,8 +288,10 @@ class CBT_Exam_Availability_Cache
         if (empty($keys)) {
             return 0;
         }
+        $deleted = (int) $redis->del(...$keys);
+        self::clear_recent_repair_event($user_id);
 
-        return (int) $redis->del(...$keys);
+        return $deleted;
     }
 
     /**
@@ -186,7 +306,20 @@ class CBT_Exam_Availability_Cache
      *   snapshot_valid:bool,
      *   snapshot_status:string,
      *   snapshot_source:string,
+     *   snapshot_miss_reason:string,
+     *   snapshot_miss_reason_label:string,
+     *   current_catalog_version:int,
+     *   current_user_version:int,
+     *   current_minute_bucket:int,
+     *   detected_snapshot_source:string,
+     *   detected_catalog_version:int,
+     *   detected_user_version:int,
+     *   detected_minute_bucket:int,
      *   snapshot_message:string,
+     *   repair_status:string,
+     *   repair_message:string,
+     *   repair_queued_at:string,
+     *   repair_source:string,
      *   item_count:int,
      *   payload_bytes:int,
      *   ttl_seconds:int,
@@ -199,6 +332,7 @@ class CBT_Exam_Availability_Cache
         $user_id = absint($user_id);
         $settings = self::snapshot_redis_settings();
         $storage_key = $user_id > 0 ? self::snapshot_storage_key($user_id) : '';
+        $current_version_meta = self::build_current_version_meta($user_id);
         $redis = self::snapshot_redis();
 
         if ($user_id <= 0) {
@@ -213,7 +347,20 @@ class CBT_Exam_Availability_Cache
                 'snapshot_valid' => false,
                 'snapshot_status' => 'idle',
                 'snapshot_source' => self::SNAPSHOT_SOURCE_MISS,
+                'snapshot_miss_reason' => 'idle',
+                'snapshot_miss_reason_label' => 'Belum dipilih',
+                'current_catalog_version' => 0,
+                'current_user_version' => 0,
+                'current_minute_bucket' => 0,
+                'detected_snapshot_source' => '',
+                'detected_catalog_version' => 0,
+                'detected_user_version' => 0,
+                'detected_minute_bucket' => 0,
                 'snapshot_message' => 'User siswa belum dipilih.',
+                'repair_status' => '',
+                'repair_message' => '',
+                'repair_queued_at' => '',
+                'repair_source' => '',
                 'item_count' => 0,
                 'payload_bytes' => 0,
                 'ttl_seconds' => -2,
@@ -234,7 +381,20 @@ class CBT_Exam_Availability_Cache
                 'snapshot_valid' => false,
                 'snapshot_status' => 'unavailable',
                 'snapshot_source' => self::SNAPSHOT_SOURCE_MISS,
+                'snapshot_miss_reason' => 'redis_unavailable',
+                'snapshot_miss_reason_label' => 'Redis tidak tersedia',
+                'current_catalog_version' => (int) ($current_version_meta['catalog_version'] ?? 0),
+                'current_user_version' => (int) ($current_version_meta['user_version'] ?? 0),
+                'current_minute_bucket' => (int) ($current_version_meta['minute_bucket'] ?? 0),
+                'detected_snapshot_source' => '',
+                'detected_catalog_version' => 0,
+                'detected_user_version' => 0,
+                'detected_minute_bucket' => 0,
                 'snapshot_message' => 'Redis exam availability tidak tersedia.',
+                'repair_status' => '',
+                'repair_message' => '',
+                'repair_queued_at' => '',
+                'repair_source' => '',
                 'item_count' => 0,
                 'payload_bytes' => 0,
                 'ttl_seconds' => -2,
@@ -253,11 +413,19 @@ class CBT_Exam_Availability_Cache
         $snapshot = isset($resolved_snapshot['snapshot']) && is_array($resolved_snapshot['snapshot'])
             ? $resolved_snapshot['snapshot']
             : self::empty_payload();
+        $detected_version_meta = self::build_detected_version_meta(
+            self::parse_student_storage_key_meta($storage_key, $user_id)
+        );
         $item_count = count((array) ($snapshot['items'] ?? []));
         $current_user_preview = self::build_current_user_preview(
             is_array($snapshot['current_user'] ?? null) ? $snapshot['current_user'] : null
         );
         $preview_items = self::build_preview_items((array) ($snapshot['items'] ?? []));
+
+        $miss_reason = [
+            'code' => '',
+            'label' => '',
+        ];
 
         if ($snapshot_valid && $snapshot_source === self::SNAPSHOT_SOURCE_PREPARED) {
             $snapshot_status = 'ready';
@@ -270,8 +438,17 @@ class CBT_Exam_Availability_Cache
             $snapshot_message = 'Snapshot ditemukan tetapi payload-nya tidak valid dan akan diabaikan.';
         } else {
             $snapshot_status = 'miss';
-            $snapshot_message = 'Snapshot belum ada. Request student berikutnya akan hydrate dan menulis ke Redis.';
+            $miss_reason = self::detect_student_snapshot_miss_reason($user_id, $redis);
+            $detected_version_meta = [
+                'snapshot_source' => (string) ($miss_reason['detected_snapshot_source'] ?? ''),
+                'catalog_version' => max(0, (int) ($miss_reason['detected_catalog_version'] ?? 0)),
+                'user_version' => max(0, (int) ($miss_reason['detected_user_version'] ?? 0)),
+                'minute_bucket' => max(0, (int) ($miss_reason['detected_minute_bucket'] ?? 0)),
+            ];
+            $snapshot_message = self::build_student_snapshot_miss_message($miss_reason);
         }
+
+        $repair_meta = self::build_student_snapshot_repair_meta($user_id, $snapshot_status);
 
         return [
             'user_id' => $user_id,
@@ -284,7 +461,20 @@ class CBT_Exam_Availability_Cache
             'snapshot_valid' => $snapshot_valid,
             'snapshot_status' => $snapshot_status,
             'snapshot_source' => $snapshot_source,
+            'snapshot_miss_reason' => (string) ($miss_reason['code'] ?? ''),
+            'snapshot_miss_reason_label' => (string) ($miss_reason['label'] ?? ''),
+            'current_catalog_version' => (int) ($current_version_meta['catalog_version'] ?? 0),
+            'current_user_version' => (int) ($current_version_meta['user_version'] ?? 0),
+            'current_minute_bucket' => (int) ($current_version_meta['minute_bucket'] ?? 0),
+            'detected_snapshot_source' => (string) ($detected_version_meta['snapshot_source'] ?? ''),
+            'detected_catalog_version' => max(0, (int) ($detected_version_meta['catalog_version'] ?? 0)),
+            'detected_user_version' => max(0, (int) ($detected_version_meta['user_version'] ?? 0)),
+            'detected_minute_bucket' => max(0, (int) ($detected_version_meta['minute_bucket'] ?? 0)),
             'snapshot_message' => $snapshot_message,
+            'repair_status' => (string) ($repair_meta['status'] ?? ''),
+            'repair_message' => (string) ($repair_meta['message'] ?? ''),
+            'repair_queued_at' => (string) ($repair_meta['queued_at'] ?? ''),
+            'repair_source' => (string) ($repair_meta['source'] ?? ''),
             'item_count' => $item_count,
             'payload_bytes' => $payload_bytes,
             'ttl_seconds' => $ttl_seconds,
@@ -482,6 +672,61 @@ class CBT_Exam_Availability_Cache
         }
 
         return is_array($invalid_candidate) ? $invalid_candidate : $default;
+    }
+
+    /**
+     * @return array{
+     *   storage_key:string,
+     *   minute_bucket:int,
+     *   snapshot:array{items:array<int,array<string,mixed>>,current_user:array<string,mixed>|null}
+     * }|null
+     */
+    private static function find_current_version_stale_minute_candidate(int $user_id, Redis $redis): ?array
+    {
+        $current_version_meta = self::build_current_version_meta($user_id);
+        $current_catalog_version = (int) ($current_version_meta['catalog_version'] ?? 0);
+        $current_user_version = (int) ($current_version_meta['user_version'] ?? 0);
+        $current_minute_bucket = (int) ($current_version_meta['minute_bucket'] ?? 0);
+        $candidate = null;
+
+        foreach (self::collect_student_storage_keys($redis, $user_id, false) as $storage_key) {
+            $meta = self::parse_student_storage_key_meta((string) $storage_key, $user_id);
+            if (!is_array($meta) || (string) ($meta['source'] ?? '') !== self::SNAPSHOT_SOURCE_MINUTE) {
+                continue;
+            }
+
+            $catalog_version = (int) ($meta['catalog_version'] ?? 0);
+            $user_version = (int) ($meta['user_version'] ?? 0);
+            $minute_bucket = max(0, (int) ($meta['minute_bucket'] ?? 0));
+            if ($catalog_version !== $current_catalog_version || $user_version !== $current_user_version) {
+                continue;
+            }
+
+            if ($minute_bucket <= 0 || $minute_bucket === $current_minute_bucket) {
+                continue;
+            }
+
+            $raw_snapshot = $redis->get((string) $storage_key);
+            if (!is_string($raw_snapshot) || trim($raw_snapshot) === '') {
+                continue;
+            }
+
+            $decoded = json_decode($raw_snapshot, true);
+            if (!is_array($decoded)) {
+                $redis->del((string) $storage_key);
+                continue;
+            }
+
+            if (!is_array($candidate) || $minute_bucket > (int) ($candidate['minute_bucket'] ?? 0)) {
+                $candidate = [
+                    'storage_key' => (string) $storage_key,
+                    'minute_bucket' => $minute_bucket,
+                    'snapshot' => self::sanitize_payload($decoded),
+                ];
+            }
+        }
+
+        return is_array($candidate) ? $candidate : null;
     }
 
     /**
@@ -699,7 +944,7 @@ class CBT_Exam_Availability_Cache
     /**
      * @return array<int,string>
      */
-    private static function collect_student_storage_keys(Redis $redis, int $user_id): array
+    private static function collect_student_storage_keys(Redis $redis, int $user_id, bool $include_fallback = true): array
     {
         $user_id = absint($user_id);
         if ($user_id <= 0) {
@@ -735,7 +980,7 @@ class CBT_Exam_Availability_Cache
             }
         }
 
-        if (empty($keys)) {
+        if ($include_fallback && empty($keys)) {
             $storage_key = self::snapshot_storage_key($user_id);
             $keys[$storage_key] = $storage_key;
         }
@@ -751,6 +996,251 @@ class CBT_Exam_Availability_Cache
         }
 
         return (int) floor($timestamp / MINUTE_IN_SECONDS);
+    }
+
+    /**
+     * @return array{
+     *   code:string,
+     *   label:string,
+     *   detected_snapshot_source:string,
+     *   detected_catalog_version:int,
+     *   detected_user_version:int,
+     *   detected_minute_bucket:int
+     * }
+     */
+    private static function detect_student_snapshot_miss_reason(int $user_id, Redis $redis): array
+    {
+        $keys = self::collect_student_storage_keys($redis, $user_id, false);
+        if (empty($keys)) {
+            return [
+                'code' => 'not_prepared',
+                'label' => 'Belum disiapkan',
+                'detected_snapshot_source' => '',
+                'detected_catalog_version' => 0,
+                'detected_user_version' => 0,
+                'detected_minute_bucket' => 0,
+            ];
+        }
+
+        $current_catalog_version = max(1, (int) (CBT_Cache::get_namespace_registry_entry(CBT_Cache::namespace_catalog())['version'] ?? 1));
+        $current_user_version = max(1, (int) (CBT_Cache::get_namespace_registry_entry(CBT_Cache::namespace_user($user_id))['version'] ?? 1));
+        $current_minute_bucket = self::current_minute_bucket();
+        $has_version_mismatch = false;
+        $has_minute_rollover = false;
+        $version_mismatch_meta = null;
+        $minute_rollover_meta = null;
+
+        foreach ($keys as $key) {
+            $meta = self::parse_student_storage_key_meta((string) $key, $user_id);
+            if (!is_array($meta)) {
+                continue;
+            }
+
+            $catalog_version = (int) ($meta['catalog_version'] ?? 0);
+            $user_version = (int) ($meta['user_version'] ?? 0);
+            $minute_bucket = isset($meta['minute_bucket']) ? (int) $meta['minute_bucket'] : null;
+            if ($catalog_version !== $current_catalog_version || $user_version !== $current_user_version) {
+                $has_version_mismatch = true;
+                if (!is_array($version_mismatch_meta)) {
+                    $version_mismatch_meta = $meta;
+                }
+                continue;
+            }
+
+            if ((string) ($meta['source'] ?? '') === self::SNAPSHOT_SOURCE_MINUTE
+                && $minute_bucket !== null
+                && $minute_bucket !== $current_minute_bucket
+            ) {
+                $has_minute_rollover = true;
+                if (!is_array($minute_rollover_meta)) {
+                    $minute_rollover_meta = $meta;
+                }
+            }
+        }
+
+        if ($has_version_mismatch) {
+            return self::merge_student_snapshot_miss_reason_meta([
+                'code' => 'version_changed',
+                'label' => 'Version berubah',
+            ], $version_mismatch_meta);
+        }
+
+        if ($has_minute_rollover) {
+            return self::merge_student_snapshot_miss_reason_meta([
+                'code' => 'minute_rollover',
+                'label' => 'Minute rollover',
+            ], $minute_rollover_meta);
+        }
+
+        return [
+            'code' => 'not_prepared',
+            'label' => 'Belum disiapkan',
+            'detected_snapshot_source' => '',
+            'detected_catalog_version' => 0,
+            'detected_user_version' => 0,
+            'detected_minute_bucket' => 0,
+        ];
+    }
+
+    /**
+     * @param array{code:string,label:string} $miss_reason
+     */
+    private static function build_student_snapshot_miss_message(array $miss_reason): string
+    {
+        $code = sanitize_key((string) ($miss_reason['code'] ?? ''));
+
+        if ($code === 'minute_rollover') {
+            return 'Snapshot MISS karena minute rollover. Bucket menit saat ini sudah berganti, jadi key minute sebelumnya tidak lagi dianggap current.';
+        }
+
+        if ($code === 'version_changed') {
+            return 'Snapshot MISS karena version berubah. Namespace katalog atau user sudah berubah, jadi key availability sebelumnya tidak lagi dianggap current.';
+        }
+
+        return 'Snapshot MISS karena belum pernah disiapkan atau sudah dibersihkan. Request student berikutnya akan hydrate dan menulis key current.';
+    }
+
+    /**
+     * @return array{status:string,message:string,queued_at:string,source:string}
+     */
+    private static function build_student_snapshot_repair_meta(int $user_id, string $snapshot_status): array
+    {
+        $default = [
+            'status' => '',
+            'message' => '',
+            'queued_at' => '',
+            'source' => '',
+        ];
+
+        if ($user_id <= 0) {
+            return $default;
+        }
+
+        if (
+            class_exists('CBT_Exam_Availability_Auto_Warm_Service')
+            && method_exists('CBT_Exam_Availability_Auto_Warm_Service', 'get_rewarm_user_state')
+        ) {
+            $queue_meta = CBT_Exam_Availability_Auto_Warm_Service::get_rewarm_user_state($user_id);
+            if (!empty($queue_meta['queued'])) {
+                return [
+                    'status' => 'queued_rewarm',
+                    'message' => trim((string) ($queue_meta['message'] ?? 'MISS karena Version berubah. Siswa ini sudah masuk antrean rewarm.')),
+                    'queued_at' => trim((string) ($queue_meta['queued_at'] ?? '')),
+                    'source' => trim((string) ($queue_meta['source'] ?? 'admin')),
+                ];
+            }
+        }
+
+        if (sanitize_key($snapshot_status) !== 'ready') {
+            return $default;
+        }
+
+        $recent_repair = self::get_recent_repair_event($user_id);
+        if (!is_array($recent_repair)) {
+            return $default;
+        }
+
+        return [
+            'status' => sanitize_key((string) ($recent_repair['status'] ?? '')),
+            'message' => trim((string) ($recent_repair['message'] ?? '')),
+            'queued_at' => trim((string) ($recent_repair['completed_at'] ?? '')),
+            'source' => trim((string) ($recent_repair['source'] ?? '')),
+        ];
+    }
+
+    /**
+     * @return array{source:string,catalog_version:int,user_version:int,minute_bucket:int|null}|null
+     */
+    private static function parse_student_storage_key_meta(string $storage_key, int $user_id): ?array
+    {
+        $storage_key = trim($storage_key);
+        if ($storage_key === '') {
+            return null;
+        }
+
+        $pattern = '/^' . preg_quote(self::SNAPSHOT_REDIS_PREFIX . 'student:user:' . max(0, $user_id), '/') . ':(prepared(?::catalog_v:(\d+):user_v:(\d+))|catalog_v:(\d+):user_v:(\d+):minute:(\d+))$/';
+        if (!preg_match($pattern, $storage_key, $matches)) {
+            return null;
+        }
+
+        if (strpos((string) ($matches[1] ?? ''), 'prepared') === 0) {
+            return [
+                'source' => self::SNAPSHOT_SOURCE_PREPARED,
+                'catalog_version' => max(1, (int) ($matches[2] ?? 1)),
+                'user_version' => max(1, (int) ($matches[3] ?? 1)),
+                'minute_bucket' => null,
+            ];
+        }
+
+        return [
+            'source' => self::SNAPSHOT_SOURCE_MINUTE,
+            'catalog_version' => max(1, (int) ($matches[4] ?? 1)),
+            'user_version' => max(1, (int) ($matches[5] ?? 1)),
+            'minute_bucket' => max(0, (int) ($matches[6] ?? 0)),
+        ];
+    }
+
+    /**
+     * @return array{catalog_version:int,user_version:int,minute_bucket:int}
+     */
+    private static function build_current_version_meta(int $user_id): array
+    {
+        if ($user_id <= 0) {
+            return [
+                'catalog_version' => 0,
+                'user_version' => 0,
+                'minute_bucket' => 0,
+            ];
+        }
+
+        return [
+            'catalog_version' => max(1, (int) (CBT_Cache::get_namespace_registry_entry(CBT_Cache::namespace_catalog())['version'] ?? 1)),
+            'user_version' => max(1, (int) (CBT_Cache::get_namespace_registry_entry(CBT_Cache::namespace_user($user_id))['version'] ?? 1)),
+            'minute_bucket' => self::current_minute_bucket(),
+        ];
+    }
+
+    /**
+     * @param array{source?:string,catalog_version?:int,user_version?:int,minute_bucket?:int|null}|null $meta
+     * @return array{snapshot_source:string,catalog_version:int,user_version:int,minute_bucket:int}
+     */
+    private static function build_detected_version_meta(?array $meta): array
+    {
+        return [
+            'snapshot_source' => sanitize_key((string) ($meta['source'] ?? '')),
+            'catalog_version' => max(0, (int) ($meta['catalog_version'] ?? 0)),
+            'user_version' => max(0, (int) ($meta['user_version'] ?? 0)),
+            'minute_bucket' => max(0, (int) ($meta['minute_bucket'] ?? 0)),
+        ];
+    }
+
+    /**
+     * @param array{
+     *   code:string,
+     *   label:string
+     * } $reason
+     * @param array{source?:string,catalog_version?:int,user_version?:int,minute_bucket?:int|null}|null $meta
+     * @return array{
+     *   code:string,
+     *   label:string,
+     *   detected_snapshot_source:string,
+     *   detected_catalog_version:int,
+     *   detected_user_version:int,
+     *   detected_minute_bucket:int
+     * }
+     */
+    private static function merge_student_snapshot_miss_reason_meta(array $reason, ?array $meta): array
+    {
+        $detected = self::build_detected_version_meta($meta);
+
+        return [
+            'code' => sanitize_key((string) ($reason['code'] ?? '')),
+            'label' => sanitize_text_field((string) ($reason['label'] ?? '')),
+            'detected_snapshot_source' => (string) ($detected['snapshot_source'] ?? ''),
+            'detected_catalog_version' => max(0, (int) ($detected['catalog_version'] ?? 0)),
+            'detected_user_version' => max(0, (int) ($detected['user_version'] ?? 0)),
+            'detected_minute_bucket' => max(0, (int) ($detected['minute_bucket'] ?? 0)),
+        ];
     }
 
     /**
@@ -801,6 +1291,75 @@ class CBT_Exam_Availability_Cache
         }
 
         return $snapshot;
+    }
+
+    private static function record_recent_repair_event(int $user_id, string $status, string $message, string $source): void
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return;
+        }
+
+        $events = get_option(self::OPTION_RECENT_REPAIRS, []);
+        if (!is_array($events)) {
+            $events = [];
+        }
+
+        $event_key = (string) $user_id;
+        unset($events[$event_key]);
+        $events[$event_key] = [
+            'status' => sanitize_key($status),
+            'message' => sanitize_text_field($message),
+            'source' => sanitize_key($source),
+            'completed_at' => current_time('mysql'),
+        ];
+
+        if (count($events) > self::RECENT_REPAIR_LIMIT) {
+            $events = array_slice($events, -self::RECENT_REPAIR_LIMIT, null, true);
+        }
+
+        update_option(self::OPTION_RECENT_REPAIRS, $events);
+    }
+
+    /**
+     * @return array{status:string,message:string,source:string,completed_at:string}|null
+     */
+    private static function get_recent_repair_event(int $user_id): ?array
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return null;
+        }
+
+        $events = get_option(self::OPTION_RECENT_REPAIRS, []);
+        if (!is_array($events) || !isset($events[(string) $user_id]) || !is_array($events[(string) $user_id])) {
+            return null;
+        }
+
+        $event = $events[(string) $user_id];
+
+        return [
+            'status' => sanitize_key((string) ($event['status'] ?? '')),
+            'message' => sanitize_text_field((string) ($event['message'] ?? '')),
+            'source' => sanitize_key((string) ($event['source'] ?? '')),
+            'completed_at' => sanitize_text_field((string) ($event['completed_at'] ?? '')),
+        ];
+    }
+
+    private static function clear_recent_repair_event(int $user_id): void
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return;
+        }
+
+        $events = get_option(self::OPTION_RECENT_REPAIRS, []);
+        if (!is_array($events) || !isset($events[(string) $user_id])) {
+            return;
+        }
+
+        unset($events[(string) $user_id]);
+        update_option(self::OPTION_RECENT_REPAIRS, $events);
     }
 
     private static function normalize_kelas_code(string $value): string

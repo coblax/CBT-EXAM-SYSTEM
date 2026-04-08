@@ -3,6 +3,7 @@ export function createExamSessionManager(deps) {
     var OPEN_ATTEMPT_PROGRESS_STEP_TOTAL = 5;
     var RESULT_PROGRESS_STEP_TOTAL = 4;
     var START_ATTEMPT_TIMEOUT_MESSAGE = 'Gagal menyiapkan sesi ujian. Server terlalu lama merespons.';
+    var START_ATTEMPT_RECOVERY_BUSY_MESSAGE = 'Server masih sibuk menyiapkan sesi ujian. Coba lagi beberapa saat.';
     var recordTimeline = deps.recordTimeline;
     var state = deps.state;
     var apiRequest = deps.apiRequest;
@@ -324,6 +325,16 @@ export function createExamSessionManager(deps) {
         return status === 404 || code === 'attempt_not_found';
     }
 
+    function isStartAttemptRecoveryBusyError(error) {
+        var code = String(error && error.code ? error.code : '').trim().toLowerCase();
+        if (code === 'start_attempt_recovery_busy') {
+            return true;
+        }
+
+        return error instanceof Error
+            && String(error.message || '').trim() === START_ATTEMPT_RECOVERY_BUSY_MESSAGE;
+    }
+
     function shouldRecoverSlowStartAttempt(error) {
         return isStartAttemptTimeoutError(error) || isStartAttemptLockError(error);
     }
@@ -479,7 +490,61 @@ export function createExamSessionManager(deps) {
             throw lastError;
         }
 
-        throw new Error('Server masih sibuk menyiapkan sesi ujian. Coba lagi beberapa saat.');
+        var busyError = new Error(START_ATTEMPT_RECOVERY_BUSY_MESSAGE);
+        busyError.code = 'start_attempt_recovery_busy';
+        throw busyError;
+    }
+
+    async function tryFinalizePendingStartAttempt(selectedExam) {
+        var examId = Number(selectedExam && selectedExam.id) || 0;
+        if (examId <= 0) {
+            return false;
+        }
+
+        try {
+            updateOpeningAttemptProgress(
+                36,
+                2,
+                'Memastikan attempt yang baru dibuat',
+                'Kami menyegarkan status exam untuk memastikan sesi aktif tidak tertinggal.'
+            );
+            await loadExams();
+
+            var refreshedExam = findExamById(examId) || getSelectedExam();
+            var latestAttemptId = Number(refreshedExam && refreshedExam.latest_attempt_id) || 0;
+            var latestAttemptStatus = String(refreshedExam && refreshedExam.latest_attempt_status ? refreshedExam.latest_attempt_status : '').toLowerCase();
+            if (latestAttemptId <= 0 || latestAttemptStatus !== 'in_progress') {
+                return false;
+            }
+
+            updateOpeningAttemptProgress(
+                54,
+                2,
+                'Attempt aktif ditemukan',
+                'Server sudah menandai sesi aktif. Kami mencoba menyambungkan Anda kembali.'
+            );
+            var resumePayload = await requestStartAttempt({
+                exam_id: examId,
+                resume_only: 1
+            }, {
+                timeoutMs: Math.max(5000, Math.min(startAttemptTimeoutMs, 8000))
+            });
+
+            state.selectedExamId = examId;
+            await openAttemptSession(refreshedExam, resumePayload);
+            return true;
+        } catch (resumeError) {
+            recordTimelineEntry(
+                'attempt:start:final-resume-error',
+                resumeError instanceof Error ? resumeError.message : 'Resume akhir attempt gagal.',
+                {
+                    attemptId: Number(state.attemptId) || 0,
+                    selectedExamId: examId,
+                    stage: String(state.stage || '')
+                }
+            );
+            return false;
+        }
     }
 
     async function waitForQueuedStartAttempt(selectedExam, submittedToken, queuedPayload) {
@@ -1313,6 +1378,27 @@ export function createExamSessionManager(deps) {
                 selectedExamId: Number(selectedExam.id) || 0
             });
         } catch (error) {
+            if (isStartAttemptRecoveryBusyError(error)) {
+                var finalizedPendingAttempt = await tryFinalizePendingStartAttempt(selectedExam);
+                if (finalizedPendingAttempt) {
+                    state.error = '';
+                    recordTimelineEntry(
+                        'attempt:start:final-resume',
+                        'Attempt aktif ditemukan setelah refresh akhir dan berhasil dibuka.',
+                        {
+                            attemptId: Number(state.attemptId) || 0,
+                            selectedExamId: Number(selectedExam && selectedExam.id) || 0,
+                            stage: 'exam'
+                        }
+                    );
+                    recordActionTrailEntry('attempt:start:final-resume', 'Attempt aktif berhasil dibuka setelah refresh akhir.', {
+                        attemptId: Number(state.attemptId) || 0,
+                        selectedExamId: Number(selectedExam && selectedExam.id) || 0
+                    });
+                    return;
+                }
+            }
+
             resetOpeningAttemptState();
             state.stage = 'confirm';
             if (shouldExitFullscreenOnFailure) {
