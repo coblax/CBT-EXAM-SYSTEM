@@ -251,4 +251,26 @@ describe('createAppShellManager rich zoom modal', function () {
         expect(html).toContain('data-action="retry-session-recovery"');
         expect(html).toContain('Percobaan sambung ulang: 2');
     });
+
+    it('renders early finish progress feedback before the final submit enters the finishing stage', function () {
+        var manager = createFixture({
+            state: {
+                finishConfirmOpen: false,
+                finishProgressPercent: 12,
+                finishProgressStepIndex: 1,
+                finishProgressStepTotal: 4,
+                finishProgressStatus: 'Mengecek jawaban terakhir',
+                finishProgressDetail: 'Menyimpan posisi terakhir dan memastikan semua jawaban ikut tersinkron.',
+                examLockedForPendingFinish: true
+            }
+        });
+        var html = manager.renderFinishConfirmModal();
+
+        expect(html).toContain('Proses');
+        expect(html).toContain('Siap');
+        expect(html).toContain('Langkah 1/4');
+        expect(html).toContain('Progress finalisasi: 12%');
+        expect(html).toContain('Proses...');
+        expect(html).toContain('aria-label="Progress pengumpulan ujian"');
+    });
 });

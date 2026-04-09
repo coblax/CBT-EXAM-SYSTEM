@@ -21,6 +21,7 @@ final class SetupSecurityConfigTest extends TestCase
         self::assertSame(1, $settings['detect_idle_during_exam']);
         self::assertSame(0, $settings['detect_heartbeat_lost']);
         self::assertSame(5, $settings['idle_threshold_minutes']);
+        self::assertSame(0, $settings['security_redis_first_ingest']);
         self::assertSame($settings, \CBT_Admin_Setup_Service::get_security_settings());
     }
 
@@ -36,6 +37,7 @@ final class SetupSecurityConfigTest extends TestCase
             'detect_heartbeat_lost' => 1,
             'idle_threshold_minutes' => '9',
             'log_security_events' => 1,
+            'security_redis_first_ingest' => 1,
         ]);
 
         $settings = \CBT_Admin_Security_Service::get_security_settings();
@@ -45,6 +47,7 @@ final class SetupSecurityConfigTest extends TestCase
         self::assertSame(1, $settings['detect_heartbeat_lost']);
         self::assertSame(9, $settings['idle_threshold_minutes']);
         self::assertSame(1, $settings['log_security_events']);
+        self::assertSame(1, $settings['security_redis_first_ingest']);
         self::assertSame($settings, \CBT_Admin_Setup_Service::get_security_settings());
     }
 }

@@ -18,6 +18,7 @@ final class CBT_Admin_Security_Actions
         $block_copy_paste = isset($_POST['block_copy_paste']) && (string) wp_unslash($_POST['block_copy_paste']) === '1';
         $block_browser_inspection_shortcuts = isset($_POST['block_browser_inspection_shortcuts']) && (string) wp_unslash($_POST['block_browser_inspection_shortcuts']) === '1';
         $log_security_events = isset($_POST['log_security_events']) && (string) wp_unslash($_POST['log_security_events']) === '1';
+        $security_redis_first_ingest = isset($_POST['security_redis_first_ingest']) && (string) wp_unslash($_POST['security_redis_first_ingest']) === '1';
         $detect_idle_during_exam = isset($_POST['detect_idle_during_exam']) && (string) wp_unslash($_POST['detect_idle_during_exam']) === '1';
         $detect_heartbeat_lost = isset($_POST['detect_heartbeat_lost']) && (string) wp_unslash($_POST['detect_heartbeat_lost']) === '1';
         $idle_threshold_minutes = isset($_POST['idle_threshold_minutes'])
@@ -31,6 +32,7 @@ final class CBT_Admin_Security_Actions
                 'block_copy_paste' => $block_copy_paste ? 1 : 0,
                 'block_browser_inspection_shortcuts' => $block_browser_inspection_shortcuts ? 1 : 0,
                 'log_security_events' => $log_security_events ? 1 : 0,
+                'security_redis_first_ingest' => $security_redis_first_ingest ? 1 : 0,
                 'detect_idle_during_exam' => $detect_idle_during_exam ? 1 : 0,
                 'detect_heartbeat_lost' => $detect_heartbeat_lost ? 1 : 0,
                 'idle_threshold_minutes' => $idle_threshold_minutes,

@@ -24,6 +24,9 @@ class CBT_Deactivator
         if (class_exists('CBT_Adaptive_Load_Service')) {
             CBT_Adaptive_Load_Service::deactivate();
         }
+        if (class_exists('CBT_Security_Event_Ingest')) {
+            CBT_Security_Event_Ingest::deactivate();
+        }
         // Keep data and roles on deactivate to avoid accidental data loss.
     }
 }

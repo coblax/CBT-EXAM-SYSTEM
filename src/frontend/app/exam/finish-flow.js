@@ -83,6 +83,40 @@ export function createFinishFlowManager(deps) {
         }
     }
 
+    function waitForInteractiveFinishPaint() {
+        if (!windowRef) {
+            return Promise.resolve();
+        }
+
+        if (windowRef.document && windowRef.document.visibilityState === 'hidden') {
+            return new Promise(function (resolve) {
+                if (typeof windowRef.setTimeout === 'function') {
+                    windowRef.setTimeout(resolve, 0);
+                    return;
+                }
+                resolve();
+            });
+        }
+
+        if (typeof windowRef.requestAnimationFrame !== 'function') {
+            return new Promise(function (resolve) {
+                if (typeof windowRef.setTimeout === 'function') {
+                    windowRef.setTimeout(resolve, 0);
+                    return;
+                }
+                resolve();
+            });
+        }
+
+        return new Promise(function (resolve) {
+            windowRef.requestAnimationFrame(function () {
+                windowRef.requestAnimationFrame(function () {
+                    resolve();
+                });
+            });
+        });
+    }
+
     function recordTimelineEntry(kind, summary, meta) {
         if (typeof recordTimeline === 'function') {
             recordTimeline(kind, summary, meta || {});
@@ -920,8 +954,8 @@ export function createFinishFlowManager(deps) {
         updateFinishProgress(
             12,
             1,
-            'Mengecek jawaban terakhir',
-            'Menyimpan posisi terakhir dan memastikan semua jawaban yang sudah diisi ikut tersinkron.',
+            'Cek jawaban',
+            'Simpan',
             {
                 renderOptions: {
                     immediate: true,
@@ -943,6 +977,7 @@ export function createFinishFlowManager(deps) {
         queueAnsweredQuestionsForFinalSync();
         persistCurrentQuestionCacheLocally();
         render();
+        await waitForInteractiveFinishPaint();
 
         try {
             try {
@@ -956,16 +991,16 @@ export function createFinishFlowManager(deps) {
             updateFinishProgress(
                 34,
                 2,
-                'Menyinkronkan jawaban',
-                'Mengirim jawaban yang masih antre agar hasil akhir akurat.'
+                'Sinkron',
+                'Kirim.'
             );
 
             if (getNavigatorConnectionStatus() === 'offline') {
                 updateFinishProgress(
                     34,
                     2,
-                    'Menunggu koneksi kembali',
-                    'Jawaban terakhir belum bisa dikirim karena perangkat sedang offline.'
+                    'Menunggu koneksi',
+                    'Menunggu koneksi.'
                 );
                 syncPendingAnswerRuntimeState({
                     persist: true,

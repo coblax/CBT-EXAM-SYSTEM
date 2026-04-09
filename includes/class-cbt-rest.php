@@ -246,6 +246,67 @@ class CBT_REST
             'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
         ]);
 
+        register_rest_route('cbt/v1', '/security_observability_snapshot', [
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => [self::class, 'security_observability_snapshot'],
+            'permission_callback' => [self::class, 'permission_manage_security_admin'],
+            'args' => [
+                'micro_drain' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+            ],
+        ]);
+
+        register_rest_route('cbt/v1', '/security_logs_page', [
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => [self::class, 'security_logs_page'],
+            'permission_callback' => [self::class, 'permission_manage_security_admin'],
+            'args' => [
+                'page' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+                'per_page' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+                'severity' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'event_type' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'device_type' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'kelas' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'ruang' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'student_name' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+            ],
+        ]);
+
         register_rest_route('cbt/v1', '/ui_state', [
             [
                 'methods' => WP_REST_Server::READABLE,
@@ -2292,6 +2353,93 @@ class CBT_REST
             'logged' => $logged ? 1 : 0,
             'skipped' => $logged ? 0 : 1,
         ]);
+    }
+
+    public static function security_observability_snapshot(WP_REST_Request $request)
+    {
+        $allow_micro_drain = absint((int) $request->get_param('micro_drain')) === 1;
+        $snapshot = class_exists('CBT_Admin_Security_Service')
+            ? CBT_Admin_Security_Service::build_security_observability_snapshot($allow_micro_drain)
+            : [];
+
+        $must_watch_attempts = is_array($snapshot['must_watch_attempts'] ?? null)
+            ? $snapshot['must_watch_attempts']
+            : [];
+        $live_roster_groups = is_array($snapshot['live_roster_groups'] ?? null)
+            ? $snapshot['live_roster_groups']
+            : [];
+        $status_snapshot = is_array($snapshot['status_snapshot'] ?? null)
+            ? $snapshot['status_snapshot']
+            : [];
+
+        ob_start();
+        if (class_exists('CBT_Admin_Security_Page')) {
+            CBT_Admin_Security_Page::render_security_log_must_watch_panel($must_watch_attempts);
+        }
+        $must_watch_html = (string) ob_get_clean();
+
+        ob_start();
+        if (class_exists('CBT_Admin_Security_Page')) {
+            CBT_Admin_Security_Page::render_security_log_live_roster_panel($live_roster_groups);
+        }
+        $live_roster_html = (string) ob_get_clean();
+
+        return rest_ensure_response([
+            'ok' => true,
+            'mode' => sanitize_key((string) ($snapshot['mode'] ?? 'mysql_fallback')),
+            'status_snapshot' => $status_snapshot,
+            'must_watch_total' => max(0, (int) ($snapshot['must_watch_total'] ?? count($must_watch_attempts))),
+            'live_roster_total' => max(0, (int) ($snapshot['live_roster_total'] ?? 0)),
+            'must_watch_html' => $must_watch_html,
+            'live_roster_html' => $live_roster_html,
+        ]);
+    }
+
+    public static function security_logs_page(WP_REST_Request $request)
+    {
+        $query = [
+            'page' => $request->get_param('page'),
+            'per_page' => $request->get_param('per_page'),
+            'severity' => $request->get_param('severity'),
+            'event_type' => $request->get_param('event_type'),
+            'device_type' => $request->get_param('device_type'),
+            'kelas' => $request->get_param('kelas'),
+            'ruang' => $request->get_param('ruang'),
+            'student_name' => $request->get_param('student_name'),
+        ];
+
+        $payload = class_exists('CBT_Admin_Security_Service')
+            ? CBT_Admin_Security_Service::build_security_logs_page_payload($query)
+            : [
+                'logs' => [],
+                'total' => 0,
+                'page' => 1,
+                'per_page' => 20,
+                'page_count' => 1,
+            ];
+
+        ob_start();
+        if (class_exists('CBT_Admin_Security_Page')) {
+            CBT_Admin_Security_Page::render_security_log_history_table_region(
+                is_array($payload['logs'] ?? null) ? $payload['logs'] : [],
+                class_exists('CBT_Security_Log') ? CBT_Security_Log::event_definitions() : []
+            );
+        }
+        $history_html = (string) ob_get_clean();
+
+        return rest_ensure_response([
+            'ok' => true,
+            'history_html' => $history_html,
+            'total' => max(0, (int) ($payload['total'] ?? 0)),
+            'page' => max(1, (int) ($payload['page'] ?? 1)),
+            'per_page' => max(1, (int) ($payload['per_page'] ?? 20)),
+            'page_count' => max(1, (int) ($payload['page_count'] ?? 1)),
+        ]);
+    }
+
+    public static function permission_manage_security_admin(): bool
+    {
+        return class_exists('CBT_Admin_Security_Service') && CBT_Admin_Security_Service::can_manage_exams();
     }
 
     private static function get_request_payload_value(WP_REST_Request $request, string $key)

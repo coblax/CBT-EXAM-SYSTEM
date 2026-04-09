@@ -460,6 +460,12 @@
                 background: transparent;
                 box-shadow: none;
             }
+            .cbt-setup-security-log-chip-group {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+                gap: 8px;
+            }
             .cbt-setup-security-log-body {
                 display: grid;
                 gap: 18px;
@@ -789,6 +795,83 @@
                 color: #5b6574;
                 line-height: 1.6;
             }
+            .cbt-setup-security-log-view-tabs {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-view-tab {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                min-height: 38px;
+                padding: 0 16px;
+                border: 1px solid #d8e4f2;
+                border-radius: 999px;
+                background: #f7fbff;
+                color: #315273;
+                font-size: 13px;
+                font-weight: 700;
+                line-height: 1;
+                cursor: pointer;
+                transition: border-color 140ms ease, background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+            }
+            .cbt-setup-security-log-view-tab:hover,
+            .cbt-setup-security-log-view-tab:focus {
+                border-color: #8bb3e4;
+                background: #f1f7ff;
+                color: #163b63;
+                box-shadow: 0 10px 20px rgba(37, 99, 235, 0.10);
+                outline: none;
+            }
+            .cbt-setup-security-log-view-tab.is-active {
+                border-color: #2563eb;
+                background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+                color: #ffffff;
+                box-shadow: 0 12px 22px rgba(37, 99, 235, 0.18);
+            }
+            .cbt-setup-security-log-view-tab-badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 24px;
+                min-height: 24px;
+                padding: 0 7px;
+                border-radius: 999px;
+                background: rgba(15, 23, 42, 0.08);
+                color: inherit;
+                font-size: 11px;
+                font-weight: 800;
+                line-height: 1;
+            }
+            .cbt-setup-security-log-view-tab.is-active .cbt-setup-security-log-view-tab-badge {
+                background: rgba(255, 255, 255, 0.16);
+            }
+            .cbt-setup-security-log-view-panels {
+                display: grid;
+                gap: 18px;
+            }
+            .cbt-setup-security-log-view-panel[hidden] {
+                display: none !important;
+            }
+            .cbt-setup-security-log-lazy-shell {
+                display: grid;
+                gap: 12px;
+            }
+            .cbt-setup-security-log-lazy-placeholder {
+                padding: 16px 18px;
+                border: 1px dashed #c8d7e8;
+                border-radius: 16px;
+                background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(244, 248, 253, 0.96) 100%);
+                color: #46607b;
+                line-height: 1.55;
+            }
+            .cbt-setup-security-log-lazy-placeholder strong {
+                display: block;
+                margin-bottom: 4px;
+                color: #17324f;
+            }
             .cbt-setup-security-log-roster-region,
             .cbt-setup-security-log-watch-region,
             .cbt-setup-security-log-table-region {
@@ -830,6 +913,73 @@
                 background: rgba(255, 255, 255, 0.7);
                 color: #38506a;
                 line-height: 1.55;
+            }
+            .cbt-setup-security-log-roster-toolbar {
+                display: grid;
+                gap: 14px;
+                padding: 16px;
+                border: 1px solid #d8e6f5;
+                border-radius: 16px;
+                background: rgba(255, 255, 255, 0.86);
+            }
+            .cbt-setup-security-log-roster-filter-grid {
+                display: grid;
+                gap: 12px;
+                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            }
+            .cbt-setup-security-log-roster-filter-field {
+                display: grid;
+                gap: 6px;
+            }
+            .cbt-setup-security-log-roster-filter-field span {
+                color: #1e3a5f;
+                font-size: 12px;
+                font-weight: 700;
+                line-height: 1.3;
+                letter-spacing: 0.02em;
+            }
+            .cbt-setup-security-log-roster-filter-field input,
+            .cbt-setup-security-log-roster-filter-field select {
+                width: 100%;
+                min-height: 42px;
+                margin: 0;
+                border: 1px solid #c9d8e8;
+                border-radius: 12px;
+                background: #ffffff;
+                color: #0f172a;
+                padding: 9px 12px;
+                box-shadow: inset 0 1px 1px rgba(15, 23, 42, 0.03);
+            }
+            .cbt-setup-security-log-roster-filter-field input:focus,
+            .cbt-setup-security-log-roster-filter-field select:focus {
+                border-color: #3b82f6;
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+                outline: none;
+            }
+            .cbt-setup-security-log-roster-toolbar-footer {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px 12px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-roster-summary {
+                color: #526072;
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .cbt-setup-security-log-roster-pagination {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-roster-page-label {
+                color: #334155;
+                font-size: 12px;
+                font-weight: 700;
+                line-height: 1.4;
+                white-space: nowrap;
             }
             .cbt-setup-security-log-roster-groups {
                 display: grid;
@@ -1613,6 +1763,7 @@
                 .cbt-setup-security-log-toolbar-footer,
                 .cbt-setup-security-log-toolbar-actions,
                 .cbt-setup-security-log-watch-header,
+                .cbt-setup-security-log-roster-toolbar-footer,
                 .cbt-setup-security-log-roster-header,
                 .cbt-setup-security-log-roster-group-top,
                 .cbt-setup-security-log-roster-row-top {
@@ -1975,6 +2126,21 @@
                                         </label>
                                     </div>
                                     <div class="cbt-setup-security-option">
+                                        <label class="cbt-setup-security-checkbox" for="cbt-setup-security-redis-first-ingest">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-security-redis-first-ingest"
+                                                name="security_redis_first_ingest"
+                                                value="1"
+                                                <?php checked($security_redis_first_ingest); ?>
+                                            />
+                                            <span>
+                                                <strong>Redis-First Ingest Security Log</strong>
+                                                <span>Jika diaktifkan, event security siswa akan lebih dulu diantrikan ke Redis stream lalu di-flush batch ke MySQL. Saat Redis tidak tersedia, sistem otomatis kembali ke direct MySQL tanpa membuang event.</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div class="cbt-setup-security-option">
                                         <label class="cbt-setup-security-checkbox" for="cbt-setup-security-detect-heartbeat-lost">
                                             <input
                                                 type="checkbox"
@@ -2057,21 +2223,50 @@
 
                     <div class="cbt-setup-panel" id="cbt-setup-panel-security-log" data-setup-panel="security-log" role="tabpanel" aria-labelledby="cbt-setup-tab-security-log" hidden>
                         <div class="cbt-setup-security-grid">
-                            <section id="cbt-setup-security-log-card" class="cbt-setup-card cbt-setup-security-card cbt-setup-security-log-card">
+                            <section
+                                id="cbt-setup-security-log-card"
+                                class="cbt-setup-card cbt-setup-security-card cbt-setup-security-log-card"
+                                data-security-log-observability-endpoint="<?php echo esc_url($security_observability_endpoint_url); ?>"
+                                data-security-log-history-endpoint="<?php echo esc_url($security_logs_page_endpoint_url); ?>"
+                                data-security-log-rest-nonce="<?php echo esc_attr($security_rest_nonce); ?>"
+                            >
                                 <div class="cbt-setup-card-header">
                                     <div>
                                         <h2>Histori Security Log</h2>
                                         <p>Menampilkan 20 event terbaru dari frontend ujian dan event security penting dari sisi server.</p>
                                     </div>
-                                    <span class="cbt-setup-card-chip" data-security-log-status-chip><?php echo $security_log_events_enabled ? 'Logging On' : 'Logging Off'; ?></span>
+                                    <div class="cbt-setup-security-log-chip-group">
+                                        <span class="cbt-setup-card-chip" data-security-log-status-chip><?php echo $security_log_events_enabled ? 'Logging On' : 'Logging Off'; ?></span>
+                                        <span class="cbt-setup-card-chip" data-security-log-mode-chip><?php echo esc_html((string) ($security_log_status_snapshot['status_label'] ?? 'MySQL fallback')); ?></span>
+                                        <span class="cbt-setup-card-chip" data-security-log-backlog-chip><?php echo esc_html('Backlog ' . (string) max(0, (int) ($security_log_status_snapshot['backlog_count'] ?? 0))); ?></span>
+                                        <span class="cbt-setup-card-chip" data-security-log-dead-chip<?php echo ((int) ($security_log_status_snapshot['dead_letter_count'] ?? 0) > 0) ? '' : ' hidden'; ?>><?php echo esc_html('Dead Letter ' . (string) max(0, (int) ($security_log_status_snapshot['dead_letter_count'] ?? 0))); ?></span>
+                                    </div>
                                 </div>
                                 <div class="cbt-setup-security-log-body">
-                                    <div class="cbt-setup-security-log-roster-region" data-security-log-roster-region>
-                                        <?php CBT_Admin_Security_Page::render_security_log_live_roster_panel($security_live_roster_groups); ?>
+                                    <?php
+                                    $security_live_roster_attempt_total = 0;
+                                    foreach ((array) $security_live_roster_groups as $security_roster_group) {
+                                        $security_live_roster_attempt_total += count((array) ($security_roster_group['attempts'] ?? []));
+                                    }
+                                    $security_must_watch_total = count((array) $security_log_must_watch_attempts);
+                                    $security_history_total = count((array) $security_logs);
+                                    ?>
+                                    <div class="cbt-setup-security-log-view-tabs" role="tablist" aria-label="Navigasi Security Log">
+                                        <button type="button" class="cbt-setup-security-log-view-tab is-active" id="cbt-setup-security-log-view-tab-must-watch" data-security-log-view-button="must-watch" role="tab" aria-selected="true" aria-controls="cbt-setup-security-log-view-panel-must-watch">
+                                            <span>Must Watch</span>
+                                            <span class="cbt-setup-security-log-view-tab-badge"><?php echo esc_html((string) $security_must_watch_total); ?></span>
+                                        </button>
+                                        <button type="button" class="cbt-setup-security-log-view-tab" id="cbt-setup-security-log-view-tab-history" data-security-log-view-button="history" role="tab" aria-selected="false" aria-controls="cbt-setup-security-log-view-panel-history">
+                                            <span>Histori Log</span>
+                                            <span class="cbt-setup-security-log-view-tab-badge"><?php echo esc_html((string) $security_history_total); ?></span>
+                                        </button>
+                                        <button type="button" class="cbt-setup-security-log-view-tab" id="cbt-setup-security-log-view-tab-live-roster" data-security-log-view-button="live-roster" role="tab" aria-selected="false" aria-controls="cbt-setup-security-log-view-panel-live-roster">
+                                            <span>Live Roster</span>
+                                            <span class="cbt-setup-security-log-view-tab-badge"><?php echo esc_html((string) $security_live_roster_attempt_total); ?></span>
+                                        </button>
                                     </div>
-                                    <div class="cbt-setup-security-log-watch-region" data-security-log-watch-region>
-                                        <?php CBT_Admin_Security_Page::render_security_log_must_watch_panel($security_log_must_watch_attempts); ?>
-                                    </div>
+                                    <div class="cbt-setup-security-log-view-panels">
+                                        <div class="cbt-setup-security-log-view-panel" id="cbt-setup-security-log-view-panel-history" data-security-log-view-panel="history" role="tabpanel" aria-labelledby="cbt-setup-security-log-view-tab-history" hidden>
                                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-security-log-manage-form" id="cbt-setup-security-log-manage-form">
                                         <?php wp_nonce_field('cbt_manage_security_logs'); ?>
                                         <input type="hidden" name="action" value="cbt_manage_security_logs" />
@@ -2138,151 +2333,37 @@
                                             </div>
                                         </div>
                                         <div class="cbt-setup-security-log-table-region" data-security-log-table-region>
-                                            <div class="cbt-setup-security-log-table-shell">
-                                                <table class="widefat striped cbt-setup-security-log-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th class="check-column"><input type="checkbox" data-security-log-select-all /></th>
-                                                            <th>Waktu</th>
-                                                            <th>Siswa</th>
-                                                            <th>Exam</th>
-                                                            <th>Attempt</th>
-                                                            <th>Event</th>
-                                                            <th>Detail</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody id="cbt-setup-security-log-tbody">
-                                                        <?php if (empty($security_logs)): ?>
-                                                            <tr data-security-log-empty-default>
-                                                                <td colspan="7" class="cbt-setup-security-log-empty">Belum ada histori security log yang tercatat.</td>
-                                                            </tr>
-                                                        <?php else: ?>
-                                                            <?php foreach ($security_logs as $security_log): ?>
-                                                                <?php
-                                                                $security_log_id = (int) ($security_log['id'] ?? 0);
-                                                                $severity = sanitize_key((string) ($security_log['severity'] ?? 'info'));
-                                                                if (!in_array($severity, ['warning', 'critical', 'info'], true)) {
-                                                                    $severity = 'info';
-                                                                }
-                                                                $event_type = sanitize_key((string) ($security_log['event_type'] ?? ''));
-                                                                $device_type = sanitize_key((string) ($security_log['device_type'] ?? 'unknown'));
-                                                                if (!in_array($device_type, ['desktop', 'mobile', 'tablet', 'server', 'unknown'], true)) {
-                                                                    $device_type = 'unknown';
-                                                                }
-                                                                $device_label = trim((string) ($security_log['device_label'] ?? 'Unknown'));
-                                                                if ($device_label === '') {
-                                                                    $device_label = 'Unknown';
-                                                                }
-                                                                $device_summary = trim((string) ($security_log['device_summary'] ?? $device_label));
-                                                                $student_kelas = sanitize_text_field((string) ($security_log['student_kode_kelas'] ?? ''));
-                                                                $student_ruang = sanitize_text_field((string) ($security_log['student_kode_ruang'] ?? ''));
-                                                                $student_name = (string) ($security_log['student_name'] ?? '-');
-                                                                $security_log_context = isset($security_log['context']) && is_array($security_log['context'])
-                                                                    ? $security_log['context']
-                                                                    : [];
-                                                                $security_log_json_context = $security_log_context;
-                                                                $security_log_json_payload = [
-                                                                    'attempt_id' => (int) ($security_log['attempt_id'] ?? 0),
-                                                                    'event_type' => $event_type,
-                                                                ];
-                                                                $security_log_native_app = sanitize_key((string) ($security_log_context['native_app'] ?? ''));
-
-                                                                if ($security_log_native_app !== '') {
-                                                                    $security_log_json_payload['native_app'] = $security_log_native_app;
-
-                                                                    if (!empty($security_log_context['native_version'])) {
-                                                                        $security_log_json_payload['native_version'] = (string) $security_log_context['native_version'];
-                                                                    }
-                                                                    if (!empty($security_log_context['warning_code'])) {
-                                                                        $security_log_json_payload['warning_code'] = (string) $security_log_context['warning_code'];
-                                                                    }
-                                                                    if (!empty($security_log_context['warning_message'])) {
-                                                                        $security_log_json_payload['warning_message'] = (string) $security_log_context['warning_message'];
-                                                                    }
-                                                                    if (!empty($security_log_context['occurred_at_client'])) {
-                                                                        $security_log_json_payload['occurred_at_client'] = (string) $security_log_context['occurred_at_client'];
-                                                                    }
-
-                                                                    unset(
-                                                                        $security_log_json_context['native_app'],
-                                                                        $security_log_json_context['native_version'],
-                                                                        $security_log_json_context['warning_code'],
-                                                                        $security_log_json_context['warning_message'],
-                                                                        $security_log_json_context['occurred_at_client']
-                                                                    );
-                                                                }
-
-                                                                $security_log_json_payload['context'] = !empty($security_log_json_context)
-                                                                    ? $security_log_json_context
-                                                                    : new stdClass();
-                                                                $security_log_json_pretty = wp_json_encode(
-                                                                    $security_log_json_payload,
-                                                                    JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
-                                                                );
-                                                                if (!is_string($security_log_json_pretty) || $security_log_json_pretty === '') {
-                                                                    $security_log_json_pretty = '{}';
-                                                                }
-                                                                ?>
-                                                                <tr
-                                                                    data-security-log-row
-                                                                    data-log-severity="<?php echo esc_attr($severity); ?>"
-                                                                    data-log-event="<?php echo esc_attr($event_type); ?>"
-                                                                    data-log-device="<?php echo esc_attr($device_type); ?>"
-                                                                    data-log-device-label="<?php echo esc_attr($device_label); ?>"
-                                                                    data-log-kelas="<?php echo esc_attr($student_kelas); ?>"
-                                                                    data-log-ruang="<?php echo esc_attr($student_ruang); ?>"
-                                                                    data-log-student-name="<?php echo esc_attr(function_exists('mb_strtolower') ? mb_strtolower($student_name, 'UTF-8') : strtolower($student_name)); ?>"
-                                                                    data-log-attempt="<?php echo esc_attr((string) ((int) ($security_log['attempt_id'] ?? 0))); ?>"
-                                                                >
-                                                                    <td class="check-column">
-                                                                        <input type="checkbox" name="selected_log_ids[]" value="<?php echo esc_attr((string) $security_log_id); ?>" data-security-log-select />
-                                                                    </td>
-                                                                    <td><?php echo esc_html((string) ($security_log['occurred_at'] ?? '-')); ?></td>
-                                                                <td>
-                                                                        <div class="cbt-setup-security-log-student">
-                                                                            <div class="cbt-setup-security-log-student-name"><?php echo esc_html($student_name); ?></div>
-                                                                            <?php if (!empty($security_log['student_kode_kelas']) || !empty($security_log['student_kode_ruang'])): ?>
-                                                                                <div class="cbt-setup-security-log-student-meta">
-                                                                                    <?php if ($student_kelas !== ''): ?>
-                                                                                        <span class="is-kelas"><strong>K:</strong> <?php echo esc_html($student_kelas); ?></span>
-                                                                                    <?php endif; ?>
-                                                                                    <?php if ($student_ruang !== ''): ?>
-                                                                                        <span class="is-ruang"><strong>R:</strong> <?php echo esc_html($student_ruang); ?></span>
-                                                                                    <?php endif; ?>
-                                                                                </div>
-                                                                            <?php endif; ?>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td><?php echo esc_html((string) ($security_log['exam_title'] ?? '-')); ?></td>
-                                                                    <td><span class="cbt-setup-security-log-attempt">#<?php echo esc_html((string) ((int) ($security_log['attempt_id'] ?? 0))); ?></span></td>
-                                                                    <td>
-                                                                        <div class="cbt-setup-security-log-event">
-                                                                            <div class="cbt-setup-security-log-event-badges">
-                                                                                <span class="cbt-setup-security-log-badge is-<?php echo esc_attr($severity); ?>"><?php echo esc_html($severity); ?></span>
-                                                                                <span class="cbt-setup-security-log-badge is-device-<?php echo esc_attr($device_type); ?>"><?php echo esc_html($device_label); ?></span>
-                                                                            </div>
-                                                                            <strong><?php echo esc_html((string) ($security_log['event_label'] ?? $security_log['event_type'] ?? 'Event')); ?></strong>
-                                                                            <span class="cbt-setup-security-log-event-meta"><?php echo esc_html($device_summary); ?></span>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td class="cbt-setup-security-log-detail">
-                                                                        <p class="cbt-setup-security-log-detail-copy"><?php echo esc_html((string) ($security_log['message_display'] ?? $security_log['message'] ?? '-')); ?></p>
-                                                                        <details class="cbt-setup-security-log-json">
-                                                                            <summary>JSON</summary>
-                                                                            <pre class="cbt-setup-security-log-json-pre"><?php echo esc_html($security_log_json_pretty); ?></pre>
-                                                                        </details>
-                                                                    </td>
-                                                                </tr>
-                                                            <?php endforeach; ?>
-                                                            <tr id="cbt-setup-security-log-filter-empty" hidden>
-                                                                <td colspan="7" class="cbt-setup-security-log-empty">Tidak ada histori log yang cocok dengan filter saat ini.</td>
-                                                            </tr>
-                                                        <?php endif; ?>
-                                                    </tbody>
-                                                </table>
-                                            </div>
+                                            <?php CBT_Admin_Security_Page::render_security_log_history_table_region($security_logs, $security_log_event_definitions); ?>
                                         </div>
                                     </form>
+                                        </div>
+                                        <div class="cbt-setup-security-log-view-panel" id="cbt-setup-security-log-view-panel-must-watch" data-security-log-view-panel="must-watch" role="tabpanel" aria-labelledby="cbt-setup-security-log-view-tab-must-watch">
+                                            <div class="cbt-setup-security-log-watch-region" data-security-log-watch-region data-security-log-lazy-region="must-watch" data-security-log-lazy-loaded="0">
+                                                <template data-security-log-lazy-template>
+                                                    <?php CBT_Admin_Security_Page::render_security_log_must_watch_panel($security_log_must_watch_attempts); ?>
+                                                </template>
+                                                <div class="cbt-setup-security-log-lazy-shell" data-security-log-lazy-shell>
+                                                    <div class="cbt-setup-security-log-lazy-placeholder">
+                                                        <strong>Must Watch siap dibuka.</strong>
+                                                        Klik tab ini saat Anda ingin meninjau attempt berisiko tanpa perlu scroll jauh ke bawah.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="cbt-setup-security-log-view-panel" id="cbt-setup-security-log-view-panel-live-roster" data-security-log-view-panel="live-roster" role="tabpanel" aria-labelledby="cbt-setup-security-log-view-tab-live-roster" hidden>
+                                            <div class="cbt-setup-security-log-roster-region" data-security-log-roster-region data-security-log-lazy-region="live-roster" data-security-log-lazy-loaded="0">
+                                                <template data-security-log-lazy-template>
+                                                    <?php CBT_Admin_Security_Page::render_security_log_live_roster_panel($security_live_roster_groups); ?>
+                                                </template>
+                                                <div class="cbt-setup-security-log-lazy-shell" data-security-log-lazy-shell>
+                                                    <div class="cbt-setup-security-log-lazy-placeholder">
+                                                        <strong>Live Roster siap dibuka.</strong>
+                                                        Panel live attempt akan dimuat saat tab ini dipilih agar card Security Log tetap ringan saat pertama dibuka.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </section>
                         </div>
@@ -3364,11 +3445,11 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                     });
                 }
 
-                function bindSecurityLogTools() {
-                    var card = document.getElementById('cbt-setup-security-log-card');
-                    var manageForm = document.getElementById('cbt-setup-security-log-manage-form');
-                    var severityFilter = document.getElementById('cbt-setup-security-log-filter-severity');
-                    var eventFilter = document.getElementById('cbt-setup-security-log-filter-event');
+                    function bindSecurityLogTools() {
+                        var card = document.getElementById('cbt-setup-security-log-card');
+                        var manageForm = document.getElementById('cbt-setup-security-log-manage-form');
+                        var severityFilter = document.getElementById('cbt-setup-security-log-filter-severity');
+                        var eventFilter = document.getElementById('cbt-setup-security-log-filter-event');
                     var deviceFilter = document.getElementById('cbt-setup-security-log-filter-device');
                     var kelasFilter = document.getElementById('cbt-setup-security-log-filter-kelas');
                     var ruangFilter = document.getElementById('cbt-setup-security-log-filter-ruang');
@@ -3377,17 +3458,25 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                     var liveStatus = document.getElementById('cbt-setup-security-log-live-status');
                     var focusState = document.getElementById('cbt-setup-security-log-focus-state');
                     var focusLabel = document.getElementById('cbt-setup-security-log-focus-label');
-                    var focusClearButton = document.getElementById('cbt-setup-security-log-focus-clear');
-                    var securityLogPanel = document.getElementById('cbt-setup-panel-security-log');
-                    var rosterRegion = card ? card.querySelector('[data-security-log-roster-region]') : null;
-                    var watchRegion = card ? card.querySelector('[data-security-log-watch-region]') : null;
-                    var tableRegion = card ? card.querySelector('[data-security-log-table-region]') : null;
-                    var deleteScopeInput = card ? card.querySelector('[data-security-log-delete-scope]') : null;
-                    var deleteSelectedButton = card ? card.querySelector('[data-security-log-submit="selected"]') : null;
-                    var deleteAllButton = card ? card.querySelector('[data-security-log-submit="all"]') : null;
+                        var focusClearButton = document.getElementById('cbt-setup-security-log-focus-clear');
+                        var securityLogPanel = document.getElementById('cbt-setup-panel-security-log');
+                        var rosterRegion = card ? card.querySelector('[data-security-log-roster-region]') : null;
+                        var watchRegion = card ? card.querySelector('[data-security-log-watch-region]') : null;
+                        var tableRegion = card ? card.querySelector('[data-security-log-table-region]') : null;
+                        var statusChip = card ? card.querySelector('[data-security-log-status-chip]') : null;
+                        var modeChip = card ? card.querySelector('[data-security-log-mode-chip]') : null;
+                        var backlogChip = card ? card.querySelector('[data-security-log-backlog-chip]') : null;
+                        var deadChip = card ? card.querySelector('[data-security-log-dead-chip]') : null;
+                        var observabilityEndpoint = card ? String(card.getAttribute('data-security-log-observability-endpoint') || '') : '';
+                        var historyEndpoint = card ? String(card.getAttribute('data-security-log-history-endpoint') || '') : '';
+                        var restNonce = card ? String(card.getAttribute('data-security-log-rest-nonce') || '') : '';
+                        var deleteScopeInput = card ? card.querySelector('[data-security-log-delete-scope]') : null;
+                        var deleteSelectedButton = card ? card.querySelector('[data-security-log-submit="selected"]') : null;
+                        var deleteAllButton = card ? card.querySelector('[data-security-log-submit="all"]') : null;
                     var autoRefreshTimer = 0;
                     var refreshInFlight = false;
                     var storageKey = 'cbt_setup_security_log_auto_refresh_enabled';
+                    var activeViewStorageKey = 'cbt_setup_security_log_active_view';
                     var watchSortStorageKey = 'cbt_setup_security_log_watch_sort_mode';
                     var activeWatchFocusAttempt = '';
                     var activeWatchFocusStudent = '';
@@ -3396,8 +3485,18 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                     var activeWatchFocusEventType = '';
                     var activeWatchFocusEventLabel = '';
                     var activeWatchSortMode = 'auto';
+                    var activeSecurityLogView = 'must-watch';
+                    var activeRosterPage = 1;
+                    var activeRosterFilters = {
+                        search: '',
+                        presence: 'all',
+                        risk: 'all',
+                        exam: 'all',
+                        kelas: 'all',
+                        ruang: 'all'
+                    };
 
-                    if (!card || !manageForm || !severityFilter || !eventFilter || !deviceFilter || !kelasFilter || !ruangFilter || !studentNameFilter || !autoRefreshToggle || !liveStatus || !securityLogPanel || !tableRegion) {
+                    if (!card || !manageForm || !severityFilter || !eventFilter || !deviceFilter || !kelasFilter || !ruangFilter || !studentNameFilter || !autoRefreshToggle || !liveStatus || !securityLogPanel || !tableRegion || observabilityEndpoint === '' || historyEndpoint === '') {
                         return;
                     }
 
@@ -3410,6 +3509,102 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         } else if (tone === 'error') {
                             liveStatus.classList.add('is-error');
                         }
+                    }
+
+                    function getSecurityRestHeaders() {
+                        var headers = {
+                            'Cache-Control': 'no-cache'
+                        };
+
+                        if (restNonce !== '') {
+                            headers['X-WP-Nonce'] = restNonce;
+                        }
+
+                        return headers;
+                    }
+
+                    function updateSecurityLogStatusChips(statusSnapshot) {
+                        var backlogCount = 0;
+                        var deadCount = 0;
+                        var statusLabel = '';
+
+                        if (!statusSnapshot || typeof statusSnapshot !== 'object') {
+                            return;
+                        }
+
+                        backlogCount = parseInt(String(statusSnapshot.backlog_count || '0'), 10);
+                        deadCount = parseInt(String(statusSnapshot.dead_letter_count || '0'), 10);
+                        statusLabel = String(statusSnapshot.status_label || '');
+
+                        if (statusChip) {
+                            statusChip.textContent = String(<?php echo $security_log_events_enabled ? wp_json_encode('Logging On') : wp_json_encode('Logging Off'); ?>);
+                        }
+
+                        if (modeChip && statusLabel !== '') {
+                            modeChip.textContent = statusLabel;
+                        }
+
+                        if (backlogChip) {
+                            backlogChip.textContent = 'Backlog ' + String(Number.isFinite(backlogCount) ? backlogCount : 0);
+                        }
+
+                        if (deadChip) {
+                            deadChip.textContent = 'Dead Letter ' + String(Number.isFinite(deadCount) ? deadCount : 0);
+                            deadChip.hidden = !(Number.isFinite(deadCount) && deadCount > 0);
+                        }
+                    }
+
+                    function updateSecurityLogViewBadge(view, count) {
+                        var button = document.querySelector('[data-security-log-view-button="' + String(view || '') + '"]');
+                        var badge = button ? button.querySelector('.cbt-setup-security-log-view-tab-badge') : null;
+
+                        if (!badge) {
+                            return;
+                        }
+
+                        badge.textContent = String(Math.max(0, parseInt(String(count || '0'), 10) || 0));
+                    }
+
+                    function refreshSecurityHistoryRegion() {
+                        var requestUrl = new URL(historyEndpoint, window.location.origin);
+
+                        requestUrl.searchParams.set('page', '1');
+                        requestUrl.searchParams.set('per_page', '20');
+                        requestUrl.searchParams.set('severity', String(severityFilter.value || 'all'));
+                        requestUrl.searchParams.set('event_type', String(eventFilter.value || 'all'));
+                        requestUrl.searchParams.set('device_type', String(deviceFilter.value || 'all'));
+                        requestUrl.searchParams.set('kelas', String(kelasFilter.value || 'all'));
+                        requestUrl.searchParams.set('ruang', String(ruangFilter.value || 'all'));
+                        requestUrl.searchParams.set('student_name', String(studentNameFilter.value || ''));
+
+                        return fetch(requestUrl.toString(), {
+                            method: 'GET',
+                            credentials: 'same-origin',
+                            headers: getSecurityRestHeaders()
+                        })
+                            .then(function (response) {
+                                if (!response.ok) {
+                                    throw new Error('Histori log gagal dimuat.');
+                                }
+
+                                return response.json();
+                            })
+                            .then(function (payload) {
+                                if (!payload || payload.ok !== true || typeof payload.history_html !== 'string') {
+                                    throw new Error('Payload histori log tidak valid.');
+                                }
+
+                                tableRegion.innerHTML = payload.history_html;
+                                if (deleteScopeInput) {
+                                    deleteScopeInput.value = '';
+                                }
+                                if (deleteAllButton) {
+                                    deleteAllButton.disabled = Number(payload.total || 0) <= 0;
+                                }
+                                updateSecurityLogViewBadge('history', Number(payload.total || 0));
+                                syncDynamicFilterOptions();
+                                applySecurityLogFilters();
+                            });
                     }
 
                     function getCurrentRows() {
@@ -3435,6 +3630,338 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         }
 
                         return mode;
+                    }
+
+                    function normalizeSecurityLogView(value) {
+                        var view = String(value || '').trim().toLowerCase();
+                        if (view !== 'history' && view !== 'live-roster') {
+                            return 'must-watch';
+                        }
+
+                        return view;
+                    }
+
+                    function normalizeRosterSearchValue(value) {
+                        return String(value || '').trim().toLowerCase();
+                    }
+
+                    function normalizeRosterPresenceValue(value) {
+                        var normalized = String(value || '').trim().toLowerCase();
+                        if (normalized !== 'online' && normalized !== 'stale' && normalized !== 'offline') {
+                            return 'all';
+                        }
+
+                        return normalized;
+                    }
+
+                    function normalizeRosterRiskValue(value) {
+                        var normalized = String(value || '').trim().toLowerCase();
+                        if (normalized !== 'safe' && normalized !== 'watch' && normalized !== 'high-risk') {
+                            return 'all';
+                        }
+
+                        return normalized;
+                    }
+
+                    function normalizeRosterSelectValue(value) {
+                        var normalized = String(value || '').trim();
+                        return normalized === '' ? 'all' : normalized;
+                    }
+
+                    function readStoredSecurityLogView() {
+                        try {
+                            if (window.localStorage) {
+                                return normalizeSecurityLogView(window.localStorage.getItem(activeViewStorageKey) || 'must-watch');
+                            }
+                        } catch (error) {
+                            // Ignore storage errors.
+                        }
+
+                        return 'must-watch';
+                    }
+
+                    function storeSecurityLogView(view) {
+                        try {
+                            if (window.localStorage) {
+                                window.localStorage.setItem(activeViewStorageKey, normalizeSecurityLogView(view));
+                            }
+                        } catch (error) {
+                            // Ignore storage errors.
+                        }
+                    }
+
+                    function getSecurityLogViewButtons() {
+                        return card.querySelectorAll('[data-security-log-view-button]');
+                    }
+
+                    function getSecurityLogViewPanels() {
+                        return card.querySelectorAll('[data-security-log-view-panel]');
+                    }
+
+                    function getSecurityLogViewPanel(view) {
+                        return card.querySelector('[data-security-log-view-panel="' + normalizeSecurityLogView(view) + '"]');
+                    }
+
+                    function getLiveRosterRoot() {
+                        return rosterRegion ? rosterRegion.querySelector('[data-security-log-live-roster]') : null;
+                    }
+
+                    function getLiveRosterGroups() {
+                        var root = getLiveRosterRoot();
+                        return root ? root.querySelectorAll('[data-security-log-roster-group]') : [];
+                    }
+
+                    function getLiveRosterFilterControl(name) {
+                        var root = getLiveRosterRoot();
+                        return root ? root.querySelector('[data-security-log-roster-filter="' + name + '"]') : null;
+                    }
+
+                    function getLiveRosterPagerLabel() {
+                        var root = getLiveRosterRoot();
+                        return root ? root.querySelector('[data-security-log-roster-page-label]') : null;
+                    }
+
+                    function getLiveRosterSummary() {
+                        var root = getLiveRosterRoot();
+                        return root ? root.querySelector('[data-security-log-roster-summary]') : null;
+                    }
+
+                    function getLiveRosterFilterEmpty() {
+                        var root = getLiveRosterRoot();
+                        return root ? root.querySelector('[data-security-log-roster-filter-empty]') : null;
+                    }
+
+                    function getLiveRosterPageSize() {
+                        var root = getLiveRosterRoot();
+                        var value = root ? parseInt(root.getAttribute('data-security-log-roster-page-size') || '4', 10) : 4;
+                        if (!Number.isFinite(value) || value <= 0) {
+                            return 4;
+                        }
+
+                        return value;
+                    }
+
+                    function ensureLazyRegionLoaded(region) {
+                        var template = null;
+                        var shell = null;
+
+                        if (!region || String(region.getAttribute('data-security-log-lazy-loaded') || '0') === '1') {
+                            return;
+                        }
+
+                        template = region.querySelector('[data-security-log-lazy-template]');
+                        shell = region.querySelector('[data-security-log-lazy-shell]');
+
+                        if (!template || !shell) {
+                            region.setAttribute('data-security-log-lazy-loaded', '1');
+                            return;
+                        }
+
+                        shell.innerHTML = '';
+                        shell.appendChild(template.content.cloneNode(true));
+                        region.setAttribute('data-security-log-lazy-loaded', '1');
+                    }
+
+                    function ensureSecurityLogViewLoaded(view) {
+                        var panel = getSecurityLogViewPanel(view);
+                        var lazyRegions = [];
+                        var index = 0;
+
+                        if (!panel) {
+                            return;
+                        }
+
+                        lazyRegions = panel.querySelectorAll('[data-security-log-lazy-region]');
+                        for (index = 0; index < lazyRegions.length; index += 1) {
+                            ensureLazyRegionLoaded(lazyRegions[index]);
+                        }
+                    }
+
+                    function syncLiveRosterControlValues() {
+                        var searchControl = getLiveRosterFilterControl('search');
+                        var presenceControl = getLiveRosterFilterControl('presence');
+                        var riskControl = getLiveRosterFilterControl('risk');
+                        var examControl = getLiveRosterFilterControl('exam');
+                        var kelasControl = getLiveRosterFilterControl('kelas');
+                        var ruangControl = getLiveRosterFilterControl('ruang');
+
+                        if (searchControl) {
+                            searchControl.value = activeRosterFilters.search;
+                        }
+
+                        if (presenceControl) {
+                            presenceControl.value = normalizeRosterPresenceValue(activeRosterFilters.presence);
+                        }
+
+                        if (riskControl) {
+                            riskControl.value = normalizeRosterRiskValue(activeRosterFilters.risk);
+                        }
+
+                        if (examControl) {
+                            examControl.value = hasSelectOption(examControl, activeRosterFilters.exam) ? activeRosterFilters.exam : 'all';
+                            activeRosterFilters.exam = String(examControl.value || 'all');
+                        }
+
+                        if (kelasControl) {
+                            kelasControl.value = hasSelectOption(kelasControl, activeRosterFilters.kelas) ? activeRosterFilters.kelas : 'all';
+                            activeRosterFilters.kelas = String(kelasControl.value || 'all');
+                        }
+
+                        if (ruangControl) {
+                            ruangControl.value = hasSelectOption(ruangControl, activeRosterFilters.ruang) ? activeRosterFilters.ruang : 'all';
+                            activeRosterFilters.ruang = String(ruangControl.value || 'all');
+                        }
+                    }
+
+                    function updateLiveRosterPaginationUi(page, pageCount, visibleGroupCount, visibleAttemptCount, shownGroupCount) {
+                        var root = getLiveRosterRoot();
+                        var summary = getLiveRosterSummary();
+                        var label = getLiveRosterPagerLabel();
+                        var prevButton = root ? root.querySelector('[data-security-log-roster-page-prev]') : null;
+                        var nextButton = root ? root.querySelector('[data-security-log-roster-page-next]') : null;
+                        var filterEmpty = getLiveRosterFilterEmpty();
+
+                        if (summary) {
+                            summary.textContent = visibleGroupCount > 0
+                                ? ('Menampilkan ' + String(shownGroupCount) + ' dari ' + String(visibleGroupCount) + ' grup • ' + String(visibleAttemptCount) + ' attempt cocok.')
+                                : 'Tidak ada grup roster yang cocok dengan filter saat ini.';
+                        }
+
+                        if (label) {
+                            label.textContent = visibleGroupCount > 0
+                                ? ('Halaman ' + String(page) + ' / ' + String(pageCount))
+                                : 'Halaman 0 / 0';
+                        }
+
+                        if (prevButton) {
+                            prevButton.disabled = page <= 1;
+                        }
+
+                        if (nextButton) {
+                            nextButton.disabled = visibleGroupCount <= 0 || page >= pageCount;
+                        }
+
+                        if (filterEmpty) {
+                            filterEmpty.hidden = visibleGroupCount > 0;
+                        }
+                    }
+
+                    function applyLiveRosterFiltersAndPagination() {
+                        var groups = Array.prototype.slice.call(getLiveRosterGroups());
+                        var visibleGroups = [];
+                        var visibleAttemptCount = 0;
+                        var pageSize = getLiveRosterPageSize();
+                        var pageCount = 0;
+                        var startIndex = 0;
+                        var endIndex = 0;
+
+                        if (!groups.length) {
+                            updateLiveRosterPaginationUi(0, 0, 0, 0, 0);
+                            return;
+                        }
+
+                        groups.forEach(function (group) {
+                            var groupExam = normalizeRosterSelectValue(group.getAttribute('data-security-log-roster-exam') || '');
+                            var groupKelas = normalizeRosterSelectValue(group.getAttribute('data-security-log-roster-kelas') || '');
+                            var groupRuang = normalizeRosterSelectValue(group.getAttribute('data-security-log-roster-ruang') || '');
+                            var matchesGroupExam = activeRosterFilters.exam === 'all' || groupExam === activeRosterFilters.exam;
+                            var matchesGroupKelas = activeRosterFilters.kelas === 'all' || groupKelas === activeRosterFilters.kelas;
+                            var matchesGroupRuang = activeRosterFilters.ruang === 'all' || groupRuang === activeRosterFilters.ruang;
+                            var matchesGroup = matchesGroupExam && matchesGroupKelas && matchesGroupRuang;
+                            var rows = Array.prototype.slice.call(group.querySelectorAll('[data-security-log-roster-row]'));
+                            var matchingRows = 0;
+
+                            rows.forEach(function (row) {
+                                var rowPresence = normalizeRosterPresenceValue(row.getAttribute('data-security-log-roster-presence') || '');
+                                var rowRisk = normalizeRosterRiskValue(row.getAttribute('data-security-log-roster-risk') || '');
+                                var rowSearchText = normalizeRosterSearchValue([
+                                    row.getAttribute('data-security-log-roster-student-name') || '',
+                                    row.getAttribute('data-security-log-roster-student-login') || '',
+                                    row.getAttribute('data-security-log-roster-attempt') || ''
+                                ].join(' '));
+                                var matchesPresence = activeRosterFilters.presence === 'all' || rowPresence === activeRosterFilters.presence;
+                                var matchesRisk = activeRosterFilters.risk === 'all' || rowRisk === activeRosterFilters.risk;
+                                var matchesSearch = activeRosterFilters.search === '' || rowSearchText.indexOf(activeRosterFilters.search) >= 0;
+                                var isVisible = matchesGroup && matchesPresence && matchesRisk && matchesSearch;
+
+                                row.hidden = !isVisible;
+                                if (isVisible) {
+                                    matchingRows += 1;
+                                }
+                            });
+
+                            group.hidden = !matchesGroup || matchingRows === 0;
+                            if (matchesGroup && matchingRows > 0) {
+                                visibleGroups.push(group);
+                                visibleAttemptCount += matchingRows;
+                            }
+                        });
+
+                        pageCount = visibleGroups.length > 0 ? Math.ceil(visibleGroups.length / pageSize) : 0;
+                        if (pageCount <= 0) {
+                            activeRosterPage = 1;
+                            updateLiveRosterPaginationUi(0, 0, 0, visibleAttemptCount, 0);
+                            return;
+                        }
+
+                        if (activeRosterPage > pageCount) {
+                            activeRosterPage = pageCount;
+                        }
+
+                        if (activeRosterPage < 1) {
+                            activeRosterPage = 1;
+                        }
+
+                        startIndex = (activeRosterPage - 1) * pageSize;
+                        endIndex = startIndex + pageSize;
+
+                        visibleGroups.forEach(function (group, index) {
+                            group.hidden = index < startIndex || index >= endIndex;
+                        });
+
+                        updateLiveRosterPaginationUi(
+                            activeRosterPage,
+                            pageCount,
+                            visibleGroups.length,
+                            visibleAttemptCount,
+                            Math.max(0, Math.min(visibleGroups.length, endIndex) - startIndex)
+                        );
+                    }
+
+                    function setActiveSecurityLogView(view, options) {
+                        var normalizedView = normalizeSecurityLogView(view);
+                        var buttons = getSecurityLogViewButtons();
+                        var panels = getSecurityLogViewPanels();
+                        var index = 0;
+
+                        activeSecurityLogView = normalizedView;
+                        ensureSecurityLogViewLoaded(normalizedView);
+
+                        for (index = 0; index < buttons.length; index += 1) {
+                            var buttonView = normalizeSecurityLogView(buttons[index].getAttribute('data-security-log-view-button') || 'history');
+                            var isActiveButton = buttonView === normalizedView;
+                            buttons[index].classList.toggle('is-active', isActiveButton);
+                            buttons[index].setAttribute('aria-selected', isActiveButton ? 'true' : 'false');
+                            buttons[index].setAttribute('tabindex', isActiveButton ? '0' : '-1');
+                        }
+
+                        for (index = 0; index < panels.length; index += 1) {
+                            var panelView = normalizeSecurityLogView(panels[index].getAttribute('data-security-log-view-panel') || 'history');
+                            panels[index].hidden = panelView !== normalizedView;
+                        }
+
+                        if (!options || options.persist !== false) {
+                            storeSecurityLogView(normalizedView);
+                        }
+
+                        if (normalizedView === 'must-watch') {
+                            applyMustWatchSort(activeWatchSortMode);
+                        } else if (normalizedView === 'live-roster') {
+                            syncLiveRosterControlValues();
+                            applyLiveRosterFiltersAndPagination();
+                        } else if (normalizedView === 'history') {
+                            applySecurityLogFilters();
+                        }
                     }
 
                     function readStoredWatchSortMode() {
@@ -3629,6 +4156,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         eventFilter.value = 'all';
 
                         updateWatchFocusState();
+                        setActiveSecurityLogView('history');
                         applySecurityLogFilters();
 
                         if (tableRegion && typeof tableRegion.scrollIntoView === 'function') {
@@ -3869,59 +4397,64 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         }
 
                         refreshInFlight = true;
-                        setLiveStatus('Memuat log terbaru...', 'loading');
+                        setLiveStatus('Memuat observability terbaru...', 'loading');
 
-                        var refreshUrl = new URL(window.location.href);
-                        refreshUrl.hash = '';
-                        refreshUrl.searchParams.set('_cbt_security_refresh', String(Date.now()));
+                        var snapshotUrl = new URL(observabilityEndpoint, window.location.origin);
+                        var pendingRequests = [];
 
-                        fetch(refreshUrl.toString(), {
-                            method: 'GET',
-                            credentials: 'same-origin',
-                            headers: {
-                                'Cache-Control': 'no-cache'
-                            }
-                        })
-                            .then(function (response) {
-                                if (!response.ok) {
-                                    throw new Error('Refresh gagal.');
-                                }
-                                return response.text();
+                        snapshotUrl.searchParams.set('micro_drain', '1');
+
+                        pendingRequests.push(
+                            fetch(snapshotUrl.toString(), {
+                                method: 'GET',
+                                credentials: 'same-origin',
+                                headers: getSecurityRestHeaders()
                             })
-                            .then(function (html) {
-                                var parser = new window.DOMParser();
-                                var nextDocument = parser.parseFromString(html, 'text/html');
-                                var nextRosterRegion = nextDocument.querySelector('[data-security-log-roster-region]');
-                                var nextWatchRegion = nextDocument.querySelector('[data-security-log-watch-region]');
-                                var nextTableRegion = nextDocument.querySelector('[data-security-log-table-region]');
-                                var nextStatusChip = nextDocument.querySelector('[data-security-log-status-chip]');
-                                var currentStatusChip = card.querySelector('[data-security-log-status-chip]');
+                                .then(function (response) {
+                                    if (!response.ok) {
+                                        throw new Error('Snapshot observability gagal dimuat.');
+                                    }
 
-                                if (!nextTableRegion) {
-                                    throw new Error('Blok log tidak ditemukan.');
-                                }
+                                    return response.json();
+                                })
+                                .then(function (payload) {
+                                    if (!payload || payload.ok !== true) {
+                                        throw new Error('Payload observability tidak valid.');
+                                    }
 
-                                if (rosterRegion && nextRosterRegion) {
-                                    rosterRegion.innerHTML = nextRosterRegion.innerHTML;
-                                }
+                                    if (watchRegion && typeof payload.must_watch_html === 'string' && payload.must_watch_html !== '') {
+                                        watchRegion.innerHTML = payload.must_watch_html;
+                                        watchRegion.setAttribute('data-security-log-lazy-loaded', '1');
+                                    }
 
-                                if (watchRegion && nextWatchRegion) {
-                                    watchRegion.innerHTML = nextWatchRegion.innerHTML;
-                                }
+                                    if (rosterRegion && typeof payload.live_roster_html === 'string' && payload.live_roster_html !== '') {
+                                        rosterRegion.innerHTML = payload.live_roster_html;
+                                        rosterRegion.setAttribute('data-security-log-lazy-loaded', '1');
+                                    }
 
-                                tableRegion.innerHTML = nextTableRegion.innerHTML;
+                                    updateSecurityLogStatusChips(payload.status_snapshot || {});
+                                    updateSecurityLogViewBadge('must-watch', Number(payload.must_watch_total || 0));
+                                    updateSecurityLogViewBadge('live-roster', Number(payload.live_roster_total || 0));
+                                })
+                        );
 
-                                if (currentStatusChip && nextStatusChip) {
-                                    currentStatusChip.textContent = String(nextStatusChip.textContent || '');
-                                }
+                        if (activeSecurityLogView === 'history') {
+                            pendingRequests.push(refreshSecurityHistoryRegion());
+                        }
 
-                                if (deleteScopeInput) {
-                                    deleteScopeInput.value = '';
-                                }
-
+                        Promise.all(pendingRequests)
+                            .then(function () {
+                                ensureSecurityLogViewLoaded(activeSecurityLogView);
                                 syncDynamicFilterOptions();
-                                applyMustWatchSort(activeWatchSortMode);
-                                applySecurityLogFilters();
+                                if (activeSecurityLogView === 'must-watch') {
+                                    applyMustWatchSort(activeWatchSortMode);
+                                } else if (activeSecurityLogView === 'live-roster') {
+                                    syncLiveRosterControlValues();
+                                    applyLiveRosterFiltersAndPagination();
+                                } else if (activeSecurityLogView === 'history') {
+                                    applySecurityLogFilters();
+                                }
+                                setActiveSecurityLogView(activeSecurityLogView, { persist: false });
                                 setLiveStatus('Auto refresh aktif setiap 10 detik.', '');
                             })
                             .catch(function () {
@@ -3950,11 +4483,13 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
 
                     autoRefreshToggle.checked = readStoredAutoRefreshPreference();
                     activeWatchSortMode = readStoredWatchSortMode();
+                    activeSecurityLogView = readStoredSecurityLogView();
                     syncDynamicFilterOptions();
                     syncWatchSortButtons();
                     updateWatchFocusState();
                     applyMustWatchSort(activeWatchSortMode);
                     applySecurityLogFilters();
+                    setActiveSecurityLogView(activeSecurityLogView, { persist: false });
                     syncAutoRefreshState();
 
                     severityFilter.addEventListener('change', applySecurityLogFilters);
@@ -3964,6 +4499,60 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                     ruangFilter.addEventListener('change', applySecurityLogFilters);
                     studentNameFilter.addEventListener('input', applySecurityLogFilters);
                     autoRefreshToggle.addEventListener('change', syncAutoRefreshState);
+
+                    card.addEventListener('input', function (event) {
+                        var target = event.target;
+
+                        if (!target || typeof target.matches !== 'function') {
+                            return;
+                        }
+
+                        if (target.matches('[data-security-log-roster-filter="search"]')) {
+                            activeRosterFilters.search = normalizeRosterSearchValue(target.value || '');
+                            activeRosterPage = 1;
+                            applyLiveRosterFiltersAndPagination();
+                        }
+                    });
+
+                    card.addEventListener('click', function (event) {
+                        var target = event.target;
+                        var viewButton = null;
+                        var pageButton = null;
+
+                        if (!target || typeof target.closest !== 'function') {
+                            return;
+                        }
+
+                        viewButton = target.closest('[data-security-log-view-button]');
+                        if (viewButton) {
+                            event.preventDefault();
+                            setActiveSecurityLogView(viewButton.getAttribute('data-security-log-view-button') || 'history');
+                            if (activeSecurityLogView === 'history') {
+                                setLiveStatus('Memuat histori log...', 'loading');
+                                refreshSecurityHistoryRegion()
+                                    .then(function () {
+                                        setLiveStatus(autoRefreshToggle.checked ? 'Auto refresh aktif setiap 10 detik.' : 'Auto refresh nonaktif.', '');
+                                    })
+                                    .catch(function () {
+                                        setLiveStatus('Histori log gagal dimuat.', 'error');
+                                    });
+                            }
+                            return;
+                        }
+
+                        pageButton = target.closest('[data-security-log-roster-page-prev], [data-security-log-roster-page-next]');
+                        if (!pageButton) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        if (pageButton.hasAttribute('data-security-log-roster-page-prev')) {
+                            activeRosterPage = Math.max(1, activeRosterPage - 1);
+                        } else {
+                            activeRosterPage += 1;
+                        }
+                        applyLiveRosterFiltersAndPagination();
+                    });
 
                     if (focusClearButton) {
                         focusClearButton.addEventListener('click', function () {
@@ -4009,6 +4598,41 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         var index = 0;
 
                         if (!target || typeof target.matches !== 'function') {
+                            return;
+                        }
+
+                        if (target.matches('[data-security-log-roster-filter="presence"]')) {
+                            activeRosterFilters.presence = normalizeRosterPresenceValue(target.value || 'all');
+                            activeRosterPage = 1;
+                            applyLiveRosterFiltersAndPagination();
+                            return;
+                        }
+
+                        if (target.matches('[data-security-log-roster-filter="risk"]')) {
+                            activeRosterFilters.risk = normalizeRosterRiskValue(target.value || 'all');
+                            activeRosterPage = 1;
+                            applyLiveRosterFiltersAndPagination();
+                            return;
+                        }
+
+                        if (target.matches('[data-security-log-roster-filter="exam"]')) {
+                            activeRosterFilters.exam = normalizeRosterSelectValue(target.value || 'all');
+                            activeRosterPage = 1;
+                            applyLiveRosterFiltersAndPagination();
+                            return;
+                        }
+
+                        if (target.matches('[data-security-log-roster-filter="kelas"]')) {
+                            activeRosterFilters.kelas = normalizeRosterSelectValue(target.value || 'all');
+                            activeRosterPage = 1;
+                            applyLiveRosterFiltersAndPagination();
+                            return;
+                        }
+
+                        if (target.matches('[data-security-log-roster-filter="ruang"]')) {
+                            activeRosterFilters.ruang = normalizeRosterSelectValue(target.value || 'all');
+                            activeRosterPage = 1;
+                            applyLiveRosterFiltersAndPagination();
                             return;
                         }
 

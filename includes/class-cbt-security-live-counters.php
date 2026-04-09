@@ -25,6 +25,32 @@ class CBT_Security_Live_Counters
         return self::live_redis() instanceof Redis;
     }
 
+    public static function redis_client(): ?Redis
+    {
+        return self::live_redis();
+    }
+
+    public static function storage_ttl(): int
+    {
+        return self::LIVE_REDIS_TTL_SECONDS;
+    }
+
+    public static function has_attempt_summary(int $attempt_id): bool
+    {
+        $attempt_id = absint($attempt_id);
+        if ($attempt_id <= 0) {
+            return false;
+        }
+
+        $redis = self::live_redis();
+        if (!$redis instanceof Redis) {
+            return false;
+        }
+
+        $summary = self::read_summary($redis, $attempt_id);
+        return !empty($summary);
+    }
+
     /**
      * @param array<string,mixed> $attempt
      * @param array<string,mixed> $summary_meta
@@ -361,8 +387,31 @@ class CBT_Security_Live_Counters
      */
     private static function read_summary(Redis $redis, int $attempt_id): array
     {
-        $decoded = self::decode_json((string) $redis->get(self::summary_storage_key($attempt_id)));
-        return is_array($decoded) ? $decoded : [];
+        $raw = method_exists($redis, 'hGetAll')
+            ? $redis->hGetAll(self::summary_storage_key($attempt_id))
+            : [];
+        if (!is_array($raw) || empty($raw)) {
+            return [];
+        }
+
+        return [
+            'attempt_id' => absint($raw['attempt_id'] ?? 0),
+            'exam_id' => absint($raw['exam_id'] ?? 0),
+            'student_id' => absint($raw['student_id'] ?? 0),
+            'teacher_id' => absint($raw['teacher_id'] ?? 0),
+            'student_name' => sanitize_text_field((string) ($raw['student_name'] ?? '')),
+            'student_login' => sanitize_user((string) ($raw['student_login'] ?? ''), true),
+            'student_kode_kelas' => sanitize_text_field((string) ($raw['student_kode_kelas'] ?? '')),
+            'student_kode_ruang' => sanitize_text_field((string) ($raw['student_kode_ruang'] ?? '')),
+            'exam_title' => sanitize_text_field((string) ($raw['exam_title'] ?? '')),
+            'risk_score' => max(0.0, (float) ($raw['risk_score'] ?? 0.0)),
+            'event_total' => max(0, (int) ($raw['event_total'] ?? 0)),
+            'session_revoked_count' => max(0, (int) ($raw['session_revoked_count'] ?? 0)),
+            'last_event_at' => trim((string) ($raw['last_event_at'] ?? '')),
+            'last_device_type' => sanitize_key((string) ($raw['last_device_type'] ?? 'unknown')),
+            'last_device_label' => sanitize_text_field((string) ($raw['last_device_label'] ?? 'Unknown')),
+            'last_device_summary' => sanitize_text_field((string) ($raw['last_device_summary'] ?? 'Unknown')),
+        ];
     }
 
     /**
@@ -370,13 +419,16 @@ class CBT_Security_Live_Counters
      */
     private static function read_events(Redis $redis, int $attempt_id): array
     {
-        $decoded = self::decode_json((string) $redis->get(self::events_storage_key($attempt_id)));
-        if (!is_array($decoded)) {
+        $decoded = method_exists($redis, 'hGetAll')
+            ? $redis->hGetAll(self::events_storage_key($attempt_id))
+            : [];
+        if (!is_array($decoded) || empty($decoded)) {
             return [];
         }
 
         $events = [];
-        foreach ($decoded as $event_type => $item) {
+        foreach ($decoded as $event_type => $item_json) {
+            $item = self::decode_json((string) $item_json);
             if (!is_array($item)) {
                 continue;
             }
@@ -403,8 +455,10 @@ class CBT_Security_Live_Counters
      */
     private static function read_flags(Redis $redis, int $attempt_id): array
     {
-        $decoded = self::decode_json((string) $redis->get(self::flags_storage_key($attempt_id)));
-        if (!is_array($decoded)) {
+        $decoded = method_exists($redis, 'hGetAll')
+            ? $redis->hGetAll(self::flags_storage_key($attempt_id))
+            : [];
+        if (!is_array($decoded) || empty($decoded)) {
             return [];
         }
 
@@ -426,12 +480,19 @@ class CBT_Security_Live_Counters
      */
     private static function write_summary(Redis $redis, int $attempt_id, array $summary): void
     {
-        $encoded = wp_json_encode($summary);
-        if (!is_string($encoded) || $encoded === '') {
+        if (!method_exists($redis, 'hMSet')) {
             return;
         }
 
-        $redis->setEx(self::summary_storage_key($attempt_id), self::LIVE_REDIS_TTL_SECONDS, $encoded);
+        $payload = [];
+        foreach ($summary as $field => $value) {
+            if (is_scalar($value)) {
+                $payload[(string) $field] = (string) $value;
+            }
+        }
+
+        $redis->hMSet(self::summary_storage_key($attempt_id), $payload);
+        $redis->expire(self::summary_storage_key($attempt_id), self::LIVE_REDIS_TTL_SECONDS);
     }
 
     /**
@@ -439,12 +500,30 @@ class CBT_Security_Live_Counters
      */
     private static function write_events(Redis $redis, int $attempt_id, array $events): void
     {
-        $encoded = wp_json_encode($events);
-        if (!is_string($encoded) || $encoded === '') {
+        if (!method_exists($redis, 'hDel') || !method_exists($redis, 'hSet')) {
             return;
         }
 
-        $redis->setEx(self::events_storage_key($attempt_id), self::LIVE_REDIS_TTL_SECONDS, $encoded);
+        $storage_key = self::events_storage_key($attempt_id);
+        $existing = method_exists($redis, 'hGetAll') ? $redis->hGetAll($storage_key) : [];
+        if (is_array($existing)) {
+            foreach (array_keys($existing) as $event_type) {
+                if (!isset($events[$event_type])) {
+                    $redis->hDel($storage_key, (string) $event_type);
+                }
+            }
+        }
+
+        foreach ($events as $event_type => $payload) {
+            $encoded = wp_json_encode($payload);
+            if (!is_string($encoded) || $encoded === '') {
+                continue;
+            }
+
+            $redis->hSet($storage_key, (string) $event_type, $encoded);
+        }
+
+        $redis->expire($storage_key, self::LIVE_REDIS_TTL_SECONDS);
     }
 
     /**
@@ -452,12 +531,25 @@ class CBT_Security_Live_Counters
      */
     private static function write_flags(Redis $redis, int $attempt_id, array $flags): void
     {
-        $encoded = wp_json_encode($flags);
-        if (!is_string($encoded) || $encoded === '') {
+        if (!method_exists($redis, 'hDel') || !method_exists($redis, 'hSet')) {
             return;
         }
 
-        $redis->setEx(self::flags_storage_key($attempt_id), self::LIVE_REDIS_TTL_SECONDS, $encoded);
+        $storage_key = self::flags_storage_key($attempt_id);
+        $existing = method_exists($redis, 'hGetAll') ? $redis->hGetAll($storage_key) : [];
+        if (is_array($existing)) {
+            foreach (array_keys($existing) as $event_type) {
+                if (!isset($flags[$event_type])) {
+                    $redis->hDel($storage_key, (string) $event_type);
+                }
+            }
+        }
+
+        foreach ($flags as $event_type => $value) {
+            $redis->hSet($storage_key, (string) $event_type, (string) max(0, (int) $value));
+        }
+
+        $redis->expire($storage_key, self::LIVE_REDIS_TTL_SECONDS);
     }
 
     private static function summary_storage_key(int $attempt_id): string

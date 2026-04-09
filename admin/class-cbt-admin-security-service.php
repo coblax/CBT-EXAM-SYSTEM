@@ -33,6 +33,7 @@ final class CBT_Admin_Security_Service
      *     block_copy_paste:int,
      *     block_browser_inspection_shortcuts:int,
      *     log_security_events:int,
+     *     security_redis_first_ingest:int,
      *     detect_idle_during_exam:int,
      *     detect_heartbeat_lost:int,
      *     idle_threshold_minutes:int
@@ -49,6 +50,7 @@ final class CBT_Admin_Security_Service
         $block_copy_paste = !empty($raw['block_copy_paste']);
         $block_browser_inspection_shortcuts = !empty($raw['block_browser_inspection_shortcuts']);
         $log_security_events = !empty($raw['log_security_events']);
+        $security_redis_first_ingest = !empty($raw['security_redis_first_ingest']);
         $detect_idle_during_exam = !array_key_exists('detect_idle_during_exam', $raw) || !empty($raw['detect_idle_during_exam']);
         $detect_heartbeat_lost = !empty($raw['detect_heartbeat_lost']);
         $idle_threshold_minutes = max(1, absint($raw['idle_threshold_minutes'] ?? 5));
@@ -58,6 +60,7 @@ final class CBT_Admin_Security_Service
             'block_copy_paste' => $block_copy_paste ? 1 : 0,
             'block_browser_inspection_shortcuts' => $block_browser_inspection_shortcuts ? 1 : 0,
             'log_security_events' => $log_security_events ? 1 : 0,
+            'security_redis_first_ingest' => $security_redis_first_ingest ? 1 : 0,
             'detect_idle_during_exam' => $detect_idle_during_exam ? 1 : 0,
             'detect_heartbeat_lost' => $detect_heartbeat_lost ? 1 : 0,
             'idle_threshold_minutes' => $idle_threshold_minutes,
@@ -78,25 +81,26 @@ final class CBT_Admin_Security_Service
         $security_block_copy_paste = !empty($security['block_copy_paste']);
         $security_block_browser_inspection_shortcuts = !empty($security['block_browser_inspection_shortcuts']);
         $security_log_events_enabled = !empty($security['log_security_events']);
+        $security_redis_first_ingest = !empty($security['security_redis_first_ingest']);
         $security_detect_idle_during_exam = !empty($security['detect_idle_during_exam']);
         $security_detect_heartbeat_lost = !empty($security['detect_heartbeat_lost']);
         $security_idle_threshold_minutes = max(1, (int) ($security['idle_threshold_minutes'] ?? 5));
         $security_log_event_definitions = CBT_Security_Log::event_definitions();
 
-        $teacher_scope = self::is_admin_scope() ? 0 : get_current_user_id();
-        $security_live_roster_groups = class_exists('CBT_Live_Attempt_Roster_Index')
-            ? CBT_Live_Attempt_Roster_Index::get_grouped_payloads([
-                'teacher_id' => $teacher_scope,
-            ])
-            : [];
-        $security_log_must_watch_attempts = CBT_Security_Log::get_must_watch_attempts(5, [
-            'teacher_id' => $teacher_scope,
+        $security_live_snapshot = self::build_security_observability_snapshot(false);
+        $security_live_roster_groups = (array) ($security_live_snapshot['live_roster_groups'] ?? []);
+        $security_log_must_watch_attempts = (array) ($security_live_snapshot['must_watch_attempts'] ?? []);
+        $security_logs_page = self::build_security_logs_page_payload([
+            'page' => 1,
+            'per_page' => 20,
         ]);
-        $security_logs = CBT_Security_Log::get_recent_logs(20, [
-            'teacher_id' => $teacher_scope,
-        ]);
+        $security_logs = (array) ($security_logs_page['logs'] ?? []);
         $security_must_watch_score_threshold = CBT_Security_Log::must_watch_score_threshold();
         $security_must_watch_high_risk_threshold = CBT_Security_Log::must_watch_high_risk_threshold();
+        $security_log_status_snapshot = (array) ($security_live_snapshot['status_snapshot'] ?? []);
+        $security_observability_endpoint_url = rest_url('cbt/v1/security_observability_snapshot');
+        $security_logs_page_endpoint_url = rest_url('cbt/v1/security_logs_page');
+        $security_rest_nonce = wp_create_nonce('wp_rest');
         $native_browser_event_catalog = self::build_event_catalog(CBT_Security_Log::browser_supported_event_definitions(), ['android_webview', 'windows_cefsharp']);
         $native_android_event_catalog = self::build_event_catalog(CBT_Security_Log::android_native_supported_event_definitions(), ['android_webview']);
         $native_windows_event_catalog = self::build_event_catalog(CBT_Security_Log::windows_native_supported_event_definitions(), ['windows_cefsharp']);
@@ -129,14 +133,138 @@ final class CBT_Admin_Security_Service
             'security_detect_heartbeat_lost',
             'security_force_fullscreen',
             'security_idle_threshold_minutes',
+            'security_redis_first_ingest',
             'security_log_event_definitions',
             'security_log_events_enabled',
+            'security_log_status_snapshot',
             'security_must_watch_high_risk_threshold',
             'security_must_watch_score_threshold',
             'security_live_roster_groups',
+            'security_live_snapshot',
             'security_log_must_watch_attempts',
-            'security_logs'
+            'security_logs',
+            'security_observability_endpoint_url',
+            'security_logs_page_endpoint_url',
+            'security_rest_nonce'
         );
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public static function build_security_observability_snapshot(bool $allow_micro_drain = true): array
+    {
+        $teacher_scope = self::is_admin_scope() ? 0 : get_current_user_id();
+        if ($allow_micro_drain && class_exists('CBT_Security_Event_Ingest')) {
+            CBT_Security_Event_Ingest::maybe_micro_drain();
+        }
+
+        $live_roster_groups = class_exists('CBT_Live_Attempt_Roster_Index')
+            ? CBT_Live_Attempt_Roster_Index::get_grouped_payloads([
+                'teacher_id' => $teacher_scope,
+            ])
+            : [];
+        $must_watch_attempts = CBT_Security_Log::get_must_watch_attempts(5, [
+            'teacher_id' => $teacher_scope,
+        ]);
+        $status_snapshot = class_exists('CBT_Security_Event_Ingest')
+            ? CBT_Security_Event_Ingest::get_status_snapshot()
+            : [
+                'mode' => class_exists('CBT_Security_Live_Counters') && CBT_Security_Live_Counters::is_available()
+                    ? 'redis_live'
+                    : 'mysql_fallback',
+                'status_label' => class_exists('CBT_Security_Live_Counters') && CBT_Security_Live_Counters::is_available()
+                    ? 'Redis Live'
+                    : 'Live Redis unavailable - MySQL fallback',
+                'backlog_count' => 0,
+                'dead_letter_count' => 0,
+                'oldest_pending_age_seconds' => 0,
+                'ingest_mode' => 'disabled',
+            ];
+
+        $live_roster_total = 0;
+        foreach ((array) $live_roster_groups as $group) {
+            $live_roster_total += count((array) ($group['attempts'] ?? []));
+        }
+
+        return [
+            'mode' => sanitize_key((string) ($status_snapshot['mode'] ?? 'mysql_fallback')),
+            'status_snapshot' => $status_snapshot,
+            'live_roster_groups' => $live_roster_groups,
+            'must_watch_attempts' => $must_watch_attempts,
+            'live_roster_total' => $live_roster_total,
+            'must_watch_total' => count((array) $must_watch_attempts),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $query
+     * @return array<string,mixed>
+     */
+    public static function build_security_logs_page_payload(array $query): array
+    {
+        $teacher_scope = self::is_admin_scope() ? 0 : get_current_user_id();
+        $page = max(1, absint($query['page'] ?? 1));
+        $per_page = max(1, min(50, absint($query['per_page'] ?? 20)));
+        $filters = [
+            'teacher_id' => $teacher_scope,
+        ];
+
+        $rows = CBT_Security_Log::get_recent_logs(50, $filters);
+        $filtered = array_values(array_filter($rows, static function (array $row) use ($query): bool {
+            $severity = sanitize_key((string) ($query['severity'] ?? 'all'));
+            $event_type = sanitize_key((string) ($query['event_type'] ?? 'all'));
+            $device_type = sanitize_key((string) ($query['device_type'] ?? 'all'));
+            $kelas = sanitize_text_field((string) ($query['kelas'] ?? 'all'));
+            $ruang = sanitize_text_field((string) ($query['ruang'] ?? 'all'));
+            $student_name = function_exists('mb_strtolower')
+                ? mb_strtolower(trim((string) ($query['student_name'] ?? '')), 'UTF-8')
+                : strtolower(trim((string) ($query['student_name'] ?? '')));
+
+            if ($severity !== '' && $severity !== 'all' && sanitize_key((string) ($row['severity'] ?? '')) !== $severity) {
+                return false;
+            }
+
+            if ($event_type !== '' && $event_type !== 'all' && sanitize_key((string) ($row['event_type'] ?? '')) !== $event_type) {
+                return false;
+            }
+
+            if ($device_type !== '' && $device_type !== 'all' && sanitize_key((string) ($row['device_type'] ?? '')) !== $device_type) {
+                return false;
+            }
+
+            if ($kelas !== '' && $kelas !== 'all' && sanitize_text_field((string) ($row['student_kode_kelas'] ?? '')) !== $kelas) {
+                return false;
+            }
+
+            if ($ruang !== '' && $ruang !== 'all' && sanitize_text_field((string) ($row['student_kode_ruang'] ?? '')) !== $ruang) {
+                return false;
+            }
+
+            if ($student_name !== '') {
+                $candidate = function_exists('mb_strtolower')
+                    ? mb_strtolower((string) ($row['student_name'] ?? ''), 'UTF-8')
+                    : strtolower((string) ($row['student_name'] ?? ''));
+                if (strpos($candidate, $student_name) === false) {
+                    return false;
+                }
+            }
+
+            return true;
+        }));
+
+        $total = count($filtered);
+        $page_count = max(1, (int) ceil($total / $per_page));
+        $page = min($page, $page_count);
+        $offset = ($page - 1) * $per_page;
+
+        return [
+            'logs' => array_slice($filtered, $offset, $per_page),
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $per_page,
+            'page_count' => $page_count,
+        ];
     }
 
     /**

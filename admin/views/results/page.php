@@ -2321,7 +2321,7 @@ if (!defined('ABSPATH')) {
                             $attempt_remaining_badge_class .= ' is-completed';
                             $attempt_remaining_fill_class .= ' is-completed';
                         }
-	                        $attempt_status_label = $attempt_status === 'in_progress' ? 'In Progress' : 'Completed';
+	                        $attempt_status_label = $attempt_status === 'in_progress' ? 'Berjalan' : 'Selesai';
 	                        $attempt_status_pill_class = 'cbt-results-status-pill';
 	                        if ($attempt_status === 'in_progress') {
 	                            $attempt_status_pill_class .= ' is-in-progress';

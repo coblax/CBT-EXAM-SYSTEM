@@ -64,6 +64,12 @@ final class AdminSecurityLiveRosterRenderTest extends TestCase
         self::assertStringContainsString('Conn DEGRADED', $html);
         self::assertStringContainsString('High Risk', $html);
         self::assertStringContainsString('Buka Results', $html);
+        self::assertStringContainsString('Cari siswa, login, atau attempt', $html);
+        self::assertStringContainsString('Semua status', $html);
+        self::assertStringContainsString('Semua risk', $html);
+        self::assertStringContainsString('Halaman 1 / 1', $html);
+        self::assertStringContainsString('data-security-log-roster-filter="search"', $html);
+        self::assertStringContainsString('data-security-log-roster-page-prev', $html);
         self::assertStringNotContainsString('Pelanggaran Dominan', $html);
     }
 

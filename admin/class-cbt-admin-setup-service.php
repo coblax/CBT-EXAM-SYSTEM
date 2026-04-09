@@ -31,6 +31,7 @@ final class CBT_Admin_Setup_Service
      *     block_copy_paste:int,
      *     block_browser_inspection_shortcuts:int,
      *     log_security_events:int,
+     *     security_redis_first_ingest:int,
      *     detect_idle_during_exam:int,
      *     detect_heartbeat_lost:int,
      *     idle_threshold_minutes:int

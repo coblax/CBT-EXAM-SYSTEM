@@ -421,11 +421,14 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
         $GLOBALS['cbt_test_redis_storage'] = [];
         $GLOBALS['cbt_test_redis_hashes'] = [];
         $GLOBALS['cbt_test_redis_zsets'] = [];
+        $GLOBALS['cbt_test_redis_streams'] = [];
+        $GLOBALS['cbt_test_redis_stream_seq'] = [];
         $GLOBALS['cbt_test_redis_expiry'] = [];
         $GLOBALS['cbt_test_redis_should_fail_connect'] = false;
         $GLOBALS['cbt_test_redis_pipeline_disabled'] = false;
         $GLOBALS['cbt_test_redis_pipeline_batches'] = [];
         $GLOBALS['cbt_test_redis_fail_keys'] = [];
+        $GLOBALS['cbt_test_redis_fail_stream_keys'] = [];
         $GLOBALS['cbt_test_current_time_timestamp'] = 1774353600;
         $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:00:00';
 
@@ -777,6 +780,11 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
             return $this;
         }
 
+        public function multi($mode = null)
+        {
+            return $this->pipeline();
+        }
+
         public function exec()
         {
             if (!$this->pipeline_active) {
@@ -837,6 +845,67 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
                     continue;
                 }
 
+                if ($commandName === 'hSet') {
+                    $field = (string) ($command['field'] ?? '');
+                    $value = (string) ($command['value'] ?? '');
+                    if (!isset($GLOBALS['cbt_test_redis_hashes'][$key]) || !is_array($GLOBALS['cbt_test_redis_hashes'][$key])) {
+                        $GLOBALS['cbt_test_redis_hashes'][$key] = [];
+                    }
+                    $GLOBALS['cbt_test_redis_hashes'][$key][$field] = $value;
+                    $results[] = 1;
+                    continue;
+                }
+
+                if ($commandName === 'hGet') {
+                    $field = (string) ($command['field'] ?? '');
+                    $results[] = isset($GLOBALS['cbt_test_redis_hashes'][$key][$field])
+                        ? $GLOBALS['cbt_test_redis_hashes'][$key][$field]
+                        : false;
+                    continue;
+                }
+
+                if ($commandName === 'hMSet') {
+                    $values = isset($command['values']) && is_array($command['values']) ? $command['values'] : [];
+                    if (!isset($GLOBALS['cbt_test_redis_hashes'][$key]) || !is_array($GLOBALS['cbt_test_redis_hashes'][$key])) {
+                        $GLOBALS['cbt_test_redis_hashes'][$key] = [];
+                    }
+                    foreach ($values as $field => $value) {
+                        $GLOBALS['cbt_test_redis_hashes'][$key][(string) $field] = (string) $value;
+                    }
+                    $results[] = true;
+                    continue;
+                }
+
+                if ($commandName === 'hDel') {
+                    $deleted = 0;
+                    $fields = isset($command['fields']) && is_array($command['fields']) ? $command['fields'] : [];
+                    foreach ($fields as $field) {
+                        if (isset($GLOBALS['cbt_test_redis_hashes'][$key][(string) $field])) {
+                            unset($GLOBALS['cbt_test_redis_hashes'][$key][(string) $field]);
+                            $deleted++;
+                        }
+                    }
+                    $results[] = $deleted;
+                    continue;
+                }
+
+                if ($commandName === 'xAdd') {
+                    $results[] = $this->writeStreamEntry(
+                        $key,
+                        (string) ($command['id'] ?? '*'),
+                        isset($command['values']) && is_array($command['values']) ? $command['values'] : []
+                    );
+                    continue;
+                }
+
+                if ($commandName === 'xDel') {
+                    $results[] = $this->deleteStreamEntries(
+                        $key,
+                        isset($command['ids']) && is_array($command['ids']) ? $command['ids'] : []
+                    );
+                    continue;
+                }
+
                 $results[] = false;
             }
 
@@ -859,6 +928,11 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
                 }
                 if (array_key_exists($safe_key, $GLOBALS['cbt_test_redis_hashes'])) {
                     unset($GLOBALS['cbt_test_redis_hashes'][$safe_key]);
+                    unset($GLOBALS['cbt_test_redis_expiry'][$safe_key]);
+                    $deleted++;
+                }
+                if (array_key_exists($safe_key, $GLOBALS['cbt_test_redis_streams'])) {
+                    unset($GLOBALS['cbt_test_redis_streams'][$safe_key]);
                     unset($GLOBALS['cbt_test_redis_expiry'][$safe_key]);
                     $deleted++;
                 }
@@ -939,6 +1013,97 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
             return $this->readHash((string) $key);
         }
 
+        public function hGet($key, $field)
+        {
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'hGet',
+                    'key' => (string) $key,
+                    'field' => (string) $field,
+                ];
+
+                return $this;
+            }
+
+            $key = (string) $key;
+            $field = (string) $field;
+            return isset($GLOBALS['cbt_test_redis_hashes'][$key][$field])
+                ? $GLOBALS['cbt_test_redis_hashes'][$key][$field]
+                : false;
+        }
+
+        public function hSet($key, $field, $value)
+        {
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'hSet',
+                    'key' => (string) $key,
+                    'field' => (string) $field,
+                    'value' => (string) $value,
+                ];
+
+                return $this;
+            }
+
+            $key = (string) $key;
+            $field = (string) $field;
+            if (!isset($GLOBALS['cbt_test_redis_hashes'][$key]) || !is_array($GLOBALS['cbt_test_redis_hashes'][$key])) {
+                $GLOBALS['cbt_test_redis_hashes'][$key] = [];
+            }
+
+            $GLOBALS['cbt_test_redis_hashes'][$key][$field] = (string) $value;
+            return 1;
+        }
+
+        public function hMSet($key, $pairs)
+        {
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'hMSet',
+                    'key' => (string) $key,
+                    'values' => is_array($pairs) ? $pairs : [],
+                ];
+
+                return $this;
+            }
+
+            $key = (string) $key;
+            if (!isset($GLOBALS['cbt_test_redis_hashes'][$key]) || !is_array($GLOBALS['cbt_test_redis_hashes'][$key])) {
+                $GLOBALS['cbt_test_redis_hashes'][$key] = [];
+            }
+
+            foreach ((array) $pairs as $field => $value) {
+                $GLOBALS['cbt_test_redis_hashes'][$key][(string) $field] = (string) $value;
+            }
+
+            return true;
+        }
+
+        public function hDel($key, ...$fields)
+        {
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'hDel',
+                    'key' => (string) $key,
+                    'fields' => $fields,
+                ];
+
+                return $this;
+            }
+
+            $key = (string) $key;
+            $deleted = 0;
+            foreach ($fields as $field) {
+                $field = (string) $field;
+                if (isset($GLOBALS['cbt_test_redis_hashes'][$key][$field])) {
+                    unset($GLOBALS['cbt_test_redis_hashes'][$key][$field]);
+                    $deleted++;
+                }
+            }
+
+            return $deleted;
+        }
+
         public function zAdd($key, $score, $member, ...$extra_args)
         {
             $key = (string) $key;
@@ -984,11 +1149,129 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
             return $deleted;
         }
 
+        public function xAdd($key, $id, array $values, $maxlen = null, $approximate = null)
+        {
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'xAdd',
+                    'key' => (string) $key,
+                    'id' => (string) $id,
+                    'values' => is_array($values) ? $values : [],
+                ];
+
+                return $this;
+            }
+
+            return $this->writeStreamEntry((string) $key, (string) $id, is_array($values) ? $values : []);
+        }
+
+        public function xRange($key, $start, $end, $count = -1)
+        {
+            $key = (string) $key;
+            $stream = $GLOBALS['cbt_test_redis_streams'][$key] ?? [];
+            if (!is_array($stream) || empty($stream)) {
+                return [];
+            }
+
+            $entries = [];
+            $start = (string) $start;
+            $end = (string) $end;
+            $exclusiveStart = str_starts_with($start, '(');
+            if ($exclusiveStart) {
+                $start = substr($start, 1);
+            }
+
+            foreach ($stream as $entryId => $payload) {
+                if ($start !== '-' && ($exclusiveStart ? strcmp($entryId, $start) <= 0 : strcmp($entryId, $start) < 0)) {
+                    continue;
+                }
+                if ($end !== '+' && strcmp($entryId, $end) > 0) {
+                    continue;
+                }
+                $entries[$entryId] = $payload;
+                if ((int) $count > 0 && count($entries) >= (int) $count) {
+                    break;
+                }
+            }
+
+            return $entries;
+        }
+
+        public function xDel($key, array $ids)
+        {
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'xDel',
+                    'key' => (string) $key,
+                    'ids' => $ids,
+                ];
+
+                return $this;
+            }
+
+            return $this->deleteStreamEntries((string) $key, $ids);
+        }
+
+        public function xLen($key)
+        {
+            $key = (string) $key;
+            $stream = $GLOBALS['cbt_test_redis_streams'][$key] ?? [];
+            return is_array($stream) ? count($stream) : 0;
+        }
+
         private function currentTimestamp(): int
         {
             return isset($GLOBALS['cbt_test_current_time_timestamp'])
                 ? (int) $GLOBALS['cbt_test_current_time_timestamp']
                 : time();
+        }
+
+        /**
+         * @param array<string,mixed> $values
+         */
+        private function writeStreamEntry(string $key, string $id, array $values): string
+        {
+            if (in_array($key, (array) ($GLOBALS['cbt_test_redis_fail_stream_keys'] ?? []), true)) {
+                return '';
+            }
+
+            if (!isset($GLOBALS['cbt_test_redis_streams'][$key]) || !is_array($GLOBALS['cbt_test_redis_streams'][$key])) {
+                $GLOBALS['cbt_test_redis_streams'][$key] = [];
+            }
+            if (!isset($GLOBALS['cbt_test_redis_stream_seq'][$key])) {
+                $GLOBALS['cbt_test_redis_stream_seq'][$key] = 0;
+            }
+
+            if ($id === '*' || $id === '') {
+                $milliseconds = (int) floor(microtime(true) * 1000);
+                $sequence = (int) $GLOBALS['cbt_test_redis_stream_seq'][$key];
+                $streamId = $milliseconds . '-' . $sequence;
+                $GLOBALS['cbt_test_redis_stream_seq'][$key] = $sequence + 1;
+            } else {
+                $streamId = $id;
+            }
+
+            $GLOBALS['cbt_test_redis_streams'][$key][$streamId] = $values;
+            ksort($GLOBALS['cbt_test_redis_streams'][$key], SORT_STRING);
+
+            return $streamId;
+        }
+
+        /**
+         * @param array<int|string> $ids
+         */
+        private function deleteStreamEntries(string $key, array $ids): int
+        {
+            $deleted = 0;
+            foreach ($ids as $id) {
+                $safeId = (string) $id;
+                if (isset($GLOBALS['cbt_test_redis_streams'][$key][$safeId])) {
+                    unset($GLOBALS['cbt_test_redis_streams'][$key][$safeId]);
+                    $deleted++;
+                }
+            }
+
+            return $deleted;
         }
 
         private function readStorageValue(string $key)
@@ -1018,7 +1301,8 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
         {
             $exists = array_key_exists($key, $GLOBALS['cbt_test_redis_storage'])
                 || array_key_exists($key, $GLOBALS['cbt_test_redis_hashes'])
-                || array_key_exists($key, $GLOBALS['cbt_test_redis_zsets']);
+                || array_key_exists($key, $GLOBALS['cbt_test_redis_zsets'])
+                || array_key_exists($key, $GLOBALS['cbt_test_redis_streams']);
             if (!$exists) {
                 return false;
             }
@@ -1031,7 +1315,8 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
         {
             $exists = array_key_exists($key, $GLOBALS['cbt_test_redis_storage'])
                 || array_key_exists($key, $GLOBALS['cbt_test_redis_hashes'])
-                || array_key_exists($key, $GLOBALS['cbt_test_redis_zsets']);
+                || array_key_exists($key, $GLOBALS['cbt_test_redis_zsets'])
+                || array_key_exists($key, $GLOBALS['cbt_test_redis_streams']);
             if (!$exists) {
                 return -2;
             }
@@ -1046,6 +1331,7 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
                     $GLOBALS['cbt_test_redis_storage'][$key],
                     $GLOBALS['cbt_test_redis_hashes'][$key],
                     $GLOBALS['cbt_test_redis_zsets'][$key],
+                    $GLOBALS['cbt_test_redis_streams'][$key],
                     $GLOBALS['cbt_test_redis_expiry'][$key]
                 );
                 return -2;

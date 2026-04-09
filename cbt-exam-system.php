@@ -35,6 +35,7 @@ require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-start-attempt-gate-servi
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-attempt-runtime-snapshot-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-question-submission-context-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-security-live-counters.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-security-event-ingest.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-live-proctoring-presence.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-live-attempt-roster-index.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-ui-state.php';
@@ -120,6 +121,7 @@ add_action('plugins_loaded', static function () {
     CBT_Exam_Availability_Auto_Warm_Service::init();
     CBT_Exam_Preflight_Service::init();
     CBT_Snapshot_Auto_Heal_Queue_Service::init();
+    CBT_Security_Event_Ingest::init();
     CBT_Admin::init();
     CBT_Frontend::init();
     CBT_REST::init();

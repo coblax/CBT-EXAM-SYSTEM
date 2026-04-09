@@ -8,7 +8,7 @@ class CBT_Activator
 {
     private const OPTION_DB_VERSION = 'cbt_exam_system_db_version';
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
-    private const DB_VERSION = '1.6.10';
+    private const DB_VERSION = '1.6.11';
 
     public static function activate(): void
     {
@@ -28,6 +28,9 @@ class CBT_Activator
         }
         if (class_exists('CBT_Adaptive_Load_Service')) {
             CBT_Adaptive_Load_Service::activate();
+        }
+        if (class_exists('CBT_Security_Event_Ingest')) {
+            CBT_Security_Event_Ingest::activate();
         }
     }
 
@@ -221,6 +224,7 @@ class CBT_Activator
         self::ensure_exam_kkm_schema($wpdb);
         self::ensure_exam_student_result_visibility_schema($wpdb);
         self::ensure_exam_calculator_schema($wpdb);
+        self::ensure_security_log_ingest_schema($wpdb);
         self::ensure_question_rich_text_storage_schema($wpdb);
         self::migrate_question_type_details($wpdb);
         self::seed_default_subjects($wpdb);
@@ -251,6 +255,34 @@ class CBT_Activator
         foreach ($constraints as $sql) {
             // Ignore if constraint exists or storage engine does not support it.
             $wpdb->query($sql);
+        }
+    }
+
+    private static function ensure_security_log_ingest_schema(wpdb $wpdb): void
+    {
+        $table = $wpdb->prefix . 'cbt_security_logs';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (!in_array('ingest_id', $columns, true)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN ingest_id CHAR(26) NULL AFTER student_id");
+        }
+
+        $indexes = $wpdb->get_results("SHOW INDEX FROM {$table}", ARRAY_A);
+        $has_unique = false;
+        if (is_array($indexes)) {
+            foreach ($indexes as $index) {
+                if ((string) ($index['Key_name'] ?? '') === 'uniq_ingest_id') {
+                    $has_unique = true;
+                    break;
+                }
+            }
+        }
+
+        if (!$has_unique) {
+            $wpdb->query("ALTER TABLE {$table} ADD UNIQUE KEY uniq_ingest_id (ingest_id)");
         }
     }
 

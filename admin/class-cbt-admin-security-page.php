@@ -25,16 +25,188 @@ final class CBT_Admin_Security_Page
     }
 
     /**
+     * @param array<int,array<string,mixed>> $security_logs
+     * @param array<string,array{label:string,severity:string,message:string}> $security_log_event_definitions
+     */
+    public static function render_security_log_history_table_region(array $security_logs, array $security_log_event_definitions = []): void
+    {
+        ?>
+        <div class="cbt-setup-security-log-table-shell">
+            <table class="widefat striped cbt-setup-security-log-table">
+                <thead>
+                    <tr>
+                        <th class="check-column"><input type="checkbox" data-security-log-select-all /></th>
+                        <th>Waktu</th>
+                        <th>Siswa</th>
+                        <th>Exam</th>
+                        <th>Attempt</th>
+                        <th>Event</th>
+                        <th>Detail</th>
+                    </tr>
+                </thead>
+                <tbody id="cbt-setup-security-log-tbody">
+                    <?php if (empty($security_logs)): ?>
+                        <tr data-security-log-empty-default>
+                            <td colspan="7" class="cbt-setup-security-log-empty">Belum ada histori security log yang tercatat.</td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($security_logs as $security_log): ?>
+                            <?php
+                            $security_log_id = (int) ($security_log['id'] ?? 0);
+                            $severity = sanitize_key((string) ($security_log['severity'] ?? 'info'));
+                            if (!in_array($severity, ['warning', 'critical', 'info'], true)) {
+                                $severity = 'info';
+                            }
+                            $event_type = sanitize_key((string) ($security_log['event_type'] ?? ''));
+                            $device_type = sanitize_key((string) ($security_log['device_type'] ?? 'unknown'));
+                            if (!in_array($device_type, ['desktop', 'mobile', 'tablet', 'server', 'unknown'], true)) {
+                                $device_type = 'unknown';
+                            }
+                            $device_label = trim((string) ($security_log['device_label'] ?? 'Unknown'));
+                            if ($device_label === '') {
+                                $device_label = 'Unknown';
+                            }
+                            $device_summary = trim((string) ($security_log['device_summary'] ?? $device_label));
+                            $student_kelas = sanitize_text_field((string) ($security_log['student_kode_kelas'] ?? ''));
+                            $student_ruang = sanitize_text_field((string) ($security_log['student_kode_ruang'] ?? ''));
+                            $student_name = (string) ($security_log['student_name'] ?? '-');
+                            $security_log_context = isset($security_log['context']) && is_array($security_log['context'])
+                                ? $security_log['context']
+                                : [];
+                            $security_log_json_context = $security_log_context;
+                            $security_log_json_payload = [
+                                'attempt_id' => (int) ($security_log['attempt_id'] ?? 0),
+                                'event_type' => $event_type,
+                            ];
+                            $security_log_native_app = sanitize_key((string) ($security_log_context['native_app'] ?? ''));
+
+                            if ($security_log_native_app !== '') {
+                                $security_log_json_payload['native_app'] = $security_log_native_app;
+
+                                if (!empty($security_log_context['native_version'])) {
+                                    $security_log_json_payload['native_version'] = (string) $security_log_context['native_version'];
+                                }
+                                if (!empty($security_log_context['warning_code'])) {
+                                    $security_log_json_payload['warning_code'] = (string) $security_log_context['warning_code'];
+                                }
+                                if (!empty($security_log_context['warning_message'])) {
+                                    $security_log_json_payload['warning_message'] = (string) $security_log_context['warning_message'];
+                                }
+                                if (!empty($security_log_context['occurred_at_client'])) {
+                                    $security_log_json_payload['occurred_at_client'] = (string) $security_log_context['occurred_at_client'];
+                                }
+
+                                unset(
+                                    $security_log_json_context['native_app'],
+                                    $security_log_json_context['native_version'],
+                                    $security_log_json_context['warning_code'],
+                                    $security_log_json_context['warning_message'],
+                                    $security_log_json_context['occurred_at_client']
+                                );
+                            }
+
+                            $security_log_json_payload['context'] = !empty($security_log_json_context)
+                                ? $security_log_json_context
+                                : new stdClass();
+                            $security_log_json_pretty = wp_json_encode(
+                                $security_log_json_payload,
+                                JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                            );
+                            if (!is_string($security_log_json_pretty) || $security_log_json_pretty === '') {
+                                $security_log_json_pretty = '{}';
+                            }
+                            ?>
+                            <tr
+                                data-security-log-row
+                                data-log-severity="<?php echo esc_attr($severity); ?>"
+                                data-log-event="<?php echo esc_attr($event_type); ?>"
+                                data-log-device="<?php echo esc_attr($device_type); ?>"
+                                data-log-device-label="<?php echo esc_attr($device_label); ?>"
+                                data-log-kelas="<?php echo esc_attr($student_kelas); ?>"
+                                data-log-ruang="<?php echo esc_attr($student_ruang); ?>"
+                                data-log-student-name="<?php echo esc_attr(function_exists('mb_strtolower') ? mb_strtolower($student_name, 'UTF-8') : strtolower($student_name)); ?>"
+                                data-log-attempt="<?php echo esc_attr((string) ((int) ($security_log['attempt_id'] ?? 0))); ?>"
+                            >
+                                <td class="check-column">
+                                    <input type="checkbox" name="selected_log_ids[]" value="<?php echo esc_attr((string) $security_log_id); ?>" data-security-log-select />
+                                </td>
+                                <td><?php echo esc_html((string) ($security_log['occurred_at'] ?? '-')); ?></td>
+                                <td>
+                                    <div class="cbt-setup-security-log-student">
+                                        <div class="cbt-setup-security-log-student-name"><?php echo esc_html($student_name); ?></div>
+                                        <?php if (!empty($security_log['student_kode_kelas']) || !empty($security_log['student_kode_ruang'])): ?>
+                                            <div class="cbt-setup-security-log-student-meta">
+                                                <?php if ($student_kelas !== ''): ?>
+                                                    <span class="is-kelas"><strong>K:</strong> <?php echo esc_html($student_kelas); ?></span>
+                                                <?php endif; ?>
+                                                <?php if ($student_ruang !== ''): ?>
+                                                    <span class="is-ruang"><strong>R:</strong> <?php echo esc_html($student_ruang); ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                                <td><?php echo esc_html((string) ($security_log['exam_title'] ?? '-')); ?></td>
+                                <td><span class="cbt-setup-security-log-attempt">#<?php echo esc_html((string) ((int) ($security_log['attempt_id'] ?? 0))); ?></span></td>
+                                <td>
+                                    <div class="cbt-setup-security-log-event">
+                                        <div class="cbt-setup-security-log-event-badges">
+                                            <span class="cbt-setup-security-log-badge is-<?php echo esc_attr($severity); ?>"><?php echo esc_html($severity); ?></span>
+                                            <span class="cbt-setup-security-log-badge is-device-<?php echo esc_attr($device_type); ?>"><?php echo esc_html($device_label); ?></span>
+                                        </div>
+                                        <strong><?php echo esc_html((string) ($security_log['event_label'] ?? ($security_log_event_definitions[$event_type]['label'] ?? $security_log['event_type'] ?? 'Event'))); ?></strong>
+                                        <span class="cbt-setup-security-log-event-meta"><?php echo esc_html($device_summary); ?></span>
+                                    </div>
+                                </td>
+                                <td class="cbt-setup-security-log-detail">
+                                    <p class="cbt-setup-security-log-detail-copy"><?php echo esc_html((string) ($security_log['message_display'] ?? $security_log['message'] ?? '-')); ?></p>
+                                    <details class="cbt-setup-security-log-json">
+                                        <summary>JSON</summary>
+                                        <pre class="cbt-setup-security-log-json-pre"><?php echo esc_html($security_log_json_pretty); ?></pre>
+                                    </details>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <tr id="cbt-setup-security-log-filter-empty" hidden>
+                            <td colspan="7" class="cbt-setup-security-log-empty">Tidak ada histori log yang cocok dengan filter saat ini.</td>
+                        </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $groups
      */
     public static function render_security_log_live_roster_panel(array $groups): void
     {
         $active_total = 0;
+        $exam_options = [];
+        $kelas_options = [];
+        $ruang_options = [];
         foreach ($groups as $group) {
             $active_total += max(0, (int) ($group['active_total'] ?? 0));
+            $exam_title = trim((string) ($group['exam_title'] ?? '')) !== ''
+                ? (string) $group['exam_title']
+                : 'Exam #' . (int) ($group['exam_id'] ?? 0);
+            $kelas_label = trim((string) ($group['kelas_label'] ?? '')) !== ''
+                ? (string) $group['kelas_label']
+                : 'Tanpa Kelas';
+            $ruang_label = trim((string) ($group['ruang_label'] ?? '')) !== ''
+                ? (string) $group['ruang_label']
+                : 'Tanpa Ruang';
+
+            $exam_options[$exam_title] = $exam_title;
+            $kelas_options[$kelas_label] = $kelas_label;
+            $ruang_options[$ruang_label] = $ruang_label;
         }
+        natcasesort($exam_options);
+        natcasesort($kelas_options);
+        natcasesort($ruang_options);
         ?>
-        <section class="cbt-setup-security-log-roster" data-security-log-live-roster>
+        <section class="cbt-setup-security-log-roster" data-security-log-live-roster data-security-log-roster-page-size="4">
             <div class="cbt-setup-security-log-roster-header">
                 <div>
                     <h3>Live Roster</h3>
@@ -46,7 +218,85 @@ final class CBT_Admin_Security_Page
             <?php if (empty($groups)): ?>
                 <div class="cbt-setup-security-log-roster-empty">Belum ada attempt aktif yang masuk roster live saat ini.</div>
             <?php else: ?>
-                <div class="cbt-setup-security-log-roster-groups">
+                <div class="cbt-setup-security-log-roster-toolbar">
+                    <div class="cbt-setup-security-log-roster-filter-grid">
+                        <label class="cbt-setup-security-log-roster-filter-field">
+                            <span>Cari</span>
+                            <input
+                                type="search"
+                                value=""
+                                placeholder="Cari siswa, login, atau attempt"
+                                autocomplete="off"
+                                data-security-log-roster-filter="search"
+                            />
+                        </label>
+
+                        <label class="cbt-setup-security-log-roster-filter-field">
+                            <span>Status Live</span>
+                            <select data-security-log-roster-filter="presence">
+                                <option value="all">Semua status</option>
+                                <option value="online">Online</option>
+                                <option value="stale">Stale</option>
+                                <option value="offline">Offline</option>
+                            </select>
+                        </label>
+
+                        <label class="cbt-setup-security-log-roster-filter-field">
+                            <span>Risk</span>
+                            <select data-security-log-roster-filter="risk">
+                                <option value="all">Semua risk</option>
+                                <option value="safe">Normal</option>
+                                <option value="watch">Watch</option>
+                                <option value="high-risk">High Risk</option>
+                            </select>
+                        </label>
+
+                        <label class="cbt-setup-security-log-roster-filter-field">
+                            <span>Exam</span>
+                            <select data-security-log-roster-filter="exam">
+                                <option value="all">Semua exam</option>
+                                <?php foreach ($exam_options as $exam_option): ?>
+                                    <option value="<?php echo esc_attr($exam_option); ?>"><?php echo esc_html($exam_option); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+
+                        <label class="cbt-setup-security-log-roster-filter-field">
+                            <span>Kelas</span>
+                            <select data-security-log-roster-filter="kelas">
+                                <option value="all">Semua kelas</option>
+                                <?php foreach ($kelas_options as $kelas_option): ?>
+                                    <option value="<?php echo esc_attr($kelas_option); ?>"><?php echo esc_html($kelas_option); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+
+                        <label class="cbt-setup-security-log-roster-filter-field">
+                            <span>Ruang</span>
+                            <select data-security-log-roster-filter="ruang">
+                                <option value="all">Semua ruang</option>
+                                <?php foreach ($ruang_options as $ruang_option): ?>
+                                    <option value="<?php echo esc_attr($ruang_option); ?>"><?php echo esc_html($ruang_option); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                    </div>
+
+                    <div class="cbt-setup-security-log-roster-toolbar-footer">
+                        <div class="cbt-setup-security-log-roster-summary" data-security-log-roster-summary>
+                            Menampilkan <?php echo esc_html((string) count($groups)); ?> grup roster live.
+                        </div>
+                        <div class="cbt-setup-security-log-roster-pagination" data-security-log-roster-pagination>
+                            <button type="button" class="button button-secondary button-small" data-security-log-roster-page-prev>Prev</button>
+                            <span class="cbt-setup-security-log-roster-page-label" data-security-log-roster-page-label>Halaman 1 / 1</span>
+                            <button type="button" class="button button-secondary button-small" data-security-log-roster-page-next>Next</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="cbt-setup-security-log-roster-empty" data-security-log-roster-filter-empty hidden>Tidak ada roster live yang cocok dengan filter saat ini.</div>
+
+                <div class="cbt-setup-security-log-roster-groups" data-security-log-roster-groups>
                     <?php foreach ($groups as $group): ?>
                         <?php
                         $exam_title = trim((string) ($group['exam_title'] ?? '')) !== ''
@@ -60,7 +310,13 @@ final class CBT_Admin_Security_Page
                             : 'Tanpa Ruang';
                         $rows = isset($group['attempts']) && is_array($group['attempts']) ? $group['attempts'] : [];
                         ?>
-                        <article class="cbt-setup-security-log-roster-group" data-security-log-roster-group>
+                        <article
+                            class="cbt-setup-security-log-roster-group"
+                            data-security-log-roster-group
+                            data-security-log-roster-exam="<?php echo esc_attr($exam_title); ?>"
+                            data-security-log-roster-kelas="<?php echo esc_attr($kelas_label); ?>"
+                            data-security-log-roster-ruang="<?php echo esc_attr($ruang_label); ?>"
+                        >
                             <div class="cbt-setup-security-log-roster-group-top">
                                 <div class="cbt-setup-security-log-roster-group-copy">
                                     <div class="cbt-setup-security-log-roster-group-title"><?php echo esc_html($exam_title); ?></div>
@@ -367,8 +623,17 @@ final class CBT_Admin_Security_Page
             $results_args['cbt_student_q'] = $student_login;
         }
         $results_url = add_query_arg($results_args, admin_url('admin.php'));
+        $risk_filter_value = $risk_tone !== '' ? $risk_tone : 'safe';
         ?>
-        <div class="cbt-setup-security-log-roster-row" data-security-log-roster-row>
+        <div
+            class="cbt-setup-security-log-roster-row"
+            data-security-log-roster-row
+            data-security-log-roster-presence="<?php echo esc_attr($presence_status); ?>"
+            data-security-log-roster-risk="<?php echo esc_attr($risk_filter_value); ?>"
+            data-security-log-roster-student-name="<?php echo esc_attr($student_name); ?>"
+            data-security-log-roster-student-login="<?php echo esc_attr($student_login); ?>"
+            data-security-log-roster-attempt="<?php echo esc_attr((string) $attempt_id); ?>"
+        >
             <div class="cbt-setup-security-log-roster-row-top">
                 <div class="cbt-setup-security-log-roster-row-copy">
                     <strong><?php echo esc_html($student_name); ?></strong>

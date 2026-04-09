@@ -435,7 +435,7 @@ describe('createFinishFlowManager', function () {
             fixture.calls.renderSnapshots.some(function (snapshot) {
                 return snapshot.finishProgressPercent === 12
                     && snapshot.finishProgressStepIndex === 1
-                    && snapshot.finishProgressStatus === 'Mengecek jawaban terakhir'
+                    && snapshot.finishProgressStatus === 'Cek jawaban'
                     && snapshot.options
                     && snapshot.options.immediate === true
                     && snapshot.options.skipPostRenderEffects === true;
@@ -445,7 +445,7 @@ describe('createFinishFlowManager', function () {
             fixture.calls.renderSnapshots.some(function (snapshot) {
                 return snapshot.finishProgressPercent === 34
                     && snapshot.finishProgressStepIndex === 2
-                    && snapshot.finishProgressStatus === 'Menyinkronkan jawaban';
+                    && snapshot.finishProgressStatus === 'Sinkron';
             })
         ).toBe(true);
         expect(
@@ -465,6 +465,44 @@ describe('createFinishFlowManager', function () {
         ).toBe(true);
         expect(fixture.state.finishProgressPercent).toBe(0);
         expect(fixture.state.finishProgressStepIndex).toBe(0);
+    });
+
+    it('yields one paint window before starting the heavier finish sync work', async function () {
+        var rafCallbacks = [];
+        var fixture = createFixture({
+            windowRef: {
+                document: {
+                    visibilityState: 'visible'
+                },
+                requestAnimationFrame: function (callback) {
+                    rafCallbacks.push(callback);
+                    return rafCallbacks.length;
+                },
+                setTimeout: function (callback) {
+                    callback();
+                    return 1;
+                },
+                clearTimeout: function () {}
+            }
+        });
+
+        var finishPromise = fixture.manager.handleFinish(false, { skipConfirmation: true });
+
+        expect(fixture.state.finishProgressStepIndex).toBe(1);
+        expect(fixture.state.finishProgressStatus).toBe('Cek jawaban');
+        expect(fixture.calls.flushAttemptUiState).toHaveLength(0);
+        expect(rafCallbacks).toHaveLength(1);
+
+        rafCallbacks.shift()(0);
+        expect(fixture.calls.flushAttemptUiState).toHaveLength(0);
+        expect(rafCallbacks).toHaveLength(1);
+
+        rafCallbacks.shift()(16);
+        await Promise.resolve();
+
+        expect(fixture.calls.flushAttemptUiState).toHaveLength(1);
+
+        await finishPromise;
     });
 
     it('keeps finish progress on exam stage until the result renderer is ready', async function () {
@@ -512,11 +550,11 @@ describe('createFinishFlowManager', function () {
         expect(fixture.state.isFinishing).toBe(false);
         expect(fixture.state.finishProgressPercent).toBe(34);
         expect(fixture.state.finishProgressStepIndex).toBe(2);
-        expect(fixture.state.finishProgressStatus).toBe('Menunggu koneksi kembali');
-        expect(fixture.state.finishProgressDetail).toBe('Jawaban terakhir belum bisa dikirim karena perangkat sedang offline.');
+        expect(fixture.state.finishProgressStatus).toBe('Menunggu koneksi');
+        expect(fixture.state.finishProgressDetail).toBe('Menunggu koneksi.');
         expect(
             fixture.calls.renderSnapshots.some(function (snapshot) {
-                return snapshot.finishProgressStatus === 'Menunggu koneksi kembali'
+                return snapshot.finishProgressStatus === 'Menunggu koneksi'
                     && snapshot.finishProgressStepIndex === 2
                     && snapshot.stage === 'exam';
             })

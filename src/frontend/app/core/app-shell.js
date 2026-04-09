@@ -301,10 +301,20 @@ export function createAppShellManager(deps) {
         var finishProgressStepTotal = Math.max(4, Number(state.finishProgressStepTotal) || 4);
         var finishProgressStatus = String(state.finishProgressStatus || 'Menyelesaikan ujian...');
         var finishProgressDetail = String(state.finishProgressDetail || 'Mohon tunggu sebentar, kami sedang memastikan hasil ujian Anda tersimpan.');
+        var showFinishLiveProgress = state.isFinishing || finishProgressStepIndex > 0 || state.examLockedForPendingFinish;
+        var finishTitle = showFinishLiveProgress
+            ? 'Proses'
+            : 'Konfirmasi Pengumpulan Ujian';
+        var finishSubtitle = state.isFinishing
+            ? 'Finalisasi sedang berjalan. Jangan tutup halaman ini sampai hasil muncul.'
+            : (showFinishLiveProgress
+                ? 'Siap'
+                : 'Periksa jumlah jawaban sebelum ujian dikumpulkan.');
+        var finishSubmitLabel = showFinishLiveProgress ? 'Proses...' : 'Tetap Kumpulkan';
         var warningMarkup = unansweredQuestions > 0
             ? '<div class="cbt-finish-modal-warning">Masih ada <strong>' + escapeHtml(unansweredQuestions) + '</strong> soal belum terjawab.</div>'
             : '<div class="cbt-finish-modal-ok">Semua soal sudah terjawab. Anda bisa lanjut kumpulkan ujian.</div>';
-        var finishLiveMarkup = state.isFinishing
+        var finishLiveMarkup = showFinishLiveProgress
             ? [
                 '<div class="cbt-finish-live-card" aria-live="polite">',
                 '<div class="cbt-finish-live-head">',
@@ -326,8 +336,8 @@ export function createAppShellManager(deps) {
         return [
             '<div class="cbt-finish-modal-overlay">',
             '<section class="cbt-finish-modal" role="dialog" aria-modal="true" aria-labelledby="cbt-finish-modal-title">',
-            '<h3 id="cbt-finish-modal-title">' + escapeHtml(state.isFinishing ? 'Mengumpulkan Ujian' : 'Konfirmasi Pengumpulan Ujian') + '</h3>',
-            '<p class="cbt-subtitle">' + escapeHtml(state.isFinishing ? 'Finalisasi sedang berjalan. Jangan tutup halaman ini sampai hasil muncul.' : 'Periksa jumlah jawaban sebelum ujian dikumpulkan.') + '</p>',
+            '<h3 id="cbt-finish-modal-title">' + escapeHtml(finishTitle) + '</h3>',
+            '<p class="cbt-subtitle">' + escapeHtml(finishSubtitle) + '</p>',
             '<div class="cbt-finish-stat-grid">',
             '<div class="cbt-finish-stat"><span>Total Soal</span><strong>' + escapeHtml(totalQuestions) + '</strong></div>',
             '<div class="cbt-finish-stat is-answered"><span>Terjawab</span><strong>' + escapeHtml(answeredQuestions) + '</strong></div>',
@@ -341,7 +351,7 @@ export function createAppShellManager(deps) {
             finishLiveMarkup,
             '<div class="cbt-actions cbt-finish-modal-actions">',
             '<button class="cbt-button cbt-button-secondary" data-action="finish-confirm-cancel" type="button"' + (state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>Kembali Kerjakan</button>',
-            '<button class="cbt-button cbt-button-primary" data-action="finish-confirm-submit" type="button"' + (state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>' + (state.isFinishing ? 'Sedang Diproses...' : 'Tetap Kumpulkan') + '</button>',
+            '<button class="cbt-button cbt-button-primary" data-action="finish-confirm-submit" type="button"' + (state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>' + escapeHtml(finishSubmitLabel) + '</button>',
             '</div>',
             '</section>',
             '</div>'

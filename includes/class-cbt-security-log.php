@@ -20,6 +20,10 @@ if (!class_exists('CBT_Live_Attempt_Roster_Index')) {
     require_once __DIR__ . '/class-cbt-live-attempt-roster-index.php';
 }
 
+if (!class_exists('CBT_Security_Event_Ingest')) {
+    require_once __DIR__ . '/class-cbt-security-event-ingest.php';
+}
+
 class CBT_Security_Log
 {
     private const SETUP_SECURITY_OPTION = 'cbt_setup_security';
@@ -423,6 +427,7 @@ class CBT_Security_Log
             attempt_id BIGINT UNSIGNED NOT NULL,
             exam_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
             student_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            ingest_id CHAR(26) NULL,
             event_type VARCHAR(50) NOT NULL,
             severity VARCHAR(20) NOT NULL DEFAULT 'info',
             message TEXT NOT NULL,
@@ -430,6 +435,7 @@ class CBT_Security_Log
             occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
+            UNIQUE KEY uniq_ingest_id (ingest_id),
             KEY idx_attempt_occurred_at (attempt_id, occurred_at),
             KEY idx_student_occurred_at (student_id, occurred_at),
             KEY idx_event_occurred_at (event_type, occurred_at),
@@ -1080,54 +1086,125 @@ class CBT_Security_Log
             return true;
         }
 
-        $occurred_at = '';
-        $inserted = self::insert_log($attempt, $event_type, $context, $occurred_at);
-        if (!$inserted) {
+        $payload = self::build_event_payload($attempt, $event_type, $context);
+        if ($payload === null) {
             return false;
         }
 
-        $live_event_count = self::record_live_counter_event($attempt, $event_type, $context, $occurred_at);
-        self::maybe_record_repeat_event($attempt, $event_type, $context, $live_event_count);
+        $persisted = false;
+        $persist_mode = 'mysql';
+
+        if (class_exists('CBT_Security_Event_Ingest') && CBT_Security_Event_Ingest::is_available()) {
+            $persisted = CBT_Security_Event_Ingest::enqueue_event_payload($payload);
+            if ($persisted) {
+                $persist_mode = 'redis_first';
+            }
+        }
+
+        if (!$persisted) {
+            $persisted = self::persist_event_payload($payload);
+            if (!$persisted) {
+                return false;
+            }
+        }
+
+        $live_event_count = self::record_live_counter_event_from_payload($attempt, $payload);
+        self::maybe_record_repeat_event($attempt, $event_type, $context, $live_event_count, $persist_mode);
 
         return true;
     }
 
-    private static function insert_log(array $attempt, string $event_type, array $context = [], ?string &$occurred_at = null): bool
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $context
+     * @return array<string,mixed>|null
+     */
+    private static function build_event_payload(array $attempt, string $event_type, array $context = [], ?string $occurred_at = null): ?array
     {
         $event_type = sanitize_key($event_type);
         $definition = self::event_definitions()[$event_type] ?? null;
         if (!$definition) {
+            return null;
+        }
+
+        $normalized_context = self::normalize_context($context);
+        $context_json = wp_json_encode($normalized_context);
+        $occurred_at = $occurred_at !== null && trim($occurred_at) !== ''
+            ? sanitize_text_field($occurred_at)
+            : current_time('mysql');
+
+        return [
+            'attempt_id' => (int) ($attempt['id'] ?? 0),
+            'exam_id' => (int) ($attempt['exam_id'] ?? 0),
+            'student_id' => (int) ($attempt['student_id'] ?? 0),
+            'event_type' => $event_type,
+            'severity' => (string) $definition['severity'],
+            'message' => (string) $definition['message'],
+            'context' => $normalized_context,
+            'context_json' => is_string($context_json) ? $context_json : '{}',
+            'occurred_at' => $occurred_at,
+            'created_at' => $occurred_at,
+        ];
+    }
+
+    private static function insert_log(array $attempt, string $event_type, array $context = [], ?string &$occurred_at = null): bool
+    {
+        $payload = self::build_event_payload($attempt, $event_type, $context, $occurred_at);
+        if ($payload === null) {
             return false;
         }
 
+        $occurred_at = (string) ($payload['occurred_at'] ?? current_time('mysql'));
+        return self::persist_event_payload($payload);
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     */
+    public static function persist_ingested_event_payload(array $payload, string $ingest_id = ''): bool
+    {
+        return self::persist_event_payload($payload, $ingest_id);
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     */
+    private static function persist_event_payload(array $payload, string $ingest_id = ''): bool
+    {
         global $wpdb;
 
         $table = self::get_table_name($wpdb);
-        $normalized_context = self::normalize_context($context);
-        $context_json = wp_json_encode($normalized_context);
-        $occurred_at = current_time('mysql');
+        $ingest_id = trim($ingest_id);
+        $data = [
+            'attempt_id' => (int) ($payload['attempt_id'] ?? 0),
+            'exam_id' => (int) ($payload['exam_id'] ?? 0),
+            'student_id' => (int) ($payload['student_id'] ?? 0),
+            'ingest_id' => $ingest_id !== '' ? $ingest_id : null,
+            'event_type' => sanitize_key((string) ($payload['event_type'] ?? '')),
+            'severity' => sanitize_key((string) ($payload['severity'] ?? 'info')),
+            'message' => sanitize_text_field((string) ($payload['message'] ?? '')),
+            'context_json' => is_string($payload['context_json'] ?? null) ? (string) $payload['context_json'] : '{}',
+            'occurred_at' => sanitize_text_field((string) ($payload['occurred_at'] ?? current_time('mysql'))),
+            'created_at' => sanitize_text_field((string) ($payload['created_at'] ?? current_time('mysql'))),
+        ];
+        $format = ['%d', '%d', '%d', $ingest_id !== '' ? '%s' : null, '%s', '%s', '%s', '%s', '%s', '%s'];
 
         try {
             $inserted = $wpdb->insert(
                 $table,
-                [
-                    'attempt_id' => (int) ($attempt['id'] ?? 0),
-                    'exam_id' => (int) ($attempt['exam_id'] ?? 0),
-                    'student_id' => (int) ($attempt['student_id'] ?? 0),
-                    'event_type' => $event_type,
-                    'severity' => (string) $definition['severity'],
-                    'message' => (string) $definition['message'],
-                    'context_json' => is_string($context_json) ? $context_json : '{}',
-                    'occurred_at' => $occurred_at,
-                    'created_at' => $occurred_at,
-                ],
-                ['%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s']
+                $data,
+                $format
             );
         } catch (Throwable $exception) {
             return false;
         }
 
         if ($inserted === false) {
+            $last_error = property_exists($wpdb, 'last_error') ? (string) ($wpdb->last_error ?? '') : '';
+            if ($ingest_id !== '' && stripos($last_error, 'duplicate') !== false) {
+                return true;
+            }
+
             return false;
         }
 
@@ -1138,6 +1215,20 @@ class CBT_Security_Log
 
     private static function record_live_counter_event(array $attempt, string $event_type, array $context, string $occurred_at): int
     {
+        $payload = [
+            'event_type' => $event_type,
+            'context' => self::normalize_context($context),
+            'occurred_at' => $occurred_at,
+        ];
+
+        return self::record_live_counter_event_from_payload($attempt, $payload);
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     */
+    private static function record_live_counter_event_from_payload(array $attempt, array $payload): int
+    {
         if (!class_exists('CBT_Security_Live_Counters') || !CBT_Security_Live_Counters::is_available()) {
             return 0;
         }
@@ -1146,6 +1237,7 @@ class CBT_Security_Log
             return 0;
         }
 
+        $event_type = sanitize_key((string) ($payload['event_type'] ?? ''));
         $event_weight = self::get_event_risk_weight($event_type);
         if ($event_weight <= 0) {
             return 0;
@@ -1161,8 +1253,11 @@ class CBT_Security_Log
             $event_type,
             $event_weight,
             (string) ($definition['label'] ?? ucwords(str_replace('_', ' ', $event_type))),
-            $occurred_at,
-            self::build_live_counter_summary_snapshot($attempt, $context)
+            sanitize_text_field((string) ($payload['occurred_at'] ?? current_time('mysql'))),
+            self::build_live_counter_summary_snapshot(
+                $attempt,
+                is_array($payload['context'] ?? null) ? (array) $payload['context'] : []
+            )
         );
 
         self::sync_presence_risk_tone_from_score(
@@ -1203,7 +1298,13 @@ class CBT_Security_Log
         return '';
     }
 
-    private static function maybe_record_repeat_event(array $attempt, string $event_type, array $context = [], int $live_event_count = 0): void
+    private static function maybe_record_repeat_event(
+        array $attempt,
+        string $event_type,
+        array $context = [],
+        int $live_event_count = 0,
+        string $persist_mode = 'mysql'
+    ): void
     {
         $repeat_config = self::repeat_threshold_config($event_type);
         if ($repeat_config === null) {
@@ -1249,14 +1350,27 @@ class CBT_Security_Log
             ]
         ));
 
-        $occurred_at = '';
-        if (!self::insert_log($attempt, $derived_event, $repeat_context, $occurred_at)) {
+        $payload = self::build_event_payload($attempt, $derived_event, $repeat_context);
+        if ($payload === null) {
+            return;
+        }
+
+        $persisted = false;
+        if ($persist_mode === 'redis_first' && class_exists('CBT_Security_Event_Ingest') && CBT_Security_Event_Ingest::is_available()) {
+            $persisted = CBT_Security_Event_Ingest::enqueue_event_payload($payload);
+        }
+
+        if (!$persisted) {
+            $persisted = self::persist_event_payload($payload);
+        }
+
+        if (!$persisted) {
             return;
         }
 
         if ($use_live_counter) {
             CBT_Security_Live_Counters::mark_derived_event($attempt_id, $derived_event);
-            self::record_live_counter_event($attempt, $derived_event, $repeat_context, $occurred_at);
+            self::record_live_counter_event_from_payload($attempt, $payload);
         }
     }
 
@@ -1605,16 +1719,22 @@ class CBT_Security_Log
      */
     private static function build_live_counter_summary_snapshot(array $attempt, array $context = []): array
     {
+        $attempt_id = absint($attempt['id'] ?? 0);
         $student_id = absint($attempt['student_id'] ?? 0);
-        $user = $student_id > 0 ? get_user_by('id', $student_id) : false;
-        $profile = class_exists('CBT_Student_Profile_Cache')
-            ? CBT_Student_Profile_Cache::get_snapshot($student_id)
-            : [
-                'kode_kelas' => '',
-                'kode_ruang' => '',
-            ];
-        $exam_meta = self::get_exam_live_meta((int) ($attempt['exam_id'] ?? 0));
         $device_summary = self::build_device_summary_from_context($context, sanitize_key((string) ($context['event_type'] ?? '')));
+
+        if ($attempt_id > 0 && class_exists('CBT_Security_Live_Counters') && CBT_Security_Live_Counters::has_attempt_summary($attempt_id)) {
+            return [
+                'last_device_type' => (string) ($device_summary['device_type'] ?? 'unknown'),
+                'last_device_label' => (string) ($device_summary['device_label'] ?? 'Unknown'),
+                'last_device_summary' => (string) ($device_summary['device_summary'] ?? 'Unknown'),
+            ];
+        }
+
+        $user = $student_id > 0 ? get_user_by('id', $student_id) : false;
+        $exam_meta = self::get_exam_live_meta((int) ($attempt['exam_id'] ?? 0));
+        $student_kode_kelas = $student_id > 0 ? sanitize_text_field((string) get_user_meta($student_id, 'kode_kelas', true)) : '';
+        $student_kode_ruang = $student_id > 0 ? sanitize_text_field((string) get_user_meta($student_id, 'kode_ruang', true)) : '';
 
         return [
             'teacher_id' => (int) ($attempt['teacher_id'] ?? ($exam_meta['teacher_id'] ?? 0)),
@@ -1622,8 +1742,8 @@ class CBT_Security_Log
                 ? ($user->display_name !== '' ? (string) $user->display_name : (string) $user->user_login)
                 : '',
             'student_login' => $user instanceof WP_User ? (string) $user->user_login : '',
-            'student_kode_kelas' => sanitize_text_field((string) ($profile['kode_kelas'] ?? '')),
-            'student_kode_ruang' => sanitize_text_field((string) ($profile['kode_ruang'] ?? '')),
+            'student_kode_kelas' => $student_kode_kelas,
+            'student_kode_ruang' => $student_kode_ruang,
             'exam_title' => sanitize_text_field((string) ($attempt['exam_title'] ?? ($exam_meta['exam_title'] ?? ''))),
             'last_device_type' => (string) ($device_summary['device_type'] ?? 'unknown'),
             'last_device_label' => (string) ($device_summary['device_label'] ?? 'Unknown'),
