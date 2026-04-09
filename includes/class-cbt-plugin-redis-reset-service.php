@@ -625,6 +625,9 @@ final class CBT_Plugin_Redis_Reset_Service
         if (class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
             CBT_Snapshot_Auto_Heal_Queue_Service::deactivate();
         }
+        if (class_exists('CBT_Login_Snapshot_Freshness_Service')) {
+            CBT_Login_Snapshot_Freshness_Service::deactivate();
+        }
 
         foreach ([
             'cbt_exam_preflight_state',
@@ -633,6 +636,7 @@ final class CBT_Plugin_Redis_Reset_Service
             'cbt_exam_availability_auto_warm_state',
             'cbt_exam_availability_rewarm_queue_state',
             'cbt_snapshot_auto_heal_queue_state',
+            'cbt_login_snapshot_freshness_state',
         ] as $option_name) {
             if (function_exists('delete_option') && delete_option($option_name)) {
                 $deleted_options++;

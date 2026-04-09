@@ -1,0 +1,1719 @@
+- generic [ref=e2]:
+  - navigation "Main menu":
+    - link "Skip to main content" [ref=e3] [cursor=pointer]:
+      - /url: "#wpbody-content"
+    - link "Skip to toolbar" [ref=e4] [cursor=pointer]:
+      - /url: "#wp-toolbar"
+    - list [ref=e7]:
+      - listitem [ref=e8]:
+        - link "Dashboard" [ref=e9] [cursor=pointer]:
+          - /url: index.php
+          - generic [ref=e10]: 
+          - generic [ref=e11]: Dashboard
+        - list [ref=e12]:
+          - listitem [ref=e13]:
+            - link "Home" [ref=e14] [cursor=pointer]:
+              - /url: index.php
+          - listitem [ref=e15]:
+            - link "Updates" [ref=e16] [cursor=pointer]:
+              - /url: update-core.php
+      - listitem [ref=e17]
+      - listitem [ref=e19]:
+        - link "Posts" [ref=e20] [cursor=pointer]:
+          - /url: edit.php
+          - generic [ref=e21]: 
+          - generic [ref=e22]: Posts
+        - list [ref=e23]:
+          - listitem [ref=e24]:
+            - link "All Posts" [ref=e25] [cursor=pointer]:
+              - /url: edit.php
+          - listitem [ref=e26]:
+            - link "Add Post" [ref=e27] [cursor=pointer]:
+              - /url: post-new.php
+          - listitem [ref=e28]:
+            - link "Categories" [ref=e29] [cursor=pointer]:
+              - /url: edit-tags.php?taxonomy=category
+          - listitem [ref=e30]:
+            - link "Tags" [ref=e31] [cursor=pointer]:
+              - /url: edit-tags.php?taxonomy=post_tag
+      - listitem [ref=e32]:
+        - link "Media" [ref=e33] [cursor=pointer]:
+          - /url: upload.php
+          - generic [ref=e34]: 
+          - generic [ref=e35]: Media
+        - list [ref=e36]:
+          - listitem [ref=e37]:
+            - link "Library" [ref=e38] [cursor=pointer]:
+              - /url: upload.php
+          - listitem [ref=e39]:
+            - link "Add Media File" [ref=e40] [cursor=pointer]:
+              - /url: media-new.php
+      - listitem [ref=e41]:
+        - link "Pages" [ref=e42] [cursor=pointer]:
+          - /url: edit.php?post_type=page
+          - generic [ref=e43]: 
+          - generic [ref=e44]: Pages
+        - list [ref=e45]:
+          - listitem [ref=e46]:
+            - link "All Pages" [ref=e47] [cursor=pointer]:
+              - /url: edit.php?post_type=page
+          - listitem [ref=e48]:
+            - link "Add Page" [ref=e49] [cursor=pointer]:
+              - /url: post-new.php?post_type=page
+      - listitem [ref=e50]:
+        - link "Comments" [ref=e51] [cursor=pointer]:
+          - /url: edit-comments.php
+          - generic [ref=e52]: 
+          - generic [ref=e53]: Comments
+      - listitem [ref=e54]:
+        - link "CBT Exams" [ref=e55] [cursor=pointer]:
+          - /url: admin.php?page=cbt-introduction
+          - generic [ref=e56]: 
+          - generic [ref=e57]: CBT Exams
+        - list [ref=e58]:
+          - listitem [ref=e59]:
+            - link "Introduction" [ref=e60] [cursor=pointer]:
+              - /url: admin.php?page=cbt-introduction
+          - listitem [ref=e61]:
+            - link "CBT Exams" [ref=e62] [cursor=pointer]:
+              - /url: admin.php?page=cbt-exams
+          - listitem [ref=e63]:
+            - link "CBT Branding" [ref=e64] [cursor=pointer]:
+              - /url: admin.php?page=cbt-setup
+          - listitem [ref=e65]:
+            - link "CBT Security" [ref=e66] [cursor=pointer]:
+              - /url: admin.php?page=cbt-security
+          - listitem [ref=e67]:
+            - link "CBT Subjects" [ref=e68] [cursor=pointer]:
+              - /url: admin.php?page=cbt-subjects
+          - listitem [ref=e69]:
+            - link "CBT Users" [ref=e70] [cursor=pointer]:
+              - /url: admin.php?page=cbt-user-import
+          - listitem [ref=e71]:
+            - link "CBT Questions" [ref=e72] [cursor=pointer]:
+              - /url: admin.php?page=cbt-question-bank
+          - listitem [ref=e73]:
+            - link "CBT Tokens" [ref=e74] [cursor=pointer]:
+              - /url: admin.php?page=cbt-tokens
+          - listitem [ref=e75]:
+            - link "CBT Exam Cards" [ref=e76] [cursor=pointer]:
+              - /url: admin.php?page=cbt-exam-cards
+          - listitem [ref=e77]:
+            - link "CBT Results" [ref=e78] [cursor=pointer]:
+              - /url: admin.php?page=cbt-results
+          - listitem [ref=e79]:
+            - link "CBT Analytics" [ref=e80] [cursor=pointer]:
+              - /url: admin.php?page=cbt-analytics
+          - listitem [ref=e81]:
+            - link "CBT Report Exam" [ref=e82] [cursor=pointer]:
+              - /url: admin.php?page=cbt-report-exam
+          - listitem [ref=e83]:
+            - link "CBT Test Hub" [ref=e84] [cursor=pointer]:
+              - /url: admin.php?page=cbt-test-hub
+          - listitem [ref=e85]:
+            - link "CBT Cache" [ref=e86] [cursor=pointer]:
+              - /url: admin.php?page=cbt-cache
+          - listitem [ref=e87]:
+            - link "CBT Update" [ref=e88] [cursor=pointer]:
+              - /url: admin.php?page=cbt-update
+          - listitem [ref=e89]:
+            - link "CBT Maintenance" [ref=e90] [cursor=pointer]:
+              - /url: admin.php?page=cbt-maintenance
+          - listitem [ref=e91]:
+            - link "CBT Developer" [ref=e92] [cursor=pointer]:
+              - /url: admin.php?page=cbt-developer
+      - listitem [ref=e93]
+      - listitem [ref=e95]:
+        - link "Appearance" [ref=e96] [cursor=pointer]:
+          - /url: themes.php
+          - generic [ref=e97]: 
+          - generic [ref=e98]: Appearance
+        - list [ref=e99]:
+          - listitem [ref=e100]:
+            - link "Themes" [ref=e101] [cursor=pointer]:
+              - /url: themes.php
+          - listitem [ref=e102]:
+            - link "Editor" [ref=e103] [cursor=pointer]:
+              - /url: site-editor.php
+      - listitem [ref=e104]:
+        - link "Plugins" [ref=e105] [cursor=pointer]:
+          - /url: plugins.php
+          - generic [ref=e106]: 
+          - generic [ref=e107]: Plugins
+        - list [ref=e108]:
+          - listitem [ref=e109]:
+            - link "Installed Plugins" [ref=e110] [cursor=pointer]:
+              - /url: plugins.php
+          - listitem [ref=e111]:
+            - link "Add Plugin" [ref=e112] [cursor=pointer]:
+              - /url: plugin-install.php
+      - listitem [ref=e113]:
+        - link "Users" [ref=e114] [cursor=pointer]:
+          - /url: users.php
+          - generic [ref=e115]: 
+          - generic [ref=e116]: Users
+        - list [ref=e117]:
+          - listitem [ref=e118]:
+            - link "All Users" [ref=e119] [cursor=pointer]:
+              - /url: users.php
+          - listitem [ref=e120]:
+            - link "Add User" [ref=e121] [cursor=pointer]:
+              - /url: user-new.php
+          - listitem [ref=e122]:
+            - link "Profile" [ref=e123] [cursor=pointer]:
+              - /url: profile.php
+      - listitem [ref=e124]:
+        - link "Tools" [ref=e125] [cursor=pointer]:
+          - /url: tools.php
+          - generic [ref=e126]: 
+          - generic [ref=e127]: Tools
+        - list [ref=e128]:
+          - listitem [ref=e129]:
+            - link "Available Tools" [ref=e130] [cursor=pointer]:
+              - /url: tools.php
+          - listitem [ref=e131]:
+            - link "Import" [ref=e132] [cursor=pointer]:
+              - /url: import.php
+          - listitem [ref=e133]:
+            - link "Export" [ref=e134] [cursor=pointer]:
+              - /url: export.php
+          - listitem [ref=e135]:
+            - link "Site Health" [ref=e136] [cursor=pointer]:
+              - /url: site-health.php
+          - listitem [ref=e137]:
+            - link "Export Personal Data" [ref=e138] [cursor=pointer]:
+              - /url: export-personal-data.php
+          - listitem [ref=e139]:
+            - link "Erase Personal Data" [ref=e140] [cursor=pointer]:
+              - /url: erase-personal-data.php
+          - listitem [ref=e141]:
+            - link "Theme File Editor" [ref=e142] [cursor=pointer]:
+              - /url: theme-editor.php
+          - listitem [ref=e143]:
+            - link "Plugin File Editor" [ref=e144] [cursor=pointer]:
+              - /url: plugin-editor.php
+      - listitem [ref=e145]:
+        - link "Settings" [ref=e146] [cursor=pointer]:
+          - /url: options-general.php
+          - generic [ref=e147]: 
+          - generic [ref=e148]: Settings
+        - list [ref=e149]:
+          - listitem [ref=e150]:
+            - link "General" [ref=e151] [cursor=pointer]:
+              - /url: options-general.php
+          - listitem [ref=e152]:
+            - link "Writing" [ref=e153] [cursor=pointer]:
+              - /url: options-writing.php
+          - listitem [ref=e154]:
+            - link "Reading" [ref=e155] [cursor=pointer]:
+              - /url: options-reading.php
+          - listitem [ref=e156]:
+            - link "Discussion" [ref=e157] [cursor=pointer]:
+              - /url: options-discussion.php
+          - listitem [ref=e158]:
+            - link "Media" [ref=e159] [cursor=pointer]:
+              - /url: options-media.php
+          - listitem [ref=e160]:
+            - link "Permalinks" [ref=e161] [cursor=pointer]:
+              - /url: options-permalink.php
+          - listitem [ref=e162]:
+            - link "Privacy" [ref=e163] [cursor=pointer]:
+              - /url: options-privacy.php
+      - listitem [ref=e164]:
+        - button "Collapse Main menu" [expanded] [ref=e165] [cursor=pointer]:
+          - generic [ref=e167]: Collapse Menu
+  - generic [ref=e168]:
+    - generic [ref=e169]:
+      - navigation "Toolbar":
+        - menu:
+          - group [ref=e170]:
+            - menuitem "About WordPress" [ref=e171] [cursor=pointer]:
+              - generic [ref=e173]: About WordPress
+          - group [ref=e174]:
+            - menuitem "Ujian CBT Sekolah" [ref=e175] [cursor=pointer]
+          - group [ref=e176]:
+            - menuitem "0 Comments in moderation" [ref=e177] [cursor=pointer]:
+              - generic [ref=e179]: "0"
+              - generic [ref=e180]: 0 Comments in moderation
+          - group [ref=e181]:
+            - menuitem "New" [ref=e182] [cursor=pointer]:
+              - generic [ref=e184]: New
+        - menu [ref=e185]:
+          - group [ref=e186]:
+            - menuitem "Howdy, Codex E2E Admin" [ref=e187] [cursor=pointer]
+    - main [ref=e188]:
+      - generic [ref=e191]:
+        - generic [ref=e192]:
+          - generic [ref=e193]:
+            - generic [ref=e194]: Assessment
+            - heading "CBT Exams" [level=1] [ref=e195]
+            - paragraph [ref=e196]: Kelola builder exam, jadwal pelaksanaan, kelas peserta, dan pemilihan soal dari satu halaman kerja yang lebih rapi. Alur create dan update tetap sama, hanya tampilan admin-nya dibuat lebih modern dan mudah discan.
+          - generic [ref=e197]:
+            - article [ref=e198]:
+              - generic [ref=e199]: Total Exams
+              - strong [ref=e200]: "17"
+            - article [ref=e201]:
+              - generic [ref=e202]: Published
+              - strong [ref=e203]: "17"
+            - article [ref=e204]:
+              - generic [ref=e205]: Draft
+              - strong [ref=e206]: "0"
+            - article [ref=e207]:
+              - generic [ref=e208]: Soal Dipilih
+              - strong [ref=e209]: "0"
+        - region "Operational overview" [ref=e210]:
+          - generic [ref=e212]:
+            - generic [ref=e213]: Operational
+            - paragraph [ref=e214]: Diperbarui sekitar tiap 20 detik untuk memberi ringkasan kondisi Redis dan runtime CBT saat ini.
+          - generic [ref=e215]:
+            - article [ref=e216]:
+              - generic [ref=e217]: Redis RAM
+              - strong [ref=e218]: 100.83M
+              - generic [ref=e219]: Peak 131.44M · Clients 10
+              - generic [ref=e220]: Global Redis instance
+            - article [ref=e221]:
+              - generic [ref=e222]: CBT Redis Keys
+              - strong [ref=e223]: 11,757
+              - generic [ref=e224]: DB1 24 · DB2 9,184 · +1 DB
+              - generic [ref=e225]: Plugin only
+            - article [ref=e226]:
+              - generic [ref=e227]: Active Attempts
+              - strong [ref=e228]: 1,525
+              - generic [ref=e229]: Session 501 · Contract 501 · Index 501
+              - generic [ref=e230]: Runtime live
+            - article [ref=e231]:
+              - generic [ref=e232]: Start Queue
+              - strong [ref=e233]: "0"
+              - generic [ref=e234]: OPEN · 50 / 5 detik
+              - generic [ref=e235]: Per exam gate
+            - article [ref=e236]:
+              - generic [ref=e237]: Auto-Heal Queue
+              - strong [ref=e238]: "751"
+              - generic [ref=e239]: Skip 25 · Tick 2026-04-09 05:02:05
+              - generic [ref=e240]: Background repair
+            - article [ref=e241]:
+              - generic [ref=e242]: Warm Jobs
+              - strong [ref=e243]: "0"
+              - generic [ref=e244]: Preflight 0 aktif · Auto-Warm idle
+              - generic [ref=e245]: Pra-ujian
+            - article [ref=e246]:
+              - generic [ref=e247]: Login Snapshot Health
+              - strong [ref=e248]: N/A
+              - generic [ref=e249]: Snapshot 0 · Fallback 0 · Freshness 9
+              - generic [ref=e250]: Today Snapshot 0 · Today Fallback 0
+            - article [ref=e251]:
+              - generic [ref=e252]: User Snapshots
+              - strong [ref=e253]: 3,749
+              - generic [ref=e254]: Profile 1,200 · Login 1,348 · Availability 1,201
+              - generic [ref=e255]: Redis CBT only
+        - tablist "Navigasi halaman exam" [ref=e256]:
+          - tab "Form Exam Buat exam baru atau revisi draft" [ref=e257] [cursor=pointer]:
+            - generic [ref=e258]: Form Exam
+            - generic [ref=e259]: Buat exam baru atau revisi draft
+          - tab "Daftar Exam Monitoring, hasil, dan aksi cepat" [ref=e260] [cursor=pointer]:
+            - generic [ref=e261]: Daftar Exam
+            - generic [ref=e262]: Monitoring, hasil, dan aksi cepat
+          - tab "Snapshot Monitoring snapshot Redis operasional" [selected] [ref=e263] [cursor=pointer]:
+            - generic [ref=e264]: Snapshot
+            - generic [ref=e265]: Monitoring snapshot Redis operasional
+        - tabpanel [ref=e266]:
+          - generic [ref=e267]:
+            - tablist "Subtab snapshot" [ref=e268]:
+              - tab "One-Click Pra Ujian Fokus pada readiness, blocker, dan eksekusi pra-ujian." [ref=e269] [cursor=pointer]:
+                - generic [ref=e270]: One-Click Pra Ujian
+                - generic [ref=e271]: Fokus pada readiness, blocker, dan eksekusi pra-ujian.
+              - tab "Monitor Snapshot Soal Pantau snapshot delivery soal per exam." [ref=e272] [cursor=pointer]:
+                - generic [ref=e273]: Monitor Snapshot Soal
+                - generic [ref=e274]: Pantau snapshot delivery soal per exam.
+              - tab "Monitor Snapshot Start Pantau kontrak start attempt per exam." [ref=e275] [cursor=pointer]:
+                - generic [ref=e276]: Monitor Snapshot Start
+                - generic [ref=e277]: Pantau kontrak start attempt per exam.
+              - tab "Monitor Snapshot Submit Pantau submission context per exam." [ref=e278] [cursor=pointer]:
+                - generic [ref=e279]: Monitor Snapshot Submit
+                - generic [ref=e280]: Pantau submission context per exam.
+              - tab "Monitor Session Runtime Pantau session, contract, delivery, dan runtime answer live." [ref=e281] [cursor=pointer]:
+                - generic [ref=e282]: Monitor Session Runtime
+                - generic [ref=e283]: Pantau session, contract, delivery, dan runtime answer live.
+              - tab "Monitor Snapshot Exam Pantau katalog exam siswa per user." [ref=e284] [cursor=pointer]:
+                - generic [ref=e285]: Monitor Snapshot Exam
+                - generic [ref=e286]: Pantau katalog exam siswa per user.
+              - tab "Monitor Snapshot Profile Pantau snapshot profil siswa per user." [ref=e287] [cursor=pointer]:
+                - generic [ref=e288]: Monitor Snapshot Profile
+                - generic [ref=e289]: Pantau snapshot profil siswa per user.
+              - tab "Monitor Snapshot Login Pantau login auth snapshot siswa per user." [selected] [ref=e290] [cursor=pointer]:
+                - generic [ref=e291]: Monitor Snapshot Login
+                - generic [ref=e292]: Pantau login auth snapshot siswa per user.
+            - generic [ref=e293]:
+              - generic [ref=e295]:
+                - generic [ref=e296]:
+                  - generic [ref=e297]: Cari Siswa
+                  - searchbox "Cari Siswa" [ref=e298]
+                - generic [ref=e299]:
+                  - generic [ref=e300]: Kelas
+                  - combobox "Kelas" [ref=e301] [cursor=pointer]:
+                    - option "Semua kelas" [selected]
+                    - option "KELAS_TEST_01"
+                    - option "KELAS_TEST_02"
+                    - option "KELAS_TEST_03"
+                    - option "KELAS_TEST_04"
+                    - option "KELAS_TEST_05"
+                    - option "KELAS_TEST_06"
+                    - option "KELAS_TEST_07"
+                    - option "KELAS_TEST_08"
+                    - option "KELAS_TEST_09"
+                    - option "KELAS_TEST_10"
+                    - option "KELAS_TEST_11"
+                    - option "KELAS_TEST_12"
+                    - option "KELAS_TEST_13"
+                    - option "KELAS_TEST_14"
+                    - option "KELAS_TEST_15"
+                    - option "KELAS_TEST_16"
+                    - option "KELAS_TEST_17"
+                    - option "KELAS_TEST_18"
+                    - option "KELAS_TEST_19"
+                    - option "KELAS_TEST_20"
+                    - option "KELAS_TEST_21"
+                    - option "KELAS_TEST_22"
+                    - option "KELAS_TEST_23"
+                    - option "KELAS_TEST_24"
+                - generic [ref=e302]:
+                  - generic [ref=e303]: Ruang
+                  - combobox "Ruang" [ref=e304] [cursor=pointer]:
+                    - option "Semua ruang" [selected]
+                    - option "RUANG_TEST_01"
+                    - option "RUANG_TEST_02"
+                    - option "RUANG_TEST_03"
+                    - option "RUANG_TEST_04"
+                    - option "RUANG_TEST_05"
+                    - option "RUANG_TEST_06"
+                    - option "RUANG_TEST_07"
+                    - option "RUANG_TEST_08"
+                    - option "RUANG_TEST_09"
+                    - option "RUANG_TEST_10"
+                    - option "RUANG_TEST_11"
+                    - option "RUANG_TEST_12"
+                - generic [ref=e305]:
+                  - generic [ref=e306]: Status
+                  - combobox "Status" [ref=e307] [cursor=pointer]:
+                    - option "Semua status" [selected]
+                    - option "READY"
+                    - option "WARNING"
+                    - option "MISS"
+                    - option "INVALID"
+                    - option "UNAVAILABLE"
+                    - option "IDLE"
+                    - option "! READY"
+                    - option "! WARNING"
+                    - option "! MISS"
+                    - option "! INVALID"
+                    - option "! UNAVAILABLE"
+                    - option "! IDLE"
+                - generic [ref=e308]:
+                  - button "Cari" [ref=e309] [cursor=pointer]
+                  - link "Reset" [ref=e310] [cursor=pointer]:
+                    - /url: http://192.168.1.9/wp-admin/admin.php?page=cbt-exams&cbt_exam_panel=snapshot&cbt_exam_per_page=20&cbt_exam_snapshot_exam_ids%5B0%5D=22&cbt_exam_snapshot_exam_id=22&cbt_exam_snapshot_tab=login_monitor
+              - generic [ref=e312]:
+                - heading "Monitor Snapshot Login" [level=3] [ref=e313]
+                - paragraph [ref=e314]: Pantau login auth snapshot per siswa sebagai akselerator auth/login. Snapshot ini membantu lookup dan payload login siswa, tetapi bukan active session, JWT, atau state login yang sedang hidup.
+              - generic [ref=e315]:
+                - generic [ref=e316]:
+                  - generic [ref=e317]:
+                    - strong [ref=e318]: Login Snapshot Health
+                    - generic [ref=e319]: Ringkasan ini menunjukkan seberapa sering login siswa berhasil lewat snapshot dibanding fallback canonical auth, sekaligus aktivitas freshness runner untuk exam window aktif atau yang mulai dalam 2 jam ke depan.
+                  - generic [ref=e320]: AVAILABLE
+                - generic [ref=e321]:
+                  - generic [ref=e322]:
+                    - generic [ref=e323]: Hit Rate 15 menit
+                    - strong [ref=e324]: N/A
+                  - generic [ref=e325]:
+                    - generic [ref=e326]: Snapshot Success
+                    - strong [ref=e327]: "0"
+                  - generic [ref=e328]:
+                    - generic [ref=e329]: Canonical Fallback
+                    - strong [ref=e330]: "0"
+                  - generic [ref=e331]:
+                    - generic [ref=e332]: Top MISS Reason
+                    - strong [ref=e333]: "-"
+                  - generic [ref=e334]:
+                    - generic [ref=e335]: Freshness Window Jobs
+                    - strong [ref=e336]: "9"
+                    - generic [ref=e337]: Last Tick 2026-04-09 05:03:32
+                - paragraph [ref=e338]: Freshness runner terakhir me-refresh 200 siswa (200 sukses).
+                - paragraph [ref=e339]: Freshness login snapshot memeriksa 2 exam window. Refresh 200 siswa (200 sukses), skip 0 exam.
+              - generic [ref=e340]:
+                - generic [ref=e341]:
+                  - strong [ref=e342]: 1200 siswa terfilter
+                  - generic [ref=e343]: Bulk action di tab ini menyiapkan atau membersihkan login snapshot siswa sesuai filter aktif.
+                - generic [ref=e344]:
+                  - button "Siapkan Semua Login Snapshot" [ref=e346] [cursor=pointer]
+                  - button "Bersihkan Semua Login Snapshot" [ref=e348] [cursor=pointer]
+              - table [ref=e350]:
+                - rowgroup [ref=e355]:
+                  - row "Siswa Snapshot Login Aksi" [ref=e356]:
+                    - columnheader "Siswa" [ref=e357]
+                    - columnheader "Snapshot Login" [ref=e358]
+                    - columnheader "Aksi" [ref=e359]
+                - rowgroup [ref=e360]:
+                  - 'row "COBLAX Login: coblax Email: coblax@example.local Kelas: KELAS_TEST_01 Ruang: RUANG_TEST_01 User ID: 11124 READY TTL 43168s Payload 578 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot COBLAX Role: siswa NISN: 8899000001 Kelas: KELAS_TEST_01 Ruang: RUANG_TEST_01 Agama: Islam Gender: Laki-laki login:coblax email:coblax@example.local nisn:8899000001 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e361]':
+                    - 'cell "COBLAX Login: coblax Email: coblax@example.local Kelas: KELAS_TEST_01 Ruang: RUANG_TEST_01 User ID: 11124" [ref=e362]':
+                      - generic [ref=e363]: COBLAX
+                      - generic [ref=e364]:
+                        - generic [ref=e365]:
+                          - strong [ref=e366]: "Login:"
+                          - text: coblax
+                        - generic [ref=e367]:
+                          - strong [ref=e368]: "Email:"
+                          - text: coblax@example.local
+                        - generic [ref=e369]:
+                          - strong [ref=e370]: "Kelas:"
+                          - text: KELAS_TEST_01
+                        - generic [ref=e371]:
+                          - strong [ref=e372]: "Ruang:"
+                          - text: RUANG_TEST_01
+                        - generic [ref=e373]:
+                          - strong [ref=e374]: "User ID:"
+                          - text: "11124"
+                    - 'cell "READY TTL 43168s Payload 578 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot COBLAX Role: siswa NISN: 8899000001 Kelas: KELAS_TEST_01 Ruang: RUANG_TEST_01 Agama: Islam Gender: Laki-laki login:coblax email:coblax@example.local nisn:8899000001 Login snapshot siap dipakai untuk login siswa." [ref=e375]':
+                      - generic [ref=e376]:
+                        - generic [ref=e377]:
+                          - generic [ref=e378]: READY
+                          - generic [ref=e379]: TTL 43168s
+                          - generic [ref=e380]: Payload 578 bytes
+                          - generic [ref=e381]: Source freshness_runner
+                        - generic [ref=e382]:
+                          - strong [ref=e383]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e384]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e385]:
+                          - img "Foto login snapshot COBLAX" [ref=e386]
+                          - generic [ref=e387]:
+                            - generic [ref=e388]: "Role: siswa"
+                            - generic [ref=e389]: "NISN: 8899000001"
+                            - generic [ref=e390]: "Kelas: KELAS_TEST_01"
+                            - generic [ref=e391]: "Ruang: RUANG_TEST_01"
+                            - generic [ref=e392]: "Agama: Islam"
+                            - generic [ref=e393]: "Gender: Laki-laki"
+                        - generic [ref=e394]:
+                          - generic [ref=e395]: login:coblax
+                          - generic [ref=e396]: email:coblax@example.local
+                          - generic [ref=e397]: nisn:8899000001
+                        - group [ref=e398]:
+                          - generic "Detail teknis" [ref=e399] [cursor=pointer]
+                        - paragraph [ref=e400]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e401]:
+                      - generic [ref=e402]:
+                        - button "Siapkan Login Snapshot" [ref=e404] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e406] [cursor=pointer]
+                  - 'row "Siswa Test 0002 Login: test_siswa_0002 Email: test_siswa_0002@example.local Kelas: KELAS_TEST_02 Ruang: RUANG_TEST_02 User ID: 11125 READY TTL 43168s Payload 637 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0002 Role: siswa NISN: 8800000002 Kelas: KELAS_TEST_02 Ruang: RUANG_TEST_02 Agama: Kristen Protestan Gender: Perempuan login:test_siswa_0002 email:test_siswa_0002@example.local nisn:8800000002 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e407]':
+                    - 'cell "Siswa Test 0002 Login: test_siswa_0002 Email: test_siswa_0002@example.local Kelas: KELAS_TEST_02 Ruang: RUANG_TEST_02 User ID: 11125" [ref=e408]':
+                      - generic [ref=e409]: Siswa Test 0002
+                      - generic [ref=e410]:
+                        - generic [ref=e411]:
+                          - strong [ref=e412]: "Login:"
+                          - text: test_siswa_0002
+                        - generic [ref=e413]:
+                          - strong [ref=e414]: "Email:"
+                          - text: test_siswa_0002@example.local
+                        - generic [ref=e415]:
+                          - strong [ref=e416]: "Kelas:"
+                          - text: KELAS_TEST_02
+                        - generic [ref=e417]:
+                          - strong [ref=e418]: "Ruang:"
+                          - text: RUANG_TEST_02
+                        - generic [ref=e419]:
+                          - strong [ref=e420]: "User ID:"
+                          - text: "11125"
+                    - 'cell "READY TTL 43168s Payload 637 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0002 Role: siswa NISN: 8800000002 Kelas: KELAS_TEST_02 Ruang: RUANG_TEST_02 Agama: Kristen Protestan Gender: Perempuan login:test_siswa_0002 email:test_siswa_0002@example.local nisn:8800000002 Login snapshot siap dipakai untuk login siswa." [ref=e421]':
+                      - generic [ref=e422]:
+                        - generic [ref=e423]:
+                          - generic [ref=e424]: READY
+                          - generic [ref=e425]: TTL 43168s
+                          - generic [ref=e426]: Payload 637 bytes
+                          - generic [ref=e427]: Source freshness_runner
+                        - generic [ref=e428]:
+                          - strong [ref=e429]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e430]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e431]:
+                          - img "Foto login snapshot Siswa Test 0002" [ref=e432]
+                          - generic [ref=e433]:
+                            - generic [ref=e434]: "Role: siswa"
+                            - generic [ref=e435]: "NISN: 8800000002"
+                            - generic [ref=e436]: "Kelas: KELAS_TEST_02"
+                            - generic [ref=e437]: "Ruang: RUANG_TEST_02"
+                            - generic [ref=e438]: "Agama: Kristen Protestan"
+                            - generic [ref=e439]: "Gender: Perempuan"
+                        - generic [ref=e440]:
+                          - generic [ref=e441]: login:test_siswa_0002
+                          - generic [ref=e442]: email:test_siswa_0002@example.local
+                          - generic [ref=e443]: nisn:8800000002
+                        - group [ref=e444]:
+                          - generic "Detail teknis" [ref=e445] [cursor=pointer]
+                        - paragraph [ref=e446]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e447]:
+                      - generic [ref=e448]:
+                        - button "Siapkan Login Snapshot" [ref=e450] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e452] [cursor=pointer]
+                  - 'row "Siswa Test 0003 Login: test_siswa_0003 Email: test_siswa_0003@example.local Kelas: KELAS_TEST_03 Ruang: RUANG_TEST_03 User ID: 11126 READY TTL 43168s Payload 626 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0003 Role: siswa NISN: 8800000003 Kelas: KELAS_TEST_03 Ruang: RUANG_TEST_03 Agama: Katolik Gender: Laki-laki login:test_siswa_0003 email:test_siswa_0003@example.local nisn:8800000003 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e453]':
+                    - 'cell "Siswa Test 0003 Login: test_siswa_0003 Email: test_siswa_0003@example.local Kelas: KELAS_TEST_03 Ruang: RUANG_TEST_03 User ID: 11126" [ref=e454]':
+                      - generic [ref=e455]: Siswa Test 0003
+                      - generic [ref=e456]:
+                        - generic [ref=e457]:
+                          - strong [ref=e458]: "Login:"
+                          - text: test_siswa_0003
+                        - generic [ref=e459]:
+                          - strong [ref=e460]: "Email:"
+                          - text: test_siswa_0003@example.local
+                        - generic [ref=e461]:
+                          - strong [ref=e462]: "Kelas:"
+                          - text: KELAS_TEST_03
+                        - generic [ref=e463]:
+                          - strong [ref=e464]: "Ruang:"
+                          - text: RUANG_TEST_03
+                        - generic [ref=e465]:
+                          - strong [ref=e466]: "User ID:"
+                          - text: "11126"
+                    - 'cell "READY TTL 43168s Payload 626 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0003 Role: siswa NISN: 8800000003 Kelas: KELAS_TEST_03 Ruang: RUANG_TEST_03 Agama: Katolik Gender: Laki-laki login:test_siswa_0003 email:test_siswa_0003@example.local nisn:8800000003 Login snapshot siap dipakai untuk login siswa." [ref=e467]':
+                      - generic [ref=e468]:
+                        - generic [ref=e469]:
+                          - generic [ref=e470]: READY
+                          - generic [ref=e471]: TTL 43168s
+                          - generic [ref=e472]: Payload 626 bytes
+                          - generic [ref=e473]: Source freshness_runner
+                        - generic [ref=e474]:
+                          - strong [ref=e475]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e476]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e477]:
+                          - img "Foto login snapshot Siswa Test 0003" [ref=e478]
+                          - generic [ref=e479]:
+                            - generic [ref=e480]: "Role: siswa"
+                            - generic [ref=e481]: "NISN: 8800000003"
+                            - generic [ref=e482]: "Kelas: KELAS_TEST_03"
+                            - generic [ref=e483]: "Ruang: RUANG_TEST_03"
+                            - generic [ref=e484]: "Agama: Katolik"
+                            - generic [ref=e485]: "Gender: Laki-laki"
+                        - generic [ref=e486]:
+                          - generic [ref=e487]: login:test_siswa_0003
+                          - generic [ref=e488]: email:test_siswa_0003@example.local
+                          - generic [ref=e489]: nisn:8800000003
+                        - group [ref=e490]:
+                          - generic "Detail teknis" [ref=e491] [cursor=pointer]
+                        - paragraph [ref=e492]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e493]:
+                      - generic [ref=e494]:
+                        - button "Siapkan Login Snapshot" [ref=e496] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e498] [cursor=pointer]
+                  - 'row "Siswa Test 0004 Login: test_siswa_0004 Email: test_siswa_0004@example.local Kelas: KELAS_TEST_04 Ruang: RUANG_TEST_04 User ID: 11127 READY TTL 43168s Payload 625 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0004 Role: siswa NISN: 8800000004 Kelas: KELAS_TEST_04 Ruang: RUANG_TEST_04 Agama: Hindu Gender: Perempuan login:test_siswa_0004 email:test_siswa_0004@example.local nisn:8800000004 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e499]':
+                    - 'cell "Siswa Test 0004 Login: test_siswa_0004 Email: test_siswa_0004@example.local Kelas: KELAS_TEST_04 Ruang: RUANG_TEST_04 User ID: 11127" [ref=e500]':
+                      - generic [ref=e501]: Siswa Test 0004
+                      - generic [ref=e502]:
+                        - generic [ref=e503]:
+                          - strong [ref=e504]: "Login:"
+                          - text: test_siswa_0004
+                        - generic [ref=e505]:
+                          - strong [ref=e506]: "Email:"
+                          - text: test_siswa_0004@example.local
+                        - generic [ref=e507]:
+                          - strong [ref=e508]: "Kelas:"
+                          - text: KELAS_TEST_04
+                        - generic [ref=e509]:
+                          - strong [ref=e510]: "Ruang:"
+                          - text: RUANG_TEST_04
+                        - generic [ref=e511]:
+                          - strong [ref=e512]: "User ID:"
+                          - text: "11127"
+                    - 'cell "READY TTL 43168s Payload 625 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0004 Role: siswa NISN: 8800000004 Kelas: KELAS_TEST_04 Ruang: RUANG_TEST_04 Agama: Hindu Gender: Perempuan login:test_siswa_0004 email:test_siswa_0004@example.local nisn:8800000004 Login snapshot siap dipakai untuk login siswa." [ref=e513]':
+                      - generic [ref=e514]:
+                        - generic [ref=e515]:
+                          - generic [ref=e516]: READY
+                          - generic [ref=e517]: TTL 43168s
+                          - generic [ref=e518]: Payload 625 bytes
+                          - generic [ref=e519]: Source freshness_runner
+                        - generic [ref=e520]:
+                          - strong [ref=e521]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e522]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e523]:
+                          - img "Foto login snapshot Siswa Test 0004" [ref=e524]
+                          - generic [ref=e525]:
+                            - generic [ref=e526]: "Role: siswa"
+                            - generic [ref=e527]: "NISN: 8800000004"
+                            - generic [ref=e528]: "Kelas: KELAS_TEST_04"
+                            - generic [ref=e529]: "Ruang: RUANG_TEST_04"
+                            - generic [ref=e530]: "Agama: Hindu"
+                            - generic [ref=e531]: "Gender: Perempuan"
+                        - generic [ref=e532]:
+                          - generic [ref=e533]: login:test_siswa_0004
+                          - generic [ref=e534]: email:test_siswa_0004@example.local
+                          - generic [ref=e535]: nisn:8800000004
+                        - group [ref=e536]:
+                          - generic "Detail teknis" [ref=e537] [cursor=pointer]
+                        - paragraph [ref=e538]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e539]:
+                      - generic [ref=e540]:
+                        - button "Siapkan Login Snapshot" [ref=e542] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e544] [cursor=pointer]
+                  - 'row "Siswa Test 0005 Login: test_siswa_0005 Email: test_siswa_0005@example.local Kelas: KELAS_TEST_05 Ruang: RUANG_TEST_05 User ID: 11128 READY TTL 43168s Payload 623 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0005 Role: siswa NISN: 8800000005 Kelas: KELAS_TEST_05 Ruang: RUANG_TEST_05 Agama: Buddha Gender: Laki-laki login:test_siswa_0005 email:test_siswa_0005@example.local nisn:8800000005 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e545]':
+                    - 'cell "Siswa Test 0005 Login: test_siswa_0005 Email: test_siswa_0005@example.local Kelas: KELAS_TEST_05 Ruang: RUANG_TEST_05 User ID: 11128" [ref=e546]':
+                      - generic [ref=e547]: Siswa Test 0005
+                      - generic [ref=e548]:
+                        - generic [ref=e549]:
+                          - strong [ref=e550]: "Login:"
+                          - text: test_siswa_0005
+                        - generic [ref=e551]:
+                          - strong [ref=e552]: "Email:"
+                          - text: test_siswa_0005@example.local
+                        - generic [ref=e553]:
+                          - strong [ref=e554]: "Kelas:"
+                          - text: KELAS_TEST_05
+                        - generic [ref=e555]:
+                          - strong [ref=e556]: "Ruang:"
+                          - text: RUANG_TEST_05
+                        - generic [ref=e557]:
+                          - strong [ref=e558]: "User ID:"
+                          - text: "11128"
+                    - 'cell "READY TTL 43168s Payload 623 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0005 Role: siswa NISN: 8800000005 Kelas: KELAS_TEST_05 Ruang: RUANG_TEST_05 Agama: Buddha Gender: Laki-laki login:test_siswa_0005 email:test_siswa_0005@example.local nisn:8800000005 Login snapshot siap dipakai untuk login siswa." [ref=e559]':
+                      - generic [ref=e560]:
+                        - generic [ref=e561]:
+                          - generic [ref=e562]: READY
+                          - generic [ref=e563]: TTL 43168s
+                          - generic [ref=e564]: Payload 623 bytes
+                          - generic [ref=e565]: Source freshness_runner
+                        - generic [ref=e566]:
+                          - strong [ref=e567]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e568]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e569]:
+                          - img "Foto login snapshot Siswa Test 0005" [ref=e570]
+                          - generic [ref=e571]:
+                            - generic [ref=e572]: "Role: siswa"
+                            - generic [ref=e573]: "NISN: 8800000005"
+                            - generic [ref=e574]: "Kelas: KELAS_TEST_05"
+                            - generic [ref=e575]: "Ruang: RUANG_TEST_05"
+                            - generic [ref=e576]: "Agama: Buddha"
+                            - generic [ref=e577]: "Gender: Laki-laki"
+                        - generic [ref=e578]:
+                          - generic [ref=e579]: login:test_siswa_0005
+                          - generic [ref=e580]: email:test_siswa_0005@example.local
+                          - generic [ref=e581]: nisn:8800000005
+                        - group [ref=e582]:
+                          - generic "Detail teknis" [ref=e583] [cursor=pointer]
+                        - paragraph [ref=e584]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e585]:
+                      - generic [ref=e586]:
+                        - button "Siapkan Login Snapshot" [ref=e588] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e590] [cursor=pointer]
+                  - 'row "Siswa Test 0006 Login: test_siswa_0006 Email: test_siswa_0006@example.local Kelas: KELAS_TEST_06 Ruang: RUANG_TEST_06 User ID: 11129 READY TTL 43168s Payload 629 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0006 Role: siswa NISN: 8800000006 Kelas: KELAS_TEST_06 Ruang: RUANG_TEST_06 Agama: Khonghucu Gender: Perempuan login:test_siswa_0006 email:test_siswa_0006@example.local nisn:8800000006 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e591]':
+                    - 'cell "Siswa Test 0006 Login: test_siswa_0006 Email: test_siswa_0006@example.local Kelas: KELAS_TEST_06 Ruang: RUANG_TEST_06 User ID: 11129" [ref=e592]':
+                      - generic [ref=e593]: Siswa Test 0006
+                      - generic [ref=e594]:
+                        - generic [ref=e595]:
+                          - strong [ref=e596]: "Login:"
+                          - text: test_siswa_0006
+                        - generic [ref=e597]:
+                          - strong [ref=e598]: "Email:"
+                          - text: test_siswa_0006@example.local
+                        - generic [ref=e599]:
+                          - strong [ref=e600]: "Kelas:"
+                          - text: KELAS_TEST_06
+                        - generic [ref=e601]:
+                          - strong [ref=e602]: "Ruang:"
+                          - text: RUANG_TEST_06
+                        - generic [ref=e603]:
+                          - strong [ref=e604]: "User ID:"
+                          - text: "11129"
+                    - 'cell "READY TTL 43168s Payload 629 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0006 Role: siswa NISN: 8800000006 Kelas: KELAS_TEST_06 Ruang: RUANG_TEST_06 Agama: Khonghucu Gender: Perempuan login:test_siswa_0006 email:test_siswa_0006@example.local nisn:8800000006 Login snapshot siap dipakai untuk login siswa." [ref=e605]':
+                      - generic [ref=e606]:
+                        - generic [ref=e607]:
+                          - generic [ref=e608]: READY
+                          - generic [ref=e609]: TTL 43168s
+                          - generic [ref=e610]: Payload 629 bytes
+                          - generic [ref=e611]: Source freshness_runner
+                        - generic [ref=e612]:
+                          - strong [ref=e613]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e614]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e615]:
+                          - img "Foto login snapshot Siswa Test 0006" [ref=e616]
+                          - generic [ref=e617]:
+                            - generic [ref=e618]: "Role: siswa"
+                            - generic [ref=e619]: "NISN: 8800000006"
+                            - generic [ref=e620]: "Kelas: KELAS_TEST_06"
+                            - generic [ref=e621]: "Ruang: RUANG_TEST_06"
+                            - generic [ref=e622]: "Agama: Khonghucu"
+                            - generic [ref=e623]: "Gender: Perempuan"
+                        - generic [ref=e624]:
+                          - generic [ref=e625]: login:test_siswa_0006
+                          - generic [ref=e626]: email:test_siswa_0006@example.local
+                          - generic [ref=e627]: nisn:8800000006
+                        - group [ref=e628]:
+                          - generic "Detail teknis" [ref=e629] [cursor=pointer]
+                        - paragraph [ref=e630]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e631]:
+                      - generic [ref=e632]:
+                        - button "Siapkan Login Snapshot" [ref=e634] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e636] [cursor=pointer]
+                  - 'row "Siswa Test 0007 Login: test_siswa_0007 Email: test_siswa_0007@example.local Kelas: KELAS_TEST_07 Ruang: RUANG_TEST_07 User ID: 11130 READY TTL 43168s Payload 622 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0007 Role: siswa NISN: 8800000007 Kelas: KELAS_TEST_07 Ruang: RUANG_TEST_07 Agama: Islam Gender: Laki-laki login:test_siswa_0007 email:test_siswa_0007@example.local nisn:8800000007 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e637]':
+                    - 'cell "Siswa Test 0007 Login: test_siswa_0007 Email: test_siswa_0007@example.local Kelas: KELAS_TEST_07 Ruang: RUANG_TEST_07 User ID: 11130" [ref=e638]':
+                      - generic [ref=e639]: Siswa Test 0007
+                      - generic [ref=e640]:
+                        - generic [ref=e641]:
+                          - strong [ref=e642]: "Login:"
+                          - text: test_siswa_0007
+                        - generic [ref=e643]:
+                          - strong [ref=e644]: "Email:"
+                          - text: test_siswa_0007@example.local
+                        - generic [ref=e645]:
+                          - strong [ref=e646]: "Kelas:"
+                          - text: KELAS_TEST_07
+                        - generic [ref=e647]:
+                          - strong [ref=e648]: "Ruang:"
+                          - text: RUANG_TEST_07
+                        - generic [ref=e649]:
+                          - strong [ref=e650]: "User ID:"
+                          - text: "11130"
+                    - 'cell "READY TTL 43168s Payload 622 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0007 Role: siswa NISN: 8800000007 Kelas: KELAS_TEST_07 Ruang: RUANG_TEST_07 Agama: Islam Gender: Laki-laki login:test_siswa_0007 email:test_siswa_0007@example.local nisn:8800000007 Login snapshot siap dipakai untuk login siswa." [ref=e651]':
+                      - generic [ref=e652]:
+                        - generic [ref=e653]:
+                          - generic [ref=e654]: READY
+                          - generic [ref=e655]: TTL 43168s
+                          - generic [ref=e656]: Payload 622 bytes
+                          - generic [ref=e657]: Source freshness_runner
+                        - generic [ref=e658]:
+                          - strong [ref=e659]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e660]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e661]:
+                          - img "Foto login snapshot Siswa Test 0007" [ref=e662]
+                          - generic [ref=e663]:
+                            - generic [ref=e664]: "Role: siswa"
+                            - generic [ref=e665]: "NISN: 8800000007"
+                            - generic [ref=e666]: "Kelas: KELAS_TEST_07"
+                            - generic [ref=e667]: "Ruang: RUANG_TEST_07"
+                            - generic [ref=e668]: "Agama: Islam"
+                            - generic [ref=e669]: "Gender: Laki-laki"
+                        - generic [ref=e670]:
+                          - generic [ref=e671]: login:test_siswa_0007
+                          - generic [ref=e672]: email:test_siswa_0007@example.local
+                          - generic [ref=e673]: nisn:8800000007
+                        - group [ref=e674]:
+                          - generic "Detail teknis" [ref=e675] [cursor=pointer]
+                        - paragraph [ref=e676]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e677]:
+                      - generic [ref=e678]:
+                        - button "Siapkan Login Snapshot" [ref=e680] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e682] [cursor=pointer]
+                  - 'row "Siswa Test 0008 Login: test_siswa_0008 Email: test_siswa_0008@example.local Kelas: KELAS_TEST_08 Ruang: RUANG_TEST_08 User ID: 11131 READY TTL 43168s Payload 638 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0008 Role: siswa NISN: 8800000008 Kelas: KELAS_TEST_08 Ruang: RUANG_TEST_08 Agama: Kristen Protestan Gender: Perempuan login:test_siswa_0008 email:test_siswa_0008@example.local nisn:8800000008 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e683]':
+                    - 'cell "Siswa Test 0008 Login: test_siswa_0008 Email: test_siswa_0008@example.local Kelas: KELAS_TEST_08 Ruang: RUANG_TEST_08 User ID: 11131" [ref=e684]':
+                      - generic [ref=e685]: Siswa Test 0008
+                      - generic [ref=e686]:
+                        - generic [ref=e687]:
+                          - strong [ref=e688]: "Login:"
+                          - text: test_siswa_0008
+                        - generic [ref=e689]:
+                          - strong [ref=e690]: "Email:"
+                          - text: test_siswa_0008@example.local
+                        - generic [ref=e691]:
+                          - strong [ref=e692]: "Kelas:"
+                          - text: KELAS_TEST_08
+                        - generic [ref=e693]:
+                          - strong [ref=e694]: "Ruang:"
+                          - text: RUANG_TEST_08
+                        - generic [ref=e695]:
+                          - strong [ref=e696]: "User ID:"
+                          - text: "11131"
+                    - 'cell "READY TTL 43168s Payload 638 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0008 Role: siswa NISN: 8800000008 Kelas: KELAS_TEST_08 Ruang: RUANG_TEST_08 Agama: Kristen Protestan Gender: Perempuan login:test_siswa_0008 email:test_siswa_0008@example.local nisn:8800000008 Login snapshot siap dipakai untuk login siswa." [ref=e697]':
+                      - generic [ref=e698]:
+                        - generic [ref=e699]:
+                          - generic [ref=e700]: READY
+                          - generic [ref=e701]: TTL 43168s
+                          - generic [ref=e702]: Payload 638 bytes
+                          - generic [ref=e703]: Source freshness_runner
+                        - generic [ref=e704]:
+                          - strong [ref=e705]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e706]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e707]:
+                          - img "Foto login snapshot Siswa Test 0008" [ref=e708]
+                          - generic [ref=e709]:
+                            - generic [ref=e710]: "Role: siswa"
+                            - generic [ref=e711]: "NISN: 8800000008"
+                            - generic [ref=e712]: "Kelas: KELAS_TEST_08"
+                            - generic [ref=e713]: "Ruang: RUANG_TEST_08"
+                            - generic [ref=e714]: "Agama: Kristen Protestan"
+                            - generic [ref=e715]: "Gender: Perempuan"
+                        - generic [ref=e716]:
+                          - generic [ref=e717]: login:test_siswa_0008
+                          - generic [ref=e718]: email:test_siswa_0008@example.local
+                          - generic [ref=e719]: nisn:8800000008
+                        - group [ref=e720]:
+                          - generic "Detail teknis" [ref=e721] [cursor=pointer]
+                        - paragraph [ref=e722]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e723]:
+                      - generic [ref=e724]:
+                        - button "Siapkan Login Snapshot" [ref=e726] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e728] [cursor=pointer]
+                  - 'row "Siswa Test 0009 Login: test_siswa_0009 Email: test_siswa_0009@example.local Kelas: KELAS_TEST_09 Ruang: RUANG_TEST_09 User ID: 11132 READY TTL 43168s Payload 626 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0009 Role: siswa NISN: 8800000009 Kelas: KELAS_TEST_09 Ruang: RUANG_TEST_09 Agama: Katolik Gender: Laki-laki login:test_siswa_0009 email:test_siswa_0009@example.local nisn:8800000009 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e729]':
+                    - 'cell "Siswa Test 0009 Login: test_siswa_0009 Email: test_siswa_0009@example.local Kelas: KELAS_TEST_09 Ruang: RUANG_TEST_09 User ID: 11132" [ref=e730]':
+                      - generic [ref=e731]: Siswa Test 0009
+                      - generic [ref=e732]:
+                        - generic [ref=e733]:
+                          - strong [ref=e734]: "Login:"
+                          - text: test_siswa_0009
+                        - generic [ref=e735]:
+                          - strong [ref=e736]: "Email:"
+                          - text: test_siswa_0009@example.local
+                        - generic [ref=e737]:
+                          - strong [ref=e738]: "Kelas:"
+                          - text: KELAS_TEST_09
+                        - generic [ref=e739]:
+                          - strong [ref=e740]: "Ruang:"
+                          - text: RUANG_TEST_09
+                        - generic [ref=e741]:
+                          - strong [ref=e742]: "User ID:"
+                          - text: "11132"
+                    - 'cell "READY TTL 43168s Payload 626 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0009 Role: siswa NISN: 8800000009 Kelas: KELAS_TEST_09 Ruang: RUANG_TEST_09 Agama: Katolik Gender: Laki-laki login:test_siswa_0009 email:test_siswa_0009@example.local nisn:8800000009 Login snapshot siap dipakai untuk login siswa." [ref=e743]':
+                      - generic [ref=e744]:
+                        - generic [ref=e745]:
+                          - generic [ref=e746]: READY
+                          - generic [ref=e747]: TTL 43168s
+                          - generic [ref=e748]: Payload 626 bytes
+                          - generic [ref=e749]: Source freshness_runner
+                        - generic [ref=e750]:
+                          - strong [ref=e751]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e752]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e753]:
+                          - img "Foto login snapshot Siswa Test 0009" [ref=e754]
+                          - generic [ref=e755]:
+                            - generic [ref=e756]: "Role: siswa"
+                            - generic [ref=e757]: "NISN: 8800000009"
+                            - generic [ref=e758]: "Kelas: KELAS_TEST_09"
+                            - generic [ref=e759]: "Ruang: RUANG_TEST_09"
+                            - generic [ref=e760]: "Agama: Katolik"
+                            - generic [ref=e761]: "Gender: Laki-laki"
+                        - generic [ref=e762]:
+                          - generic [ref=e763]: login:test_siswa_0009
+                          - generic [ref=e764]: email:test_siswa_0009@example.local
+                          - generic [ref=e765]: nisn:8800000009
+                        - group [ref=e766]:
+                          - generic "Detail teknis" [ref=e767] [cursor=pointer]
+                        - paragraph [ref=e768]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e769]:
+                      - generic [ref=e770]:
+                        - button "Siapkan Login Snapshot" [ref=e772] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e774] [cursor=pointer]
+                  - 'row "Siswa Test 0010 Login: test_siswa_0010 Email: test_siswa_0010@example.local Kelas: KELAS_TEST_10 Ruang: RUANG_TEST_10 User ID: 11133 READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0010 Role: siswa NISN: 8800000010 Kelas: KELAS_TEST_10 Ruang: RUANG_TEST_10 Agama: Hindu Gender: Perempuan login:test_siswa_0010 email:test_siswa_0010@example.local nisn:8800000010 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e775]':
+                    - 'cell "Siswa Test 0010 Login: test_siswa_0010 Email: test_siswa_0010@example.local Kelas: KELAS_TEST_10 Ruang: RUANG_TEST_10 User ID: 11133" [ref=e776]':
+                      - generic [ref=e777]: Siswa Test 0010
+                      - generic [ref=e778]:
+                        - generic [ref=e779]:
+                          - strong [ref=e780]: "Login:"
+                          - text: test_siswa_0010
+                        - generic [ref=e781]:
+                          - strong [ref=e782]: "Email:"
+                          - text: test_siswa_0010@example.local
+                        - generic [ref=e783]:
+                          - strong [ref=e784]: "Kelas:"
+                          - text: KELAS_TEST_10
+                        - generic [ref=e785]:
+                          - strong [ref=e786]: "Ruang:"
+                          - text: RUANG_TEST_10
+                        - generic [ref=e787]:
+                          - strong [ref=e788]: "User ID:"
+                          - text: "11133"
+                    - 'cell "READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0010 Role: siswa NISN: 8800000010 Kelas: KELAS_TEST_10 Ruang: RUANG_TEST_10 Agama: Hindu Gender: Perempuan login:test_siswa_0010 email:test_siswa_0010@example.local nisn:8800000010 Login snapshot siap dipakai untuk login siswa." [ref=e789]':
+                      - generic [ref=e790]:
+                        - generic [ref=e791]:
+                          - generic [ref=e792]: READY
+                          - generic [ref=e793]: TTL 43168s
+                          - generic [ref=e794]: Payload 624 bytes
+                          - generic [ref=e795]: Source freshness_runner
+                        - generic [ref=e796]:
+                          - strong [ref=e797]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e798]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e799]:
+                          - img "Foto login snapshot Siswa Test 0010" [ref=e800]
+                          - generic [ref=e801]:
+                            - generic [ref=e802]: "Role: siswa"
+                            - generic [ref=e803]: "NISN: 8800000010"
+                            - generic [ref=e804]: "Kelas: KELAS_TEST_10"
+                            - generic [ref=e805]: "Ruang: RUANG_TEST_10"
+                            - generic [ref=e806]: "Agama: Hindu"
+                            - generic [ref=e807]: "Gender: Perempuan"
+                        - generic [ref=e808]:
+                          - generic [ref=e809]: login:test_siswa_0010
+                          - generic [ref=e810]: email:test_siswa_0010@example.local
+                          - generic [ref=e811]: nisn:8800000010
+                        - group [ref=e812]:
+                          - generic "Detail teknis" [ref=e813] [cursor=pointer]
+                        - paragraph [ref=e814]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e815]:
+                      - generic [ref=e816]:
+                        - button "Siapkan Login Snapshot" [ref=e818] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e820] [cursor=pointer]
+                  - 'row "Siswa Test 0011 Login: test_siswa_0011 Email: test_siswa_0011@example.local Kelas: KELAS_TEST_11 Ruang: RUANG_TEST_11 User ID: 11134 READY TTL 43168s Payload 623 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0011 Role: siswa NISN: 8800000011 Kelas: KELAS_TEST_11 Ruang: RUANG_TEST_11 Agama: Buddha Gender: Laki-laki login:test_siswa_0011 email:test_siswa_0011@example.local nisn:8800000011 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e821]':
+                    - 'cell "Siswa Test 0011 Login: test_siswa_0011 Email: test_siswa_0011@example.local Kelas: KELAS_TEST_11 Ruang: RUANG_TEST_11 User ID: 11134" [ref=e822]':
+                      - generic [ref=e823]: Siswa Test 0011
+                      - generic [ref=e824]:
+                        - generic [ref=e825]:
+                          - strong [ref=e826]: "Login:"
+                          - text: test_siswa_0011
+                        - generic [ref=e827]:
+                          - strong [ref=e828]: "Email:"
+                          - text: test_siswa_0011@example.local
+                        - generic [ref=e829]:
+                          - strong [ref=e830]: "Kelas:"
+                          - text: KELAS_TEST_11
+                        - generic [ref=e831]:
+                          - strong [ref=e832]: "Ruang:"
+                          - text: RUANG_TEST_11
+                        - generic [ref=e833]:
+                          - strong [ref=e834]: "User ID:"
+                          - text: "11134"
+                    - 'cell "READY TTL 43168s Payload 623 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0011 Role: siswa NISN: 8800000011 Kelas: KELAS_TEST_11 Ruang: RUANG_TEST_11 Agama: Buddha Gender: Laki-laki login:test_siswa_0011 email:test_siswa_0011@example.local nisn:8800000011 Login snapshot siap dipakai untuk login siswa." [ref=e835]':
+                      - generic [ref=e836]:
+                        - generic [ref=e837]:
+                          - generic [ref=e838]: READY
+                          - generic [ref=e839]: TTL 43168s
+                          - generic [ref=e840]: Payload 623 bytes
+                          - generic [ref=e841]: Source freshness_runner
+                        - generic [ref=e842]:
+                          - strong [ref=e843]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e844]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e845]:
+                          - img "Foto login snapshot Siswa Test 0011" [ref=e846]
+                          - generic [ref=e847]:
+                            - generic [ref=e848]: "Role: siswa"
+                            - generic [ref=e849]: "NISN: 8800000011"
+                            - generic [ref=e850]: "Kelas: KELAS_TEST_11"
+                            - generic [ref=e851]: "Ruang: RUANG_TEST_11"
+                            - generic [ref=e852]: "Agama: Buddha"
+                            - generic [ref=e853]: "Gender: Laki-laki"
+                        - generic [ref=e854]:
+                          - generic [ref=e855]: login:test_siswa_0011
+                          - generic [ref=e856]: email:test_siswa_0011@example.local
+                          - generic [ref=e857]: nisn:8800000011
+                        - group [ref=e858]:
+                          - generic "Detail teknis" [ref=e859] [cursor=pointer]
+                        - paragraph [ref=e860]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e861]:
+                      - generic [ref=e862]:
+                        - button "Siapkan Login Snapshot" [ref=e864] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e866] [cursor=pointer]
+                  - 'row "Siswa Test 0012 Login: test_siswa_0012 Email: test_siswa_0012@example.local Kelas: KELAS_TEST_12 Ruang: RUANG_TEST_12 User ID: 11135 READY TTL 43168s Payload 628 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0012 Role: siswa NISN: 8800000012 Kelas: KELAS_TEST_12 Ruang: RUANG_TEST_12 Agama: Khonghucu Gender: Perempuan login:test_siswa_0012 email:test_siswa_0012@example.local nisn:8800000012 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e867]':
+                    - 'cell "Siswa Test 0012 Login: test_siswa_0012 Email: test_siswa_0012@example.local Kelas: KELAS_TEST_12 Ruang: RUANG_TEST_12 User ID: 11135" [ref=e868]':
+                      - generic [ref=e869]: Siswa Test 0012
+                      - generic [ref=e870]:
+                        - generic [ref=e871]:
+                          - strong [ref=e872]: "Login:"
+                          - text: test_siswa_0012
+                        - generic [ref=e873]:
+                          - strong [ref=e874]: "Email:"
+                          - text: test_siswa_0012@example.local
+                        - generic [ref=e875]:
+                          - strong [ref=e876]: "Kelas:"
+                          - text: KELAS_TEST_12
+                        - generic [ref=e877]:
+                          - strong [ref=e878]: "Ruang:"
+                          - text: RUANG_TEST_12
+                        - generic [ref=e879]:
+                          - strong [ref=e880]: "User ID:"
+                          - text: "11135"
+                    - 'cell "READY TTL 43168s Payload 628 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0012 Role: siswa NISN: 8800000012 Kelas: KELAS_TEST_12 Ruang: RUANG_TEST_12 Agama: Khonghucu Gender: Perempuan login:test_siswa_0012 email:test_siswa_0012@example.local nisn:8800000012 Login snapshot siap dipakai untuk login siswa." [ref=e881]':
+                      - generic [ref=e882]:
+                        - generic [ref=e883]:
+                          - generic [ref=e884]: READY
+                          - generic [ref=e885]: TTL 43168s
+                          - generic [ref=e886]: Payload 628 bytes
+                          - generic [ref=e887]: Source freshness_runner
+                        - generic [ref=e888]:
+                          - strong [ref=e889]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e890]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e891]:
+                          - img "Foto login snapshot Siswa Test 0012" [ref=e892]
+                          - generic [ref=e893]:
+                            - generic [ref=e894]: "Role: siswa"
+                            - generic [ref=e895]: "NISN: 8800000012"
+                            - generic [ref=e896]: "Kelas: KELAS_TEST_12"
+                            - generic [ref=e897]: "Ruang: RUANG_TEST_12"
+                            - generic [ref=e898]: "Agama: Khonghucu"
+                            - generic [ref=e899]: "Gender: Perempuan"
+                        - generic [ref=e900]:
+                          - generic [ref=e901]: login:test_siswa_0012
+                          - generic [ref=e902]: email:test_siswa_0012@example.local
+                          - generic [ref=e903]: nisn:8800000012
+                        - group [ref=e904]:
+                          - generic "Detail teknis" [ref=e905] [cursor=pointer]
+                        - paragraph [ref=e906]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e907]:
+                      - generic [ref=e908]:
+                        - button "Siapkan Login Snapshot" [ref=e910] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e912] [cursor=pointer]
+                  - 'row "Siswa Test 0013 Login: test_siswa_0013 Email: test_siswa_0013@example.local Kelas: KELAS_TEST_13 Ruang: RUANG_TEST_01 User ID: 11136 READY TTL 43168s Payload 623 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0013 Role: siswa NISN: 8800000013 Kelas: KELAS_TEST_13 Ruang: RUANG_TEST_01 Agama: Islam Gender: Laki-laki login:test_siswa_0013 email:test_siswa_0013@example.local nisn:8800000013 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e913]':
+                    - 'cell "Siswa Test 0013 Login: test_siswa_0013 Email: test_siswa_0013@example.local Kelas: KELAS_TEST_13 Ruang: RUANG_TEST_01 User ID: 11136" [ref=e914]':
+                      - generic [ref=e915]: Siswa Test 0013
+                      - generic [ref=e916]:
+                        - generic [ref=e917]:
+                          - strong [ref=e918]: "Login:"
+                          - text: test_siswa_0013
+                        - generic [ref=e919]:
+                          - strong [ref=e920]: "Email:"
+                          - text: test_siswa_0013@example.local
+                        - generic [ref=e921]:
+                          - strong [ref=e922]: "Kelas:"
+                          - text: KELAS_TEST_13
+                        - generic [ref=e923]:
+                          - strong [ref=e924]: "Ruang:"
+                          - text: RUANG_TEST_01
+                        - generic [ref=e925]:
+                          - strong [ref=e926]: "User ID:"
+                          - text: "11136"
+                    - 'cell "READY TTL 43168s Payload 623 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0013 Role: siswa NISN: 8800000013 Kelas: KELAS_TEST_13 Ruang: RUANG_TEST_01 Agama: Islam Gender: Laki-laki login:test_siswa_0013 email:test_siswa_0013@example.local nisn:8800000013 Login snapshot siap dipakai untuk login siswa." [ref=e927]':
+                      - generic [ref=e928]:
+                        - generic [ref=e929]:
+                          - generic [ref=e930]: READY
+                          - generic [ref=e931]: TTL 43168s
+                          - generic [ref=e932]: Payload 623 bytes
+                          - generic [ref=e933]: Source freshness_runner
+                        - generic [ref=e934]:
+                          - strong [ref=e935]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e936]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e937]:
+                          - img "Foto login snapshot Siswa Test 0013" [ref=e938]
+                          - generic [ref=e939]:
+                            - generic [ref=e940]: "Role: siswa"
+                            - generic [ref=e941]: "NISN: 8800000013"
+                            - generic [ref=e942]: "Kelas: KELAS_TEST_13"
+                            - generic [ref=e943]: "Ruang: RUANG_TEST_01"
+                            - generic [ref=e944]: "Agama: Islam"
+                            - generic [ref=e945]: "Gender: Laki-laki"
+                        - generic [ref=e946]:
+                          - generic [ref=e947]: login:test_siswa_0013
+                          - generic [ref=e948]: email:test_siswa_0013@example.local
+                          - generic [ref=e949]: nisn:8800000013
+                        - group [ref=e950]:
+                          - generic "Detail teknis" [ref=e951] [cursor=pointer]
+                        - paragraph [ref=e952]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e953]:
+                      - generic [ref=e954]:
+                        - button "Siapkan Login Snapshot" [ref=e956] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e958] [cursor=pointer]
+                  - 'row "Siswa Test 0014 Login: test_siswa_0014 Email: test_siswa_0014@example.local Kelas: KELAS_TEST_14 Ruang: RUANG_TEST_02 User ID: 11137 READY TTL 43168s Payload 637 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0014 Role: siswa NISN: 8800000014 Kelas: KELAS_TEST_14 Ruang: RUANG_TEST_02 Agama: Kristen Protestan Gender: Perempuan login:test_siswa_0014 email:test_siswa_0014@example.local nisn:8800000014 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e959]':
+                    - 'cell "Siswa Test 0014 Login: test_siswa_0014 Email: test_siswa_0014@example.local Kelas: KELAS_TEST_14 Ruang: RUANG_TEST_02 User ID: 11137" [ref=e960]':
+                      - generic [ref=e961]: Siswa Test 0014
+                      - generic [ref=e962]:
+                        - generic [ref=e963]:
+                          - strong [ref=e964]: "Login:"
+                          - text: test_siswa_0014
+                        - generic [ref=e965]:
+                          - strong [ref=e966]: "Email:"
+                          - text: test_siswa_0014@example.local
+                        - generic [ref=e967]:
+                          - strong [ref=e968]: "Kelas:"
+                          - text: KELAS_TEST_14
+                        - generic [ref=e969]:
+                          - strong [ref=e970]: "Ruang:"
+                          - text: RUANG_TEST_02
+                        - generic [ref=e971]:
+                          - strong [ref=e972]: "User ID:"
+                          - text: "11137"
+                    - 'cell "READY TTL 43168s Payload 637 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0014 Role: siswa NISN: 8800000014 Kelas: KELAS_TEST_14 Ruang: RUANG_TEST_02 Agama: Kristen Protestan Gender: Perempuan login:test_siswa_0014 email:test_siswa_0014@example.local nisn:8800000014 Login snapshot siap dipakai untuk login siswa." [ref=e973]':
+                      - generic [ref=e974]:
+                        - generic [ref=e975]:
+                          - generic [ref=e976]: READY
+                          - generic [ref=e977]: TTL 43168s
+                          - generic [ref=e978]: Payload 637 bytes
+                          - generic [ref=e979]: Source freshness_runner
+                        - generic [ref=e980]:
+                          - strong [ref=e981]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e982]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e983]:
+                          - img "Foto login snapshot Siswa Test 0014" [ref=e984]
+                          - generic [ref=e985]:
+                            - generic [ref=e986]: "Role: siswa"
+                            - generic [ref=e987]: "NISN: 8800000014"
+                            - generic [ref=e988]: "Kelas: KELAS_TEST_14"
+                            - generic [ref=e989]: "Ruang: RUANG_TEST_02"
+                            - generic [ref=e990]: "Agama: Kristen Protestan"
+                            - generic [ref=e991]: "Gender: Perempuan"
+                        - generic [ref=e992]:
+                          - generic [ref=e993]: login:test_siswa_0014
+                          - generic [ref=e994]: email:test_siswa_0014@example.local
+                          - generic [ref=e995]: nisn:8800000014
+                        - group [ref=e996]:
+                          - generic "Detail teknis" [ref=e997] [cursor=pointer]
+                        - paragraph [ref=e998]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e999]:
+                      - generic [ref=e1000]:
+                        - button "Siapkan Login Snapshot" [ref=e1002] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1004] [cursor=pointer]
+                  - 'row "Siswa Test 0015 Login: test_siswa_0015 Email: test_siswa_0015@example.local Kelas: KELAS_TEST_15 Ruang: RUANG_TEST_03 User ID: 11138 READY TTL 43168s Payload 625 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0015 Role: siswa NISN: 8800000015 Kelas: KELAS_TEST_15 Ruang: RUANG_TEST_03 Agama: Katolik Gender: Laki-laki login:test_siswa_0015 email:test_siswa_0015@example.local nisn:8800000015 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1005]':
+                    - 'cell "Siswa Test 0015 Login: test_siswa_0015 Email: test_siswa_0015@example.local Kelas: KELAS_TEST_15 Ruang: RUANG_TEST_03 User ID: 11138" [ref=e1006]':
+                      - generic [ref=e1007]: Siswa Test 0015
+                      - generic [ref=e1008]:
+                        - generic [ref=e1009]:
+                          - strong [ref=e1010]: "Login:"
+                          - text: test_siswa_0015
+                        - generic [ref=e1011]:
+                          - strong [ref=e1012]: "Email:"
+                          - text: test_siswa_0015@example.local
+                        - generic [ref=e1013]:
+                          - strong [ref=e1014]: "Kelas:"
+                          - text: KELAS_TEST_15
+                        - generic [ref=e1015]:
+                          - strong [ref=e1016]: "Ruang:"
+                          - text: RUANG_TEST_03
+                        - generic [ref=e1017]:
+                          - strong [ref=e1018]: "User ID:"
+                          - text: "11138"
+                    - 'cell "READY TTL 43168s Payload 625 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0015 Role: siswa NISN: 8800000015 Kelas: KELAS_TEST_15 Ruang: RUANG_TEST_03 Agama: Katolik Gender: Laki-laki login:test_siswa_0015 email:test_siswa_0015@example.local nisn:8800000015 Login snapshot siap dipakai untuk login siswa." [ref=e1019]':
+                      - generic [ref=e1020]:
+                        - generic [ref=e1021]:
+                          - generic [ref=e1022]: READY
+                          - generic [ref=e1023]: TTL 43168s
+                          - generic [ref=e1024]: Payload 625 bytes
+                          - generic [ref=e1025]: Source freshness_runner
+                        - generic [ref=e1026]:
+                          - strong [ref=e1027]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e1028]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e1029]:
+                          - img "Foto login snapshot Siswa Test 0015" [ref=e1030]
+                          - generic [ref=e1031]:
+                            - generic [ref=e1032]: "Role: siswa"
+                            - generic [ref=e1033]: "NISN: 8800000015"
+                            - generic [ref=e1034]: "Kelas: KELAS_TEST_15"
+                            - generic [ref=e1035]: "Ruang: RUANG_TEST_03"
+                            - generic [ref=e1036]: "Agama: Katolik"
+                            - generic [ref=e1037]: "Gender: Laki-laki"
+                        - generic [ref=e1038]:
+                          - generic [ref=e1039]: login:test_siswa_0015
+                          - generic [ref=e1040]: email:test_siswa_0015@example.local
+                          - generic [ref=e1041]: nisn:8800000015
+                        - group [ref=e1042]:
+                          - generic "Detail teknis" [ref=e1043] [cursor=pointer]
+                        - paragraph [ref=e1044]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1045]:
+                      - generic [ref=e1046]:
+                        - button "Siapkan Login Snapshot" [ref=e1048] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1050] [cursor=pointer]
+                  - 'row "Siswa Test 0016 Login: test_siswa_0016 Email: test_siswa_0016@example.local Kelas: KELAS_TEST_16 Ruang: RUANG_TEST_04 User ID: 11139 READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0016 Role: siswa NISN: 8800000016 Kelas: KELAS_TEST_16 Ruang: RUANG_TEST_04 Agama: Hindu Gender: Perempuan login:test_siswa_0016 email:test_siswa_0016@example.local nisn:8800000016 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1051]':
+                    - 'cell "Siswa Test 0016 Login: test_siswa_0016 Email: test_siswa_0016@example.local Kelas: KELAS_TEST_16 Ruang: RUANG_TEST_04 User ID: 11139" [ref=e1052]':
+                      - generic [ref=e1053]: Siswa Test 0016
+                      - generic [ref=e1054]:
+                        - generic [ref=e1055]:
+                          - strong [ref=e1056]: "Login:"
+                          - text: test_siswa_0016
+                        - generic [ref=e1057]:
+                          - strong [ref=e1058]: "Email:"
+                          - text: test_siswa_0016@example.local
+                        - generic [ref=e1059]:
+                          - strong [ref=e1060]: "Kelas:"
+                          - text: KELAS_TEST_16
+                        - generic [ref=e1061]:
+                          - strong [ref=e1062]: "Ruang:"
+                          - text: RUANG_TEST_04
+                        - generic [ref=e1063]:
+                          - strong [ref=e1064]: "User ID:"
+                          - text: "11139"
+                    - 'cell "READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0016 Role: siswa NISN: 8800000016 Kelas: KELAS_TEST_16 Ruang: RUANG_TEST_04 Agama: Hindu Gender: Perempuan login:test_siswa_0016 email:test_siswa_0016@example.local nisn:8800000016 Login snapshot siap dipakai untuk login siswa." [ref=e1065]':
+                      - generic [ref=e1066]:
+                        - generic [ref=e1067]:
+                          - generic [ref=e1068]: READY
+                          - generic [ref=e1069]: TTL 43168s
+                          - generic [ref=e1070]: Payload 624 bytes
+                          - generic [ref=e1071]: Source freshness_runner
+                        - generic [ref=e1072]:
+                          - strong [ref=e1073]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e1074]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e1075]:
+                          - img "Foto login snapshot Siswa Test 0016" [ref=e1076]
+                          - generic [ref=e1077]:
+                            - generic [ref=e1078]: "Role: siswa"
+                            - generic [ref=e1079]: "NISN: 8800000016"
+                            - generic [ref=e1080]: "Kelas: KELAS_TEST_16"
+                            - generic [ref=e1081]: "Ruang: RUANG_TEST_04"
+                            - generic [ref=e1082]: "Agama: Hindu"
+                            - generic [ref=e1083]: "Gender: Perempuan"
+                        - generic [ref=e1084]:
+                          - generic [ref=e1085]: login:test_siswa_0016
+                          - generic [ref=e1086]: email:test_siswa_0016@example.local
+                          - generic [ref=e1087]: nisn:8800000016
+                        - group [ref=e1088]:
+                          - generic "Detail teknis" [ref=e1089] [cursor=pointer]
+                        - paragraph [ref=e1090]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1091]:
+                      - generic [ref=e1092]:
+                        - button "Siapkan Login Snapshot" [ref=e1094] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1096] [cursor=pointer]
+                  - 'row "Siswa Test 0017 Login: test_siswa_0017 Email: test_siswa_0017@example.local Kelas: KELAS_TEST_17 Ruang: RUANG_TEST_05 User ID: 11140 READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0017 Role: siswa NISN: 8800000017 Kelas: KELAS_TEST_17 Ruang: RUANG_TEST_05 Agama: Buddha Gender: Laki-laki login:test_siswa_0017 email:test_siswa_0017@example.local nisn:8800000017 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1097]':
+                    - 'cell "Siswa Test 0017 Login: test_siswa_0017 Email: test_siswa_0017@example.local Kelas: KELAS_TEST_17 Ruang: RUANG_TEST_05 User ID: 11140" [ref=e1098]':
+                      - generic [ref=e1099]: Siswa Test 0017
+                      - generic [ref=e1100]:
+                        - generic [ref=e1101]:
+                          - strong [ref=e1102]: "Login:"
+                          - text: test_siswa_0017
+                        - generic [ref=e1103]:
+                          - strong [ref=e1104]: "Email:"
+                          - text: test_siswa_0017@example.local
+                        - generic [ref=e1105]:
+                          - strong [ref=e1106]: "Kelas:"
+                          - text: KELAS_TEST_17
+                        - generic [ref=e1107]:
+                          - strong [ref=e1108]: "Ruang:"
+                          - text: RUANG_TEST_05
+                        - generic [ref=e1109]:
+                          - strong [ref=e1110]: "User ID:"
+                          - text: "11140"
+                    - 'cell "READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0017 Role: siswa NISN: 8800000017 Kelas: KELAS_TEST_17 Ruang: RUANG_TEST_05 Agama: Buddha Gender: Laki-laki login:test_siswa_0017 email:test_siswa_0017@example.local nisn:8800000017 Login snapshot siap dipakai untuk login siswa." [ref=e1111]':
+                      - generic [ref=e1112]:
+                        - generic [ref=e1113]:
+                          - generic [ref=e1114]: READY
+                          - generic [ref=e1115]: TTL 43168s
+                          - generic [ref=e1116]: Payload 624 bytes
+                          - generic [ref=e1117]: Source freshness_runner
+                        - generic [ref=e1118]:
+                          - strong [ref=e1119]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e1120]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e1121]:
+                          - img "Foto login snapshot Siswa Test 0017" [ref=e1122]
+                          - generic [ref=e1123]:
+                            - generic [ref=e1124]: "Role: siswa"
+                            - generic [ref=e1125]: "NISN: 8800000017"
+                            - generic [ref=e1126]: "Kelas: KELAS_TEST_17"
+                            - generic [ref=e1127]: "Ruang: RUANG_TEST_05"
+                            - generic [ref=e1128]: "Agama: Buddha"
+                            - generic [ref=e1129]: "Gender: Laki-laki"
+                        - generic [ref=e1130]:
+                          - generic [ref=e1131]: login:test_siswa_0017
+                          - generic [ref=e1132]: email:test_siswa_0017@example.local
+                          - generic [ref=e1133]: nisn:8800000017
+                        - group [ref=e1134]:
+                          - generic "Detail teknis" [ref=e1135] [cursor=pointer]
+                        - paragraph [ref=e1136]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1137]:
+                      - generic [ref=e1138]:
+                        - button "Siapkan Login Snapshot" [ref=e1140] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1142] [cursor=pointer]
+                  - 'row "Siswa Test 0018 Login: test_siswa_0018 Email: test_siswa_0018@example.local Kelas: KELAS_TEST_18 Ruang: RUANG_TEST_06 User ID: 11141 READY TTL 43168s Payload 628 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0018 Role: siswa NISN: 8800000018 Kelas: KELAS_TEST_18 Ruang: RUANG_TEST_06 Agama: Khonghucu Gender: Perempuan login:test_siswa_0018 email:test_siswa_0018@example.local nisn:8800000018 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1143]':
+                    - 'cell "Siswa Test 0018 Login: test_siswa_0018 Email: test_siswa_0018@example.local Kelas: KELAS_TEST_18 Ruang: RUANG_TEST_06 User ID: 11141" [ref=e1144]':
+                      - generic [ref=e1145]: Siswa Test 0018
+                      - generic [ref=e1146]:
+                        - generic [ref=e1147]:
+                          - strong [ref=e1148]: "Login:"
+                          - text: test_siswa_0018
+                        - generic [ref=e1149]:
+                          - strong [ref=e1150]: "Email:"
+                          - text: test_siswa_0018@example.local
+                        - generic [ref=e1151]:
+                          - strong [ref=e1152]: "Kelas:"
+                          - text: KELAS_TEST_18
+                        - generic [ref=e1153]:
+                          - strong [ref=e1154]: "Ruang:"
+                          - text: RUANG_TEST_06
+                        - generic [ref=e1155]:
+                          - strong [ref=e1156]: "User ID:"
+                          - text: "11141"
+                    - 'cell "READY TTL 43168s Payload 628 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0018 Role: siswa NISN: 8800000018 Kelas: KELAS_TEST_18 Ruang: RUANG_TEST_06 Agama: Khonghucu Gender: Perempuan login:test_siswa_0018 email:test_siswa_0018@example.local nisn:8800000018 Login snapshot siap dipakai untuk login siswa." [ref=e1157]':
+                      - generic [ref=e1158]:
+                        - generic [ref=e1159]:
+                          - generic [ref=e1160]: READY
+                          - generic [ref=e1161]: TTL 43168s
+                          - generic [ref=e1162]: Payload 628 bytes
+                          - generic [ref=e1163]: Source freshness_runner
+                        - generic [ref=e1164]:
+                          - strong [ref=e1165]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e1166]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e1167]:
+                          - img "Foto login snapshot Siswa Test 0018" [ref=e1168]
+                          - generic [ref=e1169]:
+                            - generic [ref=e1170]: "Role: siswa"
+                            - generic [ref=e1171]: "NISN: 8800000018"
+                            - generic [ref=e1172]: "Kelas: KELAS_TEST_18"
+                            - generic [ref=e1173]: "Ruang: RUANG_TEST_06"
+                            - generic [ref=e1174]: "Agama: Khonghucu"
+                            - generic [ref=e1175]: "Gender: Perempuan"
+                        - generic [ref=e1176]:
+                          - generic [ref=e1177]: login:test_siswa_0018
+                          - generic [ref=e1178]: email:test_siswa_0018@example.local
+                          - generic [ref=e1179]: nisn:8800000018
+                        - group [ref=e1180]:
+                          - generic "Detail teknis" [ref=e1181] [cursor=pointer]
+                        - paragraph [ref=e1182]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1183]:
+                      - generic [ref=e1184]:
+                        - button "Siapkan Login Snapshot" [ref=e1186] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1188] [cursor=pointer]
+                  - 'row "Siswa Test 0019 Login: test_siswa_0019 Email: test_siswa_0019@example.local Kelas: KELAS_TEST_19 Ruang: RUANG_TEST_07 User ID: 11142 READY TTL 43168s Payload 622 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0019 Role: siswa NISN: 8800000019 Kelas: KELAS_TEST_19 Ruang: RUANG_TEST_07 Agama: Islam Gender: Laki-laki login:test_siswa_0019 email:test_siswa_0019@example.local nisn:8800000019 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1189]':
+                    - 'cell "Siswa Test 0019 Login: test_siswa_0019 Email: test_siswa_0019@example.local Kelas: KELAS_TEST_19 Ruang: RUANG_TEST_07 User ID: 11142" [ref=e1190]':
+                      - generic [ref=e1191]: Siswa Test 0019
+                      - generic [ref=e1192]:
+                        - generic [ref=e1193]:
+                          - strong [ref=e1194]: "Login:"
+                          - text: test_siswa_0019
+                        - generic [ref=e1195]:
+                          - strong [ref=e1196]: "Email:"
+                          - text: test_siswa_0019@example.local
+                        - generic [ref=e1197]:
+                          - strong [ref=e1198]: "Kelas:"
+                          - text: KELAS_TEST_19
+                        - generic [ref=e1199]:
+                          - strong [ref=e1200]: "Ruang:"
+                          - text: RUANG_TEST_07
+                        - generic [ref=e1201]:
+                          - strong [ref=e1202]: "User ID:"
+                          - text: "11142"
+                    - 'cell "READY TTL 43168s Payload 622 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0019 Role: siswa NISN: 8800000019 Kelas: KELAS_TEST_19 Ruang: RUANG_TEST_07 Agama: Islam Gender: Laki-laki login:test_siswa_0019 email:test_siswa_0019@example.local nisn:8800000019 Login snapshot siap dipakai untuk login siswa." [ref=e1203]':
+                      - generic [ref=e1204]:
+                        - generic [ref=e1205]:
+                          - generic [ref=e1206]: READY
+                          - generic [ref=e1207]: TTL 43168s
+                          - generic [ref=e1208]: Payload 622 bytes
+                          - generic [ref=e1209]: Source freshness_runner
+                        - generic [ref=e1210]:
+                          - strong [ref=e1211]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e1212]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e1213]:
+                          - img "Foto login snapshot Siswa Test 0019" [ref=e1214]
+                          - generic [ref=e1215]:
+                            - generic [ref=e1216]: "Role: siswa"
+                            - generic [ref=e1217]: "NISN: 8800000019"
+                            - generic [ref=e1218]: "Kelas: KELAS_TEST_19"
+                            - generic [ref=e1219]: "Ruang: RUANG_TEST_07"
+                            - generic [ref=e1220]: "Agama: Islam"
+                            - generic [ref=e1221]: "Gender: Laki-laki"
+                        - generic [ref=e1222]:
+                          - generic [ref=e1223]: login:test_siswa_0019
+                          - generic [ref=e1224]: email:test_siswa_0019@example.local
+                          - generic [ref=e1225]: nisn:8800000019
+                        - group [ref=e1226]:
+                          - generic "Detail teknis" [ref=e1227] [cursor=pointer]
+                        - paragraph [ref=e1228]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1229]:
+                      - generic [ref=e1230]:
+                        - button "Siapkan Login Snapshot" [ref=e1232] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1234] [cursor=pointer]
+                  - 'row "Siswa Test 0020 Login: test_siswa_0020 Email: test_siswa_0020@example.local Kelas: KELAS_TEST_20 Ruang: RUANG_TEST_08 User ID: 11143 READY TTL 43168s Payload 636 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0020 Role: siswa NISN: 8800000020 Kelas: KELAS_TEST_20 Ruang: RUANG_TEST_08 Agama: Kristen Protestan Gender: Perempuan login:test_siswa_0020 email:test_siswa_0020@example.local nisn:8800000020 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1235]':
+                    - 'cell "Siswa Test 0020 Login: test_siswa_0020 Email: test_siswa_0020@example.local Kelas: KELAS_TEST_20 Ruang: RUANG_TEST_08 User ID: 11143" [ref=e1236]':
+                      - generic [ref=e1237]: Siswa Test 0020
+                      - generic [ref=e1238]:
+                        - generic [ref=e1239]:
+                          - strong [ref=e1240]: "Login:"
+                          - text: test_siswa_0020
+                        - generic [ref=e1241]:
+                          - strong [ref=e1242]: "Email:"
+                          - text: test_siswa_0020@example.local
+                        - generic [ref=e1243]:
+                          - strong [ref=e1244]: "Kelas:"
+                          - text: KELAS_TEST_20
+                        - generic [ref=e1245]:
+                          - strong [ref=e1246]: "Ruang:"
+                          - text: RUANG_TEST_08
+                        - generic [ref=e1247]:
+                          - strong [ref=e1248]: "User ID:"
+                          - text: "11143"
+                    - 'cell "READY TTL 43168s Payload 636 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0020 Role: siswa NISN: 8800000020 Kelas: KELAS_TEST_20 Ruang: RUANG_TEST_08 Agama: Kristen Protestan Gender: Perempuan login:test_siswa_0020 email:test_siswa_0020@example.local nisn:8800000020 Login snapshot siap dipakai untuk login siswa." [ref=e1249]':
+                      - generic [ref=e1250]:
+                        - generic [ref=e1251]:
+                          - generic [ref=e1252]: READY
+                          - generic [ref=e1253]: TTL 43168s
+                          - generic [ref=e1254]: Payload 636 bytes
+                          - generic [ref=e1255]: Source freshness_runner
+                        - generic [ref=e1256]:
+                          - strong [ref=e1257]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e1258]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e1259]:
+                          - img "Foto login snapshot Siswa Test 0020" [ref=e1260]
+                          - generic [ref=e1261]:
+                            - generic [ref=e1262]: "Role: siswa"
+                            - generic [ref=e1263]: "NISN: 8800000020"
+                            - generic [ref=e1264]: "Kelas: KELAS_TEST_20"
+                            - generic [ref=e1265]: "Ruang: RUANG_TEST_08"
+                            - generic [ref=e1266]: "Agama: Kristen Protestan"
+                            - generic [ref=e1267]: "Gender: Perempuan"
+                        - generic [ref=e1268]:
+                          - generic [ref=e1269]: login:test_siswa_0020
+                          - generic [ref=e1270]: email:test_siswa_0020@example.local
+                          - generic [ref=e1271]: nisn:8800000020
+                        - group [ref=e1272]:
+                          - generic "Detail teknis" [ref=e1273] [cursor=pointer]
+                        - paragraph [ref=e1274]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1275]:
+                      - generic [ref=e1276]:
+                        - button "Siapkan Login Snapshot" [ref=e1278] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1280] [cursor=pointer]
+                  - 'row "Siswa Test 0021 Login: test_siswa_0021 Email: test_siswa_0021@example.local Kelas: KELAS_TEST_21 Ruang: RUANG_TEST_09 User ID: 11144 READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0021 Role: siswa NISN: 8800000021 Kelas: KELAS_TEST_21 Ruang: RUANG_TEST_09 Agama: Katolik Gender: Laki-laki login:test_siswa_0021 email:test_siswa_0021@example.local nisn:8800000021 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1281]':
+                    - 'cell "Siswa Test 0021 Login: test_siswa_0021 Email: test_siswa_0021@example.local Kelas: KELAS_TEST_21 Ruang: RUANG_TEST_09 User ID: 11144" [ref=e1282]':
+                      - generic [ref=e1283]: Siswa Test 0021
+                      - generic [ref=e1284]:
+                        - generic [ref=e1285]:
+                          - strong [ref=e1286]: "Login:"
+                          - text: test_siswa_0021
+                        - generic [ref=e1287]:
+                          - strong [ref=e1288]: "Email:"
+                          - text: test_siswa_0021@example.local
+                        - generic [ref=e1289]:
+                          - strong [ref=e1290]: "Kelas:"
+                          - text: KELAS_TEST_21
+                        - generic [ref=e1291]:
+                          - strong [ref=e1292]: "Ruang:"
+                          - text: RUANG_TEST_09
+                        - generic [ref=e1293]:
+                          - strong [ref=e1294]: "User ID:"
+                          - text: "11144"
+                    - 'cell "READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0021 Role: siswa NISN: 8800000021 Kelas: KELAS_TEST_21 Ruang: RUANG_TEST_09 Agama: Katolik Gender: Laki-laki login:test_siswa_0021 email:test_siswa_0021@example.local nisn:8800000021 Login snapshot siap dipakai untuk login siswa." [ref=e1295]':
+                      - generic [ref=e1296]:
+                        - generic [ref=e1297]:
+                          - generic [ref=e1298]: READY
+                          - generic [ref=e1299]: TTL 43168s
+                          - generic [ref=e1300]: Payload 624 bytes
+                          - generic [ref=e1301]: Source freshness_runner
+                        - generic [ref=e1302]:
+                          - strong [ref=e1303]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e1304]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e1305]:
+                          - img "Foto login snapshot Siswa Test 0021" [ref=e1306]
+                          - generic [ref=e1307]:
+                            - generic [ref=e1308]: "Role: siswa"
+                            - generic [ref=e1309]: "NISN: 8800000021"
+                            - generic [ref=e1310]: "Kelas: KELAS_TEST_21"
+                            - generic [ref=e1311]: "Ruang: RUANG_TEST_09"
+                            - generic [ref=e1312]: "Agama: Katolik"
+                            - generic [ref=e1313]: "Gender: Laki-laki"
+                        - generic [ref=e1314]:
+                          - generic [ref=e1315]: login:test_siswa_0021
+                          - generic [ref=e1316]: email:test_siswa_0021@example.local
+                          - generic [ref=e1317]: nisn:8800000021
+                        - group [ref=e1318]:
+                          - generic "Detail teknis" [ref=e1319] [cursor=pointer]
+                        - paragraph [ref=e1320]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1321]:
+                      - generic [ref=e1322]:
+                        - button "Siapkan Login Snapshot" [ref=e1324] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1326] [cursor=pointer]
+                  - 'row "Siswa Test 0022 Login: test_siswa_0022 Email: test_siswa_0022@example.local Kelas: KELAS_TEST_22 Ruang: RUANG_TEST_10 User ID: 11145 READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0022 Role: siswa NISN: 8800000022 Kelas: KELAS_TEST_22 Ruang: RUANG_TEST_10 Agama: Hindu Gender: Perempuan login:test_siswa_0022 email:test_siswa_0022@example.local nisn:8800000022 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1327]':
+                    - 'cell "Siswa Test 0022 Login: test_siswa_0022 Email: test_siswa_0022@example.local Kelas: KELAS_TEST_22 Ruang: RUANG_TEST_10 User ID: 11145" [ref=e1328]':
+                      - generic [ref=e1329]: Siswa Test 0022
+                      - generic [ref=e1330]:
+                        - generic [ref=e1331]:
+                          - strong [ref=e1332]: "Login:"
+                          - text: test_siswa_0022
+                        - generic [ref=e1333]:
+                          - strong [ref=e1334]: "Email:"
+                          - text: test_siswa_0022@example.local
+                        - generic [ref=e1335]:
+                          - strong [ref=e1336]: "Kelas:"
+                          - text: KELAS_TEST_22
+                        - generic [ref=e1337]:
+                          - strong [ref=e1338]: "Ruang:"
+                          - text: RUANG_TEST_10
+                        - generic [ref=e1339]:
+                          - strong [ref=e1340]: "User ID:"
+                          - text: "11145"
+                    - 'cell "READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0022 Role: siswa NISN: 8800000022 Kelas: KELAS_TEST_22 Ruang: RUANG_TEST_10 Agama: Hindu Gender: Perempuan login:test_siswa_0022 email:test_siswa_0022@example.local nisn:8800000022 Login snapshot siap dipakai untuk login siswa." [ref=e1341]':
+                      - generic [ref=e1342]:
+                        - generic [ref=e1343]:
+                          - generic [ref=e1344]: READY
+                          - generic [ref=e1345]: TTL 43168s
+                          - generic [ref=e1346]: Payload 624 bytes
+                          - generic [ref=e1347]: Source freshness_runner
+                        - generic [ref=e1348]:
+                          - strong [ref=e1349]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e1350]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e1351]:
+                          - img "Foto login snapshot Siswa Test 0022" [ref=e1352]
+                          - generic [ref=e1353]:
+                            - generic [ref=e1354]: "Role: siswa"
+                            - generic [ref=e1355]: "NISN: 8800000022"
+                            - generic [ref=e1356]: "Kelas: KELAS_TEST_22"
+                            - generic [ref=e1357]: "Ruang: RUANG_TEST_10"
+                            - generic [ref=e1358]: "Agama: Hindu"
+                            - generic [ref=e1359]: "Gender: Perempuan"
+                        - generic [ref=e1360]:
+                          - generic [ref=e1361]: login:test_siswa_0022
+                          - generic [ref=e1362]: email:test_siswa_0022@example.local
+                          - generic [ref=e1363]: nisn:8800000022
+                        - group [ref=e1364]:
+                          - generic "Detail teknis" [ref=e1365] [cursor=pointer]
+                        - paragraph [ref=e1366]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1367]:
+                      - generic [ref=e1368]:
+                        - button "Siapkan Login Snapshot" [ref=e1370] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1372] [cursor=pointer]
+                  - 'row "Siswa Test 0023 Login: test_siswa_0023 Email: test_siswa_0023@example.local Kelas: KELAS_TEST_23 Ruang: RUANG_TEST_11 User ID: 11146 READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0023 Role: siswa NISN: 8800000023 Kelas: KELAS_TEST_23 Ruang: RUANG_TEST_11 Agama: Buddha Gender: Laki-laki login:test_siswa_0023 email:test_siswa_0023@example.local nisn:8800000023 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1373]':
+                    - 'cell "Siswa Test 0023 Login: test_siswa_0023 Email: test_siswa_0023@example.local Kelas: KELAS_TEST_23 Ruang: RUANG_TEST_11 User ID: 11146" [ref=e1374]':
+                      - generic [ref=e1375]: Siswa Test 0023
+                      - generic [ref=e1376]:
+                        - generic [ref=e1377]:
+                          - strong [ref=e1378]: "Login:"
+                          - text: test_siswa_0023
+                        - generic [ref=e1379]:
+                          - strong [ref=e1380]: "Email:"
+                          - text: test_siswa_0023@example.local
+                        - generic [ref=e1381]:
+                          - strong [ref=e1382]: "Kelas:"
+                          - text: KELAS_TEST_23
+                        - generic [ref=e1383]:
+                          - strong [ref=e1384]: "Ruang:"
+                          - text: RUANG_TEST_11
+                        - generic [ref=e1385]:
+                          - strong [ref=e1386]: "User ID:"
+                          - text: "11146"
+                    - 'cell "READY TTL 43168s Payload 624 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0023 Role: siswa NISN: 8800000023 Kelas: KELAS_TEST_23 Ruang: RUANG_TEST_11 Agama: Buddha Gender: Laki-laki login:test_siswa_0023 email:test_siswa_0023@example.local nisn:8800000023 Login snapshot siap dipakai untuk login siswa." [ref=e1387]':
+                      - generic [ref=e1388]:
+                        - generic [ref=e1389]:
+                          - generic [ref=e1390]: READY
+                          - generic [ref=e1391]: TTL 43168s
+                          - generic [ref=e1392]: Payload 624 bytes
+                          - generic [ref=e1393]: Source freshness_runner
+                        - generic [ref=e1394]:
+                          - strong [ref=e1395]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e1396]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e1397]:
+                          - img "Foto login snapshot Siswa Test 0023" [ref=e1398]
+                          - generic [ref=e1399]:
+                            - generic [ref=e1400]: "Role: siswa"
+                            - generic [ref=e1401]: "NISN: 8800000023"
+                            - generic [ref=e1402]: "Kelas: KELAS_TEST_23"
+                            - generic [ref=e1403]: "Ruang: RUANG_TEST_11"
+                            - generic [ref=e1404]: "Agama: Buddha"
+                            - generic [ref=e1405]: "Gender: Laki-laki"
+                        - generic [ref=e1406]:
+                          - generic [ref=e1407]: login:test_siswa_0023
+                          - generic [ref=e1408]: email:test_siswa_0023@example.local
+                          - generic [ref=e1409]: nisn:8800000023
+                        - group [ref=e1410]:
+                          - generic "Detail teknis" [ref=e1411] [cursor=pointer]
+                        - paragraph [ref=e1412]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1413]:
+                      - generic [ref=e1414]:
+                        - button "Siapkan Login Snapshot" [ref=e1416] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1418] [cursor=pointer]
+                  - 'row "Siswa Test 0024 Login: test_siswa_0024 Email: test_siswa_0024@example.local Kelas: KELAS_TEST_24 Ruang: RUANG_TEST_12 User ID: 11147 READY TTL 43168s Payload 628 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0024 Role: siswa NISN: 8800000024 Kelas: KELAS_TEST_24 Ruang: RUANG_TEST_12 Agama: Khonghucu Gender: Perempuan login:test_siswa_0024 email:test_siswa_0024@example.local nisn:8800000024 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1419]':
+                    - 'cell "Siswa Test 0024 Login: test_siswa_0024 Email: test_siswa_0024@example.local Kelas: KELAS_TEST_24 Ruang: RUANG_TEST_12 User ID: 11147" [ref=e1420]':
+                      - generic [ref=e1421]: Siswa Test 0024
+                      - generic [ref=e1422]:
+                        - generic [ref=e1423]:
+                          - strong [ref=e1424]: "Login:"
+                          - text: test_siswa_0024
+                        - generic [ref=e1425]:
+                          - strong [ref=e1426]: "Email:"
+                          - text: test_siswa_0024@example.local
+                        - generic [ref=e1427]:
+                          - strong [ref=e1428]: "Kelas:"
+                          - text: KELAS_TEST_24
+                        - generic [ref=e1429]:
+                          - strong [ref=e1430]: "Ruang:"
+                          - text: RUANG_TEST_12
+                        - generic [ref=e1431]:
+                          - strong [ref=e1432]: "User ID:"
+                          - text: "11147"
+                    - 'cell "READY TTL 43168s Payload 628 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0024 Role: siswa NISN: 8800000024 Kelas: KELAS_TEST_24 Ruang: RUANG_TEST_12 Agama: Khonghucu Gender: Perempuan login:test_siswa_0024 email:test_siswa_0024@example.local nisn:8800000024 Login snapshot siap dipakai untuk login siswa." [ref=e1433]':
+                      - generic [ref=e1434]:
+                        - generic [ref=e1435]:
+                          - generic [ref=e1436]: READY
+                          - generic [ref=e1437]: TTL 43168s
+                          - generic [ref=e1438]: Payload 628 bytes
+                          - generic [ref=e1439]: Source freshness_runner
+                        - generic [ref=e1440]:
+                          - strong [ref=e1441]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e1442]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e1443]:
+                          - img "Foto login snapshot Siswa Test 0024" [ref=e1444]
+                          - generic [ref=e1445]:
+                            - generic [ref=e1446]: "Role: siswa"
+                            - generic [ref=e1447]: "NISN: 8800000024"
+                            - generic [ref=e1448]: "Kelas: KELAS_TEST_24"
+                            - generic [ref=e1449]: "Ruang: RUANG_TEST_12"
+                            - generic [ref=e1450]: "Agama: Khonghucu"
+                            - generic [ref=e1451]: "Gender: Perempuan"
+                        - generic [ref=e1452]:
+                          - generic [ref=e1453]: login:test_siswa_0024
+                          - generic [ref=e1454]: email:test_siswa_0024@example.local
+                          - generic [ref=e1455]: nisn:8800000024
+                        - group [ref=e1456]:
+                          - generic "Detail teknis" [ref=e1457] [cursor=pointer]
+                        - paragraph [ref=e1458]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1459]:
+                      - generic [ref=e1460]:
+                        - button "Siapkan Login Snapshot" [ref=e1462] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1464] [cursor=pointer]
+                  - 'row "Siswa Test 0025 Login: test_siswa_0025 Email: test_siswa_0025@example.local Kelas: KELAS_TEST_01 Ruang: RUANG_TEST_01 User ID: 11148 READY TTL 43168s Payload 623 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0025 Role: siswa NISN: 8800000025 Kelas: KELAS_TEST_01 Ruang: RUANG_TEST_01 Agama: Islam Gender: Laki-laki login:test_siswa_0025 email:test_siswa_0025@example.local nisn:8800000025 Login snapshot siap dipakai untuk login siswa. Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1465]':
+                    - 'cell "Siswa Test 0025 Login: test_siswa_0025 Email: test_siswa_0025@example.local Kelas: KELAS_TEST_01 Ruang: RUANG_TEST_01 User ID: 11148" [ref=e1466]':
+                      - generic [ref=e1467]: Siswa Test 0025
+                      - generic [ref=e1468]:
+                        - generic [ref=e1469]:
+                          - strong [ref=e1470]: "Login:"
+                          - text: test_siswa_0025
+                        - generic [ref=e1471]:
+                          - strong [ref=e1472]: "Email:"
+                          - text: test_siswa_0025@example.local
+                        - generic [ref=e1473]:
+                          - strong [ref=e1474]: "Kelas:"
+                          - text: KELAS_TEST_01
+                        - generic [ref=e1475]:
+                          - strong [ref=e1476]: "Ruang:"
+                          - text: RUANG_TEST_01
+                        - generic [ref=e1477]:
+                          - strong [ref=e1478]: "User ID:"
+                          - text: "11148"
+                    - 'cell "READY TTL 43168s Payload 623 bytes Source freshness_runner Generated: 2026-04-09 05:03:31 Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup. Foto login snapshot Siswa Test 0025 Role: siswa NISN: 8800000025 Kelas: KELAS_TEST_01 Ruang: RUANG_TEST_01 Agama: Islam Gender: Laki-laki login:test_siswa_0025 email:test_siswa_0025@example.local nisn:8800000025 Login snapshot siap dipakai untuk login siswa." [ref=e1479]':
+                      - generic [ref=e1480]:
+                        - generic [ref=e1481]:
+                          - generic [ref=e1482]: READY
+                          - generic [ref=e1483]: TTL 43168s
+                          - generic [ref=e1484]: Payload 623 bytes
+                          - generic [ref=e1485]: Source freshness_runner
+                        - generic [ref=e1486]:
+                          - strong [ref=e1487]: "Generated:"
+                          - text: 2026-04-09 05:03:31
+                        - paragraph [ref=e1488]: Snapshot ini adalah auth/login accelerator per siswa, bukan active session, JWT, atau state login yang sedang hidup.
+                        - generic [ref=e1489]:
+                          - img "Foto login snapshot Siswa Test 0025" [ref=e1490]
+                          - generic [ref=e1491]:
+                            - generic [ref=e1492]: "Role: siswa"
+                            - generic [ref=e1493]: "NISN: 8800000025"
+                            - generic [ref=e1494]: "Kelas: KELAS_TEST_01"
+                            - generic [ref=e1495]: "Ruang: RUANG_TEST_01"
+                            - generic [ref=e1496]: "Agama: Islam"
+                            - generic [ref=e1497]: "Gender: Laki-laki"
+                        - generic [ref=e1498]:
+                          - generic [ref=e1499]: login:test_siswa_0025
+                          - generic [ref=e1500]: email:test_siswa_0025@example.local
+                          - generic [ref=e1501]: nisn:8800000025
+                        - group [ref=e1502]:
+                          - generic "Detail teknis" [ref=e1503] [cursor=pointer]
+                        - paragraph [ref=e1504]: Login snapshot siap dipakai untuk login siswa.
+                    - cell "Siapkan Login Snapshot Bersihkan Login Snapshot" [ref=e1505]:
+                      - generic [ref=e1506]:
+                        - button "Siapkan Login Snapshot" [ref=e1508] [cursor=pointer]
+                        - button "Bersihkan Login Snapshot" [ref=e1510] [cursor=pointer]
+              - generic "Pagination snapshot siswa" [ref=e1511]:
+                - generic [ref=e1512]: Sebelumnya
+                - generic [ref=e1513]: Halaman 1 dari 48 · 1200 siswa
+                - link "Berikutnya" [ref=e1514] [cursor=pointer]:
+                  - /url: http://192.168.1.9/wp-admin/admin.php?page=cbt-exams&cbt_exam_panel=snapshot&cbt_exam_per_page=20&cbt_exam_paged=1&cbt_exam_snapshot_exam_ids%5B0%5D=22&cbt_exam_snapshot_exam_id=22&cbt_exam_snapshot_tab=login_monitor&cbt_student_snapshot_paged=2
+  - contentinfo [ref=e1515]:
+    - paragraph [ref=e1516]:
+      - generic [ref=e1517]:
+        - text: Thank you for creating with
+        - link "WordPress" [ref=e1518] [cursor=pointer]:
+          - /url: https://wordpress.org/
+        - text: .
+    - paragraph [ref=e1519]: Version 6.9.4

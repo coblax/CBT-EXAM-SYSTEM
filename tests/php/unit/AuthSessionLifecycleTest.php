@@ -49,6 +49,7 @@ final class AuthSessionLifecycleTest extends TestCase
         $this->useFakeRedisClient();
         $this->useFakeProfileRedisClient();
         $this->useFakeLoginSnapshotRedisClient();
+        $this->useFakeLoginMetricsRedisClient();
     }
 
     public function test_login_blocks_recent_active_session_from_legacy_shadow_and_hydrates_redis(): void
@@ -122,6 +123,54 @@ final class AuthSessionLifecycleTest extends TestCase
         self::assertIsArray($result);
         self::assertSame('ayu', $result['username']);
         self::assertSame('new-secret', $this->readLoginSnapshotPasswordHash(9));
+    }
+
+    public function test_login_records_snapshot_success_metrics_for_login_hit(): void
+    {
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(9, 'metrics_hit');
+
+        $result = CBT_Auth::login('ayu', 'secret');
+        $summary = CBT_Login_Snapshot_Metrics_Service::get_window_summary(15);
+
+        self::assertIsArray($result);
+        self::assertSame(1, (int) $summary['snapshot_success']);
+        self::assertSame(0, (int) $summary['canonical_success']);
+        self::assertSame('100.0%', (string) $summary['hit_rate_label']);
+    }
+
+    public function test_login_records_canonical_fallback_and_miss_reason_metrics_when_snapshot_password_is_stale(): void
+    {
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(9, 'metrics_fallback');
+
+        $user = get_user_by('id', 9);
+        self::assertInstanceOf(WP_User::class, $user);
+        $user->user_pass = 'new-secret';
+        $GLOBALS['cbt_test_wp_users'][9] = $user;
+
+        $result = CBT_Auth::login('ayu', 'new-secret');
+        $summary = CBT_Login_Snapshot_Metrics_Service::get_window_summary(15);
+
+        self::assertIsArray($result);
+        self::assertSame(0, (int) $summary['snapshot_success']);
+        self::assertSame(1, (int) $summary['canonical_success']);
+        self::assertSame('password_mismatch', (string) $summary['top_miss_reason']);
+        self::assertSame('Hash password snapshot tidak cocok', (string) $summary['top_miss_reason_label']);
+        self::assertSame('0.0%', (string) $summary['hit_rate_label']);
+    }
+
+    public function test_login_records_invalid_credentials_without_counting_success_hit_rate(): void
+    {
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(9, 'metrics_invalid');
+
+        $result = CBT_Auth::login('ayu', 'salah');
+        $summary = CBT_Login_Snapshot_Metrics_Service::get_window_summary(15);
+
+        self::assertTrue(is_wp_error($result));
+        self::assertSame('invalid_credentials', $result->get_error_code());
+        self::assertSame(0, (int) $summary['snapshot_success']);
+        self::assertSame(0, (int) $summary['canonical_success']);
+        self::assertSame(1, (int) $summary['invalid_credentials']);
+        self::assertSame('N/A', (string) $summary['hit_rate_label']);
     }
 
     public function test_clear_login_session_rejects_wrong_session_key_and_logout_current_session_only_clears_matching_session(): void
@@ -320,6 +369,23 @@ final class AuthSessionLifecycleTest extends TestCase
         $attemptedProperty->setValue(null, true);
 
         $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeLoginMetricsRedisClient(): void
+    {
+        $reflection = new \ReflectionClass(CBT_Login_Snapshot_Metrics_Service::class);
+
+        $redisProperty = $reflection->getProperty('metrics_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new \CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('metrics_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('metrics_redis_last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, '');
     }

@@ -771,17 +771,56 @@ export function createExamStageRenderer(deps) {
             OPENING_PROGRESS_STEP_LABELS.length,
             Number(state.openingAttemptProgressStepTotal) || OPENING_PROGRESS_STEP_LABELS.length
         );
+        var openingPhase = String(state.openingAttemptPhase || '').trim().toLowerCase();
         var progressStatus = String(state.openingAttemptProgressStatus || 'Session ujian dan daftar soal sedang dimuat. Mohon tunggu sebentar.');
         var progressDetail = String(state.openingAttemptProgressDetail || 'Mohon tunggu sebentar, kami sedang menyiapkan tampilan ujian Anda.');
+        var queuePosition = Math.max(0, Number(state.openingAttemptQueuePosition) || 0);
+        var estimatedWaitSeconds = Math.max(0, Number(state.openingAttemptQueueEstimatedWaitSeconds) || 0);
+        var canRetry = state.openingAttemptCanRetry === true;
+        var canRefreshStatus = state.openingAttemptCanRefreshStatus === true;
+        var canBack = state.openingAttemptCanBack !== false;
+        var chipLabel = 'Loading ' + escapeHtml(stepIndex || 1) + '/' + escapeHtml(stepTotal);
+        var actionButtons = [];
+        var queueMetaMarkup = '';
+
+        if (openingPhase === 'opening_waiting_queue') {
+            chipLabel = 'Dalam Antrean';
+            queueMetaMarkup = [
+                '<div class="cbt-exam-opening-queue-meta">',
+                queuePosition > 0
+                    ? '<span class="cbt-chip cbt-chip-outline">Posisi antrean: ' + escapeHtml(queuePosition) + '</span>'
+                    : '',
+                estimatedWaitSeconds > 0
+                    ? '<span class="cbt-chip cbt-chip-outline">Estimasi: ' + escapeHtml(estimatedWaitSeconds) + ' detik</span>'
+                    : '',
+                '</div>'
+            ].join('');
+        } else if (openingPhase === 'opening_recovering') {
+            chipLabel = 'Mencoba Pulih';
+        } else if (openingPhase === 'opening_terminal_error') {
+            chipLabel = 'Perlu Tindakan';
+        }
+
+        if (canRetry) {
+            actionButtons.push('<button class="cbt-button cbt-button-primary" data-action="retry-opening-attempt" type="button">Coba Lagi</button>');
+        }
+        if (canRefreshStatus) {
+            actionButtons.push('<button class="cbt-button cbt-button-secondary" data-action="refresh-opening-attempt-status" type="button">Refresh Status</button>');
+        }
+        if (canBack) {
+            actionButtons.push('<button class="cbt-button cbt-button-secondary" data-action="back-confirm" type="button">Kembali ke Daftar Exam</button>');
+        }
+        actionButtons.push('<button class="cbt-button cbt-button-secondary" data-action="logout" type="button">Logout</button>');
 
         return [
             '<section class="cbt-card cbt-exam-opening-card">',
             '<div class="cbt-exam-opening-head">',
-            '<span class="cbt-exam-opening-chip">Loading ' + escapeHtml(stepIndex || 1) + '/' + escapeHtml(stepTotal) + '</span>',
+            '<span class="cbt-exam-opening-chip">' + escapeHtml(chipLabel) + '</span>',
             '<h3>Menyiapkan Ujian</h3>',
             '<p class="cbt-subtitle">' + escapeHtml(progressStatus) + '</p>',
             '</div>',
             renderAlert(),
+            queueMetaMarkup,
             '<div class="cbt-exam-opening-progress-wrap">',
             '<div class="cbt-exam-opening-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + escapeHtml(progressPercent.toFixed(2)) + '" aria-label="Progress persiapan ujian">',
             '<span class="cbt-exam-opening-progress-fill" style="width: ' + escapeHtml(progressPercent.toFixed(2)) + '%;"></span>',
@@ -809,7 +848,7 @@ export function createExamStageRenderer(deps) {
                 ].join('');
             }).join(''),
             '</ol>',
-            '<div class="cbt-actions"><button class="cbt-button cbt-button-secondary" data-action="logout" type="button">Logout</button></div>',
+            '<div class="cbt-actions">' + actionButtons.join('') + '</div>',
             '</section>'
         ].join('');
     }

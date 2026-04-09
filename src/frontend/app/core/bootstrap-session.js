@@ -5,8 +5,18 @@ export function createBootstrapSessionManager(deps) {
     var RECOVERY_SLOW_STAGE_HOLD_DELAY_MS = 15000;
     var clearMessages = deps.clearMessages;
     var fullLogout = deps.fullLogout;
+    var findPersistedFinishRecoveryForExam = typeof deps.findPersistedFinishRecoveryForExam === 'function'
+        ? deps.findPersistedFinishRecoveryForExam
+        : function () {
+            return Promise.resolve(null);
+        };
     var loadExams = deps.loadExams;
     var persistAuthSession = deps.persistAuthSession;
+    var readPersistedQuestionCache = typeof deps.readPersistedQuestionCache === 'function'
+        ? deps.readPersistedQuestionCache
+        : function () {
+            return Promise.resolve(null);
+        };
     var readPersistedAuthSession = deps.readPersistedAuthSession;
     var reconcilePendingPageRefreshSecurityEvent = deps.reconcilePendingPageRefreshSecurityEvent;
     var render = deps.render;
@@ -188,6 +198,164 @@ export function createBootstrapSessionManager(deps) {
         return String(persisted && persisted.lastStage ? persisted.lastStage : '').toLowerCase() === 'exam';
     }
 
+    function getNavigatorConnectionStatus() {
+        return windowRef && windowRef.navigator && windowRef.navigator.onLine === false
+            ? 'offline'
+            : 'online';
+    }
+
+    function getPersistedSelectedExam() {
+        var exams = Array.isArray(state.exams) ? state.exams : [];
+        var selectedExamId = Number(state.selectedExamId) || 0;
+
+        for (var index = 0; index < exams.length; index++) {
+            if (Number(exams[index] && exams[index].id) === selectedExamId) {
+                return exams[index];
+            }
+        }
+
+        return null;
+    }
+
+    function getNormalizedFinishReceipt(receipt) {
+        var safeReceipt = receipt && typeof receipt === 'object' ? receipt : {};
+        var attemptId = Number(
+            safeReceipt.attempt_id !== undefined
+                ? safeReceipt.attempt_id
+                : safeReceipt.attemptId
+        ) || 0;
+        var examId = Number(
+            safeReceipt.exam_id !== undefined
+                ? safeReceipt.exam_id
+                : safeReceipt.examId
+        ) || 0;
+        var status = String(safeReceipt.status || '').trim().toLowerCase();
+        if (attemptId <= 0 || examId <= 0 || status !== 'completed') {
+            return null;
+        }
+
+        return {
+            attempt_id: attemptId,
+            exam_id: examId,
+            finished_at: String(
+                safeReceipt.finished_at !== undefined
+                    ? safeReceipt.finished_at
+                    : (safeReceipt.finishedAt || '')
+            ),
+            status: 'completed',
+            result_view_mode_hint: String(
+                safeReceipt.result_view_mode_hint !== undefined
+                    ? safeReceipt.result_view_mode_hint
+                    : (safeReceipt.resultViewModeHint || '')
+            ),
+            show_student_result_hint: Number(
+                safeReceipt.show_student_result_hint !== undefined
+                    ? safeReceipt.show_student_result_hint
+                    : safeReceipt.showStudentResultHint
+            ) === 1 ? 1 : 0,
+            ack_source: String(
+                safeReceipt.ack_source !== undefined
+                    ? safeReceipt.ack_source
+                    : (safeReceipt.ackSource || '')
+            ),
+            pending_result_fetch: Number(
+                safeReceipt.pending_result_fetch !== undefined
+                    ? safeReceipt.pending_result_fetch
+                    : safeReceipt.pendingResultFetch
+            ) === 1 ? 1 : 0,
+            updated_at: Math.max(
+                0,
+                Number(
+                    safeReceipt.updated_at !== undefined
+                        ? safeReceipt.updated_at
+                        : safeReceipt.updatedAt
+                ) || 0
+            )
+        };
+    }
+
+    async function tryRecoverCompletedAttemptFromPersistedReceipt(persisted, recoveryRunId) {
+        if (!shouldAutoResumePersistedAttempt(persisted) || !isActiveRecoveryRun(recoveryRunId)) {
+            return false;
+        }
+
+        var selectedExam = getPersistedSelectedExam();
+        var attemptId = Number(selectedExam && selectedExam.latest_attempt_id) || 0;
+        var persistedQuestionCache = null;
+        var fallbackFinishRecovery = null;
+
+        if (attemptId > 0) {
+            persistedQuestionCache = await readPersistedQuestionCache(attemptId);
+        }
+        if (!isActiveRecoveryRun(recoveryRunId)) {
+            return false;
+        }
+
+        var finishReceipt = getNormalizedFinishReceipt(
+            persistedQuestionCache && persistedQuestionCache.finishReceipt
+                ? persistedQuestionCache.finishReceipt
+                : null
+        );
+        if (!finishReceipt && (Number(state.selectedExamId) || 0) > 0) {
+            fallbackFinishRecovery = await findPersistedFinishRecoveryForExam(Number(state.selectedExamId) || 0);
+            if (!isActiveRecoveryRun(recoveryRunId)) {
+                return false;
+            }
+            if (fallbackFinishRecovery && Number(fallbackFinishRecovery.attemptId) > 0) {
+                attemptId = Number(fallbackFinishRecovery.attemptId) || attemptId;
+                persistedQuestionCache = fallbackFinishRecovery.snapshot || persistedQuestionCache;
+                finishReceipt = getNormalizedFinishReceipt(fallbackFinishRecovery.finishReceipt || null);
+            }
+        }
+        if (!isActiveRecoveryRun(recoveryRunId)) {
+            return false;
+        }
+        if (!finishReceipt || Number(finishReceipt.exam_id) !== (Number(state.selectedExamId) || 0)) {
+            return false;
+        }
+
+        updateSessionRecoveryProgress(
+            'exam_restore',
+            4,
+            'Memulihkan hasil ujian',
+            getNavigatorConnectionStatus() === 'offline'
+                ? 'Finalisasi sebelumnya sudah diterima server. Hasil akan dipulihkan setelah koneksi kembali.'
+                : 'Finalisasi sebelumnya sudah diterima server. Sistem sedang memulihkan hasil ujian.',
+            {
+                percent: 70,
+                runId: recoveryRunId
+            }
+        );
+
+        state.stage = 'exam';
+        state.error = '';
+        state.success = '';
+        state.busy = false;
+        state.attemptId = finishReceipt.attempt_id;
+        state.examLockedForPendingFinish = true;
+        state.pendingFinishAutoSubmit = false;
+        state.finishReceipt = finishReceipt;
+        state.finishResultPending = true;
+        state.finishRecoveryLastError = '';
+        state.finishProgressPercent = 90;
+        state.finishProgressStepIndex = 4;
+        state.finishProgressStepTotal = 4;
+        state.finishProgressStatus = getNavigatorConnectionStatus() === 'offline'
+            ? 'Menunggu koneksi untuk memulihkan hasil'
+            : 'Memuat hasil ujian';
+        state.finishProgressDetail = getNavigatorConnectionStatus() === 'offline'
+            ? 'Ujian sudah selesai di server. Nilai/review akan dipulihkan setelah koneksi kembali online.'
+            : 'Finalisasi diterima server. Kami sedang memulihkan hasil terbaru ujian Anda.';
+        persistAuthSession();
+        startSessionHeartbeat();
+        closeSessionRecovery(recoveryRunId);
+        render();
+        triggerPendingSyncLifecycleRetry('bootstrap-finish-recovery', {
+            delayMs: 220
+        });
+        return true;
+    }
+
     async function bootstrapFromPersistedSession(options) {
         options = options || {};
         var persisted = readPersistedAuthSession();
@@ -250,6 +418,15 @@ export function createBootstrapSessionManager(deps) {
                 }
             );
             var shouldAutoResume = shouldAutoResumePersistedAttempt(persisted);
+            if (shouldAutoResume) {
+                var recoveredCompletedAttempt = await tryRecoverCompletedAttemptFromPersistedReceipt(persisted, recoveryRunId);
+                if (!isActiveRecoveryRun(recoveryRunId)) {
+                    return;
+                }
+                if (recoveredCompletedAttempt) {
+                    return;
+                }
+            }
             if (shouldAutoResume && hasActiveResumeCandidate(Number(persisted.selectedExamId) > 0)) {
                 updateSessionRecoveryProgress(
                     'exam_restore',

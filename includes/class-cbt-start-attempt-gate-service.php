@@ -133,6 +133,76 @@ class CBT_Start_Attempt_Gate_Service
 
     /**
      * @return array{
+     *   mode:string,
+     *   queue_ticket:string,
+     *   queue_position:int,
+     *   estimated_wait_seconds:int,
+     *   poll_after_ms:int,
+     *   gate_capacity:int,
+     *   gate_window_seconds:int,
+     *   bucket_tokens:float,
+     *   queue_depth:int
+     * }
+     */
+    public static function get_ticket_status(int $exam_id, int $user_id, string $queue_ticket = ''): array
+    {
+        $exam_id = absint($exam_id);
+        $user_id = absint($user_id);
+        $queue_ticket = self::normalize_queue_ticket($queue_ticket);
+
+        $default = self::build_result('disabled', '', 0, self::BUCKET_CAPACITY, 0);
+        if ($exam_id <= 0 || $user_id <= 0) {
+            return $default;
+        }
+
+        $redis = self::gate_redis();
+        if (!$redis instanceof Redis) {
+            return $default;
+        }
+
+        $now = self::now();
+        self::prune_stale_queue($redis, $exam_id, $now);
+        $bucket = self::refill_bucket(self::read_bucket($redis, $exam_id), $now);
+        self::write_bucket($redis, $exam_id, $bucket);
+
+        $existing_ticket = self::get_user_ticket($redis, $exam_id, $user_id);
+        $active_ticket = '';
+        if ($queue_ticket !== '' && $existing_ticket !== '' && hash_equals($existing_ticket, $queue_ticket)) {
+            $active_ticket = $existing_ticket;
+        } elseif ($queue_ticket === '' && $existing_ticket !== '') {
+            $active_ticket = $existing_ticket;
+        } elseif ($queue_ticket !== '' && $existing_ticket === '') {
+            $active_ticket = $queue_ticket;
+        }
+
+        if ($active_ticket === '') {
+            return self::build_result('not_found', '', 0, (float) $bucket['tokens'], 0);
+        }
+
+        $queue_members = self::get_queue_members($redis, $exam_id);
+        $queue_position = self::get_queue_position($active_ticket, $queue_members);
+        if ($queue_position <= 0) {
+            return self::build_result('not_found', '', 0, (float) $bucket['tokens'], count($queue_members));
+        }
+
+        self::touch_ticket($redis, $exam_id, $active_ticket, $user_id, $now);
+        self::write_bucket($redis, $exam_id, $bucket);
+
+        if ($queue_position === 1 && $bucket['tokens'] >= 1.0) {
+            return self::build_result('admitted', $active_ticket, 1, (float) $bucket['tokens'], count($queue_members));
+        }
+
+        return self::build_result(
+            'queued',
+            $active_ticket,
+            $queue_position,
+            (float) $bucket['tokens'],
+            count($queue_members)
+        );
+    }
+
+    /**
+     * @return array{
      *   redis_available:bool,
      *   redis_error:string,
      *   status_label:string,

@@ -868,6 +868,12 @@ final class CBT_Admin_Exams_Page
         $bulk_preflight = isset($args['bulk_preflight']) && is_array($args['bulk_preflight'])
             ? $args['bulk_preflight']
             : [];
+        $login_snapshot_health_context = isset($args['login_snapshot_health_context']) && is_array($args['login_snapshot_health_context'])
+            ? $args['login_snapshot_health_context']
+            : [];
+        $adaptive_load_context = isset($args['adaptive_load_context']) && is_array($args['adaptive_load_context'])
+            ? $args['adaptive_load_context']
+            : [];
         $availability_rewarm_queue = isset($args['availability_rewarm_queue']) && is_array($args['availability_rewarm_queue'])
             ? $args['availability_rewarm_queue']
             : [];
@@ -992,6 +998,82 @@ final class CBT_Admin_Exams_Page
                         $exam_snapshot_preview_pages,
                         $exam_readiness_page
                     ); ?>
+                <?php endif; ?>
+
+                <?php if (!empty($adaptive_load_context)): ?>
+                    <?php
+                    $adaptive_load_level_label = (string) ($adaptive_load_context['level_label'] ?? 'NORMAL');
+                    $adaptive_load_source_label = (string) ($adaptive_load_context['source_label'] ?? 'Auto');
+                    $adaptive_load_primary_reason = trim((string) ($adaptive_load_context['primary_reason'] ?? ''));
+                    $adaptive_load_last_evaluated_at = trim((string) ($adaptive_load_context['last_evaluated_at'] ?? ''));
+                    $adaptive_load_override_expires_at = trim((string) ($adaptive_load_context['override_expires_at'] ?? ''));
+                    $adaptive_load_tone = sanitize_html_class((string) ($adaptive_load_context['tone'] ?? 'neutral'), 'neutral');
+                    ?>
+                    <section class="cbt-exam-snapshot-adaptive-banner is-<?php echo esc_attr($adaptive_load_tone); ?>">
+                        <div class="cbt-exam-snapshot-adaptive-copy">
+                            <div class="cbt-exam-snapshot-adaptive-head">
+                                <span class="cbt-exam-snapshot-adaptive-kicker">Adaptive Load</span>
+                                <strong><?php echo esc_html($adaptive_load_level_label); ?></strong>
+                                <small><?php echo esc_html($adaptive_load_source_label); ?></small>
+                            </div>
+                            <p class="description">
+                                <?php echo esc_html($adaptive_load_primary_reason !== '' ? $adaptive_load_primary_reason : 'Sistem otomatis menyesuaikan heartbeat siswa dan refresh Snapshot di CBT Exams saat tekanan naik.'); ?>
+                            </p>
+                            <div class="cbt-exam-snapshot-adaptive-meta">
+                                <span>Heartbeat: <?php echo esc_html((string) ($adaptive_load_context['heartbeat_interval_label'] ?? '20 detik')); ?></span>
+                                <span>Snapshot refresh: <?php echo esc_html((string) ($adaptive_load_context['admin_snapshot_refresh_label'] ?? '10 detik')); ?></span>
+                                <?php if ($adaptive_load_last_evaluated_at !== ''): ?>
+                                    <span>Evaluasi terakhir: <?php echo esc_html($adaptive_load_last_evaluated_at); ?></span>
+                                <?php endif; ?>
+                                <?php if ($adaptive_load_override_expires_at !== ''): ?>
+                                    <span>Dipaksa sampai <?php echo esc_html($adaptive_load_override_expires_at); ?></span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <div class="cbt-exam-snapshot-adaptive-actions">
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                <?php wp_nonce_field('cbt_clear_adaptive_load_override'); ?>
+                                <input type="hidden" name="action" value="cbt_clear_adaptive_load_override" />
+                                <?php self::render_snapshot_tab_hidden_field($exam_snapshot_tab); ?>
+                                <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                                <?php self::render_snapshot_filter_state_hidden_fields($exam_snapshot_filter_state); ?>
+                                <?php self::render_snapshot_preview_page_hidden_fields($exam_snapshot_preview_pages); ?>
+                                <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
+                                <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                                <button type="submit" class="button">
+                                    Auto
+                                </button>
+                            </form>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                <?php wp_nonce_field('cbt_set_adaptive_load_override'); ?>
+                                <input type="hidden" name="action" value="cbt_set_adaptive_load_override" />
+                                <input type="hidden" name="cbt_adaptive_load_override_level" value="busy" />
+                                <?php self::render_snapshot_tab_hidden_field($exam_snapshot_tab); ?>
+                                <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                                <?php self::render_snapshot_filter_state_hidden_fields($exam_snapshot_filter_state); ?>
+                                <?php self::render_snapshot_preview_page_hidden_fields($exam_snapshot_preview_pages); ?>
+                                <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
+                                <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                                <button type="submit" class="button">
+                                    Paksa Busy (15 menit)
+                                </button>
+                            </form>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                <?php wp_nonce_field('cbt_set_adaptive_load_override'); ?>
+                                <input type="hidden" name="action" value="cbt_set_adaptive_load_override" />
+                                <input type="hidden" name="cbt_adaptive_load_override_level" value="critical" />
+                                <?php self::render_snapshot_tab_hidden_field($exam_snapshot_tab); ?>
+                                <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                                <?php self::render_snapshot_filter_state_hidden_fields($exam_snapshot_filter_state); ?>
+                                <?php self::render_snapshot_preview_page_hidden_fields($exam_snapshot_preview_pages); ?>
+                                <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
+                                <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                                <button type="submit" class="button button-secondary">
+                                    Paksa Critical (15 menit)
+                                </button>
+                            </form>
+                        </div>
+                    </section>
                 <?php endif; ?>
 
                 <?php switch ($exam_snapshot_tab):
@@ -1236,6 +1318,7 @@ final class CBT_Admin_Exams_Page
                                 <p class="description cbt-exam-list-description">Pantau login auth snapshot per siswa sebagai akselerator auth/login. Snapshot ini membantu lookup dan payload login siswa, tetapi bukan active session, JWT, atau state login yang sedang hidup.</p>
                             </div>
                         </div>
+                        <?php self::render_login_snapshot_health_panel($login_snapshot_health_context); ?>
                         <?php self::render_student_snapshot_bulk_actions_bar(
                             $exam_snapshot_tab,
                             $student_snapshot_total,
@@ -1306,6 +1389,87 @@ final class CBT_Admin_Exams_Page
                 <?php endswitch; ?>
             </section>
         </div>
+        <?php
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function render_login_snapshot_health_panel(array $context): void
+    {
+        $available = !empty($context['available']);
+        $tone = sanitize_html_class((string) ($context['tone'] ?? 'neutral'), 'neutral');
+        $window_minutes = max(1, (int) ($context['window_minutes'] ?? 15));
+        $hit_rate_label = trim((string) ($context['hit_rate_label'] ?? 'N/A'));
+        $snapshot_success = max(0, (int) ($context['snapshot_success'] ?? 0));
+        $canonical_fallback = max(0, (int) ($context['canonical_fallback'] ?? 0));
+        $top_miss_reason_label = trim((string) ($context['top_miss_reason_label'] ?? ''));
+        $top_miss_reason_count = max(0, (int) ($context['top_miss_reason_count'] ?? 0));
+        $freshness_window_jobs = max(0, (int) ($context['freshness_window_jobs'] ?? 0));
+        $freshness_last_tick_at = trim((string) ($context['freshness_last_tick_at'] ?? ''));
+        $freshness_last_refreshed_user_count = max(0, (int) ($context['freshness_last_refreshed_user_count'] ?? 0));
+        $freshness_last_refreshed_success_count = max(0, (int) ($context['freshness_last_refreshed_success_count'] ?? 0));
+        $freshness_last_message = trim((string) ($context['freshness_last_message'] ?? ''));
+        $metrics_redis_error = trim((string) ($context['metrics_redis_error'] ?? ''));
+
+        if (
+            !$available
+            && $hit_rate_label === 'N/A'
+            && $snapshot_success === 0
+            && $canonical_fallback === 0
+            && $freshness_window_jobs === 0
+            && $freshness_last_tick_at === ''
+            && $freshness_last_message === ''
+        ) {
+            return;
+        }
+        ?>
+        <section class="cbt-exam-snapshot-queue-panel">
+            <div class="cbt-exam-snapshot-queue-panel-head">
+                <div class="cbt-exam-snapshot-queue-panel-copy">
+                    <strong>Login Snapshot Health</strong>
+                    <span><?php echo esc_html('Ringkasan ini menunjukkan seberapa sering login siswa berhasil lewat snapshot dibanding fallback canonical auth, sekaligus aktivitas freshness runner untuk exam window aktif atau yang mulai dalam 2 jam ke depan.'); ?></span>
+                </div>
+                <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($tone); ?>"><?php echo esc_html($available ? 'AVAILABLE' : 'N/A'); ?></span>
+            </div>
+            <div class="cbt-exam-snapshot-summary-grid">
+                <div class="cbt-exam-snapshot-summary-card">
+                    <span class="cbt-exam-snapshot-summary-label"><?php echo esc_html('Hit Rate ' . $window_minutes . ' menit'); ?></span>
+                    <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($hit_rate_label !== '' ? $hit_rate_label : 'N/A'); ?></strong>
+                </div>
+                <div class="cbt-exam-snapshot-summary-card">
+                    <span class="cbt-exam-snapshot-summary-label">Snapshot Success</span>
+                    <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html((string) $snapshot_success); ?></strong>
+                </div>
+                <div class="cbt-exam-snapshot-summary-card">
+                    <span class="cbt-exam-snapshot-summary-label">Canonical Fallback</span>
+                    <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html((string) $canonical_fallback); ?></strong>
+                </div>
+                <div class="cbt-exam-snapshot-summary-card">
+                    <span class="cbt-exam-snapshot-summary-label">Top MISS Reason</span>
+                    <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($top_miss_reason_label !== '' ? $top_miss_reason_label : '-'); ?></strong>
+                    <?php if ($top_miss_reason_count > 0): ?>
+                        <span class="cbt-exam-preflight-stage-meta"><?php echo esc_html('Count ' . $top_miss_reason_count); ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="cbt-exam-snapshot-summary-card">
+                    <span class="cbt-exam-snapshot-summary-label">Freshness Window Jobs</span>
+                    <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html((string) $freshness_window_jobs); ?></strong>
+                    <?php if ($freshness_last_tick_at !== ''): ?>
+                        <span class="cbt-exam-preflight-stage-meta"><?php echo esc_html('Last Tick ' . $freshness_last_tick_at); ?></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php if ($freshness_last_refreshed_user_count > 0 || $freshness_last_refreshed_success_count > 0): ?>
+                <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Freshness runner terakhir me-refresh ' . $freshness_last_refreshed_user_count . ' siswa (' . $freshness_last_refreshed_success_count . ' sukses).'); ?></p>
+            <?php endif; ?>
+            <?php if ($freshness_last_message !== ''): ?>
+                <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--queue"><?php echo esc_html($freshness_last_message); ?></p>
+            <?php endif; ?>
+            <?php if ($metrics_redis_error !== ''): ?>
+                <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle"><?php echo esc_html('Metrics Redis: ' . $metrics_redis_error); ?></p>
+            <?php endif; ?>
+        </section>
         <?php
     }
 

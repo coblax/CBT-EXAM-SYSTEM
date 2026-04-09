@@ -76,6 +76,9 @@ function createFixture(overrides = {}) {
         finishProgressStepTotal: 0,
         isFinishing: false,
         lastSyncError: '',
+        finishReceipt: null,
+        finishResultPending: false,
+        finishRecoveryLastError: '',
         pendingFinishAutoSubmit: false,
         pendingSyncCount: 0,
         remainingSeconds: 120,
@@ -275,7 +278,8 @@ function createFixture(overrides = {}) {
         },
         syncPendingAnswerRuntimeState: function (meta) {
             calls.syncPendingAnswerRuntimeState.push(meta || null);
-        }
+        },
+        windowRef: overrides.windowRef || globalThis
     });
 
     return {
@@ -302,6 +306,7 @@ describe('createFinishFlowManager', function () {
         expect(fixture.state.exams[0].latest_attempt_pass_label).toBe('LULUS');
         expect(fixture.calls.clearPersistedAttemptUiState).toEqual([88]);
         expect(fixture.calls.clearPersistedQuestionCache).toEqual([88]);
+        expect(fixture.calls.persistCurrentQuestionCacheLocally).toBe(1);
         expect(fixture.calls.ensureResultStageRenderer).toEqual([
             {
                 renderOnResolve: false
@@ -455,7 +460,7 @@ describe('createFinishFlowManager', function () {
             fixture.calls.renderSnapshots.some(function (snapshot) {
                 return snapshot.finishProgressPercent === 90
                     && snapshot.finishProgressStepIndex === 4
-                    && snapshot.finishProgressStatus === 'Menyiapkan hasil ujian';
+                    && snapshot.finishProgressStatus === 'Memuat hasil ujian';
             })
         ).toBe(true);
         expect(fixture.state.finishProgressPercent).toBe(0);
@@ -477,7 +482,7 @@ describe('createFinishFlowManager', function () {
         await waitForAssertion(function () {
             expect(fixture.state.finishProgressPercent).toBe(90);
             expect(fixture.state.finishProgressStepIndex).toBe(4);
-            expect(fixture.state.finishProgressStatus).toBe('Menyiapkan hasil ujian');
+            expect(fixture.state.finishProgressStatus).toBe('Memuat hasil ujian');
         });
 
         expect(fixture.state.stage).toBe('exam');
@@ -514,6 +519,75 @@ describe('createFinishFlowManager', function () {
                 return snapshot.finishProgressStatus === 'Menunggu koneksi kembali'
                     && snapshot.finishProgressStepIndex === 2
                     && snapshot.stage === 'exam';
+            })
+        ).toBe(true);
+    });
+
+    it('persists a finish receipt and keeps the exam locked when result recovery fails after server ack', async function () {
+        var fixture = createFixture({
+            apiRequest: async function (path) {
+                if (path === 'finish_exam') {
+                    return {
+                        attempt_id: 88,
+                        finished_at: '2026-03-24 15:10:00',
+                        show_student_result: 1,
+                        status: 'completed'
+                    };
+                }
+
+                if (path === 'result') {
+                    throw new Error('Result fetch gagal dari unit test.');
+                }
+
+                throw new Error('Unexpected apiRequest path: ' + String(path));
+            }
+        });
+
+        await fixture.manager.maybeFinalizeLockedExam('unit-test');
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.examLockedForPendingFinish).toBe(true);
+        expect(fixture.state.finishResultPending).toBe(true);
+        expect(fixture.state.finishReceipt).toMatchObject({
+            attempt_id: 88,
+            exam_id: 9,
+            status: 'completed',
+            pending_result_fetch: 1
+        });
+        expect(fixture.state.finishProgressStatus).toBe('Finalisasi diterima server');
+        expect(fixture.calls.persistCurrentQuestionCacheLocally).toBe(1);
+        expect(fixture.calls.clearPersistedAttemptUiState).toEqual([]);
+        expect(fixture.calls.clearPersistedQuestionCache).toEqual([]);
+    });
+
+    it('recovers the result from a persisted finish receipt without reopening editing mode', async function () {
+        var fixture = createFixture({
+            state: {
+                finishReceipt: {
+                    ack_source: 'finish_exam',
+                    attempt_id: 88,
+                    exam_id: 9,
+                    finished_at: '2026-03-24 15:10:00',
+                    pending_result_fetch: 1,
+                    result_view_mode_hint: 'full',
+                    show_student_result_hint: 1,
+                    status: 'completed',
+                    updated_at: 1710000000000
+                },
+                finishResultPending: true
+            }
+        });
+
+        await fixture.manager.maybeFinalizeLockedExam('unit-test-recovery');
+
+        expect(fixture.state.stage).toBe('result');
+        expect(fixture.state.finishReceipt).toBeNull();
+        expect(fixture.state.finishResultPending).toBe(false);
+        expect(fixture.calls.clearPersistedAttemptUiState).toEqual([88]);
+        expect(fixture.calls.clearPersistedQuestionCache).toEqual([88]);
+        expect(
+            fixture.calls.renderSnapshots.some(function (snapshot) {
+                return snapshot.stage === 'result';
             })
         ).toBe(true);
     });

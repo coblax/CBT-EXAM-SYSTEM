@@ -83,6 +83,61 @@ final class StartAttemptGateServiceTest extends TestCase
         self::assertFalse($diagnostics['redis_available']);
     }
 
+    public function test_get_ticket_status_reports_queued_and_admitted_without_consuming_the_ticket(): void
+    {
+        for ($index = 1; $index <= 50; $index++) {
+            CBT_Start_Attempt_Gate_Service::evaluate_request(77, 3000 + $index);
+        }
+
+        $queued = CBT_Start_Attempt_Gate_Service::evaluate_request(77, 71);
+        $queuedStatus = CBT_Start_Attempt_Gate_Service::get_ticket_status(77, 71, (string) $queued['queue_ticket']);
+
+        self::assertSame('queued', $queuedStatus['mode']);
+        self::assertSame(1, $queuedStatus['queue_position']);
+        self::assertSame((string) $queued['queue_ticket'], (string) $queuedStatus['queue_ticket']);
+
+        $GLOBALS['cbt_test_start_attempt_gate_now'] = 1000.6;
+        $admittedStatus = CBT_Start_Attempt_Gate_Service::get_ticket_status(77, 71, (string) $queued['queue_ticket']);
+
+        self::assertSame('admitted', $admittedStatus['mode']);
+        self::assertSame((string) $queued['queue_ticket'], (string) $admittedStatus['queue_ticket']);
+
+        $stillQueued = CBT_Start_Attempt_Gate_Service::get_exam_diagnostics(77);
+        self::assertSame(1, $stillQueued['queue_depth']);
+
+        $admitted = CBT_Start_Attempt_Gate_Service::evaluate_request(77, 71, (string) $queued['queue_ticket']);
+        self::assertSame('admitted', $admitted['mode']);
+    }
+
+    public function test_get_ticket_status_returns_not_found_when_ticket_is_missing(): void
+    {
+        $status = CBT_Start_Attempt_Gate_Service::get_ticket_status(77, 71, 'missing-ticket');
+
+        self::assertSame('not_found', $status['mode']);
+        self::assertSame('', $status['queue_ticket']);
+    }
+
+    public function test_get_ticket_status_returns_disabled_when_gate_redis_is_unavailable(): void
+    {
+        $reflection = new ReflectionClass(CBT_Start_Attempt_Gate_Service::class);
+
+        $redisProperty = $reflection->getProperty('gate_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, false);
+
+        $attemptedProperty = $reflection->getProperty('gate_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('gate_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, 'Redis offline');
+
+        $status = CBT_Start_Attempt_Gate_Service::get_ticket_status(77, 71, 'ticket-1');
+
+        self::assertSame('disabled', $status['mode']);
+    }
+
     private function useFakeGateRedis(): void
     {
         $reflection = new ReflectionClass(CBT_Start_Attempt_Gate_Service::class);

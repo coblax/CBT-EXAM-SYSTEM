@@ -17,6 +17,8 @@ require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-question-contrac
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-question-submission-context-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-auth-snapshot-cache.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-snapshot-metrics-service.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-adaptive-load-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-plugin-redis-reset-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-runtime.php';
 
@@ -81,12 +83,14 @@ final class AdminExamsSnapshotContextTest extends TestCase
         delete_transient('cbt_exam_operational_stats_global');
         delete_transient('cbt_exam_operational_stats_user_0');
         delete_transient('cbt_exam_operational_stats_user_1');
+        delete_option('cbt_adaptive_load_state');
         $this->useFakeDeliveryRedis();
         $this->useFakeStartSnapshotRedis();
         $this->useFakeStartAttemptGateRedis();
         $this->useFakeAvailabilityRedis();
         $this->useFakeProfileRedis();
         $this->useFakeLoginSnapshotRedis();
+        $this->useFakeLoginMetricsRedis();
         $this->useFakeSubmissionContextRedis();
         $this->useFakeAttemptSessionRedis();
         $this->useFakeAttemptContractRedis();
@@ -142,23 +146,47 @@ final class AdminExamsSnapshotContextTest extends TestCase
             'exam_id' => 77,
             'exam_title' => 'Ujian Matematika',
         ]);
+        update_option('cbt_login_snapshot_freshness_state', [
+            'window_exam_count' => 2,
+            'last_tick_at' => '2026-04-08 09:05:00',
+            'last_refreshed_user_count' => 6,
+            'last_refreshed_success_count' => 5,
+            'last_message' => 'Freshness login snapshot memeriksa 2 exam window. Refresh 6 siswa (5 sukses), skip 0 exam.',
+        ]);
+        \CBT_Login_Snapshot_Metrics_Service::record_snapshot_success();
+        \CBT_Login_Snapshot_Metrics_Service::record_snapshot_success();
+        \CBT_Login_Snapshot_Metrics_Service::record_canonical_success('expired_or_evicted');
 
         $context = \CBT_Admin_Exams_Service::build_page_context([
             'cbt_exam_panel' => 'snapshot',
         ]);
 
         self::assertNotEmpty($context['exam_operational_stats']);
-        self::assertSame(20, $context['exam_operational_stats']['refreshed_every_seconds']);
-        self::assertCount(7, $context['exam_operational_stats']['cards']);
+        self::assertSame(10, $context['exam_operational_stats']['refreshed_every_seconds']);
+        self::assertCount(9, $context['exam_operational_stats']['cards']);
         self::assertSame('Redis RAM', $context['exam_operational_stats']['cards'][0]['label']);
         self::assertSame('CBT Redis Keys', $context['exam_operational_stats']['cards'][1]['label']);
         self::assertSame('Active Attempts', $context['exam_operational_stats']['cards'][2]['label']);
         self::assertSame('Start Queue', $context['exam_operational_stats']['cards'][3]['label']);
         self::assertSame('Auto-Heal Queue', $context['exam_operational_stats']['cards'][4]['label']);
-        self::assertSame('Warm Jobs', $context['exam_operational_stats']['cards'][5]['label']);
-        self::assertSame('User Snapshots', $context['exam_operational_stats']['cards'][6]['label']);
+        self::assertSame('Adaptive Load', $context['exam_operational_stats']['cards'][5]['label']);
+        self::assertSame('Warm Jobs', $context['exam_operational_stats']['cards'][6]['label']);
+        self::assertSame('Login Snapshot Health', $context['exam_operational_stats']['cards'][7]['label']);
+        self::assertSame('User Snapshots', $context['exam_operational_stats']['cards'][8]['label']);
         self::assertSame('5', (string) $context['exam_operational_stats']['cards'][1]['value']);
         self::assertSame('1', (string) $context['exam_operational_stats']['cards'][2]['value']);
+        self::assertSame('NORMAL', (string) $context['exam_operational_stats']['cards'][5]['value']);
+        self::assertStringContainsString('Heartbeat 20 detik', (string) $context['exam_operational_stats']['cards'][5]['hint']);
+        self::assertSame('66.7%', (string) $context['exam_operational_stats']['cards'][7]['value']);
+        self::assertStringContainsString('Snapshot 2', (string) $context['exam_operational_stats']['cards'][7]['meta']);
+        self::assertStringContainsString('Fallback 1', (string) $context['exam_operational_stats']['cards'][7]['meta']);
+        self::assertStringContainsString('Freshness 2', (string) $context['exam_operational_stats']['cards'][7]['meta']);
+        self::assertNotEmpty($context['login_snapshot_health_context']);
+        self::assertSame('66.7%', (string) $context['login_snapshot_health_context']['hit_rate_label']);
+        self::assertSame(2, (int) $context['login_snapshot_health_context']['freshness_window_jobs']);
+        self::assertNotEmpty($context['adaptive_load_context']);
+        self::assertSame('NORMAL', (string) $context['adaptive_load_context']['level_label']);
+        self::assertSame(10, (int) $context['adaptive_load_context']['admin_snapshot_refresh_seconds']);
     }
 
     public function test_build_page_context_includes_snapshot_rows_for_admin_snapshot_tab(): void
@@ -1619,6 +1647,23 @@ final class AdminExamsSnapshotContextTest extends TestCase
         $attemptedProperty->setValue(null, true);
 
         $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeLoginMetricsRedis(): void
+    {
+        $reflection = new ReflectionClass(\CBT_Login_Snapshot_Metrics_Service::class);
+
+        $redisProperty = $reflection->getProperty('metrics_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new \CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('metrics_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('metrics_redis_last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, '');
     }

@@ -140,6 +140,22 @@ export function createQuestionCacheStorage(deps) {
         return storageKey === '' ? '' : (storageKey + '__item_');
     }
 
+    function parseAttemptIdFromQuestionCacheKey(cacheKey, keyPrefix) {
+        var safeKey = String(cacheKey || '');
+        var safePrefix = String(keyPrefix || '');
+        if (safeKey === '' || safePrefix === '' || safeKey.indexOf(safePrefix) !== 0) {
+            return 0;
+        }
+
+        var remainder = safeKey.slice(safePrefix.length);
+        if (remainder === '') {
+            return 0;
+        }
+
+        var attemptIdText = remainder.split('__')[0].split('_')[0];
+        return Number(attemptIdText) || 0;
+    }
+
     function parseQuestionIdFromCacheItemKey(cacheKey, keyPrefix) {
         var safeKey = String(cacheKey || '');
         var safePrefix = String(keyPrefix || '');
@@ -698,6 +714,110 @@ export function createQuestionCacheStorage(deps) {
         };
     }
 
+    function normalizeStoredFinishReceipt(receipt) {
+        var safeReceipt = receipt && typeof receipt === 'object' ? receipt : {};
+        var attemptId = Number(
+            safeReceipt.attempt_id !== undefined
+                ? safeReceipt.attempt_id
+                : safeReceipt.attemptId
+        ) || 0;
+        var examId = Number(
+            safeReceipt.exam_id !== undefined
+                ? safeReceipt.exam_id
+                : safeReceipt.examId
+        ) || 0;
+        var status = String(safeReceipt.status || '').trim().toLowerCase();
+        var finishedAt = String(
+            safeReceipt.finished_at !== undefined
+                ? safeReceipt.finished_at
+                : (safeReceipt.finishedAt || '')
+        ).trim();
+        var ackSource = String(
+            safeReceipt.ack_source !== undefined
+                ? safeReceipt.ack_source
+                : (safeReceipt.ackSource || '')
+        ).trim();
+        var resultViewModeHint = String(
+            safeReceipt.result_view_mode_hint !== undefined
+                ? safeReceipt.result_view_mode_hint
+                : (safeReceipt.resultViewModeHint || '')
+        ).trim();
+        var updatedAt = Math.max(
+            0,
+            Number(
+                safeReceipt.updated_at !== undefined
+                    ? safeReceipt.updated_at
+                    : safeReceipt.updatedAt
+            ) || 0
+        );
+
+        if (attemptId <= 0 || examId <= 0 || status !== 'completed') {
+            return null;
+        }
+
+        return {
+            attemptId: attemptId,
+            examId: examId,
+            finishedAt: finishedAt,
+            status: 'completed',
+            resultViewModeHint: resultViewModeHint,
+            showStudentResultHint: Number(
+                safeReceipt.show_student_result_hint !== undefined
+                    ? safeReceipt.show_student_result_hint
+                    : safeReceipt.showStudentResultHint
+            ) === 1 ? 1 : 0,
+            ackSource: ackSource,
+            pendingResultFetch: Number(
+                safeReceipt.pending_result_fetch !== undefined
+                    ? safeReceipt.pending_result_fetch
+                    : safeReceipt.pendingResultFetch
+            ) === 1,
+            updatedAt: updatedAt
+        };
+    }
+
+    function serializeStoredFinishReceipt(receipt) {
+        var normalizedReceipt = normalizeStoredFinishReceipt(receipt);
+        if (!normalizedReceipt) {
+            return null;
+        }
+
+        return {
+            attempt_id: normalizedReceipt.attemptId,
+            exam_id: normalizedReceipt.examId,
+            finished_at: normalizedReceipt.finishedAt,
+            status: normalizedReceipt.status,
+            result_view_mode_hint: normalizedReceipt.resultViewModeHint,
+            show_student_result_hint: normalizedReceipt.showStudentResultHint,
+            ack_source: normalizedReceipt.ackSource,
+            pending_result_fetch: normalizedReceipt.pendingResultFetch ? 1 : 0,
+            updated_at: normalizedReceipt.updatedAt
+        };
+    }
+
+    function choosePreferredStoredFinishReceipt(primaryReceipt, secondaryReceipt) {
+        var normalizedPrimary = normalizeStoredFinishReceipt(primaryReceipt);
+        var normalizedSecondary = normalizeStoredFinishReceipt(secondaryReceipt);
+        if (!normalizedPrimary) {
+            return normalizedSecondary;
+        }
+        if (!normalizedSecondary) {
+            return normalizedPrimary;
+        }
+
+        if (normalizedPrimary.updatedAt !== normalizedSecondary.updatedAt) {
+            return normalizedPrimary.updatedAt > normalizedSecondary.updatedAt
+                ? normalizedPrimary
+                : normalizedSecondary;
+        }
+
+        if (normalizedPrimary.pendingResultFetch !== normalizedSecondary.pendingResultFetch) {
+            return normalizedPrimary.pendingResultFetch ? normalizedPrimary : normalizedSecondary;
+        }
+
+        return normalizedPrimary;
+    }
+
     function buildChangedQuestionLookup(previousManifestById, nextManifestById, preservedLookup) {
         var changedLookup = normalizeStoredBooleanLookup(preservedLookup);
         var safePreviousManifestById = previousManifestById && typeof previousManifestById === 'object'
@@ -843,6 +963,9 @@ export function createQuestionCacheStorage(deps) {
             last_sync_error: normalizedBaseSnapshot ? normalizedBaseSnapshot.lastSyncError : (baseSnapshot && baseSnapshot.last_sync_error),
             sync_blocking_reason: normalizedBaseSnapshot ? normalizedBaseSnapshot.syncBlockingReason : (baseSnapshot && baseSnapshot.sync_blocking_reason),
             exam_locked_for_pending_finish: normalizedBaseSnapshot ? (normalizedBaseSnapshot.examLockedForPendingFinish ? 1 : 0) : (baseSnapshot && baseSnapshot.exam_locked_for_pending_finish),
+            finish_receipt: normalizedBaseSnapshot
+                ? serializeStoredFinishReceipt(normalizedBaseSnapshot.finishReceipt)
+                : (baseSnapshot && (baseSnapshot.finish_receipt !== undefined ? baseSnapshot.finish_receipt : baseSnapshot.finishReceipt)),
             window_offset: normalizedBaseSnapshot ? normalizedBaseSnapshot.windowOffset : (baseSnapshot && baseSnapshot.window_offset),
             window_limit: normalizedBaseSnapshot ? normalizedBaseSnapshot.windowLimit : (baseSnapshot && baseSnapshot.window_limit),
             cached_at: Math.max(
@@ -900,6 +1023,11 @@ export function createQuestionCacheStorage(deps) {
         var answers = normalizeStoredAnswers(snapshot.answers);
         var existingAnswerRawByQuestionId = normalizeStoredExistingAnswerRawMap(snapshot.existing_answer_raw_by_question_id);
         var autoSaveState = normalizeStoredAutoSaveState(snapshot);
+        var finishReceipt = normalizeStoredFinishReceipt(
+            snapshot.finish_receipt !== undefined
+                ? snapshot.finish_receipt
+                : snapshot.finishReceipt
+        );
         if (payloadQuestions.length && (!Object.keys(answeredQuestionLookup).length || !Object.keys(answers).length)) {
             payloadQuestions.forEach(function (question) {
                 var questionId = Number(question && question.id) || 0;
@@ -925,7 +1053,7 @@ export function createQuestionCacheStorage(deps) {
             }
         });
 
-        if (!questionOrderIds.length && !payloadQuestions.length) {
+        if (!questionOrderIds.length && !payloadQuestions.length && !finishReceipt) {
             return null;
         }
 
@@ -956,6 +1084,7 @@ export function createQuestionCacheStorage(deps) {
             lastSyncError: autoSaveState.lastSyncError,
             syncBlockingReason: autoSaveState.syncBlockingReason,
             examLockedForPendingFinish: autoSaveState.examLockedForPendingFinish,
+            finishReceipt: finishReceipt,
             windowOffset: Math.max(0, Number(snapshot.window_offset) || 0),
             windowLimit: Math.max(0, Number(snapshot.window_limit) || 0),
             cachedAt: Math.max(0, Number(snapshot.cached_at) || 0)
@@ -1114,6 +1243,7 @@ export function createQuestionCacheStorage(deps) {
             last_sync_error: autoSaveState.last_sync_error,
             sync_blocking_reason: autoSaveState.sync_blocking_reason,
             exam_locked_for_pending_finish: autoSaveState.exam_locked_for_pending_finish,
+            finish_receipt: serializeStoredFinishReceipt(state.finishReceipt),
             window_offset: Math.max(0, Number(state.windowOffset) || 0),
             window_limit: Math.max(0, Number(state.windowLimit) || 0),
             cached_at: now()
@@ -1148,6 +1278,7 @@ export function createQuestionCacheStorage(deps) {
             last_sync_error: normalizedSnapshot.lastSyncError,
             sync_blocking_reason: normalizedSnapshot.syncBlockingReason,
             exam_locked_for_pending_finish: normalizedSnapshot.examLockedForPendingFinish ? 1 : 0,
+            finish_receipt: serializeStoredFinishReceipt(normalizedSnapshot.finishReceipt),
             window_offset: normalizedSnapshot.windowOffset,
             window_limit: normalizedSnapshot.windowLimit,
             cached_at: now()
@@ -1195,6 +1326,7 @@ export function createQuestionCacheStorage(deps) {
             last_sync_error: normalizedSnapshot.lastSyncError,
             sync_blocking_reason: normalizedSnapshot.syncBlockingReason,
             exam_locked_for_pending_finish: normalizedSnapshot.examLockedForPendingFinish ? 1 : 0,
+            finish_receipt: serializeStoredFinishReceipt(normalizedSnapshot.finishReceipt),
             window_offset: normalizedSnapshot.windowOffset,
             window_limit: normalizedSnapshot.windowLimit,
             stored_question_ids: normalizeQuestionIdList(storedQuestionIds),
@@ -1226,6 +1358,7 @@ export function createQuestionCacheStorage(deps) {
             last_sync_error: metaSnapshot && metaSnapshot.last_sync_error,
             sync_blocking_reason: metaSnapshot && metaSnapshot.sync_blocking_reason,
             exam_locked_for_pending_finish: metaSnapshot && metaSnapshot.exam_locked_for_pending_finish,
+            finish_receipt: metaSnapshot && metaSnapshot.finish_receipt,
             window_offset: metaSnapshot && metaSnapshot.window_offset,
             window_limit: metaSnapshot && metaSnapshot.window_limit,
             cached_at: metaSnapshot && metaSnapshot.cached_at
@@ -1376,6 +1509,12 @@ export function createQuestionCacheStorage(deps) {
             loaded_question_window_offsets: mergeStoredBooleanLookups(
                 normalizedPrimary.loadedQuestionWindowOffsets,
                 normalizedSecondary.loadedQuestionWindowOffsets
+            ),
+            finish_receipt: serializeStoredFinishReceipt(
+                choosePreferredStoredFinishReceipt(
+                    normalizedPrimary.finishReceipt,
+                    normalizedSecondary.finishReceipt
+                )
             ),
             window_offset: Number(preferredBaseSnapshot.windowOffset) || 0,
             window_limit: Number(preferredBaseSnapshot.windowLimit) || 0,
@@ -1846,6 +1985,108 @@ export function createQuestionCacheStorage(deps) {
         return mergedSnapshot;
     }
 
+    function collectPersistedQuestionCacheAttemptIds() {
+        var userId = Number(state.user && state.user.user_id) || 0;
+        if (userId <= 0) {
+            return [];
+        }
+
+        var attemptLookup = {};
+        var sessionStorage = getSessionStorage();
+        var localStorage = getLocalStorage();
+        var sessionPrefix = sessionStorageKeyPrefix + String(userId) + '_';
+        var localMetaPrefix = metaLocalStorageKeyPrefix + String(userId) + '_';
+        var localItemPrefix = itemLocalStorageKeyPrefix + String(userId) + '_';
+
+        function collectAttemptIdsFromStorage(storage, keyPrefix) {
+            if (!storage || keyPrefix === '') {
+                return;
+            }
+
+            try {
+                var storageLength = Number(storage.length) || 0;
+                for (var index = 0; index < storageLength; index++) {
+                    var currentKey = typeof storage.key === 'function' ? storage.key(index) : '';
+                    var attemptId = parseAttemptIdFromQuestionCacheKey(currentKey, keyPrefix);
+                    if (attemptId > 0) {
+                        attemptLookup[attemptId] = true;
+                    }
+                }
+            } catch (error) {
+                // Ignore storage enumeration failures.
+            }
+        }
+
+        collectAttemptIdsFromStorage(sessionStorage, sessionPrefix);
+        collectAttemptIdsFromStorage(localStorage, localMetaPrefix);
+        collectAttemptIdsFromStorage(localStorage, localItemPrefix);
+
+        return Object.keys(attemptLookup).map(function (key) {
+            return Number(key) || 0;
+        }).filter(function (attemptId) {
+            return attemptId > 0;
+        }).sort(function (left, right) {
+            return right - left;
+        });
+    }
+
+    async function findPersistedFinishRecoveryForExam(examId) {
+        var safeExamId = Number(examId) || 0;
+        if (safeExamId <= 0) {
+            return null;
+        }
+
+        var attemptIds = collectPersistedQuestionCacheAttemptIds();
+        if (!attemptIds.length) {
+            return null;
+        }
+
+        var bestMatch = null;
+        for (var index = 0; index < attemptIds.length; index++) {
+            var attemptId = Number(attemptIds[index]) || 0;
+            if (attemptId <= 0) {
+                continue;
+            }
+
+            // eslint-disable-next-line no-await-in-loop
+            var snapshot = await readPersistedQuestionCache(attemptId);
+            var finishReceipt = snapshot && snapshot.finishReceipt ? snapshot.finishReceipt : null;
+            if (
+                !finishReceipt
+                || Number(finishReceipt.examId) !== safeExamId
+                || String(finishReceipt.status || '').toLowerCase() !== 'completed'
+            ) {
+                continue;
+            }
+
+            var finishUpdatedAt = Number(finishReceipt.updatedAt) || 0;
+            var snapshotCachedAt = Number(snapshot && snapshot.cachedAt) || 0;
+            if (
+                !bestMatch
+                || finishUpdatedAt > bestMatch.finishUpdatedAt
+                || (finishUpdatedAt === bestMatch.finishUpdatedAt && snapshotCachedAt > bestMatch.snapshotCachedAt)
+            ) {
+                bestMatch = {
+                    attemptId: attemptId,
+                    finishReceipt: finishReceipt,
+                    finishUpdatedAt: finishUpdatedAt,
+                    snapshot: snapshot,
+                    snapshotCachedAt: snapshotCachedAt
+                };
+            }
+        }
+
+        if (!bestMatch) {
+            return null;
+        }
+
+        return {
+            attemptId: bestMatch.attemptId,
+            finishReceipt: bestMatch.finishReceipt,
+            snapshot: bestMatch.snapshot
+        };
+    }
+
     function clearPersistedQuestionCache(attemptId) {
         var storageKey = buildQuestionCacheSessionStorageKey(attemptId);
         if (storageKey === '') {
@@ -1990,6 +2231,7 @@ export function createQuestionCacheStorage(deps) {
         questionOrderSignatureEquals: questionOrderSignatureEquals,
         questionRevisionEquals: questionRevisionEquals,
         questionRevisionSignature: questionRevisionSignature,
+        findPersistedFinishRecoveryForExam: findPersistedFinishRecoveryForExam,
         readPersistedQuestionCache: readPersistedQuestionCache,
         serializeQuestionRevision: serializeQuestionRevision
     };

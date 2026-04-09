@@ -44,6 +44,18 @@ if (!class_exists('CBT_Login_Auth_Snapshot_Cache')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-login-auth-snapshot-cache.php';
 }
 
+if (!class_exists('CBT_Login_Snapshot_Metrics_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-login-snapshot-metrics-service.php';
+}
+
+if (!class_exists('CBT_Login_Snapshot_Freshness_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-login-snapshot-freshness-service.php';
+}
+
+if (!class_exists('CBT_Adaptive_Load_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-adaptive-load-service.php';
+}
+
 if (!class_exists('CBT_Question_Submission_Context_Cache')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-question-submission-context-cache.php';
 }
@@ -1331,6 +1343,9 @@ final class CBT_Admin_Exams_Service
                 'page' => 1,
                 'per_page' => self::STUDENT_SNAPSHOT_PER_PAGE,
             ];
+        $login_snapshot_health_context = $can_manage_exam_snapshots
+            ? self::build_login_snapshot_health_context()
+            : [];
         $availability_rewarm_queue = self::build_compat_availability_rewarm_queue_context($can_manage_exam_snapshots);
         $student_snapshot_rows = (array) ($student_snapshot_table['items'] ?? []);
         $student_snapshot_total = max(0, (int) ($student_snapshot_table['total'] ?? 0));
@@ -1600,6 +1615,9 @@ final class CBT_Admin_Exams_Service
         $exam_operational_stats = $can_manage_exam_snapshots
             ? self::build_exam_operational_stats_context($is_admin_scope, $current_user_id)
             : [];
+        $adaptive_load_context = $can_manage_exam_snapshots
+            ? self::build_adaptive_load_context()
+            : [];
 
         return get_defined_vars();
     }
@@ -1670,6 +1688,8 @@ final class CBT_Admin_Exams_Service
                 'last_skipped_count' => 0,
                 'last_message' => '',
             ];
+        $adaptive_load = self::build_adaptive_load_context();
+        $login_snapshot_health = self::build_login_snapshot_health_context();
         $preflight_jobs = class_exists('CBT_Exam_Preflight_Service')
             ? CBT_Exam_Preflight_Service::get_jobs_state()
             : [];
@@ -1783,6 +1803,19 @@ final class CBT_Admin_Exams_Service
                 'tone' => ((int) ($auto_heal_queue['queue_depth'] ?? 0)) > 0 ? 'success' : 'neutral',
             ],
             [
+                'label' => 'Adaptive Load',
+                'value' => (string) ($adaptive_load['level_label'] ?? 'NORMAL'),
+                'meta' => trim(implode(' · ', array_filter([
+                    (string) ($adaptive_load['source_label'] ?? 'Auto'),
+                    !empty($adaptive_load['primary_reason']) ? (string) $adaptive_load['primary_reason'] : '',
+                ]))),
+                'hint' => trim(implode(' · ', array_filter([
+                    !empty($adaptive_load['heartbeat_interval_label']) ? ('Heartbeat ' . (string) $adaptive_load['heartbeat_interval_label']) : '',
+                    !empty($adaptive_load['admin_snapshot_refresh_label']) ? ('Snapshot ' . (string) $adaptive_load['admin_snapshot_refresh_label']) : '',
+                ]))),
+                'tone' => sanitize_key((string) ($adaptive_load['tone'] ?? 'neutral')),
+            ],
+            [
                 'label' => 'Warm Jobs',
                 'value' => number_format_i18n($preflight_active_count + $preflight_queued_count + ($auto_warm_active ? 1 : 0)),
                 'meta' => trim(implode(' · ', array_filter([
@@ -1792,6 +1825,21 @@ final class CBT_Admin_Exams_Service
                 ]))),
                 'hint' => 'Pra-ujian',
                 'tone' => ($preflight_active_count + $preflight_queued_count + ($auto_warm_active ? 1 : 0)) > 0 ? 'success' : 'neutral',
+            ],
+            [
+                'label' => 'Login Snapshot Health',
+                'value' => (string) ($login_snapshot_health['hit_rate_label'] ?? 'N/A'),
+                'meta' => trim(implode(' · ', array_filter([
+                    isset($login_snapshot_health['snapshot_success']) ? ('Snapshot ' . number_format_i18n((int) $login_snapshot_health['snapshot_success'])) : '',
+                    isset($login_snapshot_health['canonical_fallback']) ? ('Fallback ' . number_format_i18n((int) $login_snapshot_health['canonical_fallback'])) : '',
+                    !empty($login_snapshot_health['top_miss_reason_label']) ? ('Top ' . (string) $login_snapshot_health['top_miss_reason_label']) : '',
+                    isset($login_snapshot_health['freshness_window_jobs']) ? ('Freshness ' . number_format_i18n((int) $login_snapshot_health['freshness_window_jobs'])) : '',
+                ]))),
+                'hint' => trim(implode(' · ', array_filter([
+                    isset($login_snapshot_health['today_snapshot_success']) ? ('Today Snapshot ' . number_format_i18n((int) $login_snapshot_health['today_snapshot_success'])) : '',
+                    isset($login_snapshot_health['today_canonical_fallback']) ? ('Today Fallback ' . number_format_i18n((int) $login_snapshot_health['today_canonical_fallback'])) : '',
+                ]))),
+                'tone' => sanitize_key((string) ($login_snapshot_health['tone'] ?? 'neutral')),
             ],
             [
                 'label' => 'User Snapshots',
@@ -1808,12 +1856,137 @@ final class CBT_Admin_Exams_Service
 
         $context = [
             'cards' => $cards,
-            'refreshed_every_seconds' => self::HERO_OPERATIONAL_STATS_TTL,
+            'refreshed_every_seconds' => max(
+                1,
+                (int) ($adaptive_load['admin_snapshot_refresh_seconds'] ?? self::HERO_OPERATIONAL_STATS_TTL)
+            ),
         ];
 
         set_transient($transient_key, $context, self::HERO_OPERATIONAL_STATS_TTL);
 
         return $context;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function build_login_snapshot_health_context(): array
+    {
+        $metrics = class_exists('CBT_Login_Snapshot_Metrics_Service')
+            ? CBT_Login_Snapshot_Metrics_Service::get_admin_summary()
+            : [
+                'available' => false,
+                'window' => [],
+                'today' => [],
+            ];
+        $freshness = class_exists('CBT_Login_Snapshot_Freshness_Service')
+            ? CBT_Login_Snapshot_Freshness_Service::get_summary()
+            : [
+                'window_exam_count' => 0,
+                'last_tick_at' => '',
+                'last_refreshed_user_count' => 0,
+                'last_refreshed_success_count' => 0,
+                'last_message' => '',
+            ];
+
+        $window = is_array($metrics['window'] ?? null) ? $metrics['window'] : [];
+        $today = is_array($metrics['today'] ?? null) ? $metrics['today'] : [];
+        $available = !empty($metrics['available']);
+        $hit_rate = isset($window['hit_rate']) && is_numeric($window['hit_rate'])
+            ? (float) $window['hit_rate']
+            : null;
+        $tone = 'neutral';
+        if (!$available) {
+            $tone = 'warning';
+        } elseif ($hit_rate !== null) {
+            if ($hit_rate >= 0.85) {
+                $tone = 'success';
+            } elseif ($hit_rate < 0.6) {
+                $tone = 'error';
+            } else {
+                $tone = 'warning';
+            }
+        }
+
+        return [
+            'available' => $available,
+            'tone' => $tone,
+            'window_minutes' => max(1, (int) ($window['minutes'] ?? 15)),
+            'hit_rate' => $hit_rate,
+            'hit_rate_label' => (string) ($window['hit_rate_label'] ?? 'N/A'),
+            'snapshot_success' => max(0, (int) ($window['snapshot_success'] ?? 0)),
+            'canonical_fallback' => max(0, (int) ($window['canonical_success'] ?? 0)),
+            'invalid_credentials' => max(0, (int) ($window['invalid_credentials'] ?? 0)),
+            'session_already_active' => max(0, (int) ($window['session_already_active'] ?? 0)),
+            'top_miss_reason' => sanitize_key((string) ($window['top_miss_reason'] ?? '')),
+            'top_miss_reason_label' => (string) ($window['top_miss_reason_label'] ?? ''),
+            'top_miss_reason_count' => max(0, (int) ($window['top_miss_reason_count'] ?? 0)),
+            'today_snapshot_success' => max(0, (int) ($today['snapshot_success'] ?? 0)),
+            'today_canonical_fallback' => max(0, (int) ($today['canonical_success'] ?? 0)),
+            'freshness_window_jobs' => max(0, (int) ($freshness['window_exam_count'] ?? 0)),
+            'freshness_last_tick_at' => (string) ($freshness['last_tick_at'] ?? ''),
+            'freshness_last_refreshed_user_count' => max(0, (int) ($freshness['last_refreshed_user_count'] ?? 0)),
+            'freshness_last_refreshed_success_count' => max(0, (int) ($freshness['last_refreshed_success_count'] ?? 0)),
+            'freshness_last_message' => (string) ($freshness['last_message'] ?? ''),
+            'metrics_redis_error' => (string) ($metrics['redis_error'] ?? ''),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function build_adaptive_load_context(): array
+    {
+        $summary = class_exists('CBT_Adaptive_Load_Service')
+            ? CBT_Adaptive_Load_Service::get_monitoring_summary()
+            : [
+                'level' => 'normal',
+                'level_label' => 'NORMAL',
+                'source' => 'auto',
+                'source_label' => 'Auto',
+                'heartbeat_interval_ms' => 20000,
+                'admin_snapshot_refresh_seconds' => 10,
+                'reasons' => [],
+                'primary_reason' => '',
+                'last_evaluated_at' => '',
+                'override_expires_at' => '',
+            ];
+
+        $level = sanitize_key((string) ($summary['level'] ?? 'normal'));
+        $tone = 'neutral';
+        if ($level === 'normal') {
+            $tone = 'success';
+        } elseif ($level === 'busy') {
+            $tone = 'warning';
+        } elseif ($level === 'critical') {
+            $tone = 'error';
+        }
+
+        $heartbeat_interval_ms = max(1000, (int) ($summary['heartbeat_interval_ms'] ?? 20000));
+        $admin_snapshot_refresh_seconds = max(1, (int) ($summary['admin_snapshot_refresh_seconds'] ?? 10));
+
+        return [
+            'level' => $level,
+            'level_label' => (string) ($summary['level_label'] ?? strtoupper($level)),
+            'source' => sanitize_key((string) ($summary['source'] ?? 'auto')),
+            'source_label' => (string) ($summary['source_label'] ?? 'Auto'),
+            'reasons' => array_values(array_filter(array_map('sanitize_text_field', (array) ($summary['reasons'] ?? [])))),
+            'primary_reason' => sanitize_text_field((string) ($summary['primary_reason'] ?? '')),
+            'last_evaluated_at' => (string) ($summary['last_evaluated_at'] ?? ''),
+            'override_expires_at' => (string) ($summary['override_expires_at'] ?? ''),
+            'heartbeat_interval_ms' => $heartbeat_interval_ms,
+            'heartbeat_interval_label' => number_format_i18n((float) ($heartbeat_interval_ms / 1000), 0) . ' detik',
+            'admin_snapshot_refresh_seconds' => $admin_snapshot_refresh_seconds,
+            'admin_snapshot_refresh_label' => number_format_i18n($admin_snapshot_refresh_seconds) . ' detik',
+            'tone' => $tone,
+        ];
+    }
+
+    private static function clear_exam_operational_stats_cache(): void
+    {
+        delete_transient('cbt_exam_operational_stats_global');
+        delete_transient('cbt_exam_operational_stats_user_0');
+        delete_transient('cbt_exam_operational_stats_user_1');
     }
 
     /**
@@ -2874,6 +3047,69 @@ final class CBT_Admin_Exams_Service
 
         self::redirect_exam_snapshot_page($exam_list_state, [
             $message_key => $message,
+        ]);
+    }
+
+    public static function handle_set_adaptive_load_override(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_set_adaptive_load_override');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if (!class_exists('CBT_Adaptive_Load_Service')) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Service adaptive load belum tersedia di environment ini.',
+            ]);
+        }
+
+        $level = sanitize_key((string) wp_unslash((string) ($_POST['cbt_adaptive_load_override_level'] ?? '')));
+        if (!in_array($level, ['busy', 'critical'], true)) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Level adaptive load override tidak valid.',
+            ]);
+        }
+
+        $state = CBT_Adaptive_Load_Service::set_manual_override($level, get_current_user_id());
+        self::clear_exam_operational_stats_cache();
+        $level_label = strtoupper((string) ($state['effective_level'] ?? $level));
+        $expires_at = (string) ($state['override_expires_at'] ?? '');
+        $message = 'Adaptive load dipaksa ' . $level_label . ' selama 15 menit.';
+        if ($expires_at !== '') {
+            $message .= ' Berlaku sampai ' . $expires_at . '.';
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            'cbt_msg' => $message,
+        ]);
+    }
+
+    public static function handle_clear_adaptive_load_override(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_clear_adaptive_load_override');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if (!class_exists('CBT_Adaptive_Load_Service')) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Service adaptive load belum tersedia di environment ini.',
+            ]);
+        }
+
+        $state = CBT_Adaptive_Load_Service::clear_manual_override();
+        self::clear_exam_operational_stats_cache();
+        $message = 'Adaptive load dikembalikan ke mode auto.';
+        if (!empty($state['effective_level'])) {
+            $message .= ' Level aktif sekarang ' . strtoupper((string) $state['effective_level']) . '.';
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            'cbt_msg' => $message,
         ]);
     }
 

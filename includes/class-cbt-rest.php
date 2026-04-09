@@ -52,6 +52,11 @@ class CBT_REST
 {
     private const PRIORITY_WINDOW_TRANSIENT_KEY = 'cbt_exam_priority_window_until';
     private const AVAILABILITY_BASE_CATALOG_TTL = 900;
+    /** @var array<int,array{phase:string,exam_id:int,user_id:int,context:array<string,mixed>,job:callable}> */
+    private static array $deferred_start_attempt_jobs = [];
+    private static bool $deferred_start_attempt_shutdown_registered = false;
+    private static bool $deferred_start_attempt_jobs_flushing = false;
+    private static bool $deferred_start_attempt_response_finished = false;
 
     public static function init(): void
     {
@@ -171,6 +176,34 @@ class CBT_REST
                     'sanitize_callback' => 'absint',
                 ],
                 'exam_token' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'resume_only' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+            ],
+        ]);
+
+        register_rest_route('cbt/v1', '/start_attempt_status', [
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => [self::class, 'start_attempt_status'],
+            'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
+            'args' => [
+                'exam_id' => [
+                    'required' => true,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+                'exam_token' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'queue_ticket' => [
                     'required' => false,
                     'type' => 'string',
                     'sanitize_callback' => 'sanitize_text_field',
@@ -404,7 +437,7 @@ class CBT_REST
             }
         }
 
-        return rest_ensure_response([
+        return rest_ensure_response(self::append_adaptive_load_payload([
             'ok' => true,
             'user_id' => $user_id,
             'role' => $role,
@@ -414,7 +447,7 @@ class CBT_REST
             'attempt_timer' => $attempt_timer,
             'show_student_result' => $show_student_result,
             'enable_calculator' => $enable_calculator,
-        ]);
+        ]));
     }
 
     public static function get_exams(WP_REST_Request $request)
@@ -440,6 +473,7 @@ class CBT_REST
         $payload['items'] = self::append_global_token_meta_to_exam_items(
             isset($payload['items']) && is_array($payload['items']) ? $payload['items'] : []
         );
+        $payload = self::append_adaptive_load_payload($payload);
 
         return rest_ensure_response($payload);
     }
@@ -915,6 +949,7 @@ class CBT_REST
     {
         global $wpdb;
         self::mark_priority_window('start_attempt');
+        $request_started_at = microtime(true);
 
         $exam_id = (int) $request->get_param('exam_id');
         $exam_token_input = (string) $request->get_param('exam_token');
@@ -981,10 +1016,19 @@ class CBT_REST
             return self::validate_exam_token_or_error($expected_token, $submitted_token);
         };
 
-        $indexed_attempt = self::get_active_attempt_from_index($user_id, $exam_id, $attempt_table);
-        if (is_array($indexed_attempt)) {
+        $resume_candidate = self::resolve_resumable_attempt_candidate($exam_id, $user_id, $attempt_table);
+        if (is_array($resume_candidate['attempt'] ?? null)) {
+            self::record_start_attempt_resolution(
+                (string) ($resume_candidate['source'] ?? '') === 'db' ? 'resume_from_db' : 'resume_from_index',
+                $exam_id,
+                $user_id,
+                [
+                    'attempt_id' => (int) (($resume_candidate['attempt']['id'] ?? 0)),
+                ]
+            );
+
             return self::build_resumed_attempt_response(
-                $indexed_attempt,
+                (array) $resume_candidate['attempt'],
                 $exam,
                 $exam_id,
                 $user_id,
@@ -1020,6 +1064,10 @@ class CBT_REST
         if (class_exists('CBT_Start_Attempt_Gate_Service')) {
             $gate_result = CBT_Start_Attempt_Gate_Service::evaluate_request($exam_id, $user_id, $queue_ticket);
             if ((string) ($gate_result['mode'] ?? '') === 'queued') {
+                self::record_start_attempt_resolution('queued_new_start', $exam_id, $user_id, [
+                    'queue_ticket' => (string) ($gate_result['queue_ticket'] ?? ''),
+                    'queue_position' => (int) ($gate_result['queue_position'] ?? 0),
+                ]);
                 return self::build_start_attempt_gate_queue_response($gate_result);
             }
         }
@@ -1030,10 +1078,14 @@ class CBT_REST
             'user_id' => $user_id,
             'exam_id' => $exam_id,
         ])) {
-            $indexed_attempt = self::get_active_attempt_from_index($user_id, $exam_id, $attempt_table);
-            if (is_array($indexed_attempt)) {
+            $resume_candidate = self::resolve_resumable_attempt_candidate($exam_id, $user_id, $attempt_table);
+            if (is_array($resume_candidate['attempt'] ?? null)) {
+                self::record_start_attempt_resolution('lock_conflict_resumed', $exam_id, $user_id, [
+                    'resume_source' => (string) ($resume_candidate['source'] ?? ''),
+                    'attempt_id' => (int) (($resume_candidate['attempt']['id'] ?? 0)),
+                ]);
                 return self::build_resumed_attempt_response(
-                    $indexed_attempt,
+                    (array) $resume_candidate['attempt'],
                     $exam,
                     $exam_id,
                     $user_id,
@@ -1044,6 +1096,7 @@ class CBT_REST
                 );
             }
 
+            self::record_start_attempt_resolution('lock_conflict_retryable', $exam_id, $user_id);
             return new WP_Error(
                 'attempt_lock_active',
                 'Permintaan mulai ujian sedang diproses. Coba lagi beberapa detik.',
@@ -1052,10 +1105,18 @@ class CBT_REST
         }
 
         try {
-            $indexed_attempt = self::get_active_attempt_from_index($user_id, $exam_id, $attempt_table);
-            if (is_array($indexed_attempt)) {
+            $resume_candidate = self::resolve_resumable_attempt_candidate($exam_id, $user_id, $attempt_table);
+            if (is_array($resume_candidate['attempt'] ?? null)) {
+                self::record_start_attempt_resolution(
+                    (string) ($resume_candidate['source'] ?? '') === 'db' ? 'resume_from_db' : 'resume_from_index',
+                    $exam_id,
+                    $user_id,
+                    [
+                        'attempt_id' => (int) (($resume_candidate['attempt']['id'] ?? 0)),
+                    ]
+                );
                 return self::build_resumed_attempt_response(
-                    $indexed_attempt,
+                    (array) $resume_candidate['attempt'],
                     $exam,
                     $exam_id,
                     $user_id,
@@ -1189,12 +1250,7 @@ class CBT_REST
             ];
             CBT_Cache::invalidate_user($user_id);
             CBT_Cache::invalidate_attempt($created_attempt_id);
-            self::ensure_runtime_attempt_state($created_attempt, (int) ($exam['duration_minutes'] ?? 0));
             self::sync_active_attempt_index($created_attempt);
-            self::sync_live_attempt_roster($created_attempt, [
-                'teacher_id' => (int) ($exam['created_by'] ?? 0),
-                'exam_title' => (string) ($exam['title'] ?? ''),
-            ]);
             $attempt_timer = self::build_attempt_timer_payload([
                 'id' => $created_attempt_id,
                 'status' => 'in_progress',
@@ -1205,16 +1261,7 @@ class CBT_REST
                 $question_ids,
                 $question_number_map
             );
-            self::sync_attempt_runtime_snapshots(
-                $created_attempt,
-                $exam,
-                $question_ids,
-                $question_number_map,
-                self::normalize_attempt_option_order_map($option_order),
-                []
-            );
-
-            return rest_ensure_response([
+            $response_payload = self::append_adaptive_load_payload([
                 'attempt_id' => $created_attempt_id,
                 'status' => 'started',
                 'duration_minutes' => (int) $exam['duration_minutes'],
@@ -1225,9 +1272,221 @@ class CBT_REST
                 'question_revision' => CBT_Cache::get_exam_revision_meta($exam_id),
                 'question_order_signature' => $question_order_signature,
             ]);
+
+            self::record_start_attempt_phase('start_attempt_response_ready', $exam_id, $user_id, [
+                'attempt_id' => $created_attempt_id,
+                'elapsed_ms' => self::measure_elapsed_ms($request_started_at),
+                'used_start_snapshot' => $used_start_snapshot ? 1 : 0,
+            ]);
+
+            self::run_after_start_attempt_response(
+                'start_attempt_deferred_roster_sync',
+                $exam_id,
+                $user_id,
+                static function () use ($created_attempt, $exam): void {
+                    self::sync_live_attempt_roster($created_attempt, [
+                        'teacher_id' => (int) ($exam['created_by'] ?? 0),
+                        'exam_title' => (string) ($exam['title'] ?? ''),
+                    ]);
+                },
+                [
+                    'attempt_id' => $created_attempt_id,
+                ]
+            );
+
+            self::run_after_start_attempt_response(
+                'start_attempt_deferred_runtime_snapshots',
+                $exam_id,
+                $user_id,
+                static function () use ($created_attempt, $exam, $question_ids, $question_number_map, $option_order): void {
+                    self::sync_attempt_runtime_snapshots(
+                        $created_attempt,
+                        $exam,
+                        $question_ids,
+                        $question_number_map,
+                        self::normalize_attempt_option_order_map($option_order),
+                        []
+                    );
+                },
+                [
+                    'attempt_id' => $created_attempt_id,
+                    'question_count' => count($question_ids),
+                ]
+            );
+
+            return rest_ensure_response($response_payload);
         } finally {
             CBT_Cache::release_lock($lock_key);
         }
+    }
+
+    public static function start_attempt_status(WP_REST_Request $request)
+    {
+        global $wpdb;
+        self::mark_priority_window('start_attempt_status');
+
+        $exam_id = (int) $request->get_param('exam_id');
+        $exam_token_input = (string) $request->get_param('exam_token');
+        $queue_ticket = sanitize_text_field((string) $request->get_param('queue_ticket'));
+        $queue_ticket = preg_replace('/[^a-zA-Z0-9\\-]/', '', $queue_ticket) ?: '';
+        $resume_only = ((int) $request->get_param('resume_only') === 1);
+        if ($exam_token_input === '') {
+            $exam_token_input = (string) $request->get_param('token');
+        }
+        $exam_token_input = CBT_Auth::normalize_exam_token_input($exam_token_input);
+        $user_id = CBT_Auth::current_user_id($request);
+        $role = CBT_Auth::current_user_role($request);
+
+        if (!in_array($role, ['siswa', 'student'], true)) {
+            return new WP_Error('forbidden', 'Only student role can check start attempt status', ['status' => 403]);
+        }
+
+        if ($exam_id <= 0) {
+            return new WP_Error('invalid_exam_id', 'exam_id is required', ['status' => 400]);
+        }
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+
+        $exam = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, title, created_by, status, starts_at, ends_at, duration_minutes, randomize_questions, randomize_options, show_student_result, enable_calculator, target_kelas
+                 FROM {$exam_table}
+                 WHERE id = %d",
+                $exam_id
+            ),
+            ARRAY_A
+        );
+        if (!$exam) {
+            return self::build_start_attempt_terminal_status_response(
+                'not_found',
+                'Exam tidak ditemukan.',
+                404
+            );
+        }
+
+        $student_kelas = self::get_live_user_kelas($user_id);
+        if (!self::exam_allows_student_class($exam, $student_kelas)) {
+            return self::build_start_attempt_terminal_status_response(
+                'forbidden',
+                'Exam tidak tersedia untuk kelas akun Anda.',
+                403
+            );
+        }
+
+        $expected_token = null;
+        $resolve_expected_token = static function () use (&$expected_token): string {
+            if (is_string($expected_token)) {
+                return $expected_token;
+            }
+
+            $global_token_meta = CBT_Auth::get_global_exam_token(true);
+            $expected_token = CBT_Auth::normalize_exam_token_input((string) ($global_token_meta['token'] ?? ''));
+            return $expected_token;
+        };
+        $validate_token_submission = static function (string $submitted_token) use ($resolve_expected_token) {
+            $expected_token = $resolve_expected_token();
+            if (
+                $expected_token !== '' &&
+                $submitted_token === '' &&
+                CBT_Auth::is_frontend_auto_exam_token_enabled()
+            ) {
+                $submitted_token = $expected_token;
+            }
+
+            return self::validate_exam_token_or_error($expected_token, $submitted_token);
+        };
+
+        $resume_candidate = self::resolve_resumable_attempt_candidate($exam_id, $user_id, $attempt_table);
+        if (is_array($resume_candidate['attempt'] ?? null)) {
+            $response = self::build_resumed_attempt_response(
+                (array) $resume_candidate['attempt'],
+                $exam,
+                $exam_id,
+                $user_id,
+                $attempt_table,
+                $resume_only,
+                $exam_token_input,
+                $validate_token_submission
+            );
+
+            return is_wp_error($response)
+                ? self::build_start_attempt_terminal_status_from_error($response)
+                : $response;
+        }
+
+        $latest_attempt = self::get_latest_attempt_status_candidate($exam_id, $user_id, $attempt_table);
+
+        if ($latest_attempt && (string) ($latest_attempt['status'] ?? '') === 'in_progress') {
+            $latest_attempt['exam_id'] = $exam_id;
+            $latest_attempt['student_id'] = $user_id;
+
+            $response = self::build_resumed_attempt_response(
+                $latest_attempt,
+                $exam,
+                $exam_id,
+                $user_id,
+                $attempt_table,
+                $resume_only,
+                $exam_token_input,
+                $validate_token_submission
+            );
+
+            return is_wp_error($response)
+                ? self::build_start_attempt_terminal_status_from_error($response)
+                : $response;
+        }
+
+        if ($latest_attempt && (string) ($latest_attempt['status'] ?? '') === 'completed') {
+            return self::build_start_attempt_completed_status_response($latest_attempt);
+        }
+
+        $now = current_time('mysql');
+        $within_schedule = (
+            (empty($exam['starts_at']) || (string) $exam['starts_at'] <= $now) &&
+            (empty($exam['ends_at']) || (string) $exam['ends_at'] >= $now)
+        );
+        if (!$resume_only && ((string) ($exam['status'] ?? 'draft') !== 'published' || !$within_schedule)) {
+            return self::build_start_attempt_terminal_status_response(
+                'forbidden',
+                'Exam sedang tidak aktif.',
+                403
+            );
+        }
+
+        if (!$resume_only && $queue_ticket === '') {
+            $token_check = $validate_token_submission($exam_token_input);
+            if (is_wp_error($token_check)) {
+                return self::build_start_attempt_terminal_status_from_error($token_check);
+            }
+        }
+
+        if ($queue_ticket !== '' && class_exists('CBT_Start_Attempt_Gate_Service')) {
+            $gate_result = CBT_Start_Attempt_Gate_Service::get_ticket_status($exam_id, $user_id, $queue_ticket);
+            $gate_mode = sanitize_key((string) ($gate_result['mode'] ?? ''));
+            if ($gate_mode === 'queued' || $gate_mode === 'admitted') {
+                return self::build_start_attempt_status_gate_response($gate_result);
+            }
+
+            if ($gate_mode === 'disabled') {
+                return self::build_start_attempt_pending_status_response(
+                    'gate_disabled',
+                    'Status antrean belum tersedia karena Redis gate tidak aktif.'
+                );
+            }
+
+            return self::build_start_attempt_pending_status_response(
+                'queue_ticket_not_found',
+                'Tiket antrean tidak ditemukan atau sudah kedaluwarsa.'
+            );
+        }
+
+        return self::build_start_attempt_pending_status_response(
+            $resume_only ? 'attempt_pending' : 'start_pending',
+            $resume_only
+                ? 'Attempt aktif belum ditemukan. Status sesi masih kami pantau.'
+                : 'Sesi ujian belum siap. Coba refresh status lagi.'
+        );
     }
 
     /**
@@ -1236,7 +1495,7 @@ class CBT_REST
      */
     private static function build_start_attempt_gate_queue_response(array $gate_result)
     {
-        $payload = [
+        $payload = self::append_adaptive_load_payload([
             'status' => 'queued',
             'queue_ticket' => (string) ($gate_result['queue_ticket'] ?? ''),
             'queue_position' => max(1, (int) ($gate_result['queue_position'] ?? 0)),
@@ -1244,10 +1503,323 @@ class CBT_REST
             'estimated_wait_seconds' => max(1, (int) ($gate_result['estimated_wait_seconds'] ?? 1)),
             'gate_capacity' => max(1, (int) ($gate_result['gate_capacity'] ?? 50)),
             'gate_window_seconds' => max(1, (int) ($gate_result['gate_window_seconds'] ?? 5)),
-        ];
+        ]);
 
         if (class_exists('WP_REST_Response')) {
             return new WP_REST_Response($payload, 202);
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param array<string,mixed> $gate_result
+     * @return array<string,mixed>|WP_REST_Response
+     */
+    private static function build_start_attempt_status_gate_response(array $gate_result)
+    {
+        $mode = sanitize_key((string) ($gate_result['mode'] ?? ''));
+        if ($mode === 'queued') {
+            return self::build_start_attempt_gate_queue_response($gate_result);
+        }
+
+        return rest_ensure_response(self::append_adaptive_load_payload([
+            'status' => 'admitted',
+            'queue_ticket' => (string) ($gate_result['queue_ticket'] ?? ''),
+            'queue_position' => max(0, (int) ($gate_result['queue_position'] ?? 0)),
+            'estimated_wait_seconds' => max(0, (int) ($gate_result['estimated_wait_seconds'] ?? 0)),
+            'poll_after_ms' => max(250, (int) ($gate_result['poll_after_ms'] ?? 1000)),
+            'gate_capacity' => max(1, (int) ($gate_result['gate_capacity'] ?? 50)),
+            'gate_window_seconds' => max(1, (int) ($gate_result['gate_window_seconds'] ?? 5)),
+        ]));
+    }
+
+    /**
+     * @return array{attempt:?array,source:string}
+     */
+    private static function resolve_resumable_attempt_candidate(int $exam_id, int $user_id, string $attempt_table): array
+    {
+        $indexed_attempt = self::get_active_attempt_from_index($user_id, $exam_id, $attempt_table);
+        if (is_array($indexed_attempt)) {
+            return [
+                'attempt' => $indexed_attempt,
+                'source' => 'index',
+            ];
+        }
+
+        $latest_active_attempt = self::get_latest_active_attempt_candidate($exam_id, $user_id, $attempt_table);
+        if (is_array($latest_active_attempt)) {
+            return [
+                'attempt' => self::hydrate_attempt_identity($latest_active_attempt, $exam_id, $user_id),
+                'source' => 'db',
+            ];
+        }
+
+        return [
+            'attempt' => null,
+            'source' => 'none',
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_latest_active_attempt_candidate(int $exam_id, int $user_id, string $attempt_table): ?array
+    {
+        global $wpdb;
+
+        $attempt = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, status, started_at, finished_at, question_order, option_order, extra_time_minutes
+                 FROM {$attempt_table}
+                 WHERE exam_id = %d AND student_id = %d AND status = 'in_progress'
+                 ORDER BY id DESC
+                 LIMIT 1",
+                $exam_id,
+                $user_id
+            ),
+            ARRAY_A
+        );
+
+        return is_array($attempt) ? $attempt : null;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_latest_attempt_status_candidate(int $exam_id, int $user_id, string $attempt_table): ?array
+    {
+        global $wpdb;
+
+        $attempt = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, status, started_at, finished_at, question_order, option_order, extra_time_minutes
+                 FROM {$attempt_table}
+                 WHERE exam_id = %d AND student_id = %d AND status IN ('in_progress', 'completed')
+                 ORDER BY FIELD(status, 'in_progress', 'completed'), id DESC
+                 LIMIT 1",
+                $exam_id,
+                $user_id
+            ),
+            ARRAY_A
+        );
+
+        return is_array($attempt) ? $attempt : null;
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @return array<string,mixed>
+     */
+    private static function hydrate_attempt_identity(array $attempt, int $exam_id, int $user_id): array
+    {
+        $attempt['exam_id'] = $exam_id;
+        $attempt['student_id'] = $user_id;
+
+        return $attempt;
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function record_start_attempt_resolution(string $resolution, int $exam_id, int $user_id, array $context = []): void
+    {
+        if (!function_exists('do_action')) {
+            return;
+        }
+
+        do_action('cbt_start_attempt_resolution', array_merge([
+            'resolution' => sanitize_key($resolution),
+            'exam_id' => $exam_id,
+            'user_id' => $user_id,
+        ], $context));
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function record_start_attempt_phase(string $phase, int $exam_id, int $user_id, array $context = []): void
+    {
+        if (!function_exists('do_action')) {
+            return;
+        }
+
+        do_action('cbt_start_attempt_phase', array_merge([
+            'phase' => sanitize_key($phase),
+            'exam_id' => $exam_id,
+            'user_id' => $user_id,
+            'recorded_at' => microtime(true),
+        ], $context));
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function run_after_start_attempt_response(
+        string $phase,
+        int $exam_id,
+        int $user_id,
+        callable $job,
+        array $context = []
+    ): void {
+        self::$deferred_start_attempt_jobs[] = [
+            'phase' => sanitize_key($phase),
+            'exam_id' => $exam_id,
+            'user_id' => $user_id,
+            'context' => $context,
+            'job' => $job,
+        ];
+
+        if (self::$deferred_start_attempt_shutdown_registered) {
+            return;
+        }
+
+        self::$deferred_start_attempt_shutdown_registered = true;
+        register_shutdown_function(static function (): void {
+            CBT_REST::flush_deferred_start_attempt_jobs();
+        });
+    }
+
+    public static function flush_deferred_start_attempt_jobs(): void
+    {
+        if (self::$deferred_start_attempt_jobs_flushing) {
+            return;
+        }
+
+        self::$deferred_start_attempt_jobs_flushing = true;
+
+        try {
+            self::maybe_finish_start_attempt_response();
+
+            while (!empty(self::$deferred_start_attempt_jobs)) {
+                $jobs = self::$deferred_start_attempt_jobs;
+                self::$deferred_start_attempt_jobs = [];
+
+                foreach ($jobs as $job) {
+                    $started_at = microtime(true);
+
+                    try {
+                        ($job['job'])();
+                        self::record_start_attempt_phase(
+                            (string) ($job['phase'] ?? ''),
+                            (int) ($job['exam_id'] ?? 0),
+                            (int) ($job['user_id'] ?? 0),
+                            array_merge(
+                                is_array($job['context'] ?? null) ? $job['context'] : [],
+                                [
+                                    'ok' => 1,
+                                    'elapsed_ms' => self::measure_elapsed_ms($started_at),
+                                ]
+                            )
+                        );
+                    } catch (Throwable $throwable) {
+                        self::record_start_attempt_phase(
+                            (string) ($job['phase'] ?? ''),
+                            (int) ($job['exam_id'] ?? 0),
+                            (int) ($job['user_id'] ?? 0),
+                            array_merge(
+                                is_array($job['context'] ?? null) ? $job['context'] : [],
+                                [
+                                    'ok' => 0,
+                                    'elapsed_ms' => self::measure_elapsed_ms($started_at),
+                                    'error_class' => get_class($throwable),
+                                    'error_message' => $throwable->getMessage(),
+                                ]
+                            )
+                        );
+                    }
+                }
+            }
+        } finally {
+            self::$deferred_start_attempt_jobs_flushing = false;
+        }
+    }
+
+    private static function maybe_finish_start_attempt_response(): void
+    {
+        if (self::$deferred_start_attempt_response_finished) {
+            return;
+        }
+
+        self::$deferred_start_attempt_response_finished = true;
+
+        if (PHP_SAPI === 'cli' || PHP_SAPI === 'phpdbg') {
+            return;
+        }
+
+        if (function_exists('ignore_user_abort')) {
+            @ignore_user_abort(true);
+        }
+
+        if (function_exists('fastcgi_finish_request')) {
+            @fastcgi_finish_request();
+        }
+    }
+
+    private static function measure_elapsed_ms(float $started_at): float
+    {
+        return round(max(0, (microtime(true) - $started_at) * 1000), 3);
+    }
+
+    /**
+     * @return array<string,mixed>|WP_REST_Response
+     */
+    private static function build_start_attempt_completed_status_response(array $attempt)
+    {
+        return rest_ensure_response(self::append_adaptive_load_payload([
+            'status' => 'completed',
+            'attempt_id' => (int) ($attempt['id'] ?? 0),
+            'finished_at' => (string) ($attempt['finished_at'] ?? ''),
+        ]));
+    }
+
+    /**
+     * @return array<string,mixed>|WP_REST_Response
+     */
+    private static function build_start_attempt_pending_status_response(string $error_code = '', string $error_message = '')
+    {
+        return rest_ensure_response(self::append_adaptive_load_payload([
+            'status' => 'pending',
+            'error_code' => sanitize_key($error_code),
+            'error_message' => (string) $error_message,
+            'http_status' => 200,
+        ]));
+    }
+
+    /**
+     * @return array<string,mixed>|WP_REST_Response
+     */
+    private static function build_start_attempt_terminal_status_response(string $error_code, string $error_message, int $http_status = 400)
+    {
+        return rest_ensure_response(self::append_adaptive_load_payload([
+            'status' => 'terminal_error',
+            'error_code' => sanitize_key($error_code),
+            'error_message' => (string) $error_message,
+            'http_status' => max(400, $http_status),
+        ]));
+    }
+
+    /**
+     * @return array<string,mixed>|WP_REST_Response
+     */
+    private static function build_start_attempt_terminal_status_from_error(WP_Error $error)
+    {
+        $error_data = $error->get_error_data();
+        $http_status = is_array($error_data) ? (int) ($error_data['status'] ?? 400) : 400;
+        return self::build_start_attempt_terminal_status_response(
+            (string) $error->get_error_code(),
+            (string) $error->get_error_message(),
+            $http_status
+        );
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function append_adaptive_load_payload(array $payload): array
+    {
+        if (class_exists('CBT_Adaptive_Load_Service')) {
+            $payload['adaptive_load'] = CBT_Adaptive_Load_Service::get_frontend_payload();
         }
 
         return $payload;
@@ -1343,7 +1915,7 @@ class CBT_REST
         ], (int) ($exam['duration_minutes'] ?? 0));
         $attempt_sync_meta = self::build_attempt_question_sync_meta($runtime_attempt, $exam, $attempt_table);
 
-        return rest_ensure_response([
+        return rest_ensure_response(self::append_adaptive_load_payload([
             'attempt_id' => $attempt_id,
             'status' => 'resumed',
             'duration_minutes' => $resolved_duration_minutes,
@@ -1353,7 +1925,7 @@ class CBT_REST
             'server_now' => (string) ($attempt_timer['server_now'] ?? current_time('mysql')),
             'question_revision' => CBT_Cache::get_exam_revision_meta($exam_id),
             'question_order_signature' => (string) ($attempt_sync_meta['question_order_signature'] ?? ''),
-        ]);
+        ]));
     }
 
     /**
@@ -2284,6 +2856,7 @@ class CBT_REST
             return CBT_Runtime::ensure_attempt_state($attempt, $duration_minutes);
         }
 
+        $ensure_started_at = microtime(true);
         global $wpdb;
         $answer_table = $wpdb->prefix . 'cbt_answers';
         $answer_rows = $wpdb->get_results(
@@ -2296,7 +2869,16 @@ class CBT_REST
             ARRAY_A
         );
 
-        return CBT_Runtime::ensure_attempt_state($attempt, $duration_minutes, is_array($answer_rows) ? $answer_rows : []);
+        $result = CBT_Runtime::ensure_attempt_state($attempt, $duration_minutes, is_array($answer_rows) ? $answer_rows : []);
+        self::record_start_attempt_phase('start_attempt_lazy_runtime_state', (int) ($attempt['exam_id'] ?? 0), (int) ($attempt['student_id'] ?? 0), [
+            'attempt_id' => $attempt_id,
+            'duration_minutes' => $duration_minutes,
+            'answer_row_count' => is_array($answer_rows) ? count($answer_rows) : 0,
+            'elapsed_ms' => self::measure_elapsed_ms($ensure_started_at),
+            'ok' => $result ? 1 : 0,
+        ]);
+
+        return $result;
     }
 
     /**

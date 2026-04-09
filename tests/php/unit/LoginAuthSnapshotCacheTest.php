@@ -98,6 +98,7 @@ final class LoginAuthSnapshotCacheTest extends TestCase
         self::assertSame('ready', $result['reason']);
         self::assertSame('XI-A', $result['snapshot']['kode_kelas']);
         self::assertSame('20260011', $result['snapshot']['nisn']);
+        self::assertSame(43200, (int) ($result['snapshot']['ttl_seconds'] ?? 0));
     }
 
     public function test_warm_user_snapshot_results_batches_profile_reuse_and_pipeline_write(): void
@@ -238,6 +239,39 @@ final class LoginAuthSnapshotCacheTest extends TestCase
         self::assertSame('invalid', $diagnostics['snapshot_status']);
         self::assertSame('invalid_payload', $diagnostics['snapshot_miss_reason']);
         self::assertSame('Payload invalid', $diagnostics['snapshot_miss_reason_label']);
+    }
+
+    public function test_get_snapshot_lookup_result_reports_miss_metadata_for_known_identifier(): void
+    {
+        $lookup = CBT_Login_Auth_Snapshot_Cache::get_snapshot_lookup_result('salsa');
+
+        self::assertNull($lookup['snapshot']);
+        self::assertSame('miss', $lookup['lookup_status']);
+        self::assertSame('not_prepared', $lookup['snapshot_miss_reason']);
+        self::assertSame('Belum disiapkan', $lookup['snapshot_miss_reason_label']);
+        self::assertSame('canonical', $lookup['source_path']);
+        self::assertSame(11, (int) $lookup['resolved_user_id']);
+    }
+
+    public function test_get_user_snapshot_freshness_map_reports_status_ttl_and_refresh_eligibility(): void
+    {
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'freshness');
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(12, 'freshness');
+
+        $GLOBALS['cbt_test_redis_expiry']['cbt_login_auth:user:11'] = (int) current_time('timestamp') + 600;
+        unset($GLOBALS['cbt_test_redis_storage']['cbt_login_auth:user:12'], $GLOBALS['cbt_test_redis_expiry']['cbt_login_auth:user:12']);
+        $GLOBALS['cbt_test_redis_pipeline_batches'] = [];
+
+        $map = CBT_Login_Auth_Snapshot_Cache::get_user_snapshot_freshness_map([11, 12], 3600);
+
+        self::assertCount(2, $map);
+        self::assertSame('ready', $map[11]['snapshot_status']);
+        self::assertGreaterThanOrEqual(0, (int) $map[11]['ttl_seconds']);
+        self::assertTrue($map[11]['eligible_for_refresh']);
+        self::assertSame('miss', $map[12]['snapshot_status']);
+        self::assertSame('expired_or_evicted', $map[12]['snapshot_miss_reason']);
+        self::assertTrue($map[12]['eligible_for_refresh']);
+        self::assertCount(1, (array) ($GLOBALS['cbt_test_redis_pipeline_batches'] ?? []));
     }
 
     public function test_maybe_auto_heal_snapshot_repairs_whitelisted_login_miss_reasons(): void

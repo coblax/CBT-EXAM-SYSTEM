@@ -43,6 +43,8 @@ class CBT_Admin
         add_action('admin_post_cbt_clean_bulk_exam_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clean_bulk_exam_snapshots']);
         add_action('admin_post_cbt_clean_exam_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clean_exam_snapshots']);
         add_action('admin_post_cbt_hard_reset_cbt_redis', [CBT_Admin_Exams_Actions::class, 'handle_hard_reset_cbt_redis']);
+        add_action('admin_post_cbt_set_adaptive_load_override', [CBT_Admin_Exams_Actions::class, 'handle_set_adaptive_load_override']);
+        add_action('admin_post_cbt_clear_adaptive_load_override', [CBT_Admin_Exams_Actions::class, 'handle_clear_adaptive_load_override']);
         add_action('admin_post_cbt_warm_student_exam_availability_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_warm_student_exam_availability_snapshot']);
         add_action('admin_post_cbt_clear_student_exam_availability_snapshot', [CBT_Admin_Exams_Actions::class, 'handle_clear_student_exam_availability_snapshot']);
         add_action('admin_post_cbt_warm_bulk_student_exam_availability_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_warm_bulk_student_exam_availability_snapshots']);

@@ -24,9 +24,11 @@ function createFixture(overrides = {}) {
     }, overrides.state || {});
     var calls = {
         clearMessages: 0,
+        findPersistedFinishRecoveryForExam: [],
         fullLogout: 0,
         loadExams: 0,
         persistAuthSession: 0,
+        readPersistedQuestionCache: [],
         reconcilePendingPageRefreshSecurityEvent: 0,
         render: 0,
         renderSnapshots: [],
@@ -38,6 +40,13 @@ function createFixture(overrides = {}) {
     var manager = createBootstrapSessionManager({
         clearMessages: function () {
             calls.clearMessages += 1;
+        },
+        findPersistedFinishRecoveryForExam: async function (examId) {
+            calls.findPersistedFinishRecoveryForExam.push(Number(examId) || 0);
+            if (typeof overrides.findPersistedFinishRecoveryForExam === 'function') {
+                return overrides.findPersistedFinishRecoveryForExam(examId);
+            }
+            return null;
         },
         fullLogout: function () {
             calls.fullLogout += 1;
@@ -53,6 +62,13 @@ function createFixture(overrides = {}) {
         },
         persistAuthSession: function () {
             calls.persistAuthSession += 1;
+        },
+        readPersistedQuestionCache: async function (attemptId) {
+            calls.readPersistedQuestionCache.push(Number(attemptId) || 0);
+            if (typeof overrides.readPersistedQuestionCache === 'function') {
+                return overrides.readPersistedQuestionCache(attemptId);
+            }
+            return null;
         },
         readPersistedAuthSession: function () {
             return overrides.persisted || null;
@@ -220,6 +236,133 @@ describe('createBootstrapSessionManager', function () {
             {
                 options: { delayMs: 220 },
                 reason: 'bootstrap-session'
+            }
+        ]);
+    });
+
+    it('restores a persisted finish receipt into locked recovery mode instead of reopening exam editing', async function () {
+        var fixture = createFixture({
+            persisted: {
+                lastStage: 'exam',
+                token: 'token-123',
+                user: {
+                    user_id: 9,
+                    role: 'student'
+                },
+                selectedExamId: 44
+            },
+            state: {
+                exams: [
+                    {
+                        id: 44,
+                        latest_attempt_id: 91,
+                        latest_attempt_status: 'completed'
+                    }
+                ]
+            },
+            readPersistedQuestionCache: async function () {
+                return {
+                    finishReceipt: {
+                        attemptId: 91,
+                        examId: 44,
+                        finishedAt: '2026-04-09 08:00:00',
+                        status: 'completed',
+                        resultViewModeHint: 'full',
+                        showStudentResultHint: 1,
+                        ackSource: 'finish_exam',
+                        pendingResultFetch: true,
+                        updatedAt: 1710000000000
+                    }
+                };
+            }
+        });
+
+        await fixture.manager.bootstrapFromPersistedSession();
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.attemptId).toBe(91);
+        expect(fixture.state.examLockedForPendingFinish).toBe(true);
+        expect(fixture.state.finishResultPending).toBe(true);
+        expect(fixture.state.finishReceipt).toMatchObject({
+            attempt_id: 91,
+            exam_id: 44,
+            status: 'completed'
+        });
+        expect(fixture.calls.readPersistedQuestionCache).toEqual([91]);
+        expect(fixture.calls.tryResumeActiveAttemptFromExamList).toEqual([]);
+        expect(fixture.calls.triggerPendingSyncLifecycleRetry).toEqual([
+            {
+                options: { delayMs: 220 },
+                reason: 'bootstrap-finish-recovery'
+            }
+        ]);
+    });
+
+    it('falls back to a persisted finish receipt lookup by exam when latest attempt data is missing from exam list', async function () {
+        var fixture = createFixture({
+            persisted: {
+                lastStage: 'exam',
+                token: 'token-123',
+                user: {
+                    user_id: 9,
+                    role: 'student'
+                },
+                selectedExamId: 44
+            },
+            state: {
+                exams: [
+                    {
+                        id: 44,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: ''
+                    }
+                ]
+            },
+            findPersistedFinishRecoveryForExam: async function () {
+                return {
+                    attemptId: 91,
+                    finishReceipt: {
+                        attemptId: 91,
+                        examId: 44,
+                        finishedAt: '2026-04-09 08:00:00',
+                        status: 'completed',
+                        resultViewModeHint: 'full',
+                        showStudentResultHint: 1,
+                        ackSource: 'finish_exam',
+                        pendingResultFetch: 1,
+                        updatedAt: 123456
+                    },
+                    snapshot: {
+                        finishReceipt: {
+                            attemptId: 91,
+                            examId: 44,
+                            finishedAt: '2026-04-09 08:00:00',
+                            status: 'completed',
+                            resultViewModeHint: 'full',
+                            showStudentResultHint: 1,
+                            ackSource: 'finish_exam',
+                            pendingResultFetch: 1,
+                            updatedAt: 123456
+                        }
+                    }
+                };
+            }
+        });
+
+        await fixture.manager.bootstrapFromPersistedSession();
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.attemptId).toBe(91);
+        expect(fixture.state.examLockedForPendingFinish).toBe(true);
+        expect(fixture.state.finishResultPending).toBe(true);
+        expect(fixture.calls.readPersistedQuestionCache).toEqual([]);
+        expect(fixture.calls.findPersistedFinishRecoveryForExam).toEqual([44]);
+        expect(fixture.calls.tryResumeActiveAttemptFromExamList).toEqual([]);
+        expect(fixture.calls.triggerPendingSyncLifecycleRetry).toEqual([
+            {
+                options: { delayMs: 220 },
+                reason: 'bootstrap-finish-recovery'
             }
         ]);
     });

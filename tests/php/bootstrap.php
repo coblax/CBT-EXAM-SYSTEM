@@ -419,7 +419,9 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
         ];
         $GLOBALS['cbt_test_last_redirect'] = '';
         $GLOBALS['cbt_test_redis_storage'] = [];
+        $GLOBALS['cbt_test_redis_hashes'] = [];
         $GLOBALS['cbt_test_redis_zsets'] = [];
+        $GLOBALS['cbt_test_redis_expiry'] = [];
         $GLOBALS['cbt_test_redis_should_fail_connect'] = false;
         $GLOBALS['cbt_test_redis_pipeline_disabled'] = false;
         $GLOBALS['cbt_test_redis_pipeline_batches'] = [];
@@ -698,7 +700,7 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
         /** @var bool */
         private $pipeline_active = false;
 
-        /** @var array<int,array{command:string,key:string,ttl:int,value:string}> */
+        /** @var array<int,array<string,mixed>> */
         private $pipeline_commands = [];
 
         public function connect($host, $port = null, $timeout = null, $retry_interval = null)
@@ -727,10 +729,17 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
 
         public function get($key)
         {
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'get',
+                    'key' => (string) $key,
+                ];
+
+                return $this;
+            }
+
             $key = (string) $key;
-            return array_key_exists($key, $GLOBALS['cbt_test_redis_storage'])
-                ? $GLOBALS['cbt_test_redis_storage'][$key]
-                : false;
+            return $this->readStorageValue($key);
         }
 
         public function setEx($key, $ttl, $value)
@@ -750,7 +759,9 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
                 return false;
             }
 
-            $GLOBALS['cbt_test_redis_storage'][(string) $key] = (string) $value;
+            $safeKey = (string) $key;
+            $GLOBALS['cbt_test_redis_storage'][$safeKey] = (string) $value;
+            $GLOBALS['cbt_test_redis_expiry'][$safeKey] = $this->currentTimestamp() + max(1, (int) $ttl);
             return true;
         }
 
@@ -779,19 +790,54 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
 
             $results = [];
             foreach ($commands as $command) {
-                if (($command['command'] ?? '') !== 'setEx') {
-                    $results[] = false;
-                    continue;
-                }
-
+                $commandName = (string) ($command['command'] ?? '');
                 $key = (string) ($command['key'] ?? '');
-                if (in_array($key, (array) ($GLOBALS['cbt_test_redis_fail_keys'] ?? []), true)) {
-                    $results[] = false;
+
+                if ($commandName === 'setEx') {
+                    if (in_array($key, (array) ($GLOBALS['cbt_test_redis_fail_keys'] ?? []), true)) {
+                        $results[] = false;
+                        continue;
+                    }
+
+                    $GLOBALS['cbt_test_redis_storage'][$key] = (string) ($command['value'] ?? '');
+                    $GLOBALS['cbt_test_redis_expiry'][$key] = $this->currentTimestamp() + max(1, (int) ($command['ttl'] ?? 0));
+                    $results[] = true;
                     continue;
                 }
 
-                $GLOBALS['cbt_test_redis_storage'][$key] = (string) ($command['value'] ?? '');
-                $results[] = true;
+                if ($commandName === 'get') {
+                    $results[] = $this->readStorageValue($key);
+                    continue;
+                }
+
+                if ($commandName === 'ttl') {
+                    $results[] = $this->remainingTtl($key);
+                    continue;
+                }
+
+                if ($commandName === 'hIncrBy') {
+                    $field = (string) ($command['field'] ?? '');
+                    $increment = (int) ($command['increment'] ?? 0);
+                    $current = isset($GLOBALS['cbt_test_redis_hashes'][$key][$field])
+                        ? (int) $GLOBALS['cbt_test_redis_hashes'][$key][$field]
+                        : 0;
+                    $next = $current + $increment;
+                    $GLOBALS['cbt_test_redis_hashes'][$key][$field] = $next;
+                    $results[] = $next;
+                    continue;
+                }
+
+                if ($commandName === 'hGetAll') {
+                    $results[] = $this->readHash($key);
+                    continue;
+                }
+
+                if ($commandName === 'expire') {
+                    $results[] = $this->applyExpire($key, (int) ($command['ttl'] ?? 0));
+                    continue;
+                }
+
+                $results[] = false;
             }
 
             return $results;
@@ -804,10 +850,16 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
                 $safe_key = (string) $key;
                 if (array_key_exists($safe_key, $GLOBALS['cbt_test_redis_storage'])) {
                     unset($GLOBALS['cbt_test_redis_storage'][$safe_key]);
+                    unset($GLOBALS['cbt_test_redis_expiry'][$safe_key]);
                     $deleted++;
                 }
                 if (array_key_exists($safe_key, $GLOBALS['cbt_test_redis_zsets'])) {
                     unset($GLOBALS['cbt_test_redis_zsets'][$safe_key]);
+                    $deleted++;
+                }
+                if (array_key_exists($safe_key, $GLOBALS['cbt_test_redis_hashes'])) {
+                    unset($GLOBALS['cbt_test_redis_hashes'][$safe_key]);
+                    unset($GLOBALS['cbt_test_redis_expiry'][$safe_key]);
                     $deleted++;
                 }
             }
@@ -817,13 +869,74 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
 
         public function expire($key, $ttl)
         {
-            return true;
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'expire',
+                    'key' => (string) $key,
+                    'ttl' => (int) $ttl,
+                ];
+
+                return $this;
+            }
+
+            return $this->applyExpire((string) $key, (int) $ttl);
         }
 
         public function ttl($key)
         {
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'ttl',
+                    'key' => (string) $key,
+                ];
+
+                return $this;
+            }
+
             $key = (string) $key;
-            return array_key_exists($key, $GLOBALS['cbt_test_redis_storage']) ? 44100 : -2;
+            return $this->remainingTtl($key);
+        }
+
+        public function hIncrBy($key, $field, $increment)
+        {
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'hIncrBy',
+                    'key' => (string) $key,
+                    'field' => (string) $field,
+                    'increment' => (int) $increment,
+                ];
+
+                return $this;
+            }
+
+            $key = (string) $key;
+            $field = (string) $field;
+            if (!isset($GLOBALS['cbt_test_redis_hashes'][$key]) || !is_array($GLOBALS['cbt_test_redis_hashes'][$key])) {
+                $GLOBALS['cbt_test_redis_hashes'][$key] = [];
+            }
+
+            $current = isset($GLOBALS['cbt_test_redis_hashes'][$key][$field])
+                ? (int) $GLOBALS['cbt_test_redis_hashes'][$key][$field]
+                : 0;
+            $next = $current + (int) $increment;
+            $GLOBALS['cbt_test_redis_hashes'][$key][$field] = $next;
+
+            return $next;
+        }
+
+        public function hGetAll($key)
+        {
+            if ($this->pipeline_active) {
+                $this->pipeline_commands[] = [
+                    'command' => 'hGetAll',
+                    'key' => (string) $key,
+                ];
+
+                return $this;
+            }
+
+            return $this->readHash((string) $key);
         }
 
         public function zAdd($key, $score, $member, ...$extra_args)
@@ -869,6 +982,76 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
             }
 
             return $deleted;
+        }
+
+        private function currentTimestamp(): int
+        {
+            return isset($GLOBALS['cbt_test_current_time_timestamp'])
+                ? (int) $GLOBALS['cbt_test_current_time_timestamp']
+                : time();
+        }
+
+        private function readStorageValue(string $key)
+        {
+            if ($this->remainingTtl($key) === -2) {
+                unset($GLOBALS['cbt_test_redis_storage'][$key], $GLOBALS['cbt_test_redis_expiry'][$key]);
+                return false;
+            }
+
+            return array_key_exists($key, $GLOBALS['cbt_test_redis_storage'])
+                ? $GLOBALS['cbt_test_redis_storage'][$key]
+                : false;
+        }
+
+        private function readHash(string $key): array
+        {
+            if ($this->remainingTtl($key) === -2 && isset($GLOBALS['cbt_test_redis_expiry'][$key])) {
+                unset($GLOBALS['cbt_test_redis_hashes'][$key], $GLOBALS['cbt_test_redis_expiry'][$key]);
+                return [];
+            }
+
+            $hash = $GLOBALS['cbt_test_redis_hashes'][$key] ?? [];
+            return is_array($hash) ? $hash : [];
+        }
+
+        private function applyExpire(string $key, int $ttl): bool
+        {
+            $exists = array_key_exists($key, $GLOBALS['cbt_test_redis_storage'])
+                || array_key_exists($key, $GLOBALS['cbt_test_redis_hashes'])
+                || array_key_exists($key, $GLOBALS['cbt_test_redis_zsets']);
+            if (!$exists) {
+                return false;
+            }
+
+            $GLOBALS['cbt_test_redis_expiry'][$key] = $this->currentTimestamp() + max(1, $ttl);
+            return true;
+        }
+
+        private function remainingTtl(string $key): int
+        {
+            $exists = array_key_exists($key, $GLOBALS['cbt_test_redis_storage'])
+                || array_key_exists($key, $GLOBALS['cbt_test_redis_hashes'])
+                || array_key_exists($key, $GLOBALS['cbt_test_redis_zsets']);
+            if (!$exists) {
+                return -2;
+            }
+
+            if (!isset($GLOBALS['cbt_test_redis_expiry'][$key])) {
+                return 44100;
+            }
+
+            $remaining = (int) $GLOBALS['cbt_test_redis_expiry'][$key] - $this->currentTimestamp();
+            if ($remaining <= 0) {
+                unset(
+                    $GLOBALS['cbt_test_redis_storage'][$key],
+                    $GLOBALS['cbt_test_redis_hashes'][$key],
+                    $GLOBALS['cbt_test_redis_zsets'][$key],
+                    $GLOBALS['cbt_test_redis_expiry'][$key]
+                );
+                return -2;
+            }
+
+            return $remaining;
         }
     }
 }

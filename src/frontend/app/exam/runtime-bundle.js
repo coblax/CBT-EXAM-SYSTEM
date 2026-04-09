@@ -292,7 +292,8 @@ export function createExamRuntimeBundle(deps) {
         state: state,
         stopTimer: deps.stopTimer,
         syncFullscreenState: deps.syncFullscreenState,
-        syncPendingAnswerRuntimeState: answerSyncManager.syncPendingAnswerRuntimeState
+        syncPendingAnswerRuntimeState: answerSyncManager.syncPendingAnswerRuntimeState,
+        windowRef: windowRef
     });
 
     var questionFlags = createQuestionFlags({

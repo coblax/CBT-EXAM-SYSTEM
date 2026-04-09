@@ -32,6 +32,7 @@ export function createSessionHeartbeatManager(deps) {
 
     var heartbeatTimer = 0;
     var heartbeatInFlight = null;
+    var currentHeartbeatIntervalMs = Math.max(1000, Number(sessionHeartbeatIntervalMs) || 20000);
     var CALCULATOR_DISABLED_NOTICE = 'Kalkulator dinonaktifkan oleh guru untuk exam ini.';
     var HEARTBEAT_LOST_THRESHOLD = 3;
     var consecutiveHeartbeatFailures = 0;
@@ -91,6 +92,53 @@ export function createSessionHeartbeatManager(deps) {
         resetHeartbeatLostState({
             render: false
         });
+    }
+
+    function syncHeartbeatTimer() {
+        if (!heartbeatTimer) {
+            return;
+        }
+
+        windowRef.clearInterval(heartbeatTimer);
+        heartbeatTimer = windowRef.setInterval(function () {
+            run();
+        }, currentHeartbeatIntervalMs);
+    }
+
+    function applyAdaptiveLoadPayload(payload) {
+        var adaptiveLoad = payload && typeof payload === 'object' && payload.adaptive_load && typeof payload.adaptive_load === 'object'
+            ? payload.adaptive_load
+            : null;
+
+        if (!adaptiveLoad) {
+            return false;
+        }
+
+        var nextIntervalMs = Math.max(1000, Number(adaptiveLoad.heartbeat_interval_ms) || currentHeartbeatIntervalMs);
+        var hasChanged = (
+            String(state.adaptiveLoadLevel || '') !== String(adaptiveLoad.level || 'normal')
+            || String(state.adaptiveLoadSource || '') !== String(adaptiveLoad.source || 'auto')
+            || Number(state.adaptiveLoadHeartbeatIntervalMs || 0) !== nextIntervalMs
+            || Number(state.adaptiveLoadAdminSnapshotRefreshSeconds || 0) !== Math.max(1, Number(adaptiveLoad.admin_snapshot_refresh_seconds) || 10)
+            || String(state.adaptiveLoadLastEvaluatedAt || '') !== String(adaptiveLoad.last_evaluated_at || '')
+            || String(state.adaptiveLoadOverrideExpiresAt || '') !== String(adaptiveLoad.override_expires_at || '')
+            || JSON.stringify(Array.isArray(state.adaptiveLoadReasons) ? state.adaptiveLoadReasons : []) !== JSON.stringify(Array.isArray(adaptiveLoad.reasons) ? adaptiveLoad.reasons : [])
+        );
+
+        state.adaptiveLoadLevel = String(adaptiveLoad.level || 'normal');
+        state.adaptiveLoadSource = String(adaptiveLoad.source || 'auto');
+        state.adaptiveLoadReasons = Array.isArray(adaptiveLoad.reasons) ? adaptiveLoad.reasons.slice() : [];
+        state.adaptiveLoadHeartbeatIntervalMs = nextIntervalMs;
+        state.adaptiveLoadAdminSnapshotRefreshSeconds = Math.max(1, Number(adaptiveLoad.admin_snapshot_refresh_seconds) || 10);
+        state.adaptiveLoadLastEvaluatedAt = String(adaptiveLoad.last_evaluated_at || '');
+        state.adaptiveLoadOverrideExpiresAt = String(adaptiveLoad.override_expires_at || '');
+
+        if (currentHeartbeatIntervalMs !== nextIntervalMs) {
+            currentHeartbeatIntervalMs = nextIntervalMs;
+            syncHeartbeatTimer();
+        }
+
+        return hasChanged;
     }
 
     function hasDocumentFocus() {
@@ -356,6 +404,7 @@ export function createSessionHeartbeatManager(deps) {
                 query: buildHeartbeatSessionQuery(heartbeatAttemptId)
             });
         }).then(function (sessionPayload) {
+            applyAdaptiveLoadPayload(sessionPayload);
             resetHeartbeatLostState({
                 render: !!state.heartbeatLostActive
             });
@@ -484,7 +533,7 @@ export function createSessionHeartbeatManager(deps) {
         if (!heartbeatTimer) {
             heartbeatTimer = windowRef.setInterval(function () {
                 run();
-            }, sessionHeartbeatIntervalMs);
+            }, currentHeartbeatIntervalMs);
         }
 
         if (options.immediate !== false) {
@@ -493,6 +542,7 @@ export function createSessionHeartbeatManager(deps) {
     }
 
     return {
+        applyAdaptiveLoadPayload: applyAdaptiveLoadPayload,
         run: run,
         start: start,
         stop: stop

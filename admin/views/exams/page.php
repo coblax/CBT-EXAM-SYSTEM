@@ -936,7 +936,7 @@
                     class="cbt-exam-page-panel<?php echo $active_exam_page_panel === 'cbt-exam-snapshot-panel' ? ' cbt-active' : ''; ?>"
                     role="tabpanel"
                     data-cbt-snapshot-tab="<?php echo esc_attr((string) ($exam_snapshot_tab ?? CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT)); ?>"
-                    data-cbt-snapshot-auto-refresh-seconds="<?php echo esc_attr(((string) ($exam_snapshot_tab ?? CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT)) === CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT ? '10' : '0'); ?>"
+                    data-cbt-snapshot-auto-refresh-seconds="<?php echo esc_attr(((string) ($exam_snapshot_tab ?? CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT)) === CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT ? (string) max(1, (int) (($adaptive_load_context['admin_snapshot_refresh_seconds'] ?? 10))) : '0'); ?>"
                 >
                     <div id="cbt-exam-clean-progress-overlay" class="cbt-exam-save-progress-overlay cbt-exam-clean-progress-overlay" hidden aria-hidden="true" style="display:none;">
                         <div class="cbt-exam-save-progress-card cbt-exam-clean-progress-card">
@@ -996,6 +996,8 @@
                         'student_snapshot_per_page' => $student_snapshot_per_page ?? 25,
                         'student_snapshot_active_filters' => $student_snapshot_active_filters ?? [],
                         'student_snapshot_reset_url' => $student_snapshot_reset_url ?? $exam_snapshot_reset_url,
+                        'login_snapshot_health_context' => $login_snapshot_health_context ?? [],
+                        'adaptive_load_context' => $adaptive_load_context ?? [],
                     ]); ?>
                 </div>
             <?php endif; ?>
@@ -1351,6 +1353,72 @@
                 .cbt-exam-snapshot-section {
                     display: grid;
                     gap: 16px;
+                }
+                .cbt-exam-snapshot-adaptive-banner {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 16px;
+                    padding: 16px 18px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 18px;
+                    background: linear-gradient(135deg, #f8fbff 0%, #ffffff 100%);
+                }
+                .cbt-exam-snapshot-adaptive-banner.is-warning {
+                    border-color: #f4d27a;
+                    background: linear-gradient(135deg, #fff9e8 0%, #ffffff 100%);
+                }
+                .cbt-exam-snapshot-adaptive-banner.is-error {
+                    border-color: #f1b6b6;
+                    background: linear-gradient(135deg, #fff2f2 0%, #ffffff 100%);
+                }
+                .cbt-exam-snapshot-adaptive-copy {
+                    display: grid;
+                    gap: 6px;
+                }
+                .cbt-exam-snapshot-adaptive-head {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .cbt-exam-snapshot-adaptive-kicker {
+                    display: inline-flex;
+                    align-items: center;
+                    padding: 4px 10px;
+                    border-radius: 999px;
+                    background: #eaf3ff;
+                    color: #135e96;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                }
+                .cbt-exam-snapshot-adaptive-head strong {
+                    color: #0f172a;
+                    font-size: 16px;
+                }
+                .cbt-exam-snapshot-adaptive-head small {
+                    color: #64748b;
+                    font-weight: 600;
+                }
+                .cbt-exam-snapshot-adaptive-meta {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px 14px;
+                    flex-wrap: wrap;
+                    color: #475569;
+                    font-size: 12px;
+                }
+                .cbt-exam-snapshot-adaptive-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                    justify-content: flex-end;
+                }
+                .cbt-exam-snapshot-adaptive-actions form {
+                    margin: 0;
                 }
                 .cbt-exam-snapshot-section[hidden] {
                     display: none !important;

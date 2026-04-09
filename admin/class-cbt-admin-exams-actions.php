@@ -96,6 +96,16 @@ final class CBT_Admin_Exams_Actions
         CBT_Admin_Exams_Service::handle_hard_reset_cbt_redis();
     }
 
+    public static function handle_set_adaptive_load_override(): void
+    {
+        CBT_Admin_Exams_Service::handle_set_adaptive_load_override();
+    }
+
+    public static function handle_clear_adaptive_load_override(): void
+    {
+        CBT_Admin_Exams_Service::handle_clear_adaptive_load_override();
+    }
+
     public static function handle_warm_student_exam_availability_snapshot(): void
     {
         CBT_Admin_Exams_Service::handle_warm_student_exam_availability_snapshot();

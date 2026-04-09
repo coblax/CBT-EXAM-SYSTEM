@@ -15,6 +15,19 @@ export function createAppEventManager(deps) {
     var handleNavigationAction = deps.handleNavigationAction;
     var handleStartExam = deps.handleStartExam;
     var handleViewResult = deps.handleViewResult;
+    var retryOpeningAttempt = typeof deps.retryOpeningAttempt === 'function'
+        ? deps.retryOpeningAttempt
+        : function () {
+            return Promise.resolve(false);
+        };
+    var refreshOpeningAttemptStatus = typeof deps.refreshOpeningAttemptStatus === 'function'
+        ? deps.refreshOpeningAttemptStatus
+        : function () {
+            return Promise.resolve(false);
+        };
+    var cancelOpeningAttemptFlow = typeof deps.cancelOpeningAttemptFlow === 'function'
+        ? deps.cancelOpeningAttemptFlow
+        : function () {};
     var isCompactNavViewport = deps.isCompactNavViewport;
     var isExamAnswerEditingLocked = deps.isExamAnswerEditingLocked;
     var isExamClipboardBlockingActive = deps.isExamClipboardBlockingActive;
@@ -761,6 +774,16 @@ export function createAppEventManager(deps) {
             return true;
         }
 
+        if (action === 'retry-opening-attempt') {
+            retryOpeningAttempt();
+            return true;
+        }
+
+        if (action === 'refresh-opening-attempt-status') {
+            refreshOpeningAttemptStatus();
+            return true;
+        }
+
         if (action === 'view-result') {
             handleViewResult();
             return true;
@@ -848,6 +871,7 @@ export function createAppEventManager(deps) {
         }
 
         if (action === 'back-confirm') {
+            cancelOpeningAttemptFlow();
             flushPendingAnswerBatchSilently({
                 flushAll: true,
                 keepalive: true

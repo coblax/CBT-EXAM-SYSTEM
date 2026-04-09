@@ -18,6 +18,12 @@ class CBT_Deactivator
         if (class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
             CBT_Snapshot_Auto_Heal_Queue_Service::deactivate();
         }
+        if (class_exists('CBT_Login_Snapshot_Freshness_Service')) {
+            CBT_Login_Snapshot_Freshness_Service::deactivate();
+        }
+        if (class_exists('CBT_Adaptive_Load_Service')) {
+            CBT_Adaptive_Load_Service::deactivate();
+        }
         // Keep data and roles on deactivate to avoid accidental data loss.
     }
 }

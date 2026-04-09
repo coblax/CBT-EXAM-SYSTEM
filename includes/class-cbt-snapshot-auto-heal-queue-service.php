@@ -550,9 +550,9 @@ final class CBT_Snapshot_Auto_Heal_Queue_Service
 
         if ($status === 'ready') {
             return [
-                'success' => true,
-                'skipped' => false,
-                'message' => trim((string) ($diagnostics['snapshot_message'] ?? '')),
+                'success' => false,
+                'skipped' => true,
+                'message' => trim((string) ($diagnostics['snapshot_message'] ?? 'Target auto-heal sudah READY saat job diproses.')),
             ];
         }
 

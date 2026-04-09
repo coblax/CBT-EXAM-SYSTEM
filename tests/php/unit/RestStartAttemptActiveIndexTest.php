@@ -125,12 +125,12 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertTrue(is_wp_error($response));
         self::assertSame('attempt_already_completed', $response->get_error_code());
         self::assertSame(1, $wpdb->attemptByIdQueryCount);
-        self::assertSame(1, $wpdb->latestAttemptQueryCount);
+        self::assertSame(3, $wpdb->latestAttemptQueryCount);
         self::assertSame(0, CBT_Active_Attempt_Index::get_active_attempt_id(7, 15));
     }
 
     #[RunInSeparateProcess]
-    public function test_start_attempt_writes_active_attempt_index_after_creating_new_attempt(): void
+    public function test_start_attempt_returns_started_response_before_deferred_sync_runs(): void
     {
         $this->bootstrapStartAttemptScaffold();
         $this->useFakeRuntimeRedisClient();
@@ -167,9 +167,15 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertFalse(is_wp_error($response));
         self::assertSame('started', $response['status']);
         self::assertSame(123, $response['attempt_id']);
-        self::assertSame(1, $wpdb->latestAttemptQueryCount);
+        self::assertSame(3, $wpdb->latestAttemptQueryCount);
         self::assertSame(1, $wpdb->insertCalls);
         self::assertSame(123, CBT_Active_Attempt_Index::get_active_attempt_id(7, 15));
+        self::assertFalse(CBT_Runtime::has_attempt_state(123));
+        self::assertArrayNotHasKey('cbt_attempt_session:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+        self::assertArrayNotHasKey('cbt_attempt_contract:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+
+        CBT_REST::flush_deferred_start_attempt_jobs();
+
         self::assertArrayHasKey('cbt_attempt_session:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
         self::assertArrayHasKey('cbt_attempt_contract:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
     }
@@ -231,6 +237,327 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertSame(81, $response['attempt_id']);
         self::assertSame(0, $wpdb->latestAttemptQueryCount);
         self::assertSame(0, $wpdb->insertCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_status_returns_resumed_attempt_from_active_index(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        CBT_Runtime::ensure_attempt_state([
+            'id' => 81,
+            'exam_id' => 15,
+            'student_id' => 7,
+            'status' => 'in_progress',
+            'started_at' => '2026-04-02 10:00:00',
+            'question_order' => '[]',
+            'option_order' => '',
+            'extra_time_minutes' => 0,
+        ], 90);
+        CBT_Active_Attempt_Index::set_active_attempt([
+            'id' => 81,
+            'exam_id' => 15,
+            'student_id' => 7,
+            'status' => 'in_progress',
+        ]);
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null
+        );
+
+        $response = CBT_REST::start_attempt_status(new WP_REST_Request([
+            'exam_id' => 15,
+            'resume_only' => 1,
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('resumed', $response['status']);
+        self::assertSame(81, $response['attempt_id']);
+        self::assertSame(0, $wpdb->latestAttemptQueryCount);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_bypasses_gate_when_active_attempt_exists_only_in_database(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartAttemptGateRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+        $GLOBALS['cbt_test_start_attempt_gate_now'] = 1000.0;
+
+        for ($index = 1; $index <= 50; $index++) {
+            CBT_Start_Attempt_Gate_Service::evaluate_request(15, 3000 + $index);
+        }
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [],
+            insertId: 123,
+            activeAttemptRow: [
+                'id' => 81,
+                'status' => 'in_progress',
+                'started_at' => '2026-04-02 10:00:00',
+                'finished_at' => '',
+                'question_order' => '[]',
+                'option_order' => '',
+                'extra_time_minutes' => 0,
+            ]
+        );
+
+        $response = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('resumed', $response['status']);
+        self::assertSame(81, $response['attempt_id']);
+        self::assertSame(1, $wpdb->latestAttemptQueryCount);
+        self::assertSame(0, $wpdb->insertCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_status_returns_pending_for_resume_only_without_active_attempt(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null
+        );
+
+        $response = CBT_REST::start_attempt_status(new WP_REST_Request([
+            'exam_id' => 15,
+            'resume_only' => 1,
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('pending', $response['status']);
+        self::assertSame('attempt_pending', $response['error_code']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_status_returns_resumed_attempt_from_database_when_active_index_is_missing(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            activeAttemptRow: [
+                'id' => 82,
+                'status' => 'in_progress',
+                'started_at' => '2026-04-02 10:00:00',
+                'finished_at' => '',
+                'question_order' => '[]',
+                'option_order' => '',
+                'extra_time_minutes' => 0,
+            ]
+        );
+
+        $response = CBT_REST::start_attempt_status(new WP_REST_Request([
+            'exam_id' => 15,
+            'resume_only' => 1,
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('resumed', $response['status']);
+        self::assertSame(82, $response['attempt_id']);
+        self::assertSame(1, $wpdb->latestAttemptQueryCount);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_status_returns_completed_when_latest_attempt_is_done(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: [
+                'id' => 92,
+                'status' => 'completed',
+                'started_at' => '2026-04-02 08:00:00',
+                'finished_at' => '2026-04-02 09:00:00',
+                'question_order' => '[]',
+                'option_order' => '',
+                'extra_time_minutes' => 0,
+            ]
+        );
+
+        $response = CBT_REST::start_attempt_status(new WP_REST_Request([
+            'exam_id' => 15,
+            'resume_only' => 1,
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('completed', $response['status']);
+        self::assertSame(92, $response['attempt_id']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_status_returns_terminal_error_for_invalid_token(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => 'ABC123'];
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null
+        );
+
+        $response = CBT_REST::start_attempt_status(new WP_REST_Request([
+            'exam_id' => 15,
+            'exam_token' => 'WRONG1',
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('terminal_error', $response['status']);
+        self::assertSame('token_invalid', $response['error_code']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_status_returns_admitted_for_queue_ticket_at_head(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartAttemptGateRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+        $GLOBALS['cbt_test_start_attempt_gate_now'] = 1000.0;
+
+        for ($index = 1; $index <= 50; $index++) {
+            CBT_Start_Attempt_Gate_Service::evaluate_request(15, 5000 + $index);
+        }
+
+        $queued = CBT_Start_Attempt_Gate_Service::evaluate_request(15, 7);
+        $GLOBALS['cbt_test_start_attempt_gate_now'] = 1000.6;
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null
+        );
+
+        $response = CBT_REST::start_attempt_status(new WP_REST_Request([
+            'exam_id' => 15,
+            'queue_ticket' => (string) ($queued['queue_ticket'] ?? ''),
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('admitted', $response['status']);
+        self::assertSame((string) ($queued['queue_ticket'] ?? ''), (string) $response['queue_ticket']);
     }
 
     #[RunInSeparateProcess]
@@ -308,6 +635,163 @@ final class RestStartAttemptActiveIndexTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_get_session_works_before_deferred_attempt_session_snapshot_flush(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [],
+            insertId: 123
+        );
+
+        $started = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+        ]));
+
+        self::assertFalse(is_wp_error($started));
+        self::assertSame('started', $started['status']);
+        self::assertArrayNotHasKey('cbt_attempt_session:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [
+                123 => [
+                    'id' => 123,
+                    'exam_id' => 15,
+                    'student_id' => 7,
+                    'status' => 'in_progress',
+                    'started_at' => '2026-04-02 10:00:00',
+                    'extra_time_minutes' => 0,
+                    'question_order' => (string) ($wpdb->lastInsertData['question_order'] ?? '[]'),
+                    'option_order' => (string) ($wpdb->lastInsertData['option_order'] ?? ''),
+                    'created_by' => 0,
+                    'exam_duration_minutes' => 90,
+                ],
+            ]
+        );
+
+        $session = CBT_REST::get_session(new WP_REST_Request([
+            'attempt_id' => 123,
+        ]));
+
+        self::assertFalse(is_wp_error($session));
+        self::assertTrue((bool) ($session['ok'] ?? false));
+        self::assertIsArray($session['attempt_timer']);
+        self::assertArrayHasKey('cbt_attempt_session:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_get_questions_bootstrap_initializes_runtime_state_lazily_after_start_response(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [],
+            insertId: 123
+        );
+
+        $started = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+        ]));
+
+        self::assertFalse(is_wp_error($started));
+        self::assertSame('started', $started['status']);
+        self::assertFalse(CBT_Runtime::has_attempt_state(123));
+
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [
+                123 => [
+                    'id' => 123,
+                    'exam_id' => 15,
+                    'student_id' => 7,
+                    'status' => 'in_progress',
+                    'started_at' => '2026-04-02 10:00:00',
+                    'extra_time_minutes' => 0,
+                    'question_order' => (string) ($wpdb->lastInsertData['question_order'] ?? '[]'),
+                    'option_order' => (string) ($wpdb->lastInsertData['option_order'] ?? ''),
+                ],
+            ]
+        );
+
+        $questions = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 15,
+            'attempt_id' => 123,
+        ]));
+
+        self::assertFalse(is_wp_error($questions));
+        $questionPayload = $questions instanceof WP_REST_Response ? $questions->get_data() : (array) $questions;
+        self::assertArrayHasKey('items', $questionPayload);
+        self::assertTrue(CBT_Runtime::has_attempt_state(123));
+    }
+
+    #[RunInSeparateProcess]
     public function test_start_attempt_returns_queued_payload_when_gate_capacity_is_exhausted(): void
     {
         $this->bootstrapStartAttemptScaffold();
@@ -352,7 +836,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertSame('queued', $response['status']);
         self::assertNotSame('', (string) $response['queue_ticket']);
         self::assertSame(1, $response['queue_position']);
-        self::assertSame(0, $wpdb->latestAttemptQueryCount);
+        self::assertSame(1, $wpdb->latestAttemptQueryCount);
         self::assertSame(0, $wpdb->insertCalls);
     }
 
@@ -409,8 +893,60 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertFalse(is_wp_error($started));
         self::assertSame('started', $started['status']);
         self::assertSame(123, $started['attempt_id']);
-        self::assertSame(1, $wpdb->latestAttemptQueryCount);
+        self::assertSame(4, $wpdb->latestAttemptQueryCount);
         self::assertSame(1, $wpdb->insertCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_returns_resumed_attempt_when_lock_is_busy_and_active_attempt_appears_in_database(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+        $GLOBALS['cbt_test_acquire_lock_result'] = false;
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            activeAttemptRowsSequence: [
+                null,
+                [
+                    'id' => 83,
+                    'status' => 'in_progress',
+                    'started_at' => '2026-04-02 10:00:00',
+                    'finished_at' => '',
+                    'question_order' => '[]',
+                    'option_order' => '',
+                    'extra_time_minutes' => 0,
+                ],
+            ]
+        );
+
+        $response = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('resumed', $response['status']);
+        self::assertSame(83, $response['attempt_id']);
+        self::assertSame(2, $wpdb->latestAttemptQueryCount);
+        self::assertSame(0, $wpdb->insertCalls);
     }
 
     private function bootstrapStartAttemptScaffold(): void
@@ -623,6 +1159,12 @@ final class RestStartAttemptActiveIndexFakeWpdb
     /** @var array<string,mixed>|null */
     private ?array $latestAttemptRow;
 
+    /** @var array<string,mixed>|null */
+    private ?array $activeAttemptRow;
+
+    /** @var array<int,array<string,mixed>|null> */
+    private array $activeAttemptRowsSequence;
+
     /** @var array<int,array<string,mixed>> */
     private array $attemptRowsById;
 
@@ -638,8 +1180,19 @@ final class RestStartAttemptActiveIndexFakeWpdb
      * @param array<int,array<string,mixed>> $attemptRowsById
      * @param array<int,array<string,mixed>> $startSnapshotQuestionRows
      * @param array<int,array<string,mixed>> $startSnapshotOptionRows
+     * @param array<string,mixed>|null $activeAttemptRow
+     * @param array<int,array<string,mixed>|null> $activeAttemptRowsSequence
      */
-    public function __construct(?array $examRow, ?array $latestAttemptRow, array $attemptRowsById = [], int $insertId = 123, array $startSnapshotQuestionRows = [], array $startSnapshotOptionRows = [])
+    public function __construct(
+        ?array $examRow,
+        ?array $latestAttemptRow,
+        array $attemptRowsById = [],
+        int $insertId = 123,
+        array $startSnapshotQuestionRows = [],
+        array $startSnapshotOptionRows = [],
+        ?array $activeAttemptRow = null,
+        array $activeAttemptRowsSequence = []
+    )
     {
         $this->examRow = $examRow;
         $this->latestAttemptRow = $latestAttemptRow;
@@ -647,6 +1200,8 @@ final class RestStartAttemptActiveIndexFakeWpdb
         $this->insert_id = $insertId;
         $this->startSnapshotQuestionRows = $startSnapshotQuestionRows;
         $this->startSnapshotOptionRows = $startSnapshotOptionRows;
+        $this->activeAttemptRow = $activeAttemptRow;
+        $this->activeAttemptRowsSequence = $activeAttemptRowsSequence;
     }
 
     /** @return array<string,mixed> */
@@ -673,12 +1228,24 @@ final class RestStartAttemptActiveIndexFakeWpdb
             return $this->examRow;
         }
 
+        if (str_contains($query, "WHERE exam_id = %d AND student_id = %d AND status = 'in_progress'")) {
+            $this->latestAttemptQueryCount++;
+            if (!empty($this->activeAttemptRowsSequence)) {
+                return array_shift($this->activeAttemptRowsSequence);
+            }
+
+            return $this->activeAttemptRow;
+        }
+
         if (str_contains($query, "WHERE exam_id = %d AND student_id = %d AND status IN ('in_progress', 'completed')")) {
             $this->latestAttemptQueryCount++;
             return $this->latestAttemptRow;
         }
 
-        if (str_contains($query, 'FROM wp_cbt_attempts') && str_contains($query, 'WHERE id = %d')) {
+        if (
+            str_contains($query, 'FROM wp_cbt_attempts')
+            && (str_contains($query, 'WHERE id = %d') || str_contains($query, 'WHERE a.id = %d'))
+        ) {
             $this->attemptByIdQueryCount++;
             $attemptId = isset($args[0]) ? (int) $args[0] : 0;
             return $this->attemptRowsById[$attemptId] ?? null;

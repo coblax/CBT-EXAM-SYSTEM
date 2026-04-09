@@ -792,6 +792,9 @@ export function bootstrapFrontendApp() {
     var readPersistedQuestionCache = bindExamRuntimeMethod('questionCacheStorage', 'readPersistedQuestionCache', function () {
         return Promise.resolve(null);
     });
+    var findPersistedFinishRecoveryForExam = bindExamRuntimeMethod('questionCacheStorage', 'findPersistedFinishRecoveryForExam', function () {
+        return Promise.resolve(null);
+    });
     var persistCurrentQuestionCacheLocally = bindExamRuntimeMethod('questionCacheStorage', 'persistCurrentQuestionCacheLocally', undefined);
 
     var applyAttemptUiState = bindExamRuntimeMethod('attemptUiStateStorage', 'applyAttemptUiState', undefined);
@@ -1190,6 +1193,7 @@ export function bootstrapFrontendApp() {
         windowRef: window
     });
     var runSessionHeartbeat = sessionHeartbeatManager.run;
+    var applyAdaptiveLoadPayload = sessionHeartbeatManager.applyAdaptiveLoadPayload;
     var startSessionHeartbeat = sessionHeartbeatManager.start;
     var stopSessionHeartbeat = sessionHeartbeatManager.stop;
     examRuntimeLoader = createExamRuntimeLoader({
@@ -1337,6 +1341,7 @@ export function bootstrapFrontendApp() {
         apiRequest: function () {
             return api.apply(null, arguments);
         },
+        applyAdaptiveLoadPayload: applyAdaptiveLoadPayload,
         applyAttemptUiState: applyAttemptUiState,
         applyPersistedQuestionCache: applyPersistedQuestionCache,
         attemptUiStateSyncDelayMs: ATTEMPT_UI_STATE_SYNC_DELAY_MS,
@@ -1431,6 +1436,9 @@ export function bootstrapFrontendApp() {
     var handleViewResult = examSessionManager.handleViewResult;
     var loadExams = examSessionManager.loadExams;
     var openAttemptSession = examSessionManager.openAttemptSession;
+    var retryOpeningAttempt = examSessionManager.retryOpeningAttempt;
+    var refreshOpeningAttemptStatus = examSessionManager.refreshOpeningAttemptStatus;
+    var cancelOpeningAttemptFlow = examSessionManager.cancelOpeningAttemptFlow;
     var tryResumeActiveAttemptFromExamList = examSessionManager.tryResumeActiveAttemptFromExamList;
     authStageManager = createAuthStageManager({
         clearMessages: clearMessages,
@@ -1691,6 +1699,9 @@ export function bootstrapFrontendApp() {
         handleNavigationAction: handleNavigationAction,
         handleStartExam: handleStartExam,
         handleViewResult: handleViewResult,
+        retryOpeningAttempt: retryOpeningAttempt,
+        refreshOpeningAttemptStatus: refreshOpeningAttemptStatus,
+        cancelOpeningAttemptFlow: cancelOpeningAttemptFlow,
         isCompactNavViewport: isCompactNavViewport,
         isExamAnswerEditingLocked: isExamAnswerEditingLocked,
         isExamClipboardBlockingActive: isExamClipboardBlockingActive,
@@ -1713,10 +1724,13 @@ export function bootstrapFrontendApp() {
         updateSelectedExam: updateSelectedExam
     });
     startupManager = createBootstrapSessionManager({
+        applyAdaptiveLoadPayload: applyAdaptiveLoadPayload,
         clearMessages: clearMessages,
+        findPersistedFinishRecoveryForExam: findPersistedFinishRecoveryForExam,
         fullLogout: fullLogout,
         loadExams: loadExams,
         persistAuthSession: persistAuthSession,
+        readPersistedQuestionCache: readPersistedQuestionCache,
         readPersistedAuthSession: readPersistedAuthSession,
         reconcilePendingPageRefreshSecurityEvent: securityLoggingManager.reconcilePendingPageRefreshSecurityEvent,
         render: render,

@@ -173,6 +173,91 @@ afterEach(function () {
 });
 
 describe('createSessionHeartbeatManager', function () {
+    it('keeps the default heartbeat interval at 20 seconds when no adaptive payload is applied', async function () {
+        var fixture = createHeartbeatFixture({
+            sessionHeartbeatIntervalMs: 20000
+        });
+
+        fixture.manager.start({
+            immediate: false
+        });
+
+        await vi.advanceTimersByTimeAsync(19000);
+        expect(fixture.calls.apiRequest).toHaveLength(0);
+
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(fixture.calls.apiRequest).toHaveLength(1);
+    });
+
+    it('updates the heartbeat interval to 30 seconds for busy adaptive load', async function () {
+        var fixture = createHeartbeatFixture({
+            sessionHeartbeatIntervalMs: 20000
+        });
+
+        fixture.manager.applyAdaptiveLoadPayload({
+            adaptive_load: {
+                level: 'busy',
+                heartbeat_interval_ms: 30000,
+                admin_snapshot_refresh_seconds: 20,
+                reasons: ['Start queue mulai padat.'],
+                source: 'auto'
+            }
+        });
+        fixture.manager.start({
+            immediate: false
+        });
+
+        await vi.advanceTimersByTimeAsync(29000);
+        expect(fixture.calls.apiRequest).toHaveLength(0);
+
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(fixture.calls.apiRequest).toHaveLength(1);
+        expect(fixture.state.adaptiveLoadLevel).toBe('busy');
+        expect(fixture.state.adaptiveLoadHeartbeatIntervalMs).toBe(30000);
+    });
+
+    it('updates the heartbeat interval to 45 seconds for critical adaptive load without breaking the running timer', async function () {
+        var fixture = createHeartbeatFixture({
+            sessionHeartbeatIntervalMs: 20000
+        });
+
+        fixture.manager.applyAdaptiveLoadPayload({
+            adaptive_load: {
+                level: 'busy',
+                heartbeat_interval_ms: 30000,
+                admin_snapshot_refresh_seconds: 20,
+                reasons: ['Start queue mulai padat.'],
+                source: 'auto'
+            }
+        });
+        fixture.manager.start({
+            immediate: false
+        });
+
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(fixture.calls.apiRequest).toHaveLength(1);
+
+        fixture.manager.applyAdaptiveLoadPayload({
+            adaptive_load: {
+                level: 'critical',
+                heartbeat_interval_ms: 45000,
+                admin_snapshot_refresh_seconds: 40,
+                reasons: ['Start queue sangat padat.'],
+                source: 'manual_override'
+            }
+        });
+
+        fixture.calls.apiRequest.length = 0;
+
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(fixture.calls.apiRequest).toHaveLength(0);
+
+        await vi.advanceTimersByTimeAsync(15000);
+        expect(fixture.calls.apiRequest).toHaveLength(1);
+        expect(fixture.state.adaptiveLoadLevel).toBe('critical');
+        expect(fixture.state.adaptiveLoadHeartbeatIntervalMs).toBe(45000);
+    });
+
     it('reuses the active heartbeat request and avoids duplicate fetches in parallel runs', async function () {
         var deferred = createDeferred();
         var fixture = createHeartbeatFixture({

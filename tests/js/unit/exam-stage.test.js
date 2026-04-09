@@ -470,6 +470,28 @@ describe('createExamStageRenderer', function () {
         expect(markup).toContain('Soal Awal');
     });
 
+    it('renders queue and recovery actions inside the same opening shell', function () {
+        var renderer = createFixture({
+            state: {
+                openingAttemptPhase: 'opening_waiting_queue',
+                openingAttemptCanRetry: true,
+                openingAttemptCanRefreshStatus: true,
+                openingAttemptCanBack: true,
+                openingAttemptQueuePosition: 14,
+                openingAttemptQueueEstimatedWaitSeconds: 2,
+                openingAttemptProgressStatus: 'Menunggu giliran masuk ujian'
+            }
+        });
+
+        var markup = renderer.renderExamStageShell();
+
+        expect(markup).toContain('Dalam Antrean');
+        expect(markup).toContain('Posisi antrean: 14');
+        expect(markup).toContain('data-action="retry-opening-attempt"');
+        expect(markup).toContain('data-action="refresh-opening-attempt-status"');
+        expect(markup).toContain('data-action="back-confirm"');
+    });
+
     it('shows collect action on a non-last question once all questions are answered', function () {
         var renderer = createAnsweredExamFixture();
 

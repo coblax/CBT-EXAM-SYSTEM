@@ -12,6 +12,10 @@ if (!class_exists('CBT_Login_Auth_Snapshot_Cache')) {
     require_once __DIR__ . '/class-cbt-login-auth-snapshot-cache.php';
 }
 
+if (!class_exists('CBT_Login_Snapshot_Metrics_Service')) {
+    require_once __DIR__ . '/class-cbt-login-snapshot-metrics-service.php';
+}
+
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
@@ -56,12 +60,21 @@ class CBT_Auth
         }
 
         $identifier = trim((string) $identifier);
-        $snapshot_login = self::login_via_auth_snapshot($identifier, $password);
-        if ($snapshot_login !== null) {
-            return $snapshot_login;
+        $snapshot_attempt = self::attempt_snapshot_login($identifier, $password);
+        if (($snapshot_attempt['status'] ?? '') === 'success') {
+            self::record_login_metrics('snapshot_success', $snapshot_attempt);
+            return $snapshot_attempt['result'];
         }
 
-        return self::login_via_canonical_auth($identifier, $password, true);
+        if (($snapshot_attempt['status'] ?? '') === 'session_already_active') {
+            self::record_login_metrics('session_already_active', $snapshot_attempt);
+            return $snapshot_attempt['result'];
+        }
+
+        $canonical_attempt = self::attempt_canonical_login($identifier, $password, true, $snapshot_attempt);
+        self::record_login_metrics((string) ($canonical_attempt['status'] ?? ''), $snapshot_attempt, $canonical_attempt);
+
+        return $canonical_attempt['result'];
     }
 
     public static function generate_token(int $user_id, string $role, string $session_key): string
@@ -418,30 +431,55 @@ class CBT_Auth
     /**
      * @return array<string,mixed>|WP_Error|null
      */
-    private static function login_via_auth_snapshot(string $identifier, string $password)
+    private static function attempt_snapshot_login(string $identifier, string $password): array
     {
         if (!class_exists('CBT_Login_Auth_Snapshot_Cache')
-            || !method_exists('CBT_Login_Auth_Snapshot_Cache', 'get_snapshot_by_identifier')) {
-            return null;
+            || !method_exists('CBT_Login_Auth_Snapshot_Cache', 'get_snapshot_lookup_result')) {
+            return [
+                'status' => 'miss',
+                'result' => null,
+                'lookup' => self::empty_snapshot_lookup_meta(),
+            ];
         }
 
-        $snapshot = CBT_Login_Auth_Snapshot_Cache::get_snapshot_by_identifier($identifier);
+        $lookup = CBT_Login_Auth_Snapshot_Cache::get_snapshot_lookup_result($identifier);
+        $snapshot = is_array($lookup['snapshot'] ?? null) ? $lookup['snapshot'] : null;
         if (!is_array($snapshot)) {
-            return null;
+            return [
+                'status' => sanitize_key((string) ($lookup['lookup_status'] ?? 'miss')),
+                'result' => null,
+                'lookup' => self::normalize_snapshot_lookup_meta($lookup),
+            ];
         }
 
         $user_id = (int) ($snapshot['user_id'] ?? 0);
         $password_hash = (string) ($snapshot['password_hash'] ?? '');
         $role = sanitize_key((string) ($snapshot['role'] ?? ''));
         if ($user_id <= 0 || $password_hash === '' || $role === '') {
-            return null;
+            $lookup['lookup_status'] = 'invalid';
+            $lookup['snapshot_miss_reason'] = 'invalid_snapshot';
+            $lookup['snapshot_miss_reason_label'] = CBT_Login_Auth_Snapshot_Cache::get_snapshot_miss_reason_label('invalid_snapshot');
+            $lookup['source_path'] = 'canonical';
+            return [
+                'status' => 'invalid',
+                'result' => null,
+                'lookup' => self::normalize_snapshot_lookup_meta($lookup),
+            ];
         }
 
         if (!wp_check_password($password, $password_hash, $user_id)) {
-            return null;
+            $lookup['lookup_status'] = 'password_mismatch';
+            $lookup['snapshot_miss_reason'] = 'password_mismatch';
+            $lookup['snapshot_miss_reason_label'] = CBT_Login_Auth_Snapshot_Cache::get_snapshot_miss_reason_label('password_mismatch');
+            $lookup['source_path'] = 'canonical';
+            return [
+                'status' => 'password_mismatch',
+                'result' => null,
+                'lookup' => self::normalize_snapshot_lookup_meta($lookup),
+            ];
         }
 
-        return self::complete_login(
+        $result = self::complete_login(
             $user_id,
             $role,
             [
@@ -456,17 +494,32 @@ class CBT_Auth
                 'foto' => (string) ($snapshot['foto'] ?? ''),
             ]
         );
+
+        return [
+            'status' => is_wp_error($result) ? $result->get_error_code() : 'success',
+            'result' => $result,
+            'lookup' => self::normalize_snapshot_lookup_meta($lookup),
+        ];
     }
 
     /**
-     * @return array<string,mixed>|WP_Error
+     * @return array{status:string,result:array<string,mixed>|WP_Error,lookup:array<string,mixed>}
      */
-    private static function login_via_canonical_auth(string $identifier, string $password, bool $rewrite_snapshot_on_success = false)
+    private static function attempt_canonical_login(
+        string $identifier,
+        string $password,
+        bool $rewrite_snapshot_on_success = false,
+        array $snapshot_attempt = []
+    ): array
     {
         $user = self::find_user_by_identifier($identifier);
 
         if (!$user || !wp_check_password($password, $user->user_pass, $user->ID)) {
-            return new WP_Error('invalid_credentials', 'Invalid identifier or password', ['status' => 401]);
+            return [
+                'status' => 'invalid_credentials',
+                'result' => new WP_Error('invalid_credentials', 'Invalid identifier or password', ['status' => 401]),
+                'lookup' => self::normalize_snapshot_lookup_meta($snapshot_attempt['lookup'] ?? []),
+            ];
         }
 
         $role = self::resolve_primary_role($user);
@@ -491,7 +544,80 @@ class CBT_Auth
             }
         }
 
-        return $result;
+        return [
+            'status' => is_wp_error($result) ? $result->get_error_code() : 'success',
+            'result' => $result,
+            'lookup' => self::normalize_snapshot_lookup_meta($snapshot_attempt['lookup'] ?? []),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $snapshot_attempt
+     * @param array<string,mixed> $canonical_attempt
+     */
+    private static function record_login_metrics(string $outcome, array $snapshot_attempt = [], array $canonical_attempt = []): void
+    {
+        if (!class_exists('CBT_Login_Snapshot_Metrics_Service')) {
+            return;
+        }
+
+        $lookup = self::normalize_snapshot_lookup_meta(
+            !empty($canonical_attempt['lookup']) ? (array) $canonical_attempt['lookup'] : (array) ($snapshot_attempt['lookup'] ?? [])
+        );
+        $miss_reason = sanitize_key((string) ($lookup['snapshot_miss_reason'] ?? ''));
+        $source_path = sanitize_key((string) ($lookup['source_path'] ?? ''));
+        $lookup_status = sanitize_key((string) ($lookup['lookup_status'] ?? ''));
+        $meta = [
+            'lookup_status' => $lookup_status,
+            'source_path' => $source_path,
+            'snapshot_miss_reason' => $miss_reason,
+        ];
+
+        switch (sanitize_key($outcome)) {
+            case 'snapshot_success':
+                CBT_Login_Snapshot_Metrics_Service::record_snapshot_success($meta);
+                return;
+            case 'success':
+                CBT_Login_Snapshot_Metrics_Service::record_canonical_success($miss_reason, $meta);
+                return;
+            case 'invalid_credentials':
+                CBT_Login_Snapshot_Metrics_Service::record_invalid_credentials($source_path !== '' ? $source_path : 'canonical', $miss_reason, $meta);
+                return;
+            case 'session_already_active':
+                CBT_Login_Snapshot_Metrics_Service::record_session_already_active($source_path !== '' ? $source_path : 'canonical', $miss_reason, $meta);
+                return;
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $lookup
+     * @return array<string,mixed>
+     */
+    private static function normalize_snapshot_lookup_meta(array $lookup): array
+    {
+        return [
+            'lookup_status' => sanitize_key((string) ($lookup['lookup_status'] ?? 'miss')),
+            'snapshot_miss_reason' => sanitize_key((string) ($lookup['snapshot_miss_reason'] ?? '')),
+            'snapshot_miss_reason_label' => sanitize_text_field((string) ($lookup['snapshot_miss_reason_label'] ?? '')),
+            'source_path' => sanitize_key((string) ($lookup['source_path'] ?? 'canonical')),
+            'resolved_user_id' => absint($lookup['resolved_user_id'] ?? 0),
+            'lookup_identifier' => sanitize_text_field((string) ($lookup['lookup_identifier'] ?? '')),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function empty_snapshot_lookup_meta(): array
+    {
+        return [
+            'lookup_status' => 'miss',
+            'snapshot_miss_reason' => '',
+            'snapshot_miss_reason_label' => '',
+            'source_path' => 'canonical',
+            'resolved_user_id' => 0,
+            'lookup_identifier' => '',
+        ];
     }
 
     /**
@@ -517,7 +643,7 @@ class CBT_Auth
         $session_key = self::reset_login_session($user_id);
         $token = self::generate_token($user_id, $role, $session_key);
 
-        return [
+        $payload = [
             'token' => $token,
             'user_id' => $user_id,
             'role' => $role,
@@ -529,6 +655,12 @@ class CBT_Auth
             'agama' => (string) ($profile_snapshot['agama'] ?? ''),
             'foto' => (string) ($profile_snapshot['foto'] ?? ''),
         ];
+
+        if (class_exists('CBT_Adaptive_Load_Service')) {
+            $payload['adaptive_load'] = CBT_Adaptive_Load_Service::get_frontend_payload();
+        }
+
+        return $payload;
     }
 
     private static function generate_exam_token(int $length = self::EXAM_TOKEN_LENGTH): string

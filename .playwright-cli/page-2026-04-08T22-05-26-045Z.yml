@@ -1,0 +1,526 @@
+- generic [ref=e2]:
+  - navigation "Main menu":
+    - link "Skip to main content" [ref=e3] [cursor=pointer]:
+      - /url: "#wpbody-content"
+    - link "Skip to toolbar" [ref=e4] [cursor=pointer]:
+      - /url: "#wp-toolbar"
+    - list [ref=e7]:
+      - listitem [ref=e8]:
+        - link "Dashboard" [ref=e9] [cursor=pointer]:
+          - /url: index.php
+          - generic [ref=e10]: 
+          - generic [ref=e11]: Dashboard
+        - list [ref=e12]:
+          - listitem [ref=e13]:
+            - link "Home" [ref=e14] [cursor=pointer]:
+              - /url: index.php
+          - listitem [ref=e15]:
+            - link "Updates" [ref=e16] [cursor=pointer]:
+              - /url: update-core.php
+      - listitem [ref=e17]
+      - listitem [ref=e19]:
+        - link "Posts" [ref=e20] [cursor=pointer]:
+          - /url: edit.php
+          - generic [ref=e21]: 
+          - generic [ref=e22]: Posts
+        - list [ref=e23]:
+          - listitem [ref=e24]:
+            - link "All Posts" [ref=e25] [cursor=pointer]:
+              - /url: edit.php
+          - listitem [ref=e26]:
+            - link "Add Post" [ref=e27] [cursor=pointer]:
+              - /url: post-new.php
+          - listitem [ref=e28]:
+            - link "Categories" [ref=e29] [cursor=pointer]:
+              - /url: edit-tags.php?taxonomy=category
+          - listitem [ref=e30]:
+            - link "Tags" [ref=e31] [cursor=pointer]:
+              - /url: edit-tags.php?taxonomy=post_tag
+      - listitem [ref=e32]:
+        - link "Media" [ref=e33] [cursor=pointer]:
+          - /url: upload.php
+          - generic [ref=e34]: 
+          - generic [ref=e35]: Media
+        - list [ref=e36]:
+          - listitem [ref=e37]:
+            - link "Library" [ref=e38] [cursor=pointer]:
+              - /url: upload.php
+          - listitem [ref=e39]:
+            - link "Add Media File" [ref=e40] [cursor=pointer]:
+              - /url: media-new.php
+      - listitem [ref=e41]:
+        - link "Pages" [ref=e42] [cursor=pointer]:
+          - /url: edit.php?post_type=page
+          - generic [ref=e43]: 
+          - generic [ref=e44]: Pages
+        - list [ref=e45]:
+          - listitem [ref=e46]:
+            - link "All Pages" [ref=e47] [cursor=pointer]:
+              - /url: edit.php?post_type=page
+          - listitem [ref=e48]:
+            - link "Add Page" [ref=e49] [cursor=pointer]:
+              - /url: post-new.php?post_type=page
+      - listitem [ref=e50]:
+        - link "Comments" [ref=e51] [cursor=pointer]:
+          - /url: edit-comments.php
+          - generic [ref=e52]: 
+          - generic [ref=e53]: Comments
+      - listitem [ref=e54]:
+        - link "CBT Exams" [ref=e55] [cursor=pointer]:
+          - /url: admin.php?page=cbt-introduction
+          - generic [ref=e56]: 
+          - generic [ref=e57]: CBT Exams
+        - list [ref=e58]:
+          - listitem [ref=e59]:
+            - link "Introduction" [ref=e60] [cursor=pointer]:
+              - /url: admin.php?page=cbt-introduction
+          - listitem [ref=e61]:
+            - link "CBT Exams" [ref=e62] [cursor=pointer]:
+              - /url: admin.php?page=cbt-exams
+          - listitem [ref=e63]:
+            - link "CBT Branding" [ref=e64] [cursor=pointer]:
+              - /url: admin.php?page=cbt-setup
+          - listitem [ref=e65]:
+            - link "CBT Security" [ref=e66] [cursor=pointer]:
+              - /url: admin.php?page=cbt-security
+          - listitem [ref=e67]:
+            - link "CBT Subjects" [ref=e68] [cursor=pointer]:
+              - /url: admin.php?page=cbt-subjects
+          - listitem [ref=e69]:
+            - link "CBT Users" [ref=e70] [cursor=pointer]:
+              - /url: admin.php?page=cbt-user-import
+          - listitem [ref=e71]:
+            - link "CBT Questions" [ref=e72] [cursor=pointer]:
+              - /url: admin.php?page=cbt-question-bank
+          - listitem [ref=e73]:
+            - link "CBT Tokens" [ref=e74] [cursor=pointer]:
+              - /url: admin.php?page=cbt-tokens
+          - listitem [ref=e75]:
+            - link "CBT Exam Cards" [ref=e76] [cursor=pointer]:
+              - /url: admin.php?page=cbt-exam-cards
+          - listitem [ref=e77]:
+            - link "CBT Results" [ref=e78] [cursor=pointer]:
+              - /url: admin.php?page=cbt-results
+          - listitem [ref=e79]:
+            - link "CBT Analytics" [ref=e80] [cursor=pointer]:
+              - /url: admin.php?page=cbt-analytics
+          - listitem [ref=e81]:
+            - link "CBT Report Exam" [ref=e82] [cursor=pointer]:
+              - /url: admin.php?page=cbt-report-exam
+          - listitem [ref=e83]:
+            - link "CBT Test Hub" [ref=e84] [cursor=pointer]:
+              - /url: admin.php?page=cbt-test-hub
+          - listitem [ref=e85]:
+            - link "CBT Cache" [ref=e86] [cursor=pointer]:
+              - /url: admin.php?page=cbt-cache
+          - listitem [ref=e87]:
+            - link "CBT Update" [ref=e88] [cursor=pointer]:
+              - /url: admin.php?page=cbt-update
+          - listitem [ref=e89]:
+            - link "CBT Maintenance" [ref=e90] [cursor=pointer]:
+              - /url: admin.php?page=cbt-maintenance
+          - listitem [ref=e91]:
+            - link "CBT Developer" [ref=e92] [cursor=pointer]:
+              - /url: admin.php?page=cbt-developer
+      - listitem [ref=e93]
+      - listitem [ref=e95]:
+        - link "Appearance" [ref=e96] [cursor=pointer]:
+          - /url: themes.php
+          - generic [ref=e97]: 
+          - generic [ref=e98]: Appearance
+        - list [ref=e99]:
+          - listitem [ref=e100]:
+            - link "Themes" [ref=e101] [cursor=pointer]:
+              - /url: themes.php
+          - listitem [ref=e102]:
+            - link "Editor" [ref=e103] [cursor=pointer]:
+              - /url: site-editor.php
+      - listitem [ref=e104]:
+        - link "Plugins" [ref=e105] [cursor=pointer]:
+          - /url: plugins.php
+          - generic [ref=e106]: 
+          - generic [ref=e107]: Plugins
+        - list [ref=e108]:
+          - listitem [ref=e109]:
+            - link "Installed Plugins" [ref=e110] [cursor=pointer]:
+              - /url: plugins.php
+          - listitem [ref=e111]:
+            - link "Add Plugin" [ref=e112] [cursor=pointer]:
+              - /url: plugin-install.php
+      - listitem [ref=e113]:
+        - link "Users" [ref=e114] [cursor=pointer]:
+          - /url: users.php
+          - generic [ref=e115]: 
+          - generic [ref=e116]: Users
+        - list [ref=e117]:
+          - listitem [ref=e118]:
+            - link "All Users" [ref=e119] [cursor=pointer]:
+              - /url: users.php
+          - listitem [ref=e120]:
+            - link "Add User" [ref=e121] [cursor=pointer]:
+              - /url: user-new.php
+          - listitem [ref=e122]:
+            - link "Profile" [ref=e123] [cursor=pointer]:
+              - /url: profile.php
+      - listitem [ref=e124]:
+        - link "Tools" [ref=e125] [cursor=pointer]:
+          - /url: tools.php
+          - generic [ref=e126]: 
+          - generic [ref=e127]: Tools
+        - list [ref=e128]:
+          - listitem [ref=e129]:
+            - link "Available Tools" [ref=e130] [cursor=pointer]:
+              - /url: tools.php
+          - listitem [ref=e131]:
+            - link "Import" [ref=e132] [cursor=pointer]:
+              - /url: import.php
+          - listitem [ref=e133]:
+            - link "Export" [ref=e134] [cursor=pointer]:
+              - /url: export.php
+          - listitem [ref=e135]:
+            - link "Site Health" [ref=e136] [cursor=pointer]:
+              - /url: site-health.php
+          - listitem [ref=e137]:
+            - link "Export Personal Data" [ref=e138] [cursor=pointer]:
+              - /url: export-personal-data.php
+          - listitem [ref=e139]:
+            - link "Erase Personal Data" [ref=e140] [cursor=pointer]:
+              - /url: erase-personal-data.php
+          - listitem [ref=e141]:
+            - link "Theme File Editor" [ref=e142] [cursor=pointer]:
+              - /url: theme-editor.php
+          - listitem [ref=e143]:
+            - link "Plugin File Editor" [ref=e144] [cursor=pointer]:
+              - /url: plugin-editor.php
+      - listitem [ref=e145]:
+        - link "Settings" [ref=e146] [cursor=pointer]:
+          - /url: options-general.php
+          - generic [ref=e147]: 
+          - generic [ref=e148]: Settings
+        - list [ref=e149]:
+          - listitem [ref=e150]:
+            - link "General" [ref=e151] [cursor=pointer]:
+              - /url: options-general.php
+          - listitem [ref=e152]:
+            - link "Writing" [ref=e153] [cursor=pointer]:
+              - /url: options-writing.php
+          - listitem [ref=e154]:
+            - link "Reading" [ref=e155] [cursor=pointer]:
+              - /url: options-reading.php
+          - listitem [ref=e156]:
+            - link "Discussion" [ref=e157] [cursor=pointer]:
+              - /url: options-discussion.php
+          - listitem [ref=e158]:
+            - link "Media" [ref=e159] [cursor=pointer]:
+              - /url: options-media.php
+          - listitem [ref=e160]:
+            - link "Permalinks" [ref=e161] [cursor=pointer]:
+              - /url: options-permalink.php
+          - listitem [ref=e162]:
+            - link "Privacy" [ref=e163] [cursor=pointer]:
+              - /url: options-privacy.php
+      - listitem [ref=e164]:
+        - button "Collapse Main menu" [expanded] [ref=e165] [cursor=pointer]:
+          - generic [ref=e167]: Collapse Menu
+  - generic [ref=e168]:
+    - generic [ref=e169]:
+      - navigation "Toolbar":
+        - menu:
+          - group [ref=e170]:
+            - menuitem "About WordPress" [ref=e171] [cursor=pointer]:
+              - generic [ref=e173]: About WordPress
+          - group [ref=e174]:
+            - menuitem "Ujian CBT Sekolah" [ref=e175] [cursor=pointer]
+          - group [ref=e176]:
+            - menuitem "0 Comments in moderation" [ref=e177] [cursor=pointer]:
+              - generic [ref=e179]: "0"
+              - generic [ref=e180]: 0 Comments in moderation
+          - group [ref=e181]:
+            - menuitem "New" [ref=e182] [cursor=pointer]:
+              - generic [ref=e184]: New
+        - menu [ref=e185]:
+          - group [ref=e186]:
+            - menuitem "Howdy, Codex E2E Admin" [ref=e187] [cursor=pointer]
+    - main [ref=e188]:
+      - generic [ref=e191]:
+        - generic [ref=e192]:
+          - generic [ref=e193]:
+            - generic [ref=e194]: Assessment
+            - heading "CBT Exams" [level=1] [ref=e195]
+            - paragraph [ref=e196]: Kelola builder exam, jadwal pelaksanaan, kelas peserta, dan pemilihan soal dari satu halaman kerja yang lebih rapi. Alur create dan update tetap sama, hanya tampilan admin-nya dibuat lebih modern dan mudah discan.
+          - generic [ref=e197]:
+            - article [ref=e198]:
+              - generic [ref=e199]: Total Exams
+              - strong [ref=e200]: "17"
+            - article [ref=e201]:
+              - generic [ref=e202]: Published
+              - strong [ref=e203]: "17"
+            - article [ref=e204]:
+              - generic [ref=e205]: Draft
+              - strong [ref=e206]: "0"
+            - article [ref=e207]:
+              - generic [ref=e208]: Soal Dipilih
+              - strong [ref=e209]: "0"
+        - region "Operational overview" [ref=e210]:
+          - generic [ref=e212]:
+            - generic [ref=e213]: Operational
+            - paragraph [ref=e214]: Diperbarui sekitar tiap 20 detik untuk memberi ringkasan kondisi Redis dan runtime CBT saat ini.
+          - generic [ref=e215]:
+            - article [ref=e216]:
+              - generic [ref=e217]: Redis RAM
+              - strong [ref=e218]: 101.16M
+              - generic [ref=e219]: Peak 131.44M · Clients 20
+              - generic [ref=e220]: Global Redis instance
+            - article [ref=e221]:
+              - generic [ref=e222]: CBT Redis Keys
+              - strong [ref=e223]: 11,757
+              - generic [ref=e224]: DB1 24 · DB2 9,184 · +1 DB
+              - generic [ref=e225]: Plugin only
+            - article [ref=e226]:
+              - generic [ref=e227]: Active Attempts
+              - strong [ref=e228]: 1,525
+              - generic [ref=e229]: Session 501 · Contract 501 · Index 501
+              - generic [ref=e230]: Runtime live
+            - article [ref=e231]:
+              - generic [ref=e232]: Start Queue
+              - strong [ref=e233]: "0"
+              - generic [ref=e234]: OPEN · 50 / 5 detik
+              - generic [ref=e235]: Per exam gate
+            - article [ref=e236]:
+              - generic [ref=e237]: Auto-Heal Queue
+              - strong [ref=e238]: "751"
+              - generic [ref=e239]: Skip 25 · Tick 2026-04-09 05:02:05
+              - generic [ref=e240]: Background repair
+            - article [ref=e241]:
+              - generic [ref=e242]: Warm Jobs
+              - strong [ref=e243]: "0"
+              - generic [ref=e244]: Preflight 0 aktif · Auto-Warm idle
+              - generic [ref=e245]: Pra-ujian
+            - article [ref=e246]:
+              - generic [ref=e247]: Login Snapshot Health
+              - strong [ref=e248]: N/A
+              - generic [ref=e249]: Snapshot 0 · Fallback 0 · Freshness 9
+              - generic [ref=e250]: Today Snapshot 0 · Today Fallback 0
+            - article [ref=e251]:
+              - generic [ref=e252]: User Snapshots
+              - strong [ref=e253]: 3,749
+              - generic [ref=e254]: Profile 1,200 · Login 1,348 · Availability 1,201
+              - generic [ref=e255]: Redis CBT only
+        - tablist "Navigasi halaman exam" [ref=e256]:
+          - tab "Form Exam Buat exam baru atau revisi draft" [ref=e257] [cursor=pointer]:
+            - generic [ref=e258]: Form Exam
+            - generic [ref=e259]: Buat exam baru atau revisi draft
+          - tab "Daftar Exam Monitoring, hasil, dan aksi cepat" [ref=e260] [cursor=pointer]:
+            - generic [ref=e261]: Daftar Exam
+            - generic [ref=e262]: Monitoring, hasil, dan aksi cepat
+          - tab "Snapshot Monitoring snapshot Redis operasional" [selected] [ref=e263] [cursor=pointer]:
+            - generic [ref=e264]: Snapshot
+            - generic [ref=e265]: Monitoring snapshot Redis operasional
+        - tabpanel [ref=e266]:
+          - generic [ref=e267]:
+            - tablist "Subtab snapshot" [ref=e268]:
+              - tab "One-Click Pra Ujian Fokus pada readiness, blocker, dan eksekusi pra-ujian." [selected] [ref=e269] [cursor=pointer]:
+                - generic [ref=e270]: One-Click Pra Ujian
+                - generic [ref=e271]: Fokus pada readiness, blocker, dan eksekusi pra-ujian.
+              - tab "Monitor Snapshot Soal Pantau snapshot delivery soal per exam." [ref=e272] [cursor=pointer]:
+                - generic [ref=e273]: Monitor Snapshot Soal
+                - generic [ref=e274]: Pantau snapshot delivery soal per exam.
+              - tab "Monitor Snapshot Start Pantau kontrak start attempt per exam." [ref=e275] [cursor=pointer]:
+                - generic [ref=e276]: Monitor Snapshot Start
+                - generic [ref=e277]: Pantau kontrak start attempt per exam.
+              - tab "Monitor Snapshot Submit Pantau submission context per exam." [ref=e278] [cursor=pointer]:
+                - generic [ref=e279]: Monitor Snapshot Submit
+                - generic [ref=e280]: Pantau submission context per exam.
+              - tab "Monitor Session Runtime Pantau session, contract, delivery, dan runtime answer live." [ref=e281] [cursor=pointer]:
+                - generic [ref=e282]: Monitor Session Runtime
+                - generic [ref=e283]: Pantau session, contract, delivery, dan runtime answer live.
+              - tab "Monitor Snapshot Exam Pantau katalog exam siswa per user." [ref=e284] [cursor=pointer]:
+                - generic [ref=e285]: Monitor Snapshot Exam
+                - generic [ref=e286]: Pantau katalog exam siswa per user.
+              - tab "Monitor Snapshot Profile Pantau snapshot profil siswa per user." [ref=e287] [cursor=pointer]:
+                - generic [ref=e288]: Monitor Snapshot Profile
+                - generic [ref=e289]: Pantau snapshot profil siswa per user.
+              - tab "Monitor Snapshot Login Pantau login auth snapshot siswa per user." [ref=e290] [cursor=pointer]:
+                - generic [ref=e291]: Monitor Snapshot Login
+                - generic [ref=e292]: Pantau login auth snapshot siswa per user.
+            - generic [ref=e293]:
+              - generic [ref=e295]:
+                - generic [ref=e296]:
+                  - generic [ref=e297]: Exam
+                  - group [ref=e298]:
+                    - generic "1 exam dipilih TEST Exam 017 - TEST Subject 02 [MC ONLY]" [ref=e299] [cursor=pointer]:
+                      - generic [ref=e301]:
+                        - strong [ref=e302]: 1 exam dipilih
+                        - generic [ref=e303]: TEST Exam 017 - TEST Subject 02 [MC ONLY]
+                - generic [ref=e305]:
+                  - button "Terapkan" [ref=e306] [cursor=pointer]
+                  - link "Reset" [ref=e307] [cursor=pointer]:
+                    - /url: http://192.168.1.9/wp-admin/admin.php?page=cbt-exams&cbt_exam_panel=snapshot&cbt_exam_per_page=20
+              - generic [ref=e309]:
+                - heading "One-Click Pra Ujian" [level=3] [ref=e310]
+                - paragraph [ref=e311]: Pilih satu exam untuk meninjau kesiapan, blocker, warning, peserta target, start snapshot, snapshot soal, snapshot profil, login snapshot, dan auto-warm availability sebelum ujian dimulai. Setelah siswa mulai masuk, pantau jalur live-nya di tab Monitor Session Runtime.
+              - generic [ref=e312]:
+                - generic [ref=e314]:
+                  - strong [ref=e315]: Queue Rewarm Availability
+                  - generic [ref=e316]: Minute rollover dipulihkan inline. MISS karena version berubah masuk antrean rewarm saat monitor dibuka, lalu diproses batch ketika auto-warm exam sedang idle.
+                - generic [ref=e317]:
+                  - generic [ref=e318]:
+                    - generic [ref=e319]: Queued
+                    - strong [ref=e320]: "0"
+                  - generic [ref=e321]:
+                    - generic [ref=e322]: Diproses Batch Terakhir
+                    - strong [ref=e323]: "0"
+                  - generic [ref=e324]:
+                    - generic [ref=e325]: Skip
+                    - strong [ref=e326]: "0"
+                  - generic [ref=e327]:
+                    - generic [ref=e328]: Berhasil
+                    - strong [ref=e329]: "0"
+                  - generic [ref=e330]:
+                    - generic [ref=e331]: Gagal
+                    - strong [ref=e332]: "0"
+                  - generic [ref=e333]:
+                    - generic [ref=e334]: Last Tick
+                    - strong [ref=e335]: "-"
+              - article [ref=e337]:
+                - generic [ref=e338]:
+                  - generic [ref=e339]:
+                    - generic [ref=e340]: TEST Exam 017 - TEST Subject 02 [MC ONLY]
+                    - generic [ref=e341]:
+                      - generic [ref=e342]:
+                        - strong [ref=e343]: "Mapel:"
+                        - text: TEST Subject 02
+                      - generic [ref=e344]:
+                        - strong [ref=e345]: "Status Exam:"
+                        - text: published
+                      - generic [ref=e346]:
+                        - strong [ref=e347]: "Exam ID:"
+                        - text: "22"
+                  - generic [ref=e348]: PERLU PERHATIAN
+                - generic [ref=e349]:
+                  - generic [ref=e350]:
+                    - generic [ref=e351]:
+                      - strong [ref=e352]: One-Click Pra Ujian
+                      - paragraph [ref=e353]: Ringkasan kesiapan dan aksi pra-ujian untuk exam terpilih. Detail setiap snapshot diringkas langsung di kartu stage bawah dan panel ini diperbarui otomatis setiap 10 detik saat tab tetap terbuka. Mode global sekarang berjalan paralel untuk Snapshot Profil, Login Snapshot, dan Auto-Warm Availability dengan batch besar agar cohort besar lebih cepat terdorong. Aksi bersihkan di panel ini hanya menghapus snapshot exam-scoped; reset snapshot siswa tetap dilakukan dari panel monitoring siswa bila dibutuhkan. Setelah siswa mulai mengerjakan, status live session bisa dipantau dari tab Monitor Session Runtime.
+                    - generic [ref=e354]: SELESAI
+                  - generic [ref=e355]:
+                    - generic [ref=e356]:
+                      - generic [ref=e357]: Kesiapan Saat Ini
+                      - strong [ref=e358]: PERLU PERHATIAN
+                      - generic [ref=e359]: Blocker 0 · Warning 1
+                    - generic [ref=e360]:
+                      - generic [ref=e361]: Exam
+                      - strong [ref=e362]: TEST Exam 017 - TEST Subject 02 [MC ONLY]
+                      - generic [ref=e363]: TEST Subject 02 · Token OTOMATIS
+                    - generic [ref=e364]:
+                      - generic [ref=e365]: Jadwal & Waktu
+                      - strong [ref=e366]: 2026-04-08 20:38:02
+                      - generic [ref=e367]: 2026-04-05 09:44:00 -> 2026-04-11 11:44:00 · Durasi 60 menit · Selesai 2026-04-08 20:38:15 · Tick 2026-04-08 20:38:15
+                    - generic [ref=e368]:
+                      - generic [ref=e369]: Mode Global
+                      - strong [ref=e370]: PARALEL
+                      - generic [ref=e371]: Batch 150 · Runner idle
+                  - generic [ref=e372]:
+                    - generic [ref=e373]:
+                      - generic [ref=e374]: Peserta Target
+                      - strong [ref=e375]: "1200"
+                      - generic [ref=e376]: Jumlah siswa target exam ini
+                    - generic [ref=e377]:
+                      - generic [ref=e378]: Target Kelas
+                      - generic [ref=e379]: KELAS_TEST_01, KELAS_TEST_02, KELAS_TEST_03, KELAS_TEST_04, KELAS_TEST_05, KELAS_TEST_06, KELAS_TEST_07, KELAS_TEST_08, KELAS_TEST_09, KELAS_TEST_10, KELAS_TEST_11, KELAS_TEST_12, KELAS_TEST_13, KELAS_TEST_14, KELAS_TEST_15, KELAS_TEST_16, KELAS_TEST_17, KELAS_TEST_18, KELAS_TEST_19, KELAS_TEST_20, KELAS_TEST_21, KELAS_TEST_22, KELAS_TEST_23, KELAS_TEST_24
+                  - generic [ref=e380]:
+                    - generic [ref=e381]: Result Aktif
+                    - generic [ref=e382]: Calculator Aktif
+                  - generic [ref=e383]:
+                    - generic [ref=e384]:
+                      - generic [ref=e385]:
+                        - generic [ref=e386]: Snapshot Soal
+                        - generic [ref=e387]: READY
+                      - strong [ref=e388]: Siap 250/250 · Belum 0
+                      - generic [ref=e389]: Total 250 soal · Cache Siap · Warm Siap
+                    - generic [ref=e390]:
+                      - generic [ref=e391]:
+                        - generic [ref=e392]: Start Snapshot
+                        - generic [ref=e393]: READY
+                      - strong [ref=e394]: Siap 250/250 · Belum 0
+                      - generic [ref=e395]: Total 250 item · Cache Siap · Warm Siap
+                    - generic [ref=e396]:
+                      - generic [ref=e397]:
+                        - generic [ref=e398]: Submission Context
+                        - generic [ref=e399]: READY
+                      - strong [ref=e400]: Siap 250/250 · Belum 0
+                      - generic [ref=e401]: Total 250 soal · INVALID 0
+                    - generic [ref=e402]:
+                      - generic [ref=e403]:
+                        - generic [ref=e404]: Snapshot Profil
+                        - generic [ref=e405]: SIAP
+                      - strong [ref=e406]: Siap 1200/1200 · Pending 0
+                      - generic [ref=e407]: Reuse 1200 · Gagal 0 · Diproses 1200
+                    - generic [ref=e408]:
+                      - generic [ref=e409]:
+                        - generic [ref=e410]: Login Snapshot
+                        - generic [ref=e411]: SIAP
+                      - strong [ref=e412]: Siap 1200/1200 · Pending 0
+                      - generic [ref=e413]: Reuse 2 · Gagal 0 · Diproses 1200
+                    - generic [ref=e414]:
+                      - generic [ref=e415]:
+                        - generic [ref=e416]: Auto-Warm Availability
+                        - generic [ref=e417]: AKTIF
+                      - strong [ref=e418]: Siap 1200/1200 · Pending 0
+                      - generic [ref=e419]: Reuse 1200 · Gagal 0 · Queue 0
+                  - generic [ref=e420]:
+                    - generic [ref=e421]:
+                      - strong [ref=e422]: Blocker
+                      - paragraph [ref=e423]: Tidak ada blocker utama.
+                    - generic [ref=e424]:
+                      - strong [ref=e425]: Warning
+                      - list [ref=e426]:
+                        - listitem [ref=e427]: Auto-warm availability dihentikan manual.
+                  - paragraph [ref=e428]: One-click memakai blocker dan warning kesiapan yang sama, lalu menyiapkan Snapshot Soal, Start Snapshot, Submission Context, Snapshot Profil, Login Snapshot, dan Auto-Warm Availability dengan mode global paralel batch 150.
+                  - group [ref=e429]:
+                    - generic "Detail teknis" [ref=e430] [cursor=pointer]
+                  - generic [ref=e431]:
+                    - button "Jalankan One-Click Pra Ujian" [ref=e433] [cursor=pointer]
+                    - button "Bersihkan Semua Snapshot" [ref=e435] [cursor=pointer]
+                    - button "Bersihkan Semua Redis CBT" [ref=e437] [cursor=pointer]
+                  - paragraph [ref=e438]:
+                    - text: Gunakan
+                    - strong [ref=e439]: Bersihkan Semua Redis CBT
+                    - text: saat Anda butuh reset runtime harian antar beberapa exam. Tombol ini bersifat global untuk plugin CBT, bukan hanya exam yang sedang dipilih.
+                - generic [ref=e440]:
+                  - generic [ref=e441]:
+                    - strong [ref=e442]: Auto-Warm Availability
+                    - generic [ref=e443]: BERHENTI
+                  - generic [ref=e444]:
+                    - generic [ref=e445]:
+                      - strong [ref=e446]: "Target:"
+                      - text: 1200 siswa
+                    - generic [ref=e447]:
+                      - strong [ref=e448]: "Progress:"
+                      - text: 1200 / 1200
+                    - generic [ref=e449]:
+                      - strong [ref=e450]: "Mulai:"
+                      - text: 2026-04-08 20:38:13
+                    - generic [ref=e451]:
+                      - strong [ref=e452]: "Stop:"
+                      - text: 2026-04-09 04:08:13
+                    - generic [ref=e453]:
+                      - strong [ref=e454]: "Tick:"
+                      - text: 2026-04-08 20:38:15
+                    - generic [ref=e455]:
+                      - strong [ref=e456]: "Success / Failure:"
+                      - text: 0 / 0
+                  - paragraph [ref=e457]: Auto-warm availability dihentikan manual.
+                  - group [ref=e458]:
+                    - generic "Detail teknis" [ref=e459] [cursor=pointer]
+                  - generic [ref=e460]:
+                    - button "Mulai Auto-Warm Availability" [ref=e462] [cursor=pointer]
+                    - button "Hentikan Auto-Warm Availability" [disabled] [ref=e464]
+  - contentinfo [ref=e465]:
+    - paragraph [ref=e466]:
+      - generic [ref=e467]:
+        - text: Thank you for creating with
+        - link "WordPress" [ref=e468] [cursor=pointer]:
+          - /url: https://wordpress.org/
+        - text: .
+    - paragraph [ref=e469]: Version 6.9.4

@@ -23,7 +23,7 @@ if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
 class CBT_Login_Auth_Snapshot_Cache
 {
     private const SNAPSHOT_EVENT_REDIS_TTL_SECONDS = 604800;
-    private const SNAPSHOT_REDIS_TTL_SECONDS = 14400;
+    private const SNAPSHOT_REDIS_TTL_SECONDS = 43200;
     private const SNAPSHOT_REDIS_DEFAULT_HOST = '127.0.0.1';
     private const SNAPSHOT_REDIS_DEFAULT_PORT = 6379;
     private const SNAPSHOT_REDIS_DEFAULT_DATABASE = 2;
@@ -64,15 +64,54 @@ class CBT_Login_Auth_Snapshot_Cache
      */
     public static function get_snapshot_by_identifier(string $identifier): ?array
     {
+        $lookup = self::get_snapshot_lookup_result($identifier);
+        return is_array($lookup['snapshot'] ?? null) ? $lookup['snapshot'] : null;
+    }
+
+    /**
+     * @return array{
+     *   snapshot:array<string,mixed>|null,
+     *   lookup_status:string,
+     *   snapshot_miss_reason:string,
+     *   snapshot_miss_reason_label:string,
+     *   source_path:string,
+     *   resolved_user_id:int,
+     *   lookup_identifier:string
+     * }
+     */
+    public static function get_snapshot_lookup_result(string $identifier): array
+    {
         $lookup_identifiers = self::build_lookup_identifiers($identifier);
         if (empty($lookup_identifiers)) {
-            return null;
+            return [
+                'snapshot' => null,
+                'lookup_status' => 'miss',
+                'snapshot_miss_reason' => 'not_prepared',
+                'snapshot_miss_reason_label' => self::get_snapshot_miss_reason_label('not_prepared'),
+                'source_path' => 'canonical',
+                'resolved_user_id' => 0,
+                'lookup_identifier' => '',
+            ];
         }
 
         $redis = self::snapshot_redis();
         if (!$redis instanceof Redis) {
-            return null;
+            return [
+                'snapshot' => null,
+                'lookup_status' => 'unavailable',
+                'snapshot_miss_reason' => 'redis_unavailable',
+                'snapshot_miss_reason_label' => self::get_snapshot_miss_reason_label('redis_unavailable'),
+                'source_path' => 'canonical',
+                'resolved_user_id' => self::resolve_user_id_from_identifier($identifier),
+                'lookup_identifier' => '',
+            ];
         }
+
+        $resolved_user_id = self::resolve_user_id_from_identifier($identifier);
+        $last_reason = [
+            'code' => '',
+            'label' => '',
+        ];
 
         foreach ($lookup_identifiers as $lookup_identifier) {
             $user_id = self::read_index_user_id($lookup_identifier, $redis);
@@ -84,19 +123,210 @@ class CBT_Login_Auth_Snapshot_Cache
             if (is_array($snapshot)) {
                 if (!in_array($lookup_identifier, (array) ($snapshot['identifiers'] ?? []), true)) {
                     self::clear_user_snapshot($user_id, 'identifier_changed');
+                    $resolved_user_id = $user_id;
+                    $last_reason = [
+                        'code' => 'identifier_changed',
+                        'label' => self::get_snapshot_miss_reason_label('identifier_changed'),
+                    ];
                     continue;
                 }
 
                 $redis->expire(self::index_storage_key($lookup_identifier), self::SNAPSHOT_REDIS_TTL_SECONDS);
-                return $snapshot;
+                return [
+                    'snapshot' => $snapshot,
+                    'lookup_status' => 'ready',
+                    'snapshot_miss_reason' => '',
+                    'snapshot_miss_reason_label' => '',
+                    'source_path' => 'snapshot',
+                    'resolved_user_id' => $user_id,
+                    'lookup_identifier' => $lookup_identifier,
+                ];
             }
 
             if ($redis_available) {
                 $redis->del(self::index_storage_key($lookup_identifier));
             }
+
+            $resolved_user_id = $user_id;
+            $last_reason = self::detect_snapshot_miss_reason($user_id, $redis);
         }
 
-        return null;
+        if ($last_reason['code'] === '' && $resolved_user_id > 0) {
+            $last_reason = self::detect_snapshot_miss_reason($resolved_user_id, $redis);
+        }
+
+        if (($last_reason['code'] ?? '') === '' && $resolved_user_id <= 0) {
+            $last_reason = [
+                'code' => 'not_prepared',
+                'label' => self::get_snapshot_miss_reason_label('not_prepared'),
+            ];
+        }
+
+        $reason_code = sanitize_key((string) ($last_reason['code'] ?? ''));
+        if ($resolved_user_id > 0 && $reason_code !== '') {
+            self::maybe_enqueue_auto_heal($resolved_user_id, $reason_code, 'lookup');
+        }
+
+        return [
+            'snapshot' => null,
+            'lookup_status' => $reason_code === 'invalid_payload' ? 'invalid' : 'miss',
+            'snapshot_miss_reason' => $reason_code,
+            'snapshot_miss_reason_label' => (string) ($last_reason['label'] ?? self::get_snapshot_miss_reason_label($reason_code)),
+            'source_path' => 'canonical',
+            'resolved_user_id' => $resolved_user_id,
+            'lookup_identifier' => '',
+        ];
+    }
+
+    public static function get_snapshot_miss_reason_label(string $reason_code): string
+    {
+        $reason_code = sanitize_key($reason_code);
+
+        switch ($reason_code) {
+            case 'manual_clear':
+                return 'Dibersihkan manual';
+            case 'identifier_changed':
+                return 'Identifier login berubah';
+            case 'password_changed':
+                return 'Password berubah';
+            case 'password_mismatch':
+                return 'Hash password snapshot tidak cocok';
+            case 'role_changed':
+                return 'Role user berubah';
+            case 'user_deleted':
+                return 'User dihapus';
+            case 'invalid_payload':
+                return 'Payload invalid';
+            case 'invalid_snapshot':
+                return 'Snapshot login tidak valid';
+            case 'ineligible_user':
+                return 'User bukan siswa';
+            case 'write_failed':
+                return 'Gagal menulis ke Redis';
+            case 'expired_or_evicted':
+                return 'TTL habis / ter-evict';
+            case 'redis_unavailable':
+                return 'Redis tidak tersedia';
+            case 'not_prepared':
+            default:
+                return 'Belum disiapkan';
+        }
+    }
+
+    /**
+     * @param int[] $user_ids
+     * @return array<int,array<string,mixed>>
+     */
+    public static function get_user_snapshot_freshness_map(array $user_ids, int $required_ttl_seconds = 0): array
+    {
+        $user_ids = array_values(array_unique(array_filter(array_map('absint', $user_ids))));
+        $required_ttl_seconds = max(0, $required_ttl_seconds);
+        if (empty($user_ids)) {
+            return [];
+        }
+
+        $redis = self::snapshot_redis();
+        if (!$redis instanceof Redis) {
+            $rows = [];
+            foreach ($user_ids as $user_id) {
+                $rows[$user_id] = [
+                    'user_id' => $user_id,
+                    'snapshot_status' => 'unavailable',
+                    'snapshot_miss_reason' => 'redis_unavailable',
+                    'snapshot_miss_reason_label' => self::get_snapshot_miss_reason_label('redis_unavailable'),
+                    'ttl_seconds' => -2,
+                    'repair_status' => '',
+                    'repair_message' => '',
+                    'eligible_for_refresh' => false,
+                ];
+            }
+
+            return $rows;
+        }
+
+        $storage_keys = [];
+        foreach ($user_ids as $user_id) {
+            $storage_keys[$user_id] = self::user_storage_key($user_id);
+        }
+
+        $raw_snapshots = [];
+        $ttl_map = [];
+        if (method_exists($redis, 'pipeline') && method_exists($redis, 'exec')) {
+            try {
+                $pipeline = $redis->pipeline();
+                if (is_object($pipeline) && method_exists($pipeline, 'get') && method_exists($pipeline, 'ttl') && method_exists($pipeline, 'exec')) {
+                    foreach ($storage_keys as $storage_key) {
+                        $pipeline->get($storage_key);
+                        $pipeline->ttl($storage_key);
+                    }
+
+                    $results = $pipeline->exec();
+                    if (is_array($results) && count($results) === (count($storage_keys) * 2)) {
+                        $result_index = 0;
+                        foreach ($storage_keys as $user_id => $storage_key) {
+                            $raw_snapshots[$user_id] = $results[$result_index] ?? false;
+                            $ttl_map[$user_id] = isset($results[$result_index + 1]) ? (int) $results[$result_index + 1] : -2;
+                            $result_index += 2;
+                        }
+                    }
+                }
+            } catch (Throwable $throwable) {
+            }
+        }
+
+        $rows = [];
+        foreach ($user_ids as $user_id) {
+            $storage_key = $storage_keys[$user_id];
+            $raw_snapshot = array_key_exists($user_id, $raw_snapshots) ? $raw_snapshots[$user_id] : $redis->get($storage_key);
+            $ttl_seconds = array_key_exists($user_id, $ttl_map) ? (int) $ttl_map[$user_id] : ((method_exists($redis, 'ttl')) ? (int) $redis->ttl($storage_key) : -2);
+            $snapshot_exists = is_string($raw_snapshot) && trim($raw_snapshot) !== '';
+            $snapshot = $snapshot_exists ? self::decode_snapshot((string) $raw_snapshot) : null;
+            $snapshot_valid = is_array($snapshot);
+            $snapshot_status = 'miss';
+            $snapshot_miss_reason = '';
+            $snapshot_miss_reason_label = '';
+
+            if ($snapshot_valid) {
+                $snapshot_status = 'ready';
+            } elseif ($snapshot_exists) {
+                $snapshot_status = 'invalid';
+                $snapshot_miss_reason = 'invalid_payload';
+                $snapshot_miss_reason_label = self::get_snapshot_miss_reason_label('invalid_payload');
+            } else {
+                $miss_reason = self::detect_snapshot_miss_reason($user_id, $redis);
+                $snapshot_status = 'miss';
+                $snapshot_miss_reason = (string) ($miss_reason['code'] ?? '');
+                $snapshot_miss_reason_label = (string) ($miss_reason['label'] ?? self::get_snapshot_miss_reason_label($snapshot_miss_reason));
+            }
+
+            if (in_array($snapshot_status, ['miss', 'invalid'], true) && $snapshot_miss_reason !== '') {
+                self::maybe_enqueue_auto_heal($user_id, $snapshot_miss_reason, 'freshness_probe');
+            }
+
+            $queue_meta = self::build_queue_repair_meta($user_id);
+            $repair_status = (string) ($queue_meta['status'] ?? '');
+            $repair_message = (string) ($queue_meta['message'] ?? '');
+            $eligible_for_refresh = self::is_freshness_eligible(
+                $snapshot_status,
+                $snapshot_miss_reason,
+                $ttl_seconds,
+                $repair_status,
+                $required_ttl_seconds
+            );
+
+            $rows[$user_id] = [
+                'user_id' => $user_id,
+                'snapshot_status' => $snapshot_status,
+                'snapshot_miss_reason' => $snapshot_miss_reason,
+                'snapshot_miss_reason_label' => $snapshot_miss_reason_label,
+                'ttl_seconds' => $ttl_seconds,
+                'repair_status' => $repair_status,
+                'repair_message' => $repair_message,
+                'eligible_for_refresh' => $eligible_for_refresh,
+            ];
+        }
+
+        return $rows;
     }
 
     /**
@@ -1172,55 +1402,55 @@ class CBT_Login_Auth_Snapshot_Cache
         $event_code = sanitize_key((string) ($event['event'] ?? ''));
 
         if ($event_code === 'manual_clear') {
-            return ['code' => 'manual_clear', 'label' => 'Dibersihkan manual'];
+            return ['code' => 'manual_clear', 'label' => self::get_snapshot_miss_reason_label('manual_clear')];
         }
 
         if ($event_code === 'identifier_changed') {
-            return ['code' => 'identifier_changed', 'label' => 'Identifier login berubah'];
+            return ['code' => 'identifier_changed', 'label' => self::get_snapshot_miss_reason_label('identifier_changed')];
         }
 
         if ($event_code === 'password_changed') {
-            return ['code' => 'password_changed', 'label' => 'Password berubah'];
+            return ['code' => 'password_changed', 'label' => self::get_snapshot_miss_reason_label('password_changed')];
         }
 
         if ($event_code === 'role_changed') {
-            return ['code' => 'role_changed', 'label' => 'Role user berubah'];
+            return ['code' => 'role_changed', 'label' => self::get_snapshot_miss_reason_label('role_changed')];
         }
 
         if ($event_code === 'user_deleted') {
-            return ['code' => 'user_deleted', 'label' => 'User dihapus'];
+            return ['code' => 'user_deleted', 'label' => self::get_snapshot_miss_reason_label('user_deleted')];
         }
 
         if ($event_code === 'invalid_payload') {
-            return ['code' => 'invalid_payload', 'label' => 'Payload invalid'];
+            return ['code' => 'invalid_payload', 'label' => self::get_snapshot_miss_reason_label('invalid_payload')];
         }
 
         if ($event_code === 'invalid_snapshot') {
-            return ['code' => 'invalid_snapshot', 'label' => 'Snapshot login tidak valid'];
+            return ['code' => 'invalid_snapshot', 'label' => self::get_snapshot_miss_reason_label('invalid_snapshot')];
         }
 
         if ($event_code === 'ineligible_user') {
-            return ['code' => 'ineligible_user', 'label' => 'User bukan siswa'];
+            return ['code' => 'ineligible_user', 'label' => self::get_snapshot_miss_reason_label('ineligible_user')];
         }
 
         if ($event_code === 'write_failed') {
-            return ['code' => 'write_failed', 'label' => 'Gagal menulis ke Redis'];
+            return ['code' => 'write_failed', 'label' => self::get_snapshot_miss_reason_label('write_failed')];
         }
 
         if ($event_code === 'written') {
-            return ['code' => 'expired_or_evicted', 'label' => 'TTL habis / ter-evict'];
+            return ['code' => 'expired_or_evicted', 'label' => self::get_snapshot_miss_reason_label('expired_or_evicted')];
         }
 
         $user = get_user_by('id', $user_id);
         if (!($user instanceof WP_User)) {
-            return ['code' => 'user_deleted', 'label' => 'User dihapus'];
+            return ['code' => 'user_deleted', 'label' => self::get_snapshot_miss_reason_label('user_deleted')];
         }
 
         if (!self::is_snapshot_eligible_user($user)) {
-            return ['code' => 'ineligible_user', 'label' => 'User bukan siswa'];
+            return ['code' => 'ineligible_user', 'label' => self::get_snapshot_miss_reason_label('ineligible_user')];
         }
 
-        return ['code' => 'not_prepared', 'label' => 'Belum disiapkan'];
+        return ['code' => 'not_prepared', 'label' => self::get_snapshot_miss_reason_label('not_prepared')];
     }
 
     /**
@@ -1240,6 +1470,10 @@ class CBT_Login_Auth_Snapshot_Cache
 
         if ($code === 'password_changed') {
             return 'Login snapshot MISS karena password siswa berubah. Snapshot lama sengaja dihapus agar hash password terbaru yang dipakai.';
+        }
+
+        if ($code === 'password_mismatch') {
+            return 'Login snapshot dilewati karena hash password di snapshot tidak cocok. Jalur login akan fallback ke auth WordPress untuk memverifikasi password terbaru.';
         }
 
         if ($code === 'role_changed') {
@@ -1317,5 +1551,75 @@ class CBT_Login_Auth_Snapshot_Cache
         }
 
         return $decoded;
+    }
+
+    private static function is_freshness_eligible(
+        string $snapshot_status,
+        string $snapshot_miss_reason,
+        int $ttl_seconds,
+        string $repair_status,
+        int $required_ttl_seconds
+    ): bool {
+        $snapshot_status = sanitize_key($snapshot_status);
+        $snapshot_miss_reason = sanitize_key($snapshot_miss_reason);
+        $repair_status = sanitize_key($repair_status);
+
+        if (in_array($snapshot_status, ['miss', 'invalid'], true)) {
+            return true;
+        }
+
+        if ($repair_status === 'queued_auto_heal') {
+            return true;
+        }
+
+        if ($required_ttl_seconds > 0 && $snapshot_status === 'ready' && $ttl_seconds >= 0 && $ttl_seconds < $required_ttl_seconds) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static function resolve_user_id_from_identifier(string $identifier): int
+    {
+        $identifier = trim((string) $identifier);
+        if ($identifier === '') {
+            return 0;
+        }
+
+        if (is_email($identifier)) {
+            $by_email = get_user_by('email', sanitize_email($identifier));
+            if ($by_email instanceof WP_User) {
+                return (int) $by_email->ID;
+            }
+        }
+
+        $by_login = get_user_by('login', sanitize_user($identifier, true));
+        if ($by_login instanceof WP_User) {
+            return (int) $by_login->ID;
+        }
+
+        $by_nisn_ids = get_users([
+            'number' => 1,
+            'count_total' => false,
+            'fields' => 'ids',
+            'meta_key' => 'nisn',
+            'meta_value' => sanitize_text_field($identifier),
+            'meta_compare' => '=',
+        ]);
+        if (!empty($by_nisn_ids)) {
+            return absint($by_nisn_ids[0]);
+        }
+
+        if (strpos($identifier, '@') === false) {
+            $fallback_email = sanitize_email($identifier . '@' . self::FALLBACK_EMAIL_DOMAIN);
+            if ($fallback_email !== '') {
+                $fallback_user = get_user_by('email', $fallback_email);
+                if ($fallback_user instanceof WP_User) {
+                    return (int) $fallback_user->ID;
+                }
+            }
+        }
+
+        return 0;
     }
 }

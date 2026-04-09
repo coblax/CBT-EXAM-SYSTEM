@@ -5,6 +5,7 @@ declare(strict_types=1);
 use CbtExamSystem\Tests\TestCase;
 
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-auth-snapshot-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-snapshot-auto-heal-queue-service.php';
 
 final class SnapshotAutoHealQueueServiceTest extends TestCase
@@ -29,6 +30,7 @@ final class SnapshotAutoHealQueueServiceTest extends TestCase
         update_user_meta(11, 'nisn', '20260011');
 
         $this->useFakeProfileRedis();
+        $this->useFakeLoginSnapshotRedis();
     }
 
     public function test_maybe_enqueue_dedupes_same_target_and_exposes_queue_state(): void
@@ -102,6 +104,22 @@ final class SnapshotAutoHealQueueServiceTest extends TestCase
         self::assertSame('failed', $lastHistory['status']);
     }
 
+    public function test_tick_skips_login_job_when_freshness_runner_already_restored_snapshot(): void
+    {
+        CBT_Snapshot_Auto_Heal_Queue_Service::maybe_enqueue('login_user', 11, 'expired_or_evicted', 'freshness_probe');
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'freshness_runner');
+
+        $state = CBT_Snapshot_Auto_Heal_Queue_Service::tick();
+        $history = array_values((array) ($state['history'] ?? []));
+        $lastHistory = end($history);
+
+        self::assertSame(0, $state['queued_count']);
+        self::assertSame(0, $state['last_success_count']);
+        self::assertSame(1, $state['last_skipped_count']);
+        self::assertIsArray($lastHistory);
+        self::assertSame('skipped', $lastHistory['status']);
+    }
+
     private function useFakeProfileRedis(): void
     {
         $reflection = new ReflectionClass(CBT_Student_Profile_Cache::class);
@@ -134,5 +152,22 @@ final class SnapshotAutoHealQueueServiceTest extends TestCase
         $errorProperty = $reflection->getProperty('profile_redis_last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, 'disabled in test');
+    }
+
+    private function useFakeLoginSnapshotRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Login_Auth_Snapshot_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
     }
 }

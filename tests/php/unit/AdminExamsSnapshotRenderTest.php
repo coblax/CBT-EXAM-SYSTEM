@@ -26,6 +26,11 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Jalankan One-Click Pra Ujian', $html);
         self::assertStringContainsString('Bersihkan Semua Snapshot', $html);
         self::assertStringContainsString('Bersihkan Semua Redis CBT', $html);
+        self::assertStringContainsString('Adaptive Load', $html);
+        self::assertStringContainsString('Paksa Busy (15 menit)', $html);
+        self::assertStringContainsString('Paksa Critical (15 menit)', $html);
+        self::assertStringContainsString('Heartbeat: 20 detik', $html);
+        self::assertStringContainsString('Snapshot refresh: 10 detik', $html);
         self::assertStringContainsString('data-cbt-preflight-clean-form="1"', $html);
         self::assertStringContainsString('data-cbt-clean-target-count="18"', $html);
         self::assertStringContainsString('reset runtime harian antar beberapa exam', $html);
@@ -603,6 +608,10 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Bersihkan Semua Login Snapshot', $html);
         self::assertStringContainsString('Siapkan Login Snapshot', $html);
         self::assertStringContainsString('Bersihkan Login Snapshot', $html);
+        self::assertStringContainsString('Login Snapshot Health', $html);
+        self::assertStringContainsString('Hit Rate 15 menit', $html);
+        self::assertStringContainsString('Canonical Fallback', $html);
+        self::assertStringContainsString('Freshness Window Jobs', $html);
         self::assertStringContainsString('login:salsa', $html);
         self::assertStringContainsString('name="cbt_exam_snapshot_tab" value="login_monitor"', $html);
         self::assertStringNotContainsString('Snapshot ini memuat katalog exam siswa yang tersedia, bukan snapshot satu exam tunggal.', $html);
@@ -670,7 +679,7 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                     'login_status_label' => 'READY',
                     'login_status_tone' => 'success',
                     'login' => [
-                        'ttl_seconds' => 14400,
+                        'ttl_seconds' => 43200,
                         'payload_bytes' => 768,
                         'storage_key' => 'cbt_login_auth:user:71',
                         'snapshot_exists' => true,
@@ -912,6 +921,20 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                 ['label' => 'Ruang', 'value' => 'R1'],
             ],
             'student_snapshot_reset_url' => 'http://example.com/wp-admin/admin.php?page=cbt-exams&cbt_exam_panel=snapshot',
+            'adaptive_load_context' => [
+                'level' => 'normal',
+                'level_label' => 'NORMAL',
+                'source' => 'auto',
+                'source_label' => 'Auto',
+                'primary_reason' => 'Tekanan sistem saat ini normal.',
+                'heartbeat_interval_ms' => 20000,
+                'heartbeat_interval_label' => '20 detik',
+                'admin_snapshot_refresh_seconds' => 10,
+                'admin_snapshot_refresh_label' => '10 detik',
+                'last_evaluated_at' => '2026-04-08 08:46:00',
+                'override_expires_at' => '',
+                'tone' => 'success',
+            ],
             'student_snapshot_rows' => [
                 [
                     'user_id' => 71,
@@ -975,7 +998,7 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                     'login_status_label' => 'READY',
                     'login_status_tone' => 'success',
                     'login' => [
-                        'ttl_seconds' => 14400,
+                        'ttl_seconds' => 43200,
                         'payload_bytes' => 768,
                         'generated_at' => '2026-04-04 07:35:00',
                         'redis_host' => '127.0.0.1',
@@ -1004,6 +1027,22 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                         ],
                     ],
                 ],
+            ],
+            'login_snapshot_health_context' => [
+                'available' => true,
+                'tone' => 'success',
+                'window_minutes' => 15,
+                'hit_rate_label' => '75.0%',
+                'snapshot_success' => 9,
+                'canonical_fallback' => 3,
+                'top_miss_reason_label' => 'TTL habis / ter-evict',
+                'top_miss_reason_count' => 4,
+                'freshness_window_jobs' => 2,
+                'freshness_last_tick_at' => '2026-04-08 09:05:00',
+                'freshness_last_refreshed_user_count' => 6,
+                'freshness_last_refreshed_success_count' => 5,
+                'freshness_last_message' => 'Freshness login snapshot memeriksa 2 exam window. Refresh 6 siswa (5 sukses), skip 0 exam.',
+                'metrics_redis_error' => '',
             ],
             'exam_snapshot_rows' => [
                 [

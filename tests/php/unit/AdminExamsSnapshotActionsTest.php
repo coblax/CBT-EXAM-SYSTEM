@@ -987,6 +987,113 @@ final class AdminExamsSnapshotActionsTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_handle_set_adaptive_load_override_busy_sets_manual_override_and_preserves_snapshot_state(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeStartAttemptGateRedis();
+        $this->useFakeLoginMetricsRedis();
+
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        $_POST = [
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_tab' => CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT,
+            'cbt_exam_snapshot_exam_ids' => ['77', '54'],
+            'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_page_77' => '3',
+            'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_paged' => '2',
+            'cbt_adaptive_load_override_level' => 'busy',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_set_adaptive_load_override']);
+
+        $state = CBT_Adaptive_Load_Service::get_state();
+
+        self::assertSame('busy', $state['effective_level']);
+        self::assertSame('busy', $state['override_level']);
+        self::assertSame('manual_override', $state['source']);
+        self::assertSame(1, (int) $state['override_user_id']);
+        self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_ids%5B0%5D=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_ids%5B1%5D=54', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_page_77=3', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Adaptive+load+dipaksa+BUSY+selama+15+menit.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_set_adaptive_load_override_critical_sets_manual_override(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeStartAttemptGateRedis();
+        $this->useFakeLoginMetricsRedis();
+
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        $_POST = [
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_tab' => CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT,
+            'cbt_exam_snapshot_exam_id' => '77',
+            'cbt_adaptive_load_override_level' => 'critical',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_set_adaptive_load_override']);
+
+        $state = CBT_Adaptive_Load_Service::get_state();
+
+        self::assertSame('critical', $state['effective_level']);
+        self::assertSame('critical', $state['override_level']);
+        self::assertSame('manual_override', $state['source']);
+        self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Adaptive+load+dipaksa+CRITICAL+selama+15+menit.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_clear_adaptive_load_override_returns_to_auto_mode_and_preserves_snapshot_state(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeStartAttemptGateRedis();
+        $this->useFakeLoginMetricsRedis();
+
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        CBT_Adaptive_Load_Service::set_manual_override('critical', 1);
+
+        $_POST = [
+            'cbt_exam_status' => 'published',
+            'cbt_exam_snapshot_tab' => CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT,
+            'cbt_exam_snapshot_exam_ids' => ['77', '54'],
+            'cbt_exam_snapshot_page_77' => '2',
+            'cbt_exam_readiness_page_77' => '3',
+            'cbt_student_snapshot_q' => 'salsa',
+            'cbt_student_snapshot_paged' => '2',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_clear_adaptive_load_override']);
+
+        $state = CBT_Adaptive_Load_Service::get_state();
+
+        self::assertSame('critical', $state['effective_level']);
+        self::assertSame('', $state['override_level']);
+        self::assertSame('auto', $state['source']);
+        self::assertSame('', $state['override_expires_at']);
+        self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_ids%5B0%5D=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_exam_ids%5B1%5D=54', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_exam_readiness_page_77=3', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_q=salsa', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Adaptive+load+dikembalikan+ke+mode+auto.+Level+aktif+sekarang+CRITICAL.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
     public function test_handle_warm_and_clear_bulk_student_exam_availability_snapshots_process_filtered_students_only(): void
     {
         $this->bootstrapSnapshotActionScaffold();
@@ -1608,6 +1715,40 @@ PHP);
         $errorProperty->setValue(null, '');
     }
 
+    private function useFakeStartAttemptGateRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Start_Attempt_Gate_Service::class);
+
+        $redisProperty = $reflection->getProperty('gate_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('gate_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('gate_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeLoginMetricsRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Login_Snapshot_Metrics_Service::class);
+
+        $redisProperty = $reflection->getProperty('metrics_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('metrics_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('metrics_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
     /**
      * @param callable():void $action
      */
@@ -1768,6 +1909,35 @@ class AdminExamsSnapshotActionsFakeWpdb
                 ['id' => 9201, 'question_id' => 954, 'option_text' => 'A', 'is_correct' => 1],
                 ['id' => 9202, 'question_id' => 954, 'option_text' => 'B', 'is_correct' => 0],
             ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @param string $prepared
+     */
+    public function get_var($prepared)
+    {
+        $query = (string) $prepared;
+
+        if (strpos($query, "SELECT COUNT(*) FROM wp_cbt_attempts WHERE status = 'in_progress'") !== false) {
+            return 0;
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param string $prepared
+     * @return array<int,string>
+     */
+    public function get_col($prepared): array
+    {
+        $query = (string) $prepared;
+
+        if (strpos($query, 'SELECT id FROM wp_cbt_exams WHERE title NOT LIKE') !== false) {
+            return ['77', '54'];
         }
 
         return [];

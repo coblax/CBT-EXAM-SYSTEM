@@ -295,9 +295,14 @@ function createFixture(overrides = {}) {
                 authProgressStepIndex: Number(state.authProgressStepIndex) || 0,
                 authProgressVisible: Boolean(state.authProgressVisible),
                 openingAttemptProgressDetail: String(state.openingAttemptProgressDetail || ''),
+                openingAttemptPhase: String(state.openingAttemptPhase || ''),
+                openingAttemptCanBack: Boolean(state.openingAttemptCanBack),
+                openingAttemptCanRefreshStatus: Boolean(state.openingAttemptCanRefreshStatus),
+                openingAttemptCanRetry: Boolean(state.openingAttemptCanRetry),
                 openingAttemptProgressPercent: Number(state.openingAttemptProgressPercent) || 0,
                 openingAttemptProgressStatus: String(state.openingAttemptProgressStatus || ''),
                 openingAttemptProgressStepIndex: Number(state.openingAttemptProgressStepIndex) || 0,
+                openingAttemptQueuePosition: Number(state.openingAttemptQueuePosition) || 0,
                 resultProgressDetail: String(state.resultProgressDetail || ''),
                 resultProgressPercent: Number(state.resultProgressPercent) || 0,
                 resultProgressStatus: String(state.resultProgressStatus || ''),
@@ -308,6 +313,7 @@ function createFixture(overrides = {}) {
                 sessionRecoveryStatus: String(state.sessionRecoveryStatus || ''),
                 sessionRecoveryStepIndex: Number(state.sessionRecoveryStepIndex) || 0,
                 sessionRecoveryVisible: Boolean(state.sessionRecoveryVisible),
+                error: String(state.error || ''),
                 stage: String(state.stage || '')
             });
         },
@@ -635,12 +641,7 @@ describe('createExamSessionManager', function () {
                     return { attempt_state: null };
                 }
 
-                if (endpoint !== 'start_attempt') {
-                    throw new Error('Unexpected endpoint: ' + String(endpoint));
-                }
-
-                var body = options && options.body ? options.body : {};
-                if (Number(body.resume_only) === 1) {
+                if (endpoint === 'start_attempt_status') {
                     return {
                         attempt_id: 77,
                         duration_minutes: 60,
@@ -651,6 +652,23 @@ describe('createExamSessionManager', function () {
                     };
                 }
 
+                if (endpoint === 'start_attempt_status') {
+                    return {
+                        status: 'admitted',
+                        queue_ticket: 'gate-ticket-1',
+                        queue_position: 1,
+                        poll_after_ms: 0,
+                        estimated_wait_seconds: 0,
+                        gate_capacity: 50,
+                        gate_window_seconds: 5
+                    };
+                }
+
+                if (endpoint !== 'start_attempt') {
+                    throw new Error('Unexpected endpoint: ' + String(endpoint));
+                }
+
+                var body = options && options.body ? options.body : {};
                 throw Object.assign(new Error('Permintaan mulai ujian sedang diproses. Coba lagi beberapa detik.'), {
                     code: 'attempt_lock_active',
                     status: 429
@@ -669,7 +687,7 @@ describe('createExamSessionManager', function () {
         })).toEqual([
             'exams:0',
             'start_attempt:0',
-            'start_attempt:1',
+            'start_attempt_status:1',
             'ui_state:0'
         ]);
         expect(fixture.calls.renderSnapshots.some(function (snapshot) {
@@ -714,6 +732,18 @@ describe('createExamSessionManager', function () {
                     return { attempt_state: null };
                 }
 
+                if (endpoint === 'start_attempt_status') {
+                    return {
+                        status: 'admitted',
+                        queue_ticket: 'gate-ticket-1',
+                        queue_position: 1,
+                        poll_after_ms: 0,
+                        estimated_wait_seconds: 0,
+                        gate_capacity: 50,
+                        gate_window_seconds: 5
+                    };
+                }
+
                 if (endpoint !== 'start_attempt') {
                     throw new Error('Unexpected endpoint: ' + String(endpoint));
                 }
@@ -753,6 +783,7 @@ describe('createExamSessionManager', function () {
         })).toEqual([
             'exams:fresh',
             'start_attempt:fresh',
+            'start_attempt_status:queue',
             'start_attempt:queue',
             'ui_state:fresh'
         ]);
@@ -761,7 +792,7 @@ describe('createExamSessionManager', function () {
                 immediate: true,
                 skipPostRenderEffects: true
             },
-            reason: 'start-exam-refresh-selection'
+            reason: 'attempt-opening-progress'
         });
         expect(fixture.calls.renderCalls.some(function (entry) {
             return entry.reason === 'attempt-opening-progress'
@@ -772,6 +803,154 @@ describe('createExamSessionManager', function () {
         expect(fixture.calls.renderSnapshots.some(function (snapshot) {
             return String(snapshot.openingAttemptProgressStatus || '').indexOf('Menunggu giliran masuk ujian') >= 0;
         })).toBe(true);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.openingAttemptPhase === 'opening_waiting_queue'
+                && snapshot.openingAttemptQueuePosition === 14
+                && snapshot.openingAttemptCanRetry === true
+                && snapshot.openingAttemptCanRefreshStatus === true;
+        })).toBe(true);
+    });
+
+    it('opens the loading shell immediately when continuing an in-progress exam', async function () {
+        var restoredSnapshot = buildCachedQuestionSnapshot(40);
+        var fixture = createFixture({
+            restoredSnapshot,
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 77,
+                        latest_attempt_status: 'in_progress'
+                    }
+                ],
+                selectedExamId: 55
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'exams') {
+                    return {
+                        current_user: null,
+                        items: [
+                            {
+                                id: 55,
+                                duration_minutes: 60,
+                                is_class_allowed: 1,
+                                latest_attempt_id: 77,
+                                latest_attempt_status: 'in_progress'
+                            }
+                        ]
+                    };
+                }
+
+                if (endpoint === 'ui_state') {
+                    return { attempt_state: null };
+                }
+
+                if (endpoint === 'start_attempt_status') {
+                    return {
+                        attempt_id: 77,
+                        duration_minutes: 60,
+                        started_at: '2026-04-03 05:00:00',
+                        status: 'resumed',
+                        question_order_signature: restoredSnapshot.questionOrderSignature,
+                        question_revision: restoredSnapshot.questionRevision
+                    };
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.handleStartExam();
+
+        expect(fixture.calls.renderSnapshots[0]).toMatchObject({
+            stage: 'exam'
+        });
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint;
+        })).toEqual(['start_attempt_status', 'ui_state']);
+        expect(String(fixture.calls.renderSnapshots[0].openingAttemptProgressStatus || '')).toContain('Menyambungkan sesi ujian');
+    });
+
+    it('refreshes opening status through the lightweight status endpoint without reissuing start_attempt', async function () {
+        var fixture = createFixture({
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: ''
+                    }
+                ],
+                selectedExamId: 55,
+                stage: 'exam',
+                isOpeningAttempt: true,
+                pendingExamId: 55,
+                pendingExamToken: '',
+                pendingQueueTicket: 'gate-ticket-1',
+                pendingResumeIntent: false
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'start_attempt_status') {
+                    return {
+                        status: 'queued',
+                        queue_ticket: 'gate-ticket-1',
+                        queue_position: 7,
+                        poll_after_ms: 0,
+                        estimated_wait_seconds: 2,
+                        gate_capacity: 50,
+                        gate_window_seconds: 5
+                    };
+                }
+
+                if (endpoint === 'start_attempt') {
+                    throw new Error('start_attempt should not be called during refresh status');
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.refreshOpeningAttemptStatus();
+
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint;
+        })).toEqual(['start_attempt_status']);
+        expect(fixture.state.openingAttemptPhase).toBe('opening_waiting_queue');
+        expect(fixture.state.openingAttemptQueuePosition).toBe(7);
+    });
+
+    it('keeps the user in the opening shell when local token validation fails after the start button is pressed', async function () {
+        var fixture = createFixture({
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: '',
+                        requires_token: 1,
+                        token_input_required: 1
+                    }
+                ],
+                selectedExamId: 55,
+                examToken: 'ABC'
+            }
+        });
+
+        await fixture.manager.handleStartExam();
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.isOpeningAttempt).toBe(true);
+        expect(fixture.state.openingAttemptPhase).toBe('opening_terminal_error');
+        expect(fixture.state.error).toContain('Token ujian harus 6 karakter');
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint;
+        })).toEqual(['exams']);
     });
 
     it('paints the result loading flow immediately before fetching review data', async function () {
@@ -917,12 +1096,7 @@ describe('createExamSessionManager', function () {
                     return { attempt_state: null };
                 }
 
-                if (endpoint !== 'start_attempt') {
-                    throw new Error('Unexpected endpoint: ' + String(endpoint));
-                }
-
-                var body = options && options.body ? options.body : {};
-                if (Number(body.resume_only) === 1) {
+                if (endpoint === 'start_attempt_status') {
                     return {
                         attempt_id: 77,
                         duration_minutes: 60,
@@ -931,6 +1105,10 @@ describe('createExamSessionManager', function () {
                         question_order_signature: restoredSnapshot.questionOrderSignature,
                         question_revision: restoredSnapshot.questionRevision
                     };
+                }
+
+                if (endpoint !== 'start_attempt') {
+                    throw new Error('Unexpected endpoint: ' + String(endpoint));
                 }
 
                 throw new Error('Server masih sibuk menyiapkan sesi ujian. Coba lagi beberapa saat.');
@@ -948,12 +1126,12 @@ describe('createExamSessionManager', function () {
         })).toEqual([
             'exams:0',
             'start_attempt:0',
-            'exams:0',
-            'start_attempt:1',
+            'start_attempt_status:1',
             'ui_state:0'
         ]);
         expect(fixture.calls.renderSnapshots.some(function (snapshot) {
-            return String(snapshot.openingAttemptProgressStatus || '').indexOf('Attempt aktif ditemukan') >= 0;
+            return snapshot.stage === 'exam'
+                && String(snapshot.openingAttemptProgressStatus || '').trim() !== '';
         })).toBe(true);
     });
 
@@ -995,7 +1173,7 @@ describe('createExamSessionManager', function () {
                     return { attempt_state: null };
                 }
 
-                if (endpoint === 'start_attempt') {
+                if (endpoint === 'start_attempt_status') {
                     return {
                         attempt_id: 99,
                         duration_minutes: 60,
@@ -1014,7 +1192,7 @@ describe('createExamSessionManager', function () {
 
         expect(fixture.calls.apiCalls.map(function (entry) {
             return entry.endpoint;
-        })).toEqual(['exams', 'start_attempt', 'ui_state']);
+        })).toEqual(['exams', 'start_attempt_status', 'ui_state']);
         expect(fixture.state.stage).toBe('exam');
         expect(fixture.state.error).toBe('');
         expect(fixture.state.attemptId).toBe(99);

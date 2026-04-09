@@ -23,6 +23,12 @@ class CBT_Activator
         if (class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
             CBT_Snapshot_Auto_Heal_Queue_Service::activate();
         }
+        if (class_exists('CBT_Login_Snapshot_Freshness_Service')) {
+            CBT_Login_Snapshot_Freshness_Service::activate();
+        }
+        if (class_exists('CBT_Adaptive_Load_Service')) {
+            CBT_Adaptive_Load_Service::activate();
+        }
     }
 
     public static function maybe_upgrade(): void
