@@ -754,6 +754,10 @@
     gap: 10px;
 }
 
+.cbt-button-refresh[disabled] {
+    cursor: progress;
+}
+
 .cbt-button-refresh-icon {
     display: inline-flex;
     width: 16px;
@@ -771,14 +775,36 @@
     stroke-linejoin: round;
 }
 
-.cbt-button-refresh-label {
-    line-height: 1;
+.cbt-button-refresh[disabled] .cbt-button-refresh-icon svg {
+    animation: cbt-spin 0.8s linear infinite;
 }
 
 .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button {
     text-transform: uppercase;
     letter-spacing: 0.05em;
     font-weight: 800;
+}
+
+.cbt-confirm-refresh-progress {
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.cbt-confirm-refresh-progress .cbt-finish-live-progress-fill {
+    width: 42%;
+    animation: cbt-confirm-refresh-progress 1.25s ease-in-out infinite alternate;
+}
+
+@keyframes cbt-confirm-refresh-progress {
+    0% {
+        transform: translateX(-28%);
+        width: 28%;
+    }
+
+    100% {
+        transform: translateX(160%);
+        width: 58%;
+    }
 }
 
 /* Final login flow redesign based on the latest direction from the user. */

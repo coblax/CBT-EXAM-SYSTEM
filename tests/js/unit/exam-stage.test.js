@@ -492,6 +492,25 @@ describe('createExamStageRenderer', function () {
         expect(markup).toContain('data-action="back-confirm"');
     });
 
+    it('renders action indicators and disabled controls while retry is being processed', function () {
+        var renderer = createFixture({
+            state: {
+                openingAttemptPhase: 'opening_recovering',
+                openingAttemptCanRetry: true,
+                openingAttemptCanRefreshStatus: true,
+                openingAttemptCanBack: true,
+                busy: true,
+                openingAttemptProgressStatus: 'Mengulang permintaan sesi'
+            }
+        });
+
+        var markup = renderer.renderExamStageShell();
+
+        expect(markup).toContain('Coba Lagi sedang diproses');
+        expect(markup).toContain('Mencoba Lagi...');
+        expect(markup).toContain('disabled aria-disabled="true"');
+    });
+
     it('shows collect action on a non-last question once all questions are answered', function () {
         var renderer = createAnsweredExamFixture();
 

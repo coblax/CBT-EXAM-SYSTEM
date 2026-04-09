@@ -728,6 +728,8 @@ export function createAppEventManager(deps) {
             clearMessages();
             render('reload-exams', {
                 action: action
+            }, {
+                immediate: true
             });
             loadExams()
                 .then(function () {

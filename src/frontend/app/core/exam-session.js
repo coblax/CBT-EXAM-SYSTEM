@@ -100,6 +100,8 @@ export function createExamSessionManager(deps) {
         state.openingAttemptQueuePosition = 0;
         state.openingAttemptQueueEstimatedWaitSeconds = 0;
         state.openingAttemptQueueLastPolledAt = 0;
+        state.openingAttemptLastActionKind = '';
+        state.openingAttemptLastActionStatus = '';
         state.pendingExamId = 0;
         state.pendingExamToken = '';
         state.pendingQueueTicket = '';
@@ -107,6 +109,19 @@ export function createExamSessionManager(deps) {
         state.pendingOpeningPhase = '';
         state.pendingLastErrorCode = '';
         state.pendingLastErrorMessage = '';
+    }
+
+    function beginOpeningAttemptUiAction(kind) {
+        state.openingAttemptLastActionKind = String(kind || '');
+        state.openingAttemptLastActionStatus = state.openingAttemptLastActionKind === '' ? '' : 'running';
+    }
+
+    function completeOpeningAttemptUiAction(status) {
+        if (String(state.openingAttemptLastActionKind || '') === '') {
+            return;
+        }
+
+        state.openingAttemptLastActionStatus = String(status || '');
     }
 
     function resetAuthProgressState() {
@@ -372,7 +387,7 @@ export function createExamSessionManager(deps) {
             Number(options.percent) || Math.max(12, Number(state.openingAttemptProgressPercent) || 18),
             Number(options.stepIndex) || Math.max(1, Number(state.openingAttemptProgressStepIndex) || 1),
             String(options.status || 'Server masih sibuk menyiapkan sesi'),
-            String(options.detail || 'Anda tetap berada di jalur pembukaan ujian. Coba cek status lagi atau ulangi permintaan.'),
+            String(options.detail || 'Tetap di layar ini. Cek status lagi atau ulangi permintaan.'),
             {
                 renderOptions: {
                     immediate: true,
@@ -1044,7 +1059,7 @@ export function createExamSessionManager(deps) {
 
                     throw buildStartAttemptStatusError(
                         statusPayload,
-                        'Status antrean belum dapat dipastikan. Gunakan Refresh Status atau Coba Lagi.'
+                        'Status antrean belum pasti. Gunakan Refresh Status atau Coba Lagi.'
                     );
                 }
 
@@ -2016,7 +2031,7 @@ export function createExamSessionManager(deps) {
 
             markOpeningAttemptTemporaryFailure(errorMessage, errorCode, {
                 status: 'Server masih sibuk menyiapkan sesi',
-                detail: 'Anda tetap berada di jalur pembukaan ujian. Gunakan Refresh Status atau Coba Lagi tanpa perlu kembali ke daftar exam.',
+                detail: 'Tetap di layar ini. Gunakan Refresh Status atau Coba Lagi.',
                 canRetry: true,
                 canRefreshStatus: true
             });
@@ -2038,6 +2053,12 @@ export function createExamSessionManager(deps) {
         }
 
         cancelOpeningAttemptRequest();
+        updateOpeningAttemptProgress(
+            Math.max(18, Number(state.openingAttemptProgressPercent) || 18),
+            Math.max(1, Number(state.openingAttemptProgressStepIndex) || 1),
+            'Mengulang permintaan sesi',
+            'Permintaan Coba Lagi sedang diproses.'
+        );
         return handleStartExam({
             skipExamRefresh: true,
             selectedExam: selectedExam,
@@ -2053,6 +2074,7 @@ export function createExamSessionManager(deps) {
         }
 
         cancelOpeningAttemptRequest();
+        beginOpeningAttemptUiAction('refresh');
         var requestId = beginOpeningAttemptRequest();
         var selectedExamId = Number(selectedExam && selectedExam.id) || 0;
         var submittedToken = String(state.pendingExamToken || '');
@@ -2065,7 +2087,7 @@ export function createExamSessionManager(deps) {
             Math.max(1, Number(state.openingAttemptProgressStepIndex) || 1),
             queueTicket !== '' ? 'Mengecek status antrean' : 'Mengecek status sesi',
             queueTicket !== ''
-                ? 'Kami mengecek apakah tiket antrean Anda sudah boleh masuk.'
+                ? 'Kami mengecek apakah tiket antrean sudah boleh masuk.'
                 : 'Kami mengecek apakah sesi aktif sudah tersedia.'
         );
 
@@ -2086,10 +2108,12 @@ export function createExamSessionManager(deps) {
                     'Menunggu giliran masuk ujian',
                     buildQueuedStartAttemptDetail(statusPayload)
                 );
+                completeOpeningAttemptUiAction('success');
                 return true;
             }
 
             if (isAdmittedStartAttemptStatusPayload(statusPayload)) {
+                completeOpeningAttemptUiAction('success');
                 cancelOpeningAttemptRequest();
                 return handleStartExam({
                     skipExamRefresh: true,
@@ -2102,29 +2126,33 @@ export function createExamSessionManager(deps) {
             }
 
             if (getStartAttemptPayloadStatus(statusPayload) === 'resumed') {
+                completeOpeningAttemptUiAction('success');
                 await openAttemptSession(selectedExam, statusPayload, requestId);
                 return true;
             }
 
             if (isCompletedStartAttemptStatusPayload(statusPayload)) {
+                completeOpeningAttemptUiAction('success');
                 cancelOpeningAttemptRequest();
                 await routeToResultFromOpeningAttempt(selectedExam);
                 return true;
             }
 
             if (isTerminalStartAttemptStatusPayload(statusPayload)) {
+                completeOpeningAttemptUiAction('error');
                 throw buildStartAttemptStatusError(statusPayload);
             }
 
             if (isPendingStartAttemptStatusPayload(statusPayload)) {
+                completeOpeningAttemptUiAction('pending');
                 markOpeningAttemptTemporaryFailure(
                     String(statusPayload.error_message || 'Status sesi masih dipantau.'),
                     String(statusPayload.error_code || 'start_attempt_status_pending'),
                     {
                         status: queueTicket !== '' ? 'Status antrean belum final' : 'Attempt aktif belum terlihat',
                         detail: queueTicket !== ''
-                            ? 'Tiket antrean Anda belum siap dipakai. Gunakan Coba Lagi atau tunggu beberapa detik lalu refresh lagi.'
-                            : 'Attempt aktif belum terlihat. Anda tetap berada di shell yang sama dan bisa refresh lagi tanpa kembali ke daftar exam.',
+                            ? 'Tiket antrean belum siap dipakai. Coba lagi atau refresh beberapa detik lagi.'
+                            : 'Attempt aktif belum terlihat. Tetap di layar ini dan refresh lagi.',
                         canRetry: true,
                         canRefreshStatus: true
                     }
@@ -2139,12 +2167,14 @@ export function createExamSessionManager(deps) {
             }
 
             if (isAttemptCompletedError(error)) {
+                completeOpeningAttemptUiAction('success');
                 cancelOpeningAttemptRequest();
                 await routeToResultFromOpeningAttempt(selectedExam);
                 return true;
             }
 
             if (isTerminalStartAttemptError(error)) {
+                completeOpeningAttemptUiAction('error');
                 markOpeningAttemptTerminalFailure(
                     error instanceof Error ? error.message : 'Sesi ujian tidak dapat dilanjutkan.',
                     getErrorCode(error),
@@ -2156,12 +2186,13 @@ export function createExamSessionManager(deps) {
                 return true;
             }
 
+            completeOpeningAttemptUiAction('pending');
             markOpeningAttemptTemporaryFailure(
                 error instanceof Error ? error.message : 'Status sesi belum dapat dipastikan.',
                 getErrorCode(error),
                 {
                     status: queueTicket !== '' ? 'Status antrean belum dapat dipastikan' : 'Status sesi belum dapat dipastikan',
-                    detail: 'Anda tetap berada di shell pembukaan ujian. Gunakan Refresh Status atau Coba Lagi beberapa saat lagi.',
+                    detail: 'Tetap di layar ini. Gunakan Refresh Status atau Coba Lagi lagi nanti.',
                     canRetry: true,
                     canRefreshStatus: true
                 }

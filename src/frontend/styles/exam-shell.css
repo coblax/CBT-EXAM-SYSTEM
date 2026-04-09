@@ -312,6 +312,33 @@
     margin: 0;
 }
 
+.cbt-exam-opening-action-meta {
+    display: grid;
+    gap: 8px;
+}
+
+.cbt-exam-opening-action-meta .cbt-chip {
+    margin-right: 6px;
+    margin-bottom: 6px;
+}
+
+.cbt-exam-opening-action-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: #0f172a;
+    font-size: 12px;
+}
+
+.cbt-exam-opening-action-summary.is-running {
+    color: #0f4c81;
+}
+
+.cbt-exam-opening-action-summary strong {
+    font-size: 12px;
+}
+
 .cbt-exam-opening-progress-wrap {
     display: grid;
     gap: 8px;
@@ -436,6 +463,14 @@
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-opening-chip {
     background: rgba(37, 99, 235, 0.18);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-opening-action-summary {
+    color: #e2e8f0;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-opening-action-summary.is-running {
     color: #bfdbfe;
 }
 

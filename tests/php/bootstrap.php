@@ -20,7 +20,7 @@ if (!defined('CBT_EXAM_SYSTEM_URL')) {
 }
 
 if (!defined('CBT_EXAM_SYSTEM_VERSION')) {
-    define('CBT_EXAM_SYSTEM_VERSION', '1.8.4');
+    define('CBT_EXAM_SYSTEM_VERSION', '2.0.0');
 }
 
 if (!defined('WP_PLUGIN_DIR')) {

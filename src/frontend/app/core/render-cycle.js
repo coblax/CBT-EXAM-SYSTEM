@@ -385,7 +385,12 @@ export function createRenderCycleManager(deps) {
         pendingRenderMeta = {};
         pendingRenderOptions = {};
 
-        var loadingMarkup = state.busy && !state.sessionRecoveryVisible && !state.resultProgressVisible && state.stage !== 'exam' && state.stage !== 'login'
+        var loadingMarkup = state.busy
+            && !state.sessionRecoveryVisible
+            && !state.resultProgressVisible
+            && state.stage !== 'exam'
+            && state.stage !== 'login'
+            && state.stage !== 'confirm'
             ? '<div class="cbt-loading" role="status" aria-live="polite"><span class="cbt-loading-dot" aria-hidden="true"></span><span>Memproses...</span></div>'
             : '';
         var showTopbar = state.stage !== 'login';

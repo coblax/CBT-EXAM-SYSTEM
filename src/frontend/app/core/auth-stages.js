@@ -31,6 +31,7 @@ export function createAuthStageManager(deps) {
 
     function renderRefreshButton(disabled, extraClass) {
         var classes = ['cbt-button', 'cbt-button-secondary', 'cbt-button-refresh'];
+        var label = disabled ? 'MENYEGARKAN...' : 'REFRESH';
 
         if (extraClass) {
             classes.push(extraClass);
@@ -44,8 +45,29 @@ export function createAuthStageManager(deps) {
             '<path d="M20 4v7h-7"></path>',
             '</svg>',
             '</span>',
-            '<span class="cbt-button-refresh-label">REFRESH</span>',
+            escapeHtml(label),
             '</button>'
+        ].join('');
+    }
+
+    function renderConfirmRefreshProgressCard() {
+        if (!state.busy) {
+            return '';
+        }
+
+        return [
+            '<div class="cbt-finish-live-card">',
+            '<div class="cbt-finish-live-head">',
+            '<span class="cbt-finish-live-spinner" aria-hidden="true"></span>',
+            '<div class="cbt-finish-live-copy">',
+            '<strong>Menyegarkan ujian</strong>',
+            '<span>Status terbaru sedang dicek.</span>',
+            '</div>',
+            '</div>',
+            '<div class="cbt-finish-live-progress cbt-confirm-refresh-progress" aria-label="Progress refresh ujian">',
+            '<span class="cbt-finish-live-progress-fill"></span>',
+            '</div>',
+            '</div>'
         ].join('');
     }
 
@@ -581,6 +603,7 @@ export function createAuthStageManager(deps) {
             '<div class="cbt-field cbt-confirm-field cbt-confirm-field-note"><p class="cbt-confirm-token-note">' + escapeHtml(confirmSupportText) + '</p></div>',
             '</div>',
             renderAlert(),
+            renderConfirmRefreshProgressCard(),
             '<div class="cbt-actions cbt-confirm-actions">',
             (
                 selectedExamCompleted

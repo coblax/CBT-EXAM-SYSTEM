@@ -119,6 +119,7 @@ function createFixture(overrides = {}) {
         ensureResultStageRenderer: [],
         persistCurrentQuestionCacheLocally: 0,
         queueLoadedQuestionAnswersForFlush: 0,
+        clearMessages: 0,
         renderCalls: [],
         renderSnapshots: []
     };
@@ -200,7 +201,9 @@ function createFixture(overrides = {}) {
         clearAttemptUiStateSyncTimer: function () {},
         clearAttemptUiSyncRuntimeState: function () {},
         clearAutoSaveRuntimeState: function () {},
-        clearMessages: function () {},
+        clearMessages: function () {
+            calls.clearMessages += 1;
+        },
         clearPendingRevisionSafeAnswerRestoreState: function () {},
         clearQuestionPrefetchRuntimeState: function () {},
         clearQuestionRevisionRefreshState: function () {},
@@ -921,6 +924,7 @@ describe('createExamSessionManager', function () {
         })).toEqual(['start_attempt_status']);
         expect(fixture.state.openingAttemptPhase).toBe('opening_waiting_queue');
         expect(fixture.state.openingAttemptQueuePosition).toBe(7);
+        expect(String(fixture.state.openingAttemptProgressStatus || '')).toContain('Menunggu giliran masuk ujian');
     });
 
     it('keeps the user in the opening shell when local token validation fails after the start button is pressed', async function () {
