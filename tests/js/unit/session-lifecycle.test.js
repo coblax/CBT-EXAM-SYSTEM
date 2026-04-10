@@ -65,6 +65,7 @@ function createLifecycleFixture(overrides = {}) {
         loginPasswordVisible: true,
         notice: '',
         pendingFinishAutoSubmit: true,
+        pendingStartIntentKey: 'start_shell_key_1',
         questionOrderIds: [101, 102],
         questions: [{ id: 101 }, { id: 102 }],
         remainingSeconds: 120,
@@ -299,6 +300,7 @@ describe('createSessionLifecycleManager', function () {
         expect(fixture.state.busy).toBe(false);
         expect(fixture.state.attemptId).toBe(0);
         expect(fixture.state.remainingSeconds).toBe(0);
+        expect(fixture.state.pendingStartIntentKey).toBe('');
         expect(fixture.state.calculatorVisible).toBe(false);
         expect(fixture.state.richZoomModalOpen).toBe(false);
         expect(fixture.state.richZoomModalGalleryItems).toEqual([]);
@@ -344,6 +346,7 @@ describe('createSessionLifecycleManager', function () {
         expect(fixture.state.timerId).toBe(0);
         expect(fixture.state.attemptId).toBe(0);
         expect(fixture.state.remainingSeconds).toBe(0);
+        expect(fixture.state.pendingStartIntentKey).toBe('');
         expect(fixture.state.calculatorVisible).toBe(false);
         expect(fixture.state.calculatorExpression).toBe('');
         expect(fixture.state.calculatorResult).toBe('');

@@ -101,6 +101,7 @@ function createFixture(overrides = {}) {
         totalQuestions: 0,
         currentIndex: 0,
         pendingSyncCount: 0,
+        pendingStartIntentKey: '',
         examLockedForPendingFinish: false,
         navPanelVisible: false,
         calculatorVisible: false,
@@ -812,6 +813,17 @@ describe('createExamSessionManager', function () {
                 && snapshot.openingAttemptCanRetry === true
                 && snapshot.openingAttemptCanRefreshStatus === true;
         })).toBe(true);
+        var startAttemptBodies = fixture.calls.apiCalls
+            .filter(function (entry) {
+                return entry.endpoint === 'start_attempt';
+            })
+            .map(function (entry) {
+                return entry.options && entry.options.body ? entry.options.body : {};
+            });
+        expect(startAttemptBodies).toHaveLength(2);
+        expect(String(startAttemptBodies[0].idempotency_key || '')).not.toBe('');
+        expect(String(startAttemptBodies[0].idempotency_key || '')).toBe(String(startAttemptBodies[1].idempotency_key || ''));
+        expect(fixture.state.pendingStartIntentKey).toBe('');
     });
 
     it('opens the loading shell immediately when continuing an in-progress exam', async function () {
@@ -925,6 +937,59 @@ describe('createExamSessionManager', function () {
         expect(fixture.state.openingAttemptPhase).toBe('opening_waiting_queue');
         expect(fixture.state.openingAttemptQueuePosition).toBe(7);
         expect(String(fixture.state.openingAttemptProgressStatus || '')).toContain('Menunggu giliran masuk ujian');
+    });
+
+    it('reuses the same idempotency key when retrying the same opening shell', async function () {
+        var restoredSnapshot = buildCachedQuestionSnapshot(40);
+        var fixture = createFixture({
+            restoredSnapshot,
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: ''
+                    }
+                ],
+                selectedExamId: 55,
+                stage: 'exam',
+                isOpeningAttempt: true,
+                pendingExamId: 55,
+                pendingExamToken: '',
+                pendingStartIntentKey: 'start_1_retry_key',
+                pendingQueueTicket: '',
+                pendingResumeIntent: false
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'ui_state') {
+                    return { attempt_state: null };
+                }
+
+                if (endpoint === 'start_attempt') {
+                    return {
+                        attempt_id: 77,
+                        duration_minutes: 60,
+                        started_at: '2026-04-03 05:00:00',
+                        status: 'started',
+                        question_order_signature: restoredSnapshot.questionOrderSignature,
+                        question_revision: restoredSnapshot.questionRevision
+                    };
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.retryOpeningAttempt();
+
+        var startAttemptCalls = fixture.calls.apiCalls.filter(function (entry) {
+            return entry.endpoint === 'start_attempt';
+        });
+        expect(startAttemptCalls).toHaveLength(1);
+        expect(startAttemptCalls[0].options.body.idempotency_key).toBe('start_1_retry_key');
+        expect(fixture.state.pendingStartIntentKey).toBe('');
     });
 
     it('keeps the user in the opening shell when local token validation fails after the start button is pressed', async function () {

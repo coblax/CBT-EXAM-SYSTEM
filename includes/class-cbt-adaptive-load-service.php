@@ -16,6 +16,10 @@ if (!class_exists('CBT_Login_Snapshot_Metrics_Service')) {
     require_once __DIR__ . '/class-cbt-login-snapshot-metrics-service.php';
 }
 
+if (!class_exists('CBT_Start_Attempt_Metrics_Service')) {
+    require_once __DIR__ . '/class-cbt-start-attempt-metrics-service.php';
+}
+
 if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
     require_once __DIR__ . '/class-cbt-snapshot-auto-heal-queue-service.php';
 }
@@ -322,6 +326,9 @@ final class CBT_Adaptive_Load_Service
         $metrics = class_exists('CBT_Login_Snapshot_Metrics_Service')
             ? CBT_Login_Snapshot_Metrics_Service::get_window_summary(15)
             : [];
+        $startAttemptMetrics = class_exists('CBT_Start_Attempt_Metrics_Service')
+            ? CBT_Start_Attempt_Metrics_Service::get_window_summary(15)
+            : [];
         $auto_heal = class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')
             ? CBT_Snapshot_Auto_Heal_Queue_Service::get_summary()
             : ['queue_depth' => 0];
@@ -338,6 +345,11 @@ final class CBT_Adaptive_Load_Service
             'successful_login_total' => $snapshot_success + $canonical_success,
             'auto_heal_queue_depth' => max(0, (int) ($auto_heal['queue_depth'] ?? 0)),
             'active_attempt_count' => max(0, (int) $active_attempt_count),
+            'start_attempt_metrics_available' => !empty($startAttemptMetrics['available']),
+            'start_attempt_p95_ms' => max(0, (int) ($startAttemptMetrics['start_attempt_p95_ms'] ?? 0)),
+            'start_attempt_status_p95_ms' => max(0, (int) ($startAttemptMetrics['start_attempt_status_p95_ms'] ?? 0)),
+            'start_attempt_count' => max(0, (int) ($startAttemptMetrics['start_attempt_count'] ?? 0)),
+            'start_attempt_status_count' => max(0, (int) ($startAttemptMetrics['start_attempt_status_count'] ?? 0)),
         ];
     }
 
@@ -355,6 +367,11 @@ final class CBT_Adaptive_Load_Service
         $successful_login_total = max(0, (int) ($signals['successful_login_total'] ?? 0));
         $auto_heal_queue_depth = max(0, (int) ($signals['auto_heal_queue_depth'] ?? 0));
         $active_attempt_count = max(0, (int) ($signals['active_attempt_count'] ?? 0));
+        $start_attempt_metrics_available = !empty($signals['start_attempt_metrics_available']);
+        $start_attempt_p95_ms = max(0, (int) ($signals['start_attempt_p95_ms'] ?? 0));
+        $start_attempt_status_p95_ms = max(0, (int) ($signals['start_attempt_status_p95_ms'] ?? 0));
+        $start_attempt_count = max(0, (int) ($signals['start_attempt_count'] ?? 0));
+        $start_attempt_status_count = max(0, (int) ($signals['start_attempt_status_count'] ?? 0));
         $hit_rate = isset($signals['hit_rate']) && is_numeric($signals['hit_rate'])
             ? (float) $signals['hit_rate']
             : null;
@@ -389,6 +406,22 @@ final class CBT_Adaptive_Load_Service
             $critical_reasons[] = 'Attempt aktif sangat tinggi (' . number_format_i18n($active_attempt_count) . ') saat antrean start masih ada.';
         } elseif ($active_attempt_count >= 400) {
             $busy_reasons[] = 'Attempt aktif tinggi (' . number_format_i18n($active_attempt_count) . ').';
+        }
+
+        if ($start_attempt_metrics_available && $start_attempt_count >= 10) {
+            if ($start_attempt_p95_ms >= 12000) {
+                $critical_reasons[] = 'p95 start attempt naik ke ' . number_format_i18n($start_attempt_p95_ms) . ' ms.';
+            } elseif ($start_attempt_p95_ms >= 6000) {
+                $busy_reasons[] = 'p95 start attempt naik ke ' . number_format_i18n($start_attempt_p95_ms) . ' ms.';
+            }
+        }
+
+        if ($start_attempt_metrics_available && $start_attempt_status_count >= 10) {
+            if ($start_attempt_status_p95_ms >= 10000) {
+                $critical_reasons[] = 'p95 start attempt status naik ke ' . number_format_i18n($start_attempt_status_p95_ms) . ' ms.';
+            } elseif ($start_attempt_status_p95_ms >= 5000) {
+                $busy_reasons[] = 'p95 start attempt status naik ke ' . number_format_i18n($start_attempt_status_p95_ms) . ' ms.';
+            }
         }
 
         if (!empty($critical_reasons)) {

@@ -190,6 +190,7 @@ export function createSessionLifecycleManager(deps) {
         state.attemptId = 0;
         state.pendingExamId = 0;
         state.pendingExamToken = '';
+        state.pendingStartIntentKey = '';
         state.pendingQueueTicket = '';
         state.pendingResumeIntent = false;
         state.pendingOpeningPhase = '';
@@ -277,6 +278,7 @@ export function createSessionLifecycleManager(deps) {
         state.attemptId = 0;
         state.pendingExamId = 0;
         state.pendingExamToken = '';
+        state.pendingStartIntentKey = '';
         state.pendingQueueTicket = '';
         state.pendingResumeIntent = false;
         state.pendingOpeningPhase = '';

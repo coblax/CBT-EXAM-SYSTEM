@@ -1,0 +1,460 @@
+- generic [ref=e2]:
+  - navigation "Main menu":
+    - link "Skip to main content" [ref=e3] [cursor=pointer]:
+      - /url: "#wpbody-content"
+    - link "Skip to toolbar" [ref=e4] [cursor=pointer]:
+      - /url: "#wp-toolbar"
+    - list [ref=e7]:
+      - listitem [ref=e8]:
+        - link "Dashboard" [ref=e9] [cursor=pointer]:
+          - /url: index.php
+          - generic [ref=e10]: 
+          - generic [ref=e11]: Dashboard
+        - list [ref=e12]:
+          - listitem [ref=e13]:
+            - link "Home" [ref=e14] [cursor=pointer]:
+              - /url: index.php
+          - listitem [ref=e15]:
+            - link "Updates" [ref=e16] [cursor=pointer]:
+              - /url: update-core.php
+      - listitem [ref=e17]
+      - listitem [ref=e19]:
+        - link "Posts" [ref=e20] [cursor=pointer]:
+          - /url: edit.php
+          - generic [ref=e21]: 
+          - generic [ref=e22]: Posts
+        - list [ref=e23]:
+          - listitem [ref=e24]:
+            - link "All Posts" [ref=e25] [cursor=pointer]:
+              - /url: edit.php
+          - listitem [ref=e26]:
+            - link "Add Post" [ref=e27] [cursor=pointer]:
+              - /url: post-new.php
+          - listitem [ref=e28]:
+            - link "Categories" [ref=e29] [cursor=pointer]:
+              - /url: edit-tags.php?taxonomy=category
+          - listitem [ref=e30]:
+            - link "Tags" [ref=e31] [cursor=pointer]:
+              - /url: edit-tags.php?taxonomy=post_tag
+      - listitem [ref=e32]:
+        - link "Media" [ref=e33] [cursor=pointer]:
+          - /url: upload.php
+          - generic [ref=e34]: 
+          - generic [ref=e35]: Media
+        - list [ref=e36]:
+          - listitem [ref=e37]:
+            - link "Library" [ref=e38] [cursor=pointer]:
+              - /url: upload.php
+          - listitem [ref=e39]:
+            - link "Add Media File" [ref=e40] [cursor=pointer]:
+              - /url: media-new.php
+      - listitem [ref=e41]:
+        - link "Pages" [ref=e42] [cursor=pointer]:
+          - /url: edit.php?post_type=page
+          - generic [ref=e43]: 
+          - generic [ref=e44]: Pages
+        - list [ref=e45]:
+          - listitem [ref=e46]:
+            - link "All Pages" [ref=e47] [cursor=pointer]:
+              - /url: edit.php?post_type=page
+          - listitem [ref=e48]:
+            - link "Add Page" [ref=e49] [cursor=pointer]:
+              - /url: post-new.php?post_type=page
+      - listitem [ref=e50]:
+        - link "Comments" [ref=e51] [cursor=pointer]:
+          - /url: edit-comments.php
+          - generic [ref=e52]: 
+          - generic [ref=e53]: Comments
+      - listitem [ref=e54]:
+        - link "CBT Exams" [ref=e55] [cursor=pointer]:
+          - /url: admin.php?page=cbt-introduction
+          - generic [ref=e56]: 
+          - generic [ref=e57]: CBT Exams
+        - list [ref=e58]:
+          - listitem [ref=e59]:
+            - link "Introduction" [ref=e60] [cursor=pointer]:
+              - /url: admin.php?page=cbt-introduction
+          - listitem [ref=e61]:
+            - link "CBT Exams" [ref=e62] [cursor=pointer]:
+              - /url: admin.php?page=cbt-exams
+          - listitem [ref=e63]:
+            - link "CBT Branding" [ref=e64] [cursor=pointer]:
+              - /url: admin.php?page=cbt-setup
+          - listitem [ref=e65]:
+            - link "CBT Security" [ref=e66] [cursor=pointer]:
+              - /url: admin.php?page=cbt-security
+          - listitem [ref=e67]:
+            - link "CBT Subjects" [ref=e68] [cursor=pointer]:
+              - /url: admin.php?page=cbt-subjects
+          - listitem [ref=e69]:
+            - link "CBT Users" [ref=e70] [cursor=pointer]:
+              - /url: admin.php?page=cbt-user-import
+          - listitem [ref=e71]:
+            - link "CBT Questions" [ref=e72] [cursor=pointer]:
+              - /url: admin.php?page=cbt-question-bank
+          - listitem [ref=e73]:
+            - link "CBT Tokens" [ref=e74] [cursor=pointer]:
+              - /url: admin.php?page=cbt-tokens
+          - listitem [ref=e75]:
+            - link "CBT Exam Cards" [ref=e76] [cursor=pointer]:
+              - /url: admin.php?page=cbt-exam-cards
+          - listitem [ref=e77]:
+            - link "CBT Results" [ref=e78] [cursor=pointer]:
+              - /url: admin.php?page=cbt-results
+          - listitem [ref=e79]:
+            - link "CBT Analytics" [ref=e80] [cursor=pointer]:
+              - /url: admin.php?page=cbt-analytics
+          - listitem [ref=e81]:
+            - link "CBT Report Exam" [ref=e82] [cursor=pointer]:
+              - /url: admin.php?page=cbt-report-exam
+          - listitem [ref=e83]:
+            - link "CBT Test Hub" [ref=e84] [cursor=pointer]:
+              - /url: admin.php?page=cbt-test-hub
+          - listitem [ref=e85]:
+            - link "CBT Cache" [ref=e86] [cursor=pointer]:
+              - /url: admin.php?page=cbt-cache
+          - listitem [ref=e87]:
+            - link "CBT Update" [ref=e88] [cursor=pointer]:
+              - /url: admin.php?page=cbt-update
+          - listitem [ref=e89]:
+            - link "CBT Maintenance" [ref=e90] [cursor=pointer]:
+              - /url: admin.php?page=cbt-maintenance
+          - listitem [ref=e91]:
+            - link "CBT Developer" [ref=e92] [cursor=pointer]:
+              - /url: admin.php?page=cbt-developer
+      - listitem [ref=e93]
+      - listitem [ref=e95]:
+        - link "Appearance" [ref=e96] [cursor=pointer]:
+          - /url: themes.php
+          - generic [ref=e97]: 
+          - generic [ref=e98]: Appearance
+        - list [ref=e99]:
+          - listitem [ref=e100]:
+            - link "Themes" [ref=e101] [cursor=pointer]:
+              - /url: themes.php
+          - listitem [ref=e102]:
+            - link "Editor" [ref=e103] [cursor=pointer]:
+              - /url: site-editor.php
+      - listitem [ref=e104]:
+        - link "Plugins" [ref=e105] [cursor=pointer]:
+          - /url: plugins.php
+          - generic [ref=e106]: 
+          - generic [ref=e107]: Plugins
+        - list [ref=e108]:
+          - listitem [ref=e109]:
+            - link "Installed Plugins" [ref=e110] [cursor=pointer]:
+              - /url: plugins.php
+          - listitem [ref=e111]:
+            - link "Add Plugin" [ref=e112] [cursor=pointer]:
+              - /url: plugin-install.php
+      - listitem [ref=e113]:
+        - link "Users" [ref=e114] [cursor=pointer]:
+          - /url: users.php
+          - generic [ref=e115]: 
+          - generic [ref=e116]: Users
+        - list [ref=e117]:
+          - listitem [ref=e118]:
+            - link "All Users" [ref=e119] [cursor=pointer]:
+              - /url: users.php
+          - listitem [ref=e120]:
+            - link "Add User" [ref=e121] [cursor=pointer]:
+              - /url: user-new.php
+          - listitem [ref=e122]:
+            - link "Profile" [ref=e123] [cursor=pointer]:
+              - /url: profile.php
+      - listitem [ref=e124]:
+        - link "Tools" [ref=e125] [cursor=pointer]:
+          - /url: tools.php
+          - generic [ref=e126]: 
+          - generic [ref=e127]: Tools
+        - list [ref=e128]:
+          - listitem [ref=e129]:
+            - link "Available Tools" [ref=e130] [cursor=pointer]:
+              - /url: tools.php
+          - listitem [ref=e131]:
+            - link "Import" [ref=e132] [cursor=pointer]:
+              - /url: import.php
+          - listitem [ref=e133]:
+            - link "Export" [ref=e134] [cursor=pointer]:
+              - /url: export.php
+          - listitem [ref=e135]:
+            - link "Site Health" [ref=e136] [cursor=pointer]:
+              - /url: site-health.php
+          - listitem [ref=e137]:
+            - link "Export Personal Data" [ref=e138] [cursor=pointer]:
+              - /url: export-personal-data.php
+          - listitem [ref=e139]:
+            - link "Erase Personal Data" [ref=e140] [cursor=pointer]:
+              - /url: erase-personal-data.php
+          - listitem [ref=e141]:
+            - link "Theme File Editor" [ref=e142] [cursor=pointer]:
+              - /url: theme-editor.php
+          - listitem [ref=e143]:
+            - link "Plugin File Editor" [ref=e144] [cursor=pointer]:
+              - /url: plugin-editor.php
+      - listitem [ref=e145]:
+        - link "Settings" [ref=e146] [cursor=pointer]:
+          - /url: options-general.php
+          - generic [ref=e147]: 
+          - generic [ref=e148]: Settings
+        - list [ref=e149]:
+          - listitem [ref=e150]:
+            - link "General" [ref=e151] [cursor=pointer]:
+              - /url: options-general.php
+          - listitem [ref=e152]:
+            - link "Writing" [ref=e153] [cursor=pointer]:
+              - /url: options-writing.php
+          - listitem [ref=e154]:
+            - link "Reading" [ref=e155] [cursor=pointer]:
+              - /url: options-reading.php
+          - listitem [ref=e156]:
+            - link "Discussion" [ref=e157] [cursor=pointer]:
+              - /url: options-discussion.php
+          - listitem [ref=e158]:
+            - link "Media" [ref=e159] [cursor=pointer]:
+              - /url: options-media.php
+          - listitem [ref=e160]:
+            - link "Permalinks" [ref=e161] [cursor=pointer]:
+              - /url: options-permalink.php
+          - listitem [ref=e162]:
+            - link "Privacy" [ref=e163] [cursor=pointer]:
+              - /url: options-privacy.php
+      - listitem [ref=e164]:
+        - button "Collapse Main menu" [expanded] [ref=e165] [cursor=pointer]:
+          - generic [ref=e167]: Collapse Menu
+  - generic [ref=e168]:
+    - generic [ref=e169]:
+      - navigation "Toolbar":
+        - menu:
+          - group [ref=e170]:
+            - menuitem "About WordPress" [ref=e171] [cursor=pointer]:
+              - generic [ref=e173]: About WordPress
+          - group [ref=e174]:
+            - menuitem "Ujian CBT Sekolah" [ref=e175] [cursor=pointer]
+          - group [ref=e176]:
+            - menuitem "0 Comments in moderation" [ref=e177] [cursor=pointer]:
+              - generic [ref=e179]: "0"
+              - generic [ref=e180]: 0 Comments in moderation
+          - group [ref=e181]:
+            - menuitem "New" [ref=e182] [cursor=pointer]:
+              - generic [ref=e184]: New
+        - menu [ref=e185]:
+          - group [ref=e186]:
+            - menuitem "Howdy, CBT ADMIN" [ref=e187] [cursor=pointer]
+    - main [ref=e188]:
+      - generic [ref=e189]:
+        - generic [ref=e190]:
+          - button "Screen Options" [ref=e192] [cursor=pointer]
+          - button "Help" [ref=e194] [cursor=pointer]
+        - generic [ref=e195]:
+          - heading "Dashboard" [level=1] [ref=e196]
+          - text: 
+          - generic [ref=e198]:
+            - generic [ref=e200]:
+              - generic [ref=e201]:
+                - generic [ref=e202]:
+                  - heading "Site Health Status" [level=2] [ref=e203]
+                  - generic [ref=e204]:
+                    - button "Move up" [disabled] [ref=e205]:
+                      - generic [ref=e206]: Move up
+                    - button "Move down" [ref=e208] [cursor=pointer]:
+                      - generic [ref=e209]: Move down
+                    - 'button "Toggle panel: Site Health Status" [expanded] [ref=e211] [cursor=pointer]':
+                      - generic [ref=e212]: "Toggle panel: Site Health Status"
+                - generic [ref=e215]:
+                  - generic [ref=e216]:
+                    - img [ref=e218]
+                    - generic [ref=e221]: Good
+                  - generic [ref=e222]:
+                    - paragraph [ref=e223]: Your site’s health is looking good, but there are still some things you can do to improve its performance and security.
+                    - paragraph [ref=e224]:
+                      - text: Take a look at the
+                      - strong [ref=e225]: 7 items
+                      - text: on the
+                      - link "Site Health screen" [ref=e226] [cursor=pointer]:
+                        - /url: http://192.168.1.9/wp-admin/site-health.php
+                      - text: .
+              - generic [ref=e227]:
+                - generic [ref=e228]:
+                  - heading "At a Glance" [level=2] [ref=e229]
+                  - generic [ref=e230]:
+                    - button "Move up" [ref=e231] [cursor=pointer]:
+                      - generic [ref=e232]: Move up
+                    - button "Move down" [ref=e234] [cursor=pointer]:
+                      - generic [ref=e235]: Move down
+                    - 'button "Toggle panel: At a Glance" [expanded] [ref=e237] [cursor=pointer]':
+                      - generic [ref=e238]: "Toggle panel: At a Glance"
+                - generic [ref=e241]:
+                  - list [ref=e242]:
+                    - listitem [ref=e243]:
+                      - link "1 Post" [ref=e244] [cursor=pointer]:
+                        - /url: edit.php?post_type=post
+                    - listitem [ref=e245]:
+                      - link "2 Pages" [ref=e246] [cursor=pointer]:
+                        - /url: edit.php?post_type=page
+                    - listitem [ref=e247]:
+                      - link "1 Comment" [ref=e248] [cursor=pointer]:
+                        - /url: edit-comments.php
+                  - paragraph [ref=e249]:
+                    - generic [ref=e250]:
+                      - text: WordPress 6.9.4 running
+                      - link "Twenty Twenty-Five" [ref=e251] [cursor=pointer]:
+                        - /url: themes.php
+                      - text: theme.
+                  - paragraph [ref=e252]:
+                    - link "Search engines discouraged" [ref=e253] [cursor=pointer]:
+                      - /url: options-reading.php
+              - generic [ref=e254]:
+                - generic [ref=e255]:
+                  - heading "Activity" [level=2] [ref=e256]
+                  - generic [ref=e257]:
+                    - button "Move up" [ref=e258] [cursor=pointer]:
+                      - generic [ref=e259]: Move up
+                    - button "Move down" [ref=e261] [cursor=pointer]:
+                      - generic [ref=e262]: Move down
+                    - 'button "Toggle panel: Activity" [expanded] [ref=e264] [cursor=pointer]':
+                      - generic [ref=e265]: "Toggle panel: Activity"
+                - generic [ref=e268]:
+                  - generic [ref=e269]:
+                    - heading "Recently Published" [level=3] [ref=e270]
+                    - list [ref=e271]:
+                      - listitem [ref=e272]:
+                        - generic [ref=e273]: Mar 1st, 2:42 am
+                        - link "Edit “Hello world!”" [ref=e274] [cursor=pointer]:
+                          - /url: http://192.168.1.9/wp-admin/post.php?post=1&action=edit
+                          - text: Hello world!
+                  - generic [ref=e275]:
+                    - heading "Recent Comments" [level=3] [ref=e276]
+                    - list [ref=e277]:
+                      - listitem [ref=e278]:
+                        - generic [ref=e279]:
+                          - paragraph [ref=e280]:
+                            - text: From
+                            - link "A WordPress Commenter" [ref=e282] [cursor=pointer]:
+                              - /url: https://wordpress.org/
+                            - text: "on"
+                            - link "Hello world!" [ref=e283] [cursor=pointer]:
+                              - /url: http://192.168.1.9/2026/03/01/hello-world/
+                          - blockquote [ref=e284]:
+                            - paragraph [ref=e285]: Hi, this is a comment. To get started with moderating, editing, and deleting comments, please visit the Comments screen in…
+                          - paragraph [ref=e286]:
+                            - button "Unapprove this comment" [ref=e288] [cursor=pointer]: Unapprove
+                            - generic [ref=e289]:
+                              - text: "|"
+                              - button "Reply to this comment" [ref=e290] [cursor=pointer]: Reply
+                            - generic [ref=e291]:
+                              - text: "|"
+                              - link "Edit this comment" [ref=e292] [cursor=pointer]:
+                                - /url: comment.php?action=editcomment&c=1
+                                - text: Edit
+                            - generic [ref=e293]:
+                              - text: "|"
+                              - button "Mark this comment as spam" [ref=e294] [cursor=pointer]: Spam
+                            - generic [ref=e295]:
+                              - text: "|"
+                              - button "Move this comment to the Trash" [ref=e296] [cursor=pointer]: Trash
+                            - generic [ref=e297]:
+                              - text: "|"
+                              - link "View this comment" [ref=e298] [cursor=pointer]:
+                                - /url: http://192.168.1.9/2026/03/01/hello-world/#comment-1
+                                - text: View
+                    - heading "View more comments" [level=3] [ref=e299]
+                    - list [ref=e300]:
+                      - listitem [ref=e301]:
+                        - link "All (1)" [ref=e302] [cursor=pointer]:
+                          - /url: http://192.168.1.9/wp-admin/edit-comments.php?comment_status=all
+                          - text: All
+                          - generic [ref=e303]: (1)
+                        - text: "|"
+                      - listitem [ref=e304]:
+                        - link "Mine (0)" [ref=e305] [cursor=pointer]:
+                          - /url: http://192.168.1.9/wp-admin/edit-comments.php?comment_status=mine&user_id=12391
+                          - text: Mine
+                          - generic [ref=e306]: (0)
+                        - text: "|"
+                      - listitem [ref=e307]:
+                        - link "Pending (0)" [ref=e308] [cursor=pointer]:
+                          - /url: http://192.168.1.9/wp-admin/edit-comments.php?comment_status=moderated
+                          - text: Pending
+                          - generic [ref=e309]: (0)
+                        - text: "|"
+                      - listitem [ref=e310]:
+                        - link "Approved (1)" [ref=e311] [cursor=pointer]:
+                          - /url: http://192.168.1.9/wp-admin/edit-comments.php?comment_status=approved
+                          - text: Approved
+                          - generic [ref=e312]: (1)
+                        - text: "|"
+                      - listitem [ref=e313]:
+                        - link "Spam (0)" [ref=e314] [cursor=pointer]:
+                          - /url: http://192.168.1.9/wp-admin/edit-comments.php?comment_status=spam
+                          - text: Spam
+                          - generic [ref=e315]: (0)
+                        - text: "|"
+                      - listitem [ref=e316]:
+                        - link "Trash (0)" [ref=e317] [cursor=pointer]:
+                          - /url: http://192.168.1.9/wp-admin/edit-comments.php?comment_status=trash
+                          - text: Trash
+                          - generic [ref=e318]: (0)
+            - generic [ref=e320]:
+              - generic [ref=e321]:
+                - generic [ref=e322]:
+                  - heading "Quick Draft" [level=2] [ref=e323]:
+                    - generic [ref=e324]: Quick Draft
+                  - generic [ref=e325]:
+                    - button "Move up" [ref=e326] [cursor=pointer]:
+                      - generic [ref=e327]: Move up
+                    - button "Move down" [ref=e329] [cursor=pointer]:
+                      - generic [ref=e330]: Move down
+                    - 'button "Toggle panel: Quick Draft" [expanded] [ref=e332] [cursor=pointer]':
+                      - generic [ref=e333]:
+                        - text: "Toggle panel:"
+                        - generic [ref=e334]: Quick Draft
+                - generic [ref=e337]:
+                  - generic [ref=e338]:
+                    - generic [ref=e339]: Title
+                    - textbox "Title" [ref=e340]
+                  - generic [ref=e341]:
+                    - generic [ref=e342]: Content
+                    - textbox "Content" [ref=e343]:
+                      - /placeholder: What’s on your mind?
+                  - paragraph [ref=e344]:
+                    - button "Save Draft" [ref=e345] [cursor=pointer]
+              - generic [ref=e346]:
+                - generic [ref=e347]:
+                  - heading "WordPress Events and News" [level=2] [ref=e348]
+                  - generic [ref=e349]:
+                    - button "Move up" [ref=e350] [cursor=pointer]:
+                      - generic [ref=e351]: Move up
+                    - button "Move down" [ref=e353] [cursor=pointer]:
+                      - generic [ref=e354]: Move down
+                    - 'button "Toggle panel: WordPress Events and News" [expanded] [ref=e356] [cursor=pointer]':
+                      - generic [ref=e357]: "Toggle panel: WordPress Events and News"
+                - generic [ref=e359]:
+                  - text: 
+                  - paragraph [ref=e361]: Loading…
+                  - paragraph [ref=e362]:
+                    - link "Meetups (opens in a new tab)" [ref=e363] [cursor=pointer]:
+                      - /url: https://make.wordpress.org/community/meetups-landing-page
+                      - text: Meetups
+                      - generic [ref=e364]: (opens in a new tab)
+                      - generic [ref=e365]: 
+                    - text: "|"
+                    - link "WordCamps (opens in a new tab)" [ref=e366] [cursor=pointer]:
+                      - /url: https://central.wordcamp.org/schedule/
+                      - text: WordCamps
+                      - generic [ref=e367]: (opens in a new tab)
+                      - generic [ref=e368]: 
+                    - text: "|"
+                    - link "News (opens in a new tab)" [ref=e369] [cursor=pointer]:
+                      - /url: https://wordpress.org/news/
+                      - text: News
+                      - generic [ref=e370]: (opens in a new tab)
+                      - generic [ref=e371]: 
+  - contentinfo [ref=e372]:
+    - paragraph [ref=e373]:
+      - generic [ref=e374]:
+        - text: Thank you for creating with
+        - link "WordPress" [ref=e375] [cursor=pointer]:
+          - /url: https://wordpress.org/
+        - text: .
+    - paragraph [ref=e376]: Version 6.9.4

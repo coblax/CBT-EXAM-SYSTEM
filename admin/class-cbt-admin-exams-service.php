@@ -48,6 +48,10 @@ if (!class_exists('CBT_Login_Snapshot_Metrics_Service')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-login-snapshot-metrics-service.php';
 }
 
+if (!class_exists('CBT_Start_Attempt_Metrics_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-start-attempt-metrics-service.php';
+}
+
 if (!class_exists('CBT_Login_Snapshot_Freshness_Service')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-login-snapshot-freshness-service.php';
 }
@@ -1689,6 +1693,7 @@ final class CBT_Admin_Exams_Service
                 'last_message' => '',
             ];
         $adaptive_load = self::build_adaptive_load_context();
+        $start_attempt_metrics = self::build_start_attempt_metrics_context();
         $login_snapshot_health = self::build_login_snapshot_health_context();
         $preflight_jobs = class_exists('CBT_Exam_Preflight_Service')
             ? CBT_Exam_Preflight_Service::get_jobs_state()
@@ -1789,6 +1794,24 @@ final class CBT_Admin_Exams_Service
                 ]))),
                 'hint' => 'Per exam gate',
                 'tone' => sanitize_key((string) ($gate_diagnostics['status_tone'] ?? 'warning')),
+            ],
+            [
+                'label' => 'Start Attempt',
+                'value' => (string) ($start_attempt_metrics['start_attempt_p95_label'] ?? 'N/A'),
+                'meta' => trim(implode(' · ', array_filter([
+                    !empty($start_attempt_metrics['start_attempt_status_p95_label']) ? ('Status ' . (string) $start_attempt_metrics['start_attempt_status_p95_label']) : '',
+                    isset($start_attempt_metrics['started_total']) ? ('Started ' . number_format_i18n((int) $start_attempt_metrics['started_total'])) : '',
+                    isset($start_attempt_metrics['resumed_total']) ? ('Resumed ' . number_format_i18n((int) $start_attempt_metrics['resumed_total'])) : '',
+                    isset($start_attempt_metrics['queued_total']) ? ('Queued ' . number_format_i18n((int) $start_attempt_metrics['queued_total'])) : '',
+                ]))),
+                'hint' => trim(implode(' · ', array_filter([
+                    !empty($start_attempt_metrics['top_slowest_phase_label']) ? ('Top ' . (string) $start_attempt_metrics['top_slowest_phase_label']) : '',
+                    isset($start_attempt_metrics['lock_conflict_retryable_total']) ? ('Lock Retryable ' . number_format_i18n((int) $start_attempt_metrics['lock_conflict_retryable_total'])) : '',
+                    isset($start_attempt_metrics['today_started_total']) ? ('Today Started ' . number_format_i18n((int) $start_attempt_metrics['today_started_total'])) : '',
+                    isset($start_attempt_metrics['today_resumed_total']) ? ('Today Resumed ' . number_format_i18n((int) $start_attempt_metrics['today_resumed_total'])) : '',
+                    !empty($start_attempt_metrics['note']) ? (string) $start_attempt_metrics['note'] : '',
+                ]))),
+                'tone' => sanitize_key((string) ($start_attempt_metrics['tone'] ?? 'warning')),
             ],
             [
                 'label' => 'Auto-Heal Queue',
@@ -1928,6 +1951,79 @@ final class CBT_Admin_Exams_Service
             'freshness_last_refreshed_user_count' => max(0, (int) ($freshness['last_refreshed_user_count'] ?? 0)),
             'freshness_last_refreshed_success_count' => max(0, (int) ($freshness['last_refreshed_success_count'] ?? 0)),
             'freshness_last_message' => (string) ($freshness['last_message'] ?? ''),
+            'metrics_redis_error' => (string) ($metrics['redis_error'] ?? ''),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function build_start_attempt_metrics_context(): array
+    {
+        $metrics = class_exists('CBT_Start_Attempt_Metrics_Service')
+            ? CBT_Start_Attempt_Metrics_Service::get_admin_summary()
+            : [
+                'available' => false,
+                'window' => [],
+                'today' => [],
+                'redis_error' => '',
+            ];
+
+        $window = is_array($metrics['window'] ?? null) ? $metrics['window'] : [];
+        $today = is_array($metrics['today'] ?? null) ? $metrics['today'] : [];
+        $available = !empty($metrics['available']);
+        $startAttemptCount = max(0, (int) ($window['start_attempt_count'] ?? 0));
+        $statusCount = max(0, (int) ($window['start_attempt_status_count'] ?? 0));
+        $startAttemptP95 = max(0, (int) ($window['start_attempt_p95_ms'] ?? 0));
+        $statusP95 = max(0, (int) ($window['start_attempt_status_p95_ms'] ?? 0));
+        $sampleReady = $startAttemptCount >= 10 || $statusCount >= 10;
+
+        $tone = 'success';
+        if (!$available) {
+            $tone = 'warning';
+        } elseif (
+            ($startAttemptCount >= 10 && $startAttemptP95 >= 12000)
+            || ($statusCount >= 10 && $statusP95 >= 10000)
+        ) {
+            $tone = 'error';
+        } elseif (
+            ($startAttemptCount >= 10 && $startAttemptP95 >= 6000)
+            || ($statusCount >= 10 && $statusP95 >= 5000)
+        ) {
+            $tone = 'warning';
+        }
+
+        $note = '';
+        if (!$available) {
+            $note = 'Metrics Redis unavailable';
+        } elseif (!$sampleReady) {
+            $note = 'Sample rendah';
+        }
+
+        $topSlowestPhase = sanitize_key((string) ($window['top_slowest_phase'] ?? ''));
+        $topSlowestPhaseP95 = max(0, (int) ($window['top_slowest_phase_p95_ms'] ?? 0));
+
+        return [
+            'available' => $available,
+            'tone' => $tone,
+            'note' => $note,
+            'start_attempt_p95_ms' => $startAttemptP95,
+            'start_attempt_status_p95_ms' => $statusP95,
+            'start_attempt_p95_label' => $startAttemptP95 > 0 ? number_format_i18n($startAttemptP95) . ' ms' : 'N/A',
+            'start_attempt_status_p95_label' => $statusP95 > 0 ? number_format_i18n($statusP95) . ' ms' : 'N/A',
+            'start_attempt_count' => $startAttemptCount,
+            'start_attempt_status_count' => $statusCount,
+            'started_total' => max(0, (int) ($window['started_total'] ?? 0)),
+            'resumed_total' => max(0, (int) ($window['resumed_total'] ?? 0)),
+            'queued_total' => max(0, (int) ($window['queued_total'] ?? 0)),
+            'lock_conflict_retryable_total' => max(0, (int) ($window['lock_conflict_retryable_total'] ?? 0)),
+            'today_started_total' => max(0, (int) ($today['started_total'] ?? 0)),
+            'today_resumed_total' => max(0, (int) ($today['resumed_total'] ?? 0)),
+            'top_slowest_phase' => $topSlowestPhase,
+            'top_slowest_phase_p95_ms' => $topSlowestPhaseP95,
+            'top_slowest_phase_label' => $topSlowestPhase !== ''
+                ? ($topSlowestPhase . ($topSlowestPhaseP95 > 0 ? ' ' . number_format_i18n($topSlowestPhaseP95) . ' ms' : ''))
+                : '',
             'metrics_redis_error' => (string) ($metrics['redis_error'] ?? ''),
         ];
     }

@@ -967,6 +967,222 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertSame(0, $wpdb->insertCalls);
     }
 
+    #[RunInSeparateProcess]
+    public function test_start_attempt_replays_started_payload_for_same_idempotency_key(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [],
+            insertId: 123
+        );
+
+        $started = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+            'idempotency_key' => 'start-shell-1',
+        ]));
+        $replayed = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+            'idempotency_key' => 'start-shell-1',
+        ]));
+
+        self::assertFalse(is_wp_error($started));
+        self::assertFalse(is_wp_error($replayed));
+        self::assertSame('started', $started['status']);
+        self::assertSame('started', $replayed['status']);
+        self::assertSame(123, $started['attempt_id']);
+        self::assertSame(123, $replayed['attempt_id']);
+        self::assertSame(3, $wpdb->latestAttemptQueryCount);
+        self::assertSame(1, $wpdb->insertCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_replays_resumed_payload_for_same_idempotency_key(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        CBT_Runtime::ensure_attempt_state([
+            'id' => 81,
+            'exam_id' => 15,
+            'student_id' => 7,
+            'status' => 'in_progress',
+            'started_at' => '2026-04-02 10:00:00',
+            'question_order' => '[]',
+            'option_order' => '',
+            'extra_time_minutes' => 0,
+        ], 90);
+        CBT_Active_Attempt_Index::set_active_attempt([
+            'id' => 81,
+            'exam_id' => 15,
+            'student_id' => 7,
+            'status' => 'in_progress',
+        ]);
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: []
+        );
+
+        $resumed = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+            'idempotency_key' => 'resume-shell-1',
+        ]));
+        $replayed = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+            'idempotency_key' => 'resume-shell-1',
+        ]));
+
+        self::assertFalse(is_wp_error($resumed));
+        self::assertFalse(is_wp_error($replayed));
+        self::assertSame('resumed', $resumed['status']);
+        self::assertSame('resumed', $replayed['status']);
+        self::assertSame(81, $resumed['attempt_id']);
+        self::assertSame(81, $replayed['attempt_id']);
+        self::assertSame(0, $wpdb->latestAttemptQueryCount);
+        self::assertSame(0, $wpdb->insertCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_replays_queued_payload_for_same_idempotency_key(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartAttemptGateRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+        $GLOBALS['cbt_test_start_attempt_gate_now'] = 1000.0;
+
+        for ($index = 1; $index <= 50; $index++) {
+            CBT_Start_Attempt_Gate_Service::evaluate_request(15, 1000 + $index);
+        }
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [],
+            insertId: 123
+        );
+
+        $queued = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+            'idempotency_key' => 'queue-shell-1',
+        ]));
+        $replayed = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+            'idempotency_key' => 'queue-shell-1',
+        ]));
+
+        self::assertFalse(is_wp_error($queued));
+        self::assertFalse(is_wp_error($replayed));
+        self::assertSame('queued', $queued['status']);
+        self::assertSame('queued', $replayed['status']);
+        self::assertSame((string) $queued['queue_ticket'], (string) $replayed['queue_ticket']);
+        self::assertSame(1, $wpdb->latestAttemptQueryCount);
+        self::assertSame(0, $wpdb->insertCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_returns_retryable_error_while_same_idempotency_key_is_processing(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        $claimResult = CBT_Start_Attempt_Idempotency_Service::begin(7, 15, 'processing-shell-1');
+        self::assertSame('claimed', $claimResult['mode']);
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [],
+            insertId: 123
+        );
+
+        $response = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+            'idempotency_key' => 'processing-shell-1',
+        ]));
+
+        self::assertTrue(is_wp_error($response));
+        self::assertSame('attempt_lock_active', $response->get_error_code());
+        self::assertSame(0, $wpdb->insertCalls);
+
+        CBT_Start_Attempt_Idempotency_Service::abandon((array) ($claimResult['claim'] ?? []));
+    }
+
     private function bootstrapStartAttemptScaffold(): void
     {
         if (!class_exists('CBT_Auth')) {
@@ -1006,17 +1222,27 @@ PHP);
             eval(<<<'PHP'
 class CBT_Cache
 {
+    private static array $memory = [];
+    private static array $locks = [];
+
     public static function acquire_lock(string $key, int $ttl, array $context = []): bool
     {
         if (array_key_exists('cbt_test_acquire_lock_result', $GLOBALS)) {
             return (bool) $GLOBALS['cbt_test_acquire_lock_result'];
         }
 
+        $now = time();
+        if (isset(self::$locks[$key]) && (int) self::$locks[$key] > $now) {
+            return false;
+        }
+
+        self::$locks[$key] = $now + max(1, $ttl);
         return true;
     }
 
     public static function release_lock(string $key): void
     {
+        unset(self::$locks[$key]);
     }
 
     public static function invalidate_user(int $user_id): void
@@ -1025,6 +1251,38 @@ class CBT_Cache
 
     public static function invalidate_attempt(int $attempt_id): void
     {
+    }
+
+    public static function get(string $key, array $namespaces = [], ?bool &$found = null)
+    {
+        $found = false;
+        if (!isset(self::$memory[$key])) {
+            return null;
+        }
+
+        $entry = self::$memory[$key];
+        if (!is_array($entry) || (int) ($entry['expires_at'] ?? 0) < time()) {
+            unset(self::$memory[$key]);
+            return null;
+        }
+
+        $found = true;
+        return $entry['value'] ?? null;
+    }
+
+    public static function set(string $key, $value, int $ttl, array $namespaces = []): bool
+    {
+        self::$memory[$key] = [
+            'value' => $value,
+            'expires_at' => time() + max(1, $ttl),
+        ];
+        return true;
+    }
+
+    public static function delete(string $key, array $namespaces = []): bool
+    {
+        unset(self::$memory[$key]);
+        return true;
     }
 
     public static function remember(string $key, int $ttl, array $namespaces, callable $producer)
@@ -1051,6 +1309,7 @@ PHP);
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-runtime.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-active-attempt-index.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-gate-service.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-idempotency-service.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
     }
 

@@ -140,6 +140,7 @@ export function createInitialState(win) {
         openingAttemptQueueLastPolledAt: 0,
         pendingExamId: 0,
         pendingExamToken: '',
+        pendingStartIntentKey: '',
         pendingQueueTicket: '',
         pendingResumeIntent: false,
         pendingOpeningPhase: '',

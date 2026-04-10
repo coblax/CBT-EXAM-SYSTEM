@@ -7,6 +7,7 @@ use CbtExamSystem\Tests\TestCase;
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-gate-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-snapshot-metrics-service.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-metrics-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-snapshot-auto-heal-queue-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-adaptive-load-service.php';
 
@@ -23,6 +24,7 @@ final class AdaptiveLoadServiceTest extends TestCase
 
         $this->useFakeStartAttemptGateRedis();
         $this->useFakeLoginMetricsRedis();
+        $this->useFakeStartAttemptMetricsRedis();
         $GLOBALS['wpdb'] = new AdaptiveLoadServiceFakeWpdb();
     }
 
@@ -60,6 +62,41 @@ final class AdaptiveLoadServiceTest extends TestCase
         self::assertStringContainsString('Auto-heal queue menumpuk', implode(' ', (array) $state['reasons']));
         self::assertSame(45000, (int) $policy['heartbeat_interval_ms']);
         self::assertSame(40, (int) $policy['admin_snapshot_refresh_seconds']);
+    }
+
+    public function test_tick_escalates_to_busy_when_start_attempt_p95_is_slow(): void
+    {
+        for ($index = 0; $index < 10; $index++) {
+            CBT_Start_Attempt_Metrics_Service::record_phase('start_attempt_response_ready', 6500);
+        }
+
+        $state = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame('busy', $state['effective_level']);
+        self::assertStringContainsString('p95 start attempt naik', implode(' ', (array) $state['reasons']));
+    }
+
+    public function test_tick_escalates_to_critical_when_start_attempt_status_p95_is_slow(): void
+    {
+        for ($index = 0; $index < 10; $index++) {
+            CBT_Start_Attempt_Metrics_Service::record_phase('start_attempt_status_response_ready', 10000);
+        }
+
+        $state = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame('critical', $state['effective_level']);
+        self::assertStringContainsString('p95 start attempt status naik', implode(' ', (array) $state['reasons']));
+    }
+
+    public function test_tick_ignores_start_attempt_metrics_when_sample_is_too_small(): void
+    {
+        for ($index = 0; $index < 9; $index++) {
+            CBT_Start_Attempt_Metrics_Service::record_phase('start_attempt_response_ready', 30000);
+        }
+
+        $state = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame('normal', $state['effective_level']);
     }
 
     public function test_tick_holds_level_before_deescalating_even_after_three_clean_ticks(): void
@@ -152,6 +189,23 @@ final class AdaptiveLoadServiceTest extends TestCase
     private function useFakeLoginMetricsRedis(): void
     {
         $reflection = new ReflectionClass(CBT_Login_Snapshot_Metrics_Service::class);
+
+        $redisProperty = $reflection->getProperty('metrics_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('metrics_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('metrics_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeStartAttemptMetricsRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Start_Attempt_Metrics_Service::class);
 
         $redisProperty = $reflection->getProperty('metrics_redis');
         $redisProperty->setAccessible(true);

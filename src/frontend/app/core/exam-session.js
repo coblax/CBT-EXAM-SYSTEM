@@ -86,6 +86,7 @@ export function createExamSessionManager(deps) {
     var questionWindowSize = Math.max(1, Number(deps.questionWindowSize) || 1);
     var SESSION_RECOVERY_EXAM_STEP_TOTAL = 7;
     var openingAttemptRequestSequence = 0;
+    var openingAttemptIntentSequence = 0;
     var activeOpeningAttemptRequestId = 0;
 
     function resetOpeningAttemptProgressState() {
@@ -108,6 +109,7 @@ export function createExamSessionManager(deps) {
         state.openingAttemptLastActionStatus = '';
         state.pendingExamId = 0;
         state.pendingExamToken = '';
+        state.pendingStartIntentKey = '';
         state.pendingQueueTicket = '';
         state.pendingResumeIntent = false;
         state.pendingOpeningPhase = '';
@@ -336,11 +338,48 @@ export function createExamSessionManager(deps) {
         }
     }
 
-    function rememberOpeningAttemptContext(selectedExam, submittedToken, resumeIntent) {
+    function rememberOpeningAttemptContext(selectedExam, submittedToken, resumeIntent, startIntentKey) {
         state.pendingExamId = Number(selectedExam && selectedExam.id) || 0;
         state.pendingExamToken = String(submittedToken || '');
+        state.pendingStartIntentKey = String(startIntentKey || state.pendingStartIntentKey || '');
         state.pendingResumeIntent = resumeIntent === true;
         state.pendingOpeningPhase = String(state.openingAttemptPhase || '');
+    }
+
+    function buildOpeningAttemptIntentKey(selectedExamId) {
+        openingAttemptIntentSequence += 1;
+        var examPart = Math.max(0, Number(selectedExamId) || 0).toString(36);
+        var timePart = Date.now().toString(36);
+        var sequencePart = openingAttemptIntentSequence.toString(36);
+        var randomPart = Math.random().toString(36).slice(2, 10);
+
+        return ['start', examPart, timePart, sequencePart, randomPart].join('_');
+    }
+
+    function resolveOpeningAttemptIntentKey(selectedExamId, options) {
+        var explicitKey = String(options && options.startIntentKey ? options.startIntentKey : '').trim();
+        if (explicitKey !== '') {
+            return explicitKey;
+        }
+
+        var pendingKey = String(state.pendingStartIntentKey || '').trim();
+        if (
+            pendingKey !== ''
+            && Math.max(0, Number(state.pendingExamId) || 0) === Math.max(0, Number(selectedExamId) || 0)
+        ) {
+            return pendingKey;
+        }
+
+        return buildOpeningAttemptIntentKey(selectedExamId);
+    }
+
+    function withStartAttemptIntent(body, intentKey) {
+        var payload = Object.assign({}, body || {});
+        if (String(intentKey || '').trim() !== '') {
+            payload.idempotency_key = String(intentKey || '').trim();
+        }
+
+        return payload;
     }
 
     function clearOpeningAttemptContext() {
@@ -750,7 +789,7 @@ export function createExamSessionManager(deps) {
         );
     }
 
-    async function recoverSlowStartAttempt(selectedExam, submittedToken, triggerError, requestId) {
+    async function recoverSlowStartAttempt(selectedExam, submittedToken, triggerError, requestId, startIntentKey) {
         var examId = Number(selectedExam && selectedExam.id) || 0;
         var recoveryDeadlineAt = Date.now() + startAttemptRecoveryTimeoutMs;
         var lastError = triggerError;
@@ -822,7 +861,8 @@ export function createExamSessionManager(deps) {
                     );
                     return await requestStartAttempt({
                         exam_id: examId,
-                        exam_token: submittedToken
+                        exam_token: submittedToken,
+                        idempotency_key: startIntentKey
                     });
                 } catch (retryError) {
                     lastError = retryError;
@@ -963,7 +1003,7 @@ export function createExamSessionManager(deps) {
         }
     }
 
-    async function waitForQueuedStartAttempt(selectedExam, submittedToken, queuedPayload, requestId) {
+    async function waitForQueuedStartAttempt(selectedExam, submittedToken, queuedPayload, requestId, startIntentKey) {
         var examId = Number(selectedExam && selectedExam.id) || 0;
         var activePayload = queuedPayload;
         var hasRetriedFreshStart = false;
@@ -1026,7 +1066,8 @@ export function createExamSessionManager(deps) {
                     activePayload = await requestStartAttempt({
                         exam_id: examId,
                         exam_token: submittedToken,
-                        queue_ticket: queueTicket
+                        queue_ticket: queueTicket,
+                        idempotency_key: startIntentKey
                     }, {
                         timeoutMs: pollTimeoutMs,
                         timeoutMessage: 'Masih menunggu giliran sesi ujian.'
@@ -1056,7 +1097,8 @@ export function createExamSessionManager(deps) {
                         hasRetriedFreshStart = true;
                         activePayload = await requestStartAttempt({
                             exam_id: examId,
-                            exam_token: submittedToken
+                            exam_token: submittedToken,
+                            idempotency_key: startIntentKey
                         });
                         continue;
                     }
@@ -1073,14 +1115,15 @@ export function createExamSessionManager(deps) {
                     throw pollError;
                 }
                 if (shouldRecoverSlowStartAttempt(pollError)) {
-                    return await recoverSlowStartAttempt(selectedExam, submittedToken, pollError, requestId);
+                    return await recoverSlowStartAttempt(selectedExam, submittedToken, pollError, requestId, startIntentKey);
                 }
 
                 if (!hasRetriedFreshStart && isStartAttemptNotFoundError(pollError)) {
                     hasRetriedFreshStart = true;
                     activePayload = await requestStartAttempt({
                         exam_id: examId,
-                        exam_token: submittedToken
+                        exam_token: submittedToken,
+                        idempotency_key: startIntentKey
                     });
                     continue;
                 }
@@ -1743,6 +1786,7 @@ export function createExamSessionManager(deps) {
         var forceResumeOnly = options.forceResumeOnly === true;
         var allowFreshStartFallback = options.allowFreshStartFallback !== false;
         var shouldSkipBlockingRefresh = options.skipExamRefresh === true || resumeIntent;
+        var startIntentKey = '';
 
         enterOpeningAttemptShell(
             8,
@@ -1836,7 +1880,8 @@ export function createExamSessionManager(deps) {
                 submittedToken = '';
             }
 
-            rememberOpeningAttemptContext(selectedExam, submittedToken, resumeIntent);
+            startIntentKey = resolveOpeningAttemptIntentKey(Number(selectedExam && selectedExam.id) || selectedExamId, options);
+            rememberOpeningAttemptContext(selectedExam, submittedToken, resumeIntent, startIntentKey);
 
             if (isExamFullscreenRequired()) {
                 syncFullscreenState(false);
@@ -1900,28 +1945,28 @@ export function createExamSessionManager(deps) {
                 }
 
                 if (queueTicket !== '') {
-                    startPayload = await requestStartAttempt({
+                    startPayload = await requestStartAttempt(withStartAttemptIntent({
                         exam_id: Number(selectedExam.id) || 0,
                         exam_token: submittedToken,
                         queue_ticket: queueTicket
-                    });
+                    }, startIntentKey));
                 } else if (resumeIntent || forceResumeOnly) {
-                    startPayload = await requestStartAttempt({
+                    startPayload = await requestStartAttempt(withStartAttemptIntent({
                         exam_id: Number(selectedExam.id) || 0,
                         resume_only: 1
-                    }, {
+                    }, startIntentKey), {
                         timeoutMs: startAttemptStatusTimeoutMs
                     });
                 } else {
-                    startPayload = await requestStartAttempt({
+                    startPayload = await requestStartAttempt(withStartAttemptIntent({
                         exam_id: Number(selectedExam.id) || 0,
                         exam_token: submittedToken
-                    });
+                    }, startIntentKey));
                 }
                 assertOpeningAttemptRequestActive(requestId);
 
                 if (isQueuedStartAttemptPayload(startPayload)) {
-                    startPayload = await waitForQueuedStartAttempt(selectedExam, submittedToken, startPayload, requestId);
+                    startPayload = await waitForQueuedStartAttempt(selectedExam, submittedToken, startPayload, requestId, startIntentKey);
                     assertOpeningAttemptRequestActive(requestId);
                 }
             } catch (startError) {
@@ -1962,7 +2007,7 @@ export function createExamSessionManager(deps) {
                 recordActionTrailEntry('attempt:start:recovering', 'Server lambat, mencoba mengambil attempt aktif.', {
                     selectedExamId: Number(selectedExam.id) || 0
                 });
-                startPayload = await recoverSlowStartAttempt(selectedExam, submittedToken, startError, requestId);
+                startPayload = await recoverSlowStartAttempt(selectedExam, submittedToken, startError, requestId, startIntentKey);
                 assertOpeningAttemptRequestActive(requestId);
                 recoveredSlowStart = true;
             }
@@ -2067,7 +2112,8 @@ export function createExamSessionManager(deps) {
             skipExamRefresh: true,
             selectedExam: selectedExam,
             submittedToken: String(state.pendingExamToken || ''),
-            resumeIntentOverride: state.pendingResumeIntent === true
+            resumeIntentOverride: state.pendingResumeIntent === true,
+            startIntentKey: String(state.pendingStartIntentKey || '')
         });
     }
 
@@ -2125,6 +2171,7 @@ export function createExamSessionManager(deps) {
                     submittedToken: submittedToken,
                     resumeIntentOverride: resumeIntent,
                     queueTicket: String(statusPayload.queue_ticket || queueTicket),
+                    startIntentKey: String(state.pendingStartIntentKey || ''),
                     allowFreshStartFallback: false
                 });
             }
