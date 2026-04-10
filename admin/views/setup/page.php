@@ -471,6 +471,118 @@
                 gap: 18px;
                 padding: 0;
             }
+            .cbt-setup-security-log-monitor {
+                display: grid;
+                gap: 14px;
+                padding: 16px 18px;
+                border: 1px solid #d8e3f3;
+                border-radius: 18px;
+                background: linear-gradient(180deg, #fbfdff 0%, #f5f9ff 100%);
+            }
+            .cbt-setup-security-log-monitor.is-warning {
+                border-color: #f2d49b;
+                background: linear-gradient(180deg, #fffdf8 0%, #fff8eb 100%);
+            }
+            .cbt-setup-security-log-monitor.is-critical {
+                border-color: #f0b8b8;
+                background: linear-gradient(180deg, #fffafa 0%, #fff2f2 100%);
+            }
+            .cbt-setup-security-log-monitor-top {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 14px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-monitor-top h3 {
+                margin: 0 0 6px;
+                font-size: 15px;
+                line-height: 1.3;
+            }
+            .cbt-setup-security-log-monitor-top p {
+                margin: 0;
+                color: #5b6574;
+                line-height: 1.55;
+            }
+            .cbt-setup-security-log-monitor-actions {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-monitor-grid {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 12px;
+            }
+            .cbt-setup-security-log-monitor-card {
+                display: grid;
+                gap: 10px;
+                min-width: 0;
+                padding: 14px;
+                border: 1px solid #d9e6f7;
+                border-radius: 14px;
+                background: rgba(255, 255, 255, 0.88);
+            }
+            .cbt-setup-security-log-monitor-card h4 {
+                margin: 0;
+                font-size: 12px;
+                line-height: 1.2;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                color: #3b4d69;
+            }
+            .cbt-setup-security-log-monitor-list {
+                display: grid;
+                gap: 8px;
+                margin: 0;
+            }
+            .cbt-setup-security-log-monitor-list div {
+                display: grid;
+                gap: 2px;
+            }
+            .cbt-setup-security-log-monitor-list dt {
+                margin: 0;
+                font-size: 11px;
+                line-height: 1.2;
+                color: #64748b;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+            }
+            .cbt-setup-security-log-monitor-list dd {
+                margin: 0;
+                color: #0f172a;
+                font-size: 13px;
+                line-height: 1.45;
+                word-break: break-word;
+            }
+            .cbt-setup-security-log-monitor-footer {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 12px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-log-monitor-status {
+                color: #274367;
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .cbt-setup-security-log-monitor-disabled {
+                color: #8a4b2b;
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .cbt-setup-security-log-monitor-diagnostics {
+                margin: 0;
+                padding: 12px;
+                border-radius: 12px;
+                background: #0f172a;
+                color: #dbeafe;
+                font-size: 12px;
+                line-height: 1.5;
+                white-space: pre-wrap;
+            }
             .cbt-native-grid {
                 display: grid;
                 gap: 18px;
@@ -1789,6 +1901,14 @@
                 .cbt-setup-security-log-roster-row-side {
                     justify-content: flex-start;
                 }
+                .cbt-setup-security-log-monitor-top,
+                .cbt-setup-security-log-monitor-footer {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+                .cbt-setup-security-log-monitor-grid {
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
                 .cbt-setup-security-log-watch-item-actions {
                     display: grid;
                     grid-template-columns: 1fr;
@@ -1823,6 +1943,12 @@
                 }
                 .cbt-setup-security-log-body {
                     padding: 0;
+                }
+                .cbt-setup-security-log-monitor-grid {
+                    grid-template-columns: 1fr;
+                }
+                .cbt-setup-security-log-monitor-actions .button {
+                    width: 100%;
                 }
             }
         </style>
@@ -2228,6 +2354,7 @@
                                 class="cbt-setup-card cbt-setup-security-card cbt-setup-security-log-card"
                                 data-security-log-observability-endpoint="<?php echo esc_url($security_observability_endpoint_url); ?>"
                                 data-security-log-history-endpoint="<?php echo esc_url($security_logs_page_endpoint_url); ?>"
+                                data-security-log-ingest-action-endpoint="<?php echo esc_url($security_ingest_action_endpoint_url); ?>"
                                 data-security-log-rest-nonce="<?php echo esc_attr($security_rest_nonce); ?>"
                             >
                                 <div class="cbt-setup-card-header">
@@ -2237,12 +2364,15 @@
                                     </div>
                                     <div class="cbt-setup-security-log-chip-group">
                                         <span class="cbt-setup-card-chip" data-security-log-status-chip><?php echo $security_log_events_enabled ? 'Logging On' : 'Logging Off'; ?></span>
-                                        <span class="cbt-setup-card-chip" data-security-log-mode-chip><?php echo esc_html((string) ($security_log_status_snapshot['status_label'] ?? 'MySQL fallback')); ?></span>
+                                        <span class="cbt-setup-card-chip" data-security-log-live-chip title="<?php echo esc_attr((string) ($security_log_status_snapshot['status_label'] ?? '')); ?>"><?php echo esc_html((string) ($security_log_status_snapshot['live_label'] ?? 'Live MySQL fallback')); ?></span>
+                                        <span class="cbt-setup-card-chip" data-security-log-ingest-chip><?php echo esc_html((string) ($security_log_status_snapshot['ingest_label'] ?? 'Ingest direct MySQL')); ?></span>
+                                        <span class="cbt-setup-card-chip" data-security-log-persist-chip><?php echo esc_html((string) ($security_log_status_snapshot['persist_label'] ?? 'Persist direct MySQL')); ?></span>
                                         <span class="cbt-setup-card-chip" data-security-log-backlog-chip><?php echo esc_html('Backlog ' . (string) max(0, (int) ($security_log_status_snapshot['backlog_count'] ?? 0))); ?></span>
                                         <span class="cbt-setup-card-chip" data-security-log-dead-chip<?php echo ((int) ($security_log_status_snapshot['dead_letter_count'] ?? 0) > 0) ? '' : ' hidden'; ?>><?php echo esc_html('Dead Letter ' . (string) max(0, (int) ($security_log_status_snapshot['dead_letter_count'] ?? 0))); ?></span>
                                     </div>
                                 </div>
                                 <div class="cbt-setup-security-log-body">
+                                    <?php CBT_Admin_Security_Page::render_security_log_redis_monitor_panel($security_log_status_snapshot); ?>
                                     <?php
                                     $security_live_roster_attempt_total = 0;
                                     foreach ((array) $security_live_roster_groups as $security_roster_group) {
@@ -3464,17 +3594,26 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         var watchRegion = card ? card.querySelector('[data-security-log-watch-region]') : null;
                         var tableRegion = card ? card.querySelector('[data-security-log-table-region]') : null;
                         var statusChip = card ? card.querySelector('[data-security-log-status-chip]') : null;
-                        var modeChip = card ? card.querySelector('[data-security-log-mode-chip]') : null;
+                        var liveChip = card ? card.querySelector('[data-security-log-live-chip]') : null;
+                        var ingestChip = card ? card.querySelector('[data-security-log-ingest-chip]') : null;
+                        var persistChip = card ? card.querySelector('[data-security-log-persist-chip]') : null;
                         var backlogChip = card ? card.querySelector('[data-security-log-backlog-chip]') : null;
                         var deadChip = card ? card.querySelector('[data-security-log-dead-chip]') : null;
+                        var monitorPanel = card ? card.querySelector('[data-security-log-monitor]') : null;
+                        var monitorHelper = card ? card.querySelector('[data-security-log-monitor-helper]') : null;
+                        var monitorStatus = card ? card.querySelector('[data-security-log-monitor-status]') : null;
+                        var monitorDisabledReason = card ? card.querySelector('[data-security-log-monitor-disabled-reason]') : null;
+                        var monitorDiagnostics = card ? card.querySelector('[data-security-log-monitor-diagnostics]') : null;
                         var observabilityEndpoint = card ? String(card.getAttribute('data-security-log-observability-endpoint') || '') : '';
                         var historyEndpoint = card ? String(card.getAttribute('data-security-log-history-endpoint') || '') : '';
+                        var ingestActionEndpoint = card ? String(card.getAttribute('data-security-log-ingest-action-endpoint') || '') : '';
                         var restNonce = card ? String(card.getAttribute('data-security-log-rest-nonce') || '') : '';
                         var deleteScopeInput = card ? card.querySelector('[data-security-log-delete-scope]') : null;
                         var deleteSelectedButton = card ? card.querySelector('[data-security-log-submit="selected"]') : null;
                         var deleteAllButton = card ? card.querySelector('[data-security-log-submit="all"]') : null;
                     var autoRefreshTimer = 0;
                     var refreshInFlight = false;
+                    var monitorActionInFlight = false;
                     var storageKey = 'cbt_setup_security_log_auto_refresh_enabled';
                     var activeViewStorageKey = 'cbt_setup_security_log_active_view';
                     var watchSortStorageKey = 'cbt_setup_security_log_watch_sort_mode';
@@ -3486,6 +3625,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                     var activeWatchFocusEventLabel = '';
                     var activeWatchSortMode = 'auto';
                     var activeSecurityLogView = 'must-watch';
+                    var currentSecurityStatusSnapshot = <?php echo wp_json_encode($security_log_status_snapshot); ?>;
                     var activeRosterPage = 1;
                     var activeRosterFilters = {
                         search: '',
@@ -3523,10 +3663,356 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         return headers;
                     }
 
+                    function formatRedisMonitorDuration(seconds) {
+                        var numericSeconds = parseInt(String(seconds || '0'), 10);
+                        var minutes = 0;
+                        var remainingSeconds = 0;
+                        var hours = 0;
+                        var remainingMinutes = 0;
+
+                        if (!Number.isFinite(numericSeconds) || numericSeconds <= 0) {
+                            return '0 detik';
+                        }
+
+                        if (numericSeconds < 60) {
+                            return String(numericSeconds) + ' detik';
+                        }
+
+                        minutes = Math.floor(numericSeconds / 60);
+                        remainingSeconds = numericSeconds % 60;
+                        if (minutes < 60) {
+                            return remainingSeconds > 0
+                                ? (String(minutes) + ' m ' + String(remainingSeconds) + ' dtk')
+                                : (String(minutes) + ' menit');
+                        }
+
+                        hours = Math.floor(minutes / 60);
+                        remainingMinutes = minutes % 60;
+
+                        return remainingMinutes > 0
+                            ? (String(hours) + ' j ' + String(remainingMinutes) + ' m')
+                            : (String(hours) + ' jam');
+                    }
+
+                    function formatRedisMonitorActivity(timestamp, status) {
+                        var safeTimestamp = String(timestamp || '').trim();
+                        var safeStatus = String(status || '').trim().toUpperCase();
+
+                        if (safeTimestamp === '' && safeStatus === '') {
+                            return '-';
+                        }
+
+                        if (safeTimestamp === '') {
+                            return safeStatus;
+                        }
+
+                        if (safeStatus === '') {
+                            return safeTimestamp;
+                        }
+
+                        return safeTimestamp + ' • ' + safeStatus;
+                    }
+
+                    function setRedisMonitorField(name, value) {
+                        var field = monitorPanel ? monitorPanel.querySelector('[data-security-log-monitor-field="' + String(name || '') + '"]') : null;
+                        if (!field) {
+                            return;
+                        }
+
+                        field.textContent = String(value || '');
+                    }
+
+                    function computeRedisMonitorTone(statusSnapshot) {
+                        var snapshot = statusSnapshot && typeof statusSnapshot === 'object' ? statusSnapshot : {};
+                        var featureEnabled = Number(snapshot.feature_enabled || 0) > 0;
+                        var available = Number(snapshot.available || 0) > 0;
+                        var backlogCount = parseInt(String(snapshot.backlog_count || '0'), 10);
+                        var deadCount = parseInt(String(snapshot.dead_letter_count || '0'), 10);
+
+                        if (featureEnabled && !available) {
+                            return 'critical';
+                        }
+
+                        if (!featureEnabled || (Number.isFinite(backlogCount) && backlogCount > 0) || (Number.isFinite(deadCount) && deadCount > 0)) {
+                            return 'warning';
+                        }
+
+                        return 'healthy';
+                    }
+
+                    function computeRedisMonitorHelper(statusSnapshot) {
+                        var snapshot = statusSnapshot && typeof statusSnapshot === 'object' ? statusSnapshot : {};
+                        var featureEnabled = Number(snapshot.feature_enabled || 0) > 0;
+                        var available = Number(snapshot.available || 0) > 0;
+
+                        if (featureEnabled && available) {
+                            return 'Redis-first aktif. Audit permanen menyusul lewat batch flush.';
+                        }
+
+                        return 'Mode fallback aktif. Event tetap aman ditulis ke MySQL langsung.';
+                    }
+
+                    function computeRedisMonitorDisabledReason(statusSnapshot) {
+                        var snapshot = statusSnapshot && typeof statusSnapshot === 'object' ? statusSnapshot : {};
+                        var featureEnabled = Number(snapshot.feature_enabled || 0) > 0;
+                        var available = Number(snapshot.available || 0) > 0;
+
+                        if (!featureEnabled) {
+                            return 'Feature flag Redis-first ingest masih nonaktif.';
+                        }
+
+                        if (!available) {
+                            return 'Redis ingest tidak tersedia saat ini.';
+                        }
+
+                        if (ingestActionEndpoint === '') {
+                            return 'Endpoint aksi ingest admin belum tersedia.';
+                        }
+
+                        return '';
+                    }
+
+                    function setRedisMonitorStatus(message) {
+                        if (!monitorStatus) {
+                            return;
+                        }
+
+                        monitorStatus.textContent = String(message || '');
+                    }
+
+                    function updateRedisMonitorActionButtons(statusSnapshot) {
+                        var snapshot = statusSnapshot && typeof statusSnapshot === 'object' ? statusSnapshot : {};
+                        var buttons = monitorPanel ? monitorPanel.querySelectorAll('[data-security-log-monitor-action]') : [];
+                        var canRunActions = Number(snapshot.feature_enabled || 0) > 0 && Number(snapshot.available || 0) > 0 && ingestActionEndpoint !== '';
+                        var index = 0;
+                        var actionName = '';
+                        var isDisabled = false;
+
+                        for (index = 0; index < buttons.length; index += 1) {
+                            actionName = String(buttons[index].getAttribute('data-security-log-monitor-action') || '');
+                            isDisabled = false;
+
+                            if (actionName === 'refresh_monitor') {
+                                isDisabled = refreshInFlight || monitorActionInFlight;
+                            } else if (actionName === 'copy_diagnostics') {
+                                isDisabled = false;
+                            } else {
+                                isDisabled = !canRunActions || refreshInFlight || monitorActionInFlight;
+                            }
+
+                            buttons[index].disabled = !!isDisabled;
+                        }
+                    }
+
+                    function updateRedisMonitorPanel(statusSnapshot) {
+                        var snapshot = statusSnapshot && typeof statusSnapshot === 'object' ? statusSnapshot : {};
+                        var lastResult = '';
+                        var helperText = '';
+                        var disabledReason = '';
+                        var tone = '';
+                        var statusLabel = '';
+
+                        if (!monitorPanel) {
+                            return;
+                        }
+
+                        currentSecurityStatusSnapshot = snapshot;
+                        helperText = computeRedisMonitorHelper(snapshot);
+                        disabledReason = computeRedisMonitorDisabledReason(snapshot);
+                        tone = computeRedisMonitorTone(snapshot);
+                        lastResult = String(snapshot.last_enqueue_error || '').trim();
+                        if (lastResult === '') {
+                            lastResult = String(snapshot.last_flush_result || '').trim();
+                        }
+                        if (lastResult === '') {
+                            lastResult = '-';
+                        }
+
+                        if (monitorHelper) {
+                            monitorHelper.textContent = helperText;
+                        }
+
+                        statusLabel = String(snapshot.status_label || '').trim();
+                        if (monitorStatus) {
+                            monitorStatus.textContent = statusLabel !== '' ? statusLabel : 'Status monitor siap.';
+                        }
+
+                        monitorPanel.classList.remove('is-healthy', 'is-warning', 'is-critical');
+                        monitorPanel.classList.add('is-' + tone);
+
+                        setRedisMonitorField('live_label', String(snapshot.live_label || 'Live MySQL fallback'));
+                        setRedisMonitorField('ingest_label', String(snapshot.ingest_label || 'Ingest direct MySQL'));
+                        setRedisMonitorField('persist_label', String(snapshot.persist_label || 'Persist direct MySQL'));
+                        setRedisMonitorField('feature_enabled', Number(snapshot.feature_enabled || 0) > 0 ? 'On' : 'Off');
+                        setRedisMonitorField('available', Number(snapshot.available || 0) > 0 ? 'Yes' : 'No');
+                        setRedisMonitorField('stream_supported', Number(snapshot.stream_supported || 0) > 0 ? 'Yes' : 'No');
+                        setRedisMonitorField('worker_scheduled', Number(snapshot.worker_scheduled || 0) > 0 ? 'Yes' : 'No');
+                        setRedisMonitorField('backlog_count', String(Math.max(0, parseInt(String(snapshot.backlog_count || '0'), 10) || 0)));
+                        setRedisMonitorField('oldest_pending', formatRedisMonitorDuration(snapshot.oldest_pending_age_seconds || 0));
+                        setRedisMonitorField('dead_letter_count', String(Math.max(0, parseInt(String(snapshot.dead_letter_count || '0'), 10) || 0)));
+                        setRedisMonitorField('last_stream_id', String(snapshot.last_stream_id || '-'));
+                        setRedisMonitorField('last_enqueue', formatRedisMonitorActivity(snapshot.last_enqueue_at || '', snapshot.last_enqueue_status || ''));
+                        setRedisMonitorField('last_flush', formatRedisMonitorActivity(snapshot.last_flush_at || '', snapshot.last_flush_status || ''));
+                        setRedisMonitorField('next_flush_at', String(snapshot.next_flush_at || '-'));
+                        setRedisMonitorField('last_result', lastResult);
+
+                        if (monitorDiagnostics) {
+                            monitorDiagnostics.textContent = JSON.stringify(snapshot, null, 2);
+                        }
+
+                        if (monitorDisabledReason) {
+                            monitorDisabledReason.textContent = disabledReason;
+                            monitorDisabledReason.hidden = disabledReason === '';
+                        }
+
+                        updateRedisMonitorActionButtons(snapshot);
+                    }
+
+                    function summarizeSecurityMonitorAction(action, actionResult) {
+                        var result = actionResult && typeof actionResult === 'object' ? actionResult : {};
+                        var persisted = Math.max(0, parseInt(String(result.persisted || result.drained || '0'), 10) || 0);
+                        var deadLettered = Math.max(0, parseInt(String(result.dead_lettered || '0'), 10) || 0);
+                        var failed = Math.max(0, parseInt(String(result.failed || '0'), 10) || 0);
+                        var skipped = Math.max(0, parseInt(String(result.skipped || '0'), 10) || 0);
+                        var reason = String(result.reason || '').trim();
+
+                        if (action === 'micro_drain') {
+                            if (skipped > 0) {
+                                if (reason === 'backlog_small') {
+                                    return 'Micro-drain dilewati: backlog kecil.';
+                                }
+                                if (reason === 'lock_busy') {
+                                    return 'Micro-drain dilewati: worker sedang sibuk.';
+                                }
+                                if (reason === 'redis_unavailable') {
+                                    return 'Micro-drain dilewati: Redis unavailable.';
+                                }
+                                return 'Micro-drain dilewati.';
+                            }
+
+                            return 'Micro-drain selesai: ' + String(persisted) + ' event persisted.';
+                        }
+
+                        if (skipped > 0 && reason !== '') {
+                            return 'Flush dilewati: ' + reason + '.';
+                        }
+
+                        return 'Flush selesai: ' + String(persisted) + ' persisted, ' + String(deadLettered) + ' dead-letter, ' + String(failed) + ' gagal.';
+                    }
+
+                    function copySecurityDiagnostics() {
+                        var diagnosticsText = '';
+                        var textarea = null;
+
+                        if (!monitorDiagnostics) {
+                            return Promise.reject(new Error('Diagnostics monitor tidak tersedia.'));
+                        }
+
+                        diagnosticsText = String(monitorDiagnostics.textContent || '').trim();
+                        if (diagnosticsText === '') {
+                            diagnosticsText = JSON.stringify(currentSecurityStatusSnapshot || {}, null, 2);
+                        }
+
+                        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                            return navigator.clipboard.writeText(diagnosticsText);
+                        }
+
+                        return new Promise(function (resolve, reject) {
+                            textarea = document.createElement('textarea');
+                            textarea.value = diagnosticsText;
+                            textarea.setAttribute('readonly', 'readonly');
+                            textarea.style.position = 'fixed';
+                            textarea.style.opacity = '0';
+                            textarea.style.pointerEvents = 'none';
+                            document.body.appendChild(textarea);
+                            textarea.focus();
+                            textarea.select();
+
+                            try {
+                                if (document.execCommand('copy')) {
+                                    resolve();
+                                } else {
+                                    reject(new Error('copy_command_failed'));
+                                }
+                            } catch (error) {
+                                reject(error);
+                            } finally {
+                                document.body.removeChild(textarea);
+                            }
+                        });
+                    }
+
+                    function triggerSecurityIngestAdminAction(actionName) {
+                        var requestBody = '';
+
+                        if (monitorActionInFlight || ingestActionEndpoint === '') {
+                            return Promise.resolve();
+                        }
+
+                        monitorActionInFlight = true;
+                        updateRedisMonitorActionButtons(currentSecurityStatusSnapshot || {});
+                        setRedisMonitorStatus(actionName === 'micro_drain' ? 'Menjalankan micro-drain...' : 'Menjalankan flush batch...');
+                        setLiveStatus(actionName === 'micro_drain' ? 'Menjalankan micro-drain...' : 'Menjalankan flush batch...', 'loading');
+
+                        requestBody = JSON.stringify({
+                            action: actionName
+                        });
+
+                        return fetch(ingestActionEndpoint, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: Object.assign({
+                                'Content-Type': 'application/json'
+                            }, getSecurityRestHeaders()),
+                            body: requestBody
+                        })
+                            .then(function (response) {
+                                if (!response.ok) {
+                                    throw new Error('Aksi Redis monitor gagal diproses.');
+                                }
+
+                                return response.json();
+                            })
+                            .then(function (payload) {
+                                var statusSnapshot = payload && payload.status_snapshot && typeof payload.status_snapshot === 'object'
+                                    ? payload.status_snapshot
+                                    : {};
+                                var actionMessage = summarizeSecurityMonitorAction(actionName, payload ? payload.action_result : {});
+
+                                updateSecurityLogStatusChips(statusSnapshot);
+                                updateRedisMonitorPanel(statusSnapshot);
+                                setRedisMonitorStatus(actionMessage);
+                                setLiveStatus(actionMessage, '');
+
+                                if (activeSecurityLogView === 'history') {
+                                    return refreshSecurityHistoryRegion().then(function () {
+                                        return payload;
+                                    });
+                                }
+
+                                return payload;
+                            })
+                            .catch(function (error) {
+                                var message = error instanceof Error && error.message !== ''
+                                    ? error.message
+                                    : 'Aksi Redis monitor gagal dijalankan.';
+                                setRedisMonitorStatus(message);
+                                setLiveStatus(message, 'error');
+                                throw error;
+                            })
+                            .finally(function () {
+                                monitorActionInFlight = false;
+                                updateRedisMonitorActionButtons(currentSecurityStatusSnapshot || {});
+                            });
+                    }
+
                     function updateSecurityLogStatusChips(statusSnapshot) {
                         var backlogCount = 0;
                         var deadCount = 0;
                         var statusLabel = '';
+                        var liveLabel = '';
+                        var ingestLabel = '';
+                        var persistLabel = '';
 
                         if (!statusSnapshot || typeof statusSnapshot !== 'object') {
                             return;
@@ -3535,13 +4021,27 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         backlogCount = parseInt(String(statusSnapshot.backlog_count || '0'), 10);
                         deadCount = parseInt(String(statusSnapshot.dead_letter_count || '0'), 10);
                         statusLabel = String(statusSnapshot.status_label || '');
+                        liveLabel = String(statusSnapshot.live_label || '');
+                        ingestLabel = String(statusSnapshot.ingest_label || '');
+                        persistLabel = String(statusSnapshot.persist_label || '');
 
                         if (statusChip) {
                             statusChip.textContent = String(<?php echo $security_log_events_enabled ? wp_json_encode('Logging On') : wp_json_encode('Logging Off'); ?>);
                         }
 
-                        if (modeChip && statusLabel !== '') {
-                            modeChip.textContent = statusLabel;
+                        if (liveChip && liveLabel !== '') {
+                            liveChip.textContent = liveLabel;
+                            if (statusLabel !== '') {
+                                liveChip.title = statusLabel;
+                            }
+                        }
+
+                        if (ingestChip && ingestLabel !== '') {
+                            ingestChip.textContent = ingestLabel;
+                        }
+
+                        if (persistChip && persistLabel !== '') {
+                            persistChip.textContent = persistLabel;
                         }
 
                         if (backlogChip) {
@@ -3552,6 +4052,8 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                             deadChip.textContent = 'Dead Letter ' + String(Number.isFinite(deadCount) ? deadCount : 0);
                             deadChip.hidden = !(Number.isFinite(deadCount) && deadCount > 0);
                         }
+
+                        currentSecurityStatusSnapshot = statusSnapshot;
                     }
 
                     function updateSecurityLogViewBadge(view, count) {
@@ -4387,17 +4889,30 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         return !securityLogPanel.hidden;
                     }
 
-                    function refreshSecurityLogCard() {
-                        if (refreshInFlight || !autoRefreshToggle.checked) {
-                            return;
+                    function refreshSecurityLogCard(options) {
+                        var manualRefresh = !!(options && options.force === true);
+                        var statusMessage = options && typeof options.statusMessage === 'string'
+                            ? options.statusMessage
+                            : 'Memuat observability terbaru...';
+
+                        if (refreshInFlight || monitorActionInFlight) {
+                            return Promise.resolve();
                         }
 
-                        if (!isSecurityLogPanelActive() || document.visibilityState === 'hidden') {
-                            return;
+                        if (!manualRefresh && !autoRefreshToggle.checked) {
+                            return Promise.resolve();
+                        }
+
+                        if (!manualRefresh && (!isSecurityLogPanelActive() || document.visibilityState === 'hidden')) {
+                            return Promise.resolve();
                         }
 
                         refreshInFlight = true;
-                        setLiveStatus('Memuat observability terbaru...', 'loading');
+                        updateRedisMonitorActionButtons(currentSecurityStatusSnapshot || {});
+                        setLiveStatus(statusMessage, 'loading');
+                        if (manualRefresh) {
+                            setRedisMonitorStatus(statusMessage);
+                        }
 
                         var snapshotUrl = new URL(observabilityEndpoint, window.location.origin);
                         var pendingRequests = [];
@@ -4433,6 +4948,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                     }
 
                                     updateSecurityLogStatusChips(payload.status_snapshot || {});
+                                    updateRedisMonitorPanel(payload.status_snapshot || {});
                                     updateSecurityLogViewBadge('must-watch', Number(payload.must_watch_total || 0));
                                     updateSecurityLogViewBadge('live-roster', Number(payload.live_roster_total || 0));
                                 })
@@ -4442,7 +4958,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                             pendingRequests.push(refreshSecurityHistoryRegion());
                         }
 
-                        Promise.all(pendingRequests)
+                        return Promise.all(pendingRequests)
                             .then(function () {
                                 ensureSecurityLogViewLoaded(activeSecurityLogView);
                                 syncDynamicFilterOptions();
@@ -4455,13 +4971,20 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                     applySecurityLogFilters();
                                 }
                                 setActiveSecurityLogView(activeSecurityLogView, { persist: false });
-                                setLiveStatus('Auto refresh aktif setiap 10 detik.', '');
+                                setLiveStatus(autoRefreshToggle.checked ? 'Auto refresh aktif setiap 10 detik.' : 'Auto refresh nonaktif.', '');
+                                if (manualRefresh) {
+                                    setRedisMonitorStatus('Redis monitor diperbarui.');
+                                }
                             })
                             .catch(function () {
                                 setLiveStatus('Auto refresh gagal. Coba refresh halaman.', 'error');
+                                if (manualRefresh) {
+                                    setRedisMonitorStatus('Refresh monitor gagal.');
+                                }
                             })
                             .finally(function () {
                                 refreshInFlight = false;
+                                updateRedisMonitorActionButtons(currentSecurityStatusSnapshot || {});
                             });
                     }
 
@@ -4486,6 +5009,8 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                     activeSecurityLogView = readStoredSecurityLogView();
                     syncDynamicFilterOptions();
                     syncWatchSortButtons();
+                    updateSecurityLogStatusChips(currentSecurityStatusSnapshot || {});
+                    updateRedisMonitorPanel(currentSecurityStatusSnapshot || {});
                     updateWatchFocusState();
                     applyMustWatchSort(activeWatchSortMode);
                     applySecurityLogFilters();
@@ -4516,10 +5041,43 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
 
                     card.addEventListener('click', function (event) {
                         var target = event.target;
+                        var monitorActionButton = null;
                         var viewButton = null;
                         var pageButton = null;
 
                         if (!target || typeof target.closest !== 'function') {
+                            return;
+                        }
+
+                        monitorActionButton = target.closest('[data-security-log-monitor-action]');
+                        if (monitorActionButton) {
+                            var actionName = String(monitorActionButton.getAttribute('data-security-log-monitor-action') || '');
+                            event.preventDefault();
+
+                            if (actionName === 'refresh_monitor') {
+                                refreshSecurityLogCard({
+                                    force: true,
+                                    statusMessage: 'Memuat Redis monitor...'
+                                });
+                                return;
+                            }
+
+                            if (actionName === 'copy_diagnostics') {
+                                copySecurityDiagnostics()
+                                    .then(function () {
+                                        setRedisMonitorStatus('Diagnostics monitor berhasil disalin.');
+                                        setLiveStatus('Diagnostics monitor berhasil disalin.', '');
+                                    })
+                                    .catch(function () {
+                                        setRedisMonitorStatus('Gagal menyalin diagnostics monitor.');
+                                        setLiveStatus('Gagal menyalin diagnostics monitor.', 'error');
+                                    });
+                                return;
+                            }
+
+                            if (actionName === 'micro_drain' || actionName === 'flush_now') {
+                                triggerSecurityIngestAdminAction(actionName);
+                            }
                             return;
                         }
 

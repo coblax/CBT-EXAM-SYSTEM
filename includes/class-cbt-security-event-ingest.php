@@ -369,6 +369,7 @@ final class CBT_Security_Event_Ingest
         $ingest_mode = self::is_feature_enabled()
             ? (self::supports_streams() ? 'redis_first' : 'direct_mysql_fallback')
             : 'disabled';
+        $next_flush_timestamp = self::next_flush_timestamp();
 
         return [
             'feature_enabled' => self::is_feature_enabled() ? 1 : 0,
@@ -377,6 +378,9 @@ final class CBT_Security_Event_Ingest
             'mode' => $live_mode,
             'ingest_mode' => $ingest_mode,
             'status_label' => self::build_status_label($live_mode, $ingest_mode),
+            'live_label' => self::build_live_label($live_mode),
+            'ingest_label' => self::build_ingest_label($ingest_mode),
+            'persist_label' => self::build_persist_label($ingest_mode),
             'backlog_count' => self::get_backlog_count(),
             'dead_letter_count' => self::get_dead_letter_count(),
             'oldest_pending_age_seconds' => self::get_oldest_pending_age_seconds(),
@@ -387,6 +391,8 @@ final class CBT_Security_Event_Ingest
             'last_enqueue_status' => sanitize_key((string) ($status['last_enqueue_status'] ?? '')),
             'last_enqueue_error' => sanitize_text_field((string) ($status['last_enqueue_error'] ?? '')),
             'last_stream_id' => sanitize_text_field((string) ($status['last_stream_id'] ?? ((string) get_option(self::CURSOR_OPTION_KEY, '')))),
+            'worker_scheduled' => self::is_worker_scheduled() ? 1 : 0,
+            'next_flush_at' => $next_flush_timestamp > 0 ? self::format_timestamp($next_flush_timestamp) : '',
         ];
     }
 
@@ -556,24 +562,77 @@ final class CBT_Security_Event_Ingest
 
     private static function build_status_label(string $live_mode, string $ingest_mode): string
     {
-        if ($live_mode === 'mysql_fallback') {
-            return 'Live Redis unavailable - MySQL fallback';
+        return self::build_live_label($live_mode) . ' • '
+            . self::build_ingest_label($ingest_mode) . ' • '
+            . self::build_persist_label($ingest_mode);
+    }
+
+    private static function build_live_label(string $live_mode): string
+    {
+        if ($live_mode === 'redis_live') {
+            return 'Live Redis';
         }
 
+        return 'Live MySQL fallback';
+    }
+
+    private static function build_ingest_label(string $ingest_mode): string
+    {
         if ($ingest_mode === 'redis_first') {
-            return 'Redis Live';
+            return 'Ingest Redis-first';
         }
 
         if ($ingest_mode === 'direct_mysql_fallback') {
-            return 'Redis stream unsupported - direct MySQL';
+            return 'Ingest MySQL fallback';
         }
 
-        return 'Redis live summary, direct MySQL ingest';
+        return 'Ingest direct MySQL';
+    }
+
+    private static function build_persist_label(string $ingest_mode): string
+    {
+        if ($ingest_mode === 'redis_first') {
+            return 'Persist batch MySQL';
+        }
+
+        return 'Persist direct MySQL';
     }
 
     private static function redis(): ?Redis
     {
         return CBT_Security_Live_Counters::redis_client();
+    }
+
+    private static function is_worker_scheduled(): bool
+    {
+        return self::next_flush_timestamp() > 0;
+    }
+
+    private static function next_flush_timestamp(): int
+    {
+        if (!function_exists('wp_next_scheduled')) {
+            return 0;
+        }
+
+        $timestamp = wp_next_scheduled(self::CRON_HOOK);
+        if (!is_numeric($timestamp)) {
+            return 0;
+        }
+
+        return max(0, (int) $timestamp);
+    }
+
+    private static function format_timestamp(int $timestamp): string
+    {
+        if ($timestamp <= 0) {
+            return '';
+        }
+
+        if (function_exists('wp_date')) {
+            return sanitize_text_field((string) wp_date('Y-m-d H:i:s', $timestamp));
+        }
+
+        return sanitize_text_field(gmdate('Y-m-d H:i:s', $timestamp));
     }
 
     private static function generate_ingest_id(): string

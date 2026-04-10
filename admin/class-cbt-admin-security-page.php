@@ -178,6 +178,110 @@ final class CBT_Admin_Security_Page
     }
 
     /**
+     * @param array<string,mixed> $status_snapshot
+     */
+    public static function render_security_log_redis_monitor_panel(array $status_snapshot): void
+    {
+        $feature_enabled = !empty($status_snapshot['feature_enabled']);
+        $available = !empty($status_snapshot['available']);
+        $stream_supported = !empty($status_snapshot['stream_supported']);
+        $worker_scheduled = !empty($status_snapshot['worker_scheduled']);
+        $backlog_count = max(0, (int) ($status_snapshot['backlog_count'] ?? 0));
+        $dead_letter_count = max(0, (int) ($status_snapshot['dead_letter_count'] ?? 0));
+        $oldest_pending_age_seconds = max(0, (int) ($status_snapshot['oldest_pending_age_seconds'] ?? 0));
+        $last_stream_id = sanitize_text_field((string) ($status_snapshot['last_stream_id'] ?? ''));
+        $last_enqueue_at = sanitize_text_field((string) ($status_snapshot['last_enqueue_at'] ?? ''));
+        $last_enqueue_status = sanitize_key((string) ($status_snapshot['last_enqueue_status'] ?? ''));
+        $last_enqueue_error = sanitize_text_field((string) ($status_snapshot['last_enqueue_error'] ?? ''));
+        $last_flush_at = sanitize_text_field((string) ($status_snapshot['last_flush_at'] ?? ''));
+        $last_flush_status = sanitize_key((string) ($status_snapshot['last_flush_status'] ?? ''));
+        $last_flush_result = sanitize_text_field((string) ($status_snapshot['last_flush_result'] ?? ''));
+        $next_flush_at = sanitize_text_field((string) ($status_snapshot['next_flush_at'] ?? ''));
+        $live_label = sanitize_text_field((string) ($status_snapshot['live_label'] ?? 'Live MySQL fallback'));
+        $ingest_label = sanitize_text_field((string) ($status_snapshot['ingest_label'] ?? 'Ingest direct MySQL'));
+        $persist_label = sanitize_text_field((string) ($status_snapshot['persist_label'] ?? 'Persist direct MySQL'));
+        $status_label = sanitize_text_field((string) ($status_snapshot['status_label'] ?? ''));
+        $can_run_actions = $feature_enabled && $available;
+        $disabled_reason = $feature_enabled
+            ? ($available ? '' : 'Redis ingest tidak tersedia saat ini.')
+            : 'Feature flag Redis-first ingest masih nonaktif.';
+        $monitor_tone = 'healthy';
+        if ($feature_enabled && !$available) {
+            $monitor_tone = 'critical';
+        } elseif (!$feature_enabled || $dead_letter_count > 0 || $backlog_count > 0) {
+            $monitor_tone = 'warning';
+        }
+        $helper_text = $feature_enabled && $available
+            ? 'Redis-first aktif. Audit permanen menyusul lewat batch flush.'
+            : 'Mode fallback aktif. Event tetap aman ditulis ke MySQL langsung.';
+        $last_result = $last_enqueue_error !== ''
+            ? $last_enqueue_error
+            : ($last_flush_result !== '' ? $last_flush_result : '-');
+        $diagnostics_json = wp_json_encode($status_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($diagnostics_json) || $diagnostics_json === '') {
+            $diagnostics_json = '{}';
+        }
+        ?>
+        <section class="cbt-setup-security-log-monitor is-<?php echo esc_attr($monitor_tone); ?>" data-security-log-monitor>
+            <div class="cbt-setup-security-log-monitor-top">
+                <div>
+                    <h3>Redis Monitor</h3>
+                    <p data-security-log-monitor-helper><?php echo esc_html($helper_text); ?></p>
+                </div>
+                <div class="cbt-setup-security-log-monitor-actions">
+                    <button type="button" class="button" data-security-log-monitor-action="refresh_monitor">Refresh Monitor</button>
+                    <button type="button" class="button" data-security-log-monitor-action="micro_drain"<?php echo $can_run_actions ? '' : ' disabled'; ?>>Run Micro-Drain</button>
+                    <button type="button" class="button button-primary" data-security-log-monitor-action="flush_now"<?php echo $can_run_actions ? '' : ' disabled'; ?>>Force Flush Now</button>
+                    <button type="button" class="button" data-security-log-monitor-action="copy_diagnostics">Copy Diagnostics</button>
+                </div>
+            </div>
+            <div class="cbt-setup-security-log-monitor-grid">
+                <div class="cbt-setup-security-log-monitor-card">
+                    <h4>Mode</h4>
+                    <dl class="cbt-setup-security-log-monitor-list">
+                        <div><dt>Live</dt><dd data-security-log-monitor-field="live_label"><?php echo esc_html($live_label); ?></dd></div>
+                        <div><dt>Ingest</dt><dd data-security-log-monitor-field="ingest_label"><?php echo esc_html($ingest_label); ?></dd></div>
+                        <div><dt>Persist</dt><dd data-security-log-monitor-field="persist_label"><?php echo esc_html($persist_label); ?></dd></div>
+                    </dl>
+                </div>
+                <div class="cbt-setup-security-log-monitor-card">
+                    <h4>Health</h4>
+                    <dl class="cbt-setup-security-log-monitor-list">
+                        <div><dt>Feature Flag</dt><dd data-security-log-monitor-field="feature_enabled"><?php echo esc_html($feature_enabled ? 'On' : 'Off'); ?></dd></div>
+                        <div><dt>Redis Available</dt><dd data-security-log-monitor-field="available"><?php echo esc_html($available ? 'Yes' : 'No'); ?></dd></div>
+                        <div><dt>Stream Supported</dt><dd data-security-log-monitor-field="stream_supported"><?php echo esc_html($stream_supported ? 'Yes' : 'No'); ?></dd></div>
+                        <div><dt>Worker Scheduled</dt><dd data-security-log-monitor-field="worker_scheduled"><?php echo esc_html($worker_scheduled ? 'Yes' : 'No'); ?></dd></div>
+                    </dl>
+                </div>
+                <div class="cbt-setup-security-log-monitor-card">
+                    <h4>Queue</h4>
+                    <dl class="cbt-setup-security-log-monitor-list">
+                        <div><dt>Backlog</dt><dd data-security-log-monitor-field="backlog_count"><?php echo esc_html((string) $backlog_count); ?></dd></div>
+                        <div><dt>Oldest Pending</dt><dd data-security-log-monitor-field="oldest_pending"><?php echo esc_html(self::format_duration_seconds($oldest_pending_age_seconds)); ?></dd></div>
+                        <div><dt>Dead Letter</dt><dd data-security-log-monitor-field="dead_letter_count"><?php echo esc_html((string) $dead_letter_count); ?></dd></div>
+                        <div><dt>Last Stream ID</dt><dd data-security-log-monitor-field="last_stream_id"><?php echo esc_html($last_stream_id !== '' ? $last_stream_id : '-'); ?></dd></div>
+                    </dl>
+                </div>
+                <div class="cbt-setup-security-log-monitor-card">
+                    <h4>Activity</h4>
+                    <dl class="cbt-setup-security-log-monitor-list">
+                        <div><dt>Last Enqueue</dt><dd data-security-log-monitor-field="last_enqueue"><?php echo esc_html(self::format_activity_value($last_enqueue_at, $last_enqueue_status)); ?></dd></div>
+                        <div><dt>Last Flush</dt><dd data-security-log-monitor-field="last_flush"><?php echo esc_html(self::format_activity_value($last_flush_at, $last_flush_status)); ?></dd></div>
+                        <div><dt>Next Flush</dt><dd data-security-log-monitor-field="next_flush_at"><?php echo esc_html($next_flush_at !== '' ? $next_flush_at : '-'); ?></dd></div>
+                        <div><dt>Last Error/Result</dt><dd data-security-log-monitor-field="last_result"><?php echo esc_html($last_result); ?></dd></div>
+                    </dl>
+                </div>
+            </div>
+            <div class="cbt-setup-security-log-monitor-footer">
+                <span class="cbt-setup-security-log-monitor-status" data-security-log-monitor-status><?php echo esc_html($status_label !== '' ? $status_label : 'Status monitor siap.'); ?></span>
+                <span class="cbt-setup-security-log-monitor-disabled"<?php echo $disabled_reason !== '' ? '' : ' hidden'; ?> data-security-log-monitor-disabled-reason><?php echo esc_html($disabled_reason); ?></span>
+            </div>
+            <pre class="cbt-setup-security-log-monitor-diagnostics" data-security-log-monitor-diagnostics hidden><?php echo esc_html($diagnostics_json); ?></pre>
+        </section>
+        <?php
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $groups
      */
     public static function render_security_log_live_roster_panel(array $groups): void
@@ -706,5 +810,51 @@ final class CBT_Admin_Security_Page
         }
 
         return $indicators;
+    }
+
+    private static function format_duration_seconds(int $seconds): string
+    {
+        $seconds = max(0, $seconds);
+        if ($seconds <= 0) {
+            return '0 detik';
+        }
+
+        if ($seconds < 60) {
+            return $seconds . ' detik';
+        }
+
+        $minutes = (int) floor($seconds / 60);
+        $remaining_seconds = $seconds % 60;
+        if ($minutes < 60) {
+            return $remaining_seconds > 0
+                ? sprintf('%d m %d dtk', $minutes, $remaining_seconds)
+                : sprintf('%d menit', $minutes);
+        }
+
+        $hours = (int) floor($minutes / 60);
+        $remaining_minutes = $minutes % 60;
+
+        return $remaining_minutes > 0
+            ? sprintf('%d j %d m', $hours, $remaining_minutes)
+            : sprintf('%d jam', $hours);
+    }
+
+    private static function format_activity_value(string $timestamp, string $status): string
+    {
+        $timestamp = trim($timestamp);
+        $status = trim($status);
+        if ($timestamp === '' && $status === '') {
+            return '-';
+        }
+
+        if ($timestamp === '') {
+            return strtoupper($status);
+        }
+
+        if ($status === '') {
+            return $timestamp;
+        }
+
+        return $timestamp . ' • ' . strtoupper($status);
     }
 }

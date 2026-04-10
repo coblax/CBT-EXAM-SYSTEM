@@ -100,6 +100,7 @@ final class CBT_Admin_Security_Service
         $security_log_status_snapshot = (array) ($security_live_snapshot['status_snapshot'] ?? []);
         $security_observability_endpoint_url = rest_url('cbt/v1/security_observability_snapshot');
         $security_logs_page_endpoint_url = rest_url('cbt/v1/security_logs_page');
+        $security_ingest_action_endpoint_url = rest_url('cbt/v1/security_ingest_admin_action');
         $security_rest_nonce = wp_create_nonce('wp_rest');
         $native_browser_event_catalog = self::build_event_catalog(CBT_Security_Log::browser_supported_event_definitions(), ['android_webview', 'windows_cefsharp']);
         $native_android_event_catalog = self::build_event_catalog(CBT_Security_Log::android_native_supported_event_definitions(), ['android_webview']);
@@ -144,6 +145,7 @@ final class CBT_Admin_Security_Service
             'security_log_must_watch_attempts',
             'security_logs',
             'security_observability_endpoint_url',
+            'security_ingest_action_endpoint_url',
             'security_logs_page_endpoint_url',
             'security_rest_nonce'
         );
@@ -174,11 +176,25 @@ final class CBT_Admin_Security_Service
                     ? 'redis_live'
                     : 'mysql_fallback',
                 'status_label' => class_exists('CBT_Security_Live_Counters') && CBT_Security_Live_Counters::is_available()
-                    ? 'Redis Live'
-                    : 'Live Redis unavailable - MySQL fallback',
+                    ? 'Live Redis • Ingest direct MySQL • Persist direct MySQL'
+                    : 'Live MySQL fallback • Ingest direct MySQL • Persist direct MySQL',
+                'live_label' => class_exists('CBT_Security_Live_Counters') && CBT_Security_Live_Counters::is_available()
+                    ? 'Live Redis'
+                    : 'Live MySQL fallback',
+                'ingest_label' => 'Ingest direct MySQL',
+                'persist_label' => 'Persist direct MySQL',
                 'backlog_count' => 0,
                 'dead_letter_count' => 0,
                 'oldest_pending_age_seconds' => 0,
+                'worker_scheduled' => 0,
+                'next_flush_at' => '',
+                'last_enqueue_at' => '',
+                'last_enqueue_status' => '',
+                'last_enqueue_error' => '',
+                'last_flush_at' => '',
+                'last_flush_status' => '',
+                'last_flush_result' => '',
+                'last_stream_id' => '',
                 'ingest_mode' => 'disabled',
             ];
 

@@ -58,6 +58,7 @@ final class AdminSecurityServiceLiveRosterTest extends TestCase
         self::assertArrayHasKey('security_live_roster_groups', $context);
         self::assertCount(1, $context['security_live_roster_groups']);
         self::assertSame('Exam Context', $context['security_live_roster_groups'][0]['exam_title']);
+        self::assertSame('http://example.test/wp-json/cbt/v1/security_ingest_admin_action', $context['security_ingest_action_endpoint_url'] ?? '');
     }
 
     #[RunInSeparateProcess]

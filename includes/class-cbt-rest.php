@@ -307,6 +307,12 @@ class CBT_REST
             ],
         ]);
 
+        register_rest_route('cbt/v1', '/security_ingest_admin_action', [
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => [self::class, 'security_ingest_admin_action'],
+            'permission_callback' => [self::class, 'permission_manage_security_admin'],
+        ]);
+
         register_rest_route('cbt/v1', '/ui_state', [
             [
                 'methods' => WP_REST_Server::READABLE,
@@ -1458,18 +1464,23 @@ class CBT_REST
             return self::validate_exam_token_or_error($expected_token, $submitted_token);
         };
 
-        $resume_candidate = self::resolve_resumable_attempt_candidate($exam_id, $user_id, $attempt_table);
+        $resume_candidate = self::resolve_resumable_attempt_candidate_for_status($exam_id, $user_id, $attempt_table);
         if (is_array($resume_candidate['attempt'] ?? null)) {
-            $response = self::build_resumed_attempt_response(
+            $response = self::build_lightweight_resumed_status_response(
                 (array) $resume_candidate['attempt'],
                 $exam,
                 $exam_id,
                 $user_id,
-                $attempt_table,
                 $resume_only,
                 $exam_token_input,
                 $validate_token_submission
             );
+
+            if (!is_wp_error($response)) {
+                self::record_start_attempt_phase('start_attempt_status_resume_from_index_light', $exam_id, $user_id, [
+                    'attempt_id' => (int) (((array) $resume_candidate['attempt'])['id'] ?? ((array) $resume_candidate['attempt'])['attempt_id'] ?? 0),
+                ]);
+            }
 
             return is_wp_error($response)
                 ? self::build_start_attempt_terminal_status_from_error($response)
@@ -1482,16 +1493,21 @@ class CBT_REST
             $latest_attempt['exam_id'] = $exam_id;
             $latest_attempt['student_id'] = $user_id;
 
-            $response = self::build_resumed_attempt_response(
+            $response = self::build_lightweight_resumed_status_response(
                 $latest_attempt,
                 $exam,
                 $exam_id,
                 $user_id,
-                $attempt_table,
                 $resume_only,
                 $exam_token_input,
                 $validate_token_submission
             );
+
+            if (!is_wp_error($response)) {
+                self::record_start_attempt_phase('start_attempt_status_resume_from_db_light', $exam_id, $user_id, [
+                    'attempt_id' => (int) ($latest_attempt['id'] ?? $latest_attempt['attempt_id'] ?? 0),
+                ]);
+            }
 
             return is_wp_error($response)
                 ? self::build_start_attempt_terminal_status_from_error($response)
@@ -1601,6 +1617,33 @@ class CBT_REST
     private static function resolve_resumable_attempt_candidate(int $exam_id, int $user_id, string $attempt_table): array
     {
         $indexed_attempt = self::get_active_attempt_from_index($user_id, $exam_id, $attempt_table);
+        if (is_array($indexed_attempt)) {
+            return [
+                'attempt' => $indexed_attempt,
+                'source' => 'index',
+            ];
+        }
+
+        $latest_active_attempt = self::get_latest_active_attempt_candidate($exam_id, $user_id, $attempt_table);
+        if (is_array($latest_active_attempt)) {
+            return [
+                'attempt' => self::hydrate_attempt_identity($latest_active_attempt, $exam_id, $user_id),
+                'source' => 'db',
+            ];
+        }
+
+        return [
+            'attempt' => null,
+            'source' => 'none',
+        ];
+    }
+
+    /**
+     * @return array{attempt:?array,source:string}
+     */
+    private static function resolve_resumable_attempt_candidate_for_status(int $exam_id, int $user_id, string $attempt_table): array
+    {
+        $indexed_attempt = self::get_active_attempt_from_index_read_only($user_id, $exam_id, $attempt_table);
         if (is_array($indexed_attempt)) {
             return [
                 'attempt' => $indexed_attempt,
@@ -1990,6 +2033,56 @@ class CBT_REST
     }
 
     /**
+     * @param callable(string):mixed $validate_token_submission
+     * @return array<string,mixed>|WP_Error
+     */
+    private static function build_lightweight_resumed_status_response(
+        array $attempt,
+        array $exam,
+        int $exam_id,
+        int $user_id,
+        bool $resume_only,
+        string $exam_token_input,
+        callable $validate_token_submission
+    ) {
+        if (!$resume_only) {
+            $token_check = $validate_token_submission($exam_token_input);
+            if (is_wp_error($token_check)) {
+                return $token_check;
+            }
+        }
+
+        $attempt_id = (int) ($attempt['id'] ?? $attempt['attempt_id'] ?? 0);
+        if ($attempt_id <= 0) {
+            return new WP_Error('attempt_not_found', 'Tidak ada attempt ujian aktif untuk dilanjutkan.', ['status' => 404]);
+        }
+
+        $resolved_duration_minutes = self::resolve_attempt_duration_minutes(
+            $attempt,
+            (int) ($exam['duration_minutes'] ?? 0)
+        );
+        $attempt_timer = self::build_attempt_timer_payload([
+            'id' => $attempt_id,
+            'status' => (string) ($attempt['status'] ?? 'in_progress'),
+            'started_at' => (string) ($attempt['started_at'] ?? ''),
+            'extra_time_minutes' => (int) ($attempt['extra_time_minutes'] ?? 0),
+            'duration_minutes' => $resolved_duration_minutes,
+        ], (int) ($exam['duration_minutes'] ?? 0));
+
+        return rest_ensure_response(self::append_adaptive_load_payload([
+            'attempt_id' => $attempt_id,
+            'status' => 'resumed',
+            'duration_minutes' => $resolved_duration_minutes,
+            'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? 0)),
+            'started_at' => (string) ($attempt['started_at'] ?? ''),
+            'remaining_seconds' => (int) ($attempt_timer['remaining_seconds'] ?? max(0, $resolved_duration_minutes * MINUTE_IN_SECONDS)),
+            'server_now' => (string) ($attempt_timer['server_now'] ?? current_time('mysql')),
+            'question_revision' => CBT_Cache::get_exam_revision_meta($exam_id),
+            'question_order_signature' => self::build_attempt_question_order_signature_from_attempt($attempt),
+        ]));
+    }
+
+    /**
      * @return array<string,mixed>|null
      */
     private static function get_active_attempt_from_index(int $user_id, int $exam_id, string $attempt_table): ?array
@@ -2041,6 +2134,58 @@ class CBT_REST
         }
 
         CBT_Active_Attempt_Index::set_active_attempt($attempt);
+        return $attempt;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_active_attempt_from_index_read_only(int $user_id, int $exam_id, string $attempt_table): ?array
+    {
+        global $wpdb;
+
+        if (
+            $user_id <= 0
+            || $exam_id <= 0
+            || !class_exists('CBT_Active_Attempt_Index')
+        ) {
+            return null;
+        }
+
+        $attempt_id = CBT_Active_Attempt_Index::get_active_attempt_id($user_id, $exam_id);
+        if ($attempt_id <= 0) {
+            return null;
+        }
+
+        $runtime_attempt = self::get_live_runtime_attempt_envelope($attempt_id, $user_id);
+        if (
+            is_array($runtime_attempt)
+            && (int) ($runtime_attempt['exam_id'] ?? 0) === $exam_id
+            && (string) ($runtime_attempt['status'] ?? '') === 'in_progress'
+        ) {
+            return $runtime_attempt;
+        }
+
+        $attempt = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, exam_id, student_id, status, started_at, finished_at, question_order, option_order, extra_time_minutes
+                 FROM {$attempt_table}
+                 WHERE id = %d
+                 LIMIT 1",
+                $attempt_id
+            ),
+            ARRAY_A
+        );
+
+        if (
+            !is_array($attempt)
+            || (int) ($attempt['student_id'] ?? 0) !== $user_id
+            || (int) ($attempt['exam_id'] ?? 0) !== $exam_id
+            || (string) ($attempt['status'] ?? '') !== 'in_progress'
+        ) {
+            return null;
+        }
+
         return $attempt;
     }
 
@@ -2434,6 +2579,43 @@ class CBT_REST
             'page' => max(1, (int) ($payload['page'] ?? 1)),
             'per_page' => max(1, (int) ($payload['per_page'] ?? 20)),
             'page_count' => max(1, (int) ($payload['page_count'] ?? 1)),
+        ]);
+    }
+
+    public static function security_ingest_admin_action(WP_REST_Request $request)
+    {
+        $action = sanitize_key((string) self::get_request_payload_value($request, 'action'));
+        if ($action !== 'micro_drain' && $action !== 'flush_now') {
+            return new WP_Error('invalid_action', 'Security ingest action is not allowed.', ['status' => 400]);
+        }
+
+        if (!class_exists('CBT_Security_Event_Ingest')) {
+            $status_snapshot = class_exists('CBT_Admin_Security_Service')
+                ? (array) (CBT_Admin_Security_Service::build_security_observability_snapshot(false)['status_snapshot'] ?? [])
+                : [];
+
+            return rest_ensure_response([
+                'ok' => true,
+                'action' => $action,
+                'action_result' => [
+                    'skipped' => 1,
+                    'reason' => 'ingest_service_missing',
+                ],
+                'status_snapshot' => $status_snapshot,
+            ]);
+        }
+
+        if ($action === 'micro_drain') {
+            $action_result = CBT_Security_Event_Ingest::maybe_micro_drain();
+        } else {
+            $action_result = CBT_Security_Event_Ingest::flush_batch(500, 5.0, 'admin_force_flush');
+        }
+
+        return rest_ensure_response([
+            'ok' => true,
+            'action' => $action,
+            'action_result' => is_array($action_result) ? $action_result : [],
+            'status_snapshot' => CBT_Security_Event_Ingest::get_status_snapshot(),
         ]);
     }
 
@@ -5415,6 +5597,34 @@ class CBT_REST
         }
 
         return sha1(implode('|', $signature_parts));
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     */
+    private static function build_attempt_question_order_signature_from_attempt(array $attempt): string
+    {
+        $raw_question_order = $attempt['question_order'] ?? '';
+        $question_order_ids = [];
+
+        if (is_array($raw_question_order)) {
+            $question_order_ids = $raw_question_order;
+        } elseif (is_string($raw_question_order) && trim($raw_question_order) !== '') {
+            $decoded_question_order = json_decode($raw_question_order, true);
+            if (is_array($decoded_question_order)) {
+                $question_order_ids = $decoded_question_order;
+            }
+        }
+
+        $question_order_ids = array_values(array_filter(array_map('intval', $question_order_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        }));
+        if (empty($question_order_ids)) {
+            return '';
+        }
+
+        $question_number_map = self::build_attempt_question_number_map($question_order_ids, $question_order_ids);
+        return self::build_attempt_question_order_signature($question_order_ids, $question_number_map);
     }
 
     /**

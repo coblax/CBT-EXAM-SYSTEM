@@ -252,16 +252,6 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         $GLOBALS['cbt_test_rest_auth_role'] = 'student';
         $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
 
-        CBT_Runtime::ensure_attempt_state([
-            'id' => 81,
-            'exam_id' => 15,
-            'student_id' => 7,
-            'status' => 'in_progress',
-            'started_at' => '2026-04-02 10:00:00',
-            'question_order' => '[]',
-            'option_order' => '',
-            'extra_time_minutes' => 0,
-        ], 90);
         CBT_Active_Attempt_Index::set_active_attempt([
             'id' => 81,
             'exam_id' => 15,
@@ -281,7 +271,20 @@ final class RestStartAttemptActiveIndexTest extends TestCase
                 'randomize_options' => 0,
                 'target_kelas' => '',
             ],
-            latestAttemptRow: null
+            latestAttemptRow: null,
+            attemptRowsById: [
+                81 => [
+                    'id' => 81,
+                    'exam_id' => 15,
+                    'student_id' => 7,
+                    'status' => 'in_progress',
+                    'started_at' => '2026-04-02 10:00:00',
+                    'finished_at' => '',
+                    'question_order' => '[201,202]',
+                    'option_order' => '',
+                    'extra_time_minutes' => 0,
+                ],
+            ]
         );
 
         $response = CBT_REST::start_attempt_status(new WP_REST_Request([
@@ -293,6 +296,15 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertSame('resumed', $response['status']);
         self::assertSame(81, $response['attempt_id']);
         self::assertSame(0, $wpdb->latestAttemptQueryCount);
+        self::assertSame(1, $wpdb->attemptByIdQueryCount);
+        self::assertSame(90, $response['duration_minutes']);
+        self::assertSame('2026-04-02 10:00:00', $response['started_at']);
+        self::assertIsString($response['server_now']);
+        self::assertNotSame('', (string) $response['question_order_signature']);
+        self::assertIsArray($response['question_revision']);
+        self::assertFalse(CBT_Runtime::has_attempt_state(81));
+        self::assertArrayNotHasKey('cbt_attempt_session:attempt:81', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+        self::assertArrayNotHasKey('cbt_attempt_contract:attempt:81', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
     }
 
     #[RunInSeparateProcess]
@@ -418,7 +430,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
                 'status' => 'in_progress',
                 'started_at' => '2026-04-02 10:00:00',
                 'finished_at' => '',
-                'question_order' => '[]',
+                'question_order' => '[301,302]',
                 'option_order' => '',
                 'extra_time_minutes' => 0,
             ]
@@ -433,6 +445,12 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertSame('resumed', $response['status']);
         self::assertSame(82, $response['attempt_id']);
         self::assertSame(1, $wpdb->latestAttemptQueryCount);
+        self::assertSame(0, $wpdb->attemptByIdQueryCount);
+        self::assertSame(90, $response['duration_minutes']);
+        self::assertNotSame('', (string) $response['question_order_signature']);
+        self::assertFalse(CBT_Runtime::has_attempt_state(82));
+        self::assertArrayNotHasKey('cbt_attempt_session:attempt:82', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+        self::assertArrayNotHasKey('cbt_attempt_contract:attempt:82', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
     }
 
     #[RunInSeparateProcess]

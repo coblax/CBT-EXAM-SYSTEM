@@ -77,6 +77,10 @@ export function createExamSessionManager(deps) {
     var bumpQuestionDataGeneration = deps.bumpQuestionDataGeneration;
     var attemptUiStateSyncDelayMs = Math.max(0, Number(deps.attemptUiStateSyncDelayMs) || 0);
     var startAttemptTimeoutMs = Math.max(5000, Number(deps.startAttemptTimeoutMs) || 15000);
+    var startAttemptStatusTimeoutMs = Math.max(
+        5000,
+        Number(deps.startAttemptStatusTimeoutMs) || Math.max(12000, Math.min(startAttemptTimeoutMs, 15000))
+    );
     var startAttemptRecoveryTimeoutMs = Math.max(5000, Number(deps.startAttemptRecoveryTimeoutMs) || 30000);
     var startAttemptRecoveryPollDelayMs = Math.max(0, Number(deps.startAttemptRecoveryPollDelayMs) || 1200);
     var questionWindowSize = Math.max(1, Number(deps.questionWindowSize) || 1);
@@ -741,7 +745,7 @@ export function createExamSessionManager(deps) {
                 method: 'POST',
                 body: body
             }),
-            Math.max(5000, Number(options.timeoutMs) || Math.min(startAttemptTimeoutMs, 8000)),
+            Math.max(5000, Number(options.timeoutMs) || startAttemptStatusTimeoutMs),
             String(options.timeoutMessage || START_ATTEMPT_STATUS_TIMEOUT_MESSAGE)
         );
     }
@@ -751,7 +755,7 @@ export function createExamSessionManager(deps) {
         var recoveryDeadlineAt = Date.now() + startAttemptRecoveryTimeoutMs;
         var lastError = triggerError;
         var hasRetriedFreshStart = false;
-        var statusTimeoutMs = Math.max(5000, Math.min(startAttemptTimeoutMs, 8000));
+        var statusTimeoutMs = startAttemptStatusTimeoutMs;
 
         while (Date.now() <= recoveryDeadlineAt) {
             assertOpeningAttemptRequestActive(requestId);
@@ -859,7 +863,7 @@ export function createExamSessionManager(deps) {
                 exam_id: examId,
                 resume_only: 1
             }, {
-                timeoutMs: Math.max(5000, Math.min(startAttemptTimeoutMs, 8000))
+                timeoutMs: startAttemptStatusTimeoutMs
             });
             assertOpeningAttemptRequestActive(requestId);
 
@@ -916,7 +920,7 @@ export function createExamSessionManager(deps) {
                     exam_id: examId,
                     resume_only: 1
                 }, {
-                    timeoutMs: Math.max(5000, Math.min(startAttemptTimeoutMs, 8000))
+                    timeoutMs: startAttemptStatusTimeoutMs
                 });
                 assertOpeningAttemptRequestActive(requestId);
 
@@ -964,7 +968,7 @@ export function createExamSessionManager(deps) {
         var activePayload = queuedPayload;
         var hasRetriedFreshStart = false;
         var hasLoggedQueueState = false;
-        var pollTimeoutMs = Math.max(5000, Math.min(startAttemptTimeoutMs, 8000));
+        var pollTimeoutMs = startAttemptStatusTimeoutMs;
 
         while (isQueuedStartAttemptPayload(activePayload)) {
             assertOpeningAttemptRequestActive(requestId);
@@ -1870,7 +1874,7 @@ export function createExamSessionManager(deps) {
                         exam_id: Number(selectedExam.id) || 0,
                         resume_only: 1
                     }, {
-                        timeoutMs: Math.max(5000, Math.min(startAttemptTimeoutMs, 8000))
+                        timeoutMs: startAttemptStatusTimeoutMs
                     });
                     assertOpeningAttemptRequestActive(requestId);
 
@@ -1906,7 +1910,7 @@ export function createExamSessionManager(deps) {
                         exam_id: Number(selectedExam.id) || 0,
                         resume_only: 1
                     }, {
-                        timeoutMs: Math.max(5000, Math.min(startAttemptTimeoutMs, 8000))
+                        timeoutMs: startAttemptStatusTimeoutMs
                     });
                 } else {
                     startPayload = await requestStartAttempt({
