@@ -143,6 +143,29 @@ final class AdaptiveLoadServiceTest extends TestCase
         self::assertSame(0, (int) $state['clean_ticks']);
     }
 
+    public function test_tick_repairs_far_future_auto_hold_before_deescalating(): void
+    {
+        update_option('cbt_adaptive_load_state', [
+            'effective_level' => 'critical',
+            'candidate_level' => 'busy',
+            'source' => 'auto',
+            'reasons' => ['Level ditahan di CRITICAL untuk mencegah flap.'],
+            'last_evaluated_at' => '2026-03-24 11:59:00',
+            'hold_until' => '2026-04-22 08:29:46',
+            'override_level' => '',
+            'override_expires_at' => '',
+            'override_user_id' => 0,
+            'clean_ticks' => 3,
+            'signals' => [],
+        ]);
+
+        $state = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame('normal', $state['candidate_level']);
+        self::assertSame('normal', $state['effective_level']);
+        self::assertSame('', $state['hold_until']);
+    }
+
     public function test_manual_override_beats_auto_level_until_it_expires(): void
     {
         $this->seedAutoHealQueueDepth(500);
@@ -288,7 +311,10 @@ final class AdaptiveLoadServiceFakeWpdb
     {
         $query = (string) $prepared;
 
-        if (strpos($query, "SELECT COUNT(*) FROM wp_cbt_attempts WHERE status = 'in_progress'") !== false) {
+        if (
+            strpos($query, 'FROM wp_cbt_attempts a') !== false
+            && strpos($query, 'TIMESTAMPADD(MINUTE') !== false
+        ) {
             return 0;
         }
 

@@ -13,6 +13,9 @@ if (!defined('ABSPATH')) {
                 <?php if ($error): ?>
                     <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
                 <?php endif; ?>
+                <?php if (!empty($expired_attempt_auto_finalize['has_pending'])): ?>
+                    <div class="notice notice-info is-dismissible"><p>Attempt expired sedang dirapikan di background agar halaman results tetap ringan. Refresh lagi beberapa detik untuk melihat status terbaru.</p></div>
+                <?php endif; ?>
             </div>
             <section class="cbt-results-hero">
                 <div class="cbt-results-hero-copy">

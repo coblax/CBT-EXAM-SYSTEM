@@ -788,6 +788,7 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
             'question_ids' => self::normalize_question_ids($payload['question_ids'] ?? []),
             'question_count' => max(0, (int) ($payload['question_count'] ?? count((array) ($payload['question_ids'] ?? [])))),
             'question_number_map' => self::normalize_question_number_map($payload['question_number_map'] ?? []),
+            'question_manifest' => self::normalize_question_manifest($payload['question_manifest'] ?? []),
             'randomize_questions' => !empty($payload['randomize_questions']) ? 1 : 0,
             'randomize_options' => !empty($payload['randomize_options']) ? 1 : 0,
             'duration_minutes' => max(0, (int) ($payload['duration_minutes'] ?? 0)),
@@ -797,6 +798,46 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
                 $payload['option_randomization_tokens_by_question'] ?? []
             ),
         ];
+
+        return $normalized;
+    }
+
+    /**
+     * @param mixed $manifest
+     * @return array<int,array<string,mixed>>
+     */
+    private static function normalize_question_manifest($manifest): array
+    {
+        if (!is_array($manifest)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($manifest as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $question_id = absint($item['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+
+            $normalized_item = [
+                'id' => $question_id,
+                'question_type' => is_scalar($item['question_type'] ?? null) ? sanitize_key((string) $item['question_type']) : '',
+                'updated_at' => is_scalar($item['updated_at'] ?? null) ? (string) $item['updated_at'] : '',
+            ];
+            if (array_key_exists('points', $item)) {
+                $normalized_item['points'] = (float) ($item['points'] ?? 0);
+            }
+            $question_number = absint($item['question_number'] ?? 0);
+            if ($question_number > 0) {
+                $normalized_item['question_number'] = $question_number;
+            }
+
+            $normalized[] = $normalized_item;
+        }
 
         return $normalized;
     }

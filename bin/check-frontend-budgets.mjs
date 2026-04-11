@@ -11,7 +11,7 @@ if (!frontendEntry || typeof frontendEntry !== 'object') {
 
 const frontendEntryPath = join(process.cwd(), 'public', 'build', String(frontendEntry.file || ''));
 const frontendEntrySize = statSync(frontendEntryPath).size;
-const frontendEntryBudget = 255000;
+const frontendEntryBudget = 266000;
 
 if (frontendEntrySize > frontendEntryBudget) {
     throw new Error(

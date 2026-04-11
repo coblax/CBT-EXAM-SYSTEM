@@ -245,6 +245,83 @@ final class CBT_Snapshot_Auto_Heal_Queue_Service
     }
 
     /**
+     * @return array{
+     *   removed:bool,
+     *   key:string,
+     *   queue_depth:int,
+     *   state:array<string,mixed>
+     * }
+     */
+    public static function remove_target(string $type, int $target_id, string $message = ''): array
+    {
+        $type = self::sanitize_type($type);
+        $target_id = absint($target_id);
+        $key = self::job_key($type, $target_id);
+        $state = self::get_state();
+        $default = [
+            'removed' => false,
+            'key' => $key,
+            'queue_depth' => max(0, (int) ($state['queued_count'] ?? 0)),
+            'state' => $state,
+        ];
+
+        if ($type === '' || $target_id <= 0) {
+            return $default;
+        }
+
+        if (!CBT_Cache::acquire_lock(self::LOCK_KEY, self::LOCK_TTL, [
+            'source' => 'remove_auto_heal_target',
+            'type' => $type,
+            'target_id' => $target_id,
+        ])) {
+            return $default;
+        }
+
+        try {
+            $state = self::get_state();
+            $items = isset($state['items']) && is_array($state['items']) ? $state['items'] : [];
+            if (!isset($items[$key]) || !is_array($items[$key])) {
+                $state = self::normalize_state($state);
+                return [
+                    'removed' => false,
+                    'key' => $key,
+                    'queue_depth' => max(0, (int) ($state['queued_count'] ?? 0)),
+                    'state' => $state,
+                ];
+            }
+
+            unset($items[$key]);
+            $state['items'] = $items;
+            $state['last_message'] = trim($message) !== ''
+                ? trim($message)
+                : sprintf('Auto-heal queue target %s #%d dihapus dari antrean.', $type, $target_id);
+            $state = self::append_history($state, [
+                'key' => $key,
+                'status' => 'resolved_external',
+                'message' => $state['last_message'],
+                'finished_at' => current_time('mysql'),
+            ]);
+            $state = self::normalize_state($state);
+            self::save_state($state);
+
+            if (!empty($state['items'])) {
+                self::ensure_tick_event();
+            } else {
+                self::clear_tick_event();
+            }
+
+            return [
+                'removed' => true,
+                'key' => $key,
+                'queue_depth' => max(0, (int) ($state['queued_count'] ?? 0)),
+                'state' => $state,
+            ];
+        } finally {
+            CBT_Cache::release_lock(self::LOCK_KEY);
+        }
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public static function tick(): array

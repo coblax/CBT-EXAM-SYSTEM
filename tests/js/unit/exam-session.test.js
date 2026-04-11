@@ -102,6 +102,13 @@ function createFixture(overrides = {}) {
         currentIndex: 0,
         pendingSyncCount: 0,
         pendingStartIntentKey: '',
+        openingRetryAttemptCount: 0,
+        openingRetryNextAt: 0,
+        openingRetryDelayMs: 0,
+        openingRetryReason: '',
+        openingRetryCountdownSeconds: 0,
+        openingRetryInFlight: false,
+        openingRetryLastTrigger: '',
         examLockedForPendingFinish: false,
         navPanelVisible: false,
         calculatorVisible: false,
@@ -307,6 +314,8 @@ function createFixture(overrides = {}) {
                 openingAttemptProgressStatus: String(state.openingAttemptProgressStatus || ''),
                 openingAttemptProgressStepIndex: Number(state.openingAttemptProgressStepIndex) || 0,
                 openingAttemptQueuePosition: Number(state.openingAttemptQueuePosition) || 0,
+                openingRetryCountdownSeconds: Number(state.openingRetryCountdownSeconds) || 0,
+                openingRetryInFlight: Boolean(state.openingRetryInFlight),
                 resultProgressDetail: String(state.resultProgressDetail || ''),
                 resultProgressPercent: Number(state.resultProgressPercent) || 0,
                 resultProgressStatus: String(state.resultProgressStatus || ''),
@@ -937,6 +946,39 @@ describe('createExamSessionManager', function () {
         expect(fixture.state.openingAttemptPhase).toBe('opening_waiting_queue');
         expect(fixture.state.openingAttemptQueuePosition).toBe(7);
         expect(String(fixture.state.openingAttemptProgressStatus || '')).toContain('Menunggu giliran masuk ujian');
+    });
+
+    it('does not fire a duplicate refresh request while an opening retry request is in flight', async function () {
+        var fixture = createFixture({
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: ''
+                    }
+                ],
+                selectedExamId: 55,
+                stage: 'exam',
+                isOpeningAttempt: true,
+                pendingExamId: 55,
+                pendingExamToken: '',
+                pendingQueueTicket: 'gate-ticket-1',
+                pendingResumeIntent: false,
+                openingRetryInFlight: true
+            },
+            apiRequest: async function (endpoint) {
+                throw new Error('Unexpected endpoint while request is in flight: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.refreshOpeningAttemptStatus();
+
+        expect(fixture.calls.apiCalls).toHaveLength(0);
+        expect(String(fixture.state.openingAttemptProgressStatus || '')).toContain('Refresh Status sedang berjalan');
+        expect(fixture.state.openingRetryInFlight).toBe(true);
     });
 
     it('reuses the same idempotency key when retrying the same opening shell', async function () {

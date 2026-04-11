@@ -162,6 +162,11 @@ class CBT_REST
                     'type' => 'integer',
                     'sanitize_callback' => 'absint',
                 ],
+                'bootstrap_light' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
             ],
         ]);
 
@@ -667,6 +672,7 @@ class CBT_REST
             $include_existing = ((int) $include_existing_raw !== 0);
         }
         $include_answer_manifest = ((int) $request->get_param('include_answer_manifest') === 1);
+        $bootstrap_light = ((int) $request->get_param('bootstrap_light') === 1);
         $user_id = CBT_Auth::current_user_id($request);
         $role = CBT_Auth::current_user_role($request);
 
@@ -737,11 +743,34 @@ class CBT_REST
             }
         }
 
+        $window_mode = ($attempt_id > 0 && $limit > 0);
+        if (
+            $bootstrap_light &&
+            $window_mode &&
+            is_array($attempt) &&
+            self::is_student_role($role) &&
+            (string) ($attempt['status'] ?? '') === 'in_progress'
+        ) {
+            $bootstrap_response = self::build_bootstrap_light_question_window_response(
+                $exam,
+                $attempt,
+                $exam_id,
+                $attempt_id,
+                $offset,
+                $limit,
+                $include_existing,
+                $include_answer_manifest,
+                $question_revision
+            );
+            if ($bootstrap_response !== null) {
+                return $bootstrap_response;
+            }
+        }
+
         $use_student_delivery_snapshot = self::should_use_student_delivery_snapshot($role, $attempt);
         $questions = $use_student_delivery_snapshot
             ? self::get_student_exam_question_delivery_payload($exam_id)
             : self::get_cached_exam_question_payload($exam_id);
-        $window_mode = ($attempt_id > 0 && $limit > 0);
 
         $question_manifest = [];
         if (is_array($attempt)) {
@@ -935,6 +964,128 @@ class CBT_REST
     }
 
     /**
+     * @param array<string,mixed> $exam
+     * @param array<string,mixed> $attempt
+     * @param mixed $question_revision
+     * @return WP_REST_Response|null
+     */
+    private static function build_bootstrap_light_question_window_response(
+        array $exam,
+        array $attempt,
+        int $exam_id,
+        int $attempt_id,
+        int $offset,
+        int $limit,
+        bool $include_existing,
+        bool $include_answer_manifest,
+        $question_revision
+    ) {
+        $started_at = microtime(true);
+        $contract = [];
+        if (class_exists('CBT_Attempt_Question_Contract_Cache') && method_exists('CBT_Attempt_Question_Contract_Cache', 'read_cached_attempt_snapshot')) {
+            $contract = CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot($attempt_id);
+        }
+        if (empty($contract)) {
+            $contract = self::build_lightweight_attempt_question_contract($attempt, $exam);
+        }
+        $question_order_ids = array_values(array_filter(array_map('intval', (array) ($contract['question_order_ids'] ?? [])), static function (int $question_id): bool {
+            return $question_id > 0;
+        }));
+        if ($exam_id <= 0 || $attempt_id <= 0 || empty($question_order_ids)) {
+            return null;
+        }
+
+        $total_questions = count($question_order_ids);
+        $limit = max(1, $limit);
+        if ($total_questions > 0 && $offset >= $total_questions) {
+            $offset = max(0, (int) (floor(($total_questions - 1) / $limit) * $limit));
+        }
+
+        $window_question_ids = array_slice($question_order_ids, max(0, $offset), $limit);
+        if (empty($window_question_ids)) {
+            return null;
+        }
+
+        $window_questions = self::get_question_payload_by_ids($exam_id, $window_question_ids);
+        if (empty($window_questions)) {
+            return null;
+        }
+
+        $question_number_map = self::normalize_attempt_question_number_map(
+            is_array($contract['question_number_map'] ?? null)
+                ? $contract['question_number_map']
+                : []
+        );
+        $option_order_map = self::normalize_attempt_option_order_map($contract['option_order_map'] ?? []);
+        $question_manifest = is_array($contract['question_manifest'] ?? null)
+            ? array_values(array_filter($contract['question_manifest'], 'is_array'))
+            : [];
+        if (empty($question_manifest)) {
+            $question_manifest = self::build_minimal_question_manifest_from_order($question_order_ids, $question_number_map);
+        }
+
+        $window_questions = self::order_question_payload_by_ids($window_questions, $window_question_ids);
+        if (!empty($option_order_map)) {
+            $window_questions = self::apply_attempt_option_order_to_questions($window_questions, $option_order_map);
+        }
+        if (!empty($question_number_map)) {
+            $window_questions = self::apply_question_numbers_to_payload($window_questions, $question_number_map);
+        }
+
+        $attempt_duration_minutes = self::resolve_attempt_duration_minutes(
+            $attempt,
+            (int) ($exam['duration_minutes'] ?? 0)
+        );
+        $answered_question_ids = self::get_attempt_answered_question_ids(
+            $attempt_id,
+            $attempt,
+            $attempt_duration_minutes,
+            false
+        );
+        $existing_answers_map = [];
+        if ($include_existing) {
+            self::merge_existing_answers_into_question_payload($window_questions, $attempt_id, $window_question_ids);
+        }
+        if ($include_answer_manifest) {
+            $existing_answers_map = self::build_attempt_existing_answers_map(
+                $window_questions,
+                $attempt_id,
+                $attempt,
+                $attempt_duration_minutes,
+                false
+            );
+        }
+
+        self::record_start_attempt_phase('question_window_fast_path', $exam_id, (int) ($attempt['student_id'] ?? 0), [
+            'attempt_id' => $attempt_id,
+            'duration_ms' => self::measure_elapsed_ms($started_at),
+            'offset' => max(0, $offset),
+            'limit' => $limit,
+            'question_count' => count($window_questions),
+        ]);
+        self::record_start_attempt_phase('question_window_ready', $exam_id, (int) ($attempt['student_id'] ?? 0), [
+            'attempt_id' => $attempt_id,
+            'duration_ms' => self::measure_elapsed_ms($started_at),
+            'source' => 'bootstrap_light',
+        ]);
+
+        return rest_ensure_response([
+            'items' => $window_questions ?: [],
+            'offset' => max(0, $offset),
+            'limit' => $limit,
+            'total_questions' => $total_questions,
+            'has_next' => ($offset + count($window_questions)) < $total_questions,
+            'question_order_ids' => $question_order_ids,
+            'question_manifest' => $question_manifest,
+            'answered_question_ids' => $answered_question_ids,
+            'existing_answers_map' => $existing_answers_map,
+            'archived_review_items' => [],
+            'question_revision' => $question_revision,
+            'question_order_signature' => (string) ($contract['question_order_signature'] ?? ''),
+        ]);
+    }
+
+    /**
      * @param array<string,mixed> $attempt
      * @param array<string,mixed> $exam
      * @return array{question_count:int,question_order_signature:string,attempt:array<string,mixed>}
@@ -1085,7 +1236,7 @@ class CBT_REST
                 $processingError = new WP_Error(
                     'attempt_lock_active',
                     'Permintaan mulai ujian sedang diproses. Coba lagi beberapa detik.',
-                    ['status' => 429]
+                    ['status' => 429, 'retry_after_ms' => 1500]
                 );
                 self::record_start_attempt_response_ready_phase(
                     'start_attempt_response_ready',
@@ -1307,7 +1458,7 @@ class CBT_REST
             $lockError = new WP_Error(
                 'attempt_lock_active',
                 'Permintaan mulai ujian sedang diproses. Coba lagi beberapa detik.',
-                ['status' => 429]
+                ['status' => 429, 'retry_after_ms' => 1500]
             );
             self::record_start_attempt_response_ready_phase(
                 'start_attempt_response_ready',
@@ -1321,7 +1472,7 @@ class CBT_REST
             return $finalize_start_attempt_response(new WP_Error(
                 'attempt_lock_active',
                 'Permintaan mulai ujian sedang diproses. Coba lagi beberapa detik.',
-                ['status' => 429]
+                ['status' => 429, 'retry_after_ms' => 1500]
             ));
         }
 
@@ -1443,6 +1594,8 @@ class CBT_REST
             $question_number_map = [];
             $option_order = '{}';
             $used_start_snapshot = false;
+            $start_snapshot = [];
+            $start_attempt_question_manifest = [];
             $start_snapshot_started_at = microtime(true);
 
             try {
@@ -1464,6 +1617,11 @@ class CBT_REST
                             (int) ($exam['randomize_options'] ?? 0) === 1
                         )
                     );
+                    $start_attempt_question_manifest = self::build_lightweight_question_manifest_from_start_snapshot(
+                        $start_snapshot,
+                        $question_ids,
+                        $question_number_map
+                    );
                     $used_start_snapshot = true;
                 }
             } catch (Throwable $throwable) {
@@ -1483,6 +1641,16 @@ class CBT_REST
                     shuffle($question_ids);
                 }
                 $question_number_map = self::build_attempt_question_number_map($question_ids, $question_ids);
+                $start_attempt_question_manifest = self::build_question_manifest(
+                    self::apply_question_numbers_to_payload($questions, $question_number_map)
+                );
+            }
+
+            if (empty($start_attempt_question_manifest)) {
+                $start_attempt_question_manifest = self::build_minimal_question_manifest_from_order(
+                    $question_ids,
+                    $question_number_map
+                );
             }
 
             self::record_start_attempt_phase('start_attempt_start_snapshot', $exam_id, $user_id, [
@@ -1557,6 +1725,21 @@ class CBT_REST
                 $question_ids,
                 $question_number_map
             );
+            $minimal_snapshot_started_at = microtime(true);
+            self::write_minimal_attempt_entry_snapshots(
+                $created_attempt,
+                $exam,
+                $question_ids,
+                $question_number_map,
+                self::normalize_attempt_option_order_map($option_order),
+                $start_attempt_question_manifest
+            );
+            self::record_start_attempt_phase('start_attempt_minimal_entry_snapshots', $exam_id, $user_id, [
+                'attempt_id' => $created_attempt_id,
+                'duration_ms' => self::measure_elapsed_ms($minimal_snapshot_started_at),
+                'question_count' => count($question_ids),
+                'used_start_snapshot' => $used_start_snapshot ? 1 : 0,
+            ]);
             $response_payload = self::append_adaptive_load_payload([
                 'attempt_id' => $created_attempt_id,
                 'status' => 'started',
@@ -1600,14 +1783,14 @@ class CBT_REST
                 'start_attempt_deferred_runtime_snapshots',
                 $exam_id,
                 $user_id,
-                static function () use ($created_attempt, $exam, $question_ids, $question_number_map, $option_order): void {
+                static function () use ($created_attempt, $exam, $question_ids, $question_number_map, $option_order, $start_attempt_question_manifest): void {
                     self::sync_attempt_runtime_snapshots(
                         $created_attempt,
                         $exam,
                         $question_ids,
                         $question_number_map,
                         self::normalize_attempt_option_order_map($option_order),
-                        []
+                        $start_attempt_question_manifest
                     );
                 },
                 [
@@ -1917,6 +2100,7 @@ class CBT_REST
             'estimated_wait_seconds' => max(1, (int) ($gate_result['estimated_wait_seconds'] ?? 1)),
             'gate_capacity' => max(1, (int) ($gate_result['gate_capacity'] ?? 50)),
             'gate_window_seconds' => max(1, (int) ($gate_result['gate_window_seconds'] ?? 5)),
+            'queue_ticket_created_at' => max(0, (float) ($gate_result['queue_ticket_created_at'] ?? 0)),
         ]);
 
         if (class_exists('WP_REST_Response')) {
@@ -1945,6 +2129,7 @@ class CBT_REST
             'poll_after_ms' => max(250, (int) ($gate_result['poll_after_ms'] ?? 1000)),
             'gate_capacity' => max(1, (int) ($gate_result['gate_capacity'] ?? 50)),
             'gate_window_seconds' => max(1, (int) ($gate_result['gate_window_seconds'] ?? 5)),
+            'queue_ticket_created_at' => max(0, (float) ($gate_result['queue_ticket_created_at'] ?? 0)),
         ]));
     }
 
@@ -2288,6 +2473,7 @@ class CBT_REST
             'error_code' => sanitize_key($error_code),
             'error_message' => (string) $error_message,
             'http_status' => 200,
+            'retry_after_ms' => 1500,
         ]));
     }
 
@@ -4447,6 +4633,189 @@ class CBT_REST
     /**
      * @param array<string,mixed> $attempt
      * @param array<string,mixed> $exam
+     * @return array<string,mixed>
+     */
+    private static function build_lightweight_attempt_session_snapshot(array $attempt, array $exam): array
+    {
+        $question_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
+        $question_number_map = self::build_attempt_question_number_map($question_order_ids, $question_order_ids);
+
+        return [
+            'attempt_id' => (int) ($attempt['id'] ?? 0),
+            'exam_id' => (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+            'student_id' => (int) ($attempt['student_id'] ?? 0),
+            'status' => (string) ($attempt['status'] ?? ''),
+            'started_at' => (string) ($attempt['started_at'] ?? ''),
+            'duration_minutes' => self::resolve_attempt_duration_minutes($attempt, (int) ($exam['duration_minutes'] ?? 0)),
+            'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? 0)),
+            'question_count' => count($question_order_ids),
+            'question_order_signature' => self::build_attempt_question_order_signature($question_order_ids, $question_number_map),
+            'show_student_result' => self::normalize_show_student_result($exam['show_student_result'] ?? 1),
+            'enable_calculator' => self::normalize_enable_calculator($exam['enable_calculator'] ?? 1),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $exam
+     * @return array<string,mixed>
+     */
+    private static function build_lightweight_attempt_question_contract(array $attempt, array $exam): array
+    {
+        $question_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
+        $exam_id = (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0);
+        $start_snapshot = [];
+
+        if ($exam_id > 0) {
+            try {
+                $start_snapshot = self::get_cached_exam_start_attempt_snapshot($exam_id);
+            } catch (Throwable $throwable) {
+                $start_snapshot = [];
+            }
+        }
+
+        if (empty($question_order_ids)) {
+            $question_order_ids = array_values(array_filter(array_map('intval', (array) ($start_snapshot['question_ids'] ?? [])), static function (int $question_id): bool {
+                return $question_id > 0;
+            }));
+        }
+
+        $question_number_map = self::build_attempt_question_number_map($question_order_ids, $question_order_ids);
+        $question_manifest = self::build_lightweight_question_manifest_from_start_snapshot(
+            $start_snapshot,
+            $question_order_ids,
+            $question_number_map
+        );
+
+        if (empty($question_manifest)) {
+            $question_manifest = self::build_minimal_question_manifest_from_order($question_order_ids, $question_number_map);
+        }
+
+        return [
+            'attempt_id' => (int) ($attempt['id'] ?? 0),
+            'exam_id' => $exam_id,
+            'student_id' => (int) ($attempt['student_id'] ?? 0),
+            'status' => (string) ($attempt['status'] ?? ''),
+            'question_order_ids' => $question_order_ids,
+            'question_number_map' => $question_number_map,
+            'question_order_signature' => self::build_attempt_question_order_signature($question_order_ids, $question_number_map),
+            'question_manifest' => $question_manifest,
+            'option_order_map' => self::normalize_attempt_option_order_map($attempt['option_order'] ?? []),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $start_snapshot
+     * @param array<int,int> $question_order_ids
+     * @param array<int,int> $question_number_map
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_lightweight_question_manifest_from_start_snapshot(
+        array $start_snapshot,
+        array $question_order_ids,
+        array $question_number_map
+    ): array {
+        $source_manifest = is_array($start_snapshot['question_manifest'] ?? null)
+            ? (array) $start_snapshot['question_manifest']
+            : [];
+        if (empty($source_manifest) || empty($question_order_ids)) {
+            return [];
+        }
+
+        $manifest_by_id = [];
+        foreach ($source_manifest as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $question_id = (int) ($item['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+            $manifest_by_id[$question_id] = $item;
+        }
+
+        $manifest = [];
+        foreach ($question_order_ids as $question_id) {
+            $question_id = (int) $question_id;
+            if ($question_id <= 0 || !isset($manifest_by_id[$question_id])) {
+                continue;
+            }
+
+            $item = (array) $manifest_by_id[$question_id];
+            $item['id'] = $question_id;
+            $question_number = (int) ($question_number_map[$question_id] ?? 0);
+            if ($question_number > 0) {
+                $item['question_number'] = $question_number;
+            }
+            $manifest[] = $item;
+        }
+
+        return $manifest;
+    }
+
+    /**
+     * @param array<int,int> $question_order_ids
+     * @param array<int,int> $question_number_map
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_minimal_question_manifest_from_order(array $question_order_ids, array $question_number_map): array
+    {
+        $manifest = [];
+        foreach ($question_order_ids as $question_id) {
+            $question_id = (int) $question_id;
+            if ($question_id <= 0) {
+                continue;
+            }
+
+            $item = [
+                'id' => $question_id,
+                'question_type' => '',
+                'updated_at' => '',
+            ];
+            $question_number = (int) ($question_number_map[$question_id] ?? 0);
+            if ($question_number > 0) {
+                $item['question_number'] = $question_number;
+            }
+            $manifest[] = $item;
+        }
+
+        return $manifest;
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $exam
+     * @param array<int,int> $question_order_ids
+     * @param array<int,int> $question_number_map
+     * @param array<int,array<int,string>> $option_order_map
+     * @param array<int,array<string,mixed>> $question_manifest
+     */
+    private static function write_minimal_attempt_entry_snapshots(
+        array $attempt,
+        array $exam,
+        array $question_order_ids,
+        array $question_number_map,
+        array $option_order_map,
+        array $question_manifest
+    ): void {
+        $attempt_id = absint($attempt['id'] ?? 0);
+        if ($attempt_id <= 0 || empty($question_order_ids)) {
+            return;
+        }
+
+        self::sync_attempt_runtime_snapshots(
+            $attempt,
+            $exam,
+            $question_order_ids,
+            $question_number_map,
+            $option_order_map,
+            $question_manifest
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $attempt
+     * @param array<string,mixed> $exam
      * @param array<int,array<string,mixed>> $questions
      * @return array{
      *   question_order_ids:array<int,int>,
@@ -4519,23 +4888,35 @@ class CBT_REST
         }
 
         if (!class_exists('CBT_Attempt_Session_Snapshot_Cache')) {
-            $contract = self::build_attempt_runtime_snapshot_contract($attempt, $exam, [], $attempt_table);
-            return [
-                'attempt_id' => $attempt_id,
-                'exam_id' => (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
-                'student_id' => (int) ($attempt['student_id'] ?? 0),
-                'status' => (string) ($attempt['status'] ?? ''),
-                'started_at' => (string) ($attempt['started_at'] ?? ''),
-                'duration_minutes' => self::resolve_attempt_duration_minutes($attempt, (int) ($exam['duration_minutes'] ?? 0)),
-                'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? 0)),
-                'question_count' => count((array) ($contract['question_order_ids'] ?? [])),
-                'question_order_signature' => (string) ($contract['question_order_signature'] ?? ''),
-                'show_student_result' => self::normalize_show_student_result($exam['show_student_result'] ?? 1),
-                'enable_calculator' => self::normalize_enable_calculator($exam['enable_calculator'] ?? 1),
-            ];
+            return self::build_lightweight_attempt_session_snapshot($attempt, $exam);
         }
 
-        return CBT_Attempt_Session_Snapshot_Cache::get_attempt_snapshot($attempt_id, function () use ($attempt, $exam, $attempt_table): array {
+        if (method_exists('CBT_Attempt_Session_Snapshot_Cache', 'read_cached_attempt_snapshot')) {
+            $cached = CBT_Attempt_Session_Snapshot_Cache::read_cached_attempt_snapshot($attempt_id);
+            if (!empty($cached)) {
+                self::record_start_attempt_phase('get_session_cached_entry_snapshot', (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0), (int) ($attempt['student_id'] ?? 0), [
+                    'attempt_id' => $attempt_id,
+                    'source' => 'session_cache',
+                ]);
+                return $cached;
+            }
+        }
+
+        $bootstrap_lock_key = 'attempt_bootstrap:session:' . $attempt_id;
+        if (!CBT_Cache::acquire_lock($bootstrap_lock_key, 10, [
+            'type' => 'attempt_session_snapshot_bootstrap',
+            'attempt_id' => $attempt_id,
+            'exam_id' => (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+        ])) {
+            self::record_start_attempt_phase('attempt_bootstrap_busy', (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0), (int) ($attempt['student_id'] ?? 0), [
+                'attempt_id' => $attempt_id,
+                'source' => 'session_snapshot',
+            ]);
+            return self::build_lightweight_attempt_session_snapshot($attempt, $exam);
+        }
+
+        try {
+            return CBT_Attempt_Session_Snapshot_Cache::get_attempt_snapshot($attempt_id, function () use ($attempt, $exam, $attempt_table): array {
             $contract = self::build_attempt_runtime_snapshot_contract($attempt, $exam, [], $attempt_table);
             return [
                 'attempt_id' => (int) ($attempt['id'] ?? 0),
@@ -4550,7 +4931,10 @@ class CBT_REST
                 'show_student_result' => self::normalize_show_student_result($exam['show_student_result'] ?? 1),
                 'enable_calculator' => self::normalize_enable_calculator($exam['enable_calculator'] ?? 1),
             ];
-        });
+            });
+        } finally {
+            CBT_Cache::release_lock($bootstrap_lock_key);
+        }
     }
 
     /**
@@ -4567,10 +4951,31 @@ class CBT_REST
         }
 
         if (!class_exists('CBT_Attempt_Question_Contract_Cache')) {
-            return self::build_attempt_runtime_snapshot_contract($attempt, $exam, $questions, $attempt_table);
+            return self::build_lightweight_attempt_question_contract($attempt, $exam);
         }
 
-        return CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot($attempt_id, function () use ($attempt, $exam, $questions, $attempt_table): array {
+        if (method_exists('CBT_Attempt_Question_Contract_Cache', 'read_cached_attempt_snapshot')) {
+            $cached = CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot($attempt_id);
+            if (!empty($cached)) {
+                return $cached;
+            }
+        }
+
+        $bootstrap_lock_key = 'attempt_bootstrap:contract:' . $attempt_id;
+        if (!CBT_Cache::acquire_lock($bootstrap_lock_key, 10, [
+            'type' => 'attempt_question_contract_bootstrap',
+            'attempt_id' => $attempt_id,
+            'exam_id' => (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+        ])) {
+            self::record_start_attempt_phase('question_bootstrap_busy', (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0), (int) ($attempt['student_id'] ?? 0), [
+                'attempt_id' => $attempt_id,
+                'source' => 'question_contract',
+            ]);
+            return self::build_lightweight_attempt_question_contract($attempt, $exam);
+        }
+
+        try {
+            return CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot($attempt_id, function () use ($attempt, $exam, $questions, $attempt_table): array {
             $contract = self::build_attempt_runtime_snapshot_contract($attempt, $exam, $questions, $attempt_table);
             return array_merge($contract, [
                 'attempt_id' => (int) ($attempt['id'] ?? 0),
@@ -4578,7 +4983,10 @@ class CBT_REST
                 'student_id' => (int) ($attempt['student_id'] ?? 0),
                 'status' => (string) ($attempt['status'] ?? ''),
             ]);
-        });
+            });
+        } finally {
+            CBT_Cache::release_lock($bootstrap_lock_key);
+        }
     }
 
     /**
@@ -4688,7 +5096,7 @@ class CBT_REST
 
         $question_rows = (array) $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT q.id, q.question_type, q.correct_text
+                "SELECT q.id, q.question_type, q.correct_text, q.points, q.updated_at
                  FROM {$question_table} q
                  WHERE q.exam_id = %d
                    AND COALESCE(q.is_active, 1) = 1
@@ -4701,6 +5109,7 @@ class CBT_REST
         $question_ids = [];
         $option_question_ids = [];
         $option_tokens_by_question = [];
+        $question_manifest = [];
 
         foreach ($question_rows as $question_row) {
             $question = (array) $question_row;
@@ -4710,6 +5119,13 @@ class CBT_REST
             }
 
             $question_ids[] = $question_id;
+            $manifest_item = [
+                'id' => $question_id,
+                'question_type' => (string) ($question['question_type'] ?? ''),
+                'updated_at' => (string) ($question['updated_at'] ?? ''),
+                'points' => (float) ($question['points'] ?? 0),
+            ];
+            $question_manifest[] = $manifest_item;
 
             $question_type = (string) ($question['question_type'] ?? '');
             if (in_array($question_type, ['multiple_choice', 'multiple_answer'], true)) {
@@ -4761,6 +5177,7 @@ class CBT_REST
             'question_ids' => array_values(array_unique($question_ids)),
             'question_count' => count(array_values(array_unique($question_ids))),
             'question_number_map' => self::build_attempt_question_number_map($question_ids, $question_ids),
+            'question_manifest' => $question_manifest,
             'randomize_questions' => (int) ($exam_row['randomize_questions'] ?? 0) === 1 ? 1 : 0,
             'randomize_options' => (int) ($exam_row['randomize_options'] ?? 0) === 1 ? 1 : 0,
             'duration_minutes' => max(0, (int) ($exam_row['duration_minutes'] ?? 0)),
@@ -6115,7 +6532,7 @@ class CBT_REST
      * @param array<string,mixed>|null $attempt
      * @return array<int,int>
      */
-    private static function get_attempt_answered_question_ids(int $attempt_id, ?array $attempt = null, int $duration_minutes = 0): array
+    private static function get_attempt_answered_question_ids(int $attempt_id, ?array $attempt = null, int $duration_minutes = 0, bool $prefer_runtime = true): array
     {
         global $wpdb;
 
@@ -6124,7 +6541,7 @@ class CBT_REST
             return [];
         }
 
-        if (is_array($attempt) && CBT_Runtime::is_ready()) {
+        if ($prefer_runtime && is_array($attempt) && CBT_Runtime::is_ready()) {
             self::ensure_runtime_attempt_state($attempt, $duration_minutes);
             $runtime_answers = CBT_Runtime::get_existing_answers_map($attempt_id, $runtime_state_found);
             if ($runtime_state_found) {
@@ -6172,7 +6589,7 @@ class CBT_REST
      * @param array<string,mixed>|null $attempt
      * @return array<string,mixed>
      */
-    private static function build_attempt_existing_answers_map(array $questions, int $attempt_id, ?array $attempt = null, int $duration_minutes = 0): array
+    private static function build_attempt_existing_answers_map(array $questions, int $attempt_id, ?array $attempt = null, int $duration_minutes = 0, bool $prefer_runtime = true): array
     {
         global $wpdb;
 
@@ -6182,7 +6599,7 @@ class CBT_REST
         }
 
         $existing_answers = [];
-        if (is_array($attempt) && CBT_Runtime::is_ready()) {
+        if ($prefer_runtime && is_array($attempt) && CBT_Runtime::is_ready()) {
             self::ensure_runtime_attempt_state($attempt, $duration_minutes);
             $existing_answers = CBT_Runtime::get_existing_answers_map($attempt_id, $runtime_state_found);
             if (!$runtime_state_found) {

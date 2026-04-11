@@ -973,15 +973,20 @@ export function createQuestionRuntimeManager(deps) {
             throw scenarioError;
         }
 
+        var questionQuery = {
+            exam_id: examId,
+            attempt_id: attemptId,
+            include_existing: Number(includeExisting) ? 1 : 0,
+            include_answer_manifest: Number(includeAnswerManifest) ? 1 : 0,
+            offset: Math.max(0, Number(offset) || 0),
+            limit: windowLimit
+        };
+        if (options.bootstrapLight === true) {
+            questionQuery.bootstrap_light = 1;
+        }
+
         var questionPayload = await apiRequest('questions', {
-            query: {
-                exam_id: examId,
-                attempt_id: attemptId,
-                include_existing: Number(includeExisting) ? 1 : 0,
-                include_answer_manifest: Number(includeAnswerManifest) ? 1 : 0,
-                offset: Math.max(0, Number(offset) || 0),
-                limit: windowLimit
-            }
+            query: questionQuery
         });
         var responseRevision = normalizeQuestionRevision(
             questionPayload && questionPayload.question_revision,

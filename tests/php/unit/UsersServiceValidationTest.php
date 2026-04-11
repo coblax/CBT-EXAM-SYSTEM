@@ -72,6 +72,7 @@ final class UsersServiceValidationTest extends TestCase
                 'username' => 'satu',
                 'password' => 'secret',
                 'role' => 'siswa',
+                'jenis_kelamin' => 'Laki-laki',
             ],
             [
                 'name' => 'Siswa Dua',
@@ -80,6 +81,7 @@ final class UsersServiceValidationTest extends TestCase
                 'username' => 'dua',
                 'password' => 'secret',
                 'role' => 'siswa',
+                'jenis_kelamin' => 'Perempuan',
             ],
         ]]);
 

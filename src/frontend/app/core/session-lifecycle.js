@@ -203,6 +203,13 @@ export function createSessionLifecycleManager(deps) {
         state.openingAttemptQueuePosition = 0;
         state.openingAttemptQueueEstimatedWaitSeconds = 0;
         state.openingAttemptQueueLastPolledAt = 0;
+        state.openingRetryAttemptCount = 0;
+        state.openingRetryNextAt = 0;
+        state.openingRetryDelayMs = 0;
+        state.openingRetryReason = '';
+        state.openingRetryCountdownSeconds = 0;
+        state.openingRetryInFlight = false;
+        state.openingRetryLastTrigger = '';
         state.isOpeningAttempt = false;
         resetQuestionDataState();
         state.remainingSeconds = 0;
@@ -291,6 +298,13 @@ export function createSessionLifecycleManager(deps) {
         state.openingAttemptQueuePosition = 0;
         state.openingAttemptQueueEstimatedWaitSeconds = 0;
         state.openingAttemptQueueLastPolledAt = 0;
+        state.openingRetryAttemptCount = 0;
+        state.openingRetryNextAt = 0;
+        state.openingRetryDelayMs = 0;
+        state.openingRetryReason = '';
+        state.openingRetryCountdownSeconds = 0;
+        state.openingRetryInFlight = false;
+        state.openingRetryLastTrigger = '';
         state.isOpeningAttempt = false;
         resetQuestionDataState();
         state.remainingSeconds = 0;

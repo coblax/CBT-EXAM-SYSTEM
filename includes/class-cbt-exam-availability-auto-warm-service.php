@@ -774,6 +774,13 @@ final class CBT_Exam_Availability_Auto_Warm_Service
                 if (!empty($write_results[$user_id])) {
                     unset($items[$item_key]);
                     $success_count++;
+                    if (class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
+                        CBT_Snapshot_Auto_Heal_Queue_Service::remove_target(
+                            'availability_user',
+                            $user_id,
+                            'Snapshot availability sudah dipulihkan lewat queued rewarm; auto-heal queue dibersihkan.'
+                        );
+                    }
                     CBT_Exam_Availability_Cache::record_repair_event(
                         $user_id,
                         'repaired',

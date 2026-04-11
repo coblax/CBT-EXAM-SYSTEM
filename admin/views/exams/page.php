@@ -1410,6 +1410,30 @@
                     color: #475569;
                     font-size: 12px;
                 }
+                .cbt-exam-snapshot-adaptive-signals {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                    margin-top: 2px;
+                }
+                .cbt-exam-snapshot-adaptive-signals span {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    min-height: 26px;
+                    padding: 0 10px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 999px;
+                    background: rgba(255, 255, 255, 0.76);
+                    color: #334155;
+                    font-size: 11px;
+                    line-height: 1;
+                }
+                .cbt-exam-snapshot-adaptive-signals strong {
+                    color: #0f172a;
+                    font-weight: 700;
+                }
                 .cbt-exam-snapshot-adaptive-actions {
                     display: flex;
                     align-items: center;
@@ -4601,6 +4625,7 @@
                 let isExamSaveRunning = false;
                 let isSnapshotCleanRunning = false;
                 let isBulkPreflightRunning = false;
+                let isAdaptiveFinalizeRunning = false;
                 let examListFilterTimer = null;
                 let examSnapshotFilterTimer = null;
                 let snapshotAutoRefreshTimer = null;
@@ -6142,6 +6167,83 @@
                     }, 720);
                 }
 
+                function startAdaptiveFinalizeProgress(formElement) {
+                    if (!formElement || !cleanProgressOverlay) {
+                        return;
+                    }
+
+                    clearSnapshotCleanProgressTimer();
+                    isAdaptiveFinalizeRunning = true;
+                    isPageNavigating = true;
+                    clearSnapshotAutoRefreshTimer();
+
+                    const activeAttemptValue = Number.parseInt(String(formElement.getAttribute('data-cbt-adaptive-active-attempt-count') || '0'), 10);
+                    const activeAttemptCount = Number.isInteger(activeAttemptValue) ? Math.max(0, activeAttemptValue) : 0;
+                    const statsLabel = activeAttemptCount > 0
+                        ? `${activeAttemptCount} attempt aktif terdeteksi · hanya expired yang ditutup`
+                        : 'Tidak ada attempt aktif pada indikator Adaptive Load';
+                    const steps = [
+                        {
+                            percent: 10,
+                            phase: 'Menyiapkan pemeriksaan',
+                            message: 'Memeriksa attempt in_progress yang boleh ditutup dari panel Adaptive Load.',
+                        },
+                        {
+                            percent: 32,
+                            phase: 'Memfilter attempt aman',
+                            message: 'Attempt yang masih punya sisa waktu atau masih berada di window jadwal tidak akan disentuh.',
+                        },
+                        {
+                            percent: 58,
+                            phase: 'Menutup attempt expired',
+                            message: 'Server menutup attempt yang expired atau sudah berada di luar window jadwal.',
+                        },
+                        {
+                            percent: 82,
+                            phase: 'Menghitung ulang indikator',
+                            message: 'Adaptive Load akan dievaluasi ulang setelah cleanup selesai.',
+                        },
+                        {
+                            percent: 94,
+                            phase: 'Memuat ulang panel',
+                            message: 'Halaman akan kembali ke Snapshot dengan indikator terbaru.',
+                        },
+                    ];
+
+                    toggleSnapshotCleanOverlay(true);
+                    updateSnapshotCleanProgressUi({
+                        title: 'Menutup Attempt Expired',
+                        message: steps[0].message,
+                        phase: steps[0].phase,
+                        percent: steps[0].percent,
+                        stats: statsLabel,
+                    });
+
+                    const submitButton = formElement.querySelector('button[type="submit"]');
+                    if (submitButton) {
+                        submitButton.disabled = true;
+                        submitButton.textContent = 'Memproses...';
+                    }
+
+                    let stepIndex = 0;
+                    snapshotCleanProgressTimer = window.setInterval(() => {
+                        if (stepIndex >= steps.length - 1) {
+                            clearSnapshotCleanProgressTimer();
+                            return;
+                        }
+
+                        stepIndex += 1;
+                        const step = steps[stepIndex];
+                        updateSnapshotCleanProgressUi({
+                            title: 'Menutup Attempt Expired',
+                            message: step.message,
+                            phase: step.phase,
+                            percent: step.percent,
+                            stats: statsLabel,
+                        });
+                    }, 700);
+                }
+
                 function startBulkPreflightProgress(formElement) {
                     if (!formElement || !bulkProgressOverlay) {
                         return;
@@ -7082,6 +7184,16 @@
                         }
 
                         startSnapshotCleanProgress(cleanForm);
+                    });
+                });
+
+                Array.from(document.querySelectorAll('[data-cbt-adaptive-finalize-form="1"]')).forEach((adaptiveFinalizeForm) => {
+                    adaptiveFinalizeForm.addEventListener('submit', (event) => {
+                        if (event.defaultPrevented || isAdaptiveFinalizeRunning) {
+                            return;
+                        }
+
+                        startAdaptiveFinalizeProgress(adaptiveFinalizeForm);
                     });
                 });
 

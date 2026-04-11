@@ -1008,6 +1008,10 @@ final class CBT_Admin_Exams_Page
                     $adaptive_load_last_evaluated_at = trim((string) ($adaptive_load_context['last_evaluated_at'] ?? ''));
                     $adaptive_load_override_expires_at = trim((string) ($adaptive_load_context['override_expires_at'] ?? ''));
                     $adaptive_load_tone = sanitize_html_class((string) ($adaptive_load_context['tone'] ?? 'neutral'), 'neutral');
+                    $adaptive_load_signals = isset($adaptive_load_context['signals']) && is_array($adaptive_load_context['signals'])
+                        ? $adaptive_load_context['signals']
+                        : [];
+                    $adaptive_load_active_attempt_count = max(0, (int) ($adaptive_load_signals['active_attempt_count'] ?? 0));
                     ?>
                     <section class="cbt-exam-snapshot-adaptive-banner is-<?php echo esc_attr($adaptive_load_tone); ?>">
                         <div class="cbt-exam-snapshot-adaptive-copy">
@@ -1029,6 +1033,19 @@ final class CBT_Admin_Exams_Page
                                     <span>Dipaksa sampai <?php echo esc_html($adaptive_load_override_expires_at); ?></span>
                                 <?php endif; ?>
                             </div>
+                            <?php if (!empty($adaptive_load_context['signal_cards']) && is_array($adaptive_load_context['signal_cards'])): ?>
+                                <div class="cbt-exam-snapshot-adaptive-signals">
+                                    <?php foreach ($adaptive_load_context['signal_cards'] as $adaptive_load_signal): ?>
+                                        <?php if (!is_array($adaptive_load_signal)): ?>
+                                            <?php continue; ?>
+                                        <?php endif; ?>
+                                        <span>
+                                            <strong><?php echo esc_html((string) ($adaptive_load_signal['label'] ?? 'Signal')); ?></strong>
+                                            <?php echo esc_html((string) ($adaptive_load_signal['value'] ?? '0')); ?>
+                                        </span>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
                         <div class="cbt-exam-snapshot-adaptive-actions">
                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -1070,6 +1087,25 @@ final class CBT_Admin_Exams_Page
                                 <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
                                 <button type="submit" class="button button-secondary">
                                     Paksa Critical (15 menit)
+                                </button>
+                            </form>
+                            <form
+                                method="post"
+                                action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
+                                data-cbt-adaptive-finalize-form="1"
+                                data-cbt-adaptive-active-attempt-count="<?php echo esc_attr((string) $adaptive_load_active_attempt_count); ?>"
+                                onsubmit="return confirm('Tutup attempt in_progress yang sudah expired atau berada di luar window jadwal? Attempt yang masih punya sisa waktu tidak akan disentuh.');"
+                            >
+                                <?php wp_nonce_field('cbt_finalize_adaptive_load_expired_attempts'); ?>
+                                <input type="hidden" name="action" value="cbt_finalize_adaptive_load_expired_attempts" />
+                                <?php self::render_snapshot_tab_hidden_field($exam_snapshot_tab); ?>
+                                <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                                <?php self::render_snapshot_filter_state_hidden_fields($exam_snapshot_filter_state); ?>
+                                <?php self::render_snapshot_preview_page_hidden_fields($exam_snapshot_preview_pages); ?>
+                                <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
+                                <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                                <button type="submit" class="button button-secondary">
+                                    Tutup Expired
                                 </button>
                             </form>
                         </div>

@@ -173,6 +173,22 @@ class CBT_Attempt_Question_Contract_Cache
     }
 
     /**
+     * Read an existing snapshot without invoking the producer path.
+     *
+     * @return array<string,mixed>
+     */
+    public static function read_cached_attempt_snapshot(int $attempt_id): array
+    {
+        $attempt_id = absint($attempt_id);
+        if ($attempt_id <= 0) {
+            return [];
+        }
+
+        $payload = self::read_attempt_snapshot($attempt_id, $redis_available);
+        return is_array($payload) ? $payload : [];
+    }
+
+    /**
      * @param array<string,mixed> $payload
      */
     public static function write_attempt_snapshot(int $attempt_id, array $payload): void

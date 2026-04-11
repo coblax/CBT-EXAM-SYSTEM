@@ -3,35 +3,18 @@
 declare(strict_types=1);
 
 use CbtExamSystem\Tests\TestCase;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunClassInSeparateProcess;
 
-if (!class_exists('CBT_Security_Log')) {
-    class CBT_Security_Log
-    {
-        /** @var array<int,array<string,mixed>> */
-        public static array $events = [];
-
-        /** @param array<string,mixed> $context */
-        public static function record_latest_student_attempt_event(int $user_id, string $event_type, array $context = []): bool
-        {
-            self::$events[] = [
-                'context' => $context,
-                'event_type' => $event_type,
-                'user_id' => $user_id,
-            ];
-
-            return true;
-        }
-    }
-}
-
-require_once dirname(__DIR__, 3) . '/includes/class-cbt-auth.php';
-
+#[RunClassInSeparateProcess]
+#[PreserveGlobalState(false)]
 final class AuthSessionLifecycleTest extends TestCase
 {
     protected function setUp(): void
     {
         parent::setUp();
 
+        $this->bootstrapAuthSessionScaffold();
         CBT_Security_Log::$events = [];
         cbt_test_register_user([
             'ID' => 9,
@@ -436,5 +419,34 @@ final class AuthSessionLifecycleTest extends TestCase
 
         $decoded = json_decode($raw, true);
         return is_array($decoded) ? (string) ($decoded['password_hash'] ?? '') : '';
+    }
+
+    private function bootstrapAuthSessionScaffold(): void
+    {
+        if (!class_exists('CBT_Security_Log')) {
+            eval(<<<'PHP'
+class CBT_Security_Log
+{
+    /** @var array<int,array<string,mixed>> */
+    public static array $events = [];
+
+    /** @param array<string,mixed> $context */
+    public static function record_latest_student_attempt_event(int $user_id, string $event_type, array $context = []): bool
+    {
+        self::$events[] = [
+            'context' => $context,
+            'event_type' => $event_type,
+            'user_id' => $user_id,
+        ];
+
+        return true;
+    }
+}
+PHP);
+        }
+
+        if (!class_exists('CBT_Auth')) {
+            require_once dirname(__DIR__, 3) . '/includes/class-cbt-auth.php';
+        }
     }
 }

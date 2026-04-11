@@ -511,6 +511,30 @@ describe('createExamStageRenderer', function () {
         expect(markup).toContain('disabled aria-disabled="true"');
     });
 
+    it('renders retry countdown without disabling manual acceleration controls', function () {
+        var renderer = createFixture({
+            state: {
+                openingAttemptPhase: 'opening_recovering',
+                openingAttemptCanRetry: true,
+                openingAttemptCanRefreshStatus: true,
+                openingAttemptCanBack: true,
+                openingRetryAttemptCount: 4,
+                openingRetryCountdownSeconds: 6,
+                openingRetryNextAt: Date.now() + 6000,
+                openingRetryReason: 'Server masih menyiapkan soal pertama.',
+                openingAttemptProgressStatus: 'Memuat soal pertama'
+            }
+        });
+
+        var markup = renderer.renderExamStageShell();
+
+        expect(markup).toContain('Mencoba lagi dalam 6 detik');
+        expect(markup).toContain('Percobaan ke-4, posisi/intent tetap sama.');
+        expect(markup).toContain('Coba Sekarang');
+        expect(markup).toContain('Refresh Sekarang');
+        expect(markup).not.toContain('disabled aria-disabled="true"');
+    });
+
     it('shows collect action on a non-last question once all questions are answered', function () {
         var renderer = createAnsweredExamFixture();
 

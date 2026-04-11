@@ -22,7 +22,18 @@ final class CBT_Admin_Results_Service
     private const BULK_FORCE_COMPLETE_BATCH_SIZE = 20;
     private const BULK_JOB_MAX_BATCH_SECONDS = 6.0;
     private const BULK_JOB_FAILURE_SAMPLE_LIMIT = 10;
-    private const EXPIRED_ATTEMPT_AUTO_COMPLETE_BATCH_SIZE = 50;
+    private const EXPIRED_ATTEMPT_AUTO_COMPLETE_BATCH_SIZE = 10;
+    private const EXPIRED_ATTEMPT_AUTO_COMPLETE_CRON_HOOK = 'cbt_results_expired_auto_finalize_tick';
+    private const EXPIRED_ATTEMPT_AUTO_COMPLETE_LOCK_KEY = 'results_expired_auto_finalize';
+    private const EXPIRED_ATTEMPT_AUTO_COMPLETE_LOCK_TTL = 45;
+    private const EXPIRED_ATTEMPT_AUTO_COMPLETE_RESCHEDULE_DELAY = 5;
+
+    public static function init(): void
+    {
+        if (function_exists('add_action')) {
+            add_action(self::EXPIRED_ATTEMPT_AUTO_COMPLETE_CRON_HOOK, [self::class, 'handle_expired_auto_finalize_cron'], 10, 1);
+        }
+    }
 
     public static function can_view_results(): bool
     {
@@ -115,10 +126,9 @@ final class CBT_Admin_Results_Service
                                   WHERE meta_key = 'nisn'
                                   GROUP BY user_id
                               ) nisn_meta ON nisn_meta.user_id = u.ID";
-        self::maybe_auto_finalize_expired_attempts_for_results_scope(
-            $attempts_from_sql,
-            $attempt_base_where_parts,
-            $attempt_base_where_params
+        $expired_attempt_auto_finalize = self::maybe_schedule_expired_attempt_auto_finalize_for_results_scope(
+            $is_admin_scope,
+            $current_user_id
         );
 
         $attempt_where_parts = $attempt_base_where_parts;
@@ -333,11 +343,17 @@ final class CBT_Admin_Results_Service
         return get_defined_vars();
     }
 
+    public static function handle_expired_auto_finalize_cron(int $created_by_user_id = 0): void
+    {
+        self::process_expired_attempt_auto_finalize_batch(max(0, $created_by_user_id));
+    }
+
     /**
      * @param array<int,array<string,mixed>> $candidate_attempts
+     * @param array<string,mixed> $options
      * @return array{processed_count:int,completed_attempt_ids:array<int,int>}
      */
-    private static function maybe_auto_finalize_expired_attempt_rows(array $candidate_attempts): array
+    private static function maybe_auto_finalize_expired_attempt_rows(array $candidate_attempts, array $options = []): array
     {
         if (empty($candidate_attempts) || !class_exists('CBT_REST') || !method_exists('CBT_REST', 'finalize_attempt_completion')) {
             return [
@@ -346,7 +362,10 @@ final class CBT_Admin_Results_Service
             ];
         }
 
+        $defer_invalidation = !empty($options['defer_invalidation']);
         $completed_attempt_ids = [];
+        $completed_exam_ids = [];
+        $completed_student_ids = [];
         foreach ($candidate_attempts as $candidate_attempt) {
             if (!is_array($candidate_attempt) || (string) ($candidate_attempt['status'] ?? '') !== 'in_progress') {
                 continue;
@@ -370,12 +389,51 @@ final class CBT_Admin_Results_Service
                 continue;
             }
 
-            $completion_result = CBT_REST::finalize_attempt_completion($attempt_id);
+            $completion_result = CBT_REST::finalize_attempt_completion($attempt_id, null, [
+                'defer_invalidation' => $defer_invalidation,
+            ]);
             if (is_wp_error($completion_result)) {
                 continue;
             }
 
             $completed_attempt_ids[] = $attempt_id;
+            $candidate_exam_id = absint($candidate_attempt['exam_id'] ?? 0);
+            $candidate_student_id = absint($candidate_attempt['student_id'] ?? 0);
+            if ($candidate_exam_id > 0) {
+                $completed_exam_ids[$candidate_exam_id] = $candidate_exam_id;
+            }
+            if ($candidate_student_id > 0) {
+                $completed_student_ids[$candidate_student_id] = $candidate_student_id;
+            }
+        }
+
+        if ($defer_invalidation && !empty($completed_attempt_ids)) {
+            foreach ($completed_attempt_ids as $completed_attempt_id) {
+                CBT_Cache::invalidate_attempt($completed_attempt_id);
+            }
+
+            CBT_Cache::invalidate_analytics();
+            foreach ($completed_exam_ids as $completed_exam_id) {
+                CBT_Cache::invalidate_analytics_exam($completed_exam_id);
+            }
+
+            foreach ($completed_student_ids as $completed_student_id) {
+                CBT_Cache::invalidate_user($completed_student_id);
+            }
+
+            foreach ($candidate_attempts as $candidate_attempt) {
+                if (!is_array($candidate_attempt)) {
+                    continue;
+                }
+
+                $candidate_attempt_id = absint($candidate_attempt['id'] ?? 0);
+                $candidate_student_id = absint($candidate_attempt['student_id'] ?? 0);
+                if ($candidate_attempt_id <= 0 || $candidate_student_id <= 0 || !in_array($candidate_attempt_id, $completed_attempt_ids, true)) {
+                    continue;
+                }
+
+                CBT_UI_State::clear_attempt_state($candidate_student_id, $candidate_attempt_id);
+            }
         }
 
         return [
@@ -385,37 +443,167 @@ final class CBT_Admin_Results_Service
     }
 
     /**
-     * @param array<int,string> $attempt_base_where_parts
-     * @param array<int,mixed> $attempt_base_where_params
+     * @return array{has_pending:bool,scheduled:bool,created_by_user_id:int}
      */
-    private static function maybe_auto_finalize_expired_attempts_for_results_scope(
-        string $attempts_from_sql,
-        array $attempt_base_where_parts,
-        array $attempt_base_where_params
-    ): void {
+    private static function maybe_schedule_expired_attempt_auto_finalize_for_results_scope(
+        bool $is_admin_scope,
+        int $current_user_id
+    ): array {
+        $created_by_user_id = $is_admin_scope ? 0 : max(0, $current_user_id);
+        $has_pending = self::has_pending_expired_attempts_for_scope($created_by_user_id);
+        if (!$has_pending) {
+            return [
+                'has_pending' => false,
+                'scheduled' => false,
+                'created_by_user_id' => $created_by_user_id,
+            ];
+        }
+
+        $scheduled = self::schedule_expired_attempt_auto_finalize_tick($created_by_user_id);
+
+        return [
+            'has_pending' => true,
+            'scheduled' => $scheduled,
+            'created_by_user_id' => $created_by_user_id,
+        ];
+    }
+
+    private static function schedule_expired_attempt_auto_finalize_tick(int $created_by_user_id): bool
+    {
+        $hook_args = [$created_by_user_id];
+        if (wp_next_scheduled(self::EXPIRED_ATTEMPT_AUTO_COMPLETE_CRON_HOOK, $hook_args)) {
+            return false;
+        }
+
+        $scheduled = wp_schedule_single_event(
+            time() + 1,
+            self::EXPIRED_ATTEMPT_AUTO_COMPLETE_CRON_HOOK,
+            $hook_args
+        );
+        if (!$scheduled) {
+            return false;
+        }
+
+        if (function_exists('spawn_cron') && (!defined('DOING_CRON') || !DOING_CRON)) {
+            spawn_cron(time());
+        }
+
+        return true;
+    }
+
+    private static function process_expired_attempt_auto_finalize_batch(int $created_by_user_id): array
+    {
+        $lock_key = self::EXPIRED_ATTEMPT_AUTO_COMPLETE_LOCK_KEY . ':' . $created_by_user_id;
+        if (!CBT_Cache::acquire_lock($lock_key, self::EXPIRED_ATTEMPT_AUTO_COMPLETE_LOCK_TTL, [
+            'source' => 'results_auto_finalize',
+            'created_by_user_id' => $created_by_user_id,
+        ])) {
+            return [
+                'processed_count' => 0,
+                'completed_count' => 0,
+                'has_remaining' => true,
+            ];
+        }
+
+        try {
+            $candidate_attempts = self::fetch_expired_attempt_auto_finalize_batch($created_by_user_id);
+            if (empty($candidate_attempts)) {
+                return [
+                    'processed_count' => 0,
+                    'completed_count' => 0,
+                    'has_remaining' => false,
+                ];
+            }
+
+            $result = self::maybe_auto_finalize_expired_attempt_rows($candidate_attempts, [
+                'defer_invalidation' => true,
+            ]);
+            $has_remaining = self::has_pending_expired_attempts_for_scope($created_by_user_id);
+            if ($has_remaining) {
+                wp_schedule_single_event(
+                    time() + self::EXPIRED_ATTEMPT_AUTO_COMPLETE_RESCHEDULE_DELAY,
+                    self::EXPIRED_ATTEMPT_AUTO_COMPLETE_CRON_HOOK,
+                    [$created_by_user_id]
+                );
+            }
+
+            return [
+                'processed_count' => (int) ($result['processed_count'] ?? 0),
+                'completed_count' => count((array) ($result['completed_attempt_ids'] ?? [])),
+                'has_remaining' => $has_remaining,
+            ];
+        } finally {
+            CBT_Cache::release_lock($lock_key);
+        }
+    }
+
+    private static function has_pending_expired_attempts_for_scope(int $created_by_user_id): bool
+    {
         global $wpdb;
 
-        if (!class_exists('CBT_REST') || !method_exists('CBT_REST', 'finalize_attempt_completion')) {
-            return;
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $where_clauses = [
+            "a.status = 'in_progress'",
+            'e.title NOT LIKE %s',
+            'TIMESTAMPADD(MINUTE, GREATEST(1, COALESCE(e.duration_minutes, 0)) + GREATEST(0, COALESCE(a.extra_time_minutes, 0)), a.started_at) < %s',
+        ];
+        $where_params = ['Bank Soal - %', current_time('mysql')];
+        if ($created_by_user_id > 0) {
+            $where_clauses[] = 'e.created_by = %d';
+            $where_params[] = $created_by_user_id;
         }
 
-        $candidate_where_parts = $attempt_base_where_parts;
-        $candidate_where_parts[] = "a.status = 'in_progress'";
-        $candidate_where = ' WHERE ' . implode(' AND ', $candidate_where_parts);
+        $sql = "SELECT a.id
+                FROM {$attempt_table} a
+                INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                WHERE " . implode(' AND ', $where_clauses) . '
+                LIMIT 1';
+        $prepared_sql = $wpdb->prepare($sql, $where_params);
+        $attempt_id = $wpdb->get_var($prepared_sql);
 
-        $candidate_sql = "SELECT a.id, a.status, a.started_at, a.extra_time_minutes, e.duration_minutes AS exam_duration_minutes
-                          {$attempts_from_sql}
-                          {$candidate_where}
-                          ORDER BY a.started_at ASC, a.id ASC
-                          LIMIT %d";
-        $candidate_sql_params = array_merge($attempt_base_where_params, [self::EXPIRED_ATTEMPT_AUTO_COMPLETE_BATCH_SIZE]);
-        $candidate_sql = $wpdb->prepare($candidate_sql, $candidate_sql_params);
-        $candidate_attempts = $wpdb->get_results($candidate_sql, ARRAY_A);
-        if (!is_array($candidate_attempts) || empty($candidate_attempts)) {
-            return;
+        return absint($attempt_id) > 0;
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function fetch_expired_attempt_auto_finalize_batch(int $created_by_user_id): array
+    {
+        global $wpdb;
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $where_clauses = [
+            "a.status = 'in_progress'",
+            'e.title NOT LIKE %s',
+            'TIMESTAMPADD(MINUTE, GREATEST(1, COALESCE(e.duration_minutes, 0)) + GREATEST(0, COALESCE(a.extra_time_minutes, 0)), a.started_at) < %s',
+        ];
+        $where_params = ['Bank Soal - %', current_time('mysql')];
+        if ($created_by_user_id > 0) {
+            $where_clauses[] = 'e.created_by = %d';
+            $where_params[] = $created_by_user_id;
         }
 
-        self::maybe_auto_finalize_expired_attempt_rows($candidate_attempts);
+        $sql = "SELECT a.id,
+                       a.exam_id,
+                       a.student_id,
+                       a.status,
+                       a.started_at,
+                       a.extra_time_minutes,
+                       e.duration_minutes AS exam_duration_minutes
+                FROM {$attempt_table} a
+                INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                WHERE " . implode(' AND ', $where_clauses) . '
+                ORDER BY a.started_at ASC, a.id ASC
+                LIMIT %d';
+        $prepared_sql = $wpdb->prepare(
+            $sql,
+            array_merge($where_params, [self::EXPIRED_ATTEMPT_AUTO_COMPLETE_BATCH_SIZE])
+        );
+
+        $rows = $wpdb->get_results($prepared_sql, ARRAY_A);
+        return is_array($rows) ? $rows : [];
     }
 
     /**

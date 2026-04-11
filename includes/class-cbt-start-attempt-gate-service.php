@@ -97,6 +97,8 @@ class CBT_Start_Attempt_Gate_Service
                 return self::build_result('admitted', '', 0, (float) $bucket['tokens'], 0);
             }
 
+            $active_ticket_payload = self::read_ticket_payload($redis, $active_ticket);
+            $active_ticket_created_at = is_array($active_ticket_payload) ? (float) ($active_ticket_payload['created_at'] ?? 0) : 0.0;
             self::touch_ticket($redis, $exam_id, $active_ticket, $user_id, $now);
             self::write_bucket($redis, $exam_id, $bucket);
 
@@ -105,7 +107,8 @@ class CBT_Start_Attempt_Gate_Service
                 $active_ticket,
                 $queue_position > 0 ? $queue_position : max(1, count($queue_members)),
                 (float) $bucket['tokens'],
-                count($queue_members)
+                count($queue_members),
+                $active_ticket_created_at
             );
         }
 
@@ -127,7 +130,8 @@ class CBT_Start_Attempt_Gate_Service
             $ticket,
             $queue_position > 0 ? $queue_position : max(1, count($queue_members)),
             (float) $bucket['tokens'],
-            count($queue_members)
+            count($queue_members),
+            $now
         );
     }
 
@@ -185,11 +189,13 @@ class CBT_Start_Attempt_Gate_Service
             return self::build_result('not_found', '', 0, (float) $bucket['tokens'], count($queue_members));
         }
 
+        $active_ticket_payload = self::read_ticket_payload($redis, $active_ticket);
+        $active_ticket_created_at = is_array($active_ticket_payload) ? (float) ($active_ticket_payload['created_at'] ?? 0) : 0.0;
         self::touch_ticket($redis, $exam_id, $active_ticket, $user_id, $now);
         self::write_bucket($redis, $exam_id, $bucket);
 
         if ($queue_position === 1 && $bucket['tokens'] >= 1.0) {
-            return self::build_result('admitted', $active_ticket, 1, (float) $bucket['tokens'], count($queue_members));
+            return self::build_result('admitted', $active_ticket, 1, (float) $bucket['tokens'], count($queue_members), $active_ticket_created_at);
         }
 
         return self::build_result(
@@ -197,7 +203,8 @@ class CBT_Start_Attempt_Gate_Service
             $active_ticket,
             $queue_position,
             (float) $bucket['tokens'],
-            count($queue_members)
+            count($queue_members),
+            $active_ticket_created_at
         );
     }
 
@@ -545,7 +552,7 @@ class CBT_Start_Attempt_Gate_Service
      *   queue_depth:int
      * }
      */
-    private static function build_result(string $mode, string $ticket, int $position, float $bucket_tokens, int $queue_depth): array
+    private static function build_result(string $mode, string $ticket, int $position, float $bucket_tokens, int $queue_depth, float $ticket_created_at = 0.0): array
     {
         $queue_depth = max($queue_depth, $position);
         $estimated_wait_seconds = 0;
@@ -563,6 +570,7 @@ class CBT_Start_Attempt_Gate_Service
             'gate_window_seconds' => (int) self::BUCKET_WINDOW_SECONDS,
             'bucket_tokens' => round(max(0.0, min(self::BUCKET_CAPACITY, $bucket_tokens)), 1),
             'queue_depth' => max(0, $queue_depth),
+            'queue_ticket_created_at' => $ticket_created_at > 0 ? round($ticket_created_at, 4) : 0,
         ];
     }
 

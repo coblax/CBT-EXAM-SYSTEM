@@ -208,6 +208,16 @@ export function createApiClient(deps) {
             var requestError = new Error(apiErrorMessage(payload, 'Request gagal.'));
             requestError.status = Number(response.status) || 0;
             requestError.code = payload && typeof payload.code === 'string' ? payload.code : '';
+            if (payload && typeof payload === 'object') {
+                requestError.retry_after_ms = Number(payload.retry_after_ms) || Number(payload.retryAfterMs) || 0;
+                if (payload.data && typeof payload.data === 'object') {
+                    requestError.retry_after_ms = requestError.retry_after_ms
+                        || Number(payload.data.retry_after_ms)
+                        || Number(payload.data.retryAfterMs)
+                        || 0;
+                    requestError.data = payload.data;
+                }
+            }
 
             if (response.status === 401 && useAuth) {
                 expireAuthSession(requestError.message);

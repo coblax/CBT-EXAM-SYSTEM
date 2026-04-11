@@ -2060,6 +2060,13 @@ final class CBT_Admin_Exams_Service
 
         $heartbeat_interval_ms = max(1000, (int) ($summary['heartbeat_interval_ms'] ?? 20000));
         $admin_snapshot_refresh_seconds = max(1, (int) ($summary['admin_snapshot_refresh_seconds'] ?? 10));
+        $signals = is_array($summary['signals'] ?? null) ? (array) $summary['signals'] : [];
+        $hit_rate = isset($signals['hit_rate']) && is_numeric($signals['hit_rate'])
+            ? (float) $signals['hit_rate']
+            : null;
+        $hit_rate_label = $hit_rate !== null && is_finite($hit_rate)
+            ? number_format_i18n($hit_rate * 100, 1) . '%'
+            : 'N/A';
 
         return [
             'level' => $level,
@@ -2075,6 +2082,33 @@ final class CBT_Admin_Exams_Service
             'admin_snapshot_refresh_seconds' => $admin_snapshot_refresh_seconds,
             'admin_snapshot_refresh_label' => number_format_i18n($admin_snapshot_refresh_seconds) . ' detik',
             'tone' => $tone,
+            'signals' => $signals,
+            'signal_cards' => [
+                [
+                    'label' => 'Start Queue',
+                    'value' => number_format_i18n(max(0, (int) ($signals['start_queue_depth_total'] ?? 0))),
+                ],
+                [
+                    'label' => 'Attempt Aktif',
+                    'value' => number_format_i18n(max(0, (int) ($signals['active_attempt_count'] ?? 0))),
+                ],
+                [
+                    'label' => 'Login Fallback',
+                    'value' => number_format_i18n(max(0, (int) ($signals['canonical_fallback'] ?? 0))),
+                ],
+                [
+                    'label' => 'Hit Rate',
+                    'value' => $hit_rate_label,
+                ],
+                [
+                    'label' => 'Auto-Heal Queue',
+                    'value' => number_format_i18n(max(0, (int) ($signals['auto_heal_queue_depth'] ?? 0))),
+                ],
+                [
+                    'label' => 'Start p95',
+                    'value' => number_format_i18n(max(0, (int) ($signals['start_attempt_p95_ms'] ?? 0))) . ' ms',
+                ],
+            ],
         ];
     }
 
@@ -3206,6 +3240,41 @@ final class CBT_Admin_Exams_Service
 
         self::redirect_exam_snapshot_page($exam_list_state, [
             'cbt_msg' => $message,
+        ]);
+    }
+
+    public static function handle_finalize_adaptive_load_expired_attempts(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_finalize_adaptive_load_expired_attempts');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if (!class_exists('CBT_Adaptive_Load_Service')) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Service adaptive load belum tersedia di environment ini.',
+            ]);
+        }
+
+        $result = CBT_Adaptive_Load_Service::finalize_expired_in_progress_attempts(200);
+        if (class_exists('CBT_Adaptive_Load_Service')) {
+            CBT_Adaptive_Load_Service::tick();
+        }
+        self::clear_exam_operational_stats_cache();
+
+        $completed_count = max(0, (int) ($result['completed_count'] ?? 0));
+        $failed_count = max(0, (int) ($result['failed_count'] ?? 0));
+        $message = $completed_count > 0
+            ? sprintf('%d attempt in_progress expired/di luar window berhasil ditutup.', $completed_count)
+            : 'Tidak ada attempt in_progress expired/di luar window yang perlu ditutup.';
+        if ($failed_count > 0) {
+            $message .= ' ' . sprintf('%d attempt gagal ditutup.', $failed_count);
+        }
+
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            $failed_count > 0 ? 'cbt_err' : 'cbt_msg' => $message,
         ]);
     }
 

@@ -335,6 +335,10 @@
     color: #0f4c81;
 }
 
+.cbt-exam-opening-action-summary.is-countdown {
+    color: #9a3412;
+}
+
 .cbt-exam-opening-action-summary strong {
     font-size: 12px;
 }
@@ -472,6 +476,10 @@
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-opening-action-summary.is-running {
     color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-opening-action-summary.is-countdown {
+    color: #fdba74;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-opening-progress {

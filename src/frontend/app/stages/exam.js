@@ -781,7 +781,12 @@ export function createExamStageRenderer(deps) {
         var canBack = state.openingAttemptCanBack !== false;
         var isRetryProcessing = state.busy === true && progressStatus === 'Mengulang permintaan sesi';
         var isRefreshProcessing = state.busy === true && (progressStatus === 'Mengecek status antrean' || progressStatus === 'Mengecek status sesi');
-        var isActionRunning = isRetryProcessing || isRefreshProcessing;
+        var retryCountdownSeconds = Math.max(0, Number(state.openingRetryCountdownSeconds) || 0);
+        var retryAttemptCount = Math.max(0, Number(state.openingRetryAttemptCount) || 0);
+        var retryReason = String(state.openingRetryReason || '').trim();
+        var retryCountdownActive = retryCountdownSeconds > 0 && Number(state.openingRetryNextAt) > 0;
+        var retryInFlight = state.openingRetryInFlight === true;
+        var isActionRunning = isRetryProcessing || isRefreshProcessing || retryInFlight;
         var chipLabel = 'Loading ' + escapeHtml(stepIndex || 1) + '/' + escapeHtml(stepTotal);
         var actionButtons = [];
         var queueMetaMarkup = '';
@@ -805,15 +810,25 @@ export function createExamStageRenderer(deps) {
             chipLabel = 'Perlu Tindakan';
         }
 
-        if (isRetryProcessing || isRefreshProcessing) {
+        if (retryCountdownActive) {
+            actionSummaryMarkup = [
+                '<div class="cbt-exam-opening-action-summary is-countdown" role="status" aria-live="polite">',
+                '<strong>Mencoba lagi dalam ' + escapeHtml(retryCountdownSeconds) + ' detik...</strong>',
+                retryReason !== '' ? '<span>' + escapeHtml(retryReason) + '</span>' : '',
+                retryAttemptCount > 0 ? '<span>Percobaan ke-' + escapeHtml(retryAttemptCount) + ', posisi/intent tetap sama.</span>' : '',
+                '</div>'
+            ].join('');
+        } else if (retryInFlight) {
+            actionSummaryMarkup = '<div class="cbt-exam-opening-action-summary is-running" role="status" aria-live="polite"><strong>Sedang mencoba...</strong><span>Request sebelumnya masih berjalan, jadi tidak dibuat request paralel.</span></div>';
+        } else if (isRetryProcessing || isRefreshProcessing) {
             actionSummaryMarkup = '<div class="cbt-exam-opening-action-summary is-running"><strong>' + escapeHtml(isRetryProcessing ? 'Coba Lagi sedang diproses' : 'Refresh Status sedang diproses') + '</strong></div>';
         }
 
         if (canRetry) {
-            actionButtons.push('<button class="cbt-button cbt-button-primary" data-action="retry-opening-attempt" type="button"' + (isActionRunning ? ' disabled aria-disabled="true"' : '') + '>' + escapeHtml(isRetryProcessing ? 'Mencoba Lagi...' : 'Coba Lagi') + '</button>');
+            actionButtons.push('<button class="cbt-button cbt-button-primary" data-action="retry-opening-attempt" type="button"' + (isActionRunning ? ' disabled aria-disabled="true"' : '') + '>' + escapeHtml(isRetryProcessing || retryInFlight ? 'Mencoba Lagi...' : (retryCountdownActive ? 'Coba Sekarang' : 'Coba Lagi')) + '</button>');
         }
         if (canRefreshStatus) {
-            actionButtons.push('<button class="cbt-button cbt-button-secondary" data-action="refresh-opening-attempt-status" type="button"' + (isActionRunning ? ' disabled aria-disabled="true"' : '') + '>' + escapeHtml(isRefreshProcessing ? 'Mengecek...' : 'Refresh Status') + '</button>');
+            actionButtons.push('<button class="cbt-button cbt-button-secondary" data-action="refresh-opening-attempt-status" type="button"' + (isActionRunning ? ' disabled aria-disabled="true"' : '') + '>' + escapeHtml(isRefreshProcessing || retryInFlight ? 'Mengecek...' : (retryCountdownActive ? 'Refresh Sekarang' : 'Refresh Status')) + '</button>');
         }
         if (canBack) {
             actionButtons.push('<button class="cbt-button cbt-button-secondary" data-action="back-confirm" type="button">Kembali ke Daftar Exam</button>');

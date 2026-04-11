@@ -297,6 +297,73 @@ final class CBT_Adaptive_Load_Service
     }
 
     /**
+     * @return array{scanned_count:int,completed_count:int,failed_count:int,completed_attempt_ids:array<int,int>}
+     */
+    public static function finalize_expired_in_progress_attempts(int $limit = 200): array
+    {
+        global $wpdb;
+
+        $limit = max(1, min(1000, absint($limit)));
+        if (
+            !isset($wpdb)
+            || !is_object($wpdb)
+            || !class_exists('CBT_REST')
+            || !method_exists('CBT_REST', 'finalize_attempt_completion')
+        ) {
+            return [
+                'scanned_count' => 0,
+                'completed_count' => 0,
+                'failed_count' => 0,
+                'completed_attempt_ids' => [],
+            ];
+        }
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $now_mysql = current_time('mysql');
+        $attempt_ids = array_values(array_filter(array_map('intval', (array) $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT a.id
+                   FROM {$attempt_table} a
+             INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                  WHERE a.status = 'in_progress'
+                    AND e.title NOT LIKE %s
+                    AND (
+                        (e.starts_at IS NOT NULL AND e.starts_at > %s)
+                        OR (e.ends_at IS NOT NULL AND e.ends_at < %s)
+                        OR TIMESTAMPADD(MINUTE, (e.duration_minutes + a.extra_time_minutes), a.started_at) < %s
+                    )
+               ORDER BY a.started_at ASC, a.id ASC
+                  LIMIT %d",
+                'Bank Soal - %',
+                $now_mysql,
+                $now_mysql,
+                $now_mysql,
+                $limit
+            )
+        ))));
+
+        $completed_attempt_ids = [];
+        $failed_count = 0;
+        foreach ($attempt_ids as $attempt_id) {
+            $completion_result = CBT_REST::finalize_attempt_completion($attempt_id);
+            if (is_wp_error($completion_result)) {
+                $failed_count++;
+                continue;
+            }
+
+            $completed_attempt_ids[] = $attempt_id;
+        }
+
+        return [
+            'scanned_count' => count($attempt_ids),
+            'completed_count' => count($completed_attempt_ids),
+            'failed_count' => $failed_count,
+            'completed_attempt_ids' => $completed_attempt_ids,
+        ];
+    }
+
+    /**
      * @return array<string,mixed>
      */
     private static function collect_signals(): array
@@ -314,7 +381,19 @@ final class CBT_Adaptive_Load_Service
                 )
             ))));
             $active_attempt_count = (int) $wpdb->get_var(
-                "SELECT COUNT(*) FROM {$attempt_table} WHERE status = 'in_progress'"
+                $wpdb->prepare(
+                    "SELECT COUNT(*)
+                      FROM {$attempt_table} a
+                 INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                      WHERE a.status = 'in_progress'
+                        AND e.status = 'published'
+                        AND (e.starts_at IS NULL OR e.starts_at <= %s)
+                        AND (e.ends_at IS NULL OR e.ends_at >= %s)
+                        AND TIMESTAMPADD(MINUTE, (e.duration_minutes + a.extra_time_minutes + 10), a.started_at) >= %s",
+                    current_time('mysql'),
+                    current_time('mysql'),
+                    current_time('mysql')
+                )
             );
         } else {
             $active_attempt_count = 0;
@@ -490,6 +569,12 @@ final class CBT_Adaptive_Load_Service
         $hold_until_ts = self::mysql_to_timestamp((string) ($state['hold_until'] ?? ''));
         $clean_ticks = max(0, (int) ($state['clean_ticks'] ?? 0));
 
+        // Auto hold should never survive much longer than the configured hold window.
+        // If older state contains a far-future value, repair it so the level can de-escalate.
+        if ($hold_until_ts > 0 && $hold_until_ts > ($now_ts + self::HOLD_SECONDS)) {
+            $hold_until_ts = 0;
+        }
+
         if ($candidate_priority > $effective_priority) {
             $effective_level = $candidate_level;
             $clean_ticks = 0;
@@ -598,7 +683,7 @@ final class CBT_Adaptive_Load_Service
 
     private static function timestamp_to_mysql(int $timestamp): string
     {
-        return gmdate('Y-m-d H:i:s', $timestamp + (int) (get_option('gmt_offset', 0) * HOUR_IN_SECONDS));
+        return gmdate('Y-m-d H:i:s', $timestamp);
     }
 
     private static function maybe_restore_tick_event(): void

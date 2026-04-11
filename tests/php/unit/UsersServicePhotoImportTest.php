@@ -224,14 +224,12 @@ final class UsersServicePhotoImportTest extends TestCase
 
     public function test_resolve_manual_create_user_photo_only_uses_upload_and_student_default(): void
     {
+        $expectedStudentPhoto = $this->invokeUsersService('get_default_student_photo_url', ['']);
         $studentPhoto = $this->invokeUsersService('resolve_manual_create_user_photo', [
             'siswa_cbt',
             ['status' => 'empty', 'url' => 'http://malicious.example/avatar.png'],
         ]);
-        self::assertSame(
-            'http://localhost/wp-content/plugins/cbt-exam-system/public/images/default-student-avatar.svg',
-            $studentPhoto
-        );
+        self::assertSame($expectedStudentPhoto, $studentPhoto);
 
         $teacherPhoto = $this->invokeUsersService('resolve_manual_create_user_photo', [
             'guru_cbt',

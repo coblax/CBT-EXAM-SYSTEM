@@ -28,8 +28,10 @@ final class StartAttemptGateServiceTest extends TestCase
         self::assertSame('queued', $queued['mode']);
         self::assertNotSame('', $queued['queue_ticket']);
         self::assertSame(1, $queued['queue_position']);
+        self::assertSame(1000.0, (float) $queued['queue_ticket_created_at']);
         self::assertSame($queued['queue_ticket'], $queuedAgain['queue_ticket']);
         self::assertSame(1, $queuedAgain['queue_position']);
+        self::assertSame(1000.0, (float) $queuedAgain['queue_ticket_created_at']);
 
         $diagnostics = CBT_Start_Attempt_Gate_Service::get_exam_diagnostics(77);
         self::assertSame('GATED', $diagnostics['status_label']);
@@ -95,6 +97,7 @@ final class StartAttemptGateServiceTest extends TestCase
         self::assertSame('queued', $queuedStatus['mode']);
         self::assertSame(1, $queuedStatus['queue_position']);
         self::assertSame((string) $queued['queue_ticket'], (string) $queuedStatus['queue_ticket']);
+        self::assertSame(1000.0, (float) $queuedStatus['queue_ticket_created_at']);
 
         $GLOBALS['cbt_test_start_attempt_gate_now'] = 1000.6;
         $admittedStatus = CBT_Start_Attempt_Gate_Service::get_ticket_status(77, 71, (string) $queued['queue_ticket']);

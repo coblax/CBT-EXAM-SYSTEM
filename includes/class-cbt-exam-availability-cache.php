@@ -1123,6 +1123,18 @@ class CBT_Exam_Availability_Cache
             return $default;
         }
 
+        if (sanitize_key($snapshot_status) === 'ready') {
+            $recent_repair = self::get_recent_repair_event($user_id);
+            if (is_array($recent_repair)) {
+                return [
+                    'status' => sanitize_key((string) ($recent_repair['status'] ?? '')),
+                    'message' => trim((string) ($recent_repair['message'] ?? '')),
+                    'queued_at' => trim((string) ($recent_repair['completed_at'] ?? '')),
+                    'source' => trim((string) ($recent_repair['source'] ?? '')),
+                ];
+            }
+        }
+
         if (class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
             $queue_meta = CBT_Snapshot_Auto_Heal_Queue_Service::get_target_repair_state('availability_user', $user_id);
             if (!empty($queue_meta['queued'])) {
@@ -1154,17 +1166,7 @@ class CBT_Exam_Availability_Cache
             return $default;
         }
 
-        $recent_repair = self::get_recent_repair_event($user_id);
-        if (!is_array($recent_repair)) {
-            return $default;
-        }
-
-        return [
-            'status' => sanitize_key((string) ($recent_repair['status'] ?? '')),
-            'message' => trim((string) ($recent_repair['message'] ?? '')),
-            'queued_at' => trim((string) ($recent_repair['completed_at'] ?? '')),
-            'source' => trim((string) ($recent_repair['source'] ?? '')),
-        ];
+        return $default;
     }
 
     private static function maybe_enqueue_auto_heal_version_changed(int $user_id, string $source = 'system'): void
