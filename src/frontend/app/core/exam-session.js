@@ -2734,7 +2734,10 @@ export function createExamSessionManager(deps) {
         if (examId > 0) {
             state.selectedExamId = examId;
         }
-        await ensureExamRuntimeBundle();
+        var deferredUiStatePromise = requestDeferredOpeningUiState(state.attemptId);
+        var runtimeBundlePromise = ensureExamRuntimeBundle();
+
+        await runtimeBundlePromise;
         if (requestId > 0) {
             assertOpeningAttemptRequestActive(requestId);
         }
@@ -2757,10 +2760,10 @@ export function createExamSessionManager(deps) {
             clearPersistedQuestionCache(state.attemptId);
         }
 
-        var deferredUiStatePromise = requestDeferredOpeningUiState(state.attemptId);
+        var restoredQuestionCachePromise = readPersistedQuestionCache(state.attemptId);
 
         var localAttemptUiState = readPersistedAttemptUiState(state.attemptId);
-        var restoredQuestionCacheSnapshot = await readPersistedQuestionCache(state.attemptId);
+        var restoredQuestionCacheSnapshot = await restoredQuestionCachePromise;
         if (requestId > 0) {
             assertOpeningAttemptRequestActive(requestId);
         }
@@ -2893,11 +2896,18 @@ export function createExamSessionManager(deps) {
             'Finalisasi tampilan ujian',
             'Menyalakan timer, sinkronisasi jawaban, dan panel interaktif.'
         );
-        await ensureQuestionWindowForIndex(state.currentIndex, {
+        ensureQuestionWindowForIndex(state.currentIndex, {
             examId: examId,
             attemptId: state.attemptId,
             includeExisting: includeExisting,
             limit: questionWindowSize
+        }).catch(function (error) {
+            recordTimelineEntry('question-window:prefetch:error', error instanceof Error ? error.message : 'Prefetch question window gagal.', {
+                attemptId: Number(state.attemptId) || 0,
+                selectedExamId: examId,
+                stage: 'exam',
+                currentIndex: Number(state.currentIndex) || 0
+            });
         });
         if (requestId > 0) {
             assertOpeningAttemptRequestActive(requestId);
