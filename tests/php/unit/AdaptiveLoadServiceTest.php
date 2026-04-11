@@ -8,6 +8,7 @@ require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-gate-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-snapshot-metrics-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-metrics-service.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-entry-flow-metrics-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-snapshot-auto-heal-queue-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-adaptive-load-service.php';
 
@@ -25,6 +26,7 @@ final class AdaptiveLoadServiceTest extends TestCase
         $this->useFakeStartAttemptGateRedis();
         $this->useFakeLoginMetricsRedis();
         $this->useFakeStartAttemptMetricsRedis();
+        $this->useFakeEntryFlowMetricsRedis();
         $GLOBALS['wpdb'] = new AdaptiveLoadServiceFakeWpdb();
     }
 
@@ -92,6 +94,41 @@ final class AdaptiveLoadServiceTest extends TestCase
     {
         for ($index = 0; $index < 9; $index++) {
             CBT_Start_Attempt_Metrics_Service::record_phase('start_attempt_response_ready', 30000);
+        }
+
+        $state = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame('normal', $state['effective_level']);
+    }
+
+    public function test_tick_escalates_to_busy_when_login_to_exam_list_p95_is_slow(): void
+    {
+        for ($index = 0; $index < 10; $index++) {
+            CBT_Entry_Flow_Metrics_Service::record_flow('login_to_exam_list', 4200);
+        }
+
+        $state = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame('busy', $state['effective_level']);
+        self::assertStringContainsString('login ke daftar exam', implode(' ', (array) $state['reasons']));
+    }
+
+    public function test_tick_escalates_to_critical_when_start_to_first_question_p95_is_slow(): void
+    {
+        for ($index = 0; $index < 10; $index++) {
+            CBT_Entry_Flow_Metrics_Service::record_flow('start_to_first_question', 30000);
+        }
+
+        $state = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame('critical', $state['effective_level']);
+        self::assertStringContainsString('mulai ujian ke soal pertama', implode(' ', (array) $state['reasons']));
+    }
+
+    public function test_tick_ignores_entry_flow_metrics_when_sample_is_too_small(): void
+    {
+        for ($index = 0; $index < 9; $index++) {
+            CBT_Entry_Flow_Metrics_Service::record_flow('resume_to_first_question', 60000);
         }
 
         $state = CBT_Adaptive_Load_Service::tick();
@@ -229,6 +266,23 @@ final class AdaptiveLoadServiceTest extends TestCase
     private function useFakeStartAttemptMetricsRedis(): void
     {
         $reflection = new ReflectionClass(CBT_Start_Attempt_Metrics_Service::class);
+
+        $redisProperty = $reflection->getProperty('metrics_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('metrics_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('metrics_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeEntryFlowMetricsRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Entry_Flow_Metrics_Service::class);
 
         $redisProperty = $reflection->getProperty('metrics_redis');
         $redisProperty->setAccessible(true);

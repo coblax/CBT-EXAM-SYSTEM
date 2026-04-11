@@ -35,6 +35,11 @@ export function createExamSessionManager(deps) {
     var exitFullscreenSilently = deps.exitFullscreenSilently;
     var findExamById = deps.findExamById;
     var getNavigatorConnectionStatus = deps.getNavigatorConnectionStatus;
+    var getChangedQuestionCount = typeof deps.getChangedQuestionCount === 'function'
+        ? deps.getChangedQuestionCount
+        : function () {
+            return 0;
+        };
     var getQuestionCount = deps.getQuestionCount;
     var getSelectedExam = deps.getSelectedExam;
     var initializeSubmittedPayloadCache = deps.initializeSubmittedPayloadCache;
@@ -100,6 +105,8 @@ export function createExamSessionManager(deps) {
     var openingRetryCountdownIntervalId = 0;
     var openingRetryCountdownResolve = null;
     var openingRetryAutoActionTimerId = 0;
+    var loginEntryFlowMetricContext = null;
+    var openingEntryFlowMetricContext = null;
 
     function resetOpeningAttemptProgressState() {
         state.openingAttemptProgressPercent = 0;
@@ -135,6 +142,41 @@ export function createExamSessionManager(deps) {
     function clearOpeningAttemptLastResult() {
         state.pendingLastErrorCode = '';
         state.pendingLastErrorMessage = '';
+    }
+
+    function clearOpeningAttemptServerState() {
+        state.openingAttemptServerState = '';
+        state.openingAttemptServerReason = '';
+        state.openingAttemptServerResumeSource = '';
+        state.openingAttemptWaitAgeSeconds = 0;
+        state.openingAttemptLastStageAt = 0;
+    }
+
+    function syncOpeningAttemptServerState(source, fallback) {
+        fallback = fallback || {};
+        state.openingAttemptServerState = String(
+            source && source.opening_state
+                ? source.opening_state
+                : (fallback.openingState || '')
+        ).trim().toLowerCase();
+        state.openingAttemptServerReason = String(
+            source && source.opening_reason
+                ? source.opening_reason
+                : (fallback.openingReason || '')
+        ).trim().toLowerCase();
+        state.openingAttemptServerResumeSource = String(
+            source && source.resume_source
+                ? source.resume_source
+                : (fallback.resumeSource || '')
+        ).trim().toLowerCase();
+        state.openingAttemptWaitAgeSeconds = Math.max(
+            0,
+            Number(source && source.wait_age_seconds) || Number(fallback.waitAgeSeconds) || 0
+        );
+        state.openingAttemptLastStageAt = Math.max(
+            0,
+            Number(source && source.last_stage_at) || Number(fallback.lastStageAt) || 0
+        );
     }
 
     function rememberOpeningAttemptLastResult(code, message) {
@@ -251,6 +293,8 @@ export function createExamSessionManager(deps) {
         state.pendingResumeIntent = false;
         state.pendingOpeningPhase = '';
         clearOpeningAttemptLastResult();
+        clearOpeningAttemptServerState();
+        clearOpeningEntryFlowMetricContext();
     }
 
     function beginOpeningAttemptUiAction(kind) {
@@ -274,6 +318,192 @@ export function createExamSessionManager(deps) {
         state.authProgressStepTotal = 0;
         state.authProgressStatus = '';
         state.authProgressDetail = '';
+    }
+
+    function buildEntryFlowMetricKey(prefix, stableSeed) {
+        var seed = String(stableSeed || '').trim();
+        if (seed !== '') {
+            return String(prefix || 'entry') + '_' + seed;
+        }
+
+        return String(prefix || 'entry')
+            + '_'
+            + Date.now().toString(36)
+            + '_'
+            + Math.random().toString(36).slice(2, 10);
+    }
+
+    function emitEntryFlowMetric(payload) {
+        if (!payload || typeof apiRequest !== 'function') {
+            return Promise.resolve(false);
+        }
+
+        return apiRequest('entry_flow_metric', {
+            method: 'POST',
+            keepalive: true,
+            body: payload
+        }).then(function () {
+            return true;
+        }).catch(function () {
+            return false;
+        });
+    }
+
+    function beginLoginEntryFlowMetricContext() {
+        loginEntryFlowMetricContext = {
+            emitted: false,
+            metricKey: buildEntryFlowMetricKey('login_entry_flow'),
+            startedAt: Date.now(),
+            loginRequestStartedAt: 0,
+            loginRequestFinishedAt: 0,
+            examListStartedAt: 0,
+            examListFinishedAt: 0
+        };
+
+        return loginEntryFlowMetricContext;
+    }
+
+    function clearLoginEntryFlowMetricContext() {
+        loginEntryFlowMetricContext = null;
+    }
+
+    function emitLoginEntryFlowMetricSuccess() {
+        var context = loginEntryFlowMetricContext;
+        if (!context || context.emitted) {
+            return;
+        }
+
+        var finishedAt = context.examListFinishedAt > 0 ? context.examListFinishedAt : Date.now();
+        var phaseDurations = {};
+        if (context.loginRequestStartedAt > 0 && context.loginRequestFinishedAt >= context.loginRequestStartedAt) {
+            phaseDurations.login_request_ms = Math.max(0, context.loginRequestFinishedAt - context.loginRequestStartedAt);
+        }
+        if (context.examListStartedAt > 0 && finishedAt >= context.examListStartedAt) {
+            phaseDurations.login_exam_list_ms = Math.max(0, finishedAt - context.examListStartedAt);
+        }
+
+        context.emitted = true;
+        emitEntryFlowMetric({
+            flow: 'login_to_exam_list',
+            metric_key: context.metricKey,
+            duration_ms: Math.max(0, finishedAt - context.startedAt),
+            phase_durations: phaseDurations
+        });
+    }
+
+    function beginOpeningEntryFlowMetricContext(selectedExam, startIntentKey, resumeIntent) {
+        var examId = Number(selectedExam && selectedExam.id) || 0;
+        var metricKey = buildEntryFlowMetricKey('opening_entry_flow', startIntentKey || String(examId || '0'));
+
+        if (
+            openingEntryFlowMetricContext
+            && openingEntryFlowMetricContext.emitted !== true
+            && String(openingEntryFlowMetricContext.metricKey || '') === metricKey
+            && Number(openingEntryFlowMetricContext.examId) === examId
+        ) {
+            return openingEntryFlowMetricContext;
+        }
+
+        openingEntryFlowMetricContext = {
+            attemptAcquiredAt: 0,
+            attemptId: 0,
+            emitted: false,
+            examId: examId,
+            firstWindowStartedAt: 0,
+            flow: '',
+            metricKey: metricKey,
+            phaseDurations: {},
+            resumeIntentHint: resumeIntent === true,
+            startedAt: Date.now(),
+            uiStateReconcileMs: 0
+        };
+
+        return openingEntryFlowMetricContext;
+    }
+
+    function clearOpeningEntryFlowMetricContext() {
+        openingEntryFlowMetricContext = null;
+    }
+
+    function recordOpeningEntryFlowAttemptAcquired(startPayload) {
+        var context = openingEntryFlowMetricContext;
+        if (!context || context.emitted) {
+            return;
+        }
+
+        var acquiredAt = Date.now();
+        var status = String(startPayload && startPayload.status ? startPayload.status : '').trim().toLowerCase();
+        context.attemptId = Number(startPayload && startPayload.attempt_id) || context.attemptId || 0;
+        context.examId = context.examId || Number(startPayload && startPayload.exam_id) || 0;
+        if (!context.attemptAcquiredAt) {
+            context.attemptAcquiredAt = acquiredAt;
+            context.phaseDurations.attempt_acquire_ms = Math.max(0, acquiredAt - context.startedAt);
+        }
+        if (context.flow === '') {
+            if (status === 'resumed' || status === 'resume') {
+                context.flow = 'resume_to_first_question';
+            } else if (status === 'started') {
+                context.flow = 'start_to_first_question';
+            } else {
+                context.flow = context.resumeIntentHint
+                    ? 'resume_to_first_question'
+                    : 'start_to_first_question';
+            }
+        }
+    }
+
+    function markOpeningEntryFlowFirstWindowStart() {
+        var context = openingEntryFlowMetricContext;
+        if (!context || context.emitted || context.firstWindowStartedAt > 0) {
+            return;
+        }
+
+        context.firstWindowStartedAt = Date.now();
+        if (context.attemptAcquiredAt > 0) {
+            context.phaseDurations.attempt_open_shell_ms = Math.max(0, context.firstWindowStartedAt - context.attemptAcquiredAt);
+        }
+    }
+
+    function recordOpeningEntryFlowUiStateReconcile(durationMs) {
+        var context = openingEntryFlowMetricContext;
+        if (!context || context.emitted || !Number.isFinite(Number(durationMs))) {
+            return;
+        }
+
+        context.uiStateReconcileMs = Math.max(0, Number(durationMs) || 0);
+        if (context.uiStateReconcileMs > 0) {
+            context.phaseDurations.ui_state_reconcile_ms = context.uiStateReconcileMs;
+        }
+    }
+
+    function emitOpeningEntryFlowMetricSuccess() {
+        var context = openingEntryFlowMetricContext;
+        if (!context || context.emitted || context.flow === '') {
+            return;
+        }
+
+        var finishedAt = Date.now();
+        if (context.firstWindowStartedAt > 0) {
+            context.phaseDurations.first_window_ready_ms = Math.max(0, finishedAt - context.firstWindowStartedAt);
+        }
+
+        var phaseDurations = {};
+        ['attempt_acquire_ms', 'attempt_open_shell_ms', 'first_window_ready_ms', 'ui_state_reconcile_ms'].forEach(function (phase) {
+            var durationMs = Number(context.phaseDurations && context.phaseDurations[phase]);
+            if (Number.isFinite(durationMs) && durationMs >= 0) {
+                phaseDurations[phase] = Math.floor(durationMs);
+            }
+        });
+
+        context.emitted = true;
+        emitEntryFlowMetric({
+            flow: context.flow,
+            metric_key: context.metricKey,
+            duration_ms: Math.max(0, finishedAt - context.startedAt),
+            phase_durations: phaseDurations,
+            exam_id: Number(context.examId) || 0,
+            attempt_id: Number(context.attemptId) || 0
+        });
     }
 
     function resetResultProgressState() {
@@ -425,6 +655,7 @@ export function createExamSessionManager(deps) {
         state.openingAttemptCanRefreshStatus = false;
         state.openingAttemptCanBack = true;
         clearOpeningAttemptLastResult();
+        clearOpeningAttemptServerState();
         state.pendingQueueTicket = '';
         state.openingAttemptQueuePosition = 0;
         state.openingAttemptQueueEstimatedWaitSeconds = 0;
@@ -541,6 +772,12 @@ export function createExamSessionManager(deps) {
         state.notice = '';
         state.success = '';
         rememberOpeningAttemptLastResult(code || 'opening_recovering', state.error);
+        if (options.serverStateSource || options.serverState || options.serverReason) {
+            syncOpeningAttemptServerState(options.serverStateSource || null, {
+                openingState: String(options.serverState || ''),
+                openingReason: String(options.serverReason || code || '').trim().toLowerCase()
+            });
+        }
         setOpeningAttemptPhase('opening_recovering', {
             canRetry: options.canRetry !== false,
             canRefreshStatus: options.canRefreshStatus !== false,
@@ -588,6 +825,10 @@ export function createExamSessionManager(deps) {
         state.success = '';
         rememberOpeningAttemptLastResult(code || 'opening_terminal_error', state.error);
         resetOpeningRetryState();
+        syncOpeningAttemptServerState(options.serverStateSource || null, {
+            openingState: 'terminal_error',
+            openingReason: String(options.serverReason || code || '').trim().toLowerCase()
+        });
         setOpeningAttemptPhase('opening_terminal_error', {
             canRetry: false,
             canRefreshStatus: false,
@@ -613,6 +854,10 @@ export function createExamSessionManager(deps) {
         var queueTicket = String(queuePayload && queuePayload.queue_ticket ? queuePayload.queue_ticket : '').trim();
         var queuePosition = Math.max(0, Number(queuePayload && queuePayload.queue_position) || 0);
         var estimatedWaitSeconds = Math.max(0, Number(queuePayload && queuePayload.estimated_wait_seconds) || 0);
+        syncOpeningAttemptServerState(queuePayload, {
+            openingState: 'queue_waiting',
+            openingReason: 'queue_admission_wait'
+        });
 
         state.stage = 'exam';
         state.isOpeningAttempt = true;
@@ -1071,6 +1316,248 @@ export function createExamSessionManager(deps) {
         }
     }
 
+    function mergeAttemptUiQuestionIds(primaryIds, secondaryIds) {
+        var mergedLookup = {};
+        var mergedIds = [];
+
+        [primaryIds, secondaryIds].forEach(function (ids) {
+            if (!Array.isArray(ids)) {
+                return;
+            }
+
+            ids.forEach(function (questionId) {
+                var safeQuestionId = Number(questionId) || 0;
+                if (safeQuestionId <= 0 || mergedLookup[safeQuestionId]) {
+                    return;
+                }
+
+                mergedLookup[safeQuestionId] = true;
+                mergedIds.push(safeQuestionId);
+            });
+        });
+
+        return mergedIds;
+    }
+
+    function buildOpeningAttemptUiStateSeed(attemptId, localAttemptUiState, questionCacheSnapshot) {
+        var safeAttemptId = Number(attemptId) || 0;
+
+        if (safeAttemptId <= 0) {
+            return null;
+        }
+
+        if (localAttemptUiState && typeof localAttemptUiState === 'object') {
+            return localAttemptUiState;
+        }
+
+        if (questionCacheSnapshot && typeof questionCacheSnapshot === 'object') {
+            var cachedWindowOffset = Math.max(0, Math.floor(Number(questionCacheSnapshot.windowOffset) || 0));
+            var cachedQuestionId = Array.isArray(questionCacheSnapshot.questionOrderIds)
+                ? (Number(questionCacheSnapshot.questionOrderIds[cachedWindowOffset]) || 0)
+                : 0;
+
+            return {
+                attempt_id: safeAttemptId,
+                current_index: cachedWindowOffset,
+                current_question_id: cachedQuestionId,
+                doubtful_question_ids: []
+            };
+        }
+
+        var currentIndex = Math.max(0, Math.floor(Number(state.currentIndex) || 0));
+        var currentQuestionId = Array.isArray(state.questionOrderIds)
+            ? (Number(state.questionOrderIds[currentIndex]) || 0)
+            : 0;
+
+        return {
+            attempt_id: safeAttemptId,
+            current_index: currentIndex,
+            current_question_id: currentQuestionId,
+            doubtful_question_ids: []
+        };
+    }
+
+    function buildProvisionalOpeningAttemptUiState(attemptId, localAttemptUiState, questionCacheSnapshot) {
+        return choosePreferredAttemptUiState(
+            null,
+            buildOpeningAttemptUiStateSeed(attemptId, localAttemptUiState, questionCacheSnapshot),
+            questionCacheSnapshot,
+            attemptId
+        );
+    }
+
+    function requestDeferredOpeningUiState(attemptId) {
+        var safeAttemptId = Number(attemptId) || 0;
+
+        if (safeAttemptId <= 0) {
+            return Promise.resolve({
+                attemptState: null,
+                error: null
+            });
+        }
+
+        recordTimelineEntry('attempt:ui-state:deferred:start', 'Meminta posisi resume server secara paralel.', {
+            attemptId: safeAttemptId,
+            stage: 'exam'
+        });
+
+        return apiRequest('ui_state', {
+            query: {
+                attempt_id: safeAttemptId
+            }
+        }).then(function (uiStatePayload) {
+            var attemptState = uiStatePayload && uiStatePayload.attempt_state && typeof uiStatePayload.attempt_state === 'object'
+                ? uiStatePayload.attempt_state
+                : null;
+
+            recordTimelineEntry('attempt:ui-state:deferred:ready', attemptState
+                ? 'Posisi resume server siap direkonsiliasi.'
+                : 'Server tidak mengembalikan posisi resume khusus.', {
+                attemptId: safeAttemptId,
+                stage: 'exam',
+                hasAttemptState: attemptState ? 1 : 0
+            });
+
+            return {
+                attemptState: attemptState,
+                error: null
+            };
+        }).catch(function (error) {
+            recordTimelineEntry('attempt:ui-state:deferred:error', error instanceof Error ? error.message : 'Gagal memuat posisi resume server.', {
+                attemptId: safeAttemptId,
+                stage: 'exam'
+            });
+
+            return {
+                attemptState: null,
+                error: error
+            };
+        });
+    }
+
+    function canAutoReconcileDeferredOpeningUiState(attemptId, provisionalIndex) {
+        var safeAttemptId = Number(attemptId) || 0;
+        if (safeAttemptId <= 0) {
+            return false;
+        }
+
+        if (Number(state.attemptId) !== safeAttemptId || String(state.stage || '') !== 'exam') {
+            return false;
+        }
+
+        if ((Number(getChangedQuestionCount()) || 0) > 0) {
+            return false;
+        }
+
+        return Math.max(0, Math.floor(Number(state.currentIndex) || 0))
+            === Math.max(0, Math.floor(Number(provisionalIndex) || 0));
+    }
+
+    function buildDeferredOpeningUiStateSnapshot(remoteAttemptUiState, localAttemptUiState, attemptId) {
+        var safeAttemptId = Number(attemptId) || 0;
+        var safeRemoteSnapshot = remoteAttemptUiState && typeof remoteAttemptUiState === 'object'
+            ? remoteAttemptUiState
+            : {};
+
+        return {
+            attempt_id: safeAttemptId,
+            current_index: Math.max(0, Math.floor(Number(
+                safeRemoteSnapshot.current_index !== undefined
+                    ? safeRemoteSnapshot.current_index
+                    : 0
+            ) || 0)),
+            current_question_id: Number(safeRemoteSnapshot.current_question_id) || 0,
+            doubtful_question_ids: mergeAttemptUiQuestionIds(
+                localAttemptUiState && localAttemptUiState.doubtful_question_ids,
+                safeRemoteSnapshot.doubtful_question_ids
+            ),
+            updated_at: Math.max(0, Number(safeRemoteSnapshot.updated_at) || 0)
+        };
+    }
+
+    function scheduleDeferredOpeningUiStateReconciliation(context) {
+        var deferredUiStatePromise = context && context.deferredUiStatePromise;
+        var attemptId = Number(context && context.attemptId) || 0;
+        var provisionalIndex = Math.max(0, Math.floor(Number(context && context.provisionalIndex) || 0));
+        var examId = Number(context && context.examId) || 0;
+        var localAttemptUiState = context && context.localAttemptUiState ? context.localAttemptUiState : null;
+
+        if (attemptId <= 0 || !deferredUiStatePromise || typeof deferredUiStatePromise.then !== 'function') {
+            return;
+        }
+
+        deferredUiStatePromise.then(async function (deferredResult) {
+            if (!deferredResult || !deferredResult.attemptState) {
+                return false;
+            }
+
+            if (!canAutoReconcileDeferredOpeningUiState(attemptId, provisionalIndex)) {
+                recordTimelineEntry('attempt:ui-state:deferred:skip', 'Posisi resume server dilewati karena user sudah bergerak lebih dulu.', {
+                    attemptId: attemptId,
+                    stage: 'exam',
+                    currentIndex: Number(state.currentIndex) || 0,
+                    provisionalIndex: provisionalIndex
+                });
+                return false;
+            }
+
+            var deferredSnapshot = buildDeferredOpeningUiStateSnapshot(
+                deferredResult.attemptState,
+                localAttemptUiState,
+                attemptId
+            );
+            var targetIndex = Math.max(0, Math.floor(Number(deferredSnapshot.current_index) || 0));
+            var currentIndex = Math.max(0, Math.floor(Number(state.currentIndex) || 0));
+
+            var reconcileStartedAt = 0;
+            if (targetIndex !== currentIndex) {
+                reconcileStartedAt = Date.now();
+                await ensureQuestionWindowForIndex(targetIndex, {
+                    examId: examId,
+                    attemptId: attemptId,
+                    includeExisting: 1,
+                    limit: questionWindowSize
+                });
+            }
+
+            if (!canAutoReconcileDeferredOpeningUiState(attemptId, provisionalIndex)) {
+                recordTimelineEntry('attempt:ui-state:deferred:skip', 'Posisi resume server dibatalkan setelah user berinteraksi.', {
+                    attemptId: attemptId,
+                    stage: 'exam',
+                    currentIndex: Number(state.currentIndex) || 0,
+                    provisionalIndex: provisionalIndex
+                });
+                return false;
+            }
+
+            if (targetIndex === currentIndex) {
+                return false;
+            }
+
+            applyAttemptUiState(deferredSnapshot, attemptId);
+            syncAttemptUiStateSignatureToCurrentState();
+            persistCurrentAttemptUiStateLocally();
+            persistCurrentQuestionCacheLocally();
+            render('attempt-ui-state-deferred-reconcile', {
+                attemptId: attemptId,
+                examId: examId,
+                phase: 'deferred-ui-state-reconcile'
+            });
+            recordTimelineEntry('attempt:ui-state:deferred:reconciled', 'Posisi resume server diterapkan setelah shell ujian siap.', {
+                attemptId: attemptId,
+                stage: 'exam',
+                previousIndex: currentIndex,
+                targetIndex: targetIndex
+            });
+            if (reconcileStartedAt > 0) {
+                recordOpeningEntryFlowUiStateReconcile(Date.now() - reconcileStartedAt);
+            }
+            return true;
+        }).catch(function () {
+            // Ignore deferred reconciliation errors; the user can continue from the current shell.
+        });
+    }
+
     function isQueuedStartAttemptPayload(payload) {
         return !!payload
             && typeof payload === 'object'
@@ -1108,7 +1595,172 @@ export function createExamSessionManager(deps) {
         error.code = String(payload && payload.error_code ? payload.error_code : 'start_attempt_status_pending').trim().toLowerCase();
         error.status = Math.max(0, Number(payload && payload.http_status) || 0);
         error.retry_after_ms = extractRetryAfterMs(payload, 0);
+        error.opening_state = String(payload && payload.opening_state ? payload.opening_state : '').trim().toLowerCase();
+        error.opening_reason = String(payload && payload.opening_reason ? payload.opening_reason : '').trim().toLowerCase();
+        error.attempt_id = Math.max(0, Number(payload && payload.attempt_id) || 0);
+        error.queue_ticket = String(payload && payload.queue_ticket ? payload.queue_ticket : '').trim();
+        error.wait_age_seconds = Math.max(0, Number(payload && payload.wait_age_seconds) || 0);
+        error.last_stage_at = Math.max(0, Number(payload && payload.last_stage_at) || 0);
+        error.resume_source = String(payload && payload.resume_source ? payload.resume_source : '').trim().toLowerCase();
         return error;
+    }
+
+    function getOpeningStateRetryPolicy(openingState) {
+        var normalizedState = String(openingState || '').trim().toLowerCase();
+        if (normalizedState === 'queue_waiting') {
+            return {
+                minDelayMs: 800,
+                maxDelayMs: OPENING_RETRY_STATUS_MAX_MS,
+                fallbackMs: OPENING_RETRY_QUEUE_FALLBACK_MS,
+                autoRetryAction: 'refresh'
+            };
+        }
+        if (normalizedState === 'bootstrap_questions') {
+            return {
+                minDelayMs: OPENING_RETRY_BOOTSTRAP_MIN_MS,
+                maxDelayMs: OPENING_RETRY_BOOTSTRAP_MAX_MS,
+                fallbackMs: OPENING_RETRY_BOOTSTRAP_MIN_MS,
+                autoRetryAction: Number(state.attemptId) > 0 ? 'retry' : 'refresh'
+            };
+        }
+
+        return {
+            minDelayMs: OPENING_RETRY_STATUS_MIN_MS,
+            maxDelayMs: OPENING_RETRY_STATUS_MAX_MS,
+            fallbackMs: OPENING_RETRY_STATUS_MIN_MS,
+            autoRetryAction: Number(state.attemptId) > 0 ? 'retry' : 'refresh'
+        };
+    }
+
+    function describeOpeningPendingState(source) {
+        var openingState = String(source && source.opening_state ? source.opening_state : '').trim().toLowerCase();
+        var openingReason = String(source && source.opening_reason ? source.opening_reason : '').trim().toLowerCase();
+        var waitAgeSeconds = Math.max(0, Number(source && source.wait_age_seconds) || 0);
+        var attemptId = Math.max(0, Number(source && source.attempt_id) || 0);
+        var policy = getOpeningStateRetryPolicy(openingState);
+        var detailParts = [];
+        var status = 'Status sesi masih dipantau';
+        var detail = 'Tetap di layar ini. Kami akan mencoba lagi dengan jeda aman.';
+        var phase = 'opening_recovering';
+        var percent = Math.max(16, Number(state.openingAttemptProgressPercent) || 16);
+        var stepIndex = Math.max(1, Number(state.openingAttemptProgressStepIndex) || 1);
+
+        if (openingState === 'resume_lookup') {
+            status = 'Mengecek attempt aktif';
+            detail = 'Server masih memeriksa apakah sesi aktif sudah terlihat untuk akun Anda.';
+            percent = 18;
+            stepIndex = 1;
+        } else if (openingState === 'queue_waiting') {
+            status = 'Menunggu giliran masuk ujian';
+            detail = 'Tiket antrean yang sama tetap dipakai. Kami mengecek kapan giliran masuk dibuka.';
+            percent = 20;
+            stepIndex = 1;
+            phase = 'opening_waiting_queue';
+        } else if (openingState === 'attempt_creating') {
+            status = 'Server sedang membuat sesi ujian';
+            detail = 'Permintaan awal masih diproses. Kami menunggu server menyelesaikan pembuatan attempt.';
+            percent = 24;
+            stepIndex = 1;
+        } else if (openingState === 'attempt_created' || openingState === 'bootstrap_session') {
+            status = 'Sesi sudah dibuat, menyiapkan shell ujian';
+            detail = 'Attempt sudah ada. Kami menunggu snapshot sesi dan runtime ringan siap dipakai.';
+            percent = 46;
+            stepIndex = 2;
+        } else if (openingState === 'bootstrap_questions') {
+            status = 'Sesi siap, memuat soal pertama';
+            detail = 'Attempt sudah ada. Kami menunggu window soal pertama selesai disiapkan.';
+            percent = 76;
+            stepIndex = 4;
+        }
+
+        if (openingReason === 'lock_owner_active') {
+            detailParts.push('Request sebelumnya masih memegang lock dan tetap menjadi intent yang sama.');
+        } else if (openingReason === 'resume_db_miss' || openingReason === 'resume_index_miss') {
+            detailParts.push('Attempt aktif belum terlihat, tetapi flow masih dipantau otomatis.');
+        } else if (openingReason === 'question_window_pending') {
+            detailParts.push('Cache soal awal belum siap penuh.');
+        } else if (openingReason === 'session_snapshot_pending' || openingReason === 'entry_snapshot_pending') {
+            detailParts.push('Snapshot sesi ringan masih disusun.');
+        }
+
+        if (attemptId > 0) {
+            detailParts.push('Attempt #' + String(attemptId) + ' sudah dikenali server.');
+        }
+        if (waitAgeSeconds > 0) {
+            detailParts.push('Umur tunggu saat ini sekitar ' + String(waitAgeSeconds) + ' detik.');
+        }
+
+        if (detailParts.length) {
+            detail += ' ' + detailParts.join(' ');
+        }
+
+        return {
+            openingState: openingState,
+            openingReason: openingReason,
+            phase: phase,
+            status: status,
+            detail: detail,
+            percent: percent,
+            stepIndex: stepIndex,
+            minDelayMs: policy.minDelayMs,
+            maxDelayMs: policy.maxDelayMs,
+            fallbackMs: policy.fallbackMs,
+            autoRetryAction: policy.autoRetryAction,
+            autoRetryReason: status + '. Intent yang sama tetap dipakai.'
+        };
+    }
+
+    function applyOpeningPendingStatusPayload(payload, options) {
+        options = options || {};
+        var description = describeOpeningPendingState(payload);
+
+        syncOpeningAttemptServerState(payload, {
+            openingState: description.openingState,
+            openingReason: description.openingReason
+        });
+        state.stage = 'exam';
+        state.isOpeningAttempt = true;
+        state.busy = false;
+        state.error = '';
+        state.notice = '';
+        state.success = '';
+        setOpeningAttemptPhase(description.phase, {
+            canRetry: true,
+            canRefreshStatus: true,
+            canBack: true,
+            queuePosition: Math.max(0, Number(payload && payload.queue_position) || 0),
+            estimatedWaitSeconds: Math.max(0, Number(payload && payload.estimated_wait_seconds) || 0),
+            queueTicket: String(payload && payload.queue_ticket ? payload.queue_ticket : ''),
+            errorCode: String(payload && payload.error_code ? payload.error_code : ''),
+            errorMessage: String(payload && payload.error_message ? payload.error_message : '')
+        });
+        updateOpeningAttemptProgress(
+            description.percent,
+            description.stepIndex,
+            description.status,
+            description.detail,
+            {
+                renderOptions: {
+                    immediate: true,
+                    skipPostRenderEffects: true
+                }
+            }
+        );
+
+        if (options.scheduleRetry !== false) {
+            scheduleOpeningRetryAutoAction(
+                description.autoRetryAction,
+                description.autoRetryReason,
+                payload,
+                Math.max(0, Number(payload && payload.retry_after_ms) || description.fallbackMs),
+                {
+                    minDelayMs: description.minDelayMs,
+                    maxDelayMs: description.maxDelayMs
+                }
+            );
+        }
+
+        return description;
     }
 
     function buildQueuedStartAttemptDetail(payload) {
@@ -1401,6 +2053,10 @@ export function createExamSessionManager(deps) {
                 assertOpeningAttemptRequestActive(requestId);
 
                 if (getStartAttemptPayloadStatus(statusPayload) === 'resumed') {
+                    syncOpeningAttemptServerState(statusPayload, {
+                        openingState: 'ready',
+                        openingReason: 'attempt_ready'
+                    });
                     return statusPayload;
                 }
 
@@ -1413,6 +2069,10 @@ export function createExamSessionManager(deps) {
                 }
 
                 if (isTerminalStartAttemptStatusPayload(statusPayload)) {
+                    syncOpeningAttemptServerState(statusPayload, {
+                        openingState: 'terminal_error',
+                        openingReason: String(statusPayload && statusPayload.error_code ? statusPayload.error_code : '').trim().toLowerCase()
+                    });
                     throw buildStartAttemptStatusError(statusPayload);
                 }
 
@@ -1426,6 +2086,9 @@ export function createExamSessionManager(deps) {
                     'attempt_pending',
                     'Attempt aktif belum ditemukan. Status sesi masih kami pantau.'
                 );
+                applyOpeningPendingStatusPayload(statusPayload, {
+                    scheduleRetry: false
+                });
 
                 var pendingDiagnosticResult = await maybeRunOpeningAttemptResumeDiagnostic(
                     selectedExam,
@@ -1522,6 +2185,10 @@ export function createExamSessionManager(deps) {
 
             var refreshedExam = findExamById(examId) || getSelectedExam() || selectedExam;
             if (getStartAttemptPayloadStatus(statusPayload) === 'resumed') {
+                syncOpeningAttemptServerState(statusPayload, {
+                    openingState: 'ready',
+                    openingReason: 'attempt_ready'
+                });
                 state.selectedExamId = examId;
                 await openAttemptSession(refreshedExam, statusPayload, requestId);
                 return {
@@ -1538,6 +2205,16 @@ export function createExamSessionManager(deps) {
             }
 
             if (isTerminalStartAttemptStatusPayload(statusPayload) || isPendingStartAttemptStatusPayload(statusPayload)) {
+                if (isPendingStartAttemptStatusPayload(statusPayload)) {
+                    applyOpeningPendingStatusPayload(statusPayload, {
+                        scheduleRetry: false
+                    });
+                } else {
+                    syncOpeningAttemptServerState(statusPayload, {
+                        openingState: 'terminal_error',
+                        openingReason: String(statusPayload && statusPayload.error_code ? statusPayload.error_code : '').trim().toLowerCase()
+                    });
+                }
                 updateOpeningAttemptProgress(
                     40,
                     2,
@@ -1578,6 +2255,10 @@ export function createExamSessionManager(deps) {
                 assertOpeningAttemptRequestActive(requestId);
 
                 if (getStartAttemptPayloadStatus(resumePayload) === 'resumed') {
+                    syncOpeningAttemptServerState(resumePayload, {
+                        openingState: 'ready',
+                        openingReason: 'attempt_ready'
+                    });
                     state.selectedExamId = examId;
                     await openAttemptSession(refreshedExam, resumePayload, requestId);
                     return {
@@ -1704,6 +2385,10 @@ export function createExamSessionManager(deps) {
                 }
 
                 if (getStartAttemptPayloadStatus(statusPayload) === 'resumed') {
+                    syncOpeningAttemptServerState(statusPayload, {
+                        openingState: 'ready',
+                        openingReason: 'attempt_ready'
+                    });
                     return statusPayload;
                 }
 
@@ -1716,10 +2401,17 @@ export function createExamSessionManager(deps) {
                 }
 
                 if (isTerminalStartAttemptStatusPayload(statusPayload)) {
+                    syncOpeningAttemptServerState(statusPayload, {
+                        openingState: 'terminal_error',
+                        openingReason: String(statusPayload && statusPayload.error_code ? statusPayload.error_code : '').trim().toLowerCase()
+                    });
                     throw buildStartAttemptStatusError(statusPayload);
                 }
 
                 if (isPendingStartAttemptStatusPayload(statusPayload)) {
+                    applyOpeningPendingStatusPayload(statusPayload, {
+                        scheduleRetry: false
+                    });
                     if (!hasRetriedFreshStart && String(statusPayload && statusPayload.error_code ? statusPayload.error_code : '').trim().toLowerCase() === 'queue_ticket_not_found') {
                         hasRetriedFreshStart = true;
                         activePayload = await requestStartAttempt({
@@ -1865,6 +2557,8 @@ export function createExamSessionManager(deps) {
         }
 
         state.busy = true;
+        var loginMetricContext = beginLoginEntryFlowMetricContext();
+        loginMetricContext.loginRequestStartedAt = Date.now();
         updateAuthProgress(
             12,
             1,
@@ -1892,6 +2586,7 @@ export function createExamSessionManager(deps) {
                     password: password
                 }
             });
+            loginMetricContext.loginRequestFinishedAt = Date.now();
             applyAdaptiveLoadPayload(loginPayload);
 
             updateAuthProgress(
@@ -1920,7 +2615,9 @@ export function createExamSessionManager(deps) {
                 'Memuat daftar ujian',
                 'Kami mengambil daftar exam yang tersedia untuk akun ini.'
             );
+            loginMetricContext.examListStartedAt = Date.now();
             await loadExams();
+            loginMetricContext.examListFinishedAt = Date.now();
             updateAuthProgress(
                 92,
                 4,
@@ -1948,6 +2645,7 @@ export function createExamSessionManager(deps) {
                 'Daftar exam siap ditampilkan.',
                 { render: false }
             );
+            emitLoginEntryFlowMetricSuccess();
         } catch (error) {
             state.error = error instanceof Error ? error.message : 'Login gagal.';
             resetAuthProgressState();
@@ -1956,6 +2654,7 @@ export function createExamSessionManager(deps) {
                 stage: String(state.stage || '')
             });
         } finally {
+            clearLoginEntryFlowMetricContext();
             state.busy = false;
             resetAuthProgressState();
             render();
@@ -1966,6 +2665,7 @@ export function createExamSessionManager(deps) {
         if (requestId > 0) {
             assertOpeningAttemptRequestActive(requestId);
         }
+        recordOpeningEntryFlowAttemptAcquired(startPayload);
         state.attemptId = Number(startPayload && startPayload.attempt_id) || 0;
         if (state.attemptId <= 0) {
             throw new Error('Attempt ID tidak valid.');
@@ -1976,6 +2676,10 @@ export function createExamSessionManager(deps) {
         state.error = '';
         state.notice = '';
         state.success = '';
+        syncOpeningAttemptServerState(startPayload, {
+            openingState: 'ready',
+            openingReason: 'attempt_ready'
+        });
         recordTimelineEntry('attempt:open:start', 'Membuka sesi ujian.', {
             attemptId: Number(state.attemptId) || 0,
             selectedExamId: Number(selectedExam && selectedExam.id) || 0,
@@ -2053,20 +2757,7 @@ export function createExamSessionManager(deps) {
             clearPersistedQuestionCache(state.attemptId);
         }
 
-        var attemptUiStatePayload = null;
-        var attemptUiStateRequestFailed = false;
-        try {
-            var uiStatePayload = await apiRequest('ui_state', {
-                query: {
-                    attempt_id: state.attemptId
-                }
-            });
-            if (uiStatePayload && uiStatePayload.attempt_state && typeof uiStatePayload.attempt_state === 'object') {
-                attemptUiStatePayload = uiStatePayload.attempt_state;
-            }
-        } catch (error) {
-            attemptUiStateRequestFailed = true;
-        }
+        var deferredUiStatePromise = requestDeferredOpeningUiState(state.attemptId);
 
         var localAttemptUiState = readPersistedAttemptUiState(state.attemptId);
         var restoredQuestionCacheSnapshot = await readPersistedQuestionCache(state.attemptId);
@@ -2103,16 +2794,15 @@ export function createExamSessionManager(deps) {
             restoredQuestionCacheSnapshot = null;
         }
 
-        var preferredAttemptUiState = choosePreferredAttemptUiState(
-            attemptUiStateRequestFailed ? null : attemptUiStatePayload,
+        var provisionalAttemptUiState = buildProvisionalOpeningAttemptUiState(
+            state.attemptId,
             localAttemptUiState,
-            restoredQuestionCacheSnapshot,
-            state.attemptId
+            restoredQuestionCacheSnapshot
         );
         var requestedResumeIndex = Math.max(
             0,
-            Math.floor(Number(preferredAttemptUiState && preferredAttemptUiState.current_index !== undefined
-                ? preferredAttemptUiState.current_index
+            Math.floor(Number(provisionalAttemptUiState && provisionalAttemptUiState.current_index !== undefined
+                ? provisionalAttemptUiState.current_index
                 : 0) || 0)
         );
 
@@ -2142,6 +2832,7 @@ export function createExamSessionManager(deps) {
             stage: 'exam',
             currentIndex: Number(requestedResumeIndex) || 0
         });
+        markOpeningEntryFlowFirstWindowStart();
         updateOpeningAttemptProgress(
             76,
             4,
@@ -2182,7 +2873,7 @@ export function createExamSessionManager(deps) {
             currentIndex: Number(requestedResumeIndex) || 0
         });
 
-        applyAttemptUiState(preferredAttemptUiState, state.attemptId);
+        applyAttemptUiState(provisionalAttemptUiState, state.attemptId);
         syncAttemptUiStateSignatureToCurrentState();
 
         state.isFinishing = false;
@@ -2240,6 +2931,13 @@ export function createExamSessionManager(deps) {
         persistCurrentAttemptUiStateLocally();
         persistCurrentQuestionCacheLocally();
         scheduleAttemptUiStateSync(attemptUiStateSyncDelayMs);
+        scheduleDeferredOpeningUiStateReconciliation({
+            attemptId: state.attemptId,
+            deferredUiStatePromise: deferredUiStatePromise,
+            examId: examId,
+            localAttemptUiState: localAttemptUiState,
+            provisionalIndex: requestedResumeIndex
+        });
         if (queuedCachedAnswerCount > 0 || state.pendingSyncCount > 0 || state.examLockedForPendingFinish) {
             schedulePendingAnswerRetry('open-attempt', {
                 delayMs: 700,
@@ -2250,6 +2948,7 @@ export function createExamSessionManager(deps) {
         startTimer();
         resetQuestionPrefetchIdleTimer();
         maybeFinalizeLockedExam('open-attempt');
+        emitOpeningEntryFlowMetricSuccess();
         clearOpeningAttemptContext();
         recordTimelineEntry('attempt:open:success', 'Sesi ujian siap.', {
             attemptId: Number(state.attemptId) || 0,
@@ -2508,6 +3207,7 @@ export function createExamSessionManager(deps) {
 
             startIntentKey = resolveOpeningAttemptIntentKey(Number(selectedExam && selectedExam.id) || selectedExamId, options);
             rememberOpeningAttemptContext(selectedExam, submittedToken, resumeIntent, startIntentKey);
+            beginOpeningEntryFlowMetricContext(selectedExam, startIntentKey, resumeIntent);
 
             if (isExamFullscreenRequired()) {
                 syncFullscreenState(false);
@@ -2550,6 +3250,10 @@ export function createExamSessionManager(deps) {
                     assertOpeningAttemptRequestActive(requestId);
 
                     if (getStartAttemptPayloadStatus(startStatusPayload) === 'resumed') {
+                        syncOpeningAttemptServerState(startStatusPayload, {
+                            openingState: 'ready',
+                            openingReason: 'attempt_ready'
+                        });
                         await openAttemptSession(selectedExam, startStatusPayload, requestId);
                         recordTimelineEntry('attempt:start:resumed-status', 'Attempt aktif ditemukan lewat endpoint status ringan.', {
                             attemptId: Number(startStatusPayload && startStatusPayload.attempt_id) || 0,
@@ -2560,13 +3264,27 @@ export function createExamSessionManager(deps) {
                     }
 
                     if (isCompletedStartAttemptStatusPayload(startStatusPayload)) {
+                        syncOpeningAttemptServerState(startStatusPayload, {
+                            openingState: 'completed',
+                            openingReason: 'attempt_completed'
+                        });
                         cancelOpeningAttemptRequest();
                         await routeToResultFromOpeningAttempt(selectedExam);
                         return;
                     }
 
                     if (isTerminalStartAttemptStatusPayload(startStatusPayload)) {
+                        syncOpeningAttemptServerState(startStatusPayload, {
+                            openingState: 'terminal_error',
+                            openingReason: String(startStatusPayload && startStatusPayload.error_code ? startStatusPayload.error_code : '').trim().toLowerCase()
+                        });
                         throw buildStartAttemptStatusError(startStatusPayload);
+                    }
+
+                    if (isPendingStartAttemptStatusPayload(startStatusPayload)) {
+                        applyOpeningPendingStatusPayload(startStatusPayload, {
+                            scheduleRetry: false
+                        });
                     }
                 }
 
@@ -2699,7 +3417,8 @@ export function createExamSessionManager(deps) {
                                 : 'Exam tidak tersedia')),
                     detail: errorCode === 'token_invalid' || errorCode === 'token_required'
                         ? 'Kembali ke daftar exam untuk memperbaiki token lalu coba lagi.'
-                        : 'Kembali ke daftar exam untuk memeriksa status exam terbaru.'
+                        : 'Kembali ke daftar exam untuk memeriksa status exam terbaru.',
+                    serverStateSource: error
                 });
                 return;
             }
@@ -2712,7 +3431,8 @@ export function createExamSessionManager(deps) {
                 autoRetryAction: Number(state.attemptId) > 0 || state.pendingQueueTicket !== '' ? 'refresh' : 'retry',
                 autoRetryReason: 'Server masih menyiapkan sesi. Mencoba lagi otomatis.',
                 retrySource: error,
-                retryDelayMs: OPENING_RETRY_STATUS_MIN_MS
+                retryDelayMs: OPENING_RETRY_STATUS_MIN_MS,
+                serverStateSource: error
             });
         } finally {
             if (requestId === activeOpeningAttemptRequestId) {
@@ -2894,6 +3614,10 @@ export function createExamSessionManager(deps) {
             }
 
             if (isAdmittedStartAttemptStatusPayload(statusPayload)) {
+                syncOpeningAttemptServerState(statusPayload, {
+                    openingState: 'queue_waiting',
+                    openingReason: 'queue_admission_wait'
+                });
                 completeOpeningAttemptUiAction('success');
                 cancelOpeningAttemptRequest();
                 return handleStartExam({
@@ -2907,12 +3631,20 @@ export function createExamSessionManager(deps) {
             }
 
             if (getStartAttemptPayloadStatus(statusPayload) === 'resumed') {
+                syncOpeningAttemptServerState(statusPayload, {
+                    openingState: 'ready',
+                    openingReason: 'attempt_ready'
+                });
                 completeOpeningAttemptUiAction('success');
                 await openAttemptSession(selectedExam, statusPayload, requestId);
                 return true;
             }
 
             if (isCompletedStartAttemptStatusPayload(statusPayload)) {
+                syncOpeningAttemptServerState(statusPayload, {
+                    openingState: 'completed',
+                    openingReason: 'attempt_completed'
+                });
                 completeOpeningAttemptUiAction('success');
                 cancelOpeningAttemptRequest();
                 await routeToResultFromOpeningAttempt(selectedExam);
@@ -2920,30 +3652,17 @@ export function createExamSessionManager(deps) {
             }
 
             if (isTerminalStartAttemptStatusPayload(statusPayload)) {
+                syncOpeningAttemptServerState(statusPayload, {
+                    openingState: 'terminal_error',
+                    openingReason: String(statusPayload && statusPayload.error_code ? statusPayload.error_code : '').trim().toLowerCase()
+                });
                 completeOpeningAttemptUiAction('error');
                 throw buildStartAttemptStatusError(statusPayload);
             }
 
             if (isPendingStartAttemptStatusPayload(statusPayload)) {
                 completeOpeningAttemptUiAction('pending');
-                markOpeningAttemptTemporaryFailure(
-                    String(statusPayload.error_message || 'Status sesi masih dipantau.'),
-                    String(statusPayload.error_code || 'start_attempt_status_pending'),
-                    {
-                        status: queueTicket !== '' ? 'Status antrean belum final' : 'Attempt aktif belum terlihat',
-                        detail: queueTicket !== ''
-                            ? 'Tiket antrean belum siap dipakai. Kami akan mengecek lagi otomatis.'
-                            : 'Attempt aktif belum terlihat. Kami akan mengecek lagi otomatis.',
-                        canRetry: true,
-                        canRefreshStatus: true,
-                        autoRetryAction: 'refresh',
-                        autoRetryReason: queueTicket !== ''
-                            ? 'Menunggu antrean masuk ujian.'
-                            : 'Mengecek lagi attempt aktif.',
-                        retrySource: statusPayload,
-                        retryDelayMs: queueTicket !== '' ? OPENING_RETRY_QUEUE_FALLBACK_MS : OPENING_RETRY_STATUS_MIN_MS
-                    }
-                );
+                applyOpeningPendingStatusPayload(statusPayload);
                 return true;
             }
 
@@ -2967,7 +3686,8 @@ export function createExamSessionManager(deps) {
                     getErrorCode(error),
                     {
                         status: 'Sesi ujian membutuhkan tindakan',
-                        detail: 'Periksa pesan berikut lalu kembali ke daftar exam bila perlu.'
+                        detail: 'Periksa pesan berikut lalu kembali ke daftar exam bila perlu.',
+                        serverStateSource: error
                     }
                 );
                 return true;
@@ -2987,7 +3707,8 @@ export function createExamSessionManager(deps) {
                         ? 'Status antrean belum pasti. Mengecek lagi otomatis.'
                         : 'Status sesi belum pasti. Mengecek lagi otomatis.',
                     retrySource: error,
-                    retryDelayMs: queueTicket !== '' ? OPENING_RETRY_QUEUE_FALLBACK_MS : OPENING_RETRY_STATUS_MIN_MS
+                    retryDelayMs: queueTicket !== '' ? OPENING_RETRY_QUEUE_FALLBACK_MS : OPENING_RETRY_STATUS_MIN_MS,
+                    serverStateSource: error
                 }
             );
             return true;

@@ -52,6 +52,10 @@ if (!class_exists('CBT_Start_Attempt_Metrics_Service')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-start-attempt-metrics-service.php';
 }
 
+if (!class_exists('CBT_Entry_Flow_Metrics_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-entry-flow-metrics-service.php';
+}
+
 if (!class_exists('CBT_Login_Snapshot_Freshness_Service')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-login-snapshot-freshness-service.php';
 }
@@ -1694,6 +1698,7 @@ final class CBT_Admin_Exams_Service
             ];
         $adaptive_load = self::build_adaptive_load_context();
         $start_attempt_metrics = self::build_start_attempt_metrics_context();
+        $entry_flow_metrics = self::build_entry_flow_metrics_context();
         $login_snapshot_health = self::build_login_snapshot_health_context();
         $preflight_jobs = class_exists('CBT_Exam_Preflight_Service')
             ? CBT_Exam_Preflight_Service::get_jobs_state()
@@ -1812,6 +1817,23 @@ final class CBT_Admin_Exams_Service
                     !empty($start_attempt_metrics['note']) ? (string) $start_attempt_metrics['note'] : '',
                 ]))),
                 'tone' => sanitize_key((string) ($start_attempt_metrics['tone'] ?? 'warning')),
+            ],
+            [
+                'label' => 'Entry Flow',
+                'value' => (string) ($entry_flow_metrics['start_to_first_question_p95_label'] ?? 'N/A'),
+                'meta' => trim(implode(' · ', array_filter([
+                    !empty($entry_flow_metrics['login_to_exam_list_p95_label']) ? ('Login ' . (string) $entry_flow_metrics['login_to_exam_list_p95_label']) : '',
+                    !empty($entry_flow_metrics['resume_to_first_question_p95_label']) ? ('Resume ' . (string) $entry_flow_metrics['resume_to_first_question_p95_label']) : '',
+                    isset($entry_flow_metrics['sample_summary_label']) ? (string) $entry_flow_metrics['sample_summary_label'] : '',
+                ]))),
+                'hint' => trim(implode(' · ', array_filter([
+                    !empty($entry_flow_metrics['top_slowest_phase_label']) ? ('Top ' . (string) $entry_flow_metrics['top_slowest_phase_label']) : '',
+                    isset($entry_flow_metrics['today_start_to_first_question_count']) ? ('Today Start ' . number_format_i18n((int) $entry_flow_metrics['today_start_to_first_question_count'])) : '',
+                    isset($entry_flow_metrics['today_resume_to_first_question_count']) ? ('Today Resume ' . number_format_i18n((int) $entry_flow_metrics['today_resume_to_first_question_count'])) : '',
+                    isset($entry_flow_metrics['today_login_to_exam_list_count']) ? ('Today Login ' . number_format_i18n((int) $entry_flow_metrics['today_login_to_exam_list_count'])) : '',
+                    !empty($entry_flow_metrics['note']) ? (string) $entry_flow_metrics['note'] : '',
+                ]))),
+                'tone' => sanitize_key((string) ($entry_flow_metrics['tone'] ?? 'warning')),
             ],
             [
                 'label' => 'Auto-Heal Queue',
@@ -2023,6 +2045,84 @@ final class CBT_Admin_Exams_Service
             'top_slowest_phase_p95_ms' => $topSlowestPhaseP95,
             'top_slowest_phase_label' => $topSlowestPhase !== ''
                 ? ($topSlowestPhase . ($topSlowestPhaseP95 > 0 ? ' ' . number_format_i18n($topSlowestPhaseP95) . ' ms' : ''))
+                : '',
+            'metrics_redis_error' => (string) ($metrics['redis_error'] ?? ''),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function build_entry_flow_metrics_context(): array
+    {
+        $metrics = class_exists('CBT_Entry_Flow_Metrics_Service')
+            ? CBT_Entry_Flow_Metrics_Service::get_admin_summary()
+            : [
+                'available' => false,
+                'window' => [],
+                'today' => [],
+                'redis_error' => '',
+            ];
+
+        $window = is_array($metrics['window'] ?? null) ? $metrics['window'] : [];
+        $today = is_array($metrics['today'] ?? null) ? $metrics['today'] : [];
+        $available = !empty($metrics['available']);
+        $login_count = max(0, (int) ($window['login_to_exam_list_count'] ?? 0));
+        $start_count = max(0, (int) ($window['start_to_first_question_count'] ?? 0));
+        $resume_count = max(0, (int) ($window['resume_to_first_question_count'] ?? 0));
+        $login_p95 = max(0, (int) ($window['login_to_exam_list_p95_ms'] ?? 0));
+        $start_p95 = max(0, (int) ($window['start_to_first_question_p95_ms'] ?? 0));
+        $resume_p95 = max(0, (int) ($window['resume_to_first_question_p95_ms'] ?? 0));
+        $sample_ready = $login_count >= 10 || $start_count >= 10 || $resume_count >= 10;
+
+        $tone = 'success';
+        if (!$available) {
+            $tone = 'warning';
+        } elseif (
+            ($login_count >= 10 && $login_p95 >= 8000)
+            || ($start_count >= 10 && $start_p95 >= 30000)
+            || ($resume_count >= 10 && $resume_p95 >= 24000)
+        ) {
+            $tone = 'error';
+        } elseif (
+            ($login_count >= 10 && $login_p95 >= 4000)
+            || ($start_count >= 10 && $start_p95 >= 15000)
+            || ($resume_count >= 10 && $resume_p95 >= 12000)
+        ) {
+            $tone = 'warning';
+        }
+
+        $note = '';
+        if (!$available) {
+            $note = 'Metrics Redis unavailable';
+        } elseif (!$sample_ready) {
+            $note = 'Sample rendah';
+        }
+
+        $top_slowest_phase = sanitize_key((string) ($window['top_slowest_phase'] ?? ''));
+        $top_slowest_phase_p95 = max(0, (int) ($window['top_slowest_phase_p95_ms'] ?? 0));
+
+        return [
+            'available' => $available,
+            'tone' => $tone,
+            'note' => $note,
+            'login_to_exam_list_p95_ms' => $login_p95,
+            'start_to_first_question_p95_ms' => $start_p95,
+            'resume_to_first_question_p95_ms' => $resume_p95,
+            'login_to_exam_list_p95_label' => $login_p95 > 0 ? number_format_i18n($login_p95) . ' ms' : 'N/A',
+            'start_to_first_question_p95_label' => $start_p95 > 0 ? number_format_i18n($start_p95) . ' ms' : 'N/A',
+            'resume_to_first_question_p95_label' => $resume_p95 > 0 ? number_format_i18n($resume_p95) . ' ms' : 'N/A',
+            'login_to_exam_list_count' => $login_count,
+            'start_to_first_question_count' => $start_count,
+            'resume_to_first_question_count' => $resume_count,
+            'sample_summary_label' => 'Sample ' . number_format_i18n($login_count) . '/' . number_format_i18n($start_count) . '/' . number_format_i18n($resume_count),
+            'today_login_to_exam_list_count' => max(0, (int) ($today['login_to_exam_list_count'] ?? 0)),
+            'today_start_to_first_question_count' => max(0, (int) ($today['start_to_first_question_count'] ?? 0)),
+            'today_resume_to_first_question_count' => max(0, (int) ($today['resume_to_first_question_count'] ?? 0)),
+            'top_slowest_phase' => $top_slowest_phase,
+            'top_slowest_phase_p95_ms' => $top_slowest_phase_p95,
+            'top_slowest_phase_label' => $top_slowest_phase !== ''
+                ? ($top_slowest_phase . ($top_slowest_phase_p95 > 0 ? ' ' . number_format_i18n($top_slowest_phase_p95) . ' ms' : ''))
                 : '',
             'metrics_redis_error' => (string) ($metrics['redis_error'] ?? ''),
         ];

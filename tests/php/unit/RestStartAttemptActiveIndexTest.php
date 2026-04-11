@@ -167,12 +167,15 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertFalse(is_wp_error($response));
         self::assertSame('started', $response['status']);
         self::assertSame(123, $response['attempt_id']);
+        self::assertSame('ready', $response['opening_state']);
         self::assertSame(3, $wpdb->latestAttemptQueryCount);
         self::assertSame(1, $wpdb->insertCalls);
         self::assertSame(123, CBT_Active_Attempt_Index::get_active_attempt_id(7, 15));
         self::assertFalse(CBT_Runtime::has_attempt_state(123));
         self::assertArrayNotHasKey('cbt_attempt_session:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
         self::assertArrayNotHasKey('cbt_attempt_contract:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+        self::assertSame('ready', CBT_Start_Attempt_Opening_State_Service::get_state(7, 15)['opening_state'] ?? '');
+        self::assertSame(123, (int) (CBT_Start_Attempt_Opening_State_Service::get_state(7, 15)['attempt_id'] ?? 0));
 
         CBT_REST::flush_deferred_start_attempt_jobs();
 
@@ -397,6 +400,53 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertFalse(is_wp_error($response));
         self::assertSame('pending', $response['status']);
         self::assertSame('attempt_pending', $response['error_code']);
+        self::assertSame('resume_lookup', $response['opening_state']);
+        self::assertSame('resume_db_miss', $response['opening_reason']);
+        self::assertGreaterThanOrEqual(0, (int) ($response['wait_age_seconds'] ?? -1));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_status_preserves_bootstrap_question_pending_state_from_registry(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        CBT_Start_Attempt_Opening_State_Service::write_state(7, 15, 'bootstrap_questions', 'question_window_pending', [
+            'attempt_id' => 88,
+            'retry_after_ms' => 1100,
+        ]);
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null
+        );
+
+        $response = CBT_REST::start_attempt_status(new WP_REST_Request([
+            'exam_id' => 15,
+            'resume_only' => 1,
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('pending', $response['status']);
+        self::assertSame('bootstrap_questions', $response['opening_state']);
+        self::assertSame('question_window_pending', $response['opening_reason']);
+        self::assertSame(88, (int) ($response['attempt_id'] ?? 0));
+        self::assertSame(1100, (int) ($response['retry_after_ms'] ?? 0));
     }
 
     #[RunInSeparateProcess]
@@ -1310,6 +1360,7 @@ PHP);
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-active-attempt-index.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-gate-service.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-idempotency-service.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-opening-state-service.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
     }
 

@@ -46,6 +46,36 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
         self::assertArrayHasKey('cbt_attempt_contract:attempt:77', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
     }
 
+    #[RunInSeparateProcess]
+    public function test_get_questions_bootstrap_light_student_attempt_sanitizes_question_payload(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->useAttemptContractFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        $response = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 55,
+            'attempt_id' => 77,
+            'offset' => 0,
+            'limit' => 1,
+            'bootstrap_light' => 1,
+        ], [], [], '/cbt/v1/questions', 'GET'));
+
+        self::assertFalse(is_wp_error($response));
+        $payload = $response instanceof WP_REST_Response ? $response->get_data() : (array) $response;
+        self::assertCount(1, (array) ($payload['items'] ?? []));
+        self::assertArrayNotHasKey('correct_text', $payload['items'][0]);
+        self::assertArrayNotHasKey('short_answer_correct_text', $payload['items'][0]);
+        self::assertSame('Ibu Kota Indonesia?', $payload['items'][0]['question_text']);
+    }
+
     private function bootstrapRestDeliverySnapshotScaffold(): void
     {
         if (!class_exists('CBT_Auth')) {

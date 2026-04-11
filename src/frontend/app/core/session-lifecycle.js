@@ -203,6 +203,11 @@ export function createSessionLifecycleManager(deps) {
         state.openingAttemptQueuePosition = 0;
         state.openingAttemptQueueEstimatedWaitSeconds = 0;
         state.openingAttemptQueueLastPolledAt = 0;
+        state.openingAttemptServerState = '';
+        state.openingAttemptServerReason = '';
+        state.openingAttemptServerResumeSource = '';
+        state.openingAttemptWaitAgeSeconds = 0;
+        state.openingAttemptLastStageAt = 0;
         state.openingRetryAttemptCount = 0;
         state.openingRetryNextAt = 0;
         state.openingRetryDelayMs = 0;

@@ -1376,6 +1376,7 @@ export function bootstrapFrontendApp() {
         exitFullscreenSilently: exitFullscreenSilently,
         findExamById: findExamById,
         getNavigatorConnectionStatus: getNavigatorConnectionStatus,
+        getChangedQuestionCount: getChangedQuestionCount,
         getQuestionCount: getQuestionCount,
         getSelectedExam: getSelectedExam,
         initializeSubmittedPayloadCache: initializeSubmittedPayloadCache,

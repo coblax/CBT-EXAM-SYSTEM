@@ -141,6 +141,78 @@ export function createExamStageRenderer(deps) {
             .join(' ');
     }
 
+    function formatOpeningAttemptServerStateLabel(openingState) {
+        var normalizedState = String(openingState || '').trim().toLowerCase();
+        if (normalizedState === 'resume_lookup') {
+            return 'Mengecek attempt aktif';
+        }
+        if (normalizedState === 'queue_waiting') {
+            return 'Menunggu giliran masuk ujian';
+        }
+        if (normalizedState === 'attempt_creating') {
+            return 'Server sedang membuat sesi ujian';
+        }
+        if (normalizedState === 'attempt_created' || normalizedState === 'bootstrap_session') {
+            return 'Sesi sudah dibuat, menyiapkan shell ujian';
+        }
+        if (normalizedState === 'bootstrap_questions') {
+            return 'Sesi siap, memuat soal pertama';
+        }
+        if (normalizedState === 'ready') {
+            return 'Sesi siap dipakai';
+        }
+        if (normalizedState === 'completed') {
+            return 'Ujian sudah selesai';
+        }
+        if (normalizedState === 'terminal_error') {
+            return 'Kasus final';
+        }
+
+        return '';
+    }
+
+    function formatOpeningAttemptServerReasonLabel(openingReason) {
+        var normalizedReason = String(openingReason || '').trim().toLowerCase();
+        if (normalizedReason === 'resume_index_miss' || normalizedReason === 'resume_db_miss') {
+            return 'Attempt aktif belum terlihat';
+        }
+        if (normalizedReason === 'queue_admission_wait') {
+            return 'Masih menunggu admission';
+        }
+        if (normalizedReason === 'lock_owner_active') {
+            return 'Lock request sebelumnya masih aktif';
+        }
+        if (normalizedReason === 'attempt_insert_in_progress') {
+            return 'Insert attempt masih berjalan';
+        }
+        if (normalizedReason === 'entry_snapshot_pending') {
+            return 'Entry snapshot masih disusun';
+        }
+        if (normalizedReason === 'session_snapshot_pending') {
+            return 'Session snapshot masih disusun';
+        }
+        if (normalizedReason === 'question_window_pending') {
+            return 'Soal pertama masih disiapkan';
+        }
+        if (normalizedReason === 'attempt_ready') {
+            return 'Attempt siap dibuka';
+        }
+        if (normalizedReason === 'attempt_completed') {
+            return 'Attempt sudah selesai';
+        }
+        if (normalizedReason === 'token_invalid') {
+            return 'Token tidak valid';
+        }
+        if (normalizedReason === 'forbidden') {
+            return 'Tidak diizinkan';
+        }
+        if (normalizedReason === 'not_found') {
+            return 'Data tidak ditemukan';
+        }
+
+        return '';
+    }
+
     function requestCurrentQuestionRecovery(questionId, totalQuestions) {
         var attemptId = Number(state.attemptId) || 0;
         var examId = Number(state.selectedExamId) || 0;
@@ -844,6 +916,12 @@ export function createExamStageRenderer(deps) {
         var lastResultCode = String(state.pendingLastErrorCode || '').trim().toLowerCase();
         var lastResultMessage = String(state.pendingLastErrorMessage || '').trim();
         var lastResultLabel = formatOpeningAttemptLastResultLabel(lastResultCode);
+        var serverState = String(state.openingAttemptServerState || '').trim().toLowerCase();
+        var serverReason = String(state.openingAttemptServerReason || '').trim().toLowerCase();
+        var serverStateLabel = formatOpeningAttemptServerStateLabel(serverState);
+        var serverReasonLabel = formatOpeningAttemptServerReasonLabel(serverReason);
+        var waitAgeSeconds = Math.max(0, Number(state.openingAttemptWaitAgeSeconds) || 0);
+        var resumeSource = String(state.openingAttemptServerResumeSource || '').trim().toLowerCase();
         var retryCountdownActive = retryCountdownSeconds > 0 && Number(state.openingRetryNextAt) > 0;
         var retryInFlight = state.openingRetryInFlight === true;
         var isActionRunning = isRetryProcessing || isRefreshProcessing || retryInFlight;
@@ -852,6 +930,7 @@ export function createExamStageRenderer(deps) {
         var queueMetaMarkup = '';
         var actionSummaryMarkup = '';
         var lastResultMarkup = '';
+        var serverStateMarkup = '';
 
         if (openingPhase === 'opening_waiting_queue') {
             chipLabel = 'Dalam Antrean';
@@ -895,6 +974,18 @@ export function createExamStageRenderer(deps) {
             ].join('');
         }
 
+        if (serverStateLabel !== '' || serverReasonLabel !== '' || waitAgeSeconds > 0 || resumeSource !== '') {
+            serverStateMarkup = [
+                '<div class="cbt-exam-opening-server-state" role="status" aria-live="polite">',
+                '<strong>State server:</strong>',
+                serverStateLabel !== '' ? '<span class="cbt-chip cbt-chip-outline">' + escapeHtml(serverStateLabel) + '</span>' : '',
+                serverReasonLabel !== '' ? '<span class="cbt-chip cbt-chip-outline">' + escapeHtml(serverReasonLabel) + '</span>' : '',
+                waitAgeSeconds > 0 ? '<span>Umur tunggu sekitar ' + escapeHtml(waitAgeSeconds) + ' detik.</span>' : '',
+                resumeSource !== '' ? '<span>Sumber resume: ' + escapeHtml(resumeSource) + '.</span>' : '',
+                '</div>'
+            ].join('');
+        }
+
         if (canRetry) {
             actionButtons.push('<button class="cbt-button cbt-button-primary" data-action="retry-opening-attempt" type="button"' + (isActionRunning ? ' disabled aria-disabled="true"' : '') + '>' + escapeHtml(isRetryProcessing || retryInFlight ? 'Mencoba Lagi...' : (retryCountdownActive ? 'Coba Sekarang' : 'Coba Lagi')) + '</button>');
         }
@@ -920,6 +1011,9 @@ export function createExamStageRenderer(deps) {
                 : '',
             lastResultMarkup !== ''
                 ? '<div class="cbt-exam-opening-action-meta">' + lastResultMarkup + '</div>'
+                : '',
+            serverStateMarkup !== ''
+                ? '<div class="cbt-exam-opening-action-meta">' + serverStateMarkup + '</div>'
                 : '',
             '<div class="cbt-exam-opening-progress-wrap">',
             '<div class="cbt-exam-opening-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + escapeHtml(progressPercent.toFixed(2)) + '" aria-label="Progress persiapan ujian">',

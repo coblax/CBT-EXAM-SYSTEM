@@ -19,6 +19,7 @@ require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.ph
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-auth-snapshot-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-snapshot-metrics-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-metrics-service.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-entry-flow-metrics-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-adaptive-load-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-plugin-redis-reset-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-runtime.php';
@@ -93,6 +94,7 @@ final class AdminExamsSnapshotContextTest extends TestCase
         $this->useFakeLoginSnapshotRedis();
         $this->useFakeLoginMetricsRedis();
         $this->useFakeStartAttemptMetricsRedis();
+        $this->useFakeEntryFlowMetricsRedis();
         $this->useFakeSubmissionContextRedis();
         $this->useFakeAttemptSessionRedis();
         $this->useFakeAttemptContractRedis();
@@ -165,6 +167,11 @@ final class AdminExamsSnapshotContextTest extends TestCase
             \CBT_Start_Attempt_Metrics_Service::record_resolution('started');
             \CBT_Start_Attempt_Metrics_Service::record_resolution('resume_from_index');
             \CBT_Start_Attempt_Metrics_Service::record_resolution('queued_new_start');
+            \CBT_Entry_Flow_Metrics_Service::record_flow('login_to_exam_list', 1800);
+            \CBT_Entry_Flow_Metrics_Service::record_flow('start_to_first_question', 10000);
+            \CBT_Entry_Flow_Metrics_Service::record_flow('resume_to_first_question', 8000);
+            \CBT_Entry_Flow_Metrics_Service::record_phase('first_window_ready_ms', 10000);
+            \CBT_Entry_Flow_Metrics_Service::record_phase('attempt_acquire_ms', 2600);
         }
         \CBT_Start_Attempt_Metrics_Service::record_resolution('lock_conflict_retryable');
 
@@ -174,28 +181,33 @@ final class AdminExamsSnapshotContextTest extends TestCase
 
         self::assertNotEmpty($context['exam_operational_stats']);
         self::assertSame(10, $context['exam_operational_stats']['refreshed_every_seconds']);
-        self::assertCount(10, $context['exam_operational_stats']['cards']);
+        self::assertCount(11, $context['exam_operational_stats']['cards']);
         self::assertSame('Redis RAM', $context['exam_operational_stats']['cards'][0]['label']);
         self::assertSame('CBT Redis Keys', $context['exam_operational_stats']['cards'][1]['label']);
         self::assertSame('Active Attempts', $context['exam_operational_stats']['cards'][2]['label']);
         self::assertSame('Start Queue', $context['exam_operational_stats']['cards'][3]['label']);
         self::assertSame('Start Attempt', $context['exam_operational_stats']['cards'][4]['label']);
-        self::assertSame('Auto-Heal Queue', $context['exam_operational_stats']['cards'][5]['label']);
-        self::assertSame('Adaptive Load', $context['exam_operational_stats']['cards'][6]['label']);
-        self::assertSame('Warm Jobs', $context['exam_operational_stats']['cards'][7]['label']);
-        self::assertSame('Login Snapshot Health', $context['exam_operational_stats']['cards'][8]['label']);
-        self::assertSame('User Snapshots', $context['exam_operational_stats']['cards'][9]['label']);
+        self::assertSame('Entry Flow', $context['exam_operational_stats']['cards'][5]['label']);
+        self::assertSame('Auto-Heal Queue', $context['exam_operational_stats']['cards'][6]['label']);
+        self::assertSame('Adaptive Load', $context['exam_operational_stats']['cards'][7]['label']);
+        self::assertSame('Warm Jobs', $context['exam_operational_stats']['cards'][8]['label']);
+        self::assertSame('Login Snapshot Health', $context['exam_operational_stats']['cards'][9]['label']);
+        self::assertSame('User Snapshots', $context['exam_operational_stats']['cards'][10]['label']);
         self::assertSame('5', (string) $context['exam_operational_stats']['cards'][1]['value']);
         self::assertSame('1', (string) $context['exam_operational_stats']['cards'][2]['value']);
         self::assertSame('4,000 ms', (string) $context['exam_operational_stats']['cards'][4]['value']);
         self::assertStringContainsString('Status 2,000 ms', (string) $context['exam_operational_stats']['cards'][4]['meta']);
         self::assertStringContainsString('Top start_attempt_start_snapshot 15,000 ms', (string) $context['exam_operational_stats']['cards'][4]['hint']);
-        self::assertSame('NORMAL', (string) $context['exam_operational_stats']['cards'][6]['value']);
-        self::assertStringContainsString('Heartbeat 20 detik', (string) $context['exam_operational_stats']['cards'][6]['hint']);
-        self::assertSame('66.7%', (string) $context['exam_operational_stats']['cards'][8]['value']);
-        self::assertStringContainsString('Snapshot 2', (string) $context['exam_operational_stats']['cards'][8]['meta']);
-        self::assertStringContainsString('Fallback 1', (string) $context['exam_operational_stats']['cards'][8]['meta']);
-        self::assertStringContainsString('Freshness 2', (string) $context['exam_operational_stats']['cards'][8]['meta']);
+        self::assertSame('10,000 ms', (string) $context['exam_operational_stats']['cards'][5]['value']);
+        self::assertStringContainsString('Login 2,000 ms', (string) $context['exam_operational_stats']['cards'][5]['meta']);
+        self::assertStringContainsString('Resume 8,000 ms', (string) $context['exam_operational_stats']['cards'][5]['meta']);
+        self::assertStringContainsString('Top first_window_ready_ms 10,000 ms', (string) $context['exam_operational_stats']['cards'][5]['hint']);
+        self::assertSame('NORMAL', (string) $context['exam_operational_stats']['cards'][7]['value']);
+        self::assertStringContainsString('Heartbeat 20 detik', (string) $context['exam_operational_stats']['cards'][7]['hint']);
+        self::assertSame('66.7%', (string) $context['exam_operational_stats']['cards'][9]['value']);
+        self::assertStringContainsString('Snapshot 2', (string) $context['exam_operational_stats']['cards'][9]['meta']);
+        self::assertStringContainsString('Fallback 1', (string) $context['exam_operational_stats']['cards'][9]['meta']);
+        self::assertStringContainsString('Freshness 2', (string) $context['exam_operational_stats']['cards'][9]['meta']);
         self::assertNotEmpty($context['login_snapshot_health_context']);
         self::assertSame('66.7%', (string) $context['login_snapshot_health_context']['hit_rate_label']);
         self::assertSame(2, (int) $context['login_snapshot_health_context']['freshness_window_jobs']);
@@ -1686,6 +1698,23 @@ final class AdminExamsSnapshotContextTest extends TestCase
     private function useFakeStartAttemptMetricsRedis(): void
     {
         $reflection = new ReflectionClass(\CBT_Start_Attempt_Metrics_Service::class);
+
+        $redisProperty = $reflection->getProperty('metrics_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new \CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('metrics_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('metrics_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
+    private function useFakeEntryFlowMetricsRedis(): void
+    {
+        $reflection = new ReflectionClass(\CBT_Entry_Flow_Metrics_Service::class);
 
         $redisProperty = $reflection->getProperty('metrics_redis');
         $redisProperty->setAccessible(true);

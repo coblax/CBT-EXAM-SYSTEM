@@ -25,7 +25,9 @@ require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-student-profile-cache.ph
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-login-auth-snapshot-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-login-snapshot-metrics-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-start-attempt-metrics-service.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-entry-flow-metrics-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-start-attempt-idempotency-service.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-start-attempt-opening-state-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-login-snapshot-freshness-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-adaptive-load-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-availability-cache.php';
@@ -119,6 +121,7 @@ add_action('plugins_loaded', static function () {
     CBT_Student_Profile_Cache::init();
     CBT_Login_Auth_Snapshot_Cache::init();
     CBT_Start_Attempt_Metrics_Service::init();
+    CBT_Entry_Flow_Metrics_Service::init();
     CBT_Login_Snapshot_Freshness_Service::init();
     CBT_Adaptive_Load_Service::init();
     CBT_Exam_Availability_Auto_Warm_Service::init();

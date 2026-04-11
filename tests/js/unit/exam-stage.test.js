@@ -22,6 +22,10 @@ function createFixture(overrides = {}) {
         openingAttemptProgressStatus: 'Memuat soal awal',
         openingAttemptProgressStepIndex: 4,
         openingAttemptProgressStepTotal: 5,
+        openingAttemptServerState: '',
+        openingAttemptServerReason: '',
+        openingAttemptServerResumeSource: '',
+        openingAttemptWaitAgeSeconds: 0,
         stage: 'exam'
     }, overrides.state || {});
 
@@ -554,6 +558,26 @@ describe('createExamStageRenderer', function () {
         expect(markup).toContain('Hasil terakhir:');
         expect(markup).toContain('Cek status timeout');
         expect(markup).toContain('Status sesi ujian belum dapat dipastikan. Server terlalu lama merespons.');
+    });
+
+    it('renders server-side opening state metadata for more specific diagnostics', function () {
+        var renderer = createFixture({
+            state: {
+                openingAttemptPhase: 'opening_recovering',
+                openingAttemptServerState: 'bootstrap_questions',
+                openingAttemptServerReason: 'question_window_pending',
+                openingAttemptServerResumeSource: 'db',
+                openingAttemptWaitAgeSeconds: 19
+            }
+        });
+
+        var markup = renderer.renderExamStageShell();
+
+        expect(markup).toContain('State server:');
+        expect(markup).toContain('Sesi siap, memuat soal pertama');
+        expect(markup).toContain('Soal pertama masih disiapkan');
+        expect(markup).toContain('Umur tunggu sekitar 19 detik.');
+        expect(markup).toContain('Sumber resume: db.');
     });
 
     it('shows collect action on a non-last question once all questions are answered', function () {
