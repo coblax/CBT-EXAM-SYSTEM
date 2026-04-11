@@ -120,6 +120,11 @@ class CBT_REST
                     'type' => 'integer',
                     'sanitize_callback' => 'absint',
                 ],
+                'bootstrap_light' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
             ],
         ]);
 
@@ -428,6 +433,7 @@ class CBT_REST
         $user_id = CBT_Auth::current_user_id($request);
         $role = CBT_Auth::current_user_role($request);
         $attempt_id = (int) $request->get_param('attempt_id');
+        $bootstrap_light = ((int) $request->get_param('bootstrap_light') === 1);
 
         if ($user_id <= 0) {
             return new WP_Error('unauthorized', 'Unauthorized', ['status' => 401]);
@@ -467,7 +473,10 @@ class CBT_REST
                     );
 
                     if (is_array($exam)) {
-                        $attempt_session_snapshot = self::get_cached_attempt_session_snapshot($attempt, $exam, $attempt_table);
+                        $attempt_session_snapshot = self::get_cached_attempt_session_snapshot($attempt, $exam, $attempt_table, $bootstrap_light);
+                        if (is_wp_error($attempt_session_snapshot)) {
+                            return $attempt_session_snapshot;
+                        }
                         $session_duration_minutes = max(
                             0,
                             (int) ($attempt_session_snapshot['duration_minutes'] ?? $attempt['exam_duration_minutes'] ?? $exam['duration_minutes'] ?? 0)
@@ -981,7 +990,7 @@ class CBT_REST
      * @param array<string,mixed> $exam
      * @param array<string,mixed> $attempt
      * @param mixed $question_revision
-     * @return WP_REST_Response|null
+     * @return WP_REST_Response|WP_Error|null
      */
     private static function build_bootstrap_light_question_window_response(
         array $exam,
@@ -998,6 +1007,35 @@ class CBT_REST
         $contract = [];
         if (class_exists('CBT_Attempt_Question_Contract_Cache') && method_exists('CBT_Attempt_Question_Contract_Cache', 'read_cached_attempt_snapshot')) {
             $contract = CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot($attempt_id);
+        }
+        if (empty($contract)) {
+            $bootstrap_lock_key = 'attempt_bootstrap:contract:' . $attempt_id;
+            if (!CBT_Cache::acquire_lock($bootstrap_lock_key, 10, [
+                'type' => 'attempt_question_contract_bootstrap_light',
+                'attempt_id' => $attempt_id,
+                'exam_id' => $exam_id,
+            ])) {
+                self::write_start_attempt_opening_state($exam_id, (int) ($attempt['student_id'] ?? 0), 'bootstrap_questions', 'question_window_pending', [
+                    'attempt_id' => $attempt_id,
+                    'retry_after_ms' => 1000,
+                ]);
+                self::record_start_attempt_phase('question_bootstrap_busy', $exam_id, (int) ($attempt['student_id'] ?? 0), [
+                    'attempt_id' => $attempt_id,
+                    'source' => 'bootstrap_light',
+                    'duration_ms' => self::measure_elapsed_ms($started_at),
+                ]);
+                return new WP_Error(
+                    'question_bootstrap_busy',
+                    'Server masih menyiapkan soal pertama. Coba lagi sebentar.',
+                    ['status' => 429, 'retry_after_ms' => 1000]
+                );
+            }
+
+            try {
+                $contract = self::build_lightweight_attempt_question_contract($attempt, $exam);
+            } finally {
+                CBT_Cache::release_lock($bootstrap_lock_key);
+            }
         }
         if (empty($contract)) {
             $contract = self::build_lightweight_attempt_question_contract($attempt, $exam);
@@ -2233,7 +2271,7 @@ class CBT_REST
         ) {
             $pending_context['opening_reason'] = 'resume_db_miss';
         }
-        self::write_start_attempt_opening_state(
+        $written_pending_state = self::write_start_attempt_opening_state(
             $exam_id,
             $user_id,
             (string) ($pending_context['opening_state'] ?? 'resume_lookup'),
@@ -2246,6 +2284,9 @@ class CBT_REST
                 'last_stage_at' => (int) ($pending_context['last_stage_at'] ?? 0),
             ]
         );
+        if (is_array($written_pending_state)) {
+            $pending_context = array_merge($pending_context, $written_pending_state);
+        }
         $response = self::build_start_attempt_pending_status_response(
             $resume_only ? 'attempt_pending' : 'start_pending',
             $resume_only
@@ -2473,6 +2514,23 @@ class CBT_REST
         }
 
         $previous = CBT_Start_Attempt_Opening_State_Service::get_state($user_id, $exam_id);
+        if (
+            self::should_ignore_opening_state_downgrade(
+                is_array($previous) ? $previous : null,
+                $opening_state
+            )
+        ) {
+            self::record_start_attempt_phase('opening_state_downgrade_ignored', $exam_id, $user_id, array_merge([
+                'opening_state' => sanitize_key($opening_state),
+                'opening_reason' => sanitize_key($opening_reason),
+                'previous_opening_state' => sanitize_key((string) ($previous['opening_state'] ?? '')),
+                'previous_opening_reason' => sanitize_key((string) ($previous['opening_reason'] ?? '')),
+                'attempt_id' => (int) ($previous['attempt_id'] ?? 0),
+            ], $context));
+
+            return $previous;
+        }
+
         $record = CBT_Start_Attempt_Opening_State_Service::write_state($user_id, $exam_id, $opening_state, $opening_reason, $context);
         if (!is_array($record)) {
             return null;
@@ -2503,6 +2561,47 @@ class CBT_REST
         }
 
         return $record;
+    }
+
+    /**
+     * @param array<string,mixed>|null $previous
+     */
+    private static function should_ignore_opening_state_downgrade(?array $previous, string $next_state): bool
+    {
+        if (!is_array($previous) || (int) ($previous['attempt_id'] ?? 0) <= 0) {
+            return false;
+        }
+
+        $previous_state = sanitize_key((string) ($previous['opening_state'] ?? ''));
+        $next_state = sanitize_key($next_state);
+        if ($next_state === '' || in_array($next_state, ['completed', 'terminal_error'], true)) {
+            return false;
+        }
+
+        $previous_rank = self::opening_state_rank($previous_state);
+        $next_rank = self::opening_state_rank($next_state);
+
+        return $previous_rank >= self::opening_state_rank('attempt_created')
+            && $next_rank >= 0
+            && $next_rank < $previous_rank;
+    }
+
+    private static function opening_state_rank(string $opening_state): int
+    {
+        static $rank = [
+            'resume_lookup' => 10,
+            'queue_waiting' => 20,
+            'attempt_creating' => 30,
+            'attempt_created' => 40,
+            'bootstrap_session' => 50,
+            'bootstrap_questions' => 60,
+            'ready' => 70,
+            'completed' => 80,
+            'terminal_error' => 80,
+        ];
+
+        $opening_state = sanitize_key($opening_state);
+        return array_key_exists($opening_state, $rank) ? $rank[$opening_state] : -1;
     }
 
     /**
@@ -5257,9 +5356,9 @@ class CBT_REST
     /**
      * @param array<string,mixed> $attempt
      * @param array<string,mixed> $exam
-     * @return array<string,mixed>
+     * @return array<string,mixed>|WP_Error
      */
-    private static function get_cached_attempt_session_snapshot(array $attempt, array $exam, string $attempt_table): array
+    private static function get_cached_attempt_session_snapshot(array $attempt, array $exam, string $attempt_table, bool $cached_only = false)
     {
         $attempt_id = absint($attempt['id'] ?? 0);
         if ($attempt_id <= 0) {
@@ -5292,6 +5391,51 @@ class CBT_REST
         }
 
         $bootstrap_lock_key = 'attempt_bootstrap:session:' . $attempt_id;
+        if ($cached_only) {
+            if (!CBT_Cache::acquire_lock($bootstrap_lock_key, 10, [
+                'type' => 'attempt_session_snapshot_cached_only',
+                'attempt_id' => $attempt_id,
+                'exam_id' => (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+            ])) {
+                self::write_start_attempt_opening_state(
+                    (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+                    (int) ($attempt['student_id'] ?? 0),
+                    'bootstrap_session',
+                    'session_snapshot_pending',
+                    [
+                        'attempt_id' => $attempt_id,
+                        'retry_after_ms' => 1000,
+                    ]
+                );
+                self::record_start_attempt_phase('attempt_bootstrap_busy', (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0), (int) ($attempt['student_id'] ?? 0), [
+                    'attempt_id' => $attempt_id,
+                    'source' => 'session_snapshot_cached_only',
+                ]);
+                return new WP_Error(
+                    'attempt_bootstrap_busy',
+                    'Server masih menyiapkan sesi ujian. Coba lagi sebentar.',
+                    ['status' => 429, 'retry_after_ms' => 1000]
+                );
+            }
+
+            CBT_Cache::release_lock($bootstrap_lock_key);
+            self::write_start_attempt_opening_state(
+                (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0),
+                (int) ($attempt['student_id'] ?? 0),
+                'bootstrap_session',
+                'session_snapshot_pending',
+                [
+                    'attempt_id' => $attempt_id,
+                    'retry_after_ms' => 1000,
+                ]
+            );
+            self::record_start_attempt_phase('get_session_cached_entry_snapshot', (int) ($attempt['exam_id'] ?? $exam['id'] ?? 0), (int) ($attempt['student_id'] ?? 0), [
+                'attempt_id' => $attempt_id,
+                'source' => 'session_lightweight_cached_only',
+            ]);
+            return self::build_lightweight_attempt_session_snapshot($attempt, $exam);
+        }
+
         if (!CBT_Cache::acquire_lock($bootstrap_lock_key, 10, [
             'type' => 'attempt_session_snapshot_bootstrap',
             'attempt_id' => $attempt_id,

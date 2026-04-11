@@ -1373,6 +1373,121 @@ describe('createExamSessionManager', function () {
         expect(Number(fixture.state.openingRetryNextAt) || 0).toBeGreaterThan(0);
     });
 
+    it('does not move opening progress backward after an attempt id is already known', async function () {
+        var fixture = createFixture({
+            state: {
+                attemptId: 77,
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 77,
+                        latest_attempt_status: 'in_progress'
+                    }
+                ],
+                selectedExamId: 55,
+                stage: 'exam',
+                isOpeningAttempt: true,
+                openingAttemptProgressPercent: 76,
+                openingAttemptProgressStepIndex: 4,
+                pendingExamId: 55,
+                pendingExamToken: '',
+                pendingQueueTicket: '',
+                pendingResumeIntent: true
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'start_attempt_status') {
+                    return {
+                        status: 'pending',
+                        error_code: 'attempt_pending',
+                        error_message: 'Attempt aktif masih dicek.',
+                        retry_after_ms: 1200,
+                        opening_state: 'resume_lookup',
+                        opening_reason: 'resume_index_miss',
+                        attempt_id: 77,
+                        wait_age_seconds: 8
+                    };
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.refreshOpeningAttemptStatus();
+
+        expect(fixture.state.openingAttemptProgressPercent).toBe(76);
+        expect(fixture.state.openingAttemptProgressStepIndex).toBe(4);
+        expect(String(fixture.state.openingAttemptProgressStatus || '')).toContain('Mengecek attempt aktif');
+    });
+
+    it('retries bootstrap instead of restarting start_attempt when admitted status arrives after attempt id is known', async function () {
+        var restoredSnapshot = buildCachedQuestionSnapshot(40);
+        var fixture = createFixture({
+            restoredSnapshot,
+            state: {
+                attemptId: 77,
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 77,
+                        latest_attempt_status: 'in_progress'
+                    }
+                ],
+                selectedExamId: 55,
+                stage: 'exam',
+                isOpeningAttempt: true,
+                openingAttemptProgressPercent: 76,
+                openingAttemptProgressStepIndex: 4,
+                pendingExamId: 55,
+                pendingExamToken: '',
+                pendingQueueTicket: 'gate-ticket-1',
+                pendingResumeIntent: false,
+                questionRevision: restoredSnapshot.questionRevision,
+                questionOrderSignature: restoredSnapshot.questionOrderSignature,
+                remainingSeconds: 3450
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'start_attempt_status') {
+                    return {
+                        status: 'admitted',
+                        queue_ticket: 'gate-ticket-1',
+                        queue_position: 1,
+                        poll_after_ms: 0,
+                        estimated_wait_seconds: 0,
+                        gate_capacity: 50,
+                        gate_window_seconds: 5
+                    };
+                }
+
+                if (endpoint === 'ui_state') {
+                    return { attempt_state: null };
+                }
+
+                if (endpoint === 'start_attempt') {
+                    throw new Error('start_attempt should not be called once attempt id is known');
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.refreshOpeningAttemptStatus();
+
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint;
+        })).toEqual(['start_attempt_status', 'ui_state']);
+        expect(fixture.calls.apiCalls.some(function (entry) {
+            return entry.endpoint === 'start_attempt';
+        })).toBe(false);
+        expect(fixture.calls.loadQuestionWindow).toHaveLength(1);
+        expect(fixture.state.attemptId).toBe(77);
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.error).toBe('');
+    });
+
     it('does not fire a duplicate refresh request while an opening retry request is in flight', async function () {
         var fixture = createFixture({
             state: {

@@ -176,6 +176,7 @@ class CBT_Start_Attempt_Opening_State_Service
             'attempt_created',
             'bootstrap_session',
             'bootstrap_questions',
+            'ready',
         ];
 
         if (!is_array($record) || !in_array((string) ($record['opening_state'] ?? ''), $pending_states, true)) {

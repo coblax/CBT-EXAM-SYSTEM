@@ -580,6 +580,7 @@ export function createExamSessionManager(deps) {
         var safePercent = Number(percent);
         var safeStepIndex = Number(stepIndex);
         var shouldRender = !(options && options.render === false);
+        var allowRegression = !!(options && options.allowRegression === true);
         var renderOptions = options && options.renderOptions && typeof options.renderOptions === 'object'
             ? options.renderOptions
             : null;
@@ -589,6 +590,17 @@ export function createExamSessionManager(deps) {
         }
         if (!Number.isFinite(safeStepIndex)) {
             safeStepIndex = 0;
+        }
+
+        if (!allowRegression && state.isOpeningAttempt && Math.max(0, Number(state.attemptId) || 0) > 0) {
+            var currentPercent = Number(state.openingAttemptProgressPercent) || 0;
+            var currentStepIndex = Number(state.openingAttemptProgressStepIndex) || 0;
+            if (safePercent < currentPercent) {
+                safePercent = currentPercent;
+            }
+            if (safeStepIndex < currentStepIndex) {
+                safeStepIndex = currentStepIndex;
+            }
         }
 
         state.openingAttemptProgressPercent = Math.max(0, Math.min(100, safePercent));
@@ -645,7 +657,8 @@ export function createExamSessionManager(deps) {
         return true;
     }
 
-    function enterOpeningAttemptShell(percent, stepIndex, status, detail) {
+    function enterOpeningAttemptShell(percent, stepIndex, status, detail, options) {
+        options = options || {};
         state.stage = 'exam';
         state.isOpeningAttempt = true;
         state.busy = true;
@@ -666,6 +679,7 @@ export function createExamSessionManager(deps) {
             status,
             detail,
             {
+                allowRegression: options.allowRegression === true,
                 renderOptions: {
                     immediate: true,
                     skipPostRenderEffects: true
@@ -732,6 +746,17 @@ export function createExamSessionManager(deps) {
         }
 
         return buildOpeningAttemptIntentKey(selectedExamId);
+    }
+
+    function buildOpeningAttemptBootstrapRetryPayload(selectedExam) {
+        return {
+            attempt_id: Number(state.attemptId) || 0,
+            status: 'resumed',
+            duration_minutes: Number(selectedExam && selectedExam.duration_minutes) || 0,
+            remaining_seconds: Math.max(0, Number(state.remainingSeconds) || 0),
+            question_revision: state.questionRevision || null,
+            question_order_signature: String(state.questionOrderSignature || '')
+        };
     }
 
     function clearOpeningAttemptContext() {
@@ -1670,6 +1695,11 @@ export function createExamSessionManager(deps) {
             status = 'Sesi siap, memuat soal pertama';
             detail = 'Attempt sudah ada. Kami menunggu window soal pertama selesai disiapkan.';
             percent = 76;
+            stepIndex = 4;
+        } else if (openingState === 'ready') {
+            status = 'Sesi siap, membuka soal pertama';
+            detail = 'Attempt sudah siap. Kami melanjutkan ke bootstrap soal tanpa membuat start baru.';
+            percent = 82;
             stepIndex = 4;
         }
 
@@ -3123,6 +3153,11 @@ export function createExamSessionManager(deps) {
         var shouldSkipBlockingRefresh = options.skipExamRefresh === true || resumeIntent;
         var startIntentKey = '';
 
+        var allowProgressRegression = !state.isOpeningAttempt
+            || Math.max(0, Number(state.attemptId) || 0) <= 0
+            || String(state.pendingStartIntentKey || '').trim() === ''
+            || Math.max(0, Number(state.pendingExamId) || 0) !== selectedExamId;
+
         enterOpeningAttemptShell(
             8,
             1,
@@ -3131,7 +3166,10 @@ export function createExamSessionManager(deps) {
                 : 'Menyiapkan permintaan masuk ujian',
             resumeIntent
                 ? 'Kami sedang mengecek attempt aktif dan menyiapkan resume dari progres terakhir.'
-                : 'Kami sedang memverifikasi status exam sebelum sesi baru dibuat.'
+                : 'Kami sedang memverifikasi status exam sebelum sesi baru dibuat.',
+            {
+                allowRegression: allowProgressRegression
+            }
         );
 
         try {
@@ -3487,14 +3525,7 @@ export function createExamSessionManager(deps) {
             cancelOpeningAttemptRequest();
             beginOpeningAttemptUiAction('retry');
             var retryRequestId = beginOpeningAttemptRequest();
-            var retryPayload = {
-                attempt_id: Number(state.attemptId) || 0,
-                status: 'resumed',
-                duration_minutes: Number(selectedExam && selectedExam.duration_minutes) || 0,
-                remaining_seconds: Math.max(0, Number(state.remainingSeconds) || 0),
-                question_revision: state.questionRevision || null,
-                question_order_signature: String(state.questionOrderSignature || '')
-            };
+            var retryPayload = buildOpeningAttemptBootstrapRetryPayload(selectedExam);
 
             state.busy = true;
             updateOpeningAttemptProgress(
@@ -3629,6 +3660,14 @@ export function createExamSessionManager(deps) {
                     openingReason: 'queue_admission_wait'
                 });
                 completeOpeningAttemptUiAction('success');
+                if (Number(state.attemptId) > 0 && state.stage === 'exam' && state.isOpeningAttempt) {
+                    await openAttemptSession(
+                        selectedExam,
+                        buildOpeningAttemptBootstrapRetryPayload(selectedExam),
+                        requestId
+                    );
+                    return true;
+                }
                 cancelOpeningAttemptRequest();
                 return handleStartExam({
                     skipExamRefresh: true,

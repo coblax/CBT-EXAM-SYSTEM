@@ -76,6 +76,47 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
         self::assertSame('Ibu Kota Indonesia?', $payload['items'][0]['question_text']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_get_questions_bootstrap_light_returns_retryable_busy_when_contract_lock_is_active(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->useAttemptContractFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        $lock_key = 'attempt_bootstrap:contract:77';
+        self::assertTrue(CBT_Cache::acquire_lock($lock_key, 10, [
+            'type' => 'test_question_contract_bootstrap',
+        ]));
+
+        try {
+            $response = CBT_REST::get_questions(new WP_REST_Request([
+                'exam_id' => 55,
+                'attempt_id' => 77,
+                'offset' => 0,
+                'limit' => 1,
+                'bootstrap_light' => 1,
+            ], [], [], '/cbt/v1/questions', 'GET'));
+        } finally {
+            CBT_Cache::release_lock($lock_key);
+        }
+
+        self::assertTrue(is_wp_error($response));
+        self::assertSame('question_bootstrap_busy', $response->get_error_code());
+        $error_data = $response->get_error_data();
+        self::assertIsArray($error_data);
+        self::assertSame(429, (int) ($error_data['status'] ?? 0));
+        self::assertSame(1000, (int) ($error_data['retry_after_ms'] ?? 0));
+        self::assertSame(0, $wpdb->questionHydrateCalls);
+        self::assertSame(0, $wpdb->optionHydrateCalls);
+    }
+
     private function bootstrapRestDeliverySnapshotScaffold(): void
     {
         if (!class_exists('CBT_Auth')) {
