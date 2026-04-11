@@ -24,20 +24,20 @@
     "file": "assets/frontend-shared-review-Ckk9yafR.js",
     "name": "frontend-shared-review"
   },
-  "_frontend-stage-exam-BfSadgco.js": {
-    "file": "assets/frontend-stage-exam-BfSadgco.js",
+  "_frontend-stage-exam-DqMB2jGt.js": {
+    "file": "assets/frontend-stage-exam-DqMB2jGt.js",
     "name": "frontend-stage-exam",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
       "_frontend-shared-review-Ckk9yafR.js"
     ],
     "css": [
-      "assets/frontend-stage-exam-Cx0Q3x6t.css"
+      "assets/frontend-stage-exam-n-d6lARP.css"
     ]
   },
-  "_frontend-stage-exam-Cx0Q3x6t.css": {
-    "file": "assets/frontend-stage-exam-Cx0Q3x6t.css",
-    "src": "_frontend-stage-exam-Cx0Q3x6t.css"
+  "_frontend-stage-exam-n-d6lARP.css": {
+    "file": "assets/frontend-stage-exam-n-d6lARP.css",
+    "src": "_frontend-stage-exam-n-d6lARP.css"
   },
   "_frontend-stage-result-CXtg3x37.js": {
     "file": "assets/frontend-stage-result-CXtg3x37.js",
@@ -416,14 +416,14 @@
     "isDynamicEntry": true
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-Bs9uepg0.js",
+    "file": "assets/frontend-core-Ce1Petov.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
     "dynamicImports": [
       "_frontend-exam-runtime-BOZM2Fj0.js",
       "_math-render-z4EJh76n.js",
-      "_frontend-stage-exam-BfSadgco.js",
+      "_frontend-stage-exam-DqMB2jGt.js",
       "_frontend-stage-result-CXtg3x37.js",
       "_frontend-feature-calculator-CuFD8t3I.js",
       "src/frontend/app/core/debug-panel.js"

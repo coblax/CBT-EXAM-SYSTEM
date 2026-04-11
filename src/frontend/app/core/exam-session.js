@@ -89,10 +89,13 @@ export function createExamSessionManager(deps) {
     var OPENING_RETRY_QUEUE_FALLBACK_MS = 3000;
     var OPENING_RETRY_BOOTSTRAP_MIN_MS = 1000;
     var OPENING_RETRY_BOOTSTRAP_MAX_MS = 8000;
+    var OPENING_RETRY_DIAGNOSTIC_THRESHOLD = Math.max(3, Number(deps.openingRetryDiagnosticThreshold) || 5);
+    var OPENING_RETRY_DIAGNOSTIC_INTERVAL = Math.max(1, Number(deps.openingRetryDiagnosticInterval) || 4);
     var questionWindowSize = Math.max(1, Number(deps.questionWindowSize) || 1);
     var SESSION_RECOVERY_EXAM_STEP_TOTAL = 7;
     var openingAttemptRequestSequence = 0;
     var activeOpeningAttemptRequestId = 0;
+    var activeOpeningAttemptAbortRequest = null;
     var openingRetryCountdownTimerId = 0;
     var openingRetryCountdownIntervalId = 0;
     var openingRetryCountdownResolve = null;
@@ -129,6 +132,95 @@ export function createExamSessionManager(deps) {
         }
     }
 
+    function clearOpeningAttemptLastResult() {
+        state.pendingLastErrorCode = '';
+        state.pendingLastErrorMessage = '';
+    }
+
+    function rememberOpeningAttemptLastResult(code, message) {
+        var safeCode = String(code || '').trim().toLowerCase();
+        var safeMessage = String(message || '').trim();
+
+        if (safeCode === '' && safeMessage === '') {
+            clearOpeningAttemptLastResult();
+            return;
+        }
+
+        state.pendingLastErrorCode = safeCode;
+        state.pendingLastErrorMessage = safeMessage;
+    }
+
+    function rememberOpeningAttemptLastResultFromPayload(payload, fallbackCode, fallbackMessage) {
+        var status = getStartAttemptPayloadStatus(payload);
+        var code = String(payload && payload.error_code ? payload.error_code : '').trim().toLowerCase();
+        var message = '';
+
+        if (status === 'queued') {
+            code = code || 'queued';
+            message = buildQueuedStartAttemptDetail(payload);
+        } else if (status === 'admitted') {
+            code = code || 'admitted';
+            message = 'Giliran masuk sudah terbuka. Kami meminta server membuka sesi ujian.';
+        } else if (status === 'resumed') {
+            code = code || 'resumed';
+            message = 'Attempt aktif ditemukan dan sedang dibuka.';
+        } else if (status === 'started') {
+            code = code || 'started';
+            message = 'Attempt baru berhasil dibuat dan sedang dibuka.';
+        } else if (status === 'completed') {
+            code = code || 'attempt_already_completed';
+            message = 'Ujian ini sudah selesai dan hasilnya siap dibuka.';
+        } else if (status === 'terminal_error') {
+            code = code || String(fallbackCode || 'terminal_error').trim().toLowerCase();
+            message = String(payload && payload.error_message ? payload.error_message : (fallbackMessage || 'Sesi ujian tidak dapat dilanjutkan.')).trim();
+        } else if (status === 'pending') {
+            code = code || String(fallbackCode || 'start_attempt_status_pending').trim().toLowerCase();
+            message = String(payload && payload.error_message ? payload.error_message : (fallbackMessage || 'Status sesi ujian belum dapat dipastikan.')).trim();
+        } else {
+            code = code || String(fallbackCode || '').trim().toLowerCase();
+            message = String(
+                payload && payload.error_message
+                    ? payload.error_message
+                    : (payload && payload.message ? payload.message : (fallbackMessage || ''))
+            ).trim();
+        }
+
+        rememberOpeningAttemptLastResult(code, message);
+    }
+
+    function rememberOpeningAttemptLastResultFromError(error, fallbackCode, fallbackMessage) {
+        if (isOpeningAttemptCancelledError(error)) {
+            return;
+        }
+
+        rememberOpeningAttemptLastResult(
+            getErrorCode(error) || String(fallbackCode || '').trim().toLowerCase(),
+            error instanceof Error
+                ? String(error.message || '').trim()
+                : String(fallbackMessage || 'Status sesi ujian belum dapat dipastikan.').trim()
+        );
+    }
+
+    function registerOpeningAttemptAbortRequest(abortRequest) {
+        activeOpeningAttemptAbortRequest = typeof abortRequest === 'function' ? abortRequest : null;
+    }
+
+    function clearOpeningAttemptAbortRequest(abortRequest) {
+        if (!abortRequest || abortRequest === activeOpeningAttemptAbortRequest) {
+            activeOpeningAttemptAbortRequest = null;
+        }
+    }
+
+    function abortActiveOpeningAttemptRequest(reason) {
+        if (typeof activeOpeningAttemptAbortRequest !== 'function') {
+            return;
+        }
+
+        var abortRequest = activeOpeningAttemptAbortRequest;
+        activeOpeningAttemptAbortRequest = null;
+        abortRequest(String(reason || 'opening_attempt_cancelled'));
+    }
+
     function resetOpeningRetryState() {
         clearOpeningRetryCountdownTimers('cancelled');
         clearOpeningRetryAutoActionTimer();
@@ -158,8 +250,7 @@ export function createExamSessionManager(deps) {
         state.pendingQueueTicket = '';
         state.pendingResumeIntent = false;
         state.pendingOpeningPhase = '';
-        state.pendingLastErrorCode = '';
-        state.pendingLastErrorMessage = '';
+        clearOpeningAttemptLastResult();
     }
 
     function beginOpeningAttemptUiAction(kind) {
@@ -333,8 +424,7 @@ export function createExamSessionManager(deps) {
         state.openingAttemptCanRetry = false;
         state.openingAttemptCanRefreshStatus = false;
         state.openingAttemptCanBack = true;
-        state.pendingLastErrorCode = '';
-        state.pendingLastErrorMessage = '';
+        clearOpeningAttemptLastResult();
         state.pendingQueueTicket = '';
         state.openingAttemptQueuePosition = 0;
         state.openingAttemptQueueEstimatedWaitSeconds = 0;
@@ -374,6 +464,7 @@ export function createExamSessionManager(deps) {
     }
 
     function cancelOpeningAttemptRequest() {
+        abortActiveOpeningAttemptRequest('opening_attempt_cancelled');
         activeOpeningAttemptRequestId = 0;
     }
 
@@ -449,6 +540,7 @@ export function createExamSessionManager(deps) {
         state.error = String(message || 'Server masih sibuk menyiapkan sesi ujian.');
         state.notice = '';
         state.success = '';
+        rememberOpeningAttemptLastResult(code || 'opening_recovering', state.error);
         setOpeningAttemptPhase('opening_recovering', {
             canRetry: options.canRetry !== false,
             canRefreshStatus: options.canRefreshStatus !== false,
@@ -494,6 +586,7 @@ export function createExamSessionManager(deps) {
         state.error = String(message || 'Sesi ujian tidak dapat dilanjutkan.');
         state.notice = '';
         state.success = '';
+        rememberOpeningAttemptLastResult(code || 'opening_terminal_error', state.error);
         resetOpeningRetryState();
         setOpeningAttemptPhase('opening_terminal_error', {
             canRetry: false,
@@ -795,8 +888,9 @@ export function createExamSessionManager(deps) {
         });
     }
 
-    function withTimeout(promise, timeoutMs, timeoutMessage) {
+    function withTimeout(promise, timeoutMs, timeoutMessage, options) {
         var settled = false;
+        options = options || {};
 
         return new Promise(function (resolve, reject) {
             var timeoutId = setTimeout(function () {
@@ -804,7 +898,17 @@ export function createExamSessionManager(deps) {
                     return;
                 }
                 settled = true;
-                reject(new Error(timeoutMessage));
+                if (typeof options.onTimeout === 'function') {
+                    try {
+                        options.onTimeout();
+                    } catch (timeoutHookError) {
+                        // Ignore timeout cleanup errors so the original timeout still surfaces.
+                    }
+                }
+                var timeoutError = new Error(timeoutMessage);
+                timeoutError.code = String(options.code || 'request_timeout');
+                timeoutError.isTimeoutError = true;
+                reject(timeoutError);
             }, timeoutMs);
 
             Promise.resolve(promise)
@@ -855,7 +959,13 @@ export function createExamSessionManager(deps) {
     }
 
     function isStartAttemptTimeoutError(error) {
-        return error instanceof Error && String(error.message || '') === START_ATTEMPT_TIMEOUT_MESSAGE;
+        return getErrorCode(error) === 'start_attempt_timeout'
+            || (error instanceof Error && String(error.message || '') === START_ATTEMPT_TIMEOUT_MESSAGE);
+    }
+
+    function isStartAttemptStatusTimeoutError(error) {
+        return getErrorCode(error) === 'start_attempt_status_timeout'
+            || (error instanceof Error && String(error.message || '') === START_ATTEMPT_STATUS_TIMEOUT_MESSAGE);
     }
 
     function isStartAttemptLockError(error) {
@@ -881,7 +991,9 @@ export function createExamSessionManager(deps) {
     }
 
     function shouldRecoverSlowStartAttempt(error) {
-        return isStartAttemptTimeoutError(error) || isStartAttemptLockError(error);
+        return isStartAttemptTimeoutError(error)
+            || isStartAttemptStatusTimeoutError(error)
+            || isStartAttemptLockError(error);
     }
 
     function isRetryableStartAttemptRecoveryError(error) {
@@ -1069,35 +1181,179 @@ export function createExamSessionManager(deps) {
         if (!body.idempotency_key && state.pendingStartIntentKey) {
             body.idempotency_key = state.pendingStartIntentKey;
         }
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        var abortedByManager = false;
+        var timedOut = false;
+        var abortRequest = function () {
+            abortedByManager = true;
+            if (controller && typeof controller.abort === 'function') {
+                controller.abort();
+            }
+        };
         beginOpeningRetryRequestIndicator('start_attempt', 'Menghubungi server untuk membuka sesi.');
+        registerOpeningAttemptAbortRequest(abortRequest);
         try {
-            return await withTimeout(
+            var payload = await withTimeout(
                 apiRequest('start_attempt', {
                     method: 'POST',
-                    body: body
+                    body: body,
+                    signal: controller ? controller.signal : null
                 }),
                 Math.max(5000, Number(options.timeoutMs) || startAttemptTimeoutMs),
-                String(options.timeoutMessage || START_ATTEMPT_TIMEOUT_MESSAGE)
+                String(options.timeoutMessage || START_ATTEMPT_TIMEOUT_MESSAGE),
+                {
+                    code: 'start_attempt_timeout',
+                    onTimeout: function () {
+                        timedOut = true;
+                        if (controller && typeof controller.abort === 'function') {
+                            controller.abort();
+                        }
+                    }
+                }
             );
+            rememberOpeningAttemptLastResultFromPayload(payload, 'start_attempt_pending', 'Permintaan start belum mendapat jawaban final.');
+            return payload;
+        } catch (error) {
+            if (abortedByManager || (!timedOut && getErrorCode(error) === 'request_aborted')) {
+                throw buildOpeningAttemptCancelledError();
+            }
+            rememberOpeningAttemptLastResultFromError(error, 'start_attempt_failed', 'Permintaan start belum mendapat jawaban final.');
+            throw error;
         } finally {
+            clearOpeningAttemptAbortRequest(abortRequest);
             completeOpeningRetryRequestIndicator();
         }
     }
 
     async function requestStartAttemptStatus(body, options) {
         options = options || {};
+        body = body || {};
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        var abortedByManager = false;
+        var timedOut = false;
+        var abortRequest = function () {
+            abortedByManager = true;
+            if (controller && typeof controller.abort === 'function') {
+                controller.abort();
+            }
+        };
         beginOpeningRetryRequestIndicator('start_attempt_status', 'Mengecek status sesi aktif.');
+        registerOpeningAttemptAbortRequest(abortRequest);
         try {
-            return await withTimeout(
+            var payload = await withTimeout(
                 apiRequest('start_attempt_status', {
                     method: 'POST',
-                    body: body
+                    body: body,
+                    signal: controller ? controller.signal : null
                 }),
                 Math.max(5000, Number(options.timeoutMs) || startAttemptStatusTimeoutMs),
-                String(options.timeoutMessage || START_ATTEMPT_STATUS_TIMEOUT_MESSAGE)
+                String(options.timeoutMessage || START_ATTEMPT_STATUS_TIMEOUT_MESSAGE),
+                {
+                    code: 'start_attempt_status_timeout',
+                    onTimeout: function () {
+                        timedOut = true;
+                        if (controller && typeof controller.abort === 'function') {
+                            controller.abort();
+                        }
+                    }
+                }
             );
+            rememberOpeningAttemptLastResultFromPayload(payload, 'start_attempt_status_pending', 'Status sesi ujian belum dapat dipastikan.');
+            return payload;
+        } catch (error) {
+            if (abortedByManager || (!timedOut && getErrorCode(error) === 'request_aborted')) {
+                throw buildOpeningAttemptCancelledError();
+            }
+            rememberOpeningAttemptLastResultFromError(error, 'start_attempt_status_failed', 'Status sesi ujian belum dapat dipastikan.');
+            throw error;
         } finally {
+            clearOpeningAttemptAbortRequest(abortRequest);
             completeOpeningRetryRequestIndicator();
+        }
+    }
+
+    async function maybeRunOpeningAttemptResumeDiagnostic(selectedExam, requestId, lastDiagnosticRetryCount) {
+        var currentRetryCount = Math.max(0, Number(state.openingRetryAttemptCount) || 0);
+        var examId = Number(selectedExam && selectedExam.id) || 0;
+
+        if (examId <= 0) {
+            return {
+                handled: false,
+                lastDiagnosticRetryCount: lastDiagnosticRetryCount
+            };
+        }
+
+        if (
+            currentRetryCount < OPENING_RETRY_DIAGNOSTIC_THRESHOLD
+            || currentRetryCount < (Math.max(0, Number(lastDiagnosticRetryCount) || 0) + OPENING_RETRY_DIAGNOSTIC_INTERVAL)
+        ) {
+            return {
+                handled: false,
+                lastDiagnosticRetryCount: lastDiagnosticRetryCount
+            };
+        }
+
+        updateOpeningAttemptProgress(
+            26,
+            1,
+            'Memeriksa ulang sesi secara lebih tegas',
+            'Percobaan berulang belum memberi jawaban final. Kami meminta server memeriksa ulang attempt aktif tanpa membuat intent baru.'
+        );
+        rememberOpeningAttemptLastResult(
+            'resume_diagnostic_running',
+            'Pemeriksaan lanjutan sedang berjalan. Intent yang sama tetap dipakai.'
+        );
+
+        try {
+            var diagnosticPayload = await requestStartAttempt({
+                exam_id: examId,
+                resume_only: 1
+            }, {
+                timeoutMs: Math.max(startAttemptStatusTimeoutMs, 12000),
+                timeoutMessage: START_ATTEMPT_STATUS_TIMEOUT_MESSAGE
+            });
+            assertOpeningAttemptRequestActive(requestId);
+
+            if (getStartAttemptPayloadStatus(diagnosticPayload) === 'resumed') {
+                rememberOpeningAttemptLastResult(
+                    'resumed',
+                    'Attempt aktif ditemukan lewat pemeriksaan lanjutan dan siap dibuka.'
+                );
+                return {
+                    handled: true,
+                    lastDiagnosticRetryCount: currentRetryCount,
+                    payload: diagnosticPayload
+                };
+            }
+
+            rememberOpeningAttemptLastResultFromPayload(
+                diagnosticPayload,
+                'resume_diagnostic_pending',
+                'Pemeriksaan lanjutan belum menemukan attempt aktif.'
+            );
+            return {
+                handled: false,
+                lastDiagnosticRetryCount: currentRetryCount
+            };
+        } catch (error) {
+            if (isOpeningAttemptCancelledError(error)) {
+                throw error;
+            }
+
+            rememberOpeningAttemptLastResultFromError(
+                error,
+                'resume_diagnostic_failed',
+                'Pemeriksaan lanjutan belum berhasil.'
+            );
+
+            if (!isRetryableStartAttemptRecoveryError(error)) {
+                throw error;
+            }
+
+            return {
+                handled: false,
+                lastDiagnosticRetryCount: currentRetryCount
+            };
         }
     }
 
@@ -1106,6 +1362,7 @@ export function createExamSessionManager(deps) {
         var recoveryDeadlineAt = Date.now() + startAttemptRecoveryTimeoutMs;
         var lastError = triggerError;
         var hasRetriedFreshStart = false;
+        var lastDiagnosticRetryCount = 0;
         var statusTimeoutMs = startAttemptStatusTimeoutMs;
 
         while (Date.now() <= recoveryDeadlineAt) {
@@ -1162,34 +1419,70 @@ export function createExamSessionManager(deps) {
                 if (!isPendingStartAttemptStatusPayload(statusPayload)) {
                     return statusPayload;
                 }
+
+                lastError = buildStartAttemptStatusError(statusPayload);
+                rememberOpeningAttemptLastResultFromPayload(
+                    statusPayload,
+                    'attempt_pending',
+                    'Attempt aktif belum ditemukan. Status sesi masih kami pantau.'
+                );
+
+                var pendingDiagnosticResult = await maybeRunOpeningAttemptResumeDiagnostic(
+                    selectedExam,
+                    requestId,
+                    lastDiagnosticRetryCount
+                );
+                lastDiagnosticRetryCount = pendingDiagnosticResult.lastDiagnosticRetryCount;
+                if (pendingDiagnosticResult.handled) {
+                    return pendingDiagnosticResult.payload;
+                }
             } catch (resumeError) {
                 lastError = resumeError;
+                rememberOpeningAttemptLastResultFromError(
+                    resumeError,
+                    'start_attempt_status_failed',
+                    'Status sesi ujian belum dapat dipastikan.'
+                );
                 if (!isRetryableStartAttemptRecoveryError(resumeError)) {
                     throw resumeError;
                 }
 
-                if (!isStartAttemptNotFoundError(resumeError) || hasRetriedFreshStart) {
-                    continue;
-                }
-
-                hasRetriedFreshStart = true;
-                try {
-                    updateOpeningAttemptProgress(
-                        30,
-                        1,
-                        'Mencoba lagi pembuatan sesi',
-                        'Attempt aktif belum terlihat. Kami mencoba sekali lagi dengan aman.'
-                    );
-                    return await requestStartAttempt({
-                        exam_id: examId,
-                        exam_token: submittedToken
-                    });
-                } catch (retryError) {
-                    lastError = retryError;
-                    if (!isRetryableStartAttemptRecoveryError(retryError)) {
-                        throw retryError;
+                if (isStartAttemptNotFoundError(resumeError) && !hasRetriedFreshStart) {
+                    hasRetriedFreshStart = true;
+                    try {
+                        updateOpeningAttemptProgress(
+                            30,
+                            1,
+                            'Mencoba lagi pembuatan sesi',
+                            'Attempt aktif belum terlihat. Kami mencoba sekali lagi dengan aman.'
+                        );
+                        return await requestStartAttempt({
+                            exam_id: examId,
+                            exam_token: submittedToken
+                        });
+                    } catch (retryError) {
+                        lastError = retryError;
+                        rememberOpeningAttemptLastResultFromError(
+                            retryError,
+                            'start_attempt_retry_failed',
+                            'Percobaan start ulang belum berhasil.'
+                        );
+                        if (!isRetryableStartAttemptRecoveryError(retryError)) {
+                            throw retryError;
+                        }
                     }
                 }
+
+                var diagnosticResult = await maybeRunOpeningAttemptResumeDiagnostic(
+                    selectedExam,
+                    requestId,
+                    lastDiagnosticRetryCount
+                );
+                lastDiagnosticRetryCount = diagnosticResult.lastDiagnosticRetryCount;
+                if (diagnosticResult.handled) {
+                    return diagnosticResult.payload;
+                }
+                continue;
             }
         }
 

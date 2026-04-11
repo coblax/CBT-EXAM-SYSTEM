@@ -84,6 +84,63 @@ export function createExamStageRenderer(deps) {
     var lastQuestionRecoveryKey = '';
     var lastQuestionRecoveryAt = 0;
 
+    function formatOpeningAttemptLastResultLabel(code) {
+        var normalizedCode = String(code || '').trim().toLowerCase();
+        if (normalizedCode === '') {
+            return '';
+        }
+
+        if (normalizedCode === 'attempt_pending' || normalizedCode === 'start_attempt_status_pending') {
+            return 'Attempt aktif belum terlihat';
+        }
+        if (normalizedCode === 'start_attempt_status_timeout') {
+            return 'Cek status timeout';
+        }
+        if (normalizedCode === 'start_attempt_timeout') {
+            return 'Permintaan sesi timeout';
+        }
+        if (normalizedCode === 'attempt_lock_active') {
+            return 'Server masih mengunci permintaan';
+        }
+        if (normalizedCode === 'network_error') {
+            return 'Koneksi ke server belum stabil';
+        }
+        if (normalizedCode === 'queue_ticket_not_found') {
+            return 'Tiket antrean tidak ditemukan';
+        }
+        if (normalizedCode === 'queued') {
+            return 'Masih dalam antrean';
+        }
+        if (normalizedCode === 'admitted') {
+            return 'Giliran masuk sudah terbuka';
+        }
+        if (normalizedCode === 'resumed') {
+            return 'Attempt aktif ditemukan';
+        }
+        if (normalizedCode === 'started') {
+            return 'Attempt baru berhasil dibuat';
+        }
+        if (normalizedCode === 'attempt_already_completed') {
+            return 'Ujian sudah selesai';
+        }
+        if (normalizedCode === 'resume_diagnostic_running') {
+            return 'Pemeriksaan lanjutan sedang berjalan';
+        }
+        if (normalizedCode === 'resume_diagnostic_failed') {
+            return 'Pemeriksaan lanjutan belum berhasil';
+        }
+
+        return normalizedCode
+            .split('_')
+            .filter(function (part) {
+                return part !== '';
+            })
+            .map(function (part) {
+                return part.charAt(0).toUpperCase() + part.slice(1);
+            })
+            .join(' ');
+    }
+
     function requestCurrentQuestionRecovery(questionId, totalQuestions) {
         var attemptId = Number(state.attemptId) || 0;
         var examId = Number(state.selectedExamId) || 0;
@@ -784,6 +841,9 @@ export function createExamStageRenderer(deps) {
         var retryCountdownSeconds = Math.max(0, Number(state.openingRetryCountdownSeconds) || 0);
         var retryAttemptCount = Math.max(0, Number(state.openingRetryAttemptCount) || 0);
         var retryReason = String(state.openingRetryReason || '').trim();
+        var lastResultCode = String(state.pendingLastErrorCode || '').trim().toLowerCase();
+        var lastResultMessage = String(state.pendingLastErrorMessage || '').trim();
+        var lastResultLabel = formatOpeningAttemptLastResultLabel(lastResultCode);
         var retryCountdownActive = retryCountdownSeconds > 0 && Number(state.openingRetryNextAt) > 0;
         var retryInFlight = state.openingRetryInFlight === true;
         var isActionRunning = isRetryProcessing || isRefreshProcessing || retryInFlight;
@@ -791,6 +851,7 @@ export function createExamStageRenderer(deps) {
         var actionButtons = [];
         var queueMetaMarkup = '';
         var actionSummaryMarkup = '';
+        var lastResultMarkup = '';
 
         if (openingPhase === 'opening_waiting_queue') {
             chipLabel = 'Dalam Antrean';
@@ -824,6 +885,16 @@ export function createExamStageRenderer(deps) {
             actionSummaryMarkup = '<div class="cbt-exam-opening-action-summary is-running"><strong>' + escapeHtml(isRetryProcessing ? 'Coba Lagi sedang diproses' : 'Refresh Status sedang diproses') + '</strong></div>';
         }
 
+        if (lastResultLabel !== '' || lastResultMessage !== '') {
+            lastResultMarkup = [
+                '<div class="cbt-exam-opening-last-result" role="status" aria-live="polite">',
+                '<strong>Hasil terakhir:</strong>',
+                lastResultLabel !== '' ? '<span class="cbt-chip cbt-chip-outline">' + escapeHtml(lastResultLabel) + '</span>' : '',
+                lastResultMessage !== '' ? '<span>' + escapeHtml(lastResultMessage) + '</span>' : '',
+                '</div>'
+            ].join('');
+        }
+
         if (canRetry) {
             actionButtons.push('<button class="cbt-button cbt-button-primary" data-action="retry-opening-attempt" type="button"' + (isActionRunning ? ' disabled aria-disabled="true"' : '') + '>' + escapeHtml(isRetryProcessing || retryInFlight ? 'Mencoba Lagi...' : (retryCountdownActive ? 'Coba Sekarang' : 'Coba Lagi')) + '</button>');
         }
@@ -846,6 +917,9 @@ export function createExamStageRenderer(deps) {
             queueMetaMarkup,
             actionSummaryMarkup !== ''
                 ? '<div class="cbt-exam-opening-action-meta">' + actionSummaryMarkup + '</div>'
+                : '',
+            lastResultMarkup !== ''
+                ? '<div class="cbt-exam-opening-action-meta">' + lastResultMarkup + '</div>'
                 : '',
             '<div class="cbt-exam-opening-progress-wrap">',
             '<div class="cbt-exam-opening-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + escapeHtml(progressPercent.toFixed(2)) + '" aria-label="Progress persiapan ujian">',

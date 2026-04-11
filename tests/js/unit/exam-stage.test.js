@@ -535,6 +535,27 @@ describe('createExamStageRenderer', function () {
         expect(markup).not.toContain('disabled aria-disabled="true"');
     });
 
+    it('renders the last retry result so the opening shell does not look frozen', function () {
+        var renderer = createFixture({
+            state: {
+                openingAttemptPhase: 'opening_recovering',
+                openingAttemptCanRetry: true,
+                openingAttemptCanRefreshStatus: true,
+                openingAttemptCanBack: true,
+                pendingLastErrorCode: 'start_attempt_status_timeout',
+                pendingLastErrorMessage: 'Status sesi ujian belum dapat dipastikan. Server terlalu lama merespons.',
+                openingRetryInFlight: true,
+                openingAttemptProgressStatus: 'Mengecek attempt aktif'
+            }
+        });
+
+        var markup = renderer.renderExamStageShell();
+
+        expect(markup).toContain('Hasil terakhir:');
+        expect(markup).toContain('Cek status timeout');
+        expect(markup).toContain('Status sesi ujian belum dapat dipastikan. Server terlalu lama merespons.');
+    });
+
     it('shows collect action on a non-last question once all questions are answered', function () {
         var renderer = createAnsweredExamFixture();
 

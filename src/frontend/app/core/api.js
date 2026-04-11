@@ -73,6 +73,7 @@ export function createApiClient(deps) {
         var body = options.body || null;
         var query = options.query || null;
         var keepalive = !!options.keepalive;
+        var signal = options.signal && typeof options.signal === 'object' ? options.signal : null;
         var authToken = options.token !== undefined ? String(options.token || '') : String(state.token || '');
         var requestUrl = buildUrl(path, query);
         var startedAt = Date.now();
@@ -155,7 +156,8 @@ export function createApiClient(deps) {
                 method: method,
                 headers: headers,
                 body: body !== null ? JSON.stringify(body) : null,
-                keepalive: keepalive
+                keepalive: keepalive,
+                signal: signal || undefined
             });
             setConnectionStatus('online', {
                 persist: false,
@@ -163,6 +165,15 @@ export function createApiClient(deps) {
                 triggerRetry: false
             });
         } catch (fetchError) {
+            if (signal && signal.aborted === true) {
+                var abortError = new Error('Request dibatalkan.');
+                abortError.status = 0;
+                abortError.code = 'request_aborted';
+                abortError.isAbortError = true;
+                abortError.cause = fetchError;
+                throw abortError;
+            }
+
             var networkError = new Error(
                 getNavigatorConnectionStatus() === 'offline'
                     ? 'Koneksi terputus.'

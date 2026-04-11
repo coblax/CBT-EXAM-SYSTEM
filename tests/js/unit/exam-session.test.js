@@ -101,7 +101,21 @@ function createFixture(overrides = {}) {
         totalQuestions: 0,
         currentIndex: 0,
         pendingSyncCount: 0,
+        pendingExamId: 0,
+        pendingExamToken: '',
         pendingStartIntentKey: '',
+        pendingQueueTicket: '',
+        pendingResumeIntent: false,
+        pendingOpeningPhase: '',
+        pendingLastErrorCode: '',
+        pendingLastErrorMessage: '',
+        openingAttemptPhase: '',
+        openingAttemptCanRetry: false,
+        openingAttemptCanRefreshStatus: false,
+        openingAttemptCanBack: false,
+        openingAttemptQueuePosition: 0,
+        openingAttemptQueueEstimatedWaitSeconds: 0,
+        openingAttemptQueueLastPolledAt: 0,
         openingRetryAttemptCount: 0,
         openingRetryNextAt: 0,
         openingRetryDelayMs: 0,
@@ -314,6 +328,8 @@ function createFixture(overrides = {}) {
                 openingAttemptProgressStatus: String(state.openingAttemptProgressStatus || ''),
                 openingAttemptProgressStepIndex: Number(state.openingAttemptProgressStepIndex) || 0,
                 openingAttemptQueuePosition: Number(state.openingAttemptQueuePosition) || 0,
+                pendingLastErrorCode: String(state.pendingLastErrorCode || ''),
+                pendingLastErrorMessage: String(state.pendingLastErrorMessage || ''),
                 openingRetryCountdownSeconds: Number(state.openingRetryCountdownSeconds) || 0,
                 openingRetryInFlight: Boolean(state.openingRetryInFlight),
                 resultProgressDetail: String(state.resultProgressDetail || ''),
@@ -389,8 +405,11 @@ function createFixture(overrides = {}) {
         },
         bumpQuestionDataGeneration: function () {},
         startAttemptTimeoutMs: overrides.startAttemptTimeoutMs,
+        startAttemptStatusTimeoutMs: overrides.startAttemptStatusTimeoutMs,
         startAttemptRecoveryTimeoutMs: overrides.startAttemptRecoveryTimeoutMs,
-        startAttemptRecoveryPollDelayMs: overrides.startAttemptRecoveryPollDelayMs
+        startAttemptRecoveryPollDelayMs: overrides.startAttemptRecoveryPollDelayMs,
+        openingRetryDiagnosticThreshold: overrides.openingRetryDiagnosticThreshold,
+        openingRetryDiagnosticInterval: overrides.openingRetryDiagnosticInterval
     });
 
     return {
@@ -895,6 +914,92 @@ describe('createExamSessionManager', function () {
             return entry.endpoint;
         })).toEqual(['start_attempt_status', 'ui_state']);
         expect(String(fixture.calls.renderSnapshots[0].openingAttemptProgressStatus || '')).toContain('Menyambungkan sesi ujian');
+    });
+
+    it('escalates repeated continue-exam retries into a diagnostic resume check without creating a fresh intent', async function () {
+        var restoredSnapshot = buildCachedQuestionSnapshot(40);
+        var statusCallCount = 0;
+        var startCallCount = 0;
+        var fixture = createFixture({
+            restoredSnapshot,
+            openingRetryDiagnosticThreshold: 1,
+            openingRetryDiagnosticInterval: 1,
+            startAttemptRecoveryTimeoutMs: 4000,
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 77,
+                        latest_attempt_status: 'in_progress'
+                    }
+                ],
+                selectedExamId: 55
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'ui_state') {
+                    return { attempt_state: null };
+                }
+
+                if (endpoint === 'start_attempt_status') {
+                    statusCallCount += 1;
+                    return {
+                        status: 'pending',
+                        error_code: 'attempt_pending',
+                        error_message: 'Attempt aktif belum ditemukan. Status sesi masih kami pantau.',
+                        retry_after_ms: 1
+                    };
+                }
+
+                if (endpoint === 'start_attempt') {
+                    startCallCount += 1;
+                    if (startCallCount === 1) {
+                        throw Object.assign(new Error('Permintaan mulai ujian sedang diproses. Coba lagi beberapa detik.'), {
+                            code: 'attempt_lock_active',
+                            status: 429,
+                            retry_after_ms: 1
+                        });
+                    }
+
+                    return {
+                        attempt_id: 77,
+                        duration_minutes: 60,
+                        started_at: '2026-04-03 05:00:00',
+                        status: 'resumed',
+                        question_order_signature: restoredSnapshot.questionOrderSignature,
+                        question_revision: restoredSnapshot.questionRevision
+                    };
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.handleStartExam();
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.error).toBe('');
+        var apiEndpoints = fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint;
+        });
+        expect(apiEndpoints[0]).toBe('start_attempt_status');
+        expect(apiEndpoints[1]).toBe('start_attempt');
+        expect(apiEndpoints[apiEndpoints.length - 2]).toBe('start_attempt');
+        expect(apiEndpoints[apiEndpoints.length - 1]).toBe('ui_state');
+        expect(apiEndpoints.filter(function (endpoint) {
+            return endpoint === 'start_attempt';
+        })).toHaveLength(2);
+        expect(apiEndpoints.filter(function (endpoint) {
+            return endpoint === 'start_attempt_status';
+        }).length).toBeGreaterThanOrEqual(2);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return String(snapshot.openingAttemptProgressStatus || '').indexOf('Memeriksa ulang sesi secara lebih tegas') >= 0
+                || String(snapshot.openingAttemptProgressDetail || '').indexOf('memeriksa ulang attempt aktif tanpa membuat intent baru') >= 0;
+        })).toBe(true);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return String(snapshot.pendingLastErrorCode || '') === 'attempt_pending';
+        })).toBe(true);
     });
 
     it('refreshes opening status through the lightweight status endpoint without reissuing start_attempt', async function () {

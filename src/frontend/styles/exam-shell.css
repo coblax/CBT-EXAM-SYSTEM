@@ -343,6 +343,20 @@
     font-size: 12px;
 }
 
+.cbt-exam-opening-last-result {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: #334155;
+    font-size: 12px;
+}
+
+.cbt-exam-opening-last-result strong {
+    color: #0f172a;
+    font-size: 12px;
+}
+
 .cbt-exam-opening-progress-wrap {
     display: grid;
     gap: 8px;
@@ -480,6 +494,14 @@
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-opening-action-summary.is-countdown {
     color: #fdba74;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-opening-last-result {
+    color: #cbd5e1;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-opening-last-result strong {
+    color: #f8fafc;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-opening-progress {
