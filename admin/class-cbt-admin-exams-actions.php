@@ -81,6 +81,11 @@ final class CBT_Admin_Exams_Actions
         CBT_Admin_Exams_Service::handle_start_bulk_exam_preflight();
     }
 
+    public static function handle_rebuild_student_cohort_index(): void
+    {
+        CBT_Admin_Exams_Service::handle_rebuild_student_cohort_index();
+    }
+
     public static function handle_clean_bulk_exam_snapshots(): void
     {
         CBT_Admin_Exams_Service::handle_clean_bulk_exam_snapshots();

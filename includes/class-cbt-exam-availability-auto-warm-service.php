@@ -466,16 +466,18 @@ final class CBT_Exam_Availability_Auto_Warm_Service
             ? (string) ($exam_row['title'] ?? '')
             : ($exam_id > 0 ? ('Exam #' . $exam_id) : 'Exam belum dipilih');
         $state = self::get_state();
-        $target_student_ids = self::resolve_target_student_ids($exam_row);
-        $target_student_count = count($target_student_ids);
+        $target_student_count = self::count_target_student_ids($exam_row, false);
         $redis_ready = CBT_Exam_Availability_Cache::is_available();
         $target_kelas = self::resolve_target_kelas_values($exam_row);
         $exam_status = sanitize_key((string) ($exam_row['status'] ?? ''));
         $is_exam_published = $exam_status === 'published';
-        $has_target_kelas = !empty($target_kelas);
-        $has_target_students = $target_student_count > 0;
         $active_exam_id = (int) ($state['exam_id'] ?? 0);
         $is_same_exam_state = $exam_id > 0 && $active_exam_id === $exam_id;
+        if ($is_same_exam_state && $target_student_count <= 0) {
+            $target_student_count = max(0, (int) ($state['target_student_count'] ?? 0));
+        }
+        $has_target_kelas = !empty($target_kelas);
+        $has_target_students = $target_student_count > 0;
         $has_blocking_exam = !empty($state['active']) && !$is_same_exam_state && $active_exam_id > 0;
 
         $status_key = self::STATUS_INACTIVE;
@@ -505,7 +507,9 @@ final class CBT_Exam_Availability_Auto_Warm_Service
         } elseif (!$has_target_kelas) {
             $message = 'Auto-warm availability membutuhkan target kelas pada exam ini.';
         } elseif (!$has_target_students) {
-            $message = 'Belum ada siswa target yang cocok dengan target_kelas exam ini.';
+            $message = self::should_defer_student_cohort_canonical_scan()
+                ? 'Student Cohort Index masih building; target siswa belum dihitung detail agar halaman snapshot tetap cepat.'
+                : 'Belum ada siswa target yang cocok dengan target_kelas exam ini.';
         } elseif ($is_same_exam_state && (string) ($state['last_message'] ?? '') !== '') {
             $message = (string) $state['last_message'];
         } else {
@@ -564,9 +568,9 @@ final class CBT_Exam_Availability_Auto_Warm_Service
      * @param array<string,mixed> $exam_row
      * @return int[]
      */
-    public static function get_target_student_ids_for_exam(array $exam_row): array
+    public static function get_target_student_ids_for_exam(array $exam_row, bool $allow_expensive_fallback = true): array
     {
-        return self::resolve_target_student_ids($exam_row);
+        return self::resolve_target_student_ids($exam_row, $allow_expensive_fallback);
     }
 
     /**
@@ -576,6 +580,11 @@ final class CBT_Exam_Availability_Auto_Warm_Service
     public static function get_target_kelas_for_exam(array $exam_row): array
     {
         return self::resolve_target_kelas_values($exam_row);
+    }
+
+    public static function count_target_students_for_exam(array $exam_row, bool $allow_expensive_fallback = true): int
+    {
+        return self::count_target_student_ids($exam_row, $allow_expensive_fallback);
     }
 
     public static function is_active_for_student(int $user_id): bool
@@ -1076,11 +1085,24 @@ final class CBT_Exam_Availability_Auto_Warm_Service
     /**
      * @return int[]
      */
-    private static function resolve_target_student_ids(array $exam_row): array
+    private static function resolve_target_student_ids(array $exam_row, bool $allow_expensive_fallback = true): array
     {
         $target_kelas = self::resolve_target_kelas_values($exam_row);
         if (empty($target_kelas)) {
             return [];
+        }
+
+        if (class_exists('CBT_Student_Cohort_Index_Service') && method_exists('CBT_Student_Cohort_Index_Service', 'get_health_summary')) {
+            $cohort_summary = CBT_Student_Cohort_Index_Service::get_health_summary();
+            if (!empty($cohort_summary['available'])) {
+                if (!empty($cohort_summary['ready'])) {
+                    $cohort_student_ids = CBT_Student_Cohort_Index_Service::resolve_target_student_ids_for_exam($exam_row);
+                    return array_values(array_unique(array_filter(array_map('absint', $cohort_student_ids))));
+                }
+                if (!$allow_expensive_fallback) {
+                    return [];
+                }
+            }
         }
 
         $kelas_map = array_fill_keys($target_kelas, true);
@@ -1111,6 +1133,39 @@ final class CBT_Exam_Availability_Auto_Warm_Service
         ksort($target_student_ids, SORT_NUMERIC);
 
         return array_values($target_student_ids);
+    }
+
+    private static function count_target_student_ids(array $exam_row, bool $allow_expensive_fallback = true): int
+    {
+        $target_kelas = self::resolve_target_kelas_values($exam_row);
+        if (empty($target_kelas)) {
+            return 0;
+        }
+
+        if (class_exists('CBT_Student_Cohort_Index_Service') && method_exists('CBT_Student_Cohort_Index_Service', 'get_health_summary')) {
+            $cohort_summary = CBT_Student_Cohort_Index_Service::get_health_summary();
+            if (!empty($cohort_summary['available'])) {
+                if (!empty($cohort_summary['ready']) && method_exists('CBT_Student_Cohort_Index_Service', 'count_target_students_for_exam')) {
+                    return max(0, (int) CBT_Student_Cohort_Index_Service::count_target_students_for_exam($exam_row));
+                }
+
+                if (!$allow_expensive_fallback) {
+                    return 0;
+                }
+            }
+        }
+
+        return count(self::resolve_target_student_ids($exam_row, $allow_expensive_fallback));
+    }
+
+    private static function should_defer_student_cohort_canonical_scan(): bool
+    {
+        if (!class_exists('CBT_Student_Cohort_Index_Service') || !method_exists('CBT_Student_Cohort_Index_Service', 'get_health_summary')) {
+            return false;
+        }
+
+        $summary = CBT_Student_Cohort_Index_Service::get_health_summary();
+        return !empty($summary['available']) && empty($summary['ready']);
     }
 
     /**

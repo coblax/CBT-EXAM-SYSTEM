@@ -560,10 +560,12 @@ final class CBT_Exam_Preflight_Service
         $active_runner_exam_id = (int) ($runner['active_exam_id'] ?? 0);
         $has_active_runner_other_exam = $active_runner_exam_id > 0 && $active_runner_exam_id !== $exam_id;
         $target_kelas = CBT_Exam_Availability_Auto_Warm_Service::get_target_kelas_for_exam($exam_row);
-        $resolved_target_student_ids = CBT_Exam_Availability_Auto_Warm_Service::get_target_student_ids_for_exam($exam_row);
+        $resolved_target_student_count = method_exists('CBT_Exam_Availability_Auto_Warm_Service', 'count_target_students_for_exam')
+            ? CBT_Exam_Availability_Auto_Warm_Service::count_target_students_for_exam($exam_row, false)
+            : count(CBT_Exam_Availability_Auto_Warm_Service::get_target_student_ids_for_exam($exam_row, false));
         $target_student_count = $is_same_exam_state
-            ? max(0, (int) ($state['target_student_count'] ?? count($resolved_target_student_ids)))
-            : count($resolved_target_student_ids);
+            ? max(0, (int) ($state['target_student_count'] ?? $resolved_target_student_count))
+            : $resolved_target_student_count;
         $question_cache_ready = class_exists('CBT_Exam_Question_Delivery_Cache')
             && method_exists('CBT_Exam_Question_Delivery_Cache', 'is_available')
             && CBT_Exam_Question_Delivery_Cache::is_available();
@@ -657,7 +659,9 @@ final class CBT_Exam_Preflight_Service
         } elseif (empty($target_kelas)) {
             $message = 'One-click pra ujian membutuhkan target kelas pada exam ini.';
         } elseif ($target_student_count <= 0) {
-            $message = 'Belum ada siswa target yang cocok dengan target_kelas exam ini.';
+            $message = self::should_defer_student_cohort_canonical_scan()
+                ? 'Student Cohort Index masih building; target siswa belum dihitung detail agar halaman snapshot tetap cepat.'
+                : 'Belum ada siswa target yang cocok dengan target_kelas exam ini.';
         } else {
             $message = 'One-click memakai blocker dan warning kesiapan yang sama, lalu menyiapkan Snapshot Soal, Start Snapshot, Submission Context, Snapshot Profil, Login Snapshot, dan Auto-Warm Availability dengan mode global paralel batch 150.';
         }
@@ -1398,6 +1402,16 @@ final class CBT_Exam_Preflight_Service
             'stage_login_snapshot' => 'pending',
             'stage_auto_warm' => 'pending',
         ]);
+    }
+
+    private static function should_defer_student_cohort_canonical_scan(): bool
+    {
+        if (!class_exists('CBT_Student_Cohort_Index_Service') || !method_exists('CBT_Student_Cohort_Index_Service', 'get_health_summary')) {
+            return false;
+        }
+
+        $summary = CBT_Student_Cohort_Index_Service::get_health_summary();
+        return !empty($summary['available']) && empty($summary['ready']);
     }
 
     /**

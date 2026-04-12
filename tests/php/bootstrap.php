@@ -581,6 +581,10 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
                 }
             }
         }
+
+        if (class_exists('CBT_Student_Cohort_Index_Service')) {
+            CBT_Student_Cohort_Index_Service::reset_availability_cache();
+        }
     }
 }
 

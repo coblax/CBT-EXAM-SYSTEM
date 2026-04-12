@@ -8,7 +8,7 @@ class CBT_Activator
 {
     private const OPTION_DB_VERSION = 'cbt_exam_system_db_version';
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
-    private const DB_VERSION = '1.6.11';
+    private const DB_VERSION = '1.6.12';
 
     public static function activate(): void
     {
@@ -31,6 +31,9 @@ class CBT_Activator
         }
         if (class_exists('CBT_Security_Event_Ingest')) {
             CBT_Security_Event_Ingest::activate();
+        }
+        if (class_exists('CBT_Student_Cohort_Index_Service')) {
+            CBT_Student_Cohort_Index_Service::activate();
         }
     }
 
@@ -211,6 +214,9 @@ class CBT_Activator
 
         $tables[] = CBT_Security_Log::get_create_table_sql($wpdb);
         $tables[] = CBT_Incident_Report::get_create_table_sql($wpdb);
+        if (class_exists('CBT_Student_Cohort_Index_Service')) {
+            $tables[] = CBT_Student_Cohort_Index_Service::get_create_table_sql($wpdb);
+        }
 
         foreach ($tables as $sql) {
             dbDelta($sql);
@@ -231,6 +237,9 @@ class CBT_Activator
         self::register_roles();
         self::ensure_frontend_page();
         update_option(self::OPTION_DB_VERSION, self::DB_VERSION);
+        if (class_exists('CBT_Student_Cohort_Index_Service')) {
+            CBT_Student_Cohort_Index_Service::activate();
+        }
     }
 
     private static function maybe_add_foreign_keys(wpdb $wpdb): void

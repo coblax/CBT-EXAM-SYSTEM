@@ -1634,9 +1634,47 @@ final class CBT_Admin_Exams_Page
         $readiness_problem_students = array_values(array_filter((array) ($readiness['problem_students'] ?? []), static function ($item): bool {
             return is_array($item);
         }));
+        $readiness_problem_list_deferred = !empty($readiness['problem_list_deferred']);
         $readiness_problem_total = max(0, (int) ($readiness['problem_total'] ?? 0));
         $readiness_problem_page = max(1, (int) ($readiness['problem_page'] ?? $exam_readiness_page));
         $readiness_problem_total_pages = max(1, (int) ($readiness['problem_total_pages'] ?? 1));
+        $student_cohort_index = is_array($readiness['student_cohort_index'] ?? null) ? $readiness['student_cohort_index'] : [];
+        $student_cohort_status = sanitize_key((string) ($student_cohort_index['status'] ?? 'fallback'));
+        $student_cohort_label = trim((string) ($student_cohort_index['label'] ?? 'Fallback'));
+        if ($student_cohort_label === '') {
+            $student_cohort_label = $student_cohort_status !== '' ? strtoupper(str_replace('_', ' ', $student_cohort_status)) : 'Fallback';
+        }
+        $student_cohort_tone = !empty($student_cohort_index['ready'])
+            ? 'success'
+            : (!empty($student_cohort_index['available']) ? 'warning' : 'warning');
+        $student_cohort_indexed_total = max(0, (int) ($student_cohort_index['indexed_total'] ?? 0));
+        $student_cohort_student_total = max(0, (int) ($student_cohort_index['student_total'] ?? 0));
+        $student_cohort_last_indexed_at = trim((string) ($student_cohort_index['last_indexed_at'] ?? ''));
+        $student_cohort_rebuild = is_array($student_cohort_index['rebuild_state'] ?? null) ? $student_cohort_index['rebuild_state'] : [];
+        $student_cohort_rebuild_active = !empty($student_cohort_rebuild['active']);
+        $student_cohort_rebuild_status = sanitize_key((string) ($student_cohort_rebuild['status'] ?? 'idle'));
+        $student_cohort_rebuild_total = max(0, (int) ($student_cohort_rebuild['total_users'] ?? 0));
+        $student_cohort_rebuild_processed = max(0, (int) ($student_cohort_rebuild['processed_total'] ?? 0));
+        $student_cohort_rebuild_last_batch = max(0, (int) ($student_cohort_rebuild['last_batch_processed'] ?? 0));
+        $student_cohort_rebuild_next_at = trim((string) ($student_cohort_rebuild['next_run_at'] ?? ''));
+        $student_cohort_rebuild_progress_total = $student_cohort_rebuild_total;
+        if ($student_cohort_rebuild_progress_total <= 0 && !$student_cohort_rebuild_active && $student_cohort_indexed_total > 0) {
+            $student_cohort_rebuild_progress_total = $student_cohort_indexed_total;
+            $student_cohort_rebuild_processed = max($student_cohort_rebuild_processed, $student_cohort_indexed_total);
+        }
+        $student_cohort_rebuild_progress_percent = $student_cohort_rebuild_progress_total > 0
+            ? min(100.0, round(((float) min($student_cohort_rebuild_processed, $student_cohort_rebuild_progress_total) / (float) $student_cohort_rebuild_progress_total) * 100, 1))
+            : 0.0;
+        if ($student_cohort_rebuild_status === 'completed' && $student_cohort_rebuild_progress_total > 0) {
+            $student_cohort_rebuild_progress_percent = max($student_cohort_rebuild_progress_percent, 100.0);
+        }
+        $student_cohort_rebuild_progress_style = 'width:' . esc_attr((string) $student_cohort_rebuild_progress_percent) . '%;';
+        $student_cohort_rebuild_progress_label = $student_cohort_rebuild_progress_total > 0
+            ? (number_format_i18n($student_cohort_rebuild_processed) . ' / ' . number_format_i18n($student_cohort_rebuild_progress_total) . ' user')
+            : ('Processed ' . number_format_i18n($student_cohort_rebuild_processed) . ' user');
+        $student_cohort_rebuild_meta = $student_cohort_rebuild_active
+            ? ('Rebuild aktif · Processed ' . number_format_i18n($student_cohort_rebuild_processed) . ' · Last batch ' . number_format_i18n($student_cohort_rebuild_last_batch) . ' · Next ' . ($student_cohort_rebuild_next_at !== '' ? $student_cohort_rebuild_next_at : '-'))
+            : ('Rebuild ' . ($student_cohort_rebuild_status !== '' ? $student_cohort_rebuild_status : 'idle') . ' · Processed ' . number_format_i18n($student_cohort_rebuild_processed));
         $preflight = is_array($row['preflight'] ?? null) ? $row['preflight'] : [];
         $preflight_status_label = trim((string) ($preflight['status_label'] ?? 'NONAKTIF'));
         $preflight_status_tone = sanitize_html_class((string) ($preflight['status_tone'] ?? 'warning'), 'warning');
@@ -2386,6 +2424,18 @@ final class CBT_Admin_Exams_Page
                             <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($preflight_global_mode_label); ?></strong>
                             <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Batch ' . $preflight_global_batch_size . ' · Runner ' . ($preflight_global_runner_exam_id > 0 ? 'aktif' : 'idle')); ?></span>
                         </div>
+                        <div class="cbt-exam-readiness-summary-card">
+                            <span class="cbt-exam-snapshot-summary-label">Student Cohort Index</span>
+                            <strong class="cbt-exam-snapshot-summary-value"><span class="cbt-exam-snapshot-status is-<?php echo esc_attr($student_cohort_tone); ?>"><?php echo esc_html($student_cohort_label); ?></span></strong>
+                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Indexed ' . number_format_i18n($student_cohort_indexed_total) . ' · Siswa ' . number_format_i18n($student_cohort_student_total) . ' · Last ' . ($student_cohort_last_indexed_at !== '' ? $student_cohort_last_indexed_at : '-')); ?></span>
+                            <div class="cbt-student-cohort-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?php echo esc_attr((string) $student_cohort_rebuild_progress_percent); ?>" aria-label="Progress rebuild Student Cohort Index">
+                                <div class="cbt-student-cohort-progress-track">
+                                    <span class="cbt-student-cohort-progress-fill" style="<?php echo esc_attr($student_cohort_rebuild_progress_style); ?>"></span>
+                                </div>
+                                <span class="cbt-student-cohort-progress-meta"><?php echo esc_html(number_format_i18n($student_cohort_rebuild_progress_percent, 1) . '% · ' . $student_cohort_rebuild_progress_label); ?></span>
+                            </div>
+                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html($student_cohort_rebuild_meta); ?></span>
+                        </div>
                     </div>
 
                     <div class="cbt-exam-readiness-target-row">
@@ -2494,6 +2544,17 @@ final class CBT_Admin_Exams_Page
                             <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
                             <button type="submit" class="button">Bersihkan Semua Snapshot</button>
                         </form>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form" onsubmit="return confirm('Rebuild Student Cohort Index berjalan bertahap di background dan aman untuk cohort besar. Lanjutkan?');">
+                            <?php wp_nonce_field('cbt_rebuild_student_cohort_index'); ?>
+                            <input type="hidden" name="action" value="cbt_rebuild_student_cohort_index" />
+                            <?php self::render_snapshot_tab_hidden_field(CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT); ?>
+                            <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                            <?php self::render_snapshot_filter_state_hidden_fields($snapshot_filter_state); ?>
+                            <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
+                            <?php self::render_exam_readiness_page_hidden_field($readiness_problem_page); ?>
+                            <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                            <button type="submit" class="button button-secondary" <?php echo $student_cohort_rebuild_active ? 'disabled="disabled"' : ''; ?>>Rebuild Student Cohort Index</button>
+                        </form>
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form" onsubmit="return confirm('Tindakan ini akan membersihkan semua key Redis CBT untuk seluruh exam: snapshot soal, start, submission context, profile, login, availability, session runtime, gate queue, dan state one-click/auto-warm. Jawaban dan nilai di database tidak dihapus, tetapi siswa aktif bisa terdampak. Gunakan hanya saat tidak ada ujian yang sedang berjalan. Lanjutkan?');">
                             <?php wp_nonce_field('cbt_hard_reset_cbt_redis'); ?>
                             <input type="hidden" name="action" value="cbt_hard_reset_cbt_redis" />
@@ -2516,7 +2577,7 @@ final class CBT_Admin_Exams_Page
                             </div>
 
                             <?php if (empty($readiness_problem_students)): ?>
-                                <p class="cbt-exam-snapshot-note">Tidak ada siswa bermasalah pada halaman ini.</p>
+                                <p class="cbt-exam-snapshot-note"><?php echo esc_html($readiness_problem_list_deferred ? 'Detail siswa tidak dirender di page load karena cohort target besar. Ringkasan dihitung dari status preflight/auto-warm; jalankan One-Click Pra Ujian untuk mengisi detail batch tanpa membuat halaman lambat.' : 'Tidak ada siswa bermasalah pada halaman ini.'); ?></p>
                             <?php else: ?>
                                 <div class="cbt-exam-list-table-wrap">
                                     <table class="widefat striped cbt-exam-readiness-problem-table">

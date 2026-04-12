@@ -42,6 +42,7 @@ class CBT_Admin
         add_action('admin_post_cbt_stop_exam_availability_auto_warm', [CBT_Admin_Exams_Actions::class, 'handle_stop_exam_availability_auto_warm']);
         add_action('admin_post_cbt_start_exam_preflight', [CBT_Admin_Exams_Actions::class, 'handle_start_exam_preflight']);
         add_action('admin_post_cbt_start_bulk_exam_preflight', [CBT_Admin_Exams_Actions::class, 'handle_start_bulk_exam_preflight']);
+        add_action('admin_post_cbt_rebuild_student_cohort_index', [CBT_Admin_Exams_Actions::class, 'handle_rebuild_student_cohort_index']);
         add_action('admin_post_cbt_clean_bulk_exam_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clean_bulk_exam_snapshots']);
         add_action('admin_post_cbt_clean_exam_snapshots', [CBT_Admin_Exams_Actions::class, 'handle_clean_exam_snapshots']);
         add_action('admin_post_cbt_hard_reset_cbt_redis', [CBT_Admin_Exams_Actions::class, 'handle_hard_reset_cbt_redis']);

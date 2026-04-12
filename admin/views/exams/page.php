@@ -2018,6 +2018,35 @@
                 .cbt-exam-preflight-summary-grid .cbt-exam-snapshot-summary-value {
                     font-size: 15px;
                 }
+                .cbt-student-cohort-progress {
+                    display: grid;
+                    gap: 5px;
+                    margin-top: 4px;
+                }
+                .cbt-student-cohort-progress-track {
+                    position: relative;
+                    width: 100%;
+                    height: 9px;
+                    overflow: hidden;
+                    border: 1px solid #d7e3f0;
+                    border-radius: 999px;
+                    background: #eaf2fb;
+                }
+                .cbt-student-cohort-progress-fill {
+                    display: block;
+                    width: 0;
+                    min-width: 0;
+                    height: 100%;
+                    border-radius: inherit;
+                    background: linear-gradient(90deg, #2563eb 0%, #14b8a6 100%);
+                    transition: width 220ms ease;
+                }
+                .cbt-student-cohort-progress-meta {
+                    color: #334155;
+                    font-size: 11px;
+                    font-weight: 700;
+                    line-height: 1.35;
+                }
                 .cbt-exam-readiness-target-row {
                     display: grid;
                     gap: 12px;

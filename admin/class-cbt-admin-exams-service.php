@@ -90,6 +90,7 @@ final class CBT_Admin_Exams_Service
     private const SNAPSHOT_PREVIEW_PER_PAGE = 7;
     private const STUDENT_SNAPSHOT_PER_PAGE = 25;
     private const EXAM_READINESS_PROBLEM_PER_PAGE = 10;
+    private const EXAM_READINESS_EAGER_DIAGNOSTIC_LIMIT = 250;
     private const HERO_OPERATIONAL_STATS_TTL = 20;
     public const SNAPSHOT_TAB_PREFLIGHT = 'preflight';
     public const SNAPSHOT_TAB_QUESTION_MONITOR = 'question_monitor';
@@ -3132,6 +3133,27 @@ final class CBT_Admin_Exams_Service
         ]);
     }
 
+    public static function handle_rebuild_student_cohort_index(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_rebuild_student_cohort_index');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if (!class_exists('CBT_Student_Cohort_Index_Service')) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Student Cohort Index belum tersedia di environment ini.',
+            ]);
+        }
+
+        $result = CBT_Student_Cohort_Index_Service::start_rebuild('admin');
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            !empty($result['success']) ? 'cbt_msg' : 'cbt_err' => (string) ($result['message'] ?? 'Gagal memulai rebuild Student Cohort Index.'),
+        ]);
+    }
+
     public static function handle_clean_bulk_exam_snapshots(): void
     {
         if (!self::can_manage_exam_snapshots()) {
@@ -4615,6 +4637,22 @@ final class CBT_Admin_Exams_Service
         $search = trim((string) ($state['search'] ?? ''));
         $kelas = self::normalize_snapshot_student_meta_filter((string) ($state['kelas'] ?? ''));
         $ruang = self::normalize_snapshot_student_meta_filter((string) ($state['ruang'] ?? ''));
+
+        if (class_exists('CBT_Student_Cohort_Index_Service') && CBT_Student_Cohort_Index_Service::is_ready()) {
+            $cohort_result = CBT_Student_Cohort_Index_Service::query_students([
+                'search' => $search,
+                'kelas' => $kelas,
+                'ruang' => $ruang,
+                'limit' => 0,
+            ]);
+            if (empty($cohort_result['fallback_required'])) {
+                return self::cohort_index_rows_to_wp_users((array) ($cohort_result['rows'] ?? []));
+            }
+        }
+        if (self::should_defer_student_cohort_canonical_scan()) {
+            return [];
+        }
+
         $users = get_users(['number' => 0]);
         if (!is_array($users)) {
             return [];
@@ -4663,6 +4701,42 @@ final class CBT_Admin_Exams_Service
         });
 
         return $filtered;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return WP_User[]
+     */
+    private static function cohort_index_rows_to_wp_users(array $rows): array
+    {
+        $user_ids = array_values(array_filter(array_map(static function ($row): int {
+            return is_array($row) ? absint($row['user_id'] ?? 0) : 0;
+        }, $rows)));
+        if (empty($user_ids)) {
+            return [];
+        }
+
+        if (function_exists('cache_users')) {
+            cache_users($user_ids);
+        }
+        if (function_exists('update_meta_cache')) {
+            update_meta_cache('user', $user_ids);
+        }
+
+        $users = [];
+        foreach ($user_ids as $user_id) {
+            $user = get_user_by('id', $user_id);
+            if ($user instanceof WP_User) {
+                $users[] = $user;
+                continue;
+            }
+
+            if (class_exists('CBT_Student_Cohort_Index_Service')) {
+                CBT_Student_Cohort_Index_Service::delete_user($user_id);
+            }
+        }
+
+        return $users;
     }
 
     /**
@@ -4734,6 +4808,22 @@ final class CBT_Admin_Exams_Service
      */
     private static function build_snapshot_student_filter_options(): array
     {
+        if (class_exists('CBT_Student_Cohort_Index_Service') && CBT_Student_Cohort_Index_Service::is_ready()) {
+            $cohort_options = CBT_Student_Cohort_Index_Service::get_filter_options();
+            if (empty($cohort_options['fallback_required'])) {
+                return [
+                    'kelas' => array_values(array_filter(array_map('strval', (array) ($cohort_options['kelas'] ?? [])))),
+                    'ruang' => array_values(array_filter(array_map('strval', (array) ($cohort_options['ruang'] ?? [])))),
+                ];
+            }
+        }
+        if (self::should_defer_student_cohort_canonical_scan()) {
+            return [
+                'kelas' => [],
+                'ruang' => [],
+            ];
+        }
+
         $users = self::get_filtered_snapshot_student_users();
         $kelas_options = [];
         $ruang_options = [];
@@ -5590,7 +5680,7 @@ final class CBT_Admin_Exams_Service
             ? CBT_Exam_Preflight_Service::get_exam_panel_context($exam_row, $status === 'ready', $start_status === 'ready')
             : $empty_preflight_context;
         $resolved_readiness_context = $is_preflight_tab
-            ? self::build_exam_readiness_context($exam_row, $status === 'ready', $start_status === 'ready', $auto_warm_context, $readiness_page)
+            ? self::build_exam_readiness_context($exam_row, $status === 'ready', $start_status === 'ready', $auto_warm_context, $readiness_page, $resolved_preflight_context)
             : $empty_readiness_context;
 
         return array_merge($fallback, $diagnostics, [
@@ -5641,11 +5731,14 @@ final class CBT_Admin_Exams_Service
      * @param array<string,mixed> $auto_warm_context
      * @return array<string,mixed>
      */
-    private static function build_exam_readiness_context(array $exam_row, bool $question_snapshot_ready, bool $start_snapshot_ready, array $auto_warm_context, int $page = 1): array
+    private static function build_exam_readiness_context(array $exam_row, bool $question_snapshot_ready, bool $start_snapshot_ready, array $auto_warm_context, int $page = 1, array $preflight_context = []): array
     {
         $target_kelas = self::split_target_kelas_csv((string) ($exam_row['target_kelas'] ?? ''));
-        $target_students = self::get_snapshot_target_students_for_exam($exam_row);
-        $target_student_count = count($target_students);
+        $student_cohort_index = self::get_student_cohort_index_health_summary();
+        $target_student_count = self::get_snapshot_target_student_count_for_exam($exam_row);
+        $target_students = $target_student_count <= self::EXAM_READINESS_EAGER_DIAGNOSTIC_LIMIT
+            ? self::get_snapshot_target_students_for_exam($exam_row)
+            : [];
         $page = max(1, $page);
         $starts_at = trim((string) ($exam_row['starts_at'] ?? ''));
         $ends_at = trim((string) ($exam_row['ends_at'] ?? ''));
@@ -5659,8 +5752,19 @@ final class CBT_Admin_Exams_Service
         $availability_auto_warm_count = 0;
         $availability_missing_count = 0;
         $problem_students = [];
+        $problem_list_deferred = false;
 
-        foreach ($target_students as $student) {
+        $use_lightweight_readiness = $target_student_count > self::EXAM_READINESS_EAGER_DIAGNOSTIC_LIMIT;
+        if ($use_lightweight_readiness) {
+            $problem_list_deferred = true;
+            $profile_ready_count = max(0, (int) ($preflight_context['profile_success_count'] ?? ($preflight_context['profiles_ready_count'] ?? 0)));
+            $profile_missing_count = max(0, (int) ($preflight_context['profiles_pending_count'] ?? max(0, $target_student_count - $profile_ready_count)));
+            $availability_ready_count = max(0, (int) ($preflight_context['availability_ready_count'] ?? ($auto_warm_context['prepared_count'] ?? 0)));
+            $availability_auto_warm_count = max(0, (int) ($preflight_context['availability_reuse_count'] ?? 0));
+            $availability_missing_count = max(0, (int) ($preflight_context['availability_pending_count'] ?? max(0, $target_student_count - max($availability_ready_count, $availability_auto_warm_count))));
+        }
+
+        foreach ($use_lightweight_readiness ? [] : $target_students as $student) {
             $user_id = (int) ($student['user_id'] ?? 0);
             if ($user_id <= 0) {
                 continue;
@@ -5719,7 +5823,9 @@ final class CBT_Admin_Exams_Service
             ];
         }
 
-        $problem_total = count($problem_students);
+        $problem_total = $problem_list_deferred
+            ? max($profile_missing_count, $availability_missing_count)
+            : count($problem_students);
         $problem_total_pages = max(1, (int) ceil($problem_total / self::EXAM_READINESS_PROBLEM_PER_PAGE));
         if ($problem_total > 0 && $page > $problem_total_pages) {
             $page = $problem_total_pages;
@@ -5739,7 +5845,9 @@ final class CBT_Admin_Exams_Service
             $blockers[] = 'Target kelas pada exam ini belum diatur.';
         }
         if ($target_student_count <= 0) {
-            $blockers[] = 'Belum ada siswa target yang cocok dengan target_kelas exam ini.';
+            $blockers[] = self::should_defer_student_cohort_canonical_scan()
+                ? 'Student Cohort Index masih building; target siswa belum dihitung detail agar halaman snapshot tetap cepat.'
+                : 'Belum ada siswa target yang cocok dengan target_kelas exam ini.';
         }
         if (!$question_snapshot_ready) {
             $blockers[] = 'Snapshot Soal belum READY.';
@@ -5753,6 +5861,12 @@ final class CBT_Admin_Exams_Service
         }
         if ($availability_missing_count > 0) {
             $warnings[] = sprintf('%d siswa target belum memiliki Katalog Exam Siswa READY/AUTO-WARM.', $availability_missing_count);
+        }
+        if ($problem_list_deferred) {
+            $warnings[] = sprintf(
+                'Detail readiness per siswa ditunda karena target exam besar (%d siswa). Jalankan One-Click Pra Ujian untuk mengisi ringkasan batch tanpa memperlambat halaman.',
+                $target_student_count
+            );
         }
 
         $auto_warm_status = sanitize_key((string) ($auto_warm_context['status'] ?? 'inactive'));
@@ -5814,6 +5928,8 @@ final class CBT_Admin_Exams_Service
             'problem_page' => $page,
             'problem_total_pages' => $problem_total_pages,
             'problem_per_page' => self::EXAM_READINESS_PROBLEM_PER_PAGE,
+            'problem_list_deferred' => $problem_list_deferred,
+            'student_cohort_index' => $student_cohort_index,
         ];
     }
 
@@ -5826,6 +5942,27 @@ final class CBT_Admin_Exams_Service
         $target_kelas = self::split_target_kelas_csv((string) ($exam_row['target_kelas'] ?? ''));
         if (empty($target_kelas)) {
             return [];
+        }
+
+        if (class_exists('CBT_Student_Cohort_Index_Service') && CBT_Student_Cohort_Index_Service::is_ready()) {
+            $cohort_result = CBT_Student_Cohort_Index_Service::query_students([
+                'kelas_values' => $target_kelas,
+                'limit' => 0,
+            ]);
+            $cohort_rows = array_values(array_filter((array) ($cohort_result['rows'] ?? []), 'is_array'));
+            if (empty($cohort_result['fallback_required'])) {
+                return array_values(array_map(static function (array $row): array {
+                    $user_id = absint($row['user_id'] ?? 0);
+                    return [
+                        'user_id' => $user_id,
+                        'display_name' => trim((string) (($row['display_name'] ?? '') !== '' ? $row['display_name'] : ($row['user_login'] ?? ('Siswa #' . $user_id)))),
+                        'user_login' => (string) ($row['user_login'] ?? ''),
+                        'user_email' => (string) ($row['user_email'] ?? ''),
+                        'kode_kelas' => (string) ($row['kode_kelas'] ?? ''),
+                        'kode_ruang' => (string) ($row['kode_ruang'] ?? ''),
+                    ];
+                }, $cohort_rows));
+            }
         }
 
         $kelas_map = array_fill_keys($target_kelas, true);
@@ -5852,6 +5989,66 @@ final class CBT_Admin_Exams_Service
         }
 
         return $students;
+    }
+
+    private static function get_snapshot_target_student_count_for_exam(array $exam_row): int
+    {
+        $target_kelas = self::split_target_kelas_csv((string) ($exam_row['target_kelas'] ?? ''));
+        if (empty($target_kelas)) {
+            return 0;
+        }
+
+        if (class_exists('CBT_Student_Cohort_Index_Service') && method_exists('CBT_Student_Cohort_Index_Service', 'get_health_summary')) {
+            $cohort_summary = CBT_Student_Cohort_Index_Service::get_health_summary();
+            if (!empty($cohort_summary['available'])) {
+                if (!empty($cohort_summary['ready']) && method_exists('CBT_Student_Cohort_Index_Service', 'count_target_students_for_exam')) {
+                    return max(0, (int) CBT_Student_Cohort_Index_Service::count_target_students_for_exam($exam_row));
+                }
+
+                return 0;
+            }
+        }
+
+        return count(self::get_snapshot_target_students_for_exam($exam_row));
+    }
+
+    private static function should_defer_student_cohort_canonical_scan(): bool
+    {
+        if (!class_exists('CBT_Student_Cohort_Index_Service') || !method_exists('CBT_Student_Cohort_Index_Service', 'get_health_summary')) {
+            return false;
+        }
+
+        $summary = CBT_Student_Cohort_Index_Service::get_health_summary();
+        return !empty($summary['available']) && empty($summary['ready']);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function get_student_cohort_index_health_summary(): array
+    {
+        if (!class_exists('CBT_Student_Cohort_Index_Service')) {
+            return [
+                'enabled' => false,
+                'available' => false,
+                'ready' => false,
+                'status' => 'fallback',
+                'label' => 'Fallback',
+                'indexed_total' => 0,
+                'student_total' => 0,
+                'non_student_total' => 0,
+                'last_indexed_at' => '',
+            ];
+        }
+
+        $summary = CBT_Student_Cohort_Index_Service::get_health_summary();
+        $rebuild_state = is_array($summary['rebuild_state'] ?? null) ? $summary['rebuild_state'] : [];
+        if (!empty($summary['available']) && empty($summary['ready']) && empty($rebuild_state['active']) && method_exists('CBT_Student_Cohort_Index_Service', 'start_rebuild')) {
+            CBT_Student_Cohort_Index_Service::start_rebuild('readiness_auto');
+            $summary = CBT_Student_Cohort_Index_Service::get_health_summary();
+        }
+
+        return $summary;
     }
 
     /**
