@@ -56,6 +56,12 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Mode Global', $html);
         self::assertStringContainsString('Batch 150', $html);
         self::assertStringContainsString('Queue Rewarm Availability', $html);
+        self::assertStringContainsString('Warm Login Readiness', $html);
+        self::assertStringContainsString('Mulai Warm Login Readiness', $html);
+        self::assertStringContainsString('Hentikan Queue', $html);
+        self::assertStringContainsString('Target Source', $html);
+        self::assertStringContainsString('Cohort Index', $html);
+        self::assertStringContainsString('66.7% · 12 / 18 siap', $html);
         self::assertStringContainsString('Diproses Batch Terakhir', $html);
         self::assertStringContainsString('Queue rewarm memproses 2 user.', $html);
         self::assertStringContainsString('Global Runner Owner:', $html);
@@ -880,6 +886,41 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                 'last_tick_at' => '2026-04-08 08:45:00',
                 'last_message' => 'Queue rewarm memproses 2 user.',
             ],
+            'login_readiness_warm_queue_context' => [
+                'active' => true,
+                'status' => 'active',
+                'status_label' => 'RUNNING',
+                'status_tone' => 'warning',
+                'source' => 'cohort_index',
+                'source_label' => 'Cohort Index',
+                'filter' => [
+                    'kelas' => 'XI-A',
+                    'ruang' => 'R1',
+                    'exam_id' => 77,
+                ],
+                'target_count' => 18,
+                'processed_count' => 12,
+                'ready_count' => 12,
+                'failure_count' => 0,
+                'pending_count' => 6,
+                'last_batch_processed' => 6,
+                'progress_percent' => 66.7,
+                'progress_label' => '12 / 18 siap',
+                'started_at' => '2026-04-08 08:41:00',
+                'updated_at' => '2026-04-08 08:46:00',
+                'finished_at' => '',
+                'last_message' => 'Warm Login Readiness memproses 6 siswa. Siap 12/18.',
+                'scheduled' => true,
+                'next_run_at' => '2026-04-08 08:47:00',
+                'kelas_options' => ['XI-A', 'XI-B'],
+                'ruang_options' => ['R1', 'R2'],
+                'cohort_summary' => [
+                    'available' => true,
+                    'ready' => true,
+                    'status' => 'ready',
+                    'label' => 'Ready',
+                ],
+            ],
             'exam_snapshot_preview_pages' => [
                 77 => 2,
             ],
@@ -1174,6 +1215,10 @@ final class AdminExamsSnapshotRenderTest extends TestCase
                         'session_id' => 'preflight-77-xyz',
                         'target_kelas' => ['XI-A', 'XI-B'],
                         'target_student_count' => 18,
+                        'target_source' => 'cohort_index',
+                        'target_source_label' => 'Cohort Index',
+                        'target_snapshot_created_at' => '2026-04-04 07:31:00',
+                        'target_kelas_signature' => 'XI-A|XI-B',
                         'profile_success_count' => 12,
                         'profile_failure_count' => 1,
                         'profile_processed_count' => 13,

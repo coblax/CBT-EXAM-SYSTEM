@@ -591,6 +591,161 @@ final class CBT_Admin_Exams_Page
     }
 
     /**
+     * @param array<string,mixed> $context
+     * @param array{per_page:int,paged:int,search:string,status:string,subject_id:int,kelas:string} $exam_list_state
+     * @param array{exam_id:int,exam_ids?:array<int,int>} $snapshot_filter_state
+     * @param array<int,int> $preview_pages
+     * @param array{search:string,kelas:string,ruang:string,status:string,paged:int,per_page:int} $student_snapshot_filter_state
+     */
+    private static function render_login_readiness_warm_queue_panel(
+        array $context,
+        int $focused_exam_id,
+        string $focused_exam_title,
+        array $exam_list_state,
+        array $snapshot_filter_state,
+        array $preview_pages,
+        array $student_snapshot_filter_state,
+        int $exam_readiness_page = 1
+    ): void {
+        $status_label = trim((string) ($context['status_label'] ?? 'IDLE'));
+        $status_tone = sanitize_html_class((string) ($context['status_tone'] ?? 'neutral'), 'neutral');
+        $source_label = trim((string) ($context['source_label'] ?? '-'));
+        $target_count = max(0, (int) ($context['target_count'] ?? 0));
+        $processed_count = max(0, (int) ($context['processed_count'] ?? 0));
+        $ready_count = max(0, (int) ($context['ready_count'] ?? 0));
+        $failure_count = max(0, (int) ($context['failure_count'] ?? 0));
+        $pending_count = max(0, (int) ($context['pending_count'] ?? max(0, $target_count - $processed_count)));
+        $last_batch_processed = max(0, (int) ($context['last_batch_processed'] ?? 0));
+        $progress_percent = max(0.0, min(100.0, (float) ($context['progress_percent'] ?? 0.0)));
+        $progress_style = 'width:' . number_format($progress_percent, 2, '.', '') . '%;';
+        $progress_label = trim((string) ($context['progress_label'] ?? '0 / 0 siap'));
+        $started_at = trim((string) ($context['started_at'] ?? ''));
+        $updated_at = trim((string) ($context['updated_at'] ?? ''));
+        $finished_at = trim((string) ($context['finished_at'] ?? ''));
+        $next_run_at = trim((string) ($context['next_run_at'] ?? ''));
+        $last_message = trim((string) ($context['last_message'] ?? ''));
+        $queue_active = !empty($context['active']);
+        $kelas_options = array_values(array_map('strval', (array) ($context['kelas_options'] ?? [])));
+        $ruang_options = array_values(array_map('strval', (array) ($context['ruang_options'] ?? [])));
+        $selected_kelas = (string) ($student_snapshot_filter_state['kelas'] ?? '');
+        $selected_ruang = (string) ($student_snapshot_filter_state['ruang'] ?? '');
+        $cohort_summary = is_array($context['cohort_summary'] ?? null) ? $context['cohort_summary'] : [];
+        $cohort_status = sanitize_key((string) ($cohort_summary['status'] ?? 'fallback'));
+        $cohort_label = trim((string) ($cohort_summary['label'] ?? 'Fallback'));
+        $focused_exam_label = $focused_exam_id > 0
+            ? ($focused_exam_title !== '' ? $focused_exam_title : ('Exam #' . $focused_exam_id))
+            : '';
+        ?>
+        <section class="cbt-exam-snapshot-queue-panel">
+            <div class="cbt-exam-snapshot-queue-panel-head">
+                <div class="cbt-exam-snapshot-queue-panel-copy">
+                    <strong>Warm Login Readiness</strong>
+                    <span><?php echo esc_html($focused_exam_id > 0
+                        ? 'Queue background ini menyiapkan login snapshot bertahap untuk exam fokus dan filter kelas/ruang aktif, agar login massal tidak menunggu hydrate sinkron saat hari-H.'
+                        : 'Queue background ini menyiapkan login snapshot bertahap berdasarkan filter kelas/ruang aktif agar login massal tidak menunggu hydrate sinkron saat hari-H.'); ?></span>
+                </div>
+                <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($status_tone); ?>"><?php echo esc_html($status_label); ?></span>
+            </div>
+
+            <div class="cbt-exam-snapshot-summary-grid">
+                <div class="cbt-exam-snapshot-summary-card">
+                    <span class="cbt-exam-snapshot-summary-label">Target Source</span>
+                    <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($source_label !== '' ? $source_label : '-'); ?></strong>
+                    <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Cohort ' . ($cohort_label !== '' ? $cohort_label : '-')); ?></span>
+                </div>
+                <div class="cbt-exam-snapshot-summary-card">
+                    <span class="cbt-exam-snapshot-summary-label">Target Siswa</span>
+                    <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html((string) $target_count); ?></strong>
+                    <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html($focused_exam_label !== '' ? ('Exam ' . $focused_exam_label) : 'Filter kelas/ruang aktif'); ?></span>
+                </div>
+                <div class="cbt-exam-snapshot-summary-card">
+                    <span class="cbt-exam-snapshot-summary-label">Diproses</span>
+                    <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html((string) $processed_count); ?></strong>
+                    <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Batch terakhir ' . $last_batch_processed); ?></span>
+                </div>
+                <div class="cbt-exam-snapshot-summary-card">
+                    <span class="cbt-exam-snapshot-summary-label">Siap / Pending / Gagal</span>
+                    <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html($ready_count . ' / ' . $pending_count . ' / ' . $failure_count); ?></strong>
+                    <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Mulai ' . ($started_at !== '' ? $started_at : '-') . ' · Update ' . ($updated_at !== '' ? $updated_at : '-')); ?></span>
+                </div>
+            </div>
+
+            <div class="cbt-exam-warm-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?php echo esc_attr((string) number_format($progress_percent, 1, '.', '')); ?>" aria-label="Progress Warm Login Readiness">
+                <div class="cbt-exam-warm-progress-track">
+                    <span class="cbt-exam-warm-progress-fill" style="<?php echo esc_attr($progress_style); ?>"></span>
+                </div>
+                <span class="cbt-exam-warm-progress-meta"><?php echo esc_html(number_format_i18n($progress_percent, 1) . '% · ' . $progress_label); ?></span>
+            </div>
+
+            <div class="cbt-exam-readiness-flags">
+                <span class="cbt-student-snapshot-preview-pill"><?php echo esc_html('Kelas ' . ($selected_kelas !== '' ? $selected_kelas : 'Semua')); ?></span>
+                <span class="cbt-student-snapshot-preview-pill"><?php echo esc_html('Ruang ' . ($selected_ruang !== '' ? $selected_ruang : 'Semua')); ?></span>
+                <span class="cbt-student-snapshot-preview-pill"><?php echo esc_html('Next Tick ' . ($next_run_at !== '' ? $next_run_at : '-')); ?></span>
+                <span class="cbt-student-snapshot-preview-pill"><?php echo esc_html('Selesai ' . ($finished_at !== '' ? $finished_at : '-')); ?></span>
+            </div>
+
+            <div class="cbt-exam-preflight-actions">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form">
+                    <?php wp_nonce_field('cbt_start_login_readiness_warm_queue'); ?>
+                    <input type="hidden" name="action" value="cbt_start_login_readiness_warm_queue" />
+                    <?php self::render_snapshot_tab_hidden_field(CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT); ?>
+                    <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                    <?php self::render_snapshot_filter_state_hidden_fields($snapshot_filter_state); ?>
+                    <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
+                    <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
+                    <label>
+                        <span class="screen-reader-text">Filter kelas warm login readiness</span>
+                        <select name="cbt_student_snapshot_kelas">
+                            <option value="">Semua Kelas</option>
+                            <?php foreach ($kelas_options as $kelas_option): ?>
+                                <option value="<?php echo esc_attr($kelas_option); ?>" <?php echo $selected_kelas === $kelas_option ? 'selected="selected"' : ''; ?>><?php echo esc_html($kelas_option); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label>
+                        <span class="screen-reader-text">Filter ruang warm login readiness</span>
+                        <select name="cbt_student_snapshot_ruang">
+                            <option value="">Semua Ruang</option>
+                            <?php foreach ($ruang_options as $ruang_option): ?>
+                                <option value="<?php echo esc_attr($ruang_option); ?>" <?php echo $selected_ruang === $ruang_option ? 'selected="selected"' : ''; ?>><?php echo esc_html($ruang_option); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <?php if (($student_snapshot_filter_state['search'] ?? '') !== ''): ?>
+                        <input type="hidden" name="cbt_student_snapshot_q" value="<?php echo esc_attr((string) $student_snapshot_filter_state['search']); ?>" />
+                    <?php endif; ?>
+                    <?php if (($student_snapshot_filter_state['status'] ?? '') !== ''): ?>
+                        <input type="hidden" name="cbt_student_snapshot_status" value="<?php echo esc_attr((string) $student_snapshot_filter_state['status']); ?>" />
+                    <?php endif; ?>
+                    <?php if (!empty($student_snapshot_filter_state['paged'])): ?>
+                        <input type="hidden" name="cbt_student_snapshot_paged" value="<?php echo esc_attr((string) max(1, (int) $student_snapshot_filter_state['paged'])); ?>" />
+                    <?php endif; ?>
+                    <button type="submit" class="button button-secondary" <?php echo $queue_active ? 'disabled="disabled"' : ''; ?>>Mulai Warm Login Readiness</button>
+                </form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form">
+                    <?php wp_nonce_field('cbt_stop_login_readiness_warm_queue'); ?>
+                    <input type="hidden" name="action" value="cbt_stop_login_readiness_warm_queue" />
+                    <?php self::render_snapshot_tab_hidden_field(CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT); ?>
+                    <?php self::render_exam_list_state_hidden_fields($exam_list_state); ?>
+                    <?php self::render_snapshot_filter_state_hidden_fields($snapshot_filter_state); ?>
+                    <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
+                    <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
+                    <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                    <button type="submit" class="button" <?php echo $queue_active ? '' : 'disabled="disabled"'; ?>>Hentikan Queue</button>
+                </form>
+            </div>
+
+            <?php if ($cohort_status === 'building'): ?>
+                <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--queue"><?php echo esc_html('Student Cohort Index masih building. Queue warm login readiness akan ditahan agar tidak jatuh ke scan canonical besar.'); ?></p>
+            <?php endif; ?>
+            <?php if ($last_message !== ''): ?>
+                <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--queue"><?php echo esc_html($last_message); ?></p>
+            <?php endif; ?>
+        </section>
+        <?php
+    }
+
+    /**
      * @param array<string,mixed> $bulk_preflight
      * @param array{per_page:int,paged:int,search:string,status:string,subject_id:int,kelas:string} $exam_list_state
      * @param array{exam_id:int,exam_ids?:array<int,int>} $snapshot_filter_state
@@ -789,6 +944,7 @@ final class CBT_Admin_Exams_Page
      *   exam_snapshot_rows:array<int,array<string,mixed>>,
      *   bulk_preflight?:array<string,mixed>,
      *   availability_rewarm_queue?:array<string,mixed>,
+     *   login_readiness_warm_queue_context?:array<string,mixed>,
      *   exam_snapshot_preview_pages:array<int,int>,
      *   exam_readiness_page:int,
      *   exam_readiness_pages?:array<int,int>,
@@ -876,6 +1032,9 @@ final class CBT_Admin_Exams_Page
             : [];
         $availability_rewarm_queue = isset($args['availability_rewarm_queue']) && is_array($args['availability_rewarm_queue'])
             ? $args['availability_rewarm_queue']
+            : [];
+        $login_readiness_warm_queue_context = isset($args['login_readiness_warm_queue_context']) && is_array($args['login_readiness_warm_queue_context'])
+            ? $args['login_readiness_warm_queue_context']
             : [];
         $selected_snapshot_exam_ids = array_values(array_filter(array_map('intval', (array) ($exam_snapshot_filter_state['exam_ids'] ?? []))));
         if (empty($selected_snapshot_exam_ids) && !empty($exam_snapshot_filter_state['exam_id'])) {
@@ -1408,6 +1567,16 @@ final class CBT_Admin_Exams_Page
                             </div>
                         </div>
                         <?php self::render_availability_rewarm_queue_panel($availability_rewarm_queue); ?>
+                        <?php self::render_login_readiness_warm_queue_panel(
+                            $login_readiness_warm_queue_context,
+                            $selected_snapshot_exam_count === 1 ? (int) ($selected_snapshot_exam_ids[0] ?? 0) : 0,
+                            $selected_snapshot_exam_count === 1 ? (string) ($selected_snapshot_exam_titles[0] ?? '') : '',
+                            $exam_list_state,
+                            $exam_snapshot_filter_state,
+                            $exam_snapshot_preview_pages,
+                            $student_snapshot_filter_state,
+                            $exam_readiness_page
+                        ); ?>
                         <?php if (!empty($bulk_preflight['selected_exam_total']) && (int) $bulk_preflight['selected_exam_total'] > 1): ?>
                             <?php self::render_bulk_preflight_panel($bulk_preflight, $exam_list_state, $exam_snapshot_filter_state, $exam_snapshot_preview_pages, $student_snapshot_filter_state, $exam_readiness_page); ?>
                         <?php elseif (empty($exam_snapshot_rows)): ?>
@@ -2393,6 +2562,12 @@ final class CBT_Admin_Exams_Page
                     ? 'PARALEL'
                     : ($preflight_active_global_layer !== '' ? strtoupper(str_replace('_', ' ', $preflight_active_global_layer)) : '-');
                 $preflight_queued_exam_summary = !empty($preflight_queued_exam_titles) ? implode(', ', $preflight_queued_exam_titles) : '-';
+                $preflight_target_source = sanitize_key((string) ($preflight['target_source'] ?? ''));
+                $preflight_target_source_label = (string) ($preflight['target_source_label'] ?? ($preflight_target_source === 'cohort_index'
+                    ? 'Cohort Index'
+                    : ($preflight_target_source === 'canonical_fallback' ? 'Canonical Fallback' : ($preflight_target_source === 'index_building' ? 'Index Building' : '-'))));
+                $preflight_target_snapshot_created_at = sanitize_text_field((string) ($preflight['target_snapshot_created_at'] ?? ''));
+                $preflight_target_kelas_signature = sanitize_text_field((string) ($preflight['target_kelas_signature'] ?? ''));
                 ?>
                 <div class="cbt-exam-preflight-panel">
                     <div class="cbt-exam-preflight-panel-head">
@@ -2442,11 +2617,12 @@ final class CBT_Admin_Exams_Page
                         <div class="cbt-exam-readiness-target-count">
                             <span class="cbt-exam-snapshot-summary-label">Peserta Target</span>
                             <strong class="cbt-exam-snapshot-summary-value"><?php echo esc_html((string) $preflight_target_student_count); ?></strong>
-                            <span class="cbt-exam-readiness-summary-meta">Jumlah siswa target exam ini</span>
+                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Source ' . $preflight_target_source_label . ' · Snapshot ' . ($preflight_target_snapshot_created_at !== '' ? $preflight_target_snapshot_created_at : '-')); ?></span>
                         </div>
                         <div class="cbt-exam-readiness-target-classes">
                             <span class="cbt-exam-snapshot-summary-label">Target Kelas</span>
                             <span class="cbt-exam-readiness-target-list"><?php echo esc_html(!empty($preflight_target_kelas) ? implode(', ', $preflight_target_kelas) : '-'); ?></span>
+                            <span class="cbt-exam-readiness-summary-meta"><?php echo esc_html('Signature ' . ($preflight_target_kelas_signature !== '' ? $preflight_target_kelas_signature : '-')); ?></span>
                         </div>
                     </div>
 
@@ -2508,6 +2684,9 @@ final class CBT_Admin_Exams_Page
                             <span><strong>REST Warm:</strong> <?php echo esc_html($preflight_rest_warm_ready ? 'Siap' : 'Tidak siap'); ?></span>
                             <span><strong>Start Warm:</strong> <?php echo esc_html($preflight_start_warm_ready ? 'Siap' : 'Tidak siap'); ?></span>
                             <span><strong>Submission Context Warm:</strong> <?php echo esc_html($preflight_submission_context_warm_ready ? 'Siap' : 'Tidak siap'); ?></span>
+                            <span><strong>Target Source:</strong> <?php echo esc_html($preflight_target_source_label); ?></span>
+                            <span><strong>Target Snapshot:</strong> <?php echo esc_html($preflight_target_snapshot_created_at !== '' ? $preflight_target_snapshot_created_at : '-'); ?></span>
+                            <span><strong>Kelas Signature:</strong> <?php echo esc_html($preflight_target_kelas_signature !== '' ? $preflight_target_kelas_signature : '-'); ?></span>
                             <span><strong>Blocking One-Click:</strong> <?php echo esc_html($preflight_blocking_exam_id > 0 ? (($preflight_blocking_exam_title !== '' ? $preflight_blocking_exam_title : ('Exam #' . $preflight_blocking_exam_id)) . ' (#' . $preflight_blocking_exam_id . ')') : '-'); ?></span>
                             <span><strong>Blocking Auto-Warm:</strong> <?php echo esc_html($preflight_blocking_auto_warm_exam_id > 0 ? (($preflight_blocking_auto_warm_exam_title !== '' ? $preflight_blocking_auto_warm_exam_title : ('Exam #' . $preflight_blocking_auto_warm_exam_id)) . ' (#' . $preflight_blocking_auto_warm_exam_id . ')') : '-'); ?></span>
                             <span><strong>Global Runner Owner:</strong> <?php echo esc_html($preflight_global_runner_exam_id > 0 ? (($preflight_global_runner_exam_title !== '' ? $preflight_global_runner_exam_title : ('Exam #' . $preflight_global_runner_exam_id)) . ' (#' . $preflight_global_runner_exam_id . ')') : '-'); ?></span>

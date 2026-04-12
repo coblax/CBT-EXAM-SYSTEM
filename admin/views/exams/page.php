@@ -2047,6 +2047,35 @@
                     font-weight: 700;
                     line-height: 1.35;
                 }
+                .cbt-exam-warm-progress {
+                    display: grid;
+                    gap: 5px;
+                    margin-top: 4px;
+                }
+                .cbt-exam-warm-progress-track {
+                    position: relative;
+                    width: 100%;
+                    height: 10px;
+                    overflow: hidden;
+                    border: 1px solid #d8e3ef;
+                    border-radius: 999px;
+                    background: #eef5fb;
+                }
+                .cbt-exam-warm-progress-fill {
+                    display: block;
+                    width: 0;
+                    min-width: 0;
+                    height: 100%;
+                    border-radius: inherit;
+                    background: linear-gradient(90deg, #1d4ed8 0%, #0f766e 100%);
+                    transition: width 220ms ease;
+                }
+                .cbt-exam-warm-progress-meta {
+                    color: #334155;
+                    font-size: 11px;
+                    font-weight: 700;
+                    line-height: 1.35;
+                }
                 .cbt-exam-readiness-target-row {
                     display: grid;
                     gap: 12px;

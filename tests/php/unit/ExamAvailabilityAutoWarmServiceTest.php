@@ -137,6 +137,38 @@ final class ExamAvailabilityAutoWarmServiceTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_start_for_exam_reuses_preflight_target_snapshot_when_provided(): void
+    {
+        $result = CBT_Exam_Availability_Auto_Warm_Service::start_for_exam(
+            [
+                'id' => 77,
+                'title' => 'Ujian Matematika',
+                'status' => 'published',
+                'target_kelas' => 'XI-A',
+            ],
+            [
+                'exam_id' => 77,
+                'target_student_ids' => [72],
+                'target_source' => 'preflight_snapshot',
+                'source_preflight_state' => 'preflight-77-xyz',
+            ]
+        );
+
+        self::assertTrue($result['success']);
+        $state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
+        self::assertTrue($state['active']);
+        self::assertSame(77, $state['exam_id']);
+        self::assertSame([72], array_values($state['target_student_ids']));
+        self::assertSame(1, $state['target_student_count']);
+        self::assertSame('preflight_snapshot', $state['target_source']);
+        self::assertSame('preflight-77-xyz', $state['source_preflight_state']);
+        self::assertGreaterThan(0, count($this->storedAvailabilitySnapshotKeysFor(72)));
+        self::assertSame([], $this->storedAvailabilitySnapshotKeysFor(71));
+        self::assertCount(1, CBT_REST::$batchAvailabilityPayloadRequests);
+        self::assertSame([72], CBT_REST::$batchAvailabilityPayloadRequests[0]);
+    }
+
+    #[RunInSeparateProcess]
     public function test_start_for_different_exam_is_rejected_while_other_session_is_active(): void
     {
         CBT_Exam_Availability_Auto_Warm_Service::start_for_exam([

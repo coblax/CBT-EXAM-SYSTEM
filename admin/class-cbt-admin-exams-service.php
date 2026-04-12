@@ -1355,6 +1355,9 @@ final class CBT_Admin_Exams_Service
         $login_snapshot_health_context = $can_manage_exam_snapshots
             ? self::build_login_snapshot_health_context()
             : [];
+        $login_readiness_warm_queue_context = $can_manage_exam_snapshots && class_exists('CBT_Login_Readiness_Warm_Queue_Service')
+            ? CBT_Login_Readiness_Warm_Queue_Service::get_panel_context()
+            : [];
         $availability_rewarm_queue = self::build_compat_availability_rewarm_queue_context($can_manage_exam_snapshots);
         $student_snapshot_rows = (array) ($student_snapshot_table['items'] ?? []);
         $student_snapshot_total = max(0, (int) ($student_snapshot_table['total'] ?? 0));
@@ -3151,6 +3154,59 @@ final class CBT_Admin_Exams_Service
         $result = CBT_Student_Cohort_Index_Service::start_rebuild('admin');
         self::redirect_exam_snapshot_page($exam_list_state, [
             !empty($result['success']) ? 'cbt_msg' : 'cbt_err' => (string) ($result['message'] ?? 'Gagal memulai rebuild Student Cohort Index.'),
+        ]);
+    }
+
+    public static function handle_start_login_readiness_warm_queue(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_start_login_readiness_warm_queue');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if (!class_exists('CBT_Login_Readiness_Warm_Queue_Service')) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Warm Login Readiness queue belum tersedia di environment ini.',
+            ]);
+        }
+
+        $snapshot_filter_state = self::get_exam_snapshot_filter_state_from_request($_POST);
+        $student_snapshot_filter_state = self::get_student_snapshot_filter_state_from_request($_POST);
+        $filters = [
+            'kelas' => (string) ($student_snapshot_filter_state['kelas'] ?? ''),
+            'ruang' => (string) ($student_snapshot_filter_state['ruang'] ?? ''),
+        ];
+        $selected_exam_ids = array_values(array_filter(array_map('intval', (array) ($snapshot_filter_state['exam_ids'] ?? []))));
+        if (count($selected_exam_ids) === 1 && max(0, (int) $selected_exam_ids[0]) > 0) {
+            $filters['exam_id'] = max(0, (int) $selected_exam_ids[0]);
+        }
+
+        $result = CBT_Login_Readiness_Warm_Queue_Service::start($filters, 'admin');
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            !empty($result['success']) ? 'cbt_msg' : 'cbt_err' => (string) ($result['message'] ?? 'Gagal memulai Warm Login Readiness.'),
+        ]);
+    }
+
+    public static function handle_stop_login_readiness_warm_queue(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_stop_login_readiness_warm_queue');
+
+        $exam_list_state = self::get_exam_list_state_from_request($_POST);
+        if (!class_exists('CBT_Login_Readiness_Warm_Queue_Service')) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => 'Warm Login Readiness queue belum tersedia di environment ini.',
+            ]);
+        }
+
+        $result = CBT_Login_Readiness_Warm_Queue_Service::stop();
+        self::redirect_exam_snapshot_page($exam_list_state, [
+            !empty($result['success']) ? 'cbt_msg' : 'cbt_err' => (string) ($result['message'] ?? 'Gagal menghentikan Warm Login Readiness.'),
         ]);
     }
 

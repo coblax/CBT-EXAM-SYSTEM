@@ -86,6 +86,16 @@ final class CBT_Admin_Exams_Actions
         CBT_Admin_Exams_Service::handle_rebuild_student_cohort_index();
     }
 
+    public static function handle_start_login_readiness_warm_queue(): void
+    {
+        CBT_Admin_Exams_Service::handle_start_login_readiness_warm_queue();
+    }
+
+    public static function handle_stop_login_readiness_warm_queue(): void
+    {
+        CBT_Admin_Exams_Service::handle_stop_login_readiness_warm_queue();
+    }
+
     public static function handle_clean_bulk_exam_snapshots(): void
     {
         CBT_Admin_Exams_Service::handle_clean_bulk_exam_snapshots();

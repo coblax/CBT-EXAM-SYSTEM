@@ -1356,6 +1356,51 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertStringContainsString('cbt_msg=Berhasil+membersihkan+login+snapshot+untuk+1+siswa.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
+    #[RunInSeparateProcess]
+    public function test_handle_start_login_readiness_warm_queue_redirects_back_with_success_message(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+
+        $_POST = [
+            'cbt_exam_snapshot_tab' => 'preflight',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_start_login_readiness_warm_queue']);
+
+        $state = CBT_Login_Readiness_Warm_Queue_Service::get_state();
+        self::assertTrue($state['active']);
+        self::assertSame('active', $state['status']);
+        self::assertSame([71], array_values($state['target_user_ids']));
+        self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Warm+Login+Readiness+dimulai.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_stop_login_readiness_warm_queue_redirects_back_with_success_message(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        CBT_Login_Readiness_Warm_Queue_Service::start([
+            'kelas' => 'XI-A',
+            'ruang' => 'R1',
+        ], 'unit_test');
+
+        $_POST = [
+            'cbt_exam_snapshot_tab' => 'preflight',
+            'cbt_student_snapshot_kelas' => 'XI-A',
+            'cbt_student_snapshot_ruang' => 'R1',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_stop_login_readiness_warm_queue']);
+
+        $state = CBT_Login_Readiness_Warm_Queue_Service::get_state();
+        self::assertFalse($state['active']);
+        self::assertSame('stopped', $state['status']);
+        self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Queue+Warm+Login+Readiness+dihentikan+manual.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
     private function bootstrapSnapshotActionScaffold(): void
     {
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
@@ -1368,6 +1413,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-question-submission-context-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-auth-snapshot-cache.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-readiness-warm-queue-service.php';
 
         if (!class_exists('CBT_REST')) {
             eval(<<<'PHP'
@@ -1912,6 +1958,25 @@ class AdminExamsSnapshotActionsFakeWpdb
         }
 
         return [];
+    }
+
+    /**
+     * @param string $prepared
+     * @return array<string,mixed>|null
+     */
+    public function get_row($prepared, $output = null): ?array
+    {
+        $query = (string) $prepared;
+
+        if (strpos($query, 'SELECT id, title, status, target_kelas FROM wp_cbt_exams WHERE id = 77') !== false) {
+            return ['id' => 77, 'title' => 'Ujian Matematika', 'status' => 'published', 'target_kelas' => 'XI-A'];
+        }
+
+        if (strpos($query, 'SELECT id, title, status, target_kelas FROM wp_cbt_exams WHERE id = 54') !== false) {
+            return ['id' => 54, 'title' => 'Ujian Biologi', 'status' => 'published', 'target_kelas' => 'XI-B'];
+        }
+
+        return null;
     }
 
     /**

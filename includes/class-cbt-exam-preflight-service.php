@@ -138,7 +138,7 @@ final class CBT_Exam_Preflight_Service
 
             $eligibility = self::evaluate_exam_eligibility($exam_row);
             if (empty($eligibility['can_start'])) {
-                $failed_state = self::build_failure_state($exam_row, (string) ($eligibility['message'] ?? 'Exam belum memenuhi syarat one-click pra ujian.'));
+                $failed_state = self::build_failure_state($exam_row, (string) ($eligibility['message'] ?? 'Exam belum memenuhi syarat one-click pra ujian.'), $eligibility);
                 if ($exam_id > 0) {
                     $jobs[$exam_id] = $failed_state;
                     self::save_jobs_state($jobs);
@@ -559,13 +559,21 @@ final class CBT_Exam_Preflight_Service
         $is_same_exam_state = $exam_id > 0 && (int) ($state['exam_id'] ?? 0) === $exam_id;
         $active_runner_exam_id = (int) ($runner['active_exam_id'] ?? 0);
         $has_active_runner_other_exam = $active_runner_exam_id > 0 && $active_runner_exam_id !== $exam_id;
-        $target_kelas = CBT_Exam_Availability_Auto_Warm_Service::get_target_kelas_for_exam($exam_row);
-        $resolved_target_student_count = method_exists('CBT_Exam_Availability_Auto_Warm_Service', 'count_target_students_for_exam')
-            ? CBT_Exam_Availability_Auto_Warm_Service::count_target_students_for_exam($exam_row, false)
-            : count(CBT_Exam_Availability_Auto_Warm_Service::get_target_student_ids_for_exam($exam_row, false));
+        $target_snapshot = CBT_Exam_Availability_Auto_Warm_Service::resolve_target_snapshot_for_exam($exam_row, false, false);
+        $target_kelas = array_values(array_filter(array_map('strval', (array) ($target_snapshot['target_kelas'] ?? CBT_Exam_Availability_Auto_Warm_Service::get_target_kelas_for_exam($exam_row)))));
+        $resolved_target_student_count = max(0, (int) ($target_snapshot['target_student_count'] ?? 0));
         $target_student_count = $is_same_exam_state
             ? max(0, (int) ($state['target_student_count'] ?? $resolved_target_student_count))
             : $resolved_target_student_count;
+        $target_source = $is_same_exam_state
+            ? sanitize_key((string) ($state['target_source'] ?? ''))
+            : sanitize_key((string) ($target_snapshot['source'] ?? ''));
+        $target_snapshot_created_at = $is_same_exam_state
+            ? sanitize_text_field((string) ($state['target_snapshot_created_at'] ?? ''))
+            : '';
+        $target_kelas_signature = $is_same_exam_state
+            ? sanitize_text_field((string) ($state['target_kelas_signature'] ?? ''))
+            : sanitize_text_field((string) ($target_snapshot['target_kelas_signature'] ?? ''));
         $question_cache_ready = class_exists('CBT_Exam_Question_Delivery_Cache')
             && method_exists('CBT_Exam_Question_Delivery_Cache', 'is_available')
             && CBT_Exam_Question_Delivery_Cache::is_available();
@@ -694,6 +702,12 @@ final class CBT_Exam_Preflight_Service
             'exam_id' => $exam_id,
             'exam_title' => $exam_title,
             'target_kelas' => $target_kelas,
+            'target_source' => $target_source,
+            'target_source_label' => $target_source === 'cohort_index'
+                ? 'Cohort Index'
+                : ($target_source === 'canonical_fallback' ? 'Canonical Fallback' : ($target_source === 'index_building' ? 'Index Building' : '-')),
+            'target_snapshot_created_at' => $target_snapshot_created_at,
+            'target_kelas_signature' => $target_kelas_signature,
             'target_student_count' => $target_student_count,
             'profile_success_count' => $profile_success_count,
             'profile_failure_count' => $profile_failure_count,
@@ -802,8 +816,11 @@ final class CBT_Exam_Preflight_Service
             'exam_title' => sanitize_text_field((string) ($state['exam_title'] ?? '')),
             'exam_status' => sanitize_key((string) ($state['exam_status'] ?? '')),
             'target_kelas_csv' => sanitize_text_field((string) ($state['target_kelas_csv'] ?? '')),
+            'target_kelas_signature' => sanitize_text_field((string) ($state['target_kelas_signature'] ?? '')),
             'target_student_ids' => $target_student_ids,
             'target_student_count' => max(0, (int) ($state['target_student_count'] ?? count($target_student_ids))),
+            'target_source' => sanitize_key((string) ($state['target_source'] ?? '')),
+            'target_snapshot_created_at' => sanitize_text_field((string) ($state['target_snapshot_created_at'] ?? '')),
             'profile_cursor' => max(0, (int) ($state['profile_cursor'] ?? 0)),
             'profile_success_count' => max(0, (int) ($state['profile_success_count'] ?? 0)),
             'profile_failure_count' => max(0, (int) ($state['profile_failure_count'] ?? 0)),
@@ -860,7 +877,15 @@ final class CBT_Exam_Preflight_Service
 
     /**
      * @param array<string,mixed> $exam_row
-     * @return array{can_start:bool,message:string,target_student_ids:int[]}
+     * @return array{
+     *   can_start:bool,
+     *   message:string,
+     *   target_student_ids:int[],
+     *   target_student_count:int,
+     *   target_source:string,
+     *   target_snapshot_created_at:string,
+     *   target_kelas_signature:string
+     * }
      */
     private static function evaluate_exam_eligibility(array $exam_row): array
     {
@@ -870,6 +895,10 @@ final class CBT_Exam_Preflight_Service
                 'can_start' => false,
                 'message' => 'Exam belum dipilih untuk one-click pra ujian.',
                 'target_student_ids' => [],
+                'target_student_count' => 0,
+                'target_source' => '',
+                'target_snapshot_created_at' => '',
+                'target_kelas_signature' => '',
             ];
         }
 
@@ -878,6 +907,10 @@ final class CBT_Exam_Preflight_Service
                 'can_start' => false,
                 'message' => 'Helper warm snapshot soal belum tersedia.',
                 'target_student_ids' => [],
+                'target_student_count' => 0,
+                'target_source' => '',
+                'target_snapshot_created_at' => '',
+                'target_kelas_signature' => '',
             ];
         }
 
@@ -886,6 +919,10 @@ final class CBT_Exam_Preflight_Service
                 'can_start' => false,
                 'message' => 'Helper warm start snapshot belum tersedia.',
                 'target_student_ids' => [],
+                'target_student_count' => 0,
+                'target_source' => '',
+                'target_snapshot_created_at' => '',
+                'target_kelas_signature' => '',
             ];
         }
 
@@ -894,6 +931,10 @@ final class CBT_Exam_Preflight_Service
                 'can_start' => false,
                 'message' => 'Redis snapshot soal belum siap di environment ini.',
                 'target_student_ids' => [],
+                'target_student_count' => 0,
+                'target_source' => '',
+                'target_snapshot_created_at' => '',
+                'target_kelas_signature' => '',
             ];
         }
 
@@ -902,6 +943,10 @@ final class CBT_Exam_Preflight_Service
                 'can_start' => false,
                 'message' => 'Redis start snapshot belum siap di environment ini.',
                 'target_student_ids' => [],
+                'target_student_count' => 0,
+                'target_source' => '',
+                'target_snapshot_created_at' => '',
+                'target_kelas_signature' => '',
             ];
         }
 
@@ -910,6 +955,10 @@ final class CBT_Exam_Preflight_Service
                 'can_start' => false,
                 'message' => 'Redis availability belum siap di environment ini.',
                 'target_student_ids' => [],
+                'target_student_count' => 0,
+                'target_source' => '',
+                'target_snapshot_created_at' => '',
+                'target_kelas_signature' => '',
             ];
         }
 
@@ -918,6 +967,10 @@ final class CBT_Exam_Preflight_Service
                 'can_start' => false,
                 'message' => 'Redis snapshot profil belum siap di environment ini.',
                 'target_student_ids' => [],
+                'target_student_count' => 0,
+                'target_source' => '',
+                'target_snapshot_created_at' => '',
+                'target_kelas_signature' => '',
             ];
         }
 
@@ -927,24 +980,37 @@ final class CBT_Exam_Preflight_Service
                 'can_start' => false,
                 'message' => 'One-click pra ujian hanya tersedia untuk exam berstatus published.',
                 'target_student_ids' => [],
+                'target_student_count' => 0,
+                'target_source' => '',
+                'target_snapshot_created_at' => '',
+                'target_kelas_signature' => '',
             ];
         }
 
-        $target_kelas = CBT_Exam_Availability_Auto_Warm_Service::get_target_kelas_for_exam($exam_row);
+        $target_snapshot = CBT_Exam_Availability_Auto_Warm_Service::resolve_target_snapshot_for_exam($exam_row, true, true);
+        $target_kelas = (array) ($target_snapshot['target_kelas'] ?? CBT_Exam_Availability_Auto_Warm_Service::get_target_kelas_for_exam($exam_row));
         if (empty($target_kelas)) {
             return [
                 'can_start' => false,
                 'message' => 'Target kelas pada exam ini belum diatur.',
                 'target_student_ids' => [],
+                'target_student_count' => 0,
+                'target_source' => '',
+                'target_snapshot_created_at' => '',
+                'target_kelas_signature' => '',
             ];
         }
 
-        $target_student_ids = CBT_Exam_Availability_Auto_Warm_Service::get_target_student_ids_for_exam($exam_row);
+        $target_student_ids = array_values(array_filter(array_map('absint', (array) ($target_snapshot['target_student_ids'] ?? []))));
         if (empty($target_student_ids)) {
             return [
                 'can_start' => false,
-                'message' => 'Belum ada siswa target yang cocok dengan target_kelas exam ini.',
+                'message' => (string) ($target_snapshot['message'] ?? 'Belum ada siswa target yang cocok dengan target_kelas exam ini.'),
                 'target_student_ids' => [],
+                'target_student_count' => 0,
+                'target_source' => sanitize_key((string) ($target_snapshot['source'] ?? '')),
+                'target_snapshot_created_at' => '',
+                'target_kelas_signature' => sanitize_text_field((string) ($target_snapshot['target_kelas_signature'] ?? '')),
             ];
         }
 
@@ -952,6 +1018,10 @@ final class CBT_Exam_Preflight_Service
             'can_start' => true,
             'message' => 'Exam siap untuk one-click pra ujian.',
             'target_student_ids' => $target_student_ids,
+            'target_student_count' => count($target_student_ids),
+            'target_source' => sanitize_key((string) ($target_snapshot['source'] ?? '')),
+            'target_snapshot_created_at' => current_time('mysql'),
+            'target_kelas_signature' => sanitize_text_field((string) ($target_snapshot['target_kelas_signature'] ?? '')),
         ];
     }
 
@@ -1153,7 +1223,7 @@ final class CBT_Exam_Preflight_Service
     private static function ensure_auto_warm_started(array $state, array $exam_row): array
     {
         $state = self::build_state($state);
-        $result = CBT_Exam_Availability_Auto_Warm_Service::start_for_exam($exam_row);
+        $result = CBT_Exam_Availability_Auto_Warm_Service::start_for_exam($exam_row, self::build_auto_warm_target_snapshot($state));
         if (!empty($result['success'])) {
             $state['auto_warm_started'] = true;
             $state['stage_auto_warm'] = 'ready';
@@ -1367,12 +1437,10 @@ final class CBT_Exam_Preflight_Service
      * @param array<string,mixed> $exam_row
      * @return array<string,mixed>
      */
-    private static function build_failure_state(array $exam_row, string $message): array
+    private static function build_failure_state(array $exam_row, string $message, array $eligibility = []): array
     {
         $exam_id = (int) ($exam_row['id'] ?? 0);
-        $target_student_ids = $exam_id > 0
-            ? CBT_Exam_Availability_Auto_Warm_Service::get_target_student_ids_for_exam($exam_row)
-            : [];
+        $target_student_ids = array_values(array_filter(array_map('absint', (array) ($eligibility['target_student_ids'] ?? []))));
 
         return self::build_state([
             'active' => false,
@@ -1382,8 +1450,11 @@ final class CBT_Exam_Preflight_Service
             'exam_title' => self::resolve_exam_title($exam_row),
             'exam_status' => sanitize_key((string) ($exam_row['status'] ?? '')),
             'target_kelas_csv' => sanitize_text_field((string) ($exam_row['target_kelas'] ?? '')),
+            'target_kelas_signature' => sanitize_text_field((string) ($eligibility['target_kelas_signature'] ?? '')),
             'target_student_ids' => $target_student_ids,
-            'target_student_count' => count($target_student_ids),
+            'target_student_count' => max(0, (int) ($eligibility['target_student_count'] ?? count($target_student_ids))),
+            'target_source' => sanitize_key((string) ($eligibility['target_source'] ?? '')),
+            'target_snapshot_created_at' => sanitize_text_field((string) ($eligibility['target_snapshot_created_at'] ?? '')),
             'profile_cursor' => 0,
             'profile_success_count' => 0,
             'profile_failure_count' => 0,
@@ -1427,6 +1498,22 @@ final class CBT_Exam_Preflight_Service
             'title' => (string) ($state['exam_title'] ?? ''),
             'status' => (string) ($state['exam_status'] ?? ''),
             'target_kelas' => (string) ($state['target_kelas_csv'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private static function build_auto_warm_target_snapshot(array $state): array
+    {
+        $state = self::build_state($state);
+
+        return [
+            'exam_id' => (int) ($state['exam_id'] ?? 0),
+            'target_student_ids' => array_values(array_filter(array_map('absint', (array) ($state['target_student_ids'] ?? [])))),
+            'target_source' => sanitize_key((string) ($state['target_source'] ?? 'preflight_snapshot')),
+            'source_preflight_state' => sanitize_text_field((string) ($state['session_id'] ?? '')),
         ];
     }
 
@@ -1647,7 +1734,15 @@ final class CBT_Exam_Preflight_Service
 
     /**
      * @param array<string,mixed> $exam_row
-     * @param array{can_start:bool,message:string,target_student_ids:int[]} $eligibility
+     * @param array{
+     *   can_start:bool,
+     *   message:string,
+     *   target_student_ids:int[],
+     *   target_student_count:int,
+     *   target_source:string,
+     *   target_snapshot_created_at:string,
+     *   target_kelas_signature:string
+     * } $eligibility
      * @param array<string,mixed>|null $existing_job
      * @return array<string,mixed>
      */
@@ -1684,7 +1779,15 @@ final class CBT_Exam_Preflight_Service
 
     /**
      * @param array<string,mixed> $exam_row
-     * @param array{can_start:bool,message:string,target_student_ids:int[]} $eligibility
+     * @param array{
+     *   can_start:bool,
+     *   message:string,
+     *   target_student_ids:int[],
+     *   target_student_count:int,
+     *   target_source:string,
+     *   target_snapshot_created_at:string,
+     *   target_kelas_signature:string
+     * } $eligibility
      * @return array<string,mixed>
      */
     private static function initialize_job_state(array $exam_row, array $eligibility): array
@@ -1701,8 +1804,11 @@ final class CBT_Exam_Preflight_Service
             'exam_title' => self::resolve_exam_title($exam_row),
             'exam_status' => sanitize_key((string) ($exam_row['status'] ?? '')),
             'target_kelas_csv' => sanitize_text_field((string) ($exam_row['target_kelas'] ?? '')),
+            'target_kelas_signature' => sanitize_text_field((string) ($eligibility['target_kelas_signature'] ?? '')),
             'target_student_ids' => $target_student_ids,
-            'target_student_count' => count($target_student_ids),
+            'target_student_count' => max(0, (int) ($eligibility['target_student_count'] ?? count($target_student_ids))),
+            'target_source' => sanitize_key((string) ($eligibility['target_source'] ?? '')),
+            'target_snapshot_created_at' => sanitize_text_field((string) ($eligibility['target_snapshot_created_at'] ?? $now)),
             'profile_cursor' => 0,
             'profile_success_count' => 0,
             'profile_failure_count' => 0,
@@ -2465,7 +2571,7 @@ final class CBT_Exam_Preflight_Service
             return self::build_state($job);
         }
 
-        $result = CBT_Exam_Availability_Auto_Warm_Service::start_for_exam($exam_row);
+        $result = CBT_Exam_Availability_Auto_Warm_Service::start_for_exam($exam_row, self::build_auto_warm_target_snapshot($job));
         if (empty($result['success'])) {
             $job['availability_failure_count'] = max(0, (int) ($job['availability_failure_count'] ?? 0)) + max(0, (int) ($job['availability_pending_count'] ?? 0));
             $job['availability_pending_count'] = 0;

@@ -27,6 +27,9 @@ class CBT_Deactivator
         if (class_exists('CBT_Security_Event_Ingest')) {
             CBT_Security_Event_Ingest::deactivate();
         }
+        if (class_exists('CBT_Login_Readiness_Warm_Queue_Service')) {
+            CBT_Login_Readiness_Warm_Queue_Service::deactivate();
+        }
         // Keep data and roles on deactivate to avoid accidental data loss.
     }
 }

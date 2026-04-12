@@ -78,6 +78,9 @@ final class ExamPreflightServiceTest extends TestCase
         self::assertSame('active', $state['stage_login_snapshot']);
         self::assertSame('active', $state['stage_auto_warm']);
         self::assertSame(452, $state['target_student_count']);
+        self::assertSame('canonical_fallback', $state['target_source']);
+        self::assertNotSame('', (string) $state['target_snapshot_created_at']);
+        self::assertSame('XI-A', (string) $state['target_kelas_signature']);
         self::assertSame(1, $state['submission_context_question_count']);
         self::assertSame(1, $state['submission_context_ready_count']);
         self::assertSame(0, $state['submission_context_missing_count']);
@@ -97,6 +100,9 @@ final class ExamPreflightServiceTest extends TestCase
         $auto_warm_state = CBT_Exam_Availability_Auto_Warm_Service::get_state();
         self::assertTrue($auto_warm_state['active']);
         self::assertSame(77, $auto_warm_state['exam_id']);
+        self::assertSame('canonical_fallback', $auto_warm_state['target_source']);
+        self::assertSame((string) $state['session_id'], (string) $auto_warm_state['source_preflight_state']);
+        self::assertSame((array) $state['target_student_ids'], (array) $auto_warm_state['target_student_ids']);
     }
 
     #[RunInSeparateProcess]
@@ -145,6 +151,7 @@ final class ExamPreflightServiceTest extends TestCase
         self::assertSame('completed', $state['status']);
         self::assertTrue($state['auto_warm_started']);
         self::assertSame(1, $state['target_student_count']);
+        self::assertSame('canonical_fallback', $state['target_source']);
         self::assertSame(1, $state['profile_success_count']);
         self::assertSame(1, $state['login_snapshot_success_count']);
     }

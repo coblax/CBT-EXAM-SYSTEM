@@ -35,6 +35,9 @@ class CBT_Activator
         if (class_exists('CBT_Student_Cohort_Index_Service')) {
             CBT_Student_Cohort_Index_Service::activate();
         }
+        if (class_exists('CBT_Login_Readiness_Warm_Queue_Service')) {
+            CBT_Login_Readiness_Warm_Queue_Service::activate();
+        }
     }
 
     public static function maybe_upgrade(): void

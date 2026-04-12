@@ -17,6 +17,7 @@ require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-question-contrac
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-question-submission-context-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-auth-snapshot-cache.php';
+require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-readiness-warm-queue-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-login-snapshot-metrics-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-start-attempt-metrics-service.php';
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-entry-flow-metrics-service.php';
@@ -211,6 +212,9 @@ final class AdminExamsSnapshotContextTest extends TestCase
         self::assertNotEmpty($context['login_snapshot_health_context']);
         self::assertSame('66.7%', (string) $context['login_snapshot_health_context']['hit_rate_label']);
         self::assertSame(2, (int) $context['login_snapshot_health_context']['freshness_window_jobs']);
+        self::assertNotEmpty($context['login_readiness_warm_queue_context']);
+        self::assertSame('IDLE', (string) $context['login_readiness_warm_queue_context']['status_label']);
+        self::assertSame(0, (int) $context['login_readiness_warm_queue_context']['target_count']);
         self::assertNotEmpty($context['adaptive_load_context']);
         self::assertSame('NORMAL', (string) $context['adaptive_load_context']['level_label']);
         self::assertSame(10, (int) $context['adaptive_load_context']['admin_snapshot_refresh_seconds']);

@@ -218,7 +218,7 @@ final class CBT_Exam_Availability_Auto_Warm_Service
     /**
      * @return array<string,mixed>
      */
-    public static function start_for_exam(array $exam_row): array
+    public static function start_for_exam(array $exam_row, array $target_snapshot = []): array
     {
         if (!CBT_Cache::acquire_lock(self::LOCK_KEY, self::LOCK_TTL, [
             'source' => 'start',
@@ -246,7 +246,7 @@ final class CBT_Exam_Availability_Auto_Warm_Service
                 ];
             }
 
-            $eligibility = self::evaluate_exam_eligibility($exam_row);
+            $eligibility = self::evaluate_exam_eligibility($exam_row, $target_snapshot);
             if (empty($eligibility['can_start'])) {
                 return [
                     'success' => false,
@@ -259,6 +259,8 @@ final class CBT_Exam_Availability_Auto_Warm_Service
             $stop_after_ts = (int) current_time('timestamp') + self::WINDOW_SECONDS;
             $stop_after_at = wp_date('Y-m-d H:i:s', $stop_after_ts, wp_timezone());
             $target_student_ids = array_values(array_map('intval', (array) ($eligibility['target_student_ids'] ?? [])));
+            $target_source = sanitize_key((string) ($eligibility['target_source'] ?? ''));
+            $source_preflight_state = sanitize_text_field((string) ($eligibility['source_preflight_state'] ?? ''));
             $exam_title = trim((string) ($exam_row['title'] ?? '')) !== ''
                 ? (string) $exam_row['title']
                 : ('Exam #' . $exam_id);
@@ -266,6 +268,8 @@ final class CBT_Exam_Availability_Auto_Warm_Service
             if ($is_same_exam_state) {
                 $state['target_student_ids'] = $target_student_ids;
                 $state['target_student_count'] = count($target_student_ids);
+                $state['target_source'] = $target_source;
+                $state['source_preflight_state'] = $source_preflight_state;
                 $state['exam_title'] = $exam_title;
                 $state['active'] = true;
                 $state['status'] = self::STATUS_ACTIVE;
@@ -283,6 +287,8 @@ final class CBT_Exam_Availability_Auto_Warm_Service
                     'exam_title' => $exam_title,
                     'target_student_ids' => $target_student_ids,
                     'target_student_count' => count($target_student_ids),
+                    'target_source' => $target_source,
+                    'source_preflight_state' => $source_preflight_state,
                     'cursor' => 0,
                     'prepared_student_ids' => [],
                     'prepared_count' => 0,
@@ -587,6 +593,27 @@ final class CBT_Exam_Availability_Auto_Warm_Service
         return self::count_target_student_ids($exam_row, $allow_expensive_fallback);
     }
 
+    /**
+     * @param array<string,mixed> $exam_row
+     * @return array{
+     *   can_resolve:bool,
+     *   blocked:bool,
+     *   source:string,
+     *   message:string,
+     *   target_student_ids:int[],
+     *   target_student_count:int,
+     *   target_kelas:string[],
+     *   target_kelas_signature:string
+     * }
+     */
+    public static function resolve_target_snapshot_for_exam(
+        array $exam_row,
+        bool $allow_expensive_fallback = true,
+        bool $block_on_index_building = false
+    ): array {
+        return self::build_target_snapshot_resolution($exam_row, $allow_expensive_fallback, $block_on_index_building);
+    }
+
     public static function is_active_for_student(int $user_id): bool
     {
         $user_id = absint($user_id);
@@ -638,6 +665,8 @@ final class CBT_Exam_Availability_Auto_Warm_Service
             'exam_title' => sanitize_text_field((string) ($state['exam_title'] ?? '')),
             'target_student_ids' => $target_student_ids,
             'target_student_count' => max(0, (int) ($state['target_student_count'] ?? count($target_student_ids))),
+            'target_source' => sanitize_key((string) ($state['target_source'] ?? '')),
+            'source_preflight_state' => sanitize_text_field((string) ($state['source_preflight_state'] ?? '')),
             'cursor' => max(0, (int) ($state['cursor'] ?? 0)),
             'prepared_student_ids' => $prepared_student_ids,
             'prepared_count' => max(0, (int) ($state['prepared_count'] ?? count($prepared_student_ids))),
@@ -1027,9 +1056,10 @@ final class CBT_Exam_Availability_Auto_Warm_Service
     }
 
     /**
-     * @return array{can_start:bool,message:string,target_student_ids:int[]}
+     * @param array<string,mixed> $target_snapshot
+     * @return array{can_start:bool,message:string,target_student_ids:int[],target_source:string,source_preflight_state:string}
      */
-    private static function evaluate_exam_eligibility(array $exam_row): array
+    private static function evaluate_exam_eligibility(array $exam_row, array $target_snapshot = []): array
     {
         $exam_id = (int) ($exam_row['id'] ?? 0);
         if ($exam_id <= 0) {
@@ -1037,6 +1067,8 @@ final class CBT_Exam_Availability_Auto_Warm_Service
                 'can_start' => false,
                 'message' => 'Exam belum dipilih untuk auto-warm availability.',
                 'target_student_ids' => [],
+                'target_source' => '',
+                'source_preflight_state' => '',
             ];
         }
 
@@ -1045,6 +1077,8 @@ final class CBT_Exam_Availability_Auto_Warm_Service
                 'can_start' => false,
                 'message' => 'Redis availability belum siap di environment ini.',
                 'target_student_ids' => [],
+                'target_source' => '',
+                'source_preflight_state' => '',
             ];
         }
 
@@ -1054,6 +1088,8 @@ final class CBT_Exam_Availability_Auto_Warm_Service
                 'can_start' => false,
                 'message' => 'Auto-warm availability hanya tersedia untuk exam berstatus published.',
                 'target_student_ids' => [],
+                'target_source' => '',
+                'source_preflight_state' => '',
             ];
         }
 
@@ -1063,15 +1099,31 @@ final class CBT_Exam_Availability_Auto_Warm_Service
                 'can_start' => false,
                 'message' => 'Auto-warm availability membutuhkan target kelas pada exam ini.',
                 'target_student_ids' => [],
+                'target_source' => '',
+                'source_preflight_state' => '',
             ];
         }
 
-        $target_student_ids = self::resolve_target_student_ids($exam_row);
+        $normalized_snapshot = self::normalize_external_target_snapshot($target_snapshot, $exam_id);
+        if (!empty($normalized_snapshot['target_student_ids'])) {
+            return [
+                'can_start' => true,
+                'message' => 'Exam siap untuk auto-warm availability.',
+                'target_student_ids' => $normalized_snapshot['target_student_ids'],
+                'target_source' => (string) ($normalized_snapshot['target_source'] ?? 'preflight_snapshot'),
+                'source_preflight_state' => (string) ($normalized_snapshot['source_preflight_state'] ?? ''),
+            ];
+        }
+
+        $target_resolution = self::build_target_snapshot_resolution($exam_row, true, false);
+        $target_student_ids = array_values(array_filter(array_map('absint', (array) ($target_resolution['target_student_ids'] ?? []))));
         if (empty($target_student_ids)) {
             return [
                 'can_start' => false,
-                'message' => 'Belum ada siswa target yang cocok dengan target_kelas exam ini.',
+                'message' => (string) ($target_resolution['message'] ?? 'Belum ada siswa target yang cocok dengan target_kelas exam ini.'),
                 'target_student_ids' => [],
+                'target_source' => sanitize_key((string) ($target_resolution['source'] ?? '')),
+                'source_preflight_state' => '',
             ];
         }
 
@@ -1079,7 +1131,128 @@ final class CBT_Exam_Availability_Auto_Warm_Service
             'can_start' => true,
             'message' => 'Exam siap untuk auto-warm availability.',
             'target_student_ids' => $target_student_ids,
+            'target_source' => sanitize_key((string) ($target_resolution['source'] ?? '')),
+            'source_preflight_state' => '',
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $exam_row
+     * @return array{
+     *   can_resolve:bool,
+     *   blocked:bool,
+     *   source:string,
+     *   message:string,
+     *   target_student_ids:int[],
+     *   target_student_count:int,
+     *   target_kelas:string[],
+     *   target_kelas_signature:string
+     * }
+     */
+    private static function build_target_snapshot_resolution(
+        array $exam_row,
+        bool $allow_expensive_fallback = true,
+        bool $block_on_index_building = false
+    ): array {
+        $target_kelas = self::resolve_target_kelas_values($exam_row);
+        $base = [
+            'can_resolve' => false,
+            'blocked' => false,
+            'source' => '',
+            'message' => '',
+            'target_student_ids' => [],
+            'target_student_count' => 0,
+            'target_kelas' => $target_kelas,
+            'target_kelas_signature' => self::build_target_kelas_signature($target_kelas),
+        ];
+
+        if (empty($target_kelas)) {
+            $base['message'] = 'Target kelas pada exam ini belum diatur.';
+            return $base;
+        }
+
+        if (class_exists('CBT_Student_Cohort_Index_Service') && method_exists('CBT_Student_Cohort_Index_Service', 'get_health_summary')) {
+            $cohort_summary = CBT_Student_Cohort_Index_Service::get_health_summary();
+            if (!empty($cohort_summary['available'])) {
+                if (!empty($cohort_summary['ready'])) {
+                    $target_student_ids = CBT_Student_Cohort_Index_Service::resolve_target_student_ids_for_exam($exam_row);
+                    $target_student_ids = array_values(array_unique(array_filter(array_map('absint', $target_student_ids))));
+                    sort($target_student_ids, SORT_NUMERIC);
+
+                    return array_merge($base, [
+                        'can_resolve' => !empty($target_student_ids),
+                        'source' => 'cohort_index',
+                        'message' => !empty($target_student_ids)
+                            ? 'Target siswa exam diambil dari Student Cohort Index.'
+                            : 'Belum ada siswa target yang cocok dengan target_kelas exam ini.',
+                        'target_student_ids' => $target_student_ids,
+                        'target_student_count' => count($target_student_ids),
+                    ]);
+                }
+
+                if ($block_on_index_building) {
+                    return array_merge($base, [
+                        'blocked' => true,
+                        'source' => 'index_building',
+                        'message' => 'Student Cohort Index masih building. Tunggu sampai ready sebelum menjalankan batch massal.',
+                    ]);
+                }
+
+                if (!$allow_expensive_fallback) {
+                    return array_merge($base, [
+                        'source' => 'index_building',
+                        'message' => 'Student Cohort Index masih building; target siswa belum dihitung detail agar halaman snapshot tetap cepat.',
+                    ]);
+                }
+            }
+        }
+
+        $target_student_ids = self::resolve_target_student_ids($exam_row, $allow_expensive_fallback);
+        $target_student_ids = array_values(array_unique(array_filter(array_map('absint', $target_student_ids))));
+        sort($target_student_ids, SORT_NUMERIC);
+
+        return array_merge($base, [
+            'can_resolve' => !empty($target_student_ids),
+            'source' => 'canonical_fallback',
+            'message' => !empty($target_student_ids)
+                ? 'Target siswa exam diambil dari fallback canonical user/meta.'
+                : 'Belum ada siswa target yang cocok dengan target_kelas exam ini.',
+            'target_student_ids' => $target_student_ids,
+            'target_student_count' => count($target_student_ids),
+        ]);
+    }
+
+    /**
+     * @param array<string,mixed> $target_snapshot
+     * @return array{target_student_ids:int[],target_source:string,source_preflight_state:string}
+     */
+    private static function normalize_external_target_snapshot(array $target_snapshot, int $exam_id): array
+    {
+        $snapshot_exam_id = absint($target_snapshot['exam_id'] ?? $exam_id);
+        if ($snapshot_exam_id > 0 && $exam_id > 0 && $snapshot_exam_id !== $exam_id) {
+            return [
+                'target_student_ids' => [],
+                'target_source' => '',
+                'source_preflight_state' => '',
+            ];
+        }
+
+        return [
+            'target_student_ids' => array_values(array_unique(array_filter(array_map('absint', (array) ($target_snapshot['target_student_ids'] ?? []))))),
+            'target_source' => sanitize_key((string) ($target_snapshot['target_source'] ?? 'preflight_snapshot')),
+            'source_preflight_state' => sanitize_text_field((string) ($target_snapshot['source_preflight_state'] ?? '')),
+        ];
+    }
+
+    /**
+     * @param string[] $target_kelas
+     */
+    private static function build_target_kelas_signature(array $target_kelas): string
+    {
+        $target_kelas = array_values(array_filter(array_map('strval', $target_kelas)));
+        sort($target_kelas, SORT_NATURAL);
+
+        return implode('|', $target_kelas);
     }
 
     /**
