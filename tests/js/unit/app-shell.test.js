@@ -71,10 +71,10 @@ function createFixture(overrides = {}) {
         getConfiguredSchoolName: function () {
             return 'SMK';
         },
-        getCurrentUserName: function () {
+        getCurrentUserName: overrides.getCurrentUserName || function () {
             return 'User';
         },
-        getCurrentUserPhoto: function () {
+        getCurrentUserPhoto: overrides.getCurrentUserPhoto || function () {
             return '';
         },
         getExamProgressSummary: function () {
@@ -87,7 +87,7 @@ function createFixture(overrides = {}) {
         getSelectedExam: function () {
             return null;
         },
-        getUserInitial: function () {
+        getUserInitial: overrides.getUserInitial || function () {
             return 'U';
         },
         renderAlert: function () {
@@ -141,6 +141,33 @@ describe('createAppShellManager rich zoom modal', function () {
         expect(html).not.toContain('data-action="rich-zoom-prev"');
         expect(html).not.toContain('cbt-rich-zoom-scale-badge');
         expect(html).toContain('Gunakan Fit, 100%, atau tombol zoom lalu geser tabel untuk membaca kolom yang lebar.');
+    });
+
+    it('renders profile photo markup with fallback for stale image domains', function () {
+        var manager = createFixture({
+            state: {
+                userPhotoModalOpen: true,
+                user: {
+                    agama: 'Islam',
+                    kode_kelas: 'XII IPA 1',
+                    kode_ruang: 'R-3'
+                }
+            },
+            getCurrentUserPhoto: function () {
+                return 'https://exam.example.test/wp-content/uploads/cbt-user-import-photos/siswa-a.jpg';
+            },
+            getCurrentUserName: function () {
+                return 'Ayu';
+            },
+            getUserInitial: function () {
+                return 'A';
+            }
+        });
+
+        expect(manager.renderTopbar()).toContain('data-cbt-profile-photo="user-chip"');
+        expect(manager.renderTopbar()).toContain('data-cbt-profile-photo-fallback hidden');
+        expect(manager.renderUserPhotoModal()).toContain('data-cbt-profile-photo="modal"');
+        expect(manager.renderUserPhotoModal()).toContain('cbt-user-photo-modal-image-fallback');
     });
 
     it('renders auth progress overlay for login with staged progress copy', function () {

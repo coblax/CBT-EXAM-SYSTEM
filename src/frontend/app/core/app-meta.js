@@ -91,6 +91,10 @@ export function createAppMetaManager(deps) {
                     if (parsedIsPrivateNetwork && parsedIsWordPressPath) {
                         return parsedPath + parsed.search + parsed.hash;
                     }
+
+                    if (parsedIsWordPressPath) {
+                        return current.origin + parsedPath + parsed.search + parsed.hash;
+                    }
                 }
 
                 if (current.protocol === 'https:' && parsed.protocol === 'http:' && parsedHost === currentHost) {

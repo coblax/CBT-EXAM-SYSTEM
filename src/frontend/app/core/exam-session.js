@@ -108,6 +108,7 @@ export function createExamSessionManager(deps) {
     var openingRetryAutoActionTimerId = 0;
     var loginEntryFlowMetricContext = null;
     var openingEntryFlowMetricContext = null;
+    var examFinalizePendingPollTimerId = 0;
 
     function resetOpeningAttemptProgressState() {
         state.openingAttemptProgressPercent = 0;
@@ -1736,6 +1737,12 @@ export function createExamSessionManager(deps) {
             detail = 'Attempt sudah siap. Kami melanjutkan ke bootstrap soal tanpa membuat start baru.';
             percent = 82;
             stepIndex = 4;
+        } else if (openingState === 'attempt_finalizing') {
+            status = 'Memproses hasil';
+            detail = 'Waktu ujian habis. Server menyelesaikan finalisasi di background.';
+            percent = 88;
+            stepIndex = 5;
+            phase = 'opening_finalizing_result';
         }
 
         if (openingReason === 'lock_owner_active') {
@@ -1746,6 +1753,8 @@ export function createExamSessionManager(deps) {
             detailParts.push('Cache soal awal belum siap penuh.');
         } else if (openingReason === 'session_snapshot_pending' || openingReason === 'entry_snapshot_pending') {
             detailParts.push('Snapshot sesi ringan masih disusun.');
+        } else if (openingReason === 'attempt_finalizing') {
+            detailParts.push('Ini bukan resume ujian baru.');
         }
 
         if (attemptId > 0) {
@@ -1848,6 +1857,10 @@ export function createExamSessionManager(deps) {
         return String(exam && exam.latest_attempt_status ? exam.latest_attempt_status : '').toLowerCase();
     }
 
+    function isExamLatestAttemptFinalizing(exam) {
+        return Number(exam && exam.latest_attempt_finalize_pending) === 1;
+    }
+
     async function resolvePrimaryActionSelection(requestedAction) {
         var activeSelectedExam = getSelectedExam();
         var selectedExamId = Number(state.selectedExamId) || Number(activeSelectedExam && activeSelectedExam.id) || 0;
@@ -1871,7 +1884,10 @@ export function createExamSessionManager(deps) {
         var selectedExam = getSelectedExam();
         var resolvedAction = String(requestedAction || '');
         var latestAttemptStatus = getExamLatestAttemptStatus(selectedExam);
-        if (resolvedAction === 'view-result' && latestAttemptStatus !== 'completed') {
+        var latestAttemptFinalizing = isExamLatestAttemptFinalizing(selectedExam);
+        if (latestAttemptFinalizing) {
+            resolvedAction = 'finalizing';
+        } else if (resolvedAction === 'view-result' && latestAttemptStatus !== 'completed') {
             resolvedAction = 'start-exam';
         } else if (resolvedAction === 'start-exam' && latestAttemptStatus === 'completed') {
             resolvedAction = 'view-result';
@@ -1881,6 +1897,7 @@ export function createExamSessionManager(deps) {
             attemptId: Number(state.attemptId) || 0,
             selectedExamId: Number(selectedExam && selectedExam.id) || selectedExamId,
             latestAttemptStatus: latestAttemptStatus,
+            latestAttemptFinalizing: latestAttemptFinalizing ? 1 : 0,
             resolvedAction: resolvedAction,
             stage: String(state.stage || '')
         });
@@ -2530,6 +2547,58 @@ export function createExamSessionManager(deps) {
         resetQuestionDataState();
     }
 
+    function getExamFinalizePendingPollDelayMs() {
+        if (!Array.isArray(state.exams)) {
+            return 0;
+        }
+
+        for (var index = 0; index < state.exams.length; index++) {
+            var exam = state.exams[index];
+            if (!isExamLatestAttemptFinalizing(exam)) {
+                continue;
+            }
+            return Math.max(250, Number(exam && exam.latest_attempt_poll_after_ms) || 2000);
+        }
+
+        return 0;
+    }
+
+    function scheduleExamFinalizePendingPoll() {
+        if (examFinalizePendingPollTimerId || !windowRef || typeof windowRef.setTimeout !== 'function') {
+            return;
+        }
+        var delayMs = getExamFinalizePendingPollDelayMs();
+        if (state.stage !== 'confirm' || state.busy || state.isOpeningAttempt || delayMs <= 0) {
+            return;
+        }
+
+        examFinalizePendingPollTimerId = windowRef.setTimeout(function () {
+            examFinalizePendingPollTimerId = 0;
+            if (state.stage !== 'confirm' || state.busy || state.isOpeningAttempt) {
+                scheduleExamFinalizePendingPoll();
+                return;
+            }
+
+            Promise.resolve(loadExams())
+                .then(function () {
+                    if (state.stage === 'confirm') {
+                        render('exam-finalize-pending-poll');
+                    }
+                })
+                .catch(function () {
+                    // Polling finalisasi tidak boleh mengganggu flow siswa.
+                })
+                .then(function () {
+                    scheduleExamFinalizePendingPoll();
+                });
+        }, delayMs);
+    }
+
+    function finalizeExamsLoadState() {
+        persistAuthSession();
+        scheduleExamFinalizePendingPoll();
+    }
+
     async function loadExams() {
         var payload = await apiRequest('exams');
         applyAdaptiveLoadPayload(payload);
@@ -2578,7 +2647,7 @@ export function createExamSessionManager(deps) {
         if (!state.exams.length) {
             state.selectedExamId = 0;
             state.examToken = '';
-            persistAuthSession();
+            finalizeExamsLoadState();
             return;
         }
 
@@ -2587,7 +2656,7 @@ export function createExamSessionManager(deps) {
         });
 
         if (selectedStillExists) {
-            persistAuthSession();
+            finalizeExamsLoadState();
             return;
         }
 
@@ -2598,7 +2667,7 @@ export function createExamSessionManager(deps) {
             state.examToken = '';
         }
 
-        persistAuthSession();
+        finalizeExamsLoadState();
     }
 
     async function handleLogin(form) {
@@ -2697,6 +2766,7 @@ export function createExamSessionManager(deps) {
             state.loginPassword = '';
             state.loginPasswordVisible = false;
             persistAuthSession();
+            scheduleExamFinalizePendingPoll();
             startSessionHeartbeat();
             recordTimelineEntry('login:success', 'Login berhasil.', {
                 attemptId: Number(state.attemptId) || 0,
@@ -3062,6 +3132,9 @@ export function createExamSessionManager(deps) {
         if (latestAttemptId <= 0 || latestAttemptStatus !== 'in_progress') {
             return false;
         }
+        if (isExamLatestAttemptFinalizing(exam)) {
+            return false;
+        }
 
         try {
             updateSessionRecoveryExamProgress(
@@ -3176,6 +3249,17 @@ export function createExamSessionManager(deps) {
         }
 
         var selectedExamId = Number(selectedExam && selectedExam.id) || 0;
+        if (isExamLatestAttemptFinalizing(selectedExam)) {
+            state.busy = false;
+            state.notice = 'Hasil sedang diproses di background.';
+            state.error = '';
+            scheduleExamFinalizePendingPoll();
+            render('attempt-finalizing-blocked', {
+                selectedExamId: selectedExamId
+            });
+            return;
+        }
+
         var resumeIntent = options.resumeIntentOverride === true
             || (options.resumeIntentOverride !== false && getExamLatestAttemptStatus(selectedExam) === 'in_progress');
         var requestId = beginOpeningAttemptRequest();
@@ -3231,6 +3315,17 @@ export function createExamSessionManager(deps) {
                             detail: 'Silakan kembali ke daftar exam dan pilih exam yang masih aktif.'
                         }
                     );
+                    return;
+                }
+
+                if (String(refreshedStartSelection && refreshedStartSelection.action ? refreshedStartSelection.action : '') === 'finalizing') {
+                    cancelOpeningAttemptRequest();
+                    state.busy = false;
+                    state.notice = 'Hasil sedang diproses di background.';
+                    scheduleExamFinalizePendingPoll();
+                    render('attempt-finalizing-blocked-after-refresh', {
+                        selectedExamId: Number(selectedExam && selectedExam.id) || selectedExamId
+                    });
                     return;
                 }
 
@@ -3366,8 +3461,12 @@ export function createExamSessionManager(deps) {
 
                     if (isPendingStartAttemptStatusPayload(startStatusPayload)) {
                         applyOpeningPendingStatusPayload(startStatusPayload, {
-                            scheduleRetry: false
+                            scheduleRetry: getStartAttemptPayloadStatus(startStatusPayload) === 'pending'
+                                && String(startStatusPayload && startStatusPayload.opening_state ? startStatusPayload.opening_state : '').toLowerCase() === 'attempt_finalizing'
                         });
+                        if (String(startStatusPayload && startStatusPayload.opening_state ? startStatusPayload.opening_state : '').toLowerCase() === 'attempt_finalizing') {
+                            return;
+                        }
                     }
                 }
 
@@ -3395,6 +3494,29 @@ export function createExamSessionManager(deps) {
                 if (isQueuedStartAttemptPayload(startPayload)) {
                     startPayload = await waitForQueuedStartAttempt(selectedExam, submittedToken, startPayload, requestId);
                     assertOpeningAttemptRequestActive(requestId);
+                }
+
+                if (isPendingStartAttemptStatusPayload(startPayload)) {
+                    applyOpeningPendingStatusPayload(startPayload);
+                    return;
+                }
+
+                if (isCompletedStartAttemptStatusPayload(startPayload)) {
+                    syncOpeningAttemptServerState(startPayload, {
+                        openingState: 'completed',
+                        openingReason: 'attempt_completed'
+                    });
+                    cancelOpeningAttemptRequest();
+                    await routeToResultFromOpeningAttempt(selectedExam);
+                    return;
+                }
+
+                if (isTerminalStartAttemptStatusPayload(startPayload)) {
+                    syncOpeningAttemptServerState(startPayload, {
+                        openingState: 'terminal_error',
+                        openingReason: String(startPayload && startPayload.error_code ? startPayload.error_code : '').trim().toLowerCase()
+                    });
+                    throw buildStartAttemptStatusError(startPayload);
                 }
             } catch (startError) {
                 if (isOpeningAttemptCancelledError(startError)) {
@@ -3906,6 +4028,15 @@ export function createExamSessionManager(deps) {
                     state.error = 'Exam yang dipilih sudah tidak tersedia.';
                     render('view-result-error', {
                         reason: 'selected-exam-missing-after-refresh'
+                    });
+                    return;
+                }
+
+                if (String(refreshedResultSelection && refreshedResultSelection.action ? refreshedResultSelection.action : '') === 'finalizing') {
+                    state.notice = 'Hasil sedang diproses di background.';
+                    scheduleExamFinalizePendingPoll();
+                    render('view-result-finalizing', {
+                        selectedExamId: Number(selectedExam && selectedExam.id) || 0
                     });
                     return;
                 }

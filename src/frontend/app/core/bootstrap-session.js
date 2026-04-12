@@ -176,6 +176,10 @@ export function createBootstrapSessionManager(deps) {
         return activeRecoveryRunId;
     }
 
+    function isExamLatestAttemptFinalizing(exam) {
+        return Number(exam && exam.latest_attempt_finalize_pending) === 1;
+    }
+
     function hasActiveResumeCandidate(selectedOnly) {
         if (!Array.isArray(state.exams) || !state.exams.length) {
             return false;
@@ -190,7 +194,8 @@ export function createBootstrapSessionManager(deps) {
 
         return candidates.some(function (exam) {
             return Number(exam && exam.latest_attempt_id) > 0
-                && String(exam && exam.latest_attempt_status ? exam.latest_attempt_status : '').toLowerCase() === 'in_progress';
+                && String(exam && exam.latest_attempt_status ? exam.latest_attempt_status : '').toLowerCase() === 'in_progress'
+                && !isExamLatestAttemptFinalizing(exam);
         });
     }
 

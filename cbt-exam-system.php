@@ -30,6 +30,7 @@ require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-start-attempt-metrics-se
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-entry-flow-metrics-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-start-attempt-idempotency-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-start-attempt-opening-state-service.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-expired-attempt-finalize-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-login-snapshot-freshness-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-adaptive-load-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-availability-cache.php';

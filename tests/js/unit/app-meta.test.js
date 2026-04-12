@@ -87,6 +87,17 @@ describe('createAppMetaManager normalizePhotoUrl', function () {
             .toBe('/wp-content/plugins/cbt-exam-system/public/Default%20Pria.png');
     });
 
+    it('rewrites stale public-domain WordPress asset urls to the current host', function () {
+        var manager = createManagerWithWindow({
+            location: {
+                origin: 'https://exam.example.test'
+            }
+        });
+
+        expect(manager.normalizePhotoUrl('https://old-domain.test/wp-content/uploads/cbt-user-import-photos/siswa-a.jpg'))
+            .toBe('https://exam.example.test/wp-content/uploads/cbt-user-import-photos/siswa-a.jpg');
+    });
+
     it('keeps external cdn photo urls untouched', function () {
         var manager = createManagerWithWindow({
             location: {

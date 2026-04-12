@@ -1,6 +1,6 @@
 {
-  "_frontend-exam-runtime-DhWURbCJ.js": {
-    "file": "assets/frontend-exam-runtime-DhWURbCJ.js",
+  "_frontend-exam-runtime-FNyOImet.js": {
+    "file": "assets/frontend-exam-runtime-FNyOImet.js",
     "name": "frontend-exam-runtime",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js"
@@ -28,8 +28,8 @@
     "file": "assets/frontend-stage-exam-C9JBUS2T.css",
     "src": "_frontend-stage-exam-C9JBUS2T.css"
   },
-  "_frontend-stage-exam-CoE4iLiL.js": {
-    "file": "assets/frontend-stage-exam-CoE4iLiL.js",
+  "_frontend-stage-exam-Chbitx30.js": {
+    "file": "assets/frontend-stage-exam-Chbitx30.js",
     "name": "frontend-stage-exam",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
@@ -416,20 +416,20 @@
     "isDynamicEntry": true
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-XaFcaxbw.js",
+    "file": "assets/frontend-core-dFRrVCH2.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
     "dynamicImports": [
-      "_frontend-exam-runtime-DhWURbCJ.js",
+      "_frontend-exam-runtime-FNyOImet.js",
       "_math-render-z4EJh76n.js",
-      "_frontend-stage-exam-CoE4iLiL.js",
+      "_frontend-stage-exam-Chbitx30.js",
       "_frontend-stage-result-CXtg3x37.js",
       "_frontend-feature-calculator-CuFD8t3I.js",
       "src/frontend/app/core/debug-panel.js"
     ],
     "css": [
-      "assets/frontend-LyzDjEEs.css"
+      "assets/frontend-ioobz_OD.css"
     ],
     "assets": [
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",

@@ -7,7 +7,9 @@ if (!defined('ABSPATH')) {
 final class CBT_Admin_Exam_Cards_Service
 {
     private const USER_META_PLAIN_PASSWORD = 'cbt_plain_password';
-    private const DEFAULT_STUDENT_PHOTO_RELATIVE_PATH = 'public/images/default-student-avatar.png';
+    private const DEFAULT_STUDENT_PHOTO_RELATIVE_PATH = 'public/Default Pria.png';
+    private const DEFAULT_STUDENT_PHOTO_MALE_RELATIVE_PATH = 'public/Default Pria.png';
+    private const DEFAULT_STUDENT_PHOTO_FEMALE_RELATIVE_PATH = 'public/Default Wanita.png';
     private const DISPLAY_FIELDS_PARAM = 'cbt_card_fields';
     private const DISPLAY_FIELDS_CONFIGURED_PARAM = 'cbt_card_fields_configured';
 
@@ -306,10 +308,8 @@ final class CBT_Admin_Exam_Cards_Service
             }
 
             $role = isset($user->roles[0]) ? (string) $user->roles[0] : '';
-            $foto = esc_url_raw((string) get_user_meta($user_id, 'foto', true));
-            if (self::should_use_default_student_photo($role, $foto)) {
-                $foto = self::get_default_student_photo_url();
-            }
+            $jenis_kelamin = CBT_Admin_Users_Service::normalize_supported_jenis_kelamin((string) get_user_meta($user_id, 'jenis_kelamin', true));
+            $foto = self::resolve_student_photo($role, (string) get_user_meta($user_id, 'foto', true), $jenis_kelamin);
 
             $rows[] = [
                 'id' => $user_id,
@@ -317,7 +317,7 @@ final class CBT_Admin_Exam_Cards_Service
                 'name' => $display_name,
                 'nisn' => trim((string) get_user_meta($user_id, 'nisn', true)),
                 'kelas' => trim((string) get_user_meta($user_id, 'kode_kelas', true)),
-                'jenis_kelamin' => CBT_Admin_Users_Service::normalize_supported_jenis_kelamin((string) get_user_meta($user_id, 'jenis_kelamin', true)),
+                'jenis_kelamin' => $jenis_kelamin,
                 'agama' => trim((string) get_user_meta($user_id, 'agama', true)),
                 'ruang' => trim((string) get_user_meta($user_id, 'kode_ruang', true)),
                 'foto' => $foto,
@@ -739,20 +739,49 @@ final class CBT_Admin_Exam_Cards_Service
         return $labels;
     }
 
-    private static function get_default_student_photo_url(): string
+    private static function resolve_student_photo(string $role, string $foto, string $jenis_kelamin = ''): string
     {
-        return esc_url_raw(CBT_EXAM_SYSTEM_URL . self::DEFAULT_STUDENT_PHOTO_RELATIVE_PATH);
-    }
-
-    private static function should_use_default_student_photo(string $role, string $foto): bool
-    {
+        $clean_foto = class_exists('CBT_Student_Profile_Cache')
+            ? CBT_Student_Profile_Cache::normalize_photo_url($foto)
+            : esc_url_raw(trim($foto));
         if (!self::is_student_role($role)) {
-            return false;
+            return $clean_foto;
+        }
+        if ($clean_foto === '' || self::is_known_default_student_photo($clean_foto)) {
+            return self::get_default_student_photo_url($jenis_kelamin);
         }
 
+        return $clean_foto;
+    }
+
+    private static function get_default_student_photo_relative_path(string $jenis_kelamin = ''): string
+    {
+        $normalized_jenis_kelamin = CBT_Admin_Users_Service::normalize_supported_jenis_kelamin($jenis_kelamin);
+        if ($normalized_jenis_kelamin === 'Perempuan') {
+            return self::DEFAULT_STUDENT_PHOTO_FEMALE_RELATIVE_PATH;
+        }
+        if ($normalized_jenis_kelamin === 'Laki-laki') {
+            return self::DEFAULT_STUDENT_PHOTO_MALE_RELATIVE_PATH;
+        }
+
+        return self::DEFAULT_STUDENT_PHOTO_RELATIVE_PATH;
+    }
+
+    private static function get_default_student_photo_url(string $jenis_kelamin = ''): string
+    {
+        $segments = array_filter(explode('/', ltrim(self::get_default_student_photo_relative_path($jenis_kelamin), '/')), static function ($segment): bool {
+            return $segment !== '';
+        });
+        $encoded_segments = array_map('rawurlencode', $segments);
+
+        return esc_url_raw(CBT_EXAM_SYSTEM_URL . implode('/', $encoded_segments));
+    }
+
+    private static function is_known_default_student_photo(string $foto): bool
+    {
         $clean_foto = trim($foto);
         if ($clean_foto === '') {
-            return true;
+            return false;
         }
 
         $photo_path = (string) wp_parse_url($clean_foto, PHP_URL_PATH);
@@ -760,7 +789,14 @@ final class CBT_Admin_Exam_Cards_Service
             return false;
         }
 
-        return basename($photo_path) === 'default-student-avatar.svg';
+        $photo_basename = rawurldecode((string) basename($photo_path));
+
+        return in_array($photo_basename, [
+            'default-student-avatar.svg',
+            'default-student-avatar.png',
+            'Default Pria.png',
+            'Default Wanita.png',
+        ], true);
     }
 
     private static function is_admin_scope(): bool

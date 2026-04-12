@@ -14,7 +14,9 @@ final class BrandingRegionLabelTest extends TestCase
 
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-branding-settings.php';
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-setup-service.php';
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-users-service.php';
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-report-exam-service.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-exam-cards-service.php';
     }
 
@@ -71,5 +73,41 @@ final class BrandingRegionLabelTest extends TestCase
 
         self::assertSame('Desa Perawas, Kec. Tanjung Pandan, Kab. BELITUNG, Prov. Kep. Babel', $kabupatenResult);
         self::assertSame('Desa Melintang, Kec. Pangkalan Baru, Kota PANGKALPINANG, LN Singapura', $kotaResult);
+    }
+
+    public function test_exam_card_photo_uses_profile_style_gender_defaults(): void
+    {
+        $method = new \ReflectionMethod(\CBT_Admin_Exam_Cards_Service::class, 'resolve_student_photo');
+        $method->setAccessible(true);
+
+        $maleResult = $method->invoke(null, 'siswa_cbt', '', 'Laki-laki');
+        $femaleResult = $method->invoke(null, 'siswa_cbt', CBT_EXAM_SYSTEM_URL . 'public/images/default-student-avatar.png', 'Perempuan');
+
+        self::assertStringEndsWith('/public/Default%20Pria.png', $maleResult);
+        self::assertStringEndsWith('/public/Default%20Wanita.png', $femaleResult);
+    }
+
+    public function test_exam_card_photo_reuses_profile_url_normalization(): void
+    {
+        $method = new \ReflectionMethod(\CBT_Admin_Exam_Cards_Service::class, 'resolve_student_photo');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(null, 'siswa_cbt', 'http://127.0.0.1/wp-content/uploads/cbt-user-import-photos/siswa-a.jpg', 'Laki-laki');
+
+        self::assertStringContainsString('/wp-content/uploads/cbt-user-import-photos/siswa-a.jpg', $result);
+        self::assertStringNotContainsString('127.0.0.1', $result);
+    }
+
+    public function test_report_exam_photo_uses_profile_style_normalization_and_existing_default(): void
+    {
+        $defaultResult = \CBT_Admin_Report_Exam_Service::resolve_student_default_photo('siswa_cbt', '');
+        $normalizedResult = \CBT_Admin_Report_Exam_Service::resolve_student_default_photo(
+            'siswa_cbt',
+            'http://127.0.0.1/wp-content/uploads/cbt-user-import-photos/siswa-a.jpg'
+        );
+
+        self::assertStringEndsWith('/public/Default%20Pria.png', $defaultResult);
+        self::assertStringContainsString('/wp-content/uploads/cbt-user-import-photos/siswa-a.jpg', $normalizedResult);
+        self::assertStringNotContainsString('127.0.0.1', $normalizedResult);
     }
 }

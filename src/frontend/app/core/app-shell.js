@@ -55,7 +55,7 @@ export function createAppShellManager(deps) {
         var userChip = [
             '<span class="cbt-chip cbt-user-chip">',
             userPhoto !== ''
-                ? '<button class="cbt-user-chip-photo-button" data-action="open-user-photo" type="button" aria-label="Lihat foto profil ukuran besar"><img class="cbt-user-chip-photo" src="' + escapeHtml(userPhoto) + '" alt="' + escapeHtml(userName) + '" loading="lazy" decoding="async" /></button>'
+                ? '<button class="cbt-user-chip-photo-button" data-action="open-user-photo" type="button" aria-label="Lihat foto profil ukuran besar"><img class="cbt-user-chip-photo" src="' + escapeHtml(userPhoto) + '" alt="' + escapeHtml(userName) + '" loading="lazy" decoding="async" data-cbt-profile-photo="user-chip" /><span class="cbt-user-chip-fallback" data-cbt-profile-photo-fallback hidden aria-hidden="true">' + escapeHtml(userInitial) + '</span></button>'
                 : '<span class="cbt-user-chip-fallback" aria-hidden="true">' + escapeHtml(userInitial) + '</span>',
             '<button class="cbt-user-chip-name-button" data-action="open-user-photo" type="button" aria-label="Lihat informasi peserta">' + escapeHtml(userName) + '</button>',
             '</span>'
@@ -370,6 +370,7 @@ export function createAppShellManager(deps) {
 
         var selectedExam = getSelectedExam();
         var userName = getCurrentUserName();
+        var userInitial = getUserInitial(userName);
         var userKelas = state.user && state.user.kode_kelas ? String(state.user.kode_kelas) : '-';
         var userRuang = state.user && state.user.kode_ruang ? String(state.user.kode_ruang) : '-';
         var userAgama = state.user && state.user.agama ? String(state.user.agama) : '-';
@@ -380,7 +381,8 @@ export function createAppShellManager(deps) {
             '<section class="cbt-user-photo-modal" data-action="user-photo-modal-panel" role="dialog" aria-modal="true" aria-labelledby="cbt-user-photo-title">',
             '<button class="cbt-user-photo-modal-close" data-action="close-user-photo" type="button" aria-label="Tutup foto peserta">&times;</button>',
             '<div>',
-            '<img class="cbt-user-photo-modal-image" src="' + escapeHtml(userPhoto) + '" alt="' + escapeHtml(userName) + '" loading="eager" decoding="async" />',
+            '<img class="cbt-user-photo-modal-image" src="' + escapeHtml(userPhoto) + '" alt="' + escapeHtml(userName) + '" loading="eager" decoding="async" data-cbt-profile-photo="modal" />',
+            '<div class="cbt-user-photo-modal-image cbt-user-photo-modal-image-fallback" data-cbt-profile-photo-fallback hidden aria-hidden="true">' + escapeHtml(userInitial) + '</div>',
             '</div>',
             '<div class="cbt-user-photo-modal-info">',
             '<h3 id="cbt-user-photo-title">' + escapeHtml(userName || '-') + '</h3>',

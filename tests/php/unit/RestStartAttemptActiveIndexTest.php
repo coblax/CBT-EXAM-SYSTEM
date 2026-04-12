@@ -559,6 +559,62 @@ final class RestStartAttemptActiveIndexTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_start_attempt_status_returns_finalizing_pending_for_expired_in_progress_attempt(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-expired-attempt-finalize-service.php';
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'created_by' => 1,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            activeAttemptRow: [
+                'id' => 82,
+                'exam_id' => 15,
+                'student_id' => 7,
+                'status' => 'in_progress',
+                'started_at' => '2026-04-02 10:00:00',
+                'finished_at' => '',
+                'question_order' => '[301,302]',
+                'option_order' => '',
+                'extra_time_minutes' => 0,
+            ]
+        );
+
+        $response = CBT_REST::start_attempt_status(new WP_REST_Request([
+            'exam_id' => 15,
+            'resume_only' => 1,
+        ]));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame('pending', $response['status']);
+        self::assertSame('attempt_finalizing', $response['error_code']);
+        self::assertSame('attempt_finalizing', $response['opening_state']);
+        self::assertSame('attempt_finalizing', $response['opening_reason']);
+        self::assertSame(82, (int) ($response['attempt_id'] ?? 0));
+        self::assertSame(1, (int) ($response['finalize_pending'] ?? 0));
+        self::assertSame(2000, (int) ($response['retry_after_ms'] ?? 0));
+    }
+
+    #[RunInSeparateProcess]
     public function test_start_attempt_status_returns_completed_when_latest_attempt_is_done(): void
     {
         $this->bootstrapStartAttemptScaffold();
@@ -1736,6 +1792,20 @@ final class RestStartAttemptActiveIndexFakeWpdb
         $this->insertCalls++;
         $this->lastInsertData = $data;
         return true;
+    }
+
+    /** @param array<string,mixed>|string $prepared */
+    public function get_var($prepared)
+    {
+        $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
+        if (
+            str_contains($query, 'FROM wp_cbt_attempts a')
+            && str_contains($query, 'INNER JOIN wp_cbt_exams e')
+        ) {
+            return '82';
+        }
+
+        return null;
     }
 }
 

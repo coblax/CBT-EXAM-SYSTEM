@@ -123,6 +123,9 @@ export function createExamStageRenderer(deps) {
         if (normalizedCode === 'attempt_already_completed') {
             return 'Ujian sudah selesai';
         }
+        if (normalizedCode === 'attempt_finalizing') {
+            return 'Hasil sedang diproses';
+        }
         if (normalizedCode === 'resume_diagnostic_running') {
             return 'Pemeriksaan lanjutan sedang berjalan';
         }
@@ -160,6 +163,9 @@ export function createExamStageRenderer(deps) {
         }
         if (normalizedState === 'ready') {
             return 'Sesi siap dipakai';
+        }
+        if (normalizedState === 'attempt_finalizing') {
+            return 'Hasil sedang diproses';
         }
         if (normalizedState === 'completed') {
             return 'Ujian sudah selesai';
@@ -199,6 +205,9 @@ export function createExamStageRenderer(deps) {
         }
         if (normalizedReason === 'attempt_completed') {
             return 'Attempt sudah selesai';
+        }
+        if (normalizedReason === 'attempt_finalizing') {
+            return 'Finalisasi background berjalan';
         }
         if (normalizedReason === 'token_invalid') {
             return 'Token tidak valid';

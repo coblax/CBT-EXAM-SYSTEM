@@ -44,6 +44,7 @@ function createFixture(overrides = {}) {
         setConnectionStatus: [],
         startTimer: 0,
         stopTimer: 0,
+        submitFlowMetrics: [],
         syncFullscreenState: [],
         syncPendingAnswerRuntimeState: []
     };
@@ -89,7 +90,10 @@ function createFixture(overrides = {}) {
     }, overrides.state || {});
     var apiRequest = vi.fn(async function (path, options) {
         if (typeof overrides.apiRequest === 'function') {
-            return overrides.apiRequest(path, options);
+            var overrideResult = await overrides.apiRequest(path, options);
+            if (overrideResult !== undefined) {
+                return overrideResult;
+            }
         }
 
         if (path === 'finish_exam') {
@@ -150,6 +154,15 @@ function createFixture(overrides = {}) {
                     pending_manual_questions: 0,
                     total_questions: 10
                 }
+            };
+        }
+
+        if (path === 'submit_flow_metric') {
+            calls.submitFlowMetrics.push(options && options.body ? options.body : null);
+            return {
+                duplicate: false,
+                ok: true,
+                skipped: false
             };
         }
 
@@ -317,6 +330,10 @@ describe('createFinishFlowManager', function () {
     it('zeros restricted result details and keeps the exam list from leaking score fields', async function () {
         var fixture = createFixture({
             apiRequest: async function (path) {
+                if (path === 'submit_flow_metric') {
+                    return undefined;
+                }
+
                 if (path === 'finish_exam') {
                     return {
                         attempt_id: 88,
@@ -391,6 +408,10 @@ describe('createFinishFlowManager', function () {
     it('persists an unlocked cache snapshot immediately when finish finalization fails', async function () {
         var fixture = createFixture({
             apiRequest: async function (path) {
+                if (path === 'submit_flow_metric') {
+                    return undefined;
+                }
+
                 if (path === 'finish_exam') {
                     var error = new Error('Finish gagal dari unit test.');
                     error.status = 503;
@@ -421,6 +442,107 @@ describe('createFinishFlowManager', function () {
                 persist: true
             }
         ]);
+    });
+
+    it('emits submit telemetry events across submit, ack, and ready phases', async function () {
+        var fixture = createFixture();
+
+        await fixture.manager.handleFinish(false, { skipConfirmation: true });
+        await waitForAssertion(function () {
+            expect(fixture.state.stage).toBe('result');
+        });
+
+        var events = fixture.calls.submitFlowMetrics.map(function (payload) {
+            return payload && payload.event ? payload.event : '';
+        });
+
+        expect(events).toContain('finish_submit_started');
+        expect(events).toContain('finish_acknowledged');
+        expect(events).toContain('finish_recovery_started');
+        expect(events).toContain('finish_result_ready');
+        expect(
+            fixture.calls.submitFlowMetrics.some(function (payload) {
+                return payload
+                    && payload.event === 'finish_acknowledged'
+                    && payload.duration_ms >= 0;
+            })
+        ).toBe(true);
+        expect(
+            fixture.calls.submitFlowMetrics.some(function (payload) {
+                return payload
+                    && payload.event === 'finish_result_ready'
+                    && payload.phase_durations
+                    && payload.phase_durations.ack_to_result_ready_ms >= 0;
+            })
+        ).toBe(true);
+    });
+
+    it('does not let submit telemetry failures break finish recovery', async function () {
+        var fixture = createFixture({
+            apiRequest: async function (path, options) {
+                if (path === 'submit_flow_metric') {
+                    throw new Error('Telemetry gagal dari unit test.');
+                }
+
+                if (path === 'finish_exam') {
+                    return {
+                        attempt_id: 88,
+                        finished_at: '2026-03-24 15:10:00',
+                        show_student_result: 1,
+                        status: 'completed'
+                    };
+                }
+
+                if (path === 'result') {
+                    return {
+                        attempt: {
+                            exam_id: 9,
+                            id: 88,
+                            max_score: 100,
+                            score: 85,
+                            started_at: '2026-03-24 14:00:00',
+                            status: 'completed'
+                        },
+                        exam: {
+                            id: 9,
+                            show_student_result: 1,
+                            title: 'Flow Result Fixture'
+                        },
+                        is_passed: 1,
+                        kkm_percentage: 75,
+                        pass_label: 'LULUS',
+                        percentage: 85,
+                        result_tone: 'pass',
+                        result_view_mode: 'full',
+                        review_items: [],
+                        review_summary: {
+                            answered_questions: 10,
+                            correct_questions: 8,
+                            manual_questions: 0,
+                            total_questions: 10,
+                            unanswered_questions: 0,
+                            wrong_questions: 2
+                        },
+                        show_student_result: 1,
+                        submission_summary: {
+                            answered_questions: 10,
+                            pending_manual_questions: 0,
+                            total_questions: 10
+                        }
+                    };
+                }
+
+                throw new Error('Unexpected apiRequest path: ' + String(path));
+            }
+        });
+
+        await fixture.manager.handleFinish(false, { skipConfirmation: true });
+        await waitForAssertion(function () {
+            expect(fixture.state.stage).toBe('result');
+        });
+
+        expect(fixture.state.result).not.toBeNull();
+        expect(fixture.state.error).toBe('');
     });
 
     it('emits staged finish progress from submit until result is ready', async function () {
@@ -564,6 +686,10 @@ describe('createFinishFlowManager', function () {
     it('persists a finish receipt and keeps the exam locked when result recovery fails after server ack', async function () {
         var fixture = createFixture({
             apiRequest: async function (path) {
+                if (path === 'submit_flow_metric') {
+                    return undefined;
+                }
+
                 if (path === 'finish_exam') {
                     return {
                         attempt_id: 88,

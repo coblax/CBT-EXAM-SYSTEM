@@ -35,6 +35,9 @@ final class RestExamAvailabilitySnapshotTest extends TestCase
         self::assertSame(0, $first['items'][0]['requires_token']);
         self::assertSame(88, $first['items'][0]['latest_attempt_id']);
         self::assertSame('in_progress', $first['items'][0]['latest_attempt_status']);
+        self::assertSame(1, $first['items'][0]['latest_attempt_finalize_pending']);
+        self::assertSame('finalizing', $first['items'][0]['latest_attempt_ui_state']);
+        self::assertSame(2000, $first['items'][0]['latest_attempt_poll_after_ms']);
 
         $GLOBALS['cbt_test_global_exam_token_meta'] = [
             'token' => 'ABCD1',
@@ -339,6 +342,7 @@ PHP);
         }
 
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-expired-attempt-finalize-service.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-availability-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
@@ -424,6 +428,7 @@ final class RestExamAvailabilitySnapshotFakeWpdb
             'max_score' => 100,
             'started_at' => '2026-03-24 11:00:00',
             'finished_at' => '',
+            'extra_time_minutes' => 0,
         ],
     ];
 
@@ -479,5 +484,21 @@ final class RestExamAvailabilitySnapshotFakeWpdb
         }
 
         return [];
+    }
+
+    /**
+     * @param array<string,mixed>|string $prepared
+     */
+    public function get_var($prepared)
+    {
+        $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
+        if (
+            strpos($query, 'FROM wp_cbt_attempts a') !== false
+            && strpos($query, 'INNER JOIN wp_cbt_exams e') !== false
+        ) {
+            return '88';
+        }
+
+        return null;
     }
 }

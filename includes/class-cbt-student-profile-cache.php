@@ -54,6 +54,11 @@ class CBT_Student_Profile_Cache
         }
     }
 
+    public static function normalize_photo_url(string $value): string
+    {
+        return self::normalize_snapshot_photo_url($value);
+    }
+
     /**
      * @return array{kode_kelas:string,kode_ruang:string,agama:string,foto:string,jenis_kelamin:string,nisn:string}
      */
@@ -454,7 +459,7 @@ class CBT_Student_Profile_Cache
             }
 
             if ($field === 'foto') {
-                $snapshot[$field] = self::normalize_snapshot_photo_url((string) $value);
+                $snapshot[$field] = self::normalize_photo_url((string) $value);
                 continue;
             }
 

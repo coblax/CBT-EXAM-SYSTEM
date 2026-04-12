@@ -17,6 +17,31 @@ export function mountFrontendAppRuntime(deps) {
         return null;
     }
 
+    function handleProfilePhotoRenderError(target) {
+        if (!(target instanceof HTMLImageElement)) {
+            return;
+        }
+        if (target.getAttribute('data-cbt-profile-photo') === null) {
+            return;
+        }
+        if (target.getAttribute('data-cbt-profile-photo-error') === '1') {
+            return;
+        }
+
+        target.setAttribute('data-cbt-profile-photo-error', '1');
+        target.setAttribute('aria-hidden', 'true');
+        target.hidden = true;
+
+        var parent = target.parentElement;
+        var fallback = parent instanceof Element
+            ? parent.querySelector('[data-cbt-profile-photo-fallback]')
+            : null;
+        if (fallback instanceof HTMLElement) {
+            fallback.hidden = false;
+            fallback.removeAttribute('hidden');
+        }
+    }
+
     documentRef.addEventListener('pointerdown', function (event) {
         if (debugManager && debugManager.enabled) {
             debugManager.logEvent('capture:pointerdown', event, {
@@ -61,6 +86,10 @@ export function mountFrontendAppRuntime(deps) {
     root.addEventListener('change', function (event) {
         appEventManager.handleChange(event.target);
     });
+
+    root.addEventListener('error', function (event) {
+        handleProfilePhotoRenderError(event.target);
+    }, true);
 
     documentRef.addEventListener('click', function (event) {
         if (debugManager && debugManager.enabled) {

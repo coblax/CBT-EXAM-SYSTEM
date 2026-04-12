@@ -44,6 +44,9 @@ export function createFinishFlowManager(deps) {
     var finishRecoveryRetryTimerId = 0;
     var finishRecoveryRetryAttempt = 0;
     var FINISH_RECOVERY_RETRY_DELAYS_MS = [5000, 15000, 30000];
+    var finishSubmitStartedAtMs = 0;
+    var finishAcknowledgedAtMs = 0;
+    var submitFlowMetricSequence = 0;
 
     function resetFinishProgressState() {
         state.finishProgressPercent = 0;
@@ -129,6 +132,81 @@ export function createFinishFlowManager(deps) {
         }
     }
 
+    function buildSubmitFlowErrorMeta(error) {
+        if (!error || typeof error !== 'object') {
+            return {
+                error_code: '',
+                error_message: ''
+            };
+        }
+
+        return {
+            error_code: error.code ? String(error.code) : '',
+            error_message: error.message ? String(error.message) : ''
+        };
+    }
+
+    function buildSubmitFlowEventKey(event, attemptId, examId, clientEventAtMs) {
+        submitFlowMetricSequence += 1;
+        return [
+            String(attemptId || 0),
+            String(examId || 0),
+            String(event || ''),
+            String(clientEventAtMs || 0),
+            String(submitFlowMetricSequence)
+        ].join(':');
+    }
+
+    function getAcknowledgedAtMs(receipt) {
+        var normalizedReceipt = getNormalizedFinishReceipt(receipt);
+        if (finishAcknowledgedAtMs > 0) {
+            return finishAcknowledgedAtMs;
+        }
+
+        return normalizedReceipt ? (Number(normalizedReceipt.updated_at) || 0) : 0;
+    }
+
+    function emitSubmitFlowMetric(event, options) {
+        if (typeof apiRequest !== 'function') {
+            return;
+        }
+
+        options = options || {};
+        var attemptId = Number(options.attemptId) || Number(state.attemptId) || 0;
+        var examId = Number(options.examId) || Number(state.selectedExamId) || 0;
+        if (attemptId <= 0 || examId <= 0) {
+            return;
+        }
+
+        var clientEventAtMs = Number(options.clientEventAtMs) || Date.now();
+        var payload = {
+            attempt_id: attemptId,
+            exam_id: examId,
+            event: String(event || ''),
+            event_key: buildSubmitFlowEventKey(event, attemptId, examId, clientEventAtMs),
+            client_event_at_ms: clientEventAtMs
+        };
+
+        if (Number.isFinite(Number(options.durationMs)) && Number(options.durationMs) >= 0) {
+            payload.duration_ms = Math.max(0, Math.round(Number(options.durationMs)));
+        }
+
+        if (options.phaseDurations && typeof options.phaseDurations === 'object') {
+            payload.phase_durations = Object.assign({}, options.phaseDurations);
+        }
+
+        if (options.meta && typeof options.meta === 'object') {
+            payload.meta = Object.assign({}, options.meta);
+        }
+
+        Promise.resolve(apiRequest('submit_flow_metric', {
+            method: 'POST',
+            body: payload
+        })).catch(function () {
+            return null;
+        });
+    }
+
     function clearFinishRecoveryRetryTimer() {
         if (finishRecoveryRetryTimerId && windowRef && typeof windowRef.clearTimeout === 'function') {
             windowRef.clearTimeout(finishRecoveryRetryTimerId);
@@ -139,6 +217,8 @@ export function createFinishFlowManager(deps) {
     function resetFinishRecoveryReceiptState() {
         clearFinishRecoveryRetryTimer();
         finishRecoveryRetryAttempt = 0;
+        finishSubmitStartedAtMs = 0;
+        finishAcknowledgedAtMs = 0;
         state.finishReceipt = null;
         state.finishResultPending = false;
         state.finishRecoveryLastError = '';
@@ -236,6 +316,7 @@ export function createFinishFlowManager(deps) {
         state.finishReceipt = normalizedReceipt;
         state.finishResultPending = true;
         state.finishRecoveryLastError = '';
+        finishAcknowledgedAtMs = Number(normalizedReceipt.updated_at) || 0;
         persistCurrentQuestionCacheLocally();
         return normalizedReceipt;
     }
@@ -284,8 +365,20 @@ export function createFinishFlowManager(deps) {
             FINISH_RECOVERY_RETRY_DELAYS_MS.length - 1
         )];
         finishRecoveryRetryAttempt += 1;
+        var retryAttempt = finishRecoveryRetryAttempt;
         finishRecoveryRetryTimerId = windowRef.setTimeout(function () {
             finishRecoveryRetryTimerId = 0;
+            var finishReceipt = getNormalizedFinishReceipt(state.finishReceipt);
+            emitSubmitFlowMetric('finish_recovery_retry', {
+                attemptId: finishReceipt ? finishReceipt.attempt_id : (Number(state.attemptId) || 0),
+                examId: finishReceipt ? finishReceipt.exam_id : (Number(state.selectedExamId) || 0),
+                meta: {
+                    reason: String(reason || ''),
+                    retry_count: retryAttempt,
+                    delay_ms: delay,
+                    acknowledged_at_ms: getAcknowledgedAtMs(finishReceipt)
+                }
+            });
             recordTimelineEntry('finish_recovery_retry', 'Retry pemulihan hasil dijalankan otomatis.', {
                 attemptId: Number(state.attemptId) || 0,
                 delayMs: delay,
@@ -680,6 +773,15 @@ export function createFinishFlowManager(deps) {
             reason: String(reason || ''),
             ackSource: String(finishReceipt.ack_source || '')
         });
+        emitSubmitFlowMetric('finish_recovery_started', {
+            attemptId: finishReceipt.attempt_id,
+            examId: finishReceipt.exam_id,
+            meta: {
+                reason: String(reason || ''),
+                ack_source: String(finishReceipt.ack_source || ''),
+                acknowledged_at_ms: getAcknowledgedAtMs(finishReceipt)
+            }
+        });
         render();
 
         try {
@@ -696,8 +798,28 @@ export function createFinishFlowManager(deps) {
                 allowFallbackWithoutReview: shouldAllowFallbackWithoutReview(finishPayload, finishReceipt)
             });
             await prepareResultStageForFinishTransition();
+            var acknowledgedAtMs = getAcknowledgedAtMs(finishReceipt);
+            var submitToResultReadyMs = finishSubmitStartedAtMs > 0
+                ? Math.max(0, Date.now() - finishSubmitStartedAtMs)
+                : null;
+            var ackToResultReadyMs = acknowledgedAtMs > 0
+                ? Math.max(0, Date.now() - acknowledgedAtMs)
+                : null;
             completeExamWithResult(resultPayload);
             render();
+            emitSubmitFlowMetric('finish_result_ready', {
+                attemptId: finishReceipt.attempt_id,
+                examId: finishReceipt.exam_id,
+                durationMs: submitToResultReadyMs,
+                phaseDurations: {
+                    ack_to_result_ready_ms: ackToResultReadyMs,
+                    submit_to_result_ready_ms: submitToResultReadyMs
+                },
+                meta: {
+                    ack_source: String(finishReceipt.ack_source || ''),
+                    acknowledged_at_ms: acknowledgedAtMs
+                }
+            });
             recordTimelineEntry('finish_result_ready', 'Hasil ujian berhasil dipulihkan.', {
                 attemptId: finishReceipt.attempt_id,
                 stage: 'result'
@@ -735,6 +857,18 @@ export function createFinishFlowManager(deps) {
                 stage: String(state.stage || ''),
                 code: error && error.code ? String(error.code) : ''
             });
+            var recoveryErrorMeta = buildSubmitFlowErrorMeta(error);
+            emitSubmitFlowMetric('finish_result_recovery_failed', {
+                attemptId: finishReceipt.attempt_id,
+                examId: finishReceipt.exam_id,
+                meta: {
+                    ack_source: String(finishReceipt.ack_source || ''),
+                    acknowledged_at_ms: getAcknowledgedAtMs(finishReceipt),
+                    reason: String(reason || ''),
+                    error_code: recoveryErrorMeta.error_code,
+                    error_message: recoveryErrorMeta.error_message || state.finishRecoveryLastError
+                }
+            });
             render();
             return null;
         }
@@ -766,6 +900,7 @@ export function createFinishFlowManager(deps) {
         clearQuestionCachePersistTimer();
         clearMessages();
         prefetchResultStageRenderer();
+        finishSubmitStartedAtMs = finishSubmitStartedAtMs > 0 ? finishSubmitStartedAtMs : Date.now();
         recordTimelineEntry('finish:submit:start', 'Finalisasi ujian dimulai.', {
             attemptId: Number(state.attemptId) || 0,
             stage: String(state.stage || '')
@@ -812,6 +947,18 @@ export function createFinishFlowManager(deps) {
                 }
             });
             var finishReceipt = persistFinishReceipt(buildFinishReceiptFromPayload(finishPayload, 'finish_exam'));
+            var submitToAckMs = finishSubmitStartedAtMs > 0 && finishAcknowledgedAtMs > 0
+                ? Math.max(0, finishAcknowledgedAtMs - finishSubmitStartedAtMs)
+                : null;
+            emitSubmitFlowMetric('finish_acknowledged', {
+                attemptId: finishReceipt ? finishReceipt.attempt_id : (Number(state.attemptId) || 0),
+                examId: finishReceipt ? finishReceipt.exam_id : (Number(state.selectedExamId) || 0),
+                durationMs: submitToAckMs,
+                meta: {
+                    ack_source: 'finish_exam',
+                    submit_started_at_ms: finishSubmitStartedAtMs
+                }
+            });
             recordTimelineEntry('finish_acknowledged', 'Finalisasi ujian diakui server.', {
                 attemptId: Number(finishPayload && finishPayload.attempt_id) || Number(state.attemptId) || 0,
                 ackSource: 'finish_exam'
@@ -851,6 +998,14 @@ export function createFinishFlowManager(deps) {
                 schedulePendingAnswerRetry('finish-request-retry', {
                     immediate: false
                 });
+                var networkFinishErrorMeta = buildSubmitFlowErrorMeta(error);
+                emitSubmitFlowMetric('finish_submit_error', {
+                    meta: {
+                        error_code: networkFinishErrorMeta.error_code,
+                        error_message: networkFinishErrorMeta.error_message || state.lastSyncError,
+                        stage: String(state.stage || '')
+                    }
+                });
                 recordTimelineEntry('finish:submit:error', state.lastSyncError, {
                     attemptId: Number(state.attemptId) || 0,
                     stage: String(state.stage || ''),
@@ -862,6 +1017,18 @@ export function createFinishFlowManager(deps) {
                         attempt_id: state.attemptId,
                         status: 'completed'
                     }, 'idempotent_finish_exam'));
+                    var idempotentSubmitToAckMs = finishSubmitStartedAtMs > 0 && finishAcknowledgedAtMs > 0
+                        ? Math.max(0, finishAcknowledgedAtMs - finishSubmitStartedAtMs)
+                        : null;
+                    emitSubmitFlowMetric('finish_acknowledged', {
+                        attemptId: recoveredReceipt ? recoveredReceipt.attempt_id : (Number(state.attemptId) || 0),
+                        examId: recoveredReceipt ? recoveredReceipt.exam_id : (Number(state.selectedExamId) || 0),
+                        durationMs: idempotentSubmitToAckMs,
+                        meta: {
+                            ack_source: 'idempotent_finish_exam',
+                            submit_started_at_ms: finishSubmitStartedAtMs
+                        }
+                    });
                     var recoveredClosedResult = await recoverFinishedResultFromReceipt('attempt-closed', {
                         finishReceipt: recoveredReceipt,
                         finishPayload: {
@@ -880,6 +1047,17 @@ export function createFinishFlowManager(deps) {
                 } catch (resultError) {
                     state.error = '';
                     state.finishRecoveryLastError = resultError instanceof Error ? resultError.message : 'Ujian sudah selesai, tetapi hasil tidak bisa dimuat.';
+                    var closedRecoveryErrorMeta = buildSubmitFlowErrorMeta(resultError);
+                    emitSubmitFlowMetric('finish_result_recovery_failed', {
+                        attemptId: Number(state.attemptId) || 0,
+                        examId: Number(state.selectedExamId) || 0,
+                        meta: {
+                            ack_source: 'idempotent_finish_exam',
+                            acknowledged_at_ms: finishAcknowledgedAtMs,
+                            error_code: closedRecoveryErrorMeta.error_code,
+                            error_message: closedRecoveryErrorMeta.error_message || state.finishRecoveryLastError
+                        }
+                    });
                     recordTimelineEntry('finish_result_recovery_failed', state.finishRecoveryLastError, {
                         attemptId: Number(state.attemptId) || 0,
                         stage: String(state.stage || '')
@@ -894,6 +1072,14 @@ export function createFinishFlowManager(deps) {
                 syncPendingAnswerRuntimeState({
                     persist: true,
                     clearLastSyncError: false
+                });
+                var finishErrorMeta = buildSubmitFlowErrorMeta(error);
+                emitSubmitFlowMetric('finish_submit_error', {
+                    meta: {
+                        error_code: finishErrorMeta.error_code,
+                        error_message: finishErrorMeta.error_message || state.error || state.lastSyncError,
+                        stage: String(state.stage || '')
+                    }
                 });
                 recordTimelineEntry('finish:submit:error', state.error || state.lastSyncError || 'Gagal menyelesaikan ujian.', {
                     attemptId: Number(state.attemptId) || 0,
@@ -967,6 +1153,14 @@ export function createFinishFlowManager(deps) {
             attemptId: Number(state.attemptId) || 0,
             stage: String(state.stage || ''),
             autoSubmit: !!autoSubmit
+        });
+        finishSubmitStartedAtMs = Date.now();
+        emitSubmitFlowMetric('finish_submit_started', {
+            durationMs: 0,
+            meta: {
+                auto_submit: autoSubmit ? 1 : 0,
+                pending_sync_count: Number(state.pendingSyncCount) || 0
+            }
         });
         clearAllAutoSaveTimers();
         clearQuestionPrefetchRuntimeState();

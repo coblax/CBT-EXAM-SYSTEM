@@ -12,6 +12,14 @@ if (!class_exists('CBT_Live_Proctoring_Presence')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-live-proctoring-presence.php';
 }
 
+if (!class_exists('CBT_Submit_Flow_Metrics_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-submit-flow-metrics-service.php';
+}
+
+if (!class_exists('CBT_Expired_Attempt_Finalize_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-expired-attempt-finalize-service.php';
+}
+
 final class CBT_Admin_Results_Service
 {
     private const TEST_REDIRECT_SIGNAL = '__cbt_admin_results_redirect__';
@@ -230,6 +238,17 @@ final class CBT_Admin_Results_Service
             $answer_table,
             $option_table
         );
+        $submit_flow_monitoring = self::build_submit_flow_monitoring_context([
+            'is_admin_scope' => $is_admin_scope,
+            'current_user_id' => $current_user_id,
+            'selected_exam_id' => $selected_exam_id,
+            'selected_status' => $selected_status,
+            'selected_kelas' => $selected_kelas,
+            'student_keyword' => $student_keyword,
+            'show_exam_column' => $selected_exam_id <= 0,
+        ]);
+        $submit_health = (array) ($submit_flow_monitoring['submit_health'] ?? []);
+        $submit_watchlist = (array) ($submit_flow_monitoring['submit_watchlist'] ?? []);
 
         $essay_where_parts = ["q.question_type = 'essay'"];
         $essay_where_params = [];
@@ -345,7 +364,7 @@ final class CBT_Admin_Results_Service
 
     public static function handle_expired_auto_finalize_cron(int $created_by_user_id = 0): void
     {
-        self::process_expired_attempt_auto_finalize_batch(max(0, $created_by_user_id));
+        CBT_Expired_Attempt_Finalize_Service::process_batch(max(0, $created_by_user_id));
     }
 
     /**
@@ -355,91 +374,7 @@ final class CBT_Admin_Results_Service
      */
     private static function maybe_auto_finalize_expired_attempt_rows(array $candidate_attempts, array $options = []): array
     {
-        if (empty($candidate_attempts) || !class_exists('CBT_REST') || !method_exists('CBT_REST', 'finalize_attempt_completion')) {
-            return [
-                'processed_count' => 0,
-                'completed_attempt_ids' => [],
-            ];
-        }
-
-        $defer_invalidation = !empty($options['defer_invalidation']);
-        $completed_attempt_ids = [];
-        $completed_exam_ids = [];
-        $completed_student_ids = [];
-        foreach ($candidate_attempts as $candidate_attempt) {
-            if (!is_array($candidate_attempt) || (string) ($candidate_attempt['status'] ?? '') !== 'in_progress') {
-                continue;
-            }
-
-            $attempt_id = absint($candidate_attempt['id'] ?? 0);
-            if ($attempt_id <= 0) {
-                continue;
-            }
-
-            $attempt_base_duration_minutes = max(1, (int) ($candidate_attempt['exam_duration_minutes'] ?? 0));
-            $attempt_extra_time_minutes = max(0, (int) ($candidate_attempt['extra_time_minutes'] ?? 0));
-            $attempt_effective_duration_minutes = $attempt_base_duration_minutes + $attempt_extra_time_minutes;
-            $attempt_remaining_seconds = CBT_Admin_Results_Helper::calculate_attempt_remaining_seconds(
-                (string) ($candidate_attempt['started_at'] ?? ''),
-                $attempt_effective_duration_minutes,
-                'in_progress'
-            );
-
-            if ($attempt_remaining_seconds > 0) {
-                continue;
-            }
-
-            $completion_result = CBT_REST::finalize_attempt_completion($attempt_id, null, [
-                'defer_invalidation' => $defer_invalidation,
-            ]);
-            if (is_wp_error($completion_result)) {
-                continue;
-            }
-
-            $completed_attempt_ids[] = $attempt_id;
-            $candidate_exam_id = absint($candidate_attempt['exam_id'] ?? 0);
-            $candidate_student_id = absint($candidate_attempt['student_id'] ?? 0);
-            if ($candidate_exam_id > 0) {
-                $completed_exam_ids[$candidate_exam_id] = $candidate_exam_id;
-            }
-            if ($candidate_student_id > 0) {
-                $completed_student_ids[$candidate_student_id] = $candidate_student_id;
-            }
-        }
-
-        if ($defer_invalidation && !empty($completed_attempt_ids)) {
-            foreach ($completed_attempt_ids as $completed_attempt_id) {
-                CBT_Cache::invalidate_attempt($completed_attempt_id);
-            }
-
-            CBT_Cache::invalidate_analytics();
-            foreach ($completed_exam_ids as $completed_exam_id) {
-                CBT_Cache::invalidate_analytics_exam($completed_exam_id);
-            }
-
-            foreach ($completed_student_ids as $completed_student_id) {
-                CBT_Cache::invalidate_user($completed_student_id);
-            }
-
-            foreach ($candidate_attempts as $candidate_attempt) {
-                if (!is_array($candidate_attempt)) {
-                    continue;
-                }
-
-                $candidate_attempt_id = absint($candidate_attempt['id'] ?? 0);
-                $candidate_student_id = absint($candidate_attempt['student_id'] ?? 0);
-                if ($candidate_attempt_id <= 0 || $candidate_student_id <= 0 || !in_array($candidate_attempt_id, $completed_attempt_ids, true)) {
-                    continue;
-                }
-
-                CBT_UI_State::clear_attempt_state($candidate_student_id, $candidate_attempt_id);
-            }
-        }
-
-        return [
-            'processed_count' => count($candidate_attempts),
-            'completed_attempt_ids' => $completed_attempt_ids,
-        ];
+        return CBT_Expired_Attempt_Finalize_Service::maybe_auto_finalize_attempt_rows($candidate_attempts, $options);
     }
 
     /**
@@ -450,119 +385,22 @@ final class CBT_Admin_Results_Service
         int $current_user_id
     ): array {
         $created_by_user_id = $is_admin_scope ? 0 : max(0, $current_user_id);
-        $has_pending = self::has_pending_expired_attempts_for_scope($created_by_user_id);
-        if (!$has_pending) {
-            return [
-                'has_pending' => false,
-                'scheduled' => false,
-                'created_by_user_id' => $created_by_user_id,
-            ];
-        }
-
-        $scheduled = self::schedule_expired_attempt_auto_finalize_tick($created_by_user_id);
-
-        return [
-            'has_pending' => true,
-            'scheduled' => $scheduled,
-            'created_by_user_id' => $created_by_user_id,
-        ];
+        return CBT_Expired_Attempt_Finalize_Service::maybe_schedule_for_scope($created_by_user_id);
     }
 
     private static function schedule_expired_attempt_auto_finalize_tick(int $created_by_user_id): bool
     {
-        $hook_args = [$created_by_user_id];
-        if (wp_next_scheduled(self::EXPIRED_ATTEMPT_AUTO_COMPLETE_CRON_HOOK, $hook_args)) {
-            return false;
-        }
-
-        $scheduled = wp_schedule_single_event(
-            time() + 1,
-            self::EXPIRED_ATTEMPT_AUTO_COMPLETE_CRON_HOOK,
-            $hook_args
-        );
-        if (!$scheduled) {
-            return false;
-        }
-
-        if (function_exists('spawn_cron') && (!defined('DOING_CRON') || !DOING_CRON)) {
-            spawn_cron(time());
-        }
-
-        return true;
+        return !empty(CBT_Expired_Attempt_Finalize_Service::maybe_schedule_for_scope(max(0, $created_by_user_id))['scheduled']);
     }
 
     private static function process_expired_attempt_auto_finalize_batch(int $created_by_user_id): array
     {
-        $lock_key = self::EXPIRED_ATTEMPT_AUTO_COMPLETE_LOCK_KEY . ':' . $created_by_user_id;
-        if (!CBT_Cache::acquire_lock($lock_key, self::EXPIRED_ATTEMPT_AUTO_COMPLETE_LOCK_TTL, [
-            'source' => 'results_auto_finalize',
-            'created_by_user_id' => $created_by_user_id,
-        ])) {
-            return [
-                'processed_count' => 0,
-                'completed_count' => 0,
-                'has_remaining' => true,
-            ];
-        }
-
-        try {
-            $candidate_attempts = self::fetch_expired_attempt_auto_finalize_batch($created_by_user_id);
-            if (empty($candidate_attempts)) {
-                return [
-                    'processed_count' => 0,
-                    'completed_count' => 0,
-                    'has_remaining' => false,
-                ];
-            }
-
-            $result = self::maybe_auto_finalize_expired_attempt_rows($candidate_attempts, [
-                'defer_invalidation' => true,
-            ]);
-            $has_remaining = self::has_pending_expired_attempts_for_scope($created_by_user_id);
-            if ($has_remaining) {
-                wp_schedule_single_event(
-                    time() + self::EXPIRED_ATTEMPT_AUTO_COMPLETE_RESCHEDULE_DELAY,
-                    self::EXPIRED_ATTEMPT_AUTO_COMPLETE_CRON_HOOK,
-                    [$created_by_user_id]
-                );
-            }
-
-            return [
-                'processed_count' => (int) ($result['processed_count'] ?? 0),
-                'completed_count' => count((array) ($result['completed_attempt_ids'] ?? [])),
-                'has_remaining' => $has_remaining,
-            ];
-        } finally {
-            CBT_Cache::release_lock($lock_key);
-        }
+        return CBT_Expired_Attempt_Finalize_Service::process_batch($created_by_user_id);
     }
 
     private static function has_pending_expired_attempts_for_scope(int $created_by_user_id): bool
     {
-        global $wpdb;
-
-        $attempt_table = $wpdb->prefix . 'cbt_attempts';
-        $exam_table = $wpdb->prefix . 'cbt_exams';
-        $where_clauses = [
-            "a.status = 'in_progress'",
-            'e.title NOT LIKE %s',
-            'TIMESTAMPADD(MINUTE, GREATEST(1, COALESCE(e.duration_minutes, 0)) + GREATEST(0, COALESCE(a.extra_time_minutes, 0)), a.started_at) < %s',
-        ];
-        $where_params = ['Bank Soal - %', current_time('mysql')];
-        if ($created_by_user_id > 0) {
-            $where_clauses[] = 'e.created_by = %d';
-            $where_params[] = $created_by_user_id;
-        }
-
-        $sql = "SELECT a.id
-                FROM {$attempt_table} a
-                INNER JOIN {$exam_table} e ON e.id = a.exam_id
-                WHERE " . implode(' AND ', $where_clauses) . '
-                LIMIT 1';
-        $prepared_sql = $wpdb->prepare($sql, $where_params);
-        $attempt_id = $wpdb->get_var($prepared_sql);
-
-        return absint($attempt_id) > 0;
+        return CBT_Expired_Attempt_Finalize_Service::has_pending_expired_attempts_for_scope($created_by_user_id);
     }
 
     /**
@@ -570,40 +408,7 @@ final class CBT_Admin_Results_Service
      */
     private static function fetch_expired_attempt_auto_finalize_batch(int $created_by_user_id): array
     {
-        global $wpdb;
-
-        $attempt_table = $wpdb->prefix . 'cbt_attempts';
-        $exam_table = $wpdb->prefix . 'cbt_exams';
-        $where_clauses = [
-            "a.status = 'in_progress'",
-            'e.title NOT LIKE %s',
-            'TIMESTAMPADD(MINUTE, GREATEST(1, COALESCE(e.duration_minutes, 0)) + GREATEST(0, COALESCE(a.extra_time_minutes, 0)), a.started_at) < %s',
-        ];
-        $where_params = ['Bank Soal - %', current_time('mysql')];
-        if ($created_by_user_id > 0) {
-            $where_clauses[] = 'e.created_by = %d';
-            $where_params[] = $created_by_user_id;
-        }
-
-        $sql = "SELECT a.id,
-                       a.exam_id,
-                       a.student_id,
-                       a.status,
-                       a.started_at,
-                       a.extra_time_minutes,
-                       e.duration_minutes AS exam_duration_minutes
-                FROM {$attempt_table} a
-                INNER JOIN {$exam_table} e ON e.id = a.exam_id
-                WHERE " . implode(' AND ', $where_clauses) . '
-                ORDER BY a.started_at ASC, a.id ASC
-                LIMIT %d';
-        $prepared_sql = $wpdb->prepare(
-            $sql,
-            array_merge($where_params, [self::EXPIRED_ATTEMPT_AUTO_COMPLETE_BATCH_SIZE])
-        );
-
-        $rows = $wpdb->get_results($prepared_sql, ARRAY_A);
-        return is_array($rows) ? $rows : [];
+        return CBT_Expired_Attempt_Finalize_Service::fetch_expired_attempt_batch($created_by_user_id);
     }
 
     /**
@@ -1800,6 +1605,320 @@ final class CBT_Admin_Results_Service
         );
 
         self::dispatch_results_bulk_job_ajax(true, self::build_results_bulk_job_response($state));
+    }
+
+    /**
+     * @param array<string,mixed> $filters
+     * @return array<string,mixed>
+     */
+    private static function build_submit_flow_monitoring_context(array $filters): array
+    {
+        $summary = class_exists('CBT_Submit_Flow_Metrics_Service')
+            ? CBT_Submit_Flow_Metrics_Service::get_admin_summary()
+            : [];
+        $window = is_array($summary['window'] ?? null) ? (array) $summary['window'] : [];
+        $watchlist_snapshot = is_array($summary['watchlist'] ?? null) ? (array) $summary['watchlist'] : [];
+        $available = !empty($summary['available']);
+        $redis_error = trim((string) ($summary['redis_error'] ?? ''));
+
+        return [
+            'submit_health' => [
+                'available' => $available,
+                'finish_ack_total' => max(0, (int) ($window['finish_acknowledged_total'] ?? 0)),
+                'result_ready_total' => max(0, (int) ($window['finish_result_ready_total'] ?? 0)),
+                'recovery_failed_total' => max(0, (int) ($window['finish_recovery_failed_total'] ?? 0)),
+                'open_watchlist_total' => $available ? max(0, (int) ($watchlist_snapshot['total'] ?? 0)) : 0,
+                'ack_to_result_ready_p95_ms' => max(0, (int) ($window['ack_to_result_ready_p95_ms'] ?? 0)),
+                'ack_to_result_ready_p95_label' => max(0, (int) ($window['ack_to_result_ready_p95_ms'] ?? 0)) > 0
+                    ? number_format_i18n((int) ($window['ack_to_result_ready_p95_ms'] ?? 0)) . ' ms'
+                    : 'N/A',
+                'minutes' => max(0, (int) ($window['minutes'] ?? 15)),
+                'note' => $available
+                    ? 'Ringkasan 15 menit terakhir untuk submit -> result recovery.'
+                    : ($redis_error !== '' ? $redis_error : 'Submit telemetry belum tersedia.'),
+            ],
+            'submit_watchlist' => self::build_submit_watchlist_context($watchlist_snapshot, $filters, $redis_error),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $watchlist_snapshot
+     * @param array<string,mixed> $filters
+     * @return array<string,mixed>
+     */
+    private static function build_submit_watchlist_context(array $watchlist_snapshot, array $filters, string $redis_error = ''): array
+    {
+        $available = !empty($watchlist_snapshot['available']);
+        if (!$available) {
+            return [
+                'available' => false,
+                'items' => [],
+                'display_count' => 0,
+                'total' => 0,
+                'note' => $redis_error !== '' ? $redis_error : 'Submit watchlist belum tersedia.',
+            ];
+        }
+
+        $items = is_array($watchlist_snapshot['items'] ?? null) ? (array) $watchlist_snapshot['items'] : [];
+        $attempt_ids = array_values(array_unique(array_filter(array_map(static function ($item): int {
+            return is_array($item) ? max(0, (int) ($item['attempt_id'] ?? 0)) : 0;
+        }, $items))));
+        $attempt_rows_by_id = self::load_submit_watchlist_attempt_rows($attempt_ids, $filters);
+        $current_timestamp = (int) current_time('timestamp');
+        $current_ms = $current_timestamp * 1000;
+        $filtered_items = [];
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $attempt_id = max(0, (int) ($item['attempt_id'] ?? 0));
+            if ($attempt_id <= 0 || !isset($attempt_rows_by_id[$attempt_id])) {
+                continue;
+            }
+
+            $latest_state = sanitize_key((string) ($item['latest_state'] ?? ''));
+            $latest_event_at_ms = max(0, (int) ($item['latest_event_at_ms'] ?? 0));
+            $age_ms = max(0, $current_ms - $latest_event_at_ms);
+            if (!self::should_display_submit_watchlist_state($latest_state, $age_ms)) {
+                continue;
+            }
+
+            $attempt_row = (array) $attempt_rows_by_id[$attempt_id];
+            $latest_event_at_ts = $latest_event_at_ms > 0 ? (int) floor($latest_event_at_ms / 1000) : 0;
+            $server_completed = strtolower(trim((string) ($attempt_row['status'] ?? ''))) === 'completed';
+            $filtered_items[] = [
+                'attempt_id' => $attempt_id,
+                'attempt_anchor' => '#cbt-results-attempt-row-' . $attempt_id,
+                'exam_id' => max(0, (int) ($item['exam_id'] ?? 0)),
+                'student_name' => trim((string) ($attempt_row['student_name'] ?? '-')),
+                'student_username' => trim((string) ($attempt_row['student_username'] ?? '')),
+                'student_nisn' => trim((string) ($attempt_row['student_nisn'] ?? '')),
+                'student_kelas' => trim((string) ($attempt_row['student_kelas'] ?? '')),
+                'exam_title' => trim((string) ($attempt_row['exam_title'] ?? '-')),
+                'latest_state' => $latest_state,
+                'state_label' => self::format_submit_watchlist_state_label($latest_state),
+                'state_badge_class' => 'cbt-results-submit-watchlist-badge is-' . $latest_state,
+                'updated_at_label' => $latest_event_at_ts > 0 ? wp_date('d M Y H:i:s', $latest_event_at_ts, wp_timezone()) : '-',
+                'age_label' => $latest_event_at_ts > 0 ? self::format_submit_watchlist_age_label($latest_event_at_ts, $current_timestamp) : '-',
+                'retry_count' => max(0, (int) ($item['retry_count'] ?? 0)),
+                'detail' => self::build_submit_watchlist_detail($item),
+                'server_completed' => $server_completed,
+            ];
+        }
+
+        return [
+            'available' => true,
+            'items' => array_slice($filtered_items, 0, 12),
+            'display_count' => min(12, count($filtered_items)),
+            'total' => count($filtered_items),
+            'note' => empty($filtered_items)
+                ? 'Belum ada unresolved submit yang melewati ambang operasional.'
+                : sprintf('Menampilkan %d dari %d unresolved submit pada scope filter aktif.', min(12, count($filtered_items)), count($filtered_items)),
+        ];
+    }
+
+    /**
+     * @param array<int,int> $attempt_ids
+     * @param array<string,mixed> $filters
+     * @return array<int,array<string,mixed>>
+     */
+    private static function load_submit_watchlist_attempt_rows(array $attempt_ids, array $filters): array
+    {
+        global $wpdb;
+
+        $attempt_ids = array_values(array_unique(array_filter(array_map('intval', $attempt_ids), static function (int $attempt_id): bool {
+            return $attempt_id > 0;
+        })));
+        if (empty($attempt_ids)) {
+            return [];
+        }
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $where_parts = [
+            'a.id IN (' . implode(',', array_fill(0, count($attempt_ids), '%d')) . ')',
+            'e.title NOT LIKE %s',
+        ];
+        $where_params = array_merge($attempt_ids, ['Bank Soal - %']);
+
+        if (empty($filters['is_admin_scope'])) {
+            $where_parts[] = 'e.created_by = %d';
+            $where_params[] = max(0, (int) ($filters['current_user_id'] ?? 0));
+        }
+
+        if ((int) ($filters['selected_exam_id'] ?? 0) > 0) {
+            $where_parts[] = 'a.exam_id = %d';
+            $where_params[] = (int) $filters['selected_exam_id'];
+        }
+
+        $selected_kelas = trim((string) ($filters['selected_kelas'] ?? ''));
+        if ($selected_kelas !== '') {
+            $where_parts[] = 'kelas_meta.meta_value = %s';
+            $where_params[] = $selected_kelas;
+        }
+
+        $student_keyword = trim((string) ($filters['student_keyword'] ?? ''));
+        if ($student_keyword !== '') {
+            $student_like = '%' . $wpdb->esc_like($student_keyword) . '%';
+            $where_parts[] = '(u.user_login LIKE %s OR u.display_name LIKE %s OR nisn_meta.meta_value LIKE %s)';
+            $where_params[] = $student_like;
+            $where_params[] = $student_like;
+            $where_params[] = $student_like;
+        }
+
+        $selected_status = sanitize_key((string) ($filters['selected_status'] ?? ''));
+        if ($selected_status !== '' && in_array($selected_status, ['in_progress', 'completed'], true)) {
+            $where_parts[] = 'a.status = %s';
+            $where_params[] = $selected_status;
+        }
+
+        $sql = "SELECT a.id,
+                       a.exam_id,
+                       a.student_id,
+                       a.status,
+                       a.started_at,
+                       a.finished_at,
+                       e.title AS exam_title,
+                       u.display_name AS student_name,
+                       u.user_login AS student_username,
+                       kelas_meta.meta_value AS student_kelas,
+                       nisn_meta.meta_value AS student_nisn
+                FROM {$attempt_table} a
+                INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                INNER JOIN {$wpdb->users} u ON u.ID = a.student_id
+                LEFT JOIN (
+                    SELECT user_id, MAX(meta_value) AS meta_value
+                    FROM {$wpdb->usermeta}
+                    WHERE meta_key = 'kode_kelas'
+                    GROUP BY user_id
+                ) kelas_meta ON kelas_meta.user_id = u.ID
+                LEFT JOIN (
+                    SELECT user_id, MAX(meta_value) AS meta_value
+                    FROM {$wpdb->usermeta}
+                    WHERE meta_key = 'nisn'
+                    GROUP BY user_id
+                ) nisn_meta ON nisn_meta.user_id = u.ID
+                WHERE " . implode(' AND ', $where_parts) . '
+                ORDER BY a.id DESC';
+
+        $prepared_sql = $wpdb->prepare($sql, $where_params);
+        $rows = $wpdb->get_results($prepared_sql, ARRAY_A);
+        $rows = is_array($rows) ? $rows : [];
+        $rows_by_id = [];
+        foreach ($rows as $row) {
+            $attempt_id = max(0, (int) ($row['id'] ?? 0));
+            if ($attempt_id <= 0) {
+                continue;
+            }
+            $rows_by_id[$attempt_id] = (array) $row;
+        }
+
+        return $rows_by_id;
+    }
+
+    private static function should_display_submit_watchlist_state(string $state, int $age_ms): bool
+    {
+        $state = sanitize_key($state);
+        $age_ms = max(0, $age_ms);
+
+        if ($state === 'submitting') {
+            return $age_ms >= 15000;
+        }
+
+        if ($state === 'result_pending') {
+            return $age_ms >= 30000;
+        }
+
+        return in_array($state, ['recovery_retrying', 'submit_error', 'recovery_failed'], true);
+    }
+
+    private static function format_submit_watchlist_state_label(string $state): string
+    {
+        $state = sanitize_key($state);
+        if ($state === 'recovery_failed') {
+            return 'Recovery Failed';
+        }
+        if ($state === 'submit_error') {
+            return 'Submit Error';
+        }
+        if ($state === 'recovery_retrying') {
+            return 'Recovery Retrying';
+        }
+        if ($state === 'result_pending') {
+            return 'Result Pending';
+        }
+        if ($state === 'submitting') {
+            return 'Submitting';
+        }
+
+        return 'Unknown';
+    }
+
+    private static function format_submit_watchlist_age_label(int $from_timestamp, int $to_timestamp): string
+    {
+        $from_timestamp = max(0, $from_timestamp);
+        $to_timestamp = max($from_timestamp, $to_timestamp);
+        $diff = max(0, $to_timestamp - $from_timestamp);
+
+        if ($diff < MINUTE_IN_SECONDS) {
+            return $diff . ' detik lalu';
+        }
+
+        if ($diff < HOUR_IN_SECONDS) {
+            return (int) floor($diff / MINUTE_IN_SECONDS) . ' menit lalu';
+        }
+
+        if ($diff < DAY_IN_SECONDS) {
+            return (int) floor($diff / HOUR_IN_SECONDS) . ' jam lalu';
+        }
+
+        return (int) floor($diff / DAY_IN_SECONDS) . ' hari lalu';
+    }
+
+    /**
+     * @param array<string,mixed> $item
+     */
+    private static function build_submit_watchlist_detail(array $item): string
+    {
+        $state = sanitize_key((string) ($item['latest_state'] ?? ''));
+        $retry_count = max(0, (int) ($item['retry_count'] ?? 0));
+        $ack_source = trim((string) ($item['ack_source'] ?? ''));
+        $last_error_message = trim((string) ($item['last_error_message'] ?? ''));
+
+        if ($state === 'recovery_failed') {
+            return $last_error_message !== '' ? $last_error_message : 'Pemulihan hasil belum berhasil.';
+        }
+
+        if ($state === 'submit_error') {
+            return $last_error_message !== '' ? $last_error_message : 'Submit belum diakui server.';
+        }
+
+        if ($state === 'recovery_retrying') {
+            $parts = ['Retry pemulihan berjalan'];
+            if ($retry_count > 0) {
+                $parts[] = 'retry #' . $retry_count;
+            }
+            if ($ack_source !== '') {
+                $parts[] = 'source ' . str_replace('_', ' ', $ack_source);
+            }
+            return implode(' · ', $parts);
+        }
+
+        if ($state === 'result_pending') {
+            $detail = 'Finalisasi sudah diterima server. Hasil masih dipulihkan.';
+            if ($ack_source !== '') {
+                $detail .= ' Source ' . str_replace('_', ' ', $ack_source) . '.';
+            }
+            return $detail;
+        }
+
+        if ($state === 'submitting') {
+            return 'Permintaan kumpulkan sedang berjalan dan belum punya event lanjutan.';
+        }
+
+        return 'Status submit masih dipantau.';
     }
 
     /**

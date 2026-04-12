@@ -705,6 +705,209 @@ if (!defined('ABSPATH')) {
                     gap: 14px;
                     flex-wrap: wrap;
                 }
+                .cbt-results-submit-health-grid {
+                    display: grid;
+                    grid-template-columns: repeat(5, minmax(0, 1fr));
+                    gap: 12px;
+                }
+                .cbt-results-submit-section-head {
+                    display: grid;
+                    gap: 6px;
+                }
+                .cbt-results-submit-section-head h3 {
+                    margin: 0;
+                    color: #0f172a;
+                    font-size: 18px;
+                    line-height: 1.2;
+                }
+                .cbt-results-submit-section-head p {
+                    margin: 0;
+                    color: #526174;
+                    font-size: 13px;
+                    line-height: 1.6;
+                }
+                .cbt-results-submit-health-card {
+                    display: grid;
+                    gap: 6px;
+                    padding: 16px 18px;
+                    border: 1px solid #d9e3ef;
+                    border-radius: 18px;
+                    background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+                    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+                }
+                .cbt-results-submit-health-card span {
+                    font-size: 11px;
+                    line-height: 1.3;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: #607287;
+                    font-weight: 800;
+                }
+                .cbt-results-submit-health-card strong {
+                    font-size: 24px;
+                    line-height: 1.05;
+                    color: #0f172a;
+                    font-weight: 800;
+                }
+                .cbt-results-submit-health-card small {
+                    color: #526174;
+                    font-size: 12px;
+                    line-height: 1.5;
+                }
+                .cbt-results-submit-watchlist {
+                    display: grid;
+                    gap: 12px;
+                    padding: 18px 20px;
+                    border: 1px solid #d9e3ef;
+                    border-radius: 20px;
+                    background: linear-gradient(135deg, #f8fbff 0%, #eef5fd 100%);
+                }
+                .cbt-results-submit-watchlist-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                }
+                .cbt-results-submit-watchlist-head h3 {
+                    margin: 0;
+                    color: #0f172a;
+                    font-size: 18px;
+                    line-height: 1.2;
+                }
+                .cbt-results-submit-watchlist-head p {
+                    margin: 6px 0 0;
+                    color: #526174;
+                    font-size: 13px;
+                    line-height: 1.6;
+                    max-width: 760px;
+                }
+                .cbt-results-submit-watchlist-list {
+                    display: grid;
+                    gap: 10px;
+                }
+                .cbt-results-submit-watchlist-item {
+                    display: grid;
+                    gap: 10px;
+                    padding: 14px 16px;
+                    border: 1px solid #d7e4f0;
+                    border-radius: 18px;
+                    background: rgba(255, 255, 255, 0.92);
+                    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+                }
+                .cbt-results-submit-watchlist-item-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                }
+                .cbt-results-submit-watchlist-student {
+                    display: grid;
+                    gap: 4px;
+                }
+                .cbt-results-submit-watchlist-student strong {
+                    color: #0f172a;
+                    font-size: 14px;
+                    line-height: 1.3;
+                }
+                .cbt-results-submit-watchlist-student span {
+                    color: #526174;
+                    font-size: 12px;
+                    line-height: 1.5;
+                }
+                .cbt-results-submit-watchlist-meta {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .cbt-results-submit-watchlist-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 30px;
+                    padding: 0 12px;
+                    border-radius: 999px;
+                    background: #e5eef8;
+                    color: #20405c;
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                }
+                .cbt-results-submit-watchlist-badge.is-recovery_failed {
+                    background: rgba(220, 38, 38, 0.12);
+                    color: #b91c1c;
+                }
+                .cbt-results-submit-watchlist-badge.is-submit_error {
+                    background: rgba(234, 88, 12, 0.12);
+                    color: #c2410c;
+                }
+                .cbt-results-submit-watchlist-badge.is-recovery_retrying {
+                    background: rgba(202, 138, 4, 0.14);
+                    color: #a16207;
+                }
+                .cbt-results-submit-watchlist-badge.is-result_pending,
+                .cbt-results-submit-watchlist-badge.is-submitting {
+                    background: rgba(34, 113, 177, 0.12);
+                    color: #135e96;
+                }
+                .cbt-results-submit-watchlist-meta small {
+                    color: #526174;
+                    font-size: 12px;
+                    line-height: 1.5;
+                }
+                .cbt-results-submit-watchlist-detail {
+                    color: #1f3347;
+                    font-size: 13px;
+                    line-height: 1.7;
+                }
+                .cbt-results-submit-watchlist-footer {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .cbt-results-submit-watchlist-hint {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    min-height: 30px;
+                    padding: 0 12px;
+                    border-radius: 999px;
+                    background: rgba(22, 163, 74, 0.12);
+                    color: #166534;
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                }
+                .cbt-results-submit-watchlist-link {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 34px;
+                    padding: 0 14px;
+                    border-radius: 999px;
+                    border: 1px solid #d2dfeb;
+                    background: #fff;
+                    color: #135e96;
+                    font-size: 12px;
+                    font-weight: 800;
+                    text-decoration: none;
+                }
+                .cbt-results-submit-watchlist-link:hover,
+                .cbt-results-submit-watchlist-link:focus {
+                    border-color: #2271b1;
+                    color: #0f4c81;
+                    outline: none;
+                }
+                .cbt-results-submit-watchlist-empty {
+                    color: #526174;
+                    font-size: 13px;
+                    line-height: 1.7;
+                }
                 .cbt-results-live-row {
                     display: flex;
                     align-items: center;
@@ -2236,6 +2439,88 @@ if (!defined('ABSPATH')) {
                         <span id="cbt-attempts-live-status" class="cbt-results-live-status">Auto refresh aktif setiap 10 detik.</span>
                     </div>
                 </div>
+                <div class="cbt-results-submit-section-head">
+                    <h3>Submit Health</h3>
+                    <p>Ringkasan 15 menit terakhir untuk submit, ack server, recovery hasil, dan unresolved watchlist pada scope results saat ini.</p>
+                </div>
+                <div class="cbt-results-submit-health-grid">
+                    <article class="cbt-results-submit-health-card">
+                        <span>Finish Ack</span>
+                        <strong><?php echo esc_html(!empty($submit_health['available']) ? number_format_i18n((int) ($submit_health['finish_ack_total'] ?? 0)) : 'N/A'); ?></strong>
+                        <small>Attempt yang sudah diakui server dalam <?php echo esc_html(number_format_i18n((int) ($submit_health['minutes'] ?? 15))); ?> menit terakhir.</small>
+                    </article>
+                    <article class="cbt-results-submit-health-card">
+                        <span>Result Ready</span>
+                        <strong><?php echo esc_html(!empty($submit_health['available']) ? number_format_i18n((int) ($submit_health['result_ready_total'] ?? 0)) : 'N/A'); ?></strong>
+                        <small>Recovery hasil yang berhasil committed ke UI.</small>
+                    </article>
+                    <article class="cbt-results-submit-health-card">
+                        <span>Recovery Failed</span>
+                        <strong><?php echo esc_html(!empty($submit_health['available']) ? number_format_i18n((int) ($submit_health['recovery_failed_total'] ?? 0)) : 'N/A'); ?></strong>
+                        <small>Kasus submit yang masih stuck setelah finalisasi.</small>
+                    </article>
+                    <article class="cbt-results-submit-health-card">
+                        <span>Ack -&gt; Result p95</span>
+                        <strong><?php echo esc_html((string) ($submit_health['ack_to_result_ready_p95_label'] ?? 'N/A')); ?></strong>
+                        <small>Latency p95 dari ack server sampai result siap.</small>
+                    </article>
+                    <article class="cbt-results-submit-health-card">
+                        <span>Open Watchlist</span>
+                        <strong><?php echo esc_html(!empty($submit_health['available']) ? number_format_i18n((int) ($submit_watchlist['total'] ?? ($submit_health['open_watchlist_total'] ?? 0))) : 'N/A'); ?></strong>
+                        <small><?php echo esc_html((string) ($submit_health['note'] ?? '')); ?></small>
+                    </article>
+                </div>
+                <section class="cbt-results-submit-watchlist">
+                    <div class="cbt-results-submit-watchlist-head">
+                        <div>
+                            <h3>Submit Watchlist</h3>
+                            <p><?php echo esc_html((string) ($submit_watchlist['note'] ?? 'Pantau unresolved submit yang butuh perhatian operator.')); ?></p>
+                        </div>
+                    </div>
+                    <?php if (empty($submit_watchlist['available'])): ?>
+                        <div class="cbt-results-submit-watchlist-empty">Submit telemetry belum tersedia. Halaman results tetap aman dipakai, tetapi watchlist belum bisa dihitung.</div>
+                    <?php elseif (empty($submit_watchlist['items'])): ?>
+                        <div class="cbt-results-submit-watchlist-empty">Belum ada unresolved submit yang melewati ambang operasional pada scope filter aktif.</div>
+                    <?php else: ?>
+                        <div class="cbt-results-submit-watchlist-list">
+                            <?php foreach ((array) ($submit_watchlist['items'] ?? []) as $submit_watchlist_item): ?>
+                                <article class="cbt-results-submit-watchlist-item">
+                                    <div class="cbt-results-submit-watchlist-item-head">
+                                        <div class="cbt-results-submit-watchlist-student">
+                                            <strong><?php echo esc_html((string) ($submit_watchlist_item['student_name'] ?? '-')); ?></strong>
+                                            <span>
+                                                <?php
+                                                $submit_watchlist_identity_parts = array_filter([
+                                                    (string) ($submit_watchlist_item['student_username'] ?? ''),
+                                                    (string) ($submit_watchlist_item['student_nisn'] ?? ''),
+                                                    (string) ($submit_watchlist_item['student_kelas'] ?? ''),
+                                                ]);
+                                                echo esc_html(!empty($submit_watchlist_identity_parts) ? implode(' · ', $submit_watchlist_identity_parts) : 'Identitas siswa');
+                                                ?>
+                                            </span>
+                                            <span><?php echo esc_html((string) ($submit_watchlist_item['exam_title'] ?? '-')); ?></span>
+                                        </div>
+                                        <div class="cbt-results-submit-watchlist-meta">
+                                            <span class="<?php echo esc_attr((string) ($submit_watchlist_item['state_badge_class'] ?? 'cbt-results-submit-watchlist-badge')); ?>"><?php echo esc_html((string) ($submit_watchlist_item['state_label'] ?? 'Unknown')); ?></span>
+                                            <small>Updated <?php echo esc_html((string) ($submit_watchlist_item['updated_at_label'] ?? '-')); ?></small>
+                                            <small>Age <?php echo esc_html((string) ($submit_watchlist_item['age_label'] ?? '-')); ?></small>
+                                            <small>Retry <?php echo esc_html(number_format_i18n((int) ($submit_watchlist_item['retry_count'] ?? 0))); ?></small>
+                                        </div>
+                                    </div>
+                                    <div class="cbt-results-submit-watchlist-detail"><?php echo esc_html((string) ($submit_watchlist_item['detail'] ?? 'Status submit masih dipantau.')); ?></div>
+                                    <div class="cbt-results-submit-watchlist-footer">
+                                        <div>
+                                            <?php if (!empty($submit_watchlist_item['server_completed'])): ?>
+                                                <span class="cbt-results-submit-watchlist-hint">Server Completed</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <a class="cbt-results-submit-watchlist-link" href="<?php echo esc_url((string) ($submit_watchlist_item['attempt_anchor'] ?? '#')); ?>">Lompat ke Attempt</a>
+                                    </div>
+                                </article>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </section>
                 <div class="cbt-results-active-filters">
                     <span class="cbt-results-active-filters-title">Filter Aktif</span>
                     <div class="cbt-results-active-filters-list">
@@ -2307,14 +2592,16 @@ if (!defined('ABSPATH')) {
                         $attempt_remaining_fill_class = 'cbt-attempt-remaining-fill';
                         $attempt_remaining_label = 'Selesai';
                         $attempt_remaining_meta = 'Attempt sudah ditutup.';
+                        $attempt_finalize_pending = false;
                         if ($attempt_status === 'in_progress') {
                             $attempt_remaining_label = CBT_Admin_Results_Helper::format_attempt_remaining_label($attempt_remaining_seconds);
                             $attempt_remaining_meta = 'Sisa dari total ' . $attempt_effective_duration_minutes . ' menit.';
                             if ($attempt_remaining_seconds <= 0) {
-                                $attempt_remaining_label = 'Habis';
+                                $attempt_finalize_pending = true;
+                                $attempt_remaining_label = 'Diproses';
                                 $attempt_remaining_badge_class .= ' is-expired';
                                 $attempt_remaining_fill_class .= ' is-expired';
-                                $attempt_remaining_meta = 'Waktu ujian habis. Menunggu sinkron finalisasi.';
+                                $attempt_remaining_meta = 'Waktu ujian habis. Finalisasi dijalankan di background.';
                             } elseif ($attempt_remaining_seconds <= (10 * MINUTE_IN_SECONDS)) {
                                 $attempt_remaining_badge_class .= ' is-warning';
                                 $attempt_remaining_fill_class .= ' is-warning';
@@ -2337,7 +2624,7 @@ if (!defined('ABSPATH')) {
                                 $attempt_toggle_open_label = $has_archived_history ? 'Lihat Detail & History' : 'Lihat Detail Jawaban';
                                 $attempt_toggle_close_label = $has_archived_history ? 'Tutup Detail & History' : 'Tutup Detail Jawaban';
 		                        ?>
-	                        <tr class="cbt-results-attempt-row" data-cbt-attempt-row="<?php echo (int) $attempt_id; ?>">
+	                        <tr id="cbt-results-attempt-row-<?php echo (int) $attempt_id; ?>" class="cbt-results-attempt-row" data-cbt-attempt-row="<?php echo (int) $attempt_id; ?>">
 	                            <td class="cbt-results-id-cell">#<?php echo (int) $attempt_id; ?></td>
                             <td class="cbt-results-student-cell">
                                 <strong class="cbt-results-student-name"><?php echo esc_html((string) ($attempt['student_name'] ?? '-')); ?></strong>
@@ -2426,6 +2713,8 @@ if (!defined('ABSPATH')) {
                                     data-cbt-remaining-seconds="<?php echo esc_attr((string) $attempt_remaining_seconds); ?>"
                                     data-cbt-total-seconds="<?php echo esc_attr((string) $attempt_total_seconds); ?>"
                                     data-cbt-attempt-status="<?php echo esc_attr($attempt_status); ?>"
+                                    data-cbt-finalize-pending="<?php echo $attempt_finalize_pending ? '1' : '0'; ?>"
+                                    data-cbt-finalize-poll-after-ms="3000"
                                 >
                                     <span class="<?php echo esc_attr($attempt_remaining_badge_class); ?>" data-cbt-remaining-label>
                                         <?php echo esc_html($attempt_remaining_label); ?>
@@ -3258,12 +3547,14 @@ if (!defined('ABSPATH')) {
                     }
 
                     var sharedState = window.cbtResultsPageState || (window.cbtResultsPageState = {});
-                    var refreshIntervalMs = 10000;
+                    var normalRefreshIntervalMs = 10000;
+                    var finalizePendingRefreshIntervalMs = 3000;
                     var inFlight = false;
                     var lastBodyHtml = '';
                     var autoRefreshStorageKey = 'cbt_attempts_auto_refresh_enabled';
                     var autoRefreshEnabled = true;
                     var liveStatusResetTimer = 0;
+                    var autoRefreshTimerId = 0;
 
                     function getAttemptsTable() {
                         return document.getElementById('cbt-attempts-table');
@@ -3283,6 +3574,35 @@ if (!defined('ABSPATH')) {
 
                     if (!getAttemptsTable() || !getAttemptsBody()) {
                         return;
+                    }
+
+                    function hasFinalizePendingRows() {
+                        var attemptsBody = getAttemptsBody();
+                        return !!(attemptsBody && attemptsBody.querySelector('[data-cbt-finalize-pending="1"]'));
+                    }
+
+                    function getCurrentRefreshIntervalMs() {
+                        return hasFinalizePendingRows()
+                            ? finalizePendingRefreshIntervalMs
+                            : normalRefreshIntervalMs;
+                    }
+
+                    function clearAutoRefreshTimer() {
+                        window.clearTimeout(autoRefreshTimerId);
+                        autoRefreshTimerId = 0;
+                    }
+
+                    function scheduleAutoRefreshTick(delayMs) {
+                        clearAutoRefreshTimer();
+                        if (!autoRefreshEnabled) {
+                            return;
+                        }
+
+                        autoRefreshTimerId = window.setTimeout(function () {
+                            Promise.resolve(refreshAttemptsTable()).then(function () {
+                                scheduleAutoRefreshTick(getCurrentRefreshIntervalMs());
+                            });
+                        }, Math.max(1000, Number(delayMs) || getCurrentRefreshIntervalMs()));
                     }
 
                     function syncBodySnapshot() {
@@ -3328,6 +3648,10 @@ if (!defined('ABSPATH')) {
                         }
                         if (!autoRefreshEnabled) {
                             setLiveStatus('Auto refresh nonaktif.');
+                            return;
+                        }
+                        if (hasFinalizePendingRows()) {
+                            setLiveStatus('Memantau finalisasi background setiap 3 detik.');
                             return;
                         }
                         setLiveStatus('Auto refresh aktif setiap 10 detik.');
@@ -3376,6 +3700,7 @@ if (!defined('ABSPATH')) {
                         var remainingSeconds = Math.max(0, parseInt(String(container.getAttribute('data-cbt-remaining-seconds') || '0'), 10) || 0);
                         var labelEl = container.querySelector('[data-cbt-remaining-label]');
                         var fillEl = container.querySelector('[data-cbt-remaining-fill]');
+                        var finalizePending = String(container.getAttribute('data-cbt-finalize-pending') || '') === '1';
 
                         if (labelEl) {
                             labelEl.classList.remove('is-warning', 'is-expired', 'is-completed');
@@ -3401,7 +3726,9 @@ if (!defined('ABSPATH')) {
                             : 0;
 
                         if (labelEl) {
-                            labelEl.textContent = remainingSeconds > 0 ? formatRemainingTime(remainingSeconds) : 'Habis';
+                            labelEl.textContent = remainingSeconds > 0
+                                ? formatRemainingTime(remainingSeconds)
+                                : (finalizePending ? 'Diproses' : 'Habis');
                             if (remainingSeconds <= 0) {
                                 labelEl.classList.add('is-expired');
                             } else if (remainingSeconds <= 600) {
@@ -3491,10 +3818,12 @@ if (!defined('ABSPATH')) {
                                 if (typeof sharedState.syncAttemptAnswerDetails === 'function') {
                                     sharedState.syncAttemptAnswerDetails(currentBody);
                                 }
+                                tickRemainingTimeCells();
                                 setLiveStatus('Auto refresh: data diperbarui ' + nowText() + '.');
                             } else {
                                 setLiveStatus('Auto refresh: tidak ada perubahan (' + nowText() + ').');
                             }
+                            syncAutoRefreshUIState();
                         } catch (error) {
                             setLiveStatus('Auto refresh gagal. Cek jaringan/browser.');
                         } finally {
@@ -3518,6 +3847,9 @@ if (!defined('ABSPATH')) {
                         syncAutoRefreshUIState();
                         if (autoRefreshEnabled) {
                             refreshAttemptsTable();
+                            scheduleAutoRefreshTick(500);
+                        } else {
+                            clearAutoRefreshTimer();
                         }
                     });
 
@@ -3535,14 +3867,16 @@ if (!defined('ABSPATH')) {
                             return;
                         }
                         syncAutoRefreshUIState();
+                        scheduleAutoRefreshTick(getCurrentRefreshIntervalMs());
                     });
 
                     window.setInterval(tickRemainingTimeCells, 1000);
-	                    window.setInterval(refreshAttemptsTable, refreshIntervalMs);
+                    scheduleAutoRefreshTick(getCurrentRefreshIntervalMs());
 	                    document.addEventListener('visibilitychange', function () {
 	                        if (!document.hidden && autoRefreshEnabled) {
 	                            refreshAttemptsTable();
 	                            tickRemainingTimeCells();
+                                scheduleAutoRefreshTick(getCurrentRefreshIntervalMs());
 	                        }
 	                    });
 	                })();

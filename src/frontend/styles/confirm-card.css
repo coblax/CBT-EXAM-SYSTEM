@@ -196,6 +196,17 @@
     font-size: 54px;
 }
 
+.cbt-user-photo-modal-image-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: min(46dvh, 470px);
+    font-size: clamp(56px, 12vw, 92px);
+    font-weight: 800;
+    color: #fff;
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-confirm-card {
     background:
         radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 32%),

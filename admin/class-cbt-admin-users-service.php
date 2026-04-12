@@ -193,7 +193,9 @@ final class CBT_Admin_Users_Service
             $editing_agama_form = self::normalize_supported_agama($editing_agama);
             $editing_jenis_kelamin = (string) get_user_meta((int) $editing_user->ID, 'jenis_kelamin', true);
             $editing_jenis_kelamin_form = self::normalize_supported_jenis_kelamin($editing_jenis_kelamin);
-            $editing_foto = (string) get_user_meta((int) $editing_user->ID, 'foto', true);
+            $editing_foto = class_exists('CBT_Student_Profile_Cache')
+                ? CBT_Student_Profile_Cache::normalize_photo_url((string) get_user_meta((int) $editing_user->ID, 'foto', true))
+                : esc_url_raw((string) get_user_meta((int) $editing_user->ID, 'foto', true));
         }
         $is_admin_scope = self::is_admin_scope();
 
@@ -2311,7 +2313,9 @@ final class CBT_Admin_Users_Service
 
     private static function resolve_student_default_photo(string $role, string $foto, string $jenis_kelamin = ''): string
     {
-        $clean_foto = esc_url_raw(trim($foto));
+        $clean_foto = class_exists('CBT_Student_Profile_Cache')
+            ? CBT_Student_Profile_Cache::normalize_photo_url($foto)
+            : esc_url_raw(trim($foto));
         if ($clean_foto !== '') {
             return $clean_foto;
         }

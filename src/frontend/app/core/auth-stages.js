@@ -131,12 +131,17 @@ export function createAuthStageManager(deps) {
         return Number(exam && exam.show_student_result !== undefined ? exam.show_student_result : 1) === 1;
     }
 
+    function isExamLatestAttemptFinalizing(exam) {
+        return Number(exam && exam.latest_attempt_finalize_pending) === 1;
+    }
+
     function renderExamPickerMobileOption(exam) {
         var optionId = Number(exam && exam.id) || 0;
         var isActive = optionId === Number(state.selectedExamId);
         var durationMinutes = Number(exam && exam.duration_minutes) || 0;
         var startsAtLabel = formatDateTimeCompact(exam && exam.starts_at ? exam.starts_at : '');
         var latestAttemptStatus = String(exam && exam.latest_attempt_status ? exam.latest_attempt_status : '').toLowerCase();
+        var latestAttemptFinalizing = isExamLatestAttemptFinalizing(exam);
         var availableNow = Number(exam && exam.is_available_now ? exam.is_available_now : 0) === 1;
         var classAllowed = Number(exam && exam.is_class_allowed ? exam.is_class_allowed : 0) === 1;
         var withinSchedule = Number(exam && exam.is_within_schedule ? exam.is_within_schedule : 0) === 1;
@@ -149,7 +154,10 @@ export function createAuthStageManager(deps) {
             classes.push('is-active');
         }
 
-        if (latestAttemptStatus === 'completed') {
+        if (latestAttemptFinalizing) {
+            availabilityLabel = 'DIPROSES';
+            availabilityTone = 'is-warn';
+        } else if (latestAttemptStatus === 'completed') {
             availabilityLabel = 'SELESAI';
             availabilityTone = 'is-completed';
         } else if (latestAttemptStatus === 'in_progress') {
@@ -307,6 +315,7 @@ export function createAuthStageManager(deps) {
         var userInitial = getUserInitial(userName);
         var hasSelectedExam = !!selectedExam;
         var selectedAttemptStatus = String(selectedExam && selectedExam.latest_attempt_status ? selectedExam.latest_attempt_status : '').toLowerCase();
+        var selectedAttemptFinalizing = isExamLatestAttemptFinalizing(selectedExam);
         var selectedExamCompleted = selectedAttemptStatus === 'completed';
         var selectedExamShowsResult = canShowStudentResult(selectedExam);
         var selectedExamAttemptId = Number(selectedExam && selectedExam.latest_attempt_id ? selectedExam.latest_attempt_id : 0);
@@ -332,6 +341,9 @@ export function createAuthStageManager(deps) {
                     )
                     : 'Ujian ini tidak membutuhkan token.'))
             : 'Pilih ujian terlebih dahulu dari daftar di kiri.';
+        if (selectedAttemptFinalizing) {
+            tokenInfoText = 'Hasil sedang diproses.';
+        }
         var userUsername = String(state.user && state.user.username ? state.user.username : '-');
         var userClassCode = String(state.user && state.user.kode_kelas ? state.user.kode_kelas : '-');
         var userRoomCode = String(state.user && state.user.kode_ruang ? state.user.kode_ruang : '-');
@@ -348,6 +360,9 @@ export function createAuthStageManager(deps) {
         if (!hasSelectedExam) {
             selectedAccessLabel = 'Belum pilih ujian';
             selectedAccessTone = 'is-muted';
+        } else if (selectedAttemptFinalizing) {
+            selectedAccessLabel = 'Memproses hasil';
+            selectedAccessTone = 'is-warn';
         } else if (selectedExamCompleted) {
             selectedAccessLabel = selectedExamShowsResult ? 'Hasil tersedia' : 'Status tersedia';
             selectedAccessTone = 'is-done';
@@ -377,6 +392,9 @@ export function createAuthStageManager(deps) {
         if (!hasSelectedExam) {
             selectedAttemptLabel = 'Menunggu pilihan';
             selectedAttemptTone = 'is-muted';
+        } else if (selectedAttemptFinalizing) {
+            selectedAttemptLabel = 'Diproses finalisasi';
+            selectedAttemptTone = 'is-warn';
         } else if (selectedExamCompleted) {
             selectedAttemptLabel = 'Sudah selesai';
             selectedAttemptTone = 'is-done';
@@ -407,7 +425,9 @@ export function createAuthStageManager(deps) {
                 : ((selectedExamRequiresToken || selectedExamAutoToken) ? 'Otomatis oleh sistem' : 'Tidak diperlukan'));
         var tokenFieldHelpText = !hasSelectedExam
             ? 'Pilih ujian dari daftar kiri untuk melihat kebutuhan token.'
-            : (selectedExamCompleted
+            : (selectedAttemptFinalizing
+                ? 'Waktu habis. Hasil diproses di background.'
+                : (selectedExamCompleted
                 ? (selectedExamShowsResult
                     ? 'Attempt terakhir untuk ujian ini sudah selesai. Anda masih bisa membuka hasil nilainya.'
                     : 'Attempt terakhir untuk ujian ini sudah selesai. Admin menyembunyikan nilai dan review, tetapi status hasil tetap bisa dibuka.')
@@ -415,7 +435,7 @@ export function createAuthStageManager(deps) {
                     ? 'Masukkan token 6 karakter sebelum memulai atau melanjutkan ujian.'
                     : ((selectedExamRequiresToken || selectedExamAutoToken)
                         ? 'Token tidak perlu diketik manual karena akan diisi oleh sistem.'
-                        : 'Ujian ini dapat dimulai tanpa token.')));
+                        : 'Ujian ini dapat dimulai tanpa token.'))));
         if (tokenRefreshMinutes > 0 && hasSelectedExam && !selectedExamCompleted) {
             tokenFieldHelpText += ' Gunakan token terbaru karena sistem dapat memperbaruinya setiap ' + tokenRefreshMinutes + ' menit.';
         }
@@ -423,7 +443,9 @@ export function createAuthStageManager(deps) {
         var confirmQuickText = !hasSelectedExam
             ? 'Pilih salah satu ujian dari daftar kiri untuk mengaktifkan detail dan tombol aksi.'
             : (
-                selectedAttemptStatus === 'in_progress'
+                selectedAttemptFinalizing
+                    ? 'Finalisasi background berjalan. Halaman diperbarui otomatis.'
+                    : (selectedAttemptStatus === 'in_progress'
                     ? 'Sesi sebelumnya masih aktif. Anda akan melanjutkan dari progres terakhir.'
                     : (
                         selectedExamCompleted
@@ -431,7 +453,7 @@ export function createAuthStageManager(deps) {
                                 ? 'Attempt terakhir sudah selesai. Gunakan tombol lihat nilai untuk membuka hasilnya.'
                                 : 'Attempt terakhir sudah selesai. Gunakan tombol lihat status untuk membuka informasi penyimpanan jawaban.')
                             : 'Pastikan jadwal, token, dan data peserta sudah benar sebelum menekan mulai.'
-                    )
+                    ))
             );
         var confirmSupportText = tokenFieldHelpText;
         if (confirmQuickText && tokenFieldHelpText.indexOf(confirmQuickText) === -1) {
@@ -439,8 +461,8 @@ export function createAuthStageManager(deps) {
         }
 
         var primaryActionLabel = state.busy
-            ? (selectedExamCompleted ? 'Memuat...' : (selectedAttemptStatus === 'in_progress' ? 'Membuka...' : 'Memulai...'))
-            : (selectedExamCompleted ? (selectedExamShowsResult ? 'Lihat Nilai' : 'Lihat Status') : (selectedAttemptStatus === 'in_progress' ? 'Lanjutkan Ujian' : 'Mulai Ujian'));
+            ? (selectedAttemptFinalizing ? 'Memproses...' : (selectedExamCompleted ? 'Memuat...' : (selectedAttemptStatus === 'in_progress' ? 'Membuka...' : 'Memulai...')))
+            : (selectedAttemptFinalizing ? 'Memproses...' : (selectedExamCompleted ? (selectedExamShowsResult ? 'Lihat Nilai' : 'Lihat Status') : (selectedAttemptStatus === 'in_progress' ? 'Lanjutkan Ujian' : 'Mulai Ujian')));
         var examItems = state.exams.map(function (exam) {
             var isActive = Number(exam.id) === Number(state.selectedExamId);
             var status = String(exam.status || '-');
@@ -450,6 +472,7 @@ export function createAuthStageManager(deps) {
             var availableNow = Number(exam.is_available_now) === 1;
             var availabilityReason = String(exam.availability_reason || '');
             var latestAttemptStatus = String(exam.latest_attempt_status || '').toLowerCase();
+            var latestAttemptFinalizing = isExamLatestAttemptFinalizing(exam);
             var latestAttemptPercentage = Number(exam.latest_attempt_percentage);
             var showStudentResult = canShowStudentResult(exam);
             var examAttemptCompact = 'BELUM';
@@ -459,7 +482,10 @@ export function createAuthStageManager(deps) {
             if (isActive) {
                 itemClasses.push('is-active');
             }
-            if (latestAttemptStatus === 'completed') {
+            if (latestAttemptFinalizing) {
+                itemClasses.push('is-in-progress');
+                examAttemptCompact = 'DIPROSES';
+            } else if (latestAttemptStatus === 'completed') {
                 itemClasses.push('is-completed');
                 examAttemptCompact = 'SELESAI';
                 if (showStudentResult && Number.isFinite(latestAttemptPercentage)) {
@@ -503,7 +529,9 @@ export function createAuthStageManager(deps) {
                 statusBadgeClass = 'is-muted';
             }
 
-            if (latestAttemptStatus === 'completed') {
+            if (latestAttemptFinalizing) {
+                attemptChipClass = 'is-warn';
+            } else if (latestAttemptStatus === 'completed') {
                 attemptChipClass = 'is-success';
             } else if (latestAttemptStatus === 'in_progress') {
                 attemptChipClass = 'is-ready';
@@ -580,7 +608,7 @@ export function createAuthStageManager(deps) {
             '<div class="cbt-confirm-profile">',
             (
                 userPhoto !== ''
-                    ? '<button class="cbt-confirm-profile-avatar-button" data-action="open-user-photo" type="button" aria-label="Lihat foto peserta ukuran besar"><img class="cbt-confirm-profile-avatar" src="' + escapeHtml(userPhoto) + '" alt="' + escapeHtml(userName) + '" loading="lazy" decoding="async" /></button>'
+                    ? '<button class="cbt-confirm-profile-avatar-button" data-action="open-user-photo" type="button" aria-label="Lihat foto peserta ukuran besar"><img class="cbt-confirm-profile-avatar" src="' + escapeHtml(userPhoto) + '" alt="' + escapeHtml(userName) + '" loading="lazy" decoding="async" data-cbt-profile-photo="confirm" /><span class="cbt-confirm-profile-avatar cbt-confirm-profile-avatar-fallback" data-cbt-profile-photo-fallback hidden aria-hidden="true">' + escapeHtml(userInitial) + '</span></button>'
                     : '<div class="cbt-confirm-profile-avatar cbt-confirm-profile-avatar-fallback" aria-hidden="true">' + escapeHtml(userInitial) + '</div>'
             ),
             '</div>',
@@ -608,7 +636,7 @@ export function createAuthStageManager(deps) {
             (
                 selectedExamCompleted
                     ? '<button class="cbt-button cbt-button-primary" data-action="view-result" type="button"' + (state.busy || !hasSelectedExam || selectedExamAttemptId <= 0 ? ' disabled' : '') + '>' + primaryActionLabel + '</button>'
-                    : '<button class="cbt-button cbt-button-primary" data-action="start-exam" type="button"' + (state.busy || !hasSelectedExam ? ' disabled' : '') + '>' + primaryActionLabel + '</button>'
+                    : '<button class="cbt-button cbt-button-primary" data-action="start-exam" type="button"' + (state.busy || !hasSelectedExam || selectedAttemptFinalizing ? ' disabled' : '') + '>' + primaryActionLabel + '</button>'
             ),
             renderRefreshButton(state.busy),
             '</div>',

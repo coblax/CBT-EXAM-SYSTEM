@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 final class CBT_Admin_Report_Exam_Service
 {
-    private const DEFAULT_STUDENT_PHOTO_RELATIVE_PATH = 'public/images/default-student-avatar.svg';
+    private const DEFAULT_STUDENT_PHOTO_RELATIVE_PATH = 'public/Default Pria.png';
 
     public static function is_admin_scope(): bool
     {
@@ -1180,7 +1180,9 @@ final class CBT_Admin_Report_Exam_Service
 
     public static function resolve_student_default_photo(string $role, string $foto): string
     {
-        $clean_foto = esc_url_raw(trim($foto));
+        $clean_foto = class_exists('CBT_Student_Profile_Cache')
+            ? CBT_Student_Profile_Cache::normalize_photo_url($foto)
+            : esc_url_raw(trim($foto));
         if ($clean_foto !== '') {
             return $clean_foto;
         }
@@ -1267,7 +1269,12 @@ final class CBT_Admin_Report_Exam_Service
 
     private static function get_default_student_photo_url(): string
     {
-        return esc_url_raw(CBT_EXAM_SYSTEM_URL . self::DEFAULT_STUDENT_PHOTO_RELATIVE_PATH);
+        $segments = array_filter(explode('/', ltrim(self::DEFAULT_STUDENT_PHOTO_RELATIVE_PATH, '/')), static function ($segment): bool {
+            return $segment !== '';
+        });
+        $encoded_segments = array_map('rawurlencode', $segments);
+
+        return esc_url_raw(CBT_EXAM_SYSTEM_URL . implode('/', $encoded_segments));
     }
 
     /**

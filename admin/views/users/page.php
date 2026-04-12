@@ -1006,7 +1006,9 @@
                                     $ruang = (string) get_user_meta((int) $user->ID, 'kode_ruang', true);
                                     $agama = (string) get_user_meta((int) $user->ID, 'agama', true);
                                     $jenis_kelamin = CBT_Admin_Users_Service::normalize_supported_jenis_kelamin((string) get_user_meta((int) $user->ID, 'jenis_kelamin', true));
-                                    $foto = (string) get_user_meta((int) $user->ID, 'foto', true);
+                                    $foto = class_exists('CBT_Student_Profile_Cache')
+                                        ? CBT_Student_Profile_Cache::normalize_photo_url((string) get_user_meta((int) $user->ID, 'foto', true))
+                                        : esc_url_raw((string) get_user_meta((int) $user->ID, 'foto', true));
                                     $edit_url = add_query_arg(
                                         [
                                             'page' => 'cbt-user-import',

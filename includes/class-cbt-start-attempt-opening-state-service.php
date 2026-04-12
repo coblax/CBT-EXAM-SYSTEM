@@ -19,6 +19,7 @@ class CBT_Start_Attempt_Opening_State_Service
         'attempt_created',
         'bootstrap_session',
         'bootstrap_questions',
+        'attempt_finalizing',
         'ready',
         'completed',
         'terminal_error',
@@ -34,6 +35,7 @@ class CBT_Start_Attempt_Opening_State_Service
         'entry_snapshot_pending',
         'session_snapshot_pending',
         'question_window_pending',
+        'attempt_finalizing',
         'attempt_ready',
         'attempt_completed',
         'token_invalid',
@@ -176,6 +178,7 @@ class CBT_Start_Attempt_Opening_State_Service
             'attempt_created',
             'bootstrap_session',
             'bootstrap_questions',
+            'attempt_finalizing',
             'ready',
         ];
 
