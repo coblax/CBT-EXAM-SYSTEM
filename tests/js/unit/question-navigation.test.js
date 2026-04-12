@@ -17,6 +17,7 @@ function createFixture(overrides = {}) {
         acknowledgeQuestionRevisionMarker: [],
         clearMessages: 0,
         ensureQuestionWindowForIndex: [],
+        operationOrder: [],
         persistCurrentAttemptUiStateLocally: 0,
         prefetchNextQuestionBatch: 0,
         queueQuestionAnswer: [],
@@ -98,6 +99,7 @@ function createFixture(overrides = {}) {
         },
         clearMessages: function () {
             calls.clearMessages += 1;
+            calls.operationOrder.push('clearMessages');
         },
         documentRef: document,
         ensureQuestionWindowForIndex: async function (index) {
@@ -105,6 +107,7 @@ function createFixture(overrides = {}) {
             var questionId = questionOrderIds[safeIndex];
             loadedQuestionIds.add(questionId);
             calls.ensureQuestionWindowForIndex.push(safeIndex);
+            calls.operationOrder.push('ensureQuestionWindowForIndex:' + String(safeIndex));
             return questionLookup[questionId] || null;
         },
         escapeHtml: function (value) {
@@ -153,6 +156,7 @@ function createFixture(overrides = {}) {
         normalizeTrueFalseMatrixAnswer: normalizeTrueFalseMatrixAnswer,
         persistCurrentAttemptUiStateLocally: function () {
             calls.persistCurrentAttemptUiStateLocally += 1;
+            calls.operationOrder.push('persistCurrentAttemptUiStateLocally');
         },
         prefetchNextQuestionBatch: function () {
             calls.prefetchNextQuestionBatch += 1;
@@ -161,6 +165,7 @@ function createFixture(overrides = {}) {
         questionWindowSize: 2,
         queueQuestionAnswer: function (question) {
             calls.queueQuestionAnswer.push(Number(question && question.id) || 0);
+            calls.operationOrder.push('queueQuestionAnswer:' + String(Number(question && question.id) || 0));
             return true;
         },
         render: function (reason, meta) {
@@ -168,6 +173,7 @@ function createFixture(overrides = {}) {
                 meta: meta || null,
                 reason: String(reason || '')
             });
+            calls.operationOrder.push('render:' + String(reason || ''));
         },
         renderExamPartial: function (regions, reason, meta) {
             calls.renderExamPartial.push({
@@ -175,6 +181,7 @@ function createFixture(overrides = {}) {
                 reason: String(reason || ''),
                 regions: regions || null
             });
+            calls.operationOrder.push('renderExamPartial:' + String(reason || ''));
             return false;
         },
         resetQuestionPrefetchIdleTimer: function () {
@@ -260,6 +267,7 @@ describe('createExamNavigationManager', function () {
         await fixture.navigationManager.goToQuestion(-10);
 
         expect(fixture.state.currentIndex).toBe(0);
+        expect(fixture.calls.queueQuestionAnswer).toEqual([101, 103]);
     });
 
     it('keeps doubtful flags intact when answers change and the user moves away and back', async function () {
@@ -307,5 +315,39 @@ describe('createExamNavigationManager', function () {
             return entry.questionId;
         })).toEqual([103]);
         expect(fixture.state.currentIndex).toBe(1);
+    });
+
+    it('shows a navigation transition before flushing the previous answer when the target payload is already loaded', async function () {
+        var fixture = createFixture();
+
+        await fixture.navigationManager.goToQuestion(1);
+
+        expect(fixture.state.currentIndex).toBe(1);
+        expect(fixture.state.navigationRefreshing).toBe(false);
+        expect(fixture.calls.operationOrder.indexOf('render:navigation:question-transition')).toBeGreaterThanOrEqual(0);
+        expect(fixture.calls.operationOrder.indexOf('queueQuestionAnswer:101')).toBeGreaterThanOrEqual(0);
+        expect(fixture.calls.operationOrder.indexOf('render:navigation:question-transition')).toBeLessThan(
+            fixture.calls.operationOrder.indexOf('queueQuestionAnswer:101')
+        );
+        expect(fixture.calls.operationOrder.indexOf('persistCurrentAttemptUiStateLocally')).toBeGreaterThan(
+            fixture.calls.operationOrder.indexOf('queueQuestionAnswer:101')
+        );
+    });
+
+    it('shows the question loading patch before loading an unloaded target question', async function () {
+        var fixture = createFixture({
+            loadedQuestionIds: [101]
+        });
+
+        await fixture.navigationManager.goToQuestion(1);
+
+        expect(fixture.state.currentIndex).toBe(1);
+        expect(fixture.state.navigationRefreshing).toBe(false);
+        expect(fixture.state.questionRegionRefreshing).toBe(false);
+        expect(fixture.calls.operationOrder.indexOf('render:navigation:question-loading')).toBeGreaterThanOrEqual(0);
+        expect(fixture.calls.operationOrder.indexOf('ensureQuestionWindowForIndex:1')).toBeGreaterThanOrEqual(0);
+        expect(fixture.calls.operationOrder.indexOf('render:navigation:question-loading')).toBeLessThan(
+            fixture.calls.operationOrder.indexOf('ensureQuestionWindowForIndex:1')
+        );
     });
 });

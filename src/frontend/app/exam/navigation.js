@@ -39,6 +39,41 @@ export function createExamNavigationManager(deps) {
     var schedulePendingAnswerRetry = deps.schedulePendingAnswerRetry;
     var scheduleQuestionCachePersist = deps.scheduleQuestionCachePersist;
     var setActiveQuestionWindowForIndex = deps.setActiveQuestionWindowForIndex;
+    var windowRef = (documentRef && documentRef.defaultView) || (typeof window !== 'undefined' ? window : globalThis);
+
+    function waitForInteractiveNavigationPaint() {
+        if (!windowRef) {
+            return Promise.resolve();
+        }
+
+        if (windowRef.document && windowRef.document.visibilityState === 'hidden') {
+            return new Promise(function (resolve) {
+                if (typeof windowRef.setTimeout === 'function') {
+                    windowRef.setTimeout(resolve, 0);
+                    return;
+                }
+                resolve();
+            });
+        }
+
+        if (typeof windowRef.requestAnimationFrame !== 'function') {
+            return new Promise(function (resolve) {
+                if (typeof windowRef.setTimeout === 'function') {
+                    windowRef.setTimeout(resolve, 0);
+                    return;
+                }
+                resolve();
+            });
+        }
+
+        return new Promise(function (resolve) {
+            windowRef.requestAnimationFrame(function () {
+                windowRef.requestAnimationFrame(function () {
+                    resolve();
+                });
+            });
+        });
+    }
 
     function isQuestionDoubtful(question) {
         if (!question) {
@@ -328,7 +363,7 @@ export function createExamNavigationManager(deps) {
         return '<span class="cbt-nav-type-badge ' + escapeHtml(config.className) + '">' + escapeHtml(config.code) + '</span>';
     }
 
-    function renderNavigationPatch(regions, reason, meta) {
+    function renderNavigationPatch(regions, reason, meta, options) {
         if (typeof renderExamPartial === 'function') {
             var didPatch = renderExamPartial(regions, reason, meta);
             if (didPatch) {
@@ -336,7 +371,7 @@ export function createExamNavigationManager(deps) {
             }
         }
 
-        render(reason, meta);
+        render(reason, meta, options);
         return false;
     }
 
@@ -352,15 +387,7 @@ export function createExamNavigationManager(deps) {
 
         var safeIndex = clampQuestionIndex(nextIndex);
         var currentQuestion = getQuestionAtIndex(state.currentIndex);
-        if (currentQuestion) {
-            var currentQuestionId = Number(currentQuestion.id) || 0;
-            if (currentQuestionId > 0 && queueQuestionAnswer(currentQuestion, { force: true })) {
-                scheduleQuestionCachePersist(0);
-                schedulePendingAnswerRetry('question-navigation', {
-                    delayMs: 150
-                });
-            }
-        }
+        var currentQuestionId = currentQuestion ? (Number(currentQuestion.id) || 0) : 0;
 
         var targetQuestionId = getQuestionIdAtIndex(safeIndex);
         var requiresWindowLoad = !isQuestionPayloadLoaded(targetQuestionId);
@@ -375,14 +402,29 @@ export function createExamNavigationManager(deps) {
             return;
         }
 
+        state.navigationRefreshing = true;
+
         if (requiresWindowLoad) {
             state.questionRegionRefreshing = true;
             renderNavigationPatch({
                 question: true,
+                navigation: true,
                 notice: true
             }, 'navigation:question-loading', {
                 nextIndex: safeIndex
+            }, {
+                immediate: true,
+                skipPostRenderEffects: true
             });
+
+            await waitForInteractiveNavigationPaint();
+
+            if (currentQuestionId > 0 && queueQuestionAnswer(currentQuestion, { force: true })) {
+                scheduleQuestionCachePersist(0);
+                schedulePendingAnswerRetry('question-navigation', {
+                    delayMs: 150
+                });
+            }
 
             try {
                 await ensureQuestionWindowForIndex(safeIndex, {
@@ -390,6 +432,7 @@ export function createExamNavigationManager(deps) {
                     limit: questionWindowSize
                 });
             } catch (error) {
+                state.navigationRefreshing = false;
                 state.questionRegionRefreshing = false;
                 if (isNetworkConnectivityError(error)) {
                     state.error = '';
@@ -405,6 +448,58 @@ export function createExamNavigationManager(deps) {
                 });
                 return;
             }
+        } else {
+            state.questionRegionRefreshing = false;
+            state.currentIndex = safeIndex;
+            setActiveQuestionWindowForIndex(safeIndex, questionWindowSize);
+            var didAcknowledgeLoadedRevisionMarker = typeof acknowledgeQuestionRevisionMarker === 'function'
+                ? acknowledgeQuestionRevisionMarker(targetQuestionId, {
+                    persist: false
+                })
+                : false;
+            var didClearLoadedStickyRevisionNotice = typeof clearStickyQuestionRevisionNotice === 'function'
+                ? clearStickyQuestionRevisionNotice()
+                : false;
+            if (state.notice === 'Koneksi terputus. Soal tujuan belum tersimpan di perangkat ini.') {
+                state.notice = '';
+            }
+            renderNavigationPatch({
+                navigation: true,
+                notice: didClearLoadedStickyRevisionNotice || state.notice !== '',
+                question: true
+            }, 'navigation:question-transition', {
+                nextIndex: safeIndex,
+                requiresWindowLoad: false
+            }, {
+                immediate: true,
+                skipPostRenderEffects: true
+            });
+
+            await waitForInteractiveNavigationPaint();
+
+            if (currentQuestionId > 0 && queueQuestionAnswer(currentQuestion, { force: true })) {
+                scheduleQuestionCachePersist(0);
+                schedulePendingAnswerRetry('question-navigation', {
+                    delayMs: 150
+                });
+            }
+
+            persistCurrentAttemptUiStateLocally();
+            if (didAcknowledgeLoadedRevisionMarker) {
+                scheduleQuestionCachePersist(0);
+            }
+            scheduleAttemptUiStateSync(attemptUiStateNavigationSyncDelayMs);
+            state.navigationRefreshing = false;
+            renderNavigationPatch({
+                navigation: true,
+                notice: didClearLoadedStickyRevisionNotice || state.notice !== ''
+            }, 'navigation:jump', {
+                nextIndex: safeIndex,
+                requiresWindowLoad: false
+            });
+            prefetchNextQuestionBatch();
+            resetQuestionPrefetchIdleTimer();
+            return;
         }
 
         state.questionRegionRefreshing = false;
@@ -426,6 +521,7 @@ export function createExamNavigationManager(deps) {
             scheduleQuestionCachePersist(0);
         }
         scheduleAttemptUiStateSync(attemptUiStateNavigationSyncDelayMs);
+        state.navigationRefreshing = false;
         renderNavigationPatch({
             navigation: true,
             notice: didClearStickyRevisionNotice || state.notice !== '',

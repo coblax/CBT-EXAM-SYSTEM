@@ -58,6 +58,7 @@ export function createExamSessionManager(deps) {
             return Promise.resolve(null);
         };
     var prefetchResultStageRenderer = deps.prefetchResultStageRenderer;
+    var windowRef = deps.windowRef || (typeof window !== 'undefined' ? window : globalThis);
     var queueLoadedQuestionAnswersForFlush = deps.queueLoadedQuestionAnswersForFlush;
     var questionRevisionEquals = deps.questionRevisionEquals;
     var questionWindowOffsetForIndex = deps.questionWindowOffsetForIndex;
@@ -114,6 +115,40 @@ export function createExamSessionManager(deps) {
         state.openingAttemptProgressStepTotal = 0;
         state.openingAttemptProgressStatus = '';
         state.openingAttemptProgressDetail = '';
+    }
+
+    function waitForInteractiveOpeningPaint() {
+        if (!windowRef) {
+            return Promise.resolve();
+        }
+
+        if (windowRef.document && windowRef.document.visibilityState === 'hidden') {
+            return new Promise(function (resolve) {
+                if (typeof windowRef.setTimeout === 'function') {
+                    windowRef.setTimeout(resolve, 0);
+                    return;
+                }
+                resolve();
+            });
+        }
+
+        if (typeof windowRef.requestAnimationFrame !== 'function') {
+            return new Promise(function (resolve) {
+                if (typeof windowRef.setTimeout === 'function') {
+                    windowRef.setTimeout(resolve, 0);
+                    return;
+                }
+                resolve();
+            });
+        }
+
+        return new Promise(function (resolve) {
+            windowRef.requestAnimationFrame(function () {
+                windowRef.requestAnimationFrame(function () {
+                    resolve();
+                });
+            });
+        });
     }
 
     function clearOpeningRetryCountdownTimers(result) {
@@ -3504,7 +3539,13 @@ export function createExamSessionManager(deps) {
                 Math.max(18, Number(state.openingAttemptProgressPercent) || 18),
                 Math.max(1, Number(state.openingAttemptProgressStepIndex) || 1),
                 'Mencoba lagi sekarang',
-                'Countdown dipercepat. Request yang sama akan dipakai, tanpa membuat request paralel.'
+                'Countdown dipercepat. Request yang sama akan dipakai, tanpa membuat request paralel.',
+                {
+                    renderOptions: {
+                        immediate: true,
+                        skipPostRenderEffects: true
+                    }
+                }
             );
             return true;
         }
@@ -3516,7 +3557,13 @@ export function createExamSessionManager(deps) {
                 Math.max(18, Number(state.openingAttemptProgressPercent) || 18),
                 Math.max(1, Number(state.openingAttemptProgressStepIndex) || 1),
                 'Coba Lagi sedang berjalan',
-                'Permintaan sebelumnya masih diproses. Kami tidak membuat request paralel.'
+                'Permintaan sebelumnya masih diproses. Kami tidak membuat request paralel.',
+                {
+                    renderOptions: {
+                        immediate: true,
+                        skipPostRenderEffects: true
+                    }
+                }
             );
             return true;
         }
@@ -3532,8 +3579,16 @@ export function createExamSessionManager(deps) {
                 Math.max(76, Number(state.openingAttemptProgressPercent) || 76),
                 4,
                 'Memuat ulang soal pertama',
-                'Coba Lagi akan memakai attempt yang sudah dibuat, tanpa membuat start baru.'
+                'Coba Lagi akan memakai attempt yang sudah dibuat, tanpa membuat start baru.',
+                {
+                    renderOptions: {
+                        immediate: true,
+                        skipPostRenderEffects: true
+                    }
+                }
             );
+
+            await waitForInteractiveOpeningPaint();
 
             try {
                 await openAttemptSession(selectedExam, retryPayload, retryRequestId);
@@ -3577,8 +3632,15 @@ export function createExamSessionManager(deps) {
             Math.max(18, Number(state.openingAttemptProgressPercent) || 18),
             Math.max(1, Number(state.openingAttemptProgressStepIndex) || 1),
             'Mengulang permintaan sesi',
-            'Permintaan Coba Lagi sedang diproses.'
+            'Permintaan Coba Lagi sedang diproses.',
+            {
+                renderOptions: {
+                    immediate: true,
+                    skipPostRenderEffects: true
+                }
+            }
         );
+        await waitForInteractiveOpeningPaint();
         return handleStartExam({
             skipExamRefresh: true,
             selectedExam: selectedExam,
@@ -3598,7 +3660,13 @@ export function createExamSessionManager(deps) {
                 Math.max(16, Number(state.openingAttemptProgressPercent) || 16),
                 Math.max(1, Number(state.openingAttemptProgressStepIndex) || 1),
                 'Mengecek status sekarang',
-                'Countdown dipercepat. Kami tetap memakai intent/tiket yang sama.'
+                'Countdown dipercepat. Kami tetap memakai intent/tiket yang sama.',
+                {
+                    renderOptions: {
+                        immediate: true,
+                        skipPostRenderEffects: true
+                    }
+                }
             );
             return true;
         }
@@ -3610,7 +3678,13 @@ export function createExamSessionManager(deps) {
                 Math.max(16, Number(state.openingAttemptProgressPercent) || 16),
                 Math.max(1, Number(state.openingAttemptProgressStepIndex) || 1),
                 'Refresh Status sedang berjalan',
-                'Status masih dicek. Kami tidak membuat request paralel.'
+                'Status masih dicek. Kami tidak membuat request paralel.',
+                {
+                    renderOptions: {
+                        immediate: true,
+                        skipPostRenderEffects: true
+                    }
+                }
             );
             return true;
         }
@@ -3630,8 +3704,16 @@ export function createExamSessionManager(deps) {
             queueTicket !== '' ? 'Mengecek status antrean' : 'Mengecek status sesi',
             queueTicket !== ''
                 ? 'Kami mengecek apakah tiket antrean sudah boleh masuk.'
-                : 'Kami mengecek apakah sesi aktif sudah tersedia.'
+                : 'Kami mengecek apakah sesi aktif sudah tersedia.',
+            {
+                renderOptions: {
+                    immediate: true,
+                    skipPostRenderEffects: true
+                }
+            }
         );
+
+        await waitForInteractiveOpeningPaint();
 
         try {
             var statusPayload = await requestStartAttemptStatus({

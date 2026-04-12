@@ -41,6 +41,7 @@ export function createStageRuntimeManager(deps) {
     var renderQuestionStem = deps.renderQuestionStem;
     var recordTimeline = deps.recordTimeline;
     var safeRichHtml = deps.safeRichHtml;
+    var windowRef = deps.windowRef || (typeof window !== 'undefined' ? window : globalThis);
 
     var examStageRenderer = null;
     var examStageRendererPromise = null;
@@ -69,6 +70,40 @@ export function createStageRuntimeManager(deps) {
         }
 
         return message;
+    }
+
+    function waitForInteractiveCalculatorPaint() {
+        if (!windowRef) {
+            return Promise.resolve();
+        }
+
+        if (windowRef.document && windowRef.document.visibilityState === 'hidden') {
+            return new Promise(function (resolve) {
+                if (typeof windowRef.setTimeout === 'function') {
+                    windowRef.setTimeout(resolve, 0);
+                    return;
+                }
+                resolve();
+            });
+        }
+
+        if (typeof windowRef.requestAnimationFrame !== 'function') {
+            return new Promise(function (resolve) {
+                if (typeof windowRef.setTimeout === 'function') {
+                    windowRef.setTimeout(resolve, 0);
+                    return;
+                }
+                resolve();
+            });
+        }
+
+        return new Promise(function (resolve) {
+            windowRef.requestAnimationFrame(function () {
+                windowRef.requestAnimationFrame(function () {
+                    resolve();
+                });
+            });
+        });
     }
 
     function recordTimelineEntry(kind, summary, meta) {
@@ -684,11 +719,40 @@ export function createStageRuntimeManager(deps) {
             return;
         }
 
+        if (calculatorFeature) {
+            state.calculatorVisible = true;
+            state.calculatorError = '';
+            render('toggle-calculator-open', {
+                phase: 'ready'
+            }, {
+                immediate: true,
+                skipPostRenderEffects: true
+            });
+            calculatorFeature.focusInput();
+            return;
+        }
+
         state.calculatorVisible = true;
         state.calculatorError = '';
-        render();
-        ensureCalculatorFeature({
-            renderOnResolve: true
+        calculatorFeatureLoading = true;
+        render('toggle-calculator-open', {
+            phase: 'loading'
+        }, {
+            immediate: true,
+            skipPostRenderEffects: true
+        });
+        waitForInteractiveCalculatorPaint().then(function () {
+            if (!state.calculatorVisible) {
+                calculatorFeatureLoading = false;
+                render('toggle-calculator-cancelled', {
+                    phase: 'cancelled'
+                });
+                return null;
+            }
+
+            return ensureCalculatorFeature({
+                renderOnResolve: true
+            });
         }).then(function (feature) {
             if (!state.calculatorVisible || !feature) {
                 return;

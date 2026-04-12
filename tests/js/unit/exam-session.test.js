@@ -64,6 +64,25 @@ function createDeferredPromise() {
     };
 }
 
+async function waitForAssertion(assertion, attempts) {
+    var remaining = Math.max(1, Number(attempts) || 20);
+    var lastError = null;
+
+    while (remaining > 0) {
+        try {
+            assertion();
+            return;
+        } catch (error) {
+            lastError = error;
+            remaining -= 1;
+            if (remaining <= 0) {
+                throw lastError;
+            }
+            await flushAsyncWork();
+        }
+    }
+}
+
 async function flushAsyncWork() {
     await Promise.resolve();
     await Promise.resolve();
@@ -438,6 +457,7 @@ function createFixture(overrides = {}) {
         syncAttemptUiStateSignatureToCurrentState: function () {},
         syncFullscreenState: function () {},
         syncPendingAnswerRuntimeState: function () {},
+        windowRef: overrides.windowRef || globalThis,
         applyAttemptUiState: function (attemptUiState) {
             state.currentIndex = Number(attemptUiState && attemptUiState.current_index !== undefined ? attemptUiState.current_index : 0) || 0;
         },
@@ -1519,6 +1539,78 @@ describe('createExamSessionManager', function () {
         expect(fixture.calls.apiCalls).toHaveLength(0);
         expect(String(fixture.state.openingAttemptProgressStatus || '')).toContain('Refresh Status sedang berjalan');
         expect(fixture.state.openingRetryInFlight).toBe(true);
+        expect(fixture.calls.renderCalls.some(function (entry) {
+            return entry.reason === 'attempt-opening-progress'
+                && entry.options
+                && entry.options.immediate === true
+                && entry.options.skipPostRenderEffects === true;
+        })).toBe(true);
+    });
+
+    it('paints refresh status progress immediately before waiting for the latest opening status response', async function () {
+        var deferred = createDeferredPromise();
+        var fixture = createFixture({
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: ''
+                    }
+                ],
+                selectedExamId: 55,
+                stage: 'exam',
+                isOpeningAttempt: true,
+                pendingExamId: 55,
+                pendingExamToken: '',
+                pendingQueueTicket: '',
+                pendingResumeIntent: true
+            },
+            windowRef: {
+                document: {
+                    visibilityState: 'hidden'
+                },
+                setTimeout: setTimeout
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'start_attempt_status') {
+                    return deferred.promise;
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        var refreshPromise = fixture.manager.refreshOpeningAttemptStatus();
+        await flushAsyncWork();
+
+        expect(fixture.calls.renderCalls.some(function (entry) {
+            return entry.reason === 'attempt-opening-progress'
+                && entry.options
+                && entry.options.immediate === true
+                && entry.options.skipPostRenderEffects === true;
+        })).toBe(true);
+        expect(String(fixture.state.openingAttemptProgressStatus || '')).toContain('Mengecek status sesi');
+        await waitForAssertion(function () {
+            expect(fixture.calls.apiCalls.map(function (entry) {
+                return entry.endpoint;
+            })).toEqual(['start_attempt_status']);
+        });
+
+        deferred.resolve({
+            status: 'pending',
+            error_code: 'attempt_pending',
+            error_message: 'Attempt aktif belum ditemukan. Status sesi masih kami pantau.',
+            retry_after_ms: 1200,
+            opening_state: 'resume_lookup',
+            opening_reason: 'resume_index_miss',
+            attempt_id: 88,
+            wait_age_seconds: 5
+        });
+
+        await refreshPromise;
     });
 
     it('reuses the same idempotency key when retrying the same opening shell', async function () {
@@ -1572,6 +1664,66 @@ describe('createExamSessionManager', function () {
         expect(startAttemptCalls).toHaveLength(1);
         expect(startAttemptCalls[0].options.body.idempotency_key).toBe('start_1_retry_key');
         expect(fixture.state.pendingStartIntentKey).toBe('');
+    });
+
+    it('paints retry progress immediately before reusing the same opening request flow', async function () {
+        var restoredSnapshot = buildCachedQuestionSnapshot(40);
+        var deferred = createDeferredPromise();
+        var fixture = createFixture({
+            restoredSnapshot,
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: ''
+                    }
+                ],
+                selectedExamId: 55,
+                stage: 'exam',
+                isOpeningAttempt: true,
+                pendingExamId: 55,
+                pendingExamToken: '',
+                pendingStartIntentKey: 'retry_key_fast',
+                pendingQueueTicket: '',
+                pendingResumeIntent: false
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'start_attempt') {
+                    return deferred.promise;
+                }
+
+                if (endpoint === 'ui_state') {
+                    return { attempt_state: null };
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        var retryPromise = fixture.manager.retryOpeningAttempt();
+        await flushAsyncWork();
+
+        expect(fixture.calls.renderCalls.some(function (entry) {
+            return entry.reason === 'attempt-opening-progress'
+                && entry.options
+                && entry.options.immediate === true
+                && entry.options.skipPostRenderEffects === true;
+        })).toBe(true);
+        expect(String(fixture.state.openingAttemptProgressStatus || '')).toContain('Mengulang permintaan sesi');
+
+        deferred.resolve({
+            attempt_id: 77,
+            duration_minutes: 60,
+            started_at: '2026-04-03 05:00:00',
+            status: 'started',
+            question_order_signature: restoredSnapshot.questionOrderSignature,
+            question_revision: restoredSnapshot.questionRevision
+        });
+
+        await retryPromise;
     });
 
     it('keeps the user in the opening shell when local token validation fails after the start button is pressed', async function () {
