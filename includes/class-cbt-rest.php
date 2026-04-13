@@ -755,7 +755,15 @@ class CBT_REST
         if ($role === 'siswa' || $role === 'student') {
             $student_kelas = self::get_live_user_kelas($user_id);
             if (!self::exam_allows_student_class($exam, $student_kelas)) {
-                return new WP_Error('forbidden', 'Exam is not available for your class', ['status' => 403]);
+                return new WP_Error(
+                    'forbidden',
+                    'Exam tidak tersedia untuk kelas akun Anda.',
+                    [
+                        'status' => 403,
+                        'opening_reason' => 'forbidden',
+                        'suggestion' => 'Kembali ke daftar exam untuk memilih exam lain yang sesuai.',
+                    ]
+                );
             }
 
             $is_resuming_attempt = (
@@ -771,7 +779,7 @@ class CBT_REST
                     (empty($exam['ends_at']) || (string) $exam['ends_at'] >= $now)
                 );
                 if ((string) ($exam['status'] ?? 'draft') !== 'published' || !$within_schedule) {
-                    return new WP_Error('forbidden', 'Exam is not active', ['status' => 403]);
+                    return self::build_start_attempt_inactive_exam_error($exam, $now);
                 }
             }
         }
@@ -1348,7 +1356,16 @@ class CBT_REST
         $student_kelas = self::get_live_user_kelas($user_id);
         if (!self::exam_allows_student_class($exam, $student_kelas)) {
             self::write_start_attempt_opening_state($exam_id, $user_id, 'terminal_error', 'forbidden');
-            return $finalize_start_attempt_response(new WP_Error('forbidden', 'Exam is not available for your class', ['status' => 403]), 'terminal_error');
+            return $finalize_start_attempt_response(new WP_Error(
+                'forbidden',
+                'Exam tidak tersedia untuk kelas akun Anda.',
+                [
+                    'status' => 403,
+                    'opening_reason' => 'forbidden',
+                    'suggestion' => 'Kembali ke daftar exam untuk memilih exam lain yang sesuai.',
+                    'return_to_exam_list_suggestion' => 'Kembali ke daftar exam untuk memilih exam lain yang sesuai.',
+                ]
+            ), 'terminal_error');
         }
 
         $expected_token = null;
@@ -1463,21 +1480,27 @@ class CBT_REST
             (empty($exam['ends_at']) || (string) $exam['ends_at'] >= $now)
         );
         if ((string) ($exam['status'] ?? 'draft') !== 'published' || !$within_schedule) {
-            self::write_start_attempt_opening_state($exam_id, $user_id, 'terminal_error', 'forbidden');
+            $inactive_details = self::describe_start_attempt_inactive_exam($exam, $now);
+            $inactive_reason = (string) ($inactive_details['opening_reason'] ?? 'exam_not_active');
+            $inactive_error = self::build_start_attempt_inactive_exam_error($exam, $now);
+            self::write_start_attempt_opening_state($exam_id, $user_id, 'terminal_error', $inactive_reason);
             self::record_start_attempt_resolution('terminal_error', $exam_id, $user_id, [
                 'error_code' => 'forbidden',
+                'inactive_error_code' => $inactive_reason,
             ]);
-            $inactiveError = new WP_Error('forbidden', 'Exam is not active', ['status' => 403]);
             self::record_start_attempt_response_ready_phase(
                 'start_attempt_response_ready',
                 $exam_id,
                 $user_id,
                 $request_started_at,
-                $inactiveError,
-                ['error_code' => 'forbidden'],
+                $inactive_error,
+                [
+                    'error_code' => 'forbidden',
+                    'inactive_error_code' => $inactive_reason,
+                ],
                 'terminal_error'
             );
-            return $finalize_start_attempt_response(new WP_Error('forbidden', 'Exam is not active', ['status' => 403]), 'terminal_error');
+            return $finalize_start_attempt_response($inactive_error, 'terminal_error');
         }
 
         $token_check = $validate_token_submission($exam_token_input);
@@ -2083,7 +2106,12 @@ class CBT_REST
             return self::build_start_attempt_terminal_status_response(
                 'forbidden',
                 'Exam tidak tersedia untuk kelas akun Anda.',
-                403
+                403,
+                [
+                    'opening_reason' => 'forbidden',
+                    'suggestion' => 'Kembali ke daftar exam untuk memilih exam lain yang sesuai.',
+                    'return_to_exam_list_suggestion' => 'Kembali ke daftar exam untuk memilih exam lain yang sesuai.',
+                ]
             );
         }
 
@@ -2274,11 +2302,14 @@ class CBT_REST
             (empty($exam['ends_at']) || (string) $exam['ends_at'] >= $now)
         );
         if (!$resume_only && ((string) ($exam['status'] ?? 'draft') !== 'published' || !$within_schedule)) {
-            self::write_start_attempt_opening_state($exam_id, $user_id, 'terminal_error', 'forbidden', []);
+            $inactive_details = self::describe_start_attempt_inactive_exam($exam, $now);
+            $inactive_reason = (string) ($inactive_details['opening_reason'] ?? 'exam_not_active');
+            self::write_start_attempt_opening_state($exam_id, $user_id, 'terminal_error', $inactive_reason, []);
             $response = self::build_start_attempt_terminal_status_response(
                 'forbidden',
-                'Exam sedang tidak aktif.',
-                403
+                (string) ($inactive_details['message'] ?? 'Exam sedang tidak aktif.'),
+                403,
+                $inactive_details
             );
             self::record_start_attempt_response_ready_phase(
                 'start_attempt_status_response_ready',
@@ -2286,7 +2317,10 @@ class CBT_REST
                 $user_id,
                 $request_started_at,
                 $response,
-                ['error_code' => 'forbidden'],
+                [
+                    'error_code' => 'forbidden',
+                    'inactive_error_code' => $inactive_reason,
+                ],
                 'terminal_error'
             );
             return $response;
@@ -2626,6 +2660,9 @@ class CBT_REST
         if (in_array($error_code, ['token_invalid', 'token_required', 'token_required_local', 'token_invalid_length'], true)) {
             return 'token_invalid';
         }
+        if (in_array($error_code, ['exam_not_published', 'exam_not_started', 'exam_ended', 'exam_not_active'], true)) {
+            return $error_code;
+        }
         if (in_array($error_code, ['not_found', 'invalid_exam_id'], true)) {
             return 'not_found';
         }
@@ -2634,6 +2671,67 @@ class CBT_REST
         }
 
         return 'forbidden';
+    }
+
+    /**
+     * @param array<string,mixed> $exam
+     * @return array<string,mixed>
+     */
+    private static function describe_start_attempt_inactive_exam(array $exam, string $now): array
+    {
+        $exam_status = sanitize_key((string) ($exam['status'] ?? 'draft'));
+        $starts_at = (string) ($exam['starts_at'] ?? '');
+        $ends_at = (string) ($exam['ends_at'] ?? '');
+
+        $code = 'exam_not_active';
+        $message = 'Exam sedang tidak aktif. Kembali ke daftar exam untuk memeriksa status exam terbaru.';
+        $suggestion = 'Kembali ke daftar exam untuk memeriksa status exam terbaru.';
+
+        if ($exam_status !== 'published') {
+            $code = 'exam_not_published';
+            $message = 'Exam belum dipublikasikan. Kembali ke daftar exam untuk memeriksa status terbaru atau hubungi admin.';
+            $suggestion = 'Kembali ke daftar exam untuk memeriksa status terbaru atau hubungi admin.';
+        } elseif ($starts_at !== '' && $starts_at > $now) {
+            $code = 'exam_not_started';
+            $message = 'Exam belum dimulai. Kembali ke daftar exam untuk melihat jadwal terbaru.';
+            $suggestion = 'Kembali ke daftar exam untuk melihat jadwal terbaru.';
+        } elseif ($ends_at !== '' && $ends_at < $now) {
+            $code = 'exam_ended';
+            $message = 'Jadwal exam sudah berakhir. Kembali ke daftar exam untuk memeriksa status hasil atau pilih exam lain.';
+            $suggestion = 'Kembali ke daftar exam untuk memeriksa status hasil atau pilih exam lain.';
+        }
+
+        return [
+            'error_code' => $code,
+            'opening_reason' => $code,
+            'message' => $message,
+            'suggestion' => $suggestion,
+            'return_to_exam_list_suggestion' => $suggestion,
+            'exam_status' => $exam_status,
+            'starts_at' => $starts_at,
+            'ends_at' => $ends_at,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $exam
+     */
+    private static function build_start_attempt_inactive_exam_error(array $exam, string $now): WP_Error
+    {
+        $details = self::describe_start_attempt_inactive_exam($exam, $now);
+        return new WP_Error(
+            'forbidden',
+            (string) ($details['message'] ?? 'Exam sedang tidak aktif.'),
+            [
+                'status' => 403,
+                'opening_reason' => (string) ($details['opening_reason'] ?? 'exam_not_active'),
+                'suggestion' => (string) ($details['suggestion'] ?? ''),
+                'return_to_exam_list_suggestion' => (string) ($details['return_to_exam_list_suggestion'] ?? ''),
+                'exam_status' => (string) ($details['exam_status'] ?? ''),
+                'starts_at' => (string) ($details['starts_at'] ?? ''),
+                'ends_at' => (string) ($details['ends_at'] ?? ''),
+            ]
+        );
     }
 
     /**
@@ -3101,14 +3199,39 @@ class CBT_REST
     /**
      * @return array<string,mixed>|WP_REST_Response
      */
-    private static function build_start_attempt_terminal_status_response(string $error_code, string $error_message, int $http_status = 400)
+    private static function build_start_attempt_terminal_status_response(string $error_code, string $error_message, int $http_status = 400, array $extra = [])
     {
-        return rest_ensure_response(self::append_adaptive_load_payload([
+        $payload = [
             'status' => 'terminal_error',
             'error_code' => sanitize_key($error_code),
             'error_message' => (string) $error_message,
             'http_status' => max(400, $http_status),
-        ]));
+        ];
+
+        $allowed_extra_keys = [
+            'opening_state',
+            'opening_reason',
+            'suggestion',
+            'return_to_exam_list_suggestion',
+            'exam_status',
+            'starts_at',
+            'ends_at',
+        ];
+        foreach ($allowed_extra_keys as $key) {
+            if (!array_key_exists($key, $extra)) {
+                continue;
+            }
+            $payload[$key] = is_scalar($extra[$key]) ? (string) $extra[$key] : '';
+        }
+
+        if (!isset($payload['opening_state'])) {
+            $payload['opening_state'] = 'terminal_error';
+        }
+        if (!isset($payload['opening_reason'])) {
+            $payload['opening_reason'] = sanitize_key($error_code);
+        }
+
+        return rest_ensure_response(self::append_adaptive_load_payload($payload));
     }
 
     /**
@@ -3118,10 +3241,19 @@ class CBT_REST
     {
         $error_data = $error->get_error_data();
         $http_status = is_array($error_data) ? (int) ($error_data['status'] ?? 400) : 400;
+        $extra = [];
+        if (is_array($error_data)) {
+            foreach (['opening_reason', 'suggestion', 'return_to_exam_list_suggestion', 'exam_status', 'starts_at', 'ends_at'] as $key) {
+                if (array_key_exists($key, $error_data)) {
+                    $extra[$key] = $error_data[$key];
+                }
+            }
+        }
         return self::build_start_attempt_terminal_status_response(
             (string) $error->get_error_code(),
             (string) $error->get_error_message(),
-            $http_status
+            $http_status,
+            $extra
         );
     }
 

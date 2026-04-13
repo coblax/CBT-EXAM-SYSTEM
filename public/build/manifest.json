@@ -416,7 +416,7 @@
     "isDynamicEntry": true
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-dFRrVCH2.js",
+    "file": "assets/frontend-core-DlbWRFam.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
@@ -429,7 +429,7 @@
       "src/frontend/app/core/debug-panel.js"
     ],
     "css": [
-      "assets/frontend-ioobz_OD.css"
+      "assets/frontend-rBpoEpwH.css"
     ],
     "assets": [
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",

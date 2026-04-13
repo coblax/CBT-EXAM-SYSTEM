@@ -40,6 +40,10 @@ class CBT_Start_Attempt_Opening_State_Service
         'attempt_completed',
         'token_invalid',
         'forbidden',
+        'exam_not_published',
+        'exam_not_started',
+        'exam_ended',
+        'exam_not_active',
         'not_found',
     ];
 

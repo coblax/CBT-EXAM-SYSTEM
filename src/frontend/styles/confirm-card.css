@@ -196,6 +196,11 @@
     font-size: 54px;
 }
 
+[data-cbt-profile-photo][hidden],
+[data-cbt-profile-photo-fallback][hidden] {
+    display: none !important;
+}
+
 .cbt-user-photo-modal-image-fallback {
     display: flex;
     align-items: center;

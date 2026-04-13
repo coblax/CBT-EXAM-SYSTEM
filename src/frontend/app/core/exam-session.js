@@ -249,7 +249,7 @@ export function createExamSessionManager(deps) {
             code = code || 'attempt_already_completed';
             message = 'Ujian ini sudah selesai dan hasilnya siap dibuka.';
         } else if (status === 'terminal_error') {
-            code = code || String(fallbackCode || 'terminal_error').trim().toLowerCase();
+            code = String(payload && payload.opening_reason ? payload.opening_reason : (code || fallbackCode || 'terminal_error')).trim().toLowerCase();
             message = String(payload && payload.error_message ? payload.error_message : (fallbackMessage || 'Sesi ujian tidak dapat dilanjutkan.')).trim();
         } else if (status === 'pending') {
             code = code || String(fallbackCode || 'start_attempt_status_pending').trim().toLowerCase();
@@ -728,6 +728,19 @@ export function createExamSessionManager(deps) {
         return String(error && error.code ? error.code : '').trim().toLowerCase();
     }
 
+    function getErrorField(error, field) {
+        var sources = [error, error && error.data];
+        for (var index = 0; index < sources.length; index += 1) {
+            var source = sources[index];
+            var value = source && source[field] !== undefined ? source[field] : '';
+            if (value !== undefined && value !== null && String(value).trim() !== '') {
+                return String(value).trim();
+            }
+        }
+
+        return '';
+    }
+
     function buildOpeningAttemptCancelledError() {
         var cancelledError = new Error('Opening attempt flow dibatalkan.');
         cancelledError.code = 'opening_attempt_cancelled';
@@ -971,7 +984,9 @@ export function createExamSessionManager(deps) {
             || code === 'token_invalid'
             || code === 'token_required'
             || code === 'forbidden'
-            || code === 'not_found';
+            || code === 'not_found'
+            || code.indexOf('exam_') === 0
+            || getErrorField(error, 'opening_reason').toLowerCase().indexOf('exam_') === 0;
     }
 
     function isAttemptCompletedError(error) {
@@ -1663,7 +1678,27 @@ export function createExamSessionManager(deps) {
         error.wait_age_seconds = Math.max(0, Number(payload && payload.wait_age_seconds) || 0);
         error.last_stage_at = Math.max(0, Number(payload && payload.last_stage_at) || 0);
         error.resume_source = String(payload && payload.resume_source ? payload.resume_source : '').trim().toLowerCase();
+        error.suggestion = String(payload && payload.suggestion ? payload.suggestion : '').trim();
         return error;
+    }
+
+    function buildTerminalStartAttemptUiCopy(errorCode, error) {
+        var code = String(errorCode || getErrorCode(error) || '').trim().toLowerCase();
+        var reason = getErrorField(error, 'opening_reason').toLowerCase();
+        var normalized = reason || code;
+        var suggestion = getErrorField(error, 'suggestion');
+        var status = normalized === 'token_invalid'
+            ? 'Token ujian tidak valid'
+            : (normalized === 'token_required'
+                ? 'Token ujian dibutuhkan'
+                : 'Exam tidak dapat dilanjutkan');
+
+        return {
+            status: status,
+            detail: suggestion || (normalized === 'token_invalid' || normalized === 'token_required'
+                ? 'Kembali ke daftar exam untuk memperbaiki token lalu coba lagi.'
+                : 'Kembali ke daftar exam untuk memeriksa status exam terbaru.')
+        };
     }
 
     function getOpeningStateRetryPolicy(openingState) {
@@ -3612,17 +3647,10 @@ export function createExamSessionManager(deps) {
             });
 
             if (isTerminalStartAttemptError(error)) {
+                var terminalCopy = buildTerminalStartAttemptUiCopy(errorCode, error);
                 markOpeningAttemptTerminalFailure(errorMessage, errorCode, {
-                    status: errorCode === 'token_invalid'
-                        ? 'Token ujian tidak valid'
-                        : (errorCode === 'token_required'
-                            ? 'Token ujian dibutuhkan'
-                            : (errorCode === 'forbidden'
-                                ? 'Exam tidak dapat dilanjutkan'
-                                : 'Exam tidak tersedia')),
-                    detail: errorCode === 'token_invalid' || errorCode === 'token_required'
-                        ? 'Kembali ke daftar exam untuk memperbaiki token lalu coba lagi.'
-                        : 'Kembali ke daftar exam untuk memeriksa status exam terbaru.',
+                    status: terminalCopy.status,
+                    detail: terminalCopy.detail,
                     serverStateSource: error
                 });
                 return;
@@ -3934,12 +3962,13 @@ export function createExamSessionManager(deps) {
 
             if (isTerminalStartAttemptError(error)) {
                 completeOpeningAttemptUiAction('error');
+                var terminalStatusCopy = buildTerminalStartAttemptUiCopy(getErrorCode(error), error);
                 markOpeningAttemptTerminalFailure(
                     error instanceof Error ? error.message : 'Sesi ujian tidak dapat dilanjutkan.',
                     getErrorCode(error),
                     {
-                        status: 'Sesi ujian membutuhkan tindakan',
-                        detail: 'Periksa pesan berikut lalu kembali ke daftar exam bila perlu.',
+                        status: terminalStatusCopy.status,
+                        detail: terminalStatusCopy.detail,
                         serverStateSource: error
                     }
                 );
