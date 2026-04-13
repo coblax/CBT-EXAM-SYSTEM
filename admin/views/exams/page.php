@@ -27,13 +27,13 @@
                     </div>
                 </section>
                 <?php if (!empty($exam_operational_stats['cards']) && is_array($exam_operational_stats['cards'])): ?>
-                    <section class="cbt-exams-operational-strip" aria-label="Operational overview">
-                        <div class="cbt-exams-operational-head">
+                    <details class="cbt-exams-operational-strip" aria-label="Operational overview">
+                        <summary class="cbt-exams-operational-head">
                             <div>
                                 <span class="cbt-exams-operational-kicker">Operational</span>
                                 <p>Diperbarui sekitar tiap <?php echo esc_html((string) max(1, (int) ($exam_operational_stats['refreshed_every_seconds'] ?? 20))); ?> detik untuk memberi ringkasan kondisi Redis dan runtime CBT saat ini.</p>
                             </div>
-                        </div>
+                        </summary>
                         <div class="cbt-exams-operational-grid">
                             <?php foreach ((array) $exam_operational_stats['cards'] as $operational_card): ?>
                                 <?php
@@ -56,7 +56,7 @@
                                 </article>
                             <?php endforeach; ?>
                         </div>
-                    </section>
+                    </details>
                 <?php endif; ?>
 
             <?php if ($notice): ?>
@@ -786,13 +786,12 @@
                     </div>
                 <?php endif; ?>
                 <div class="cbt-exam-list-table-wrap">
-                <table class="widefat striped cbt-exam-list-table">
+                <table class="widefat cbt-exam-list-table">
                     <thead>
                     <tr>
                         <th>ID</th>
                         <th>Mapel</th>
                         <th>Judul</th>
-                        <th>Kelas</th>
                         <th>Status</th>
                         <th>Jadwal</th>
                         <th>Durasi</th>
@@ -801,11 +800,12 @@
                         <th>Actions</th>
                     </tr>
                     </thead>
-                    <tbody>
                     <?php if (empty($exams)): ?>
-                        <tr><td colspan="10"><?php echo !empty($exam_active_filters) ? 'Tidak ada exam yang cocok dengan filter saat ini.' : 'Belum ada exam yang tampil.'; ?></td></tr>
+                        <tbody>
+                        <tr><td colspan="9"><?php echo !empty($exam_active_filters) ? 'Tidak ada exam yang cocok dengan filter saat ini.' : 'Belum ada exam yang tampil.'; ?></td></tr>
+                        </tbody>
                     <?php else: ?>
-                        <?php foreach ($exams as $exam): ?>
+                        <?php foreach ($exams as $index => $exam): ?>
                             <?php
                             $kelas_list = CBT_Admin_Exams_Service::split_target_kelas_csv((string) ($exam['target_kelas'] ?? ''));
                             $kelas_display = !empty($kelas_list) ? implode(', ', $kelas_list) : 'Semua kelas';
@@ -824,7 +824,8 @@
                             $show_student_result_enabled = !array_key_exists('show_student_result', $exam) || !empty($exam['show_student_result']);
                             $enable_calculator_enabled = !array_key_exists('enable_calculator', $exam) || !empty($exam['enable_calculator']);
                             ?>
-                            <tr>
+                            <tbody class="cbt-exam-item-group <?php echo $index % 2 === 0 ? 'is-striped' : ''; ?>">
+                            <tr class="cbt-exam-main-row">
                                 <td><?php echo (int) $exam['id']; ?></td>
                                 <td><?php echo esc_html((string) ($exam['subject_name'] ?? '-')); ?></td>
                                 <td>
@@ -836,9 +837,9 @@
                                             </span>
                                             <small><?php echo esc_html((string) ($exam['topology_summary_text'] ?? 'Belum ada soal aktif')); ?></small>
                                         </div>
+                                        </div>
                                     </div>
                                 </td>
-                                <td><?php echo esc_html($kelas_display); ?></td>
                                 <td>
                                     <div class="cbt-exam-status-stack">
                                         <span class="cbt-exam-status-pill cbt-exam-status-pill--<?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_value); ?></span>
@@ -893,9 +894,23 @@
                                     </div>
                                 </td>
                             </tr>
+                            <tr class="cbt-exam-class-row">
+                                <td colspan="2"></td>
+                                <td colspan="7">
+                                    <div class="cbt-exam-list-classes-wrap">
+                                        <?php if (empty($kelas_list)): ?>
+                                            <span class="cbt-exam-list-class-badge is-all">Semua Kelas</span>
+                                        <?php else: ?>
+                                            <?php foreach ($kelas_list as $kelas): ?>
+                                                <span class="cbt-exam-list-class-badge"><?php echo esc_html($kelas); ?></span>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                            </tr>
+                            </tbody>
                         <?php endforeach; ?>
                     <?php endif; ?>
-                    </tbody>
                 </table>
                 </div>
             <?php
@@ -1134,8 +1149,6 @@
                     line-height: 1.1;
                 }
                 .cbt-exams-operational-strip {
-                    display: grid;
-                    gap: 12px;
                     padding: 14px 18px;
                     border: 1px solid #dbe6f1;
                     border-radius: 20px;
@@ -1147,6 +1160,27 @@
                     align-items: flex-start;
                     justify-content: space-between;
                     gap: 12px;
+                    cursor: pointer;
+                    outline: none;
+                    list-style: none; /* hide standard marker in many browsers */
+                    user-select: none;
+                }
+                .cbt-exams-operational-head::-webkit-details-marker {
+                    display: none; /* hide standard marker in Safari/Chrome */
+                }
+                .cbt-exams-operational-head::after {
+                    content: "▼";
+                    font-size: 14px;
+                    color: #64748b;
+                    margin-top: 4px;
+                    padding-left: 12px;
+                    transition: transform 0.2s ease;
+                }
+                .cbt-exams-operational-strip[open] .cbt-exams-operational-head::after {
+                    transform: rotate(180deg);
+                }
+                .cbt-exams-operational-strip[open] .cbt-exams-operational-grid {
+                    margin-top: 14px;
                 }
                 .cbt-exams-operational-kicker {
                     display: inline-flex;
@@ -1173,7 +1207,8 @@
                     gap: 10px;
                 }
                 .cbt-exams-operational-card {
-                    display: grid;
+                    display: flex;
+                    flex-direction: column;
                     gap: 4px;
                     min-height: 88px;
                     padding: 12px 14px;
@@ -1207,16 +1242,16 @@
                     line-height: 1.45;
                 }
                 .cbt-exams-operational-card-hint {
-                    display: inline-flex;
-                    align-items: center;
+                    display: inline-block;
                     width: fit-content;
-                    min-height: 22px;
-                    padding: 0 8px;
-                    border-radius: 999px;
+                    margin-top: auto;
+                    padding: 4px 10px;
+                    border-radius: 8px;
                     background: #f1f5f9;
                     color: #475569;
                     font-size: 11px;
                     font-weight: 600;
+                    line-height: 1.4;
                 }
                 .cbt-exams-page .notice {
                     margin: 0;
@@ -4052,6 +4087,41 @@
                 .cbt-exam-list-topology-badge--empty {
                     background: #f1f5f9;
                     color: #475569;
+                }
+                .cbt-exam-list-table > tbody.cbt-exam-item-group.is-striped > tr {
+                    background-color: #f6f7f7;
+                }
+                .cbt-exam-list-table > tbody.cbt-exam-item-group > tr.cbt-exam-class-row > td {
+                    padding-bottom: 12px;
+                    padding-top: 0;
+                    border-top: none;
+                }
+                .cbt-exam-list-table > tbody.cbt-exam-item-group > tr.cbt-exam-main-row > td {
+                    border-bottom: none;
+                }
+                .cbt-exam-list-classes-wrap {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                    margin-top: 4px;
+                }
+                .cbt-exam-list-class-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 24px;
+                    padding: 0 8px;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 6px;
+                    background: #f8fafc;
+                    color: #475569;
+                    font-size: 11px;
+                    font-weight: 600;
+                    letter-spacing: 0.02em;
+                }
+                .cbt-exam-list-class-badge.is-all {
+                    background: #f0fdf4;
+                    border-color: #bbf7d0;
+                    color: #166534;
                 }
                 .cbt-exam-status-pill {
                     display: inline-flex;

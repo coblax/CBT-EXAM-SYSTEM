@@ -1,6 +1,12 @@
         <style>
             .cbt-users-page {
                 max-width: 1180px;
+                animation: cbtSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+                opacity: 0;
+            }
+            @keyframes cbtSlideUp {
+                0% { opacity: 0; transform: translateY(15px); }
+                100% { opacity: 1; transform: translateY(0); }
             }
             .cbt-users-shell {
                 display: grid;
@@ -8,33 +14,45 @@
                 margin-top: 18px;
             }
             .cbt-users-hero {
+                position: relative;
+                overflow: hidden;
                 display: flex;
-                align-items: flex-start;
+                align-items: center;
                 justify-content: space-between;
-                gap: 22px;
-                padding: 24px 28px;
-                border: 1px solid #d7dbe2;
-                border-radius: 22px;
-                background:
-                    radial-gradient(circle at top right, rgba(34, 113, 177, 0.10), transparent 34%),
-                    linear-gradient(135deg, #ffffff 0%, #f6f9fc 100%);
-                box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+                gap: 24px;
+                padding: 28px 36px;
+                border: 1px solid rgba(255, 255, 255, 0.6);
+                border-radius: 24px;
+                background: linear-gradient(145deg, #ffffff 0%, #f0f4f8 100%);
+                box-shadow: 
+                    0 20px 40px rgba(15, 23, 42, 0.05), 
+                    inset 0 2px 0 rgba(255, 255, 255, 0.9);
+            }
+            .cbt-users-hero::before {
+                content: ''; position: absolute;
+                top: -200px; right: -200px; width: 600px; height: 600px;
+                background: radial-gradient(circle, rgba(59, 130, 246, 0.12) 0%, transparent 70%);
+                border-radius: 50%; pointer-events: none;
             }
             .cbt-users-hero-copy {
-                max-width: 680px;
+                flex: 1;
+                margin-right: 32px;
+                position: relative;
+                z-index: 2;
             }
             .cbt-users-kicker {
                 display: inline-flex;
                 align-items: center;
-                min-height: 28px;
+                min-height: 26px;
                 padding: 0 12px;
                 border-radius: 999px;
-                background: #e8f1ff;
-                color: #0f4fa8;
-                font-size: 12px;
-                font-weight: 700;
-                letter-spacing: 0.06em;
+                background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0.1em;
                 text-transform: uppercase;
+                box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
             }
             .cbt-users-hero h1 {
                 margin: 12px 0 8px;
@@ -48,64 +66,72 @@
                 line-height: 1.6;
             }
             .cbt-users-overview {
+                position: relative;
+                z-index: 2;
                 display: grid;
-                gap: 10px;
-                min-width: 260px;
+                gap: 8px;
+                min-width: 250px;
+                padding: 20px;
+                border: 1px solid rgba(255, 255, 255, 0.8);
+                border-radius: 20px;
+                background: rgba(255, 255, 255, 0.5);
+                backdrop-filter: blur(20px);
+                box-shadow: 0 10px 25px rgba(15, 23, 42, 0.04), inset 0 0 0 1px rgba(255,255,255,0.4);
+                flex-shrink: 0;
             }
             .cbt-users-pill {
-                display: inline-flex;
+                display: flex;
                 align-items: center;
-                justify-content: center;
-                min-height: 34px;
-                padding: 0 14px;
-                border-radius: 999px;
-                background: rgba(255, 255, 255, 0.92);
-                border: 1px solid #d7e4f5;
-                color: #1e3a5f;
+                justify-content: space-between;
+                padding: 8px 12px;
+                background: rgba(255,255,255,0.8);
+                border-radius: 8px;
+                color: #0f172a;
                 font-size: 13px;
-                font-weight: 600;
+                font-weight: 700;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.02);
             }
             .cbt-users-tabs {
                 display: flex;
                 align-items: center;
-                gap: 10px;
+                gap: 12px;
                 flex-wrap: wrap;
             }
             .cbt-users-tab {
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                min-height: 42px;
-                padding: 0 16px;
-                border: 1px solid #c9d5e6;
-                border-radius: 12px;
+                min-height: 46px;
+                padding: 0 20px;
+                border: 2px solid #e2e8f0;
+                border-radius: 14px;
                 background: #ffffff;
-                color: #334155;
-                font-size: 13px;
-                font-weight: 600;
+                color: #64748b;
+                font-size: 14px;
+                font-weight: 700;
                 cursor: pointer;
-                transition: all 0.16s ease;
+                transition: all 0.2s ease;
             }
             .cbt-users-tab:hover,
             .cbt-users-tab:focus {
-                border-color: #2271b1;
-                color: #0f4fa8;
+                border-color: #cbd5e1;
+                background: #f8fafc;
+                color: #0f172a;
                 outline: none;
-                box-shadow: 0 0 0 3px rgba(34, 113, 177, 0.12);
             }
             .cbt-users-tab.is-active {
-                border-color: #2271b1;
-                background: #2271b1;
+                border-color: #3b82f6;
+                background: #3b82f6;
                 color: #ffffff;
-                box-shadow: 0 10px 24px rgba(34, 113, 177, 0.18);
+                box-shadow: 0 8px 16px rgba(59, 130, 246, 0.25);
             }
             .cbt-users-panel {
                 display: none;
-                padding: 24px;
-                border: 1px solid #dcdcde;
+                padding: 32px 36px;
+                border: 1px solid #e2e8f0;
                 border-radius: 20px;
                 background: #ffffff;
-                box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+                box-shadow: 0 14px 32px rgba(15, 23, 42, 0.04);
             }
             .cbt-users-panel.is-active {
                 display: block;
@@ -122,14 +148,17 @@
                 margin-bottom: 18px;
             }
             .cbt-users-panel-header h2 {
-                margin: 0 0 6px;
-                font-size: 18px;
+                margin: 0 0 8px;
+                font-size: 20px;
+                font-weight: 800;
+                color: #0f172a;
                 line-height: 1.2;
             }
             .cbt-users-panel-header p {
                 margin: 0;
-                color: #646970;
-                line-height: 1.55;
+                color: #64748b;
+                font-size: 14px;
+                line-height: 1.6;
             }
             .cbt-users-chip {
                 display: inline-flex;
@@ -137,10 +166,12 @@
                 min-height: 28px;
                 padding: 0 12px;
                 border-radius: 999px;
-                background: #f3f4f6;
-                color: #334155;
-                font-size: 12px;
-                font-weight: 600;
+                background: #e2e8f0;
+                color: #0f172a;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
                 white-space: nowrap;
             }
             .cbt-users-actions,
@@ -280,17 +311,31 @@
             .cbt-users-panel input[type="email"],
             .cbt-users-panel input[type="search"],
             .cbt-users-panel select {
-                height: 42px;
+                height: 48px;
                 border-radius: 12px;
-                border: 1px solid #d0d7e2;
-                padding: 0 12px;
+                border: 2px solid #e2e8f0;
+                padding: 0 16px;
+                background: #f8fafc;
+                color: #0f172a;
+                font-size: 14px;
+                transition: all 0.2s ease;
+            }
+            .cbt-users-panel input[type="text"]:focus,
+            .cbt-users-panel input[type="email"]:focus,
+            .cbt-users-panel input[type="search"]:focus,
+            .cbt-users-panel select:focus {
+                border-color: #3b82f6;
+                background: #ffffff;
+                box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+                outline: none;
             }
             .cbt-users-panel select {
-                background-position: right 12px center;
+                background-position: right 16px center;
             }
             .cbt-users-panel select:disabled {
-                background: #f8fafc;
+                background: #f1f5f9;
                 color: #94a3b8;
+                border-color: #cbd5e1;
             }
             .cbt-users-panel input[type="file"] {
                 padding: 8px 0;
@@ -310,13 +355,11 @@
                 align-items: start;
             }
             .cbt-users-import-card {
-                padding: 18px 20px;
-                border: 1px solid #dbe4ef;
-                border-radius: 18px;
-                background:
-                    radial-gradient(circle at top right, rgba(34, 113, 177, 0.06), transparent 34%),
-                    linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
-                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+                padding: 24px 28px;
+                border: 1px solid #e2e8f0;
+                border-radius: 20px;
+                background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+                box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
             }
             .cbt-users-import-card-label {
                 display: block;
@@ -333,11 +376,23 @@
                 list-style: disc;
             }
             .cbt-users-panel .button {
-                border-radius: 10px;
+                border-radius: 12px;
+                min-height: 44px;
+                font-weight: 700;
+                padding: 0 20px;
+                transition: all 0.2s ease;
             }
             .cbt-users-panel .button-primary {
-                background: #1d4ed8;
-                border-color: #1d4ed8;
+                background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+                border: none;
+                color: #ffffff;
+                box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+            }
+            .cbt-users-panel .button-primary:hover,
+            .cbt-users-panel .button-primary:focus {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 16px rgba(59, 130, 246, 0.4);
+                background: linear-gradient(180deg, #60a5fa 0%, #3b82f6 100%);
             }
             .cbt-users-import-progress {
                 display: grid;
@@ -431,19 +486,26 @@
                 overflow-x: auto;
             }
             .cbt-users-panel .widefat {
-                border-radius: 12px;
+                border-radius: 16px;
                 overflow: hidden;
                 border: 1px solid #e2e8f0;
+                box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03);
             }
             .cbt-users-panel .widefat thead th {
                 background: #f8fafc;
-                font-size: 12px;
+                font-size: 11px;
                 text-transform: uppercase;
-                letter-spacing: 0.04em;
+                letter-spacing: 0;
+                font-weight: 700;
+                padding: 8px 6px;
+                white-space: nowrap;
             }
             .cbt-users-panel .widefat td,
             .cbt-users-panel .widefat th {
-                vertical-align: top;
+                vertical-align: middle;
+                padding: 6px 8px;
+                font-size: 13px;
+                word-break: break-word;
             }
             .cbt-users-panel .widefat tbody tr:hover {
                 background: #f8fafc;
@@ -985,12 +1047,12 @@
                                 <th>NISN</th>
                                 <th>Email</th>
                                 <th>Role</th>
-                                <th>Kode Kelas</th>
-                                <th>Kode Ruang</th>
+                                <th>Kelas</th>
+                                <th>Ruang</th>
                                 <th>Agama</th>
-                                <th>Jenis Kelamin</th>
+                                <th>L/P</th>
                                 <th>Foto</th>
-                                <th>Registered</th>
+                                <th>Tgl Daftar</th>
                                 <th>Aksi</th>
                             </tr>
                             </thead>
