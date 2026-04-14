@@ -27,8 +27,9 @@ $default_shape = isset($load_test_shapes[$default_shape_key]) && is_array($load_
     ? (array) $load_test_shapes[$default_shape_key]
     : [];
 $is_default_ramping = $default_shape_key === 'ramping_vus';
+$active_load_view = $load_test_running_count > 0 ? 'jobs' : 'runner';
 ?>
-<div data-load-panel data-load-global-token="<?php echo esc_attr((string) (($load_test_runtime['global_token_meta']['token'] ?? ''))); ?>">
+<div data-load-panel data-load-active-view="<?php echo esc_attr($active_load_view); ?>" data-load-global-token="<?php echo esc_attr((string) (($load_test_runtime['global_token_meta']['token'] ?? ''))); ?>">
     <section class="cbt-maintenance-card cbt-maintenance-card--load">
         <div class="cbt-maintenance-card-header">
             <div>
@@ -45,7 +46,42 @@ $is_default_ramping = $default_shape_key === 'ramping_vus';
             <strong>Mode runner:</strong> background shell, reuse user yang sama di semua exam paralel, dan tidak memblokir run saat jumlah bulk students lebih kecil dari target VUs. Selector hanya menampilkan exam ujian siswa, bukan Bank Soal.
         </div>
 
-        <div class="cbt-maintenance-load-section-grid" style="margin-top:16px;">
+        <div class="cbt-maintenance-load-view-tabs" role="tablist" aria-label="Load test runner views">
+            <button
+                type="button"
+                class="cbt-maintenance-load-view-tab<?php echo $active_load_view === 'runner' ? ' is-active' : ''; ?>"
+                id="cbt-maintenance-load-view-tab-runner"
+                data-load-view-tab="runner"
+                role="tab"
+                aria-selected="<?php echo $active_load_view === 'runner' ? 'true' : 'false'; ?>"
+                aria-controls="cbt-maintenance-load-view-panel-runner"
+            >
+                Runner
+                <span>Preflight, exam, profile, dan command preview</span>
+            </button>
+            <button
+                type="button"
+                class="cbt-maintenance-load-view-tab<?php echo $active_load_view === 'jobs' ? ' is-active' : ''; ?>"
+                id="cbt-maintenance-load-view-tab-jobs"
+                data-load-view-tab="jobs"
+                role="tab"
+                aria-selected="<?php echo $active_load_view === 'jobs' ? 'true' : 'false'; ?>"
+                aria-controls="cbt-maintenance-load-view-panel-jobs"
+            >
+                Jobs
+                <span data-load-jobs-tab-badge><?php echo esc_html($load_test_running_count > 0 ? $load_test_running_count . ' running' : count($load_test_jobs) . ' total'); ?></span>
+            </button>
+        </div>
+
+        <div
+            class="cbt-maintenance-load-view-panel"
+            id="cbt-maintenance-load-view-panel-runner"
+            data-load-view-panel="runner"
+            role="tabpanel"
+            aria-labelledby="cbt-maintenance-load-view-tab-runner"
+            <?php echo $active_load_view === 'runner' ? '' : 'hidden'; ?>
+        >
+        <div class="cbt-maintenance-load-section-grid">
             <section class="cbt-maintenance-load-section">
                 <div class="cbt-maintenance-card-header" style="margin-bottom:14px;">
                     <div>
@@ -413,8 +449,16 @@ k6 version</code></pre>
                 </form>
             </section>
         </div>
+        </div>
 
-        <section class="cbt-maintenance-load-section" style="margin-top:18px;">
+        <section
+            class="cbt-maintenance-load-section cbt-maintenance-load-view-panel"
+            id="cbt-maintenance-load-view-panel-jobs"
+            data-load-view-panel="jobs"
+            role="tabpanel"
+            aria-labelledby="cbt-maintenance-load-view-tab-jobs"
+            <?php echo $active_load_view === 'jobs' ? '' : 'hidden'; ?>
+        >
             <div class="cbt-maintenance-card-header" style="margin-bottom:14px;">
                 <div>
                     <h3 style="margin:0 0 6px;font-size:17px;">Jobs</h3>

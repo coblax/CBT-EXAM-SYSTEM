@@ -925,6 +925,57 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
         border-color: #d6e3f3;
         background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
     }
+    .cbt-maintenance-load-view-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+        padding: 8px;
+        border: 1px solid #dbe5ef;
+        border-radius: 18px;
+        background: rgba(248, 251, 255, 0.92);
+    }
+    .cbt-maintenance-load-view-tab {
+        display: grid;
+        gap: 4px;
+        flex: 1 1 220px;
+        min-height: 56px;
+        padding: 10px 14px;
+        border: 1px solid #c8d9ef;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        color: #1e3a8a;
+        font-weight: 800;
+        line-height: 1.2;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 140ms ease, box-shadow 140ms ease, color 140ms ease, background 140ms ease, transform 140ms ease;
+    }
+    .cbt-maintenance-load-view-tab span {
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.45;
+    }
+    .cbt-maintenance-load-view-tab:hover,
+    .cbt-maintenance-load-view-tab:focus {
+        border-color: #93c5fd;
+        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.10);
+        outline: none;
+        transform: translateY(-1px);
+    }
+    .cbt-maintenance-load-view-tab.is-active {
+        border-color: #1d4ed8;
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        color: #ffffff;
+        box-shadow: 0 14px 28px rgba(37, 99, 235, 0.18);
+    }
+    .cbt-maintenance-load-view-tab.is-active span {
+        color: rgba(255, 255, 255, 0.82);
+    }
+    .cbt-maintenance-load-view-panel {
+        margin-top: 16px;
+    }
     .cbt-maintenance-load-section-grid {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
@@ -1711,6 +1762,9 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 const tokenValueNode = form ? form.querySelector('[data-load-token-value]') : null;
                 const tokenHelpNode = form ? form.querySelector('[data-load-token-help]') : null;
                 const runningChip = loadRoot ? loadRoot.querySelector('[data-load-running-chip]') : null;
+                const loadViewTabs = loadRoot ? Array.prototype.slice.call(loadRoot.querySelectorAll('[data-load-view-tab]')) : [];
+                const loadViewPanels = loadRoot ? Array.prototype.slice.call(loadRoot.querySelectorAll('[data-load-view-panel]')) : [];
+                const jobsTabBadge = loadRoot ? loadRoot.querySelector('[data-load-jobs-tab-badge]') : null;
                 const flatFields = form ? Array.prototype.slice.call(form.querySelectorAll('[data-load-flat-field]')) : [];
                 const rampingFields = form ? Array.prototype.slice.call(form.querySelectorAll('[data-load-ramping-field]')) : [];
                 const iterationsField = form ? form.querySelector('[name="iterations"]') : null;
@@ -1729,6 +1783,26 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                     'post_start_spread_ms',
                     'scenario_key',
                 ];
+
+                const activateLoadViewTab = function (viewName, shouldFocus) {
+                    const normalized = String(viewName || '') === 'jobs' ? 'jobs' : 'runner';
+                    if (loadRoot) {
+                        loadRoot.setAttribute('data-load-active-view', normalized);
+                    }
+                    loadViewTabs.forEach(function (button) {
+                        const isActive = String(button.getAttribute('data-load-view-tab') || '') === normalized;
+                        button.classList.toggle('is-active', isActive);
+                        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                        button.setAttribute('tabindex', isActive ? '0' : '-1');
+                        if (isActive && shouldFocus && typeof button.focus === 'function') {
+                            button.focus();
+                        }
+                    });
+                    loadViewPanels.forEach(function (panelNode) {
+                        const isActive = String(panelNode.getAttribute('data-load-view-panel') || '') === normalized;
+                        panelNode.hidden = !isActive;
+                    });
+                };
 
                 const getScenario = function (scenarioKey) {
                     const normalizedKey = String(scenarioKey || '').trim();
@@ -2384,6 +2458,11 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                                 : String(payload.data.job_count || 0) + ' total';
                             runningChip.className = 'cbt-maintenance-chip cbt-maintenance-chip--' + (Number(payload.data.running_count || 0) > 0 ? 'running' : 'idle');
                         }
+                        if (jobsTabBadge) {
+                            jobsTabBadge.textContent = Number(payload.data.running_count || 0) > 0
+                                ? String(payload.data.running_count || 0) + ' running'
+                                : String(payload.data.job_count || 0) + ' total';
+                        }
                         schedulePolling(Number(payload.data.running_count || 0));
                     }).catch(function () {
                         schedulePolling(0);
@@ -2409,9 +2488,16 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 }
                 if (refreshButton) {
                     refreshButton.addEventListener('click', function () {
+                        activateLoadViewTab('jobs', false);
                         refreshJobs();
                     });
                 }
+                loadViewTabs.forEach(function (button) {
+                    button.addEventListener('click', function () {
+                        activateLoadViewTab(String(button.getAttribute('data-load-view-tab') || 'runner'), false);
+                    });
+                });
+                activateLoadViewTab(loadRoot ? String(loadRoot.getAttribute('data-load-active-view') || 'runner') : 'runner', false);
                 updateCommandPreview();
                 initLoadJobSelector('');
                 schedulePolling(Number(jobsWrap && jobsWrap.getAttribute('data-load-running-count') ? jobsWrap.getAttribute('data-load-running-count') : 0));
