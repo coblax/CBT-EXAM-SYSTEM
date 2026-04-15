@@ -35,7 +35,13 @@ if (!defined('ABSPATH')) {
             <style>
                 .cbt-results-page {
                     padding-right: 18px;
-                }
+                    animation: cbtSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+                opacity: 0;
+            }
+            @keyframes cbtSlideUp {
+                0% { opacity: 0; transform: translateY(15px); }
+                100% { opacity: 1; transform: translateY(0); }
+            }
                 .cbt-results-shell {
                     max-width: 1320px;
                     display: grid;
@@ -45,14 +51,24 @@ if (!defined('ABSPATH')) {
                     margin: 0;
                 }
                 .cbt-results-hero {
+                    position: relative;
+                    overflow: hidden;
                     display: grid;
                     grid-template-columns: minmax(0, 1.75fr) minmax(320px, 1fr);
                     gap: 18px;
                     padding: 26px 28px;
-                    border: 1px solid #d5deea;
+                    border: 1px solid rgba(255, 255, 255, 0.6);
                     border-radius: 24px;
-                    background: linear-gradient(135deg, #ffffff 0%, #eef5fd 58%, #dce9f8 100%);
-                    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
+                    background: linear-gradient(145deg, #ffffff 0%, #f0f4f8 100%);
+
+                    
+                    box-shadow: 0 20px 40px rgba(15, 23, 42, 0.05), inset 0 2px 0 rgba(255, 255, 255, 0.9);
+                }
+                .cbt-results-hero::before {
+                    content: ""; position: absolute;
+                    top: -200px; right: -200px; width: 600px; height: 600px;
+                    background: radial-gradient(circle, rgba(59, 130, 246, 0.12) 0%, transparent 70%);
+                    border-radius: 50%; pointer-events: none;
                 }
                 .cbt-results-hero-copy {
                     display: grid;
@@ -68,7 +84,7 @@ if (!defined('ABSPATH')) {
                     padding: 0 14px;
                     border-radius: 999px;
                     background: rgba(34, 113, 177, 0.12);
-                    color: #0f4c81;
+                    color: #ffffff;
                     font-size: 12px;
                     font-weight: 700;
                     letter-spacing: 0.08em;

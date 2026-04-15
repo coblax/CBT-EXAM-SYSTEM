@@ -40,9 +40,15 @@ function createFixture(overrides = {}) {
         requires_token: 0,
         show_student_result: 1
     };
+    var exams = Array.isArray(overrides.exams) ? overrides.exams.slice() : [selectedExam];
+    var selectedExamId = Number(
+        overrides.selectedExamId !== undefined
+            ? overrides.selectedExamId
+            : ((overrides.selectedExam || exams[0] || {}).id)
+    ) || 0;
 
-    state.exams = [selectedExam];
-    state.selectedExamId = Number(selectedExam.id) || 0;
+    state.exams = exams;
+    state.selectedExamId = selectedExamId;
 
     return createAuthStageManager({
         clearMessages: function () {},
@@ -91,7 +97,13 @@ function createFixture(overrides = {}) {
             };
         },
         getSelectedExam: function () {
-            return selectedExam;
+            for (var index = 0; index < state.exams.length; index++) {
+                if (Number(state.exams[index] && state.exams[index].id) === Number(state.selectedExamId)) {
+                    return state.exams[index];
+                }
+            }
+
+            return state.exams.length ? state.exams[0] : null;
         },
         getUserInitial: overrides.getUserInitial || function () {
             return 'A';
@@ -168,5 +180,64 @@ describe('createAuthStageManager', function () {
 
         expect(html).toContain('data-cbt-profile-photo="confirm"');
         expect(html).toContain('data-cbt-profile-photo-fallback hidden');
+    });
+
+    it('renders matching desktop and mobile exam option counts', function () {
+        var exams = [
+            {
+                id: 55,
+                title: 'TOBK Biologi',
+                subject_name: 'Biologi',
+                starts_at: '2026-04-09 08:00:00',
+                duration_minutes: 90,
+                is_available_now: 1,
+                is_class_allowed: 1,
+                is_within_schedule: 1,
+                latest_attempt_id: 0,
+                latest_attempt_status: '',
+                requires_token: 0,
+                show_student_result: 1
+            },
+            {
+                id: 56,
+                title: 'TOBK Kimia',
+                subject_name: 'Kimia',
+                starts_at: '2026-04-09 10:00:00',
+                duration_minutes: 60,
+                is_available_now: 0,
+                is_class_allowed: 1,
+                is_within_schedule: 0,
+                availability_reason: 'not_started',
+                latest_attempt_id: 0,
+                latest_attempt_status: '',
+                requires_token: 0,
+                show_student_result: 1
+            }
+        ];
+        var manager = createFixture({
+            exams: exams,
+            selectedExamId: 55,
+            state: {
+                examPickerMobileOpen: true
+            }
+        });
+
+        var html = manager.renderConfirmStage();
+
+        expect((html.match(/data-action="select-exam"/g) || []).length).toBe(2);
+        expect((html.match(/data-action="select-exam-mobile"/g) || []).length).toBe(2);
+        expect(html).toContain('2 ujian');
+    });
+
+    it('renders the updated empty-state copy when no exam remains visible', function () {
+        var manager = createFixture({
+            exams: [],
+            selectedExamId: 0
+        });
+
+        var html = manager.renderConfirmStage();
+
+        expect(html).toContain('Belum Ada Exam Aktif');
+        expect(html).toContain('Akun ini belum memiliki ujian yang bisa dikerjakan atau dilihat saat ini.');
     });
 });

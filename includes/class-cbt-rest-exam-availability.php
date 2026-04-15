@@ -239,6 +239,11 @@ trait CBT_REST_Exam_Availability_Helpers
 
                 $exam_table = $wpdb->prefix . 'cbt_exams';
                 $subject_table = $wpdb->prefix . 'cbt_subjects';
+                $question_table = $wpdb->prefix . 'cbt_questions';
+                $question_count_subquery = "SELECT exam_id, COUNT(*) AS question_count
+                    FROM {$question_table}
+                    WHERE COALESCE(is_active, 1) = 1
+                    GROUP BY exam_id";
                 $sql = "SELECT
                             e.id,
                             e.subject_id,
@@ -258,9 +263,10 @@ trait CBT_REST_Exam_Availability_Helpers
                             e.updated_at,
                             s.name AS subject_name,
                             s.code AS subject_code,
-                            COALESCE(NULLIF(e.total_questions, 0), 0) AS question_count
+                            COALESCE(qc.question_count, 0) AS question_count
                         FROM {$exam_table} e
                         LEFT JOIN {$subject_table} s ON s.id = e.subject_id
+                        LEFT JOIN ({$question_count_subquery}) qc ON qc.exam_id = e.id
                         WHERE e.status = 'published'
                         ORDER BY e.created_at DESC";
 
@@ -344,7 +350,7 @@ trait CBT_REST_Exam_Availability_Helpers
         string $server_timezone,
         array $latest_attempt_by_exam
     ): array {
-        return array_map(static function ($row) use ($student_kelas, $student_now, $server_timezone, $latest_attempt_by_exam): array {
+        $items = array_map(static function ($row) use ($student_kelas, $student_now, $server_timezone, $latest_attempt_by_exam): array {
             $item = (array) $row;
             $now_ts = strtotime($student_now);
             $start_ts = !empty($item['starts_at']) ? strtotime((string) $item['starts_at']) : false;
@@ -453,6 +459,143 @@ trait CBT_REST_Exam_Availability_Helpers
 
             return $item;
         }, $exam_rows);
+
+        return self::filter_and_sort_student_exam_availability_items($items, $student_now);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $items
+     * @return array<int,array<string,mixed>>
+     */
+    private static function filter_and_sort_student_exam_availability_items(array $items, string $student_now): array
+    {
+        $now_ts = self::parse_student_exam_timestamp($student_now);
+        $decorated = [];
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $visibility = self::classify_student_exam_list_item($item, $now_ts);
+            if (empty($visibility['visible'])) {
+                continue;
+            }
+
+            $decorated[] = [
+                'bucket' => (int) ($visibility['bucket'] ?? 99),
+                'created_at_ts' => self::parse_student_exam_timestamp((string) ($item['created_at'] ?? '')),
+                'id' => (int) ($item['id'] ?? 0),
+                'item' => $item,
+            ];
+        }
+
+        usort($decorated, static function (array $left, array $right): int {
+            $left_bucket = (int) ($left['bucket'] ?? 99);
+            $right_bucket = (int) ($right['bucket'] ?? 99);
+            if ($left_bucket !== $right_bucket) {
+                return $left_bucket <=> $right_bucket;
+            }
+
+            $left_created_at_ts = (int) ($left['created_at_ts'] ?? 0);
+            $right_created_at_ts = (int) ($right['created_at_ts'] ?? 0);
+            if ($left_created_at_ts !== $right_created_at_ts) {
+                return $right_created_at_ts <=> $left_created_at_ts;
+            }
+
+            return ((int) ($right['id'] ?? 0)) <=> ((int) ($left['id'] ?? 0));
+        });
+
+        return array_values(array_map(static function (array $entry): array {
+            return (array) ($entry['item'] ?? []);
+        }, $decorated));
+    }
+
+    /**
+     * @param array<string,mixed> $item
+     * @return array{visible:bool,bucket:int}
+     */
+    private static function classify_student_exam_list_item(array $item, int $now_ts): array
+    {
+        $status = sanitize_key((string) ($item['status'] ?? 'draft'));
+        $question_count = max(0, (int) ($item['question_count'] ?? 0));
+        $has_target_kelas = self::student_exam_item_has_target_kelas($item);
+        $class_allowed = (int) ($item['is_class_allowed'] ?? 0) === 1;
+
+        if ($status !== 'published' || $question_count <= 0 || !$has_target_kelas || !$class_allowed) {
+            return [
+                'visible' => false,
+                'bucket' => 99,
+            ];
+        }
+
+        $latest_attempt_status = sanitize_key((string) ($item['latest_attempt_status'] ?? ''));
+        $latest_attempt_finalizing = (int) ($item['latest_attempt_finalize_pending'] ?? 0) === 1;
+        if ($latest_attempt_finalizing || $latest_attempt_status === 'in_progress') {
+            return [
+                'visible' => true,
+                'bucket' => 0,
+            ];
+        }
+
+        if ((int) ($item['is_available_now'] ?? 0) === 1) {
+            return [
+                'visible' => true,
+                'bucket' => 1,
+            ];
+        }
+
+        $availability_reason = sanitize_key((string) ($item['availability_reason'] ?? ''));
+        if ($availability_reason === 'not_started' && self::student_exam_item_is_upcoming_within_window($item, $now_ts)) {
+            return [
+                'visible' => true,
+                'bucket' => 2,
+            ];
+        }
+
+        if ($latest_attempt_status === 'completed') {
+            return [
+                'visible' => true,
+                'bucket' => 3,
+            ];
+        }
+
+        return [
+            'visible' => false,
+            'bucket' => 99,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $item
+     */
+    private static function student_exam_item_has_target_kelas(array $item): bool
+    {
+        return !empty(self::parse_exam_target_kelas((string) ($item['target_kelas'] ?? '')));
+    }
+
+    /**
+     * @param array<string,mixed> $item
+     */
+    private static function student_exam_item_is_upcoming_within_window(array $item, int $now_ts): bool
+    {
+        $start_ts = self::parse_student_exam_timestamp((string) ($item['starts_at'] ?? ''));
+        if ($start_ts <= 0 || $now_ts <= 0 || $start_ts <= $now_ts) {
+            return false;
+        }
+
+        return ($start_ts - $now_ts) <= self::student_exam_upcoming_window_seconds();
+    }
+
+    private static function student_exam_upcoming_window_seconds(): int
+    {
+        return 86400;
+    }
+
+    private static function parse_student_exam_timestamp(string $value): int
+    {
+        $timestamp = strtotime($value);
+        return $timestamp === false ? 0 : (int) $timestamp;
     }
 
     /**

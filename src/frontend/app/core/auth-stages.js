@@ -241,8 +241,12 @@ export function createAuthStageManager(deps) {
             ? '<div class="cbt-login-panel-brand-mobile"><img class="cbt-login-panel-brand-mobile-logo" src="' + escapeHtml(schoolLogoUrl) + '" alt="' + schoolName + '" loading="lazy" decoding="async" /></div>'
             : '';
         var passwordType = state.loginPasswordVisible ? 'text' : 'password';
-        var loginButtonClass = state.busy ? 'cbt-button cbt-button-primary cbt-button-login is-loading' : 'cbt-button cbt-button-primary cbt-button-login';
-        var loginButtonLabel = state.busy ? 'Memverifikasi...' : 'LOGIN';
+        var limitRemaining = Number(state.loginRateLimitRemaining) || 0;
+        var loginButtonClass = state.busy || limitRemaining > 0 ? 'cbt-button cbt-button-primary cbt-button-login is-loading' : 'cbt-button cbt-button-primary cbt-button-login';
+        var loginButtonLabel = limitRemaining > 0 
+            ? 'Coba lagi dalam 0' + Math.floor(limitRemaining / 60) + ':' + ('0' + (limitRemaining % 60)).slice(-2) + '...'
+            : (state.busy ? 'Memverifikasi...' : 'LOGIN');
+        var isSubmitDisabled = state.busy || limitRemaining > 0;
         var togglePasswordLabel = state.loginPasswordVisible ? 'Sembunyikan' : 'Tampilkan';
         var pluginAuthorRaw = getConfiguredPluginAuthor();
         var pluginVersionRaw = getConfiguredPluginVersion();
@@ -284,7 +288,7 @@ export function createAuthStageManager(deps) {
             '<form id="cbt-login-form" class="cbt-form-grid">',
             '<div class="cbt-field"><label for="cbt-identifier">EMAIL / USERNAME / NISN</label><input id="cbt-identifier" class="cbt-input" name="identifier" autocomplete="username" value="' + escapeHtml(state.loginIdentifier) + '" placeholder="Contoh: 231045 atau siswa@smkn1tpd.sch.id" required /></div>',
             '<div class="cbt-field"><label for="cbt-password">PASSWORD</label><div class="cbt-password-field"><input id="cbt-password" class="cbt-input" name="password" type="' + passwordType + '" autocomplete="current-password" value="' + escapeHtml(state.loginPassword) + '" placeholder="Masukkan password akun" required /><button class="cbt-password-toggle' + (state.loginPasswordVisible ? ' is-visible' : '') + '" data-action="toggle-password" type="button" aria-label="' + togglePasswordLabel + '" title="' + togglePasswordLabel + '"' + (state.busy ? ' disabled' : '') + '><span class="cbt-password-toggle-icon" aria-hidden="true"><span class="cbt-password-toggle-icon-eye"><svg viewBox="0 0 24 24" focusable="false"><path d="M1.5 12S5.5 5.5 12 5.5 22.5 12 22.5 12 18.5 18.5 12 18.5 1.5 12 1.5 12Z"></path><circle cx="12" cy="12" r="3.2"></circle></svg></span><span class="cbt-password-toggle-icon-eye-off"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.2 3.2 20.8 20.8"></path><path d="M9.9 5.9A12.2 12.2 0 0 1 12 5.5c6.5 0 10.5 6.5 10.5 6.5a18.9 18.9 0 0 1-3.4 4.2"></path><path d="M6.4 8A18.3 18.3 0 0 0 1.5 12s4 6.5 10.5 6.5a11.6 11.6 0 0 0 4-.7"></path><path d="M14.3 14.3A3.2 3.2 0 0 1 9.7 9.7"></path></svg></span></span><span class="cbt-password-toggle-label">' + escapeHtml(togglePasswordLabel) + '</span></button></div></div>',
-            '<div class="cbt-actions"><button class="' + loginButtonClass + '" type="submit"' + (state.busy ? ' disabled' : '') + '><span class="cbt-button-spinner" aria-hidden="true"></span><span>' + loginButtonLabel + '</span></button></div>',
+            '<div class="cbt-actions"><button class="' + loginButtonClass + '" type="submit"' + (isSubmitDisabled ? ' disabled' : '') + '><span class="cbt-button-spinner" aria-hidden="true"></span><span>' + loginButtonLabel + '</span></button></div>',
             '</form>',
             renderAlert(),
             '<p class="cbt-login-help">Jika gagal login, hubungi admin sekolah atau pengawas ujian.</p>',
@@ -299,7 +303,7 @@ export function createAuthStageManager(deps) {
             return [
                 '<section class="cbt-card">',
                 '<h3>Belum Ada Exam Aktif</h3>',
-                '<p class="cbt-subtitle">Akun ini belum memiliki exam yang tersedia saat ini.</p>',
+                '<p class="cbt-subtitle">Akun ini belum memiliki ujian yang bisa dikerjakan atau dilihat saat ini.</p>',
                 '<div class="cbt-actions">',
                 renderRefreshButton(state.busy),
                 '<button class="cbt-button cbt-button-danger" data-action="logout" type="button">Logout</button>',

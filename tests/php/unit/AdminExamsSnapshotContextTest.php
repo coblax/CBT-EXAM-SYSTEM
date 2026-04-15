@@ -254,6 +254,9 @@ final class AdminExamsSnapshotContextTest extends TestCase
                     [
                         'id' => 77,
                         'title' => 'Ujian Matematika',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],
@@ -301,6 +304,9 @@ final class AdminExamsSnapshotContextTest extends TestCase
                     [
                         'id' => 77,
                         'title' => 'Ujian Matematika',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],
@@ -354,6 +360,9 @@ final class AdminExamsSnapshotContextTest extends TestCase
                     [
                         'id' => 77,
                         'title' => 'Ujian Matematika',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],
@@ -770,6 +779,9 @@ final class AdminExamsSnapshotContextTest extends TestCase
                     [
                         'id' => 77,
                         'title' => 'Ujian Matematika',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],
@@ -1222,6 +1234,9 @@ final class AdminExamsSnapshotContextTest extends TestCase
                     [
                         'id' => 77,
                         'title' => 'Ujian Matematika',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],
@@ -1262,6 +1277,9 @@ final class AdminExamsSnapshotContextTest extends TestCase
                     [
                         'id' => 77,
                         'title' => 'Ujian Matematika',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],

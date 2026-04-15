@@ -26,12 +26,16 @@ final class ExamAvailabilitySnapshotTest extends TestCase
                     [
                         'id' => 15,
                         'title' => 'Matematika',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'latest_attempt_id' => 91,
                     ],
                 ],
                 'current_user' => [
                     'user_id' => 7,
                     'role' => 'student',
+                    'kode_kelas' => 'XI-A',
                 ],
             ];
         };
@@ -41,7 +45,9 @@ final class ExamAvailabilitySnapshotTest extends TestCase
 
         self::assertSame(1, $calls);
         self::assertSame(91, $first['items'][0]['latest_attempt_id']);
-        self::assertSame($first, $second);
+        self::assertSame(91, $second['items'][0]['latest_attempt_id']);
+        self::assertSame(1, $second['items'][0]['is_available_now']);
+        self::assertSame('ok', $second['items'][0]['availability_reason']);
         self::assertNotSame([], $this->storedSnapshotKeys());
 
         $GLOBALS['cbt_test_current_time_timestamp'] = 1774353660;
@@ -63,11 +69,18 @@ final class ExamAvailabilitySnapshotTest extends TestCase
 
             return [
                 'items' => [
-                    ['id' => 21, 'title' => 'Bahasa Indonesia'],
+                    [
+                        'id' => 21,
+                        'title' => 'Bahasa Indonesia',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                    ],
                 ],
                 'current_user' => [
                     'user_id' => 11,
                     'role' => 'student',
+                    'kode_kelas' => 'XI-A',
                 ],
             ];
         };
@@ -95,6 +108,9 @@ final class ExamAvailabilitySnapshotTest extends TestCase
                     [
                         'id' => 221,
                         'title' => 'Runtime Repair',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],
@@ -102,6 +118,7 @@ final class ExamAvailabilitySnapshotTest extends TestCase
                 'current_user' => [
                     'user_id' => 28,
                     'display_name' => 'Repair User',
+                    'kode_kelas' => 'XI-A',
                 ],
             ];
         };
@@ -130,18 +147,30 @@ final class ExamAvailabilitySnapshotTest extends TestCase
                     [
                         'id' => 15,
                         'title' => 'Matematika',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                        'created_at' => '2026-03-24 12:00:00',
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],
                     [
                         'id' => 16,
                         'title' => 'Biologi',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                        'created_at' => '2026-03-24 11:00:00',
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],
                     [
                         'id' => 17,
                         'title' => 'Kimia',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                        'created_at' => '2026-03-24 10:00:00',
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],
@@ -178,6 +207,9 @@ final class ExamAvailabilitySnapshotTest extends TestCase
                     [
                         'id' => 54,
                         'title' => 'Biologi',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                     ],
@@ -205,7 +237,13 @@ final class ExamAvailabilitySnapshotTest extends TestCase
         CBT_Exam_Availability_Cache::warm_student_snapshot(61, static function (): array {
             return [
                 'items' => [
-                    ['id' => 601, 'title' => 'Ujian Minute'],
+                    [
+                        'id' => 601,
+                        'title' => 'Ujian Minute',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                    ],
                 ],
                 'current_user' => [
                     'user_id' => 61,
@@ -232,7 +270,13 @@ final class ExamAvailabilitySnapshotTest extends TestCase
         CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(62, static function (): array {
             return [
                 'items' => [
-                    ['id' => 602, 'title' => 'Ujian Version'],
+                    [
+                        'id' => 602,
+                        'title' => 'Ujian Version',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                    ],
                 ],
                 'current_user' => [
                     'user_id' => 62,
@@ -262,9 +306,11 @@ final class ExamAvailabilitySnapshotTest extends TestCase
                     [
                         'id' => 88,
                         'title' => 'Ujian Fisika',
+                        'status' => 'published',
                         'starts_at' => '2026-03-24 12:10:00',
                         'ends_at' => '2026-03-24 13:10:00',
                         'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                         'server_now' => '2026-03-24 11:00:00',
@@ -305,6 +351,77 @@ final class ExamAvailabilitySnapshotTest extends TestCase
         self::assertSame('prepared', CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(31)['snapshot_source']);
     }
 
+    public function test_minute_snapshot_refreshes_visibility_window_and_keeps_diagnostics_filtered(): void
+    {
+        CBT_Exam_Availability_Cache::warm_student_snapshot(41, static function (): array {
+            return [
+                'items' => [
+                    [
+                        'id' => 411,
+                        'title' => 'Upcoming Window',
+                        'status' => 'published',
+                        'starts_at' => '2026-03-25 12:10:00',
+                        'ends_at' => '2026-03-25 13:10:00',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                        'created_at' => '2026-03-24 11:00:00',
+                    ],
+                    [
+                        'id' => 412,
+                        'title' => 'Ended Hidden',
+                        'status' => 'published',
+                        'starts_at' => '2026-03-24 08:00:00',
+                        'ends_at' => '2026-03-24 09:00:00',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                        'created_at' => '2026-03-24 10:00:00',
+                    ],
+                    [
+                        'id' => 413,
+                        'title' => 'No Active Questions',
+                        'status' => 'published',
+                        'starts_at' => '2026-03-24 11:00:00',
+                        'ends_at' => '2026-03-24 13:00:00',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 0,
+                        'created_at' => '2026-03-24 09:00:00',
+                    ],
+                ],
+                'current_user' => [
+                    'user_id' => 41,
+                    'display_name' => 'Window User',
+                    'username' => 'window-user',
+                    'kode_kelas' => 'XI-A',
+                    'kode_ruang' => 'R1',
+                ],
+            ];
+        });
+
+        $producer = static function (): array {
+            return ['items' => [], 'current_user' => null];
+        };
+
+        $beforeWindow = CBT_Exam_Availability_Cache::get_student_snapshot(41, $producer);
+        $beforeDiagnostics = CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(41);
+
+        self::assertSame([], $beforeWindow['items']);
+        self::assertSame(0, $beforeDiagnostics['item_count']);
+        self::assertSame([], $beforeDiagnostics['preview_items']);
+
+        $GLOBALS['cbt_test_current_time_timestamp'] = 1774354500;
+        $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:15:00';
+
+        $withinWindow = CBT_Exam_Availability_Cache::get_student_snapshot(41, $producer);
+        $withinDiagnostics = CBT_Exam_Availability_Cache::get_student_snapshot_diagnostics(41);
+
+        self::assertSame([411], array_map(static function (array $item): int {
+            return (int) $item['id'];
+        }, $withinWindow['items']));
+        self::assertSame('not_started', $withinWindow['items'][0]['availability_reason']);
+        self::assertSame(1, $withinDiagnostics['item_count']);
+        self::assertSame(411, $withinDiagnostics['preview_items'][0]['id']);
+    }
+
     public function test_write_prepared_student_snapshot_persists_payload_without_readback(): void
     {
         $written = CBT_Exam_Availability_Cache::write_prepared_student_snapshot(44, [
@@ -312,6 +429,9 @@ final class ExamAvailabilitySnapshotTest extends TestCase
                 [
                     'id' => 101,
                     'title' => 'Batch Warm',
+                    'status' => 'published',
+                    'target_kelas' => 'XI-A',
+                    'question_count' => 10,
                     'availability_reason' => 'ok',
                     'is_available_now' => 1,
                 ],
@@ -334,13 +454,29 @@ final class ExamAvailabilitySnapshotTest extends TestCase
         $results = CBT_Exam_Availability_Cache::write_prepared_student_snapshots([
             51 => [
                 'items' => [
-                    ['id' => 151, 'title' => 'Batch 1', 'availability_reason' => 'ok', 'is_available_now' => 1],
+                    [
+                        'id' => 151,
+                        'title' => 'Batch 1',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
                 ],
                 'current_user' => ['user_id' => 51, 'display_name' => 'Batch 1'],
             ],
             52 => [
                 'items' => [
-                    ['id' => 152, 'title' => 'Batch 2', 'availability_reason' => 'ok', 'is_available_now' => 1],
+                    [
+                        'id' => 152,
+                        'title' => 'Batch 2',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
                 ],
                 'current_user' => ['user_id' => 52, 'display_name' => 'Batch 2'],
             ],
@@ -356,7 +492,15 @@ final class ExamAvailabilitySnapshotTest extends TestCase
         $fallbackResults = CBT_Exam_Availability_Cache::write_prepared_student_snapshots([
             53 => [
                 'items' => [
-                    ['id' => 153, 'title' => 'Fallback', 'availability_reason' => 'ok', 'is_available_now' => 1],
+                    [
+                        'id' => 153,
+                        'title' => 'Fallback',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
                 ],
                 'current_user' => ['user_id' => 53, 'display_name' => 'Fallback'],
             ],

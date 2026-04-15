@@ -24,10 +24,31 @@ trait CBT_REST_Login_Routes
             return new WP_Error('invalid_payload', 'Identifier and password are required', ['status' => 400]);
         }
 
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+        $limit_key = 'cbt_rl_' . md5($ip . '_' . strtolower($identifier));
+        $block_key = $limit_key . '_block';
+
+        $blocked_until = get_transient($block_key);
+        if ($blocked_until !== false && time() < (int)$blocked_until) {
+            $retry_after = max(1, (int)$blocked_until - time());
+            return new WP_Error('too_many_requests', 'Terlalu banyak percobaan yang gagal. Sistem melindungi akun dari serangan.', ['status' => 429, 'retry_after' => $retry_after]);
+        }
+
         $result = CBT_Auth::login($identifier, $password);
         if (is_wp_error($result)) {
+            $attempts = (int) get_transient($limit_key);
+            $attempts++;
+            if ($attempts >= 5) {
+                set_transient($block_key, time() + 240, 240);
+                delete_transient($limit_key);
+                return new WP_Error('too_many_requests', 'Terlalu banyak percobaan yang gagal. Sistem melindungi akun dari serangan.', ['status' => 429, 'retry_after' => 240]);
+            } else {
+                set_transient($limit_key, $attempts, 600);
+            }
             return $result;
         }
+
+        delete_transient($limit_key);
 
         self::mark_priority_window('login');
 

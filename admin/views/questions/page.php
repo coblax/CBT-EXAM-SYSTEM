@@ -51,25 +51,39 @@ if (!defined('ABSPATH')) {
                 <style>
                     .cbt-questions-page {
                         max-width: 1180px;
-                    }
+                        animation: cbtSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+                opacity: 0;
+            }
+            @keyframes cbtSlideUp {
+                0% { opacity: 0; transform: translateY(15px); }
+                100% { opacity: 1; transform: translateY(0); }
+            }
                     .cbt-questions-shell {
                         display: grid;
                         gap: 18px;
                         margin-top: 18px;
                     }
                     .cbt-questions-hero {
-                        display: flex;
+                        position: relative;
+                    overflow: hidden;
+                    display: flex;
                         align-items: flex-start;
                         justify-content: space-between;
                         gap: 22px;
                         padding: 24px 28px;
-                        border: 1px solid #d7dbe2;
-                        border-radius: 22px;
-                        background:
-                            radial-gradient(circle at top right, rgba(34, 113, 177, 0.10), transparent 34%),
-                            linear-gradient(135deg, #ffffff 0%, #f6f9fc 100%);
-                        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
-                    }
+                        border: 1px solid rgba(255, 255, 255, 0.6);
+                        border-radius: 24px;
+                        background: linear-gradient(145deg, #ffffff 0%, #f0f4f8 100%);
+
+                        
+                        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.05), inset 0 2px 0 rgba(255, 255, 255, 0.9);
+                }
+                .cbt-questions-hero::before {
+                    content: ""; position: absolute;
+                    top: -200px; right: -200px; width: 600px; height: 600px;
+                    background: radial-gradient(circle, rgba(59, 130, 246, 0.12) 0%, transparent 70%);
+                    border-radius: 50%; pointer-events: none;
+                }
                     .cbt-questions-hero-copy {
                         max-width: 700px;
                     }
@@ -79,8 +93,8 @@ if (!defined('ABSPATH')) {
                         min-height: 28px;
                         padding: 0 12px;
                         border-radius: 999px;
-                        background: #e8f1ff;
-                        color: #0f4fa8;
+                        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+                        color: #ffffff;
                         font-size: 12px;
                         font-weight: 700;
                         letter-spacing: 0.06em;
@@ -144,8 +158,8 @@ if (!defined('ABSPATH')) {
                         box-shadow: 0 0 0 3px rgba(34, 113, 177, 0.12);
                     }
                     .cbt-questions-tab.is-active {
-                        border-color: #2271b1;
-                        background: #2271b1;
+                        border-color: #ffffff;
+                        background: #3b82f6;
                         color: #ffffff;
                         box-shadow: 0 10px 24px rgba(34, 113, 177, 0.18);
                     }

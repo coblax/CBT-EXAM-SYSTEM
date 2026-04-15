@@ -115,6 +115,9 @@ final class RestExamAvailabilitySnapshotTest extends TestCase
                     [
                         'id' => 15,
                         'title' => 'Minute Snapshot',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                         'latest_attempt_id' => 11,
@@ -135,6 +138,9 @@ final class RestExamAvailabilitySnapshotTest extends TestCase
                     [
                         'id' => 99,
                         'title' => 'Prepared Snapshot',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
                         'availability_reason' => 'ok',
                         'is_available_now' => 1,
                         'latest_attempt_id' => 222,
@@ -272,9 +278,256 @@ final class RestExamAvailabilitySnapshotTest extends TestCase
         self::assertSame('in_progress', $payloads[7]['items'][0]['latest_attempt_status']);
         self::assertSame(8, $payloads[8]['current_user']['user_id']);
         self::assertSame('XI-B', $payloads[8]['current_user']['kode_kelas']);
-        self::assertSame(77, $payloads[8]['items'][0]['latest_attempt_id']);
-        self::assertSame('completed', $payloads[8]['items'][0]['latest_attempt_status']);
-        self::assertSame('class_mismatch', $payloads[8]['items'][0]['availability_reason']);
+        self::assertSame([], $payloads[8]['items']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_get_exams_student_filters_and_orders_actionable_upcoming_and_history_items(): void
+    {
+        $this->bootstrapRestSnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->setExamAvailabilityRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = [
+            'token' => '',
+            'refresh_minutes' => 15,
+            'generated_at' => 1774353600,
+            'next_refresh_at' => 1774354500,
+            'frontend_auto_apply' => 0,
+        ];
+
+        $fakeWpdb = new RestExamAvailabilitySnapshotFakeWpdb();
+        $fakeWpdb->examRows = [
+            [
+                'id' => 15,
+                'subject_id' => 1,
+                'title' => 'Riwayat Progress',
+                'duration_minutes' => 90,
+                'kkm_percentage' => 75.0,
+                'total_questions' => 10,
+                'randomize_questions' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'status' => 'published',
+                'starts_at' => '2026-03-24 08:00:00',
+                'ends_at' => '2026-03-24 10:00:00',
+                'target_kelas' => 'XI-A',
+                'created_by' => 1,
+                'created_at' => '2026-03-24 09:00:00',
+                'updated_at' => '2026-03-24 09:00:00',
+                'subject_name' => 'Matematika',
+                'subject_code' => 'MAT',
+                'question_count' => 10,
+            ],
+            [
+                'id' => 16,
+                'subject_id' => 1,
+                'title' => 'Siap Sekarang',
+                'duration_minutes' => 60,
+                'kkm_percentage' => 75.0,
+                'total_questions' => 10,
+                'randomize_questions' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'status' => 'published',
+                'starts_at' => '2026-03-24 11:00:00',
+                'ends_at' => '2026-03-24 13:00:00',
+                'target_kelas' => 'XI-A',
+                'created_by' => 1,
+                'created_at' => '2026-03-24 08:00:00',
+                'updated_at' => '2026-03-24 08:00:00',
+                'subject_name' => 'Biologi',
+                'subject_code' => 'BIO',
+                'question_count' => 10,
+            ],
+            [
+                'id' => 17,
+                'subject_id' => 1,
+                'title' => 'Upcoming 24 Jam',
+                'duration_minutes' => 45,
+                'kkm_percentage' => 75.0,
+                'total_questions' => 10,
+                'randomize_questions' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'status' => 'published',
+                'starts_at' => '2026-03-25 08:00:00',
+                'ends_at' => '2026-03-25 10:00:00',
+                'target_kelas' => 'XI-A',
+                'created_by' => 1,
+                'created_at' => '2026-03-24 07:00:00',
+                'updated_at' => '2026-03-24 07:00:00',
+                'subject_name' => 'Kimia',
+                'subject_code' => 'KIM',
+                'question_count' => 10,
+            ],
+            [
+                'id' => 18,
+                'subject_id' => 1,
+                'title' => 'Riwayat Selesai',
+                'duration_minutes' => 30,
+                'kkm_percentage' => 75.0,
+                'total_questions' => 10,
+                'randomize_questions' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'status' => 'published',
+                'starts_at' => '2026-03-24 08:30:00',
+                'ends_at' => '2026-03-24 09:30:00',
+                'target_kelas' => 'XI-A',
+                'created_by' => 1,
+                'created_at' => '2026-03-24 06:00:00',
+                'updated_at' => '2026-03-24 06:00:00',
+                'subject_name' => 'Fisika',
+                'subject_code' => 'FIS',
+                'question_count' => 10,
+            ],
+            [
+                'id' => 19,
+                'subject_id' => 1,
+                'title' => 'Upcoming Terlalu Jauh',
+                'duration_minutes' => 30,
+                'kkm_percentage' => 75.0,
+                'total_questions' => 10,
+                'randomize_questions' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'status' => 'published',
+                'starts_at' => '2026-03-26 08:00:00',
+                'ends_at' => '2026-03-26 09:00:00',
+                'target_kelas' => 'XI-A',
+                'created_by' => 1,
+                'created_at' => '2026-03-24 05:00:00',
+                'updated_at' => '2026-03-24 05:00:00',
+                'subject_name' => 'Sejarah',
+                'subject_code' => 'SEJ',
+                'question_count' => 10,
+            ],
+            [
+                'id' => 20,
+                'subject_id' => 1,
+                'title' => 'Sudah Berakhir',
+                'duration_minutes' => 30,
+                'kkm_percentage' => 75.0,
+                'total_questions' => 10,
+                'randomize_questions' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'status' => 'published',
+                'starts_at' => '2026-03-24 07:00:00',
+                'ends_at' => '2026-03-24 08:00:00',
+                'target_kelas' => 'XI-A',
+                'created_by' => 1,
+                'created_at' => '2026-03-24 04:00:00',
+                'updated_at' => '2026-03-24 04:00:00',
+                'subject_name' => 'Geografi',
+                'subject_code' => 'GEO',
+                'question_count' => 10,
+            ],
+            [
+                'id' => 21,
+                'subject_id' => 1,
+                'title' => 'Tanpa Soal Aktif',
+                'duration_minutes' => 30,
+                'kkm_percentage' => 75.0,
+                'total_questions' => 10,
+                'randomize_questions' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'status' => 'published',
+                'starts_at' => '2026-03-24 11:00:00',
+                'ends_at' => '2026-03-24 13:00:00',
+                'target_kelas' => 'XI-A',
+                'created_by' => 1,
+                'created_at' => '2026-03-24 03:00:00',
+                'updated_at' => '2026-03-24 03:00:00',
+                'subject_name' => 'Sosiologi',
+                'subject_code' => 'SOS',
+                'question_count' => 0,
+            ],
+            [
+                'id' => 22,
+                'subject_id' => 1,
+                'title' => 'Tanpa Target Kelas',
+                'duration_minutes' => 30,
+                'kkm_percentage' => 75.0,
+                'total_questions' => 10,
+                'randomize_questions' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'status' => 'published',
+                'starts_at' => '2026-03-24 11:00:00',
+                'ends_at' => '2026-03-24 13:00:00',
+                'target_kelas' => '',
+                'created_by' => 1,
+                'created_at' => '2026-03-24 02:00:00',
+                'updated_at' => '2026-03-24 02:00:00',
+                'subject_name' => 'Ekonomi',
+                'subject_code' => 'EKO',
+                'question_count' => 10,
+            ],
+            [
+                'id' => 23,
+                'subject_id' => 1,
+                'title' => 'Kelas Lain',
+                'duration_minutes' => 30,
+                'kkm_percentage' => 75.0,
+                'total_questions' => 10,
+                'randomize_questions' => 0,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'status' => 'published',
+                'starts_at' => '2026-03-24 11:00:00',
+                'ends_at' => '2026-03-24 13:00:00',
+                'target_kelas' => 'XI-B',
+                'created_by' => 1,
+                'created_at' => '2026-03-24 01:00:00',
+                'updated_at' => '2026-03-24 01:00:00',
+                'subject_name' => 'Bahasa',
+                'subject_code' => 'BHS',
+                'question_count' => 10,
+            ],
+        ];
+        $fakeWpdb->attemptRows = [
+            [
+                'student_id' => 7,
+                'exam_id' => 15,
+                'id' => 901,
+                'status' => 'in_progress',
+                'score' => 0,
+                'max_score' => 100,
+                'started_at' => '2026-03-24 09:15:00',
+                'finished_at' => '',
+                'extra_time_minutes' => 0,
+            ],
+            [
+                'student_id' => 7,
+                'exam_id' => 18,
+                'id' => 902,
+                'status' => 'completed',
+                'score' => 80,
+                'max_score' => 100,
+                'started_at' => '2026-03-24 08:30:00',
+                'finished_at' => '2026-03-24 09:05:00',
+                'extra_time_minutes' => 0,
+            ],
+        ];
+
+        global $wpdb;
+        $wpdb = $fakeWpdb;
+
+        $response = CBT_REST::get_exams(new WP_REST_Request([], [], [], '/cbt/v1/exams', 'GET'));
+
+        self::assertFalse(is_wp_error($response));
+        self::assertSame([15, 16, 17, 18], array_map(static function (array $item): int {
+            return (int) $item['id'];
+        }, $response['items']));
+        self::assertSame('in_progress', $response['items'][0]['latest_attempt_status']);
+        self::assertSame(1, $response['items'][1]['is_available_now']);
+        self::assertSame('not_started', $response['items'][2]['availability_reason']);
+        self::assertSame('completed', $response['items'][3]['latest_attempt_status']);
     }
 
     #[RunInSeparateProcess]
@@ -418,6 +671,30 @@ final class RestExamAvailabilitySnapshotFakeWpdb
     public int $examQueryCount = 0;
     public int $latestAttemptQueryCount = 0;
     /** @var array<int,array<string,mixed>> */
+    public array $examRows = [
+        [
+            'id' => 15,
+            'subject_id' => 1,
+            'title' => 'Matematika',
+            'duration_minutes' => 90,
+            'kkm_percentage' => 75.0,
+            'total_questions' => 10,
+            'randomize_questions' => 0,
+            'show_student_result' => 1,
+            'enable_calculator' => 1,
+            'status' => 'published',
+            'starts_at' => '',
+            'ends_at' => '',
+            'target_kelas' => 'XI-A',
+            'created_by' => 1,
+            'created_at' => '2026-03-20 10:00:00',
+            'updated_at' => '2026-03-20 10:00:00',
+            'subject_name' => 'Matematika',
+            'subject_code' => 'MAT',
+            'question_count' => 10,
+        ],
+    ];
+    /** @var array<int,array<string,mixed>> */
     public array $attemptRows = [
         [
             'student_id' => 7,
@@ -454,27 +731,7 @@ final class RestExamAvailabilitySnapshotFakeWpdb
         if (strpos($query, 'FROM wp_cbt_exams e') !== false) {
             $this->examQueryCount++;
 
-            return [[
-                'id' => 15,
-                'subject_id' => 1,
-                'title' => 'Matematika',
-                'duration_minutes' => 90,
-                'kkm_percentage' => 75.0,
-                'total_questions' => 10,
-                'randomize_questions' => 0,
-                'show_student_result' => 1,
-                'enable_calculator' => 1,
-                'status' => 'published',
-                'starts_at' => '',
-                'ends_at' => '',
-                'target_kelas' => 'XI-A',
-                'created_by' => 1,
-                'created_at' => '2026-03-20 10:00:00',
-                'updated_at' => '2026-03-20 10:00:00',
-                'subject_name' => 'Matematika',
-                'subject_code' => 'MAT',
-                'question_count' => 10,
-            ]];
+            return $this->examRows;
         }
 
         if (strpos($query, 'FROM wp_cbt_attempts a') !== false) {

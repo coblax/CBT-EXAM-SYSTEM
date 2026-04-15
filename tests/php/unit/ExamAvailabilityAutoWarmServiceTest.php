@@ -196,7 +196,15 @@ final class ExamAvailabilityAutoWarmServiceTest extends TestCase
         CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(71, static function (): array {
             return [
                 'items' => [
-                    ['id' => 77, 'title' => 'Ujian Matematika', 'availability_reason' => 'ok', 'is_available_now' => 1],
+                    [
+                        'id' => 77,
+                        'title' => 'Ujian Matematika',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
                 ],
                 'current_user' => [
                     'user_id' => 71,
@@ -236,7 +244,15 @@ final class ExamAvailabilityAutoWarmServiceTest extends TestCase
         CBT_Exam_Availability_Cache::warm_prepared_student_snapshot(71, static function (): array {
             return [
                 'items' => [
-                    ['id' => 77, 'title' => 'Ujian Matematika', 'availability_reason' => 'ok', 'is_available_now' => 1],
+                    [
+                        'id' => 77,
+                        'title' => 'Ujian Matematika',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                        'availability_reason' => 'ok',
+                        'is_available_now' => 1,
+                    ],
                 ],
                 'current_user' => [
                     'user_id' => 71,

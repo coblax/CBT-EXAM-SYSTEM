@@ -196,24 +196,10 @@ export function createAppMetaManager(deps) {
 
     function getLoginHeroSchoolBranding(schoolName) {
         var normalized = String(schoolName || '').replace(/\s+/g, ' ').trim();
-        var branding = {
-            tag: 'Portal CBT',
+        return {
+            tag: '',
             title: normalized || 'CBT Exam'
         };
-
-        if (normalized === '') {
-            return branding;
-        }
-
-        var match = normalized.match(/^(SMK(?:\s+N(?:EGERI)?)?|SMKN|SMA(?:\s+N(?:EGERI)?)?|SMAN|SMP(?:\s+N(?:EGERI)?)?|SMPN|SD(?:\s+N(?:EGERI)?)?|SDN|MI|MTSN?|MAN|MA(?:\s+NEGERI)?)(?:\s+(\d+))?\s+(.+)$/i);
-        if (!match) {
-            return branding;
-        }
-
-        branding.tag = normalizeLoginHeroSchoolTag(match[1], match[2]);
-        branding.title = String(match[3] || '').trim() || normalized;
-
-        return branding;
     }
 
     function getCurrentUserName() {

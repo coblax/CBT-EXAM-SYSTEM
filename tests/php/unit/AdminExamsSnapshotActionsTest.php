@@ -237,7 +237,13 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         CBT_Exam_Availability_Cache::warm_student_snapshot(71, static function (): array {
             return [
                 'items' => [
-                    ['id' => 77, 'title' => 'Ujian Matematika'],
+                    [
+                        'id' => 77,
+                        'title' => 'Ujian Matematika',
+                        'status' => 'published',
+                        'target_kelas' => 'XI-A',
+                        'question_count' => 10,
+                    ],
                 ],
                 'current_user' => [
                     'user_id' => 71,

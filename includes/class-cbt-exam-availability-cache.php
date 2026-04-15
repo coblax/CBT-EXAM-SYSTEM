@@ -630,7 +630,7 @@ class CBT_Exam_Availability_Cache
             [
                 'source' => self::SNAPSHOT_SOURCE_MINUTE,
                 'storage_key' => self::snapshot_storage_key($user_id),
-                'refresh_dynamic_fields' => false,
+                'refresh_dynamic_fields' => true,
             ],
         ];
 
@@ -1284,44 +1284,182 @@ class CBT_Exam_Availability_Cache
         $student_kelas = self::normalize_kelas_code((string) ($current_user['kode_kelas'] ?? ''));
         $server_now = (string) current_time('mysql');
         $server_timezone = wp_timezone_string();
-        $server_now_ts = strtotime($server_now);
+        $snapshot['items'] = self::refresh_and_filter_student_snapshot_items(
+            (array) ($snapshot['items'] ?? []),
+            $student_kelas,
+            $server_now,
+            $server_timezone
+        );
 
-        foreach ($snapshot['items'] as $index => $item) {
+        return $snapshot;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $items
+     * @return array<int,array<string,mixed>>
+     */
+    private static function refresh_and_filter_student_snapshot_items(
+        array $items,
+        string $student_kelas,
+        string $server_now,
+        string $server_timezone
+    ): array {
+        $server_now_ts = self::parse_student_exam_timestamp($server_now);
+        $decorated = [];
+
+        foreach ($items as $item) {
             if (!is_array($item)) {
                 continue;
             }
 
-            $start_ts = !empty($item['starts_at']) ? strtotime((string) $item['starts_at']) : false;
-            $end_ts = !empty($item['ends_at']) ? strtotime((string) $item['ends_at']) : false;
-            $within_schedule = (
-                (empty($item['starts_at']) || (string) $item['starts_at'] <= $server_now) &&
-                (empty($item['ends_at']) || (string) $item['ends_at'] >= $server_now)
-            );
-            $class_allowed = self::exam_allows_student_class((array) $item, $student_kelas);
-            $schedule_reason = 'in_range';
-            if ($start_ts !== false && $server_now_ts !== false && $start_ts > $server_now_ts) {
-                $schedule_reason = 'not_started';
-            } elseif ($end_ts !== false && $server_now_ts !== false && $end_ts < $server_now_ts) {
-                $schedule_reason = 'ended';
+            $item = self::refresh_student_snapshot_item($item, $student_kelas, $server_now, $server_timezone);
+            $visibility = self::classify_student_snapshot_item($item, $server_now_ts);
+            if (empty($visibility['visible'])) {
+                continue;
             }
 
-            $availability_reason = 'ok';
-            if (!$class_allowed) {
-                $availability_reason = 'class_mismatch';
-            } elseif (!$within_schedule) {
-                $availability_reason = $schedule_reason;
-            }
-
-            $item['is_within_schedule'] = $within_schedule ? 1 : 0;
-            $item['is_class_allowed'] = $class_allowed ? 1 : 0;
-            $item['is_available_now'] = ($within_schedule && $class_allowed) ? 1 : 0;
-            $item['availability_reason'] = $availability_reason;
-            $item['server_now'] = $server_now;
-            $item['server_timezone'] = $server_timezone;
-            $snapshot['items'][$index] = $item;
+            $decorated[] = [
+                'bucket' => (int) ($visibility['bucket'] ?? 99),
+                'created_at_ts' => self::parse_student_exam_timestamp((string) ($item['created_at'] ?? '')),
+                'id' => (int) ($item['id'] ?? 0),
+                'item' => $item,
+            ];
         }
 
-        return $snapshot;
+        usort($decorated, static function (array $left, array $right): int {
+            $left_bucket = (int) ($left['bucket'] ?? 99);
+            $right_bucket = (int) ($right['bucket'] ?? 99);
+            if ($left_bucket !== $right_bucket) {
+                return $left_bucket <=> $right_bucket;
+            }
+
+            $left_created_at_ts = (int) ($left['created_at_ts'] ?? 0);
+            $right_created_at_ts = (int) ($right['created_at_ts'] ?? 0);
+            if ($left_created_at_ts !== $right_created_at_ts) {
+                return $right_created_at_ts <=> $left_created_at_ts;
+            }
+
+            return ((int) ($right['id'] ?? 0)) <=> ((int) ($left['id'] ?? 0));
+        });
+
+        return array_values(array_map(static function (array $entry): array {
+            return (array) ($entry['item'] ?? []);
+        }, $decorated));
+    }
+
+    /**
+     * @param array<string,mixed> $item
+     * @return array<string,mixed>
+     */
+    private static function refresh_student_snapshot_item(
+        array $item,
+        string $student_kelas,
+        string $server_now,
+        string $server_timezone
+    ): array {
+        $server_now_ts = self::parse_student_exam_timestamp($server_now);
+        $start_ts = !empty($item['starts_at']) ? self::parse_student_exam_timestamp((string) $item['starts_at']) : 0;
+        $end_ts = !empty($item['ends_at']) ? self::parse_student_exam_timestamp((string) $item['ends_at']) : 0;
+        $within_schedule = (
+            (empty($item['starts_at']) || (string) $item['starts_at'] <= $server_now) &&
+            (empty($item['ends_at']) || (string) $item['ends_at'] >= $server_now)
+        );
+        $class_allowed = self::exam_allows_student_class($item, $student_kelas);
+        $schedule_reason = 'in_range';
+        if ($start_ts > 0 && $server_now_ts > 0 && $start_ts > $server_now_ts) {
+            $schedule_reason = 'not_started';
+        } elseif ($end_ts > 0 && $server_now_ts > 0 && $end_ts < $server_now_ts) {
+            $schedule_reason = 'ended';
+        }
+
+        $availability_reason = 'ok';
+        if (!$class_allowed) {
+            $availability_reason = 'class_mismatch';
+        } elseif (!$within_schedule) {
+            $availability_reason = $schedule_reason;
+        }
+
+        $item['is_within_schedule'] = $within_schedule ? 1 : 0;
+        $item['is_class_allowed'] = $class_allowed ? 1 : 0;
+        $item['is_available_now'] = ($within_schedule && $class_allowed) ? 1 : 0;
+        $item['availability_reason'] = $availability_reason;
+        $item['server_now'] = $server_now;
+        $item['server_timezone'] = $server_timezone;
+
+        return $item;
+    }
+
+    /**
+     * @param array<string,mixed> $item
+     * @return array{visible:bool,bucket:int}
+     */
+    private static function classify_student_snapshot_item(array $item, int $server_now_ts): array
+    {
+        $status = sanitize_key((string) ($item['status'] ?? 'draft'));
+        $question_count = max(0, (int) ($item['question_count'] ?? 0));
+        $has_target_kelas = !empty(self::parse_exam_target_kelas((string) ($item['target_kelas'] ?? '')));
+        $class_allowed = (int) ($item['is_class_allowed'] ?? 0) === 1;
+
+        if ($status !== 'published' || $question_count <= 0 || !$has_target_kelas || !$class_allowed) {
+            return [
+                'visible' => false,
+                'bucket' => 99,
+            ];
+        }
+
+        $latest_attempt_status = sanitize_key((string) ($item['latest_attempt_status'] ?? ''));
+        $latest_attempt_finalizing = (int) ($item['latest_attempt_finalize_pending'] ?? 0) === 1;
+        if ($latest_attempt_finalizing || $latest_attempt_status === 'in_progress') {
+            return [
+                'visible' => true,
+                'bucket' => 0,
+            ];
+        }
+
+        if ((int) ($item['is_available_now'] ?? 0) === 1) {
+            return [
+                'visible' => true,
+                'bucket' => 1,
+            ];
+        }
+
+        $availability_reason = sanitize_key((string) ($item['availability_reason'] ?? ''));
+        if ($availability_reason === 'not_started' && self::student_snapshot_item_is_upcoming_within_window($item, $server_now_ts)) {
+            return [
+                'visible' => true,
+                'bucket' => 2,
+            ];
+        }
+
+        if ($latest_attempt_status === 'completed') {
+            return [
+                'visible' => true,
+                'bucket' => 3,
+            ];
+        }
+
+        return [
+            'visible' => false,
+            'bucket' => 99,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $item
+     */
+    private static function student_snapshot_item_is_upcoming_within_window(array $item, int $server_now_ts): bool
+    {
+        $start_ts = self::parse_student_exam_timestamp((string) ($item['starts_at'] ?? ''));
+        if ($start_ts <= 0 || $server_now_ts <= 0 || $start_ts <= $server_now_ts) {
+            return false;
+        }
+
+        return ($start_ts - $server_now_ts) <= self::student_exam_upcoming_window_seconds();
+    }
+
+    private static function student_exam_upcoming_window_seconds(): int
+    {
+        return 86400;
     }
 
     private static function record_recent_repair_event(int $user_id, string $status, string $message, string $source): void
@@ -1432,6 +1570,12 @@ class CBT_Exam_Availability_Cache
         }
 
         return in_array($student_kelas, $target_kelas, true);
+    }
+
+    private static function parse_student_exam_timestamp(string $value): int
+    {
+        $timestamp = strtotime($value);
+        return $timestamp === false ? 0 : (int) $timestamp;
     }
 
     /**

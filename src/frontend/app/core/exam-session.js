@@ -2725,6 +2725,12 @@ export function createExamSessionManager(deps) {
             return;
         }
 
+        if (state.loginRateLimitRemaining > 0) {
+            state.error = 'Harap tunggu ' + state.loginRateLimitRemaining + ' detik lagi sebelum mencoba login.';
+            render();
+            return;
+        }
+
         state.busy = true;
         var loginMetricContext = beginLoginEntryFlowMetricContext();
         loginMetricContext.loginRequestStartedAt = Date.now();
@@ -2817,7 +2823,27 @@ export function createExamSessionManager(deps) {
             );
             emitLoginEntryFlowMetricSuccess();
         } catch (error) {
-            state.error = error instanceof Error ? error.message : 'Login gagal.';
+            var retryAfter = parseInt(getErrorField(error, 'retry_after'), 10);
+            if (getErrorCode(error) === 'too_many_requests' && !isNaN(retryAfter) && retryAfter > 0) {
+                state.error = (error instanceof Error ? error.message : 'Terlalu banyak percobaan login gagal.');
+                state.loginRateLimitRemaining = retryAfter;
+                
+                if (state.loginRateLimitTimer) {
+                    clearInterval(state.loginRateLimitTimer);
+                }
+                
+                state.loginRateLimitTimer = setInterval(function() {
+                    state.loginRateLimitRemaining -= 1;
+                    if (state.loginRateLimitRemaining <= 0) {
+                        clearInterval(state.loginRateLimitTimer);
+                        state.loginRateLimitTimer = null;
+                        state.error = '';
+                    }
+                    render('login-rate-limit', { remaining: state.loginRateLimitRemaining });
+                }, 1000);
+            } else {
+                state.error = error instanceof Error ? error.message : 'Login gagal.';
+            }
             resetAuthProgressState();
             recordTimelineEntry('login:error', state.error, {
                 attemptId: Number(state.attemptId) || 0,
