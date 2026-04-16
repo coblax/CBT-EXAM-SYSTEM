@@ -123,6 +123,7 @@
                 font-weight: inherit;
             }
             .cbt-exam-cards-panel input[type="text"],
+            .cbt-exam-cards-panel input[type="number"],
             .cbt-exam-cards-panel select {
                 min-height: 48px;
                 padding: 0 15px;
@@ -132,9 +133,13 @@
                 box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
                 color: #0f172a;
             }
-            .cbt-exam-cards-panel input[type="text"] {
+            .cbt-exam-cards-panel input[type="text"],
+            .cbt-exam-cards-panel input[type="number"] {
                 width: min(100%, 720px);
                 max-width: none;
+            }
+            .cbt-exam-cards-panel input[type="number"] {
+                width: min(100%, 220px);
             }
             .cbt-exam-cards-panel select {
                 min-width: 240px;
@@ -154,6 +159,84 @@
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 12px;
                 max-width: 720px;
+            }
+            .cbt-exam-cards-tabs {
+                display: flex;
+                align-items: stretch;
+                gap: 12px;
+                flex-wrap: wrap;
+            }
+            .cbt-exam-cards-tab {
+                appearance: none;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 168px;
+                min-height: 52px;
+                padding: 0 20px;
+                border: 1px solid #d7e4f5;
+                border-radius: 16px;
+                background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+                color: #3f526d;
+                font-size: 14px;
+                font-weight: 700;
+                line-height: 1.2;
+                cursor: pointer;
+                box-shadow: 0 10px 22px rgba(15, 23, 42, 0.07);
+                transition: transform 140ms ease, background-color 140ms ease, color 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+            }
+            .cbt-exam-cards-tab:hover,
+            .cbt-exam-cards-tab:focus {
+                transform: translateY(-1px);
+                border-color: #bdd3ec;
+                background: linear-gradient(180deg, #ffffff 0%, #f1f7ff 100%);
+                color: #274767;
+            }
+            .cbt-exam-cards-tab.is-active {
+                border-color: #2f7ab9;
+                background: linear-gradient(180deg, #2f7ab9 0%, #1f68a6 100%);
+                color: #ffffff;
+                box-shadow: 0 16px 30px rgba(34, 113, 177, 0.24);
+            }
+            .cbt-exam-cards-mode-panel {
+                display: grid;
+                gap: 6px;
+                max-width: 720px;
+                margin-top: 14px;
+                padding: 16px 18px;
+                border: 1px solid #dbe7f3;
+                border-radius: 18px;
+                background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+                box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+            }
+            .cbt-exam-cards-mode-panel-title {
+                color: #0f172a;
+                font-size: 15px;
+                font-weight: 700;
+                line-height: 1.35;
+            }
+            .cbt-exam-cards-mode-panel-copy {
+                color: #64748b;
+                font-size: 13px;
+                line-height: 1.6;
+            }
+            .cbt-exam-cards-seat-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(180px, 220px));
+                gap: 12px 16px;
+                align-items: end;
+            }
+            .cbt-exam-cards-seat-field {
+                display: grid;
+                gap: 7px;
+            }
+            .cbt-exam-cards-seat-field label {
+                font-size: 13px;
+                font-weight: 700;
+                color: #0f172a;
+            }
+            .cbt-exam-cards-row-hidden {
+                display: none;
             }
             .cbt-exam-cards-field-option {
                 position: relative;
@@ -333,7 +416,7 @@
                         <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d kelas tersedia', count($kelas_options))); ?></span>
                         <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d ruang tersedia', count($ruang_options))); ?></span>
                         <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d filter aktif', $active_filter_count)); ?></span>
-                        <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d info tampil', $display_field_count)); ?></span>
+                        <span id="cbt-card-mode-pill" class="cbt-exam-cards-pill"><?php echo esc_html('Mode: ' . $selected_print_mode_label); ?></span>
                     </div>
                 </section>
 
@@ -341,7 +424,7 @@
                     <div class="cbt-exam-cards-panel-header">
                         <div>
                             <h2>Filter & Generate Cards</h2>
-                            <p>Pilih kelas, ruang, atau kata kunci siswa untuk membatasi kartu yang akan digenerate. Setelah itu, tentukan juga informasi mana yang ingin ditampilkan pada kartu.</p>
+                            <p>Pilih kelas, ruang, atau kata kunci siswa untuk membatasi kartu yang akan digenerate. Setelah itu, tentukan apakah outputnya berupa kartu peserta lengkap atau nomor meja besar siap cetak.</p>
                         </div>
                         <span class="cbt-exam-cards-chip">PDF A4 • 6 kartu / halaman</span>
                     </div>
@@ -355,6 +438,7 @@
 
                     <div class="cbt-exam-cards-summary" aria-hidden="true">
                         <span class="cbt-exam-cards-summary-label">Ringkasan:</span>
+                        <span id="cbt-card-mode-summary" class="cbt-exam-cards-summary-item"><?php echo esc_html('Mode: ' . $selected_print_mode_label); ?></span>
                         <span class="cbt-exam-cards-summary-item"><?php echo esc_html('Kelas: ' . ($selected_kelas !== '' ? $selected_kelas : 'Semua kelas')); ?></span>
                         <span class="cbt-exam-cards-summary-item"><?php echo esc_html('Ruang: ' . ($selected_ruang !== '' ? $selected_ruang : 'Semua ruang')); ?></span>
                         <span class="cbt-exam-cards-summary-item"><?php echo esc_html(sprintf('Jadwal publish: %d exam', $schedule_count)); ?></span>
@@ -367,6 +451,34 @@
                         <input type="hidden" name="cbt_card_fields_configured" value="1" />
                         <table class="form-table" role="presentation">
                             <tbody>
+                            <tr>
+                                <th>Mode Cetak</th>
+                                <td>
+                                    <input type="hidden" id="cbt-card-print-mode" name="cbt_card_print_mode" value="<?php echo esc_attr($selected_print_mode); ?>" />
+                                    <div class="cbt-exam-cards-tabs" role="tablist" aria-label="Mode cetak exam cards">
+                                        <?php foreach ($print_mode_options as $mode_key => $mode_option): ?>
+                                            <button
+                                                type="button"
+                                                class="cbt-exam-cards-tab<?php echo $selected_print_mode === $mode_key ? ' is-active' : ''; ?>"
+                                                data-print-mode-tab="<?php echo esc_attr($mode_key); ?>"
+                                                role="tab"
+                                                aria-selected="<?php echo $selected_print_mode === $mode_key ? 'true' : 'false'; ?>"
+                                            >
+                                                <?php echo esc_html((string) ($mode_option['label'] ?? $mode_key)); ?>
+                                            </button>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <div class="cbt-exam-cards-mode-panel">
+                                        <div id="cbt-card-mode-title" class="cbt-exam-cards-mode-panel-title">
+                                            <?php echo esc_html((string) ($print_mode_options[$selected_print_mode]['label'] ?? $selected_print_mode)); ?>
+                                        </div>
+                                        <div id="cbt-card-mode-copy" class="cbt-exam-cards-mode-panel-copy">
+                                            <?php echo esc_html((string) ($print_mode_options[$selected_print_mode]['description'] ?? '')); ?>
+                                        </div>
+                                    </div>
+                                    <p class="description">Tab ini hanya mengatur tipe output. Filter siswa tetap sama, tetapi field dan note di bawah akan menyesuaikan mode yang aktif.</p>
+                                </td>
+                            </tr>
                             <tr>
                                 <th><label for="cbt-card-kelas">Kelas</label></th>
                                 <td>
@@ -403,6 +515,22 @@
                                 </td>
                             </tr>
                             <tr>
+                                <th><label for="cbt-card-seat-start">Pengaturan Nomor</label></th>
+                                <td>
+                                    <div id="cbt-card-seat-settings" class="cbt-exam-cards-seat-grid<?php echo !$is_desk_number_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">
+                                        <div class="cbt-exam-cards-seat-field">
+                                            <label for="cbt-card-seat-start">Nomor Awal</label>
+                                            <input type="number" min="1" step="1" id="cbt-card-seat-start" name="cbt_card_seat_start" value="<?php echo esc_attr((string) $seat_start_number); ?>" />
+                                        </div>
+                                        <div class="cbt-exam-cards-seat-field">
+                                            <label for="cbt-card-seat-padding">Digit Padding</label>
+                                            <input type="number" min="1" max="12" step="1" id="cbt-card-seat-padding" name="cbt_card_seat_padding" value="<?php echo esc_attr((string) $seat_padding); ?>" />
+                                        </div>
+                                    </div>
+                                    <p id="cbt-card-seat-settings-note" class="description<?php echo !$is_desk_number_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">Nomor meja dibentuk otomatis dari hasil filter siswa dengan urutan existing `kelas -> nama -> username`, lalu dimulai dari angka awal yang Anda tentukan.</p>
+                                </td>
+                            </tr>
+                            <tr id="cbt-card-fields-row"<?php echo $is_desk_number_mode ? ' class="cbt-exam-cards-row-hidden"' : ''; ?>>
                                 <th>Informasi Kartu</th>
                                 <td>
                                     <div class="cbt-exam-cards-field-grid">
@@ -432,11 +560,16 @@
                             </tr>
                             </tbody>
                         </table>
-                        <p class="cbt-exam-cards-note">
+                        <p id="cbt-card-participant-note" class="cbt-exam-cards-note<?php echo $is_desk_number_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">
                             Password pada kartu akan memakai nilai tersimpan. Jika masih kosong, sistem akan membuat password 6 digit otomatis untuk siswa tersebut saat proses generate berjalan. Opsi tampilan di atas hanya mengatur field yang dicetak, bukan mengubah data siswa.
                         </p>
+                        <p id="cbt-card-desk-note" class="cbt-exam-cards-note<?php echo !$is_desk_number_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">
+                            Mode nomor meja hanya membuat urutan angka print-only untuk hasil filter saat ini. Tidak ada password, foto, atau data profil siswa yang diubah saat generate berlangsung.
+                        </p>
                         <div class="cbt-exam-cards-form-actions">
-                            <button class="button button-primary" type="submit">Generate &amp; Print Cards</button>
+                            <button id="cbt-card-submit-button" class="button button-primary" type="submit">
+                                <?php echo esc_html($is_desk_number_mode ? 'Generate & Print Nomor Meja' : 'Generate & Print Kartu'); ?>
+                            </button>
                             <a href="<?php echo esc_url($reset_url); ?>" class="button button-secondary">Reset Filter</a>
                         </div>
                     </form>
@@ -458,4 +591,87 @@
                 </section>
             </div>
         </div>
+        <script>
+            (function () {
+                const modeInput = document.getElementById('cbt-card-print-mode');
+                const fieldsRow = document.getElementById('cbt-card-fields-row');
+                const seatSettings = document.getElementById('cbt-card-seat-settings');
+                const seatSettingsNote = document.getElementById('cbt-card-seat-settings-note');
+                const participantNote = document.getElementById('cbt-card-participant-note');
+                const deskNote = document.getElementById('cbt-card-desk-note');
+                const modeTitle = document.getElementById('cbt-card-mode-title');
+                const modeCopy = document.getElementById('cbt-card-mode-copy');
+                const modePill = document.getElementById('cbt-card-mode-pill');
+                const modeSummary = document.getElementById('cbt-card-mode-summary');
+                const submitButton = document.getElementById('cbt-card-submit-button');
+                const fieldInputs = fieldsRow ? fieldsRow.querySelectorAll('input[type="checkbox"]') : [];
+                const modeTabs = document.querySelectorAll('[data-print-mode-tab]');
+                const modeDescriptions = <?php echo wp_json_encode($print_mode_options); ?>;
+
+                if (!modeInput) {
+                    return;
+                }
+
+                const syncPrintMode = function () {
+                    const activeMode = modeInput.value === 'desk_number' ? 'desk_number' : 'participant';
+                    const isDeskMode = activeMode === 'desk_number';
+                    const activeModeDescription = modeDescriptions[activeMode] || {};
+
+                    if (fieldsRow) {
+                        fieldsRow.classList.toggle('cbt-exam-cards-row-hidden', isDeskMode);
+                    }
+                    if (seatSettings) {
+                        seatSettings.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
+                    }
+                    if (seatSettingsNote) {
+                        seatSettingsNote.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
+                    }
+                    if (participantNote) {
+                        participantNote.classList.toggle('cbt-exam-cards-row-hidden', isDeskMode);
+                    }
+                    if (deskNote) {
+                        deskNote.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
+                    }
+
+                    fieldInputs.forEach(function (input) {
+                        input.disabled = isDeskMode;
+                    });
+
+                    if (modeTitle) {
+                        modeTitle.textContent = activeModeDescription.label || activeMode;
+                    }
+                    if (modeCopy) {
+                        modeCopy.textContent = activeModeDescription.description || '';
+                    }
+                    if (modePill) {
+                        modePill.textContent = 'Mode: ' + (activeModeDescription.label || activeMode);
+                    }
+                    if (modeSummary) {
+                        modeSummary.textContent = 'Mode: ' + (activeModeDescription.label || activeMode);
+                    }
+                    if (submitButton) {
+                        submitButton.textContent = isDeskMode ? 'Generate & Print Nomor Meja' : 'Generate & Print Kartu';
+                    }
+
+                    modeTabs.forEach(function (tab) {
+                        const isActive = tab.getAttribute('data-print-mode-tab') === activeMode;
+                        tab.classList.toggle('is-active', isActive);
+                        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                    });
+                };
+
+                modeTabs.forEach(function (tab) {
+                    tab.addEventListener('click', function () {
+                        const nextMode = tab.getAttribute('data-print-mode-tab');
+                        if (!nextMode) {
+                            return;
+                        }
+                        modeInput.value = nextMode;
+                        syncPrintMode();
+                    });
+                });
+
+                syncPrintMode();
+            })();
+        </script>
         <?php

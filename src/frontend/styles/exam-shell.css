@@ -71,12 +71,24 @@
     grid-template-columns: minmax(0, 1fr);
 }
 
+@keyframes cbtQuestionSlideIn {
+    0% {
+        opacity: 0.3;
+        transform: translateY(12px) scale(0.99);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
 .cbt-question-card {
     border: 1px solid var(--cbt-border);
     border-radius: var(--cbt-radius);
     background: #fff;
     overflow: hidden;
     box-shadow: var(--cbt-shadow);
+    animation: cbtQuestionSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .cbt-question-card-loading .cbt-question-body {

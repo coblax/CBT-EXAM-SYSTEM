@@ -12,6 +12,13 @@ final class CBT_Admin_Exam_Cards_Service
     private const DEFAULT_STUDENT_PHOTO_FEMALE_RELATIVE_PATH = 'public/Default Wanita.png';
     private const DISPLAY_FIELDS_PARAM = 'cbt_card_fields';
     private const DISPLAY_FIELDS_CONFIGURED_PARAM = 'cbt_card_fields_configured';
+    private const PRINT_MODE_PARAM = 'cbt_card_print_mode';
+    private const PRINT_MODE_PARTICIPANT = 'participant';
+    private const PRINT_MODE_DESK_NUMBER = 'desk_number';
+    private const SEAT_START_PARAM = 'cbt_card_seat_start';
+    private const SEAT_PADDING_PARAM = 'cbt_card_seat_padding';
+    private const DEFAULT_SEAT_START = 1;
+    private const DEFAULT_SEAT_PADDING = 3;
 
     public static function can_manage_users(): bool
     {
@@ -29,10 +36,16 @@ final class CBT_Admin_Exam_Cards_Service
         $selected_kelas = isset($query['cbt_card_kelas']) ? sanitize_text_field(wp_unslash((string) $query['cbt_card_kelas'])) : '';
         $selected_ruang = isset($query['cbt_card_ruang']) ? sanitize_text_field(wp_unslash((string) $query['cbt_card_ruang'])) : '';
         $search = isset($query['cbt_card_q']) ? sanitize_text_field(wp_unslash((string) $query['cbt_card_q'])) : '';
+        $selected_print_mode = self::get_print_mode_from_source($query);
+        $seat_start_number = self::get_seat_start_number_from_source($query);
+        $seat_padding = self::get_seat_padding_from_source($query);
         $display_field_options = self::get_display_field_options();
+        $print_mode_options = self::get_print_mode_options();
         $selected_display_fields = self::get_selected_display_fields_from_source($query);
         $selected_display_field_labels = self::get_selected_display_field_labels($selected_display_fields);
         $display_field_count = count($selected_display_fields);
+        $is_desk_number_mode = $selected_print_mode === self::PRINT_MODE_DESK_NUMBER;
+        $selected_print_mode_label = (string) ($print_mode_options[$selected_print_mode]['label'] ?? $selected_print_mode);
 
         $kelas_options = self::get_distinct_user_meta_values('kode_kelas');
         $ruang_options = self::get_distinct_user_meta_values('kode_ruang');
@@ -60,15 +73,21 @@ final class CBT_Admin_Exam_Cards_Service
             'display_field_count',
             'display_field_options',
             'error',
+            'is_desk_number_mode',
             'kelas_options',
             'notice',
+            'print_mode_options',
             'reset_url',
             'ruang_options',
             'schedule_count',
             'search',
+            'seat_padding',
+            'seat_start_number',
             'selected_display_field_labels',
             'selected_display_fields',
             'selected_kelas',
+            'selected_print_mode',
+            'selected_print_mode_label',
             'selected_ruang'
         );
     }
@@ -82,16 +101,22 @@ final class CBT_Admin_Exam_Cards_Service
         $selected_kelas = isset($source['cbt_card_kelas']) ? trim(sanitize_text_field(wp_unslash((string) $source['cbt_card_kelas']))) : '';
         $selected_ruang = isset($source['cbt_card_ruang']) ? trim(sanitize_text_field(wp_unslash((string) $source['cbt_card_ruang']))) : '';
         $search = isset($source['cbt_card_q']) ? trim(sanitize_text_field(wp_unslash((string) $source['cbt_card_q']))) : '';
+        $print_mode = self::get_print_mode_from_source($source);
+        $seat_start_number = self::get_seat_start_number_from_source($source);
+        $seat_padding = self::get_seat_padding_from_source($source);
         $selected_display_fields = self::get_selected_display_fields_from_source($source);
 
         $redirect_args = [
             'cbt_card_kelas' => $selected_kelas,
             'cbt_card_ruang' => $selected_ruang,
             'cbt_card_q' => $search,
+            self::PRINT_MODE_PARAM => $print_mode,
+            self::SEAT_START_PARAM => $seat_start_number,
+            self::SEAT_PADDING_PARAM => $seat_padding,
             self::DISPLAY_FIELDS_CONFIGURED_PARAM => '1',
             self::DISPLAY_FIELDS_PARAM => $selected_display_fields,
         ];
-        if (empty($selected_display_fields)) {
+        if ($print_mode === self::PRINT_MODE_PARTICIPANT && empty($selected_display_fields)) {
             return new WP_Error(
                 'exam_cards_display_fields_empty',
                 'Pilih minimal satu informasi yang akan ditampilkan pada kartu ujian.',
@@ -102,6 +127,29 @@ final class CBT_Admin_Exam_Cards_Service
         $students = self::get_exam_card_students($search, $selected_kelas, $selected_ruang);
         if (empty($students)) {
             return new WP_Error('exam_cards_empty', 'Tidak ada siswa sesuai filter untuk dicetak.', ['redirect_args' => $redirect_args]);
+        }
+
+        $branding_context = self::build_print_branding_context();
+        $printed_at = current_time('d M Y H:i');
+        $kelas_label = $selected_kelas !== '' ? $selected_kelas : 'Semua Kelas';
+        $ruang_label = $selected_ruang !== '' ? $selected_ruang : 'Semua Ruang';
+        $student_total = count($students);
+        $back_url = self::build_print_back_url($selected_kelas, $selected_ruang, $search, $selected_display_fields, $print_mode, $seat_start_number, $seat_padding);
+
+        if ($print_mode === self::PRINT_MODE_DESK_NUMBER) {
+            $seat_cards = self::build_desk_number_cards($students, $seat_start_number, $seat_padding);
+
+            return $branding_context + compact(
+                'back_url',
+                'kelas_label',
+                'printed_at',
+                'print_mode',
+                'ruang_label',
+                'seat_cards',
+                'seat_padding',
+                'seat_start_number',
+                'student_total'
+            );
         }
 
         foreach ($students as $idx => $student) {
@@ -128,74 +176,34 @@ final class CBT_Admin_Exam_Cards_Service
             $schedule_items[] = self::format_exam_card_schedule_line((array) $schedule_row);
         }
 
-        $branding = CBT_Admin_Branding_Settings::get_print_context();
-        $exam_program_name = trim((string) ($branding['exam_program_name'] ?? ''));
-        $school_name = trim((string) ($branding['school_name'] ?? ''));
-        $school_motto = trim((string) ($branding['school_motto'] ?? ''));
-        $school_npsn = trim((string) ($branding['school_npsn'] ?? ''));
-        $school_address = trim((string) ($branding['school_address'] ?? ''));
-        $school_village = trim((string) ($branding['school_village'] ?? ''));
-        $school_district_city_ln = trim((string) ($branding['school_district_city_ln'] ?? ''));
-        $school_regency_country_ln = trim((string) ($branding['school_regency_country_ln'] ?? ''));
-        $school_regency_country_ln_is_city = !empty($branding['school_regency_country_ln_is_city']);
-        $school_province_abroad_ln = trim((string) ($branding['school_province_abroad_ln'] ?? ''));
-        $school_province_abroad_ln_is_foreign = !empty($branding['school_province_abroad_ln_is_foreign']);
-        if ($school_name === '') {
-            $school_name = trim((string) get_bloginfo('name'));
-        }
-        if ($school_name === '') {
-            $school_name = 'CBT Exam';
-        }
-
-        $card_program_title = $exam_program_name !== '' ? $exam_program_name : 'Ujian CBT';
-        $card_header_address_line = self::build_card_header_address_line($school_address);
-        $card_header_region_line = self::build_card_header_region_line(
-            $school_village,
-            $school_district_city_ln,
-            $school_regency_country_ln,
-            $school_province_abroad_ln,
-            $school_regency_country_ln_is_city,
-            $school_province_abroad_ln_is_foreign
-        );
-        $school_logo_1_url = (string) ($branding['logo_1_url'] ?? '');
-        $school_logo_2_url = (string) ($branding['logo_2_url'] ?? '');
-        $printed_at = current_time('d M Y H:i');
-        $kelas_label = $selected_kelas !== '' ? $selected_kelas : 'Semua Kelas';
-        $ruang_label = $selected_ruang !== '' ? $selected_ruang : 'Semua Ruang';
-        $student_total = count($students);
-
-        $back_args = [
-            'page' => 'cbt-exam-cards',
-            'cbt_card_kelas' => $selected_kelas,
-            self::DISPLAY_FIELDS_CONFIGURED_PARAM => '1',
-            self::DISPLAY_FIELDS_PARAM => $selected_display_fields,
-        ];
-        if ($selected_ruang !== '') {
-            $back_args['cbt_card_ruang'] = $selected_ruang;
-        }
-        if ($search !== '') {
-            $back_args['cbt_card_q'] = $search;
-        }
-        $back_url = add_query_arg($back_args, admin_url('admin.php'));
-
-        return compact(
+        return $branding_context + compact(
             'back_url',
-            'card_program_title',
-            'card_header_address_line',
-            'card_header_region_line',
             'kelas_label',
             'printed_at',
+            'print_mode',
             'ruang_label',
             'schedule_items',
-            'school_logo_1_url',
-            'school_logo_2_url',
-            'school_motto',
-            'school_name',
-            'school_npsn',
             'selected_display_fields',
             'student_total',
             'students'
         );
+    }
+
+    /**
+     * @return array<string,array{label:string,description:string}>
+     */
+    public static function get_print_mode_options(): array
+    {
+        return [
+            self::PRINT_MODE_PARTICIPANT => [
+                'label' => 'Kartu Peserta',
+                'description' => 'Cetak kartu peserta lengkap dengan informasi siswa yang dipilih.',
+            ],
+            self::PRINT_MODE_DESK_NUMBER => [
+                'label' => 'Nomor Meja',
+                'description' => 'Cetak placard nomor meja besar dengan urutan otomatis untuk hasil filter siswa.',
+            ],
+        ];
     }
 
     /**
@@ -669,6 +677,33 @@ final class CBT_Admin_Exam_Cards_Service
         return implode(', ', $segments);
     }
 
+    private static function get_print_mode_from_source(array $source): string
+    {
+        $raw_mode = isset($source[self::PRINT_MODE_PARAM])
+            ? sanitize_key(wp_unslash((string) $source[self::PRINT_MODE_PARAM]))
+            : self::PRINT_MODE_PARTICIPANT;
+
+        if ($raw_mode === self::PRINT_MODE_DESK_NUMBER) {
+            return self::PRINT_MODE_DESK_NUMBER;
+        }
+
+        return self::PRINT_MODE_PARTICIPANT;
+    }
+
+    private static function get_seat_start_number_from_source(array $source): int
+    {
+        $seat_start_number = isset($source[self::SEAT_START_PARAM]) ? absint(wp_unslash((string) $source[self::SEAT_START_PARAM])) : self::DEFAULT_SEAT_START;
+
+        return max(1, $seat_start_number);
+    }
+
+    private static function get_seat_padding_from_source(array $source): int
+    {
+        $seat_padding = isset($source[self::SEAT_PADDING_PARAM]) ? absint(wp_unslash((string) $source[self::SEAT_PADDING_PARAM])) : self::DEFAULT_SEAT_PADDING;
+
+        return min(12, max(1, $seat_padding > 0 ? $seat_padding : self::DEFAULT_SEAT_PADDING));
+    }
+
     /**
      * @param array<string,mixed> $source
      * @return string[]
@@ -737,6 +772,112 @@ final class CBT_Admin_Exam_Cards_Service
         }
 
         return $labels;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $students
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_desk_number_cards(array $students, int $seat_start_number, int $seat_padding): array
+    {
+        $seat_cards = [];
+
+        foreach (array_values($students) as $index => $student) {
+            $seat_number_raw = $seat_start_number + $index;
+            $seat_cards[] = [
+                'student_id' => (int) ($student['id'] ?? 0),
+                'student_name' => trim((string) ($student['name'] ?? ($student['username'] ?? ''))),
+                'kelas' => trim((string) ($student['kelas'] ?? '')),
+                'ruang' => trim((string) ($student['ruang'] ?? '')),
+                'seat_number_raw' => $seat_number_raw,
+                'seat_number_display' => str_pad((string) $seat_number_raw, $seat_padding, '0', STR_PAD_LEFT),
+            ];
+        }
+
+        return $seat_cards;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function build_print_branding_context(): array
+    {
+        $branding = CBT_Admin_Branding_Settings::get_print_context();
+        $exam_program_name = trim((string) ($branding['exam_program_name'] ?? ''));
+        $school_name = trim((string) ($branding['school_name'] ?? ''));
+        $school_motto = trim((string) ($branding['school_motto'] ?? ''));
+        $school_npsn = trim((string) ($branding['school_npsn'] ?? ''));
+        $school_address = trim((string) ($branding['school_address'] ?? ''));
+        $school_village = trim((string) ($branding['school_village'] ?? ''));
+        $school_district_city_ln = trim((string) ($branding['school_district_city_ln'] ?? ''));
+        $school_regency_country_ln = trim((string) ($branding['school_regency_country_ln'] ?? ''));
+        $school_regency_country_ln_is_city = !empty($branding['school_regency_country_ln_is_city']);
+        $school_province_abroad_ln = trim((string) ($branding['school_province_abroad_ln'] ?? ''));
+        $school_province_abroad_ln_is_foreign = !empty($branding['school_province_abroad_ln_is_foreign']);
+        if ($school_name === '' && function_exists('get_bloginfo')) {
+            $school_name = trim((string) get_bloginfo('name'));
+        }
+        if ($school_name === '' && function_exists('get_option')) {
+            $school_name = trim((string) get_option('blogname'));
+        }
+        if ($school_name === '') {
+            $school_name = 'CBT Exam';
+        }
+
+        $card_program_title = $exam_program_name !== '' ? $exam_program_name : 'Ujian CBT';
+        $card_header_address_line = self::build_card_header_address_line($school_address);
+        $card_header_region_line = self::build_card_header_region_line(
+            $school_village,
+            $school_district_city_ln,
+            $school_regency_country_ln,
+            $school_province_abroad_ln,
+            $school_regency_country_ln_is_city,
+            $school_province_abroad_ln_is_foreign
+        );
+        $school_logo_1_url = (string) ($branding['logo_1_url'] ?? '');
+        $school_logo_2_url = (string) ($branding['logo_2_url'] ?? '');
+
+        return compact(
+            'card_program_title',
+            'card_header_address_line',
+            'card_header_region_line',
+            'school_logo_1_url',
+            'school_logo_2_url',
+            'school_motto',
+            'school_name',
+            'school_npsn'
+        );
+    }
+
+    /**
+     * @param string[] $selected_display_fields
+     */
+    private static function build_print_back_url(
+        string $selected_kelas,
+        string $selected_ruang,
+        string $search,
+        array $selected_display_fields,
+        string $print_mode,
+        int $seat_start_number,
+        int $seat_padding
+    ): string {
+        $back_args = [
+            'page' => 'cbt-exam-cards',
+            'cbt_card_kelas' => $selected_kelas,
+            self::PRINT_MODE_PARAM => $print_mode,
+            self::SEAT_START_PARAM => $seat_start_number,
+            self::SEAT_PADDING_PARAM => $seat_padding,
+            self::DISPLAY_FIELDS_CONFIGURED_PARAM => '1',
+            self::DISPLAY_FIELDS_PARAM => $selected_display_fields,
+        ];
+        if ($selected_ruang !== '') {
+            $back_args['cbt_card_ruang'] = $selected_ruang;
+        }
+        if ($search !== '') {
+            $back_args['cbt_card_q'] = $search;
+        }
+
+        return add_query_arg($back_args, admin_url('admin.php'));
     }
 
     private static function resolve_student_photo(string $role, string $foto, string $jenis_kelamin = ''): string

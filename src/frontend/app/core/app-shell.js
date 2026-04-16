@@ -72,8 +72,9 @@ export function createAppShellManager(deps) {
 
         var timerChip = '';
         if (state.stage === 'exam') {
+            var panicClass = (state.remainingSeconds > 0 && state.remainingSeconds <= 300) ? ' is-panic-mode' : '';
             timerChip = [
-                '<span class="cbt-chip cbt-timer-chip" aria-live="polite" aria-label="Sisa waktu ujian: ' + escapeHtml(formatSeconds(state.remainingSeconds)) + '">',
+                '<span class="cbt-chip cbt-timer-chip' + panicClass + '" aria-live="polite" aria-label="Sisa waktu ujian: ' + escapeHtml(formatSeconds(state.remainingSeconds)) + '">',
                 '<span class="cbt-timer-chip-icon" aria-hidden="true">\u23f1</span>',
                 '<span data-cbt-timer>' + formatSeconds(state.remainingSeconds) + '</span>',
                 '</span>'

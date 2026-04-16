@@ -245,6 +245,31 @@
     letter-spacing: 0.01em;
 }
 
+@keyframes cbtTimerPanicPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+        border-color: rgba(220, 38, 38, 0.9);
+        color: #fca5a5;
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(220, 38, 38, 0);
+        border-color: rgba(220, 38, 38, 0.4);
+        color: #fff;
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+        border-color: rgba(220, 38, 38, 0.9);
+        color: #fca5a5;
+    }
+}
+
+.cbt-timer-chip.is-panic-mode {
+    background: rgba(220, 38, 38, 0.95) !important;
+    color: #fff !important;
+    border-color: rgba(239, 68, 68, 1) !important;
+    animation: cbtTimerPanicPulse 1.2s cubic-bezier(0.66, 0, 0, 1) infinite;
+}
+
 .cbt-logout-button {
     display: inline-flex;
     align-items: center;
