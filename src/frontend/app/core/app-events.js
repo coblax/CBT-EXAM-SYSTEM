@@ -6,6 +6,9 @@ export function createAppEventManager(deps) {
     var getCurrentUserPhoto = deps.getCurrentUserPhoto;
     var handleAnswerChangeTarget = deps.handleAnswerChangeTarget;
     var handleAnswerInputTarget = deps.handleAnswerInputTarget;
+    var handleAnswerPointerTarget = typeof deps.handleAnswerPointerTarget === 'function'
+        ? deps.handleAnswerPointerTarget
+        : null;
     var handleArrowNavigationKey = deps.handleArrowNavigationKey;
     var handleBlockedBrowserInspectionShortcutAction = deps.handleBlockedBrowserInspectionShortcutAction;
     var handleBlockedClipboardAction = deps.handleBlockedClipboardAction;
@@ -896,6 +899,10 @@ export function createAppEventManager(deps) {
     }
 
     function handlePointerDown(event) {
+        if (handleAnswerPointerTarget) {
+            handleAnswerPointerTarget(event.target);
+        }
+
         var resolvedAction = resolveAction(event.target, event);
         if (!resolvedAction) {
             if (debugManager && debugManager.enabled) {

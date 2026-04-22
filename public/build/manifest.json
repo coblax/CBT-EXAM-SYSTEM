@@ -1,6 +1,6 @@
 {
-  "_frontend-exam-runtime-FNyOImet.js": {
-    "file": "assets/frontend-exam-runtime-FNyOImet.js",
+  "_frontend-exam-runtime-DEN3jK-l.js": {
+    "file": "assets/frontend-exam-runtime-DEN3jK-l.js",
     "name": "frontend-exam-runtime",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js"
@@ -416,12 +416,12 @@
     "isDynamicEntry": true
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-D1LISHC_.js",
+    "file": "assets/frontend-core-WRxxcGo6.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
     "dynamicImports": [
-      "_frontend-exam-runtime-FNyOImet.js",
+      "_frontend-exam-runtime-DEN3jK-l.js",
       "_math-render-z4EJh76n.js",
       "_frontend-stage-exam-BHykID1u.js",
       "_frontend-stage-result-CXtg3x37.js",

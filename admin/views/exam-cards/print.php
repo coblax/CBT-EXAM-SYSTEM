@@ -73,8 +73,8 @@
                     align-items: start;
                 }
                 .cards-grid.is-desk-number {
-                    grid-template-columns: repeat(3, minmax(0, 1fr));
-                    gap: 2.2mm;
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                    gap: 1.8mm;
                 }
                 .exam-card {
                     border: 1px solid #0f172a;
@@ -296,28 +296,28 @@
                     white-space: nowrap;
                 }
                 .desk-seat-card {
-                    border: 1.9px solid #38bdf8;
+                    border: 2.4px solid #38bdf8;
                     break-inside: avoid;
                     page-break-inside: avoid;
                     background: #ffffff;
                     display: grid;
-                    grid-template-rows: auto minmax(23mm, 1fr);
-                    min-height: 36mm;
+                    grid-template-rows: auto minmax(22mm, 1fr);
+                    min-height: 33mm;
                     overflow: hidden;
                 }
                 .desk-seat-card-head {
                     display: grid;
-                    grid-template-columns: 9mm minmax(0, 1fr);
-                    gap: 0.9mm;
+                    grid-template-columns: 6.5mm minmax(0, 1fr);
+                    gap: 0.55mm;
                     align-items: center;
                     text-align: center;
-                    padding: 1.4mm 1.8mm 1.1mm;
-                    border-bottom: 1.4px solid #38bdf8;
+                    padding: 0.9mm 1.1mm 0.7mm;
+                    border-bottom: 1.8px solid #38bdf8;
                     background: linear-gradient(180deg, #fcfeff 0%, #f3faff 100%);
                 }
                 .desk-seat-card-logo {
-                    width: 8mm;
-                    height: 8mm;
+                    width: 5.8mm;
+                    height: 5.8mm;
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -331,22 +331,22 @@
                 }
                 .desk-seat-card-head-main {
                     display: grid;
-                    gap: 0.15mm;
+                    gap: 0.08mm;
                     text-align: center;
                     min-width: 0;
                 }
                 .desk-seat-card-title {
-                    font-size: 6.9px;
+                    font-size: 4.8px;
                     font-weight: 800;
-                    line-height: 1.08;
-                    letter-spacing: 0.03em;
+                    line-height: 1.04;
+                    letter-spacing: 0.02em;
                     text-transform: uppercase;
                     color: #0f172a;
                 }
                 .desk-seat-card-school {
-                    font-size: 5.9px;
+                    font-size: 4.1px;
                     font-weight: 700;
-                    line-height: 1.12;
+                    line-height: 1.05;
                     text-transform: uppercase;
                     color: #1e3a8a;
                 }
@@ -354,17 +354,17 @@
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    min-height: 23mm;
-                    padding: 0.4mm 1.2mm 1.1mm;
+                    min-height: 22mm;
+                    padding: 0.1mm 0.2mm 0.2mm;
                 }
                 .desk-seat-card-number {
                     display: block;
                     width: 100%;
                     font-family: Georgia, "Times New Roman", serif;
-                    font-size: 20mm;
-                    line-height: 0.9;
+                    font-size: 25.8mm;
+                    line-height: 0.8;
                     font-weight: 700;
-                    letter-spacing: 0;
+                    letter-spacing: -0.025em;
                     color: #0f2f7a;
                     text-align: center;
                     white-space: nowrap;

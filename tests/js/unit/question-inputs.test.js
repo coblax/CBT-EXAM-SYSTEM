@@ -26,6 +26,7 @@ function createFixture(overrides = {}) {
         clearMessages: function () {
             calls.clearMessages += 1;
         },
+        documentRef: document,
         normalizeExamToken: overrides.normalizeExamToken || function (value) {
             return String(value || '').trim().toUpperCase();
         },
@@ -59,7 +60,8 @@ function createFixture(overrides = {}) {
         state,
         updateSelectedExam: function (examId) {
             calls.updateSelectedExam.push(String(examId || ''));
-        }
+        },
+        windowRef: window
     });
 
     return {
@@ -233,6 +235,70 @@ describe('createAnswerInputManager', function () {
         expect(fixture.root.querySelector('input[data-option-id="501"]').closest('.cbt-option').classList.contains('is-selected')).toBe(true);
         expect(fixture.root.querySelector('input[data-option-id="502"]').closest('.cbt-option').classList.contains('is-selected')).toBe(false);
         expect(fixture.root.querySelector('.cbt-question-head').classList.contains('is-answered')).toBe(true);
+    });
+
+    it('restores exam shell focus after pointer-based radio selection so arrow shortcuts do not stay trapped in the radio group', function () {
+        vi.useFakeTimers();
+        try {
+            var fixture = createFixture({
+                renderExamPartial: function () {
+                    return true;
+                },
+                state: {
+                    answers: {},
+                    answeredQuestionLookup: {}
+                }
+            });
+            fixture.root.innerHTML = [
+                '<div data-cbt-exam-shell="1"><section class="cbt-question-card">',
+                '<div data-cbt-exam-question-region="questionHead"><div class="cbt-question-head"></div></div>',
+                '<label class="cbt-option"><div class="cbt-option-row"><input type="radio" name="cbt_q_41" data-action="answer-single" data-qid="41" data-option-id="501" /><span class="cbt-option-key">A</span><div class="cbt-option-label">Alpha</div></div></label>',
+                '</section></div>'
+            ].join('');
+            var input = fixture.root.querySelector('input[data-option-id="501"]');
+            var optionLabel = fixture.root.querySelector('.cbt-option-label');
+            var shell = fixture.root.querySelector('[data-cbt-exam-shell="1"]');
+
+            fixture.manager.handlePointerTarget(optionLabel);
+            input.focus();
+
+            fixture.manager.handleChangeTarget(input);
+            vi.runAllTimers();
+
+            expect(document.activeElement).toBe(shell);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('preserves radio focus for keyboard-origin answer changes', function () {
+        vi.useFakeTimers();
+        try {
+            var fixture = createFixture({
+                renderExamPartial: function () {
+                    return true;
+                },
+                state: {
+                    answers: {},
+                    answeredQuestionLookup: {}
+                }
+            });
+            fixture.root.innerHTML = [
+                '<div data-cbt-exam-shell="1"><section class="cbt-question-card">',
+                '<div data-cbt-exam-question-region="questionHead"><div class="cbt-question-head"></div></div>',
+                '<label class="cbt-option"><div class="cbt-option-row"><input type="radio" name="cbt_q_41" data-action="answer-single" data-qid="41" data-option-id="501" /><span class="cbt-option-key">A</span><div class="cbt-option-label">Alpha</div></div></label>',
+                '</section></div>'
+            ].join('');
+            var input = fixture.root.querySelector('input[data-option-id="501"]');
+
+            input.focus();
+            fixture.manager.handleChangeTarget(input);
+            vi.runAllTimers();
+
+            expect(document.activeElement).toBe(input);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('uses a save-feedback partial patch for text input changes without remounting the input region', function () {

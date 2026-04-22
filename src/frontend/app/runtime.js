@@ -904,6 +904,7 @@ export function bootstrapFrontendApp() {
 
     var handleAnswerChangeTarget = bindExamRuntimeMethod('answerInputManager', 'handleChangeTarget', undefined);
     var handleAnswerInputTarget = bindExamRuntimeMethod('answerInputManager', 'handleInputTarget', undefined);
+    var handleAnswerPointerTarget = bindExamRuntimeMethod('answerInputManager', 'handlePointerTarget', undefined);
 
     var isQuestionChanged = bindExamRuntimeMethod('questionFlags', 'isQuestionChanged', function (questionId) {
         var safeQuestionId = Number(questionId) || 0;
@@ -1691,6 +1692,7 @@ export function bootstrapFrontendApp() {
         recordActionTrail: recordActionTrail,
         handleAnswerChangeTarget: handleAnswerChangeTarget,
         handleAnswerInputTarget: handleAnswerInputTarget,
+        handleAnswerPointerTarget: handleAnswerPointerTarget,
         handleArrowNavigationKey: handleArrowNavigationKey,
         handleBlockedBrowserInspectionShortcutAction: handleBlockedBrowserInspectionShortcutAction,
         handleBlockedClipboardAction: handleBlockedClipboardAction,

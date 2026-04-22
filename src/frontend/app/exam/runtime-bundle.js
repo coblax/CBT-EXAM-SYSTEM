@@ -195,6 +195,7 @@ export function createExamRuntimeBundle(deps) {
         autoSaveChoiceDelayMs: deps.autoSaveChoiceDelayMs,
         autoSaveTextDelayMs: deps.autoSaveTextDelayMs,
         clearMessages: deps.clearMessages,
+        documentRef: deps.documentRef,
         normalizeExamToken: deps.normalizeExamToken,
         render: deps.render,
         renderExamPartial: deps.renderExamPartial,
@@ -204,7 +205,8 @@ export function createExamRuntimeBundle(deps) {
             return questionRuntimeManager.scheduleQuestionCachePersist.apply(questionRuntimeManager, arguments);
         },
         state: state,
-        updateSelectedExam: deps.updateSelectedExam
+        updateSelectedExam: deps.updateSelectedExam,
+        windowRef: deps.windowRef
     });
 
     navigationManager = createExamNavigationManager({

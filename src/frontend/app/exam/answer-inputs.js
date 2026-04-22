@@ -1,4 +1,5 @@
 export function createAnswerInputManager(deps) {
+    var documentRef = deps.documentRef || document;
     var state = deps.state;
     var autoSaveChoiceDelayMs = deps.autoSaveChoiceDelayMs;
     var autoSaveTextDelayMs = deps.autoSaveTextDelayMs;
@@ -12,6 +13,95 @@ export function createAnswerInputManager(deps) {
     var scheduleAutoSave = deps.scheduleAutoSave;
     var scheduleQuestionCachePersist = deps.scheduleQuestionCachePersist;
     var updateSelectedExam = deps.updateSelectedExam;
+    var windowRef = deps.windowRef || (documentRef && documentRef.defaultView ? documentRef.defaultView : window);
+    var lastPointerChoiceInput = null;
+    var lastPointerChoiceAt = 0;
+    var pointerChoiceRetentionMs = 1500;
+
+    function resolveEventElement(target) {
+        if (target instanceof Element) {
+            return target;
+        }
+        if (target && target.parentElement instanceof Element) {
+            return target.parentElement;
+        }
+        return null;
+    }
+
+    function resolvePointerChoiceInput(target) {
+        var element = resolveEventElement(target);
+        if (!(element instanceof Element)) {
+            return null;
+        }
+
+        var input = element.closest('input[data-action="answer-single"], input[data-action="answer-tf-matrix"]');
+        if (input instanceof HTMLInputElement) {
+            return input;
+        }
+
+        var label = element.closest('label');
+        if (label instanceof HTMLLabelElement) {
+            input = label.querySelector('input[data-action="answer-single"], input[data-action="answer-tf-matrix"]');
+        }
+        return input instanceof HTMLInputElement ? input : null;
+    }
+
+    function consumePointerChoiceInput(target) {
+        if (!(target instanceof HTMLInputElement) || !(lastPointerChoiceInput instanceof HTMLInputElement)) {
+            lastPointerChoiceInput = null;
+            lastPointerChoiceAt = 0;
+            return false;
+        }
+
+        if (Date.now() - lastPointerChoiceAt > pointerChoiceRetentionMs || lastPointerChoiceInput !== target) {
+            lastPointerChoiceInput = null;
+            lastPointerChoiceAt = 0;
+            return false;
+        }
+
+        lastPointerChoiceInput = null;
+        lastPointerChoiceAt = 0;
+        return true;
+    }
+
+    function restoreExamShellFocusAfterPointerChoice(target) {
+        if (!consumePointerChoiceInput(target)) {
+            return;
+        }
+
+        var focusTarget = root instanceof HTMLElement
+            ? root.querySelector('[data-cbt-exam-shell="1"]') || root.querySelector('.cbt-question-card')
+            : null;
+
+        var applyFocusRestore = function () {
+            if (documentRef && documentRef.activeElement === target && typeof target.blur === 'function') {
+                target.blur();
+            }
+
+            if (!(focusTarget instanceof HTMLElement)) {
+                return;
+            }
+
+            if (!focusTarget.hasAttribute('tabindex')) {
+                focusTarget.setAttribute('tabindex', '-1');
+            }
+
+            try {
+                focusTarget.focus({
+                    preventScroll: true
+                });
+            } catch (error) {
+                focusTarget.focus();
+            }
+        };
+
+        if (windowRef && typeof windowRef.setTimeout === 'function') {
+            windowRef.setTimeout(applyFocusRestore, 0);
+            return;
+        }
+
+        applyFocusRestore();
+    }
 
     function renderAnswerChangePatch(reason, meta, options) {
         options = options || {};
@@ -111,6 +201,7 @@ export function createAnswerInputManager(deps) {
                     includeQuestionHead: false,
                     includeNotice: hadVisibleMessages
                 });
+                restoreExamShellFocusAfterPointerChoice(target);
             }
             return true;
         }
@@ -192,10 +283,22 @@ export function createAnswerInputManager(deps) {
                 includeQuestionHead: false,
                 includeNotice: hadVisibleMessages
             });
+            restoreExamShellFocusAfterPointerChoice(target);
             return true;
         }
 
         return false;
+    }
+
+    function handlePointerTarget(target) {
+        var pointerChoiceInput = resolvePointerChoiceInput(target);
+        if (!(pointerChoiceInput instanceof HTMLInputElement)) {
+            return false;
+        }
+
+        lastPointerChoiceInput = pointerChoiceInput;
+        lastPointerChoiceAt = Date.now();
+        return true;
     }
 
     function syncMirroredShortAnswerInputs(questionId, shortKey, shortValue, sourceTarget) {
@@ -313,6 +416,7 @@ export function createAnswerInputManager(deps) {
     }
 
     return {
+        handlePointerTarget: handlePointerTarget,
         handleChangeTarget: handleChangeTarget,
         handleInputTarget: handleInputTarget
     };
