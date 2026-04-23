@@ -232,6 +232,7 @@ final class CBT_Admin_Security_Page
                     <button type="button" class="button" data-security-log-monitor-action="refresh_monitor">Refresh Monitor</button>
                     <button type="button" class="button" data-security-log-monitor-action="micro_drain"<?php echo $can_run_actions ? '' : ' disabled'; ?>>Run Micro-Drain</button>
                     <button type="button" class="button button-primary" data-security-log-monitor-action="flush_now"<?php echo $can_run_actions ? '' : ' disabled'; ?>>Force Flush Now</button>
+                    <button type="button" class="button" data-security-log-monitor-action="clear_live_state">Clear Live Roster</button>
                     <button type="button" class="button" data-security-log-monitor-action="copy_diagnostics">Copy Diagnostics</button>
                 </div>
             </div>

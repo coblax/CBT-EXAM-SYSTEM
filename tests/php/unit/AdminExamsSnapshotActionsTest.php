@@ -961,6 +961,9 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         update_option('cbt_exam_preflight_jobs', [77 => ['active' => true]]);
         update_option('cbt_exam_preflight_global_runner', ['active_exam_id' => 77]);
         update_option('cbt_exam_availability_auto_warm_state', ['active' => true, 'exam_id' => 77]);
+        update_option('cbt_adaptive_load_state', ['effective_level' => 'busy']);
+        update_option('cbt_login_readiness_warm_queue_state', ['active' => true]);
+        update_option('cbt_student_cohort_index_rebuild_state', ['active' => true]);
 
         $_POST = [
             'cbt_exam_status' => 'published',
@@ -984,6 +987,9 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertSame(false, get_option('cbt_exam_preflight_jobs', false));
         self::assertSame(false, get_option('cbt_exam_preflight_global_runner', false));
         self::assertSame(false, get_option('cbt_exam_availability_auto_warm_state', false));
+        self::assertSame(false, get_option('cbt_adaptive_load_state', false));
+        self::assertSame(false, get_option('cbt_login_readiness_warm_queue_state', false));
+        self::assertSame(false, get_option('cbt_student_cohort_index_rebuild_state', false));
 
         self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));

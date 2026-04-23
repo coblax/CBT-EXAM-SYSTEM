@@ -350,7 +350,23 @@ final class CBT_Adaptive_Load_Service
         $completed_attempt_ids = [];
         $failed_count = 0;
         foreach ($attempt_ids as $attempt_id) {
-            $completion_result = CBT_REST::finalize_attempt_completion($attempt_id);
+            if (class_exists('CBT_Expired_Attempt_Finalize_Service') && method_exists('CBT_Expired_Attempt_Finalize_Service', 'finalize_attempt_with_finish_lock')) {
+                $completion_result = CBT_Expired_Attempt_Finalize_Service::finalize_attempt_with_finish_lock($attempt_id);
+                if (!empty($completion_result['skipped'])) {
+                    continue;
+                }
+                if (!empty($completion_result['error'])) {
+                    $failed_count++;
+                    continue;
+                }
+            } else {
+                $completion_result = CBT_REST::finalize_attempt_completion($attempt_id);
+                if (is_wp_error($completion_result)) {
+                    $failed_count++;
+                    continue;
+                }
+            }
+
             if (is_wp_error($completion_result)) {
                 $failed_count++;
                 continue;

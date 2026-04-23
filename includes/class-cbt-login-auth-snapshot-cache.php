@@ -79,7 +79,7 @@ class CBT_Login_Auth_Snapshot_Cache
      *   lookup_identifier:string
      * }
      */
-    public static function get_snapshot_lookup_result(string $identifier): array
+    public static function get_snapshot_lookup_result(string $identifier, bool $resolve_miss_user = true): array
     {
         $lookup_identifiers = self::build_lookup_identifiers($identifier);
         if (empty($lookup_identifiers)) {
@@ -102,12 +102,12 @@ class CBT_Login_Auth_Snapshot_Cache
                 'snapshot_miss_reason' => 'redis_unavailable',
                 'snapshot_miss_reason_label' => self::get_snapshot_miss_reason_label('redis_unavailable'),
                 'source_path' => 'canonical',
-                'resolved_user_id' => self::resolve_user_id_from_identifier($identifier),
+                'resolved_user_id' => $resolve_miss_user ? self::resolve_user_id_from_identifier($identifier) : 0,
                 'lookup_identifier' => '',
             ];
         }
 
-        $resolved_user_id = self::resolve_user_id_from_identifier($identifier);
+        $resolved_user_id = 0;
         $last_reason = [
             'code' => '',
             'label' => '',
@@ -149,6 +149,10 @@ class CBT_Login_Auth_Snapshot_Cache
 
             $resolved_user_id = $user_id;
             $last_reason = self::detect_snapshot_miss_reason($user_id, $redis);
+        }
+
+        if ($resolve_miss_user && $last_reason['code'] === '' && $resolved_user_id <= 0) {
+            $resolved_user_id = self::resolve_user_id_from_identifier($identifier);
         }
 
         if ($last_reason['code'] === '' && $resolved_user_id > 0) {
@@ -1596,6 +1600,17 @@ class CBT_Login_Auth_Snapshot_Cache
         $by_login = get_user_by('login', sanitize_user($identifier, true));
         if ($by_login instanceof WP_User) {
             return (int) $by_login->ID;
+        }
+
+        if (class_exists('CBT_Student_Cohort_Index_Service') && method_exists('CBT_Student_Cohort_Index_Service', 'find_user_id_by_nisn')) {
+            try {
+                $cohort_user_id = CBT_Student_Cohort_Index_Service::find_user_id_by_nisn($identifier);
+                if ($cohort_user_id > 0) {
+                    return $cohort_user_id;
+                }
+            } catch (Throwable $throwable) {
+                // Cohort index hanya akselerator; usermeta tetap fallback canonical.
+            }
         }
 
         $by_nisn_ids = get_users([

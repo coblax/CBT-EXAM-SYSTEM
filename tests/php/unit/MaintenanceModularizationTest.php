@@ -83,6 +83,16 @@ final class MaintenanceModularizationTest extends TestCase
         self::assertStringContainsString('cbt_reset_progress_token=token123', (string) $context['reset_progress_continue_url']);
     }
 
+    public function test_reset_table_list_includes_incident_and_rebuildable_cohort_index_tables(): void
+    {
+        global $wpdb;
+
+        $tables = \CBT_Admin_Maintenance_Common::cbt_data_tables($wpdb);
+
+        self::assertContains('wp_cbt_exam_incidents', $tables);
+        self::assertContains('wp_cbt_student_cohort_index', $tables);
+    }
+
     #[RunInSeparateProcess]
     public function test_seed_service_build_seed_context_exposes_selected_preset_metadata(): void
     {
@@ -716,6 +726,8 @@ final class MaintenanceModularizationTest extends TestCase
 
 final class MaintenanceModularizationFakeWpdb extends \wpdb
 {
+    public string $prefix = 'wp_';
+
     /**
      * @param mixed ...$args
      * @return array{query:string,args:array<int,mixed>}

@@ -8,7 +8,7 @@ class CBT_Activator
 {
     private const OPTION_DB_VERSION = 'cbt_exam_system_db_version';
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
-    private const DB_VERSION = '1.6.12';
+    private const DB_VERSION = '1.6.14';
 
     public static function activate(): void
     {
@@ -28,6 +28,9 @@ class CBT_Activator
         }
         if (class_exists('CBT_Adaptive_Load_Service')) {
             CBT_Adaptive_Load_Service::activate();
+        }
+        if (class_exists('CBT_Expired_Attempt_Finalize_Service')) {
+            CBT_Expired_Attempt_Finalize_Service::activate();
         }
         if (class_exists('CBT_Security_Event_Ingest')) {
             CBT_Security_Event_Ingest::activate();
@@ -194,6 +197,7 @@ class CBT_Activator
             KEY idx_exam_status (exam_id, status),
             KEY idx_student_status (student_id, status),
             KEY idx_student_id_id (student_id, id),
+            KEY idx_status_started_id (status, started_at, id),
             KEY idx_status (status)
         ) $charset;";
 
@@ -369,6 +373,21 @@ class CBT_Activator
         if (!in_array('extra_time_minutes', $columns, true)) {
             $wpdb->query(
                 "ALTER TABLE {$attempt_table} ADD COLUMN extra_time_minutes INT UNSIGNED NOT NULL DEFAULT 0 AFTER duration_seconds"
+            );
+        }
+
+        $index_rows = $wpdb->get_results("SHOW INDEX FROM {$attempt_table}", ARRAY_A);
+        $index_names = [];
+        foreach ((array) $index_rows as $index_row) {
+            $index_name = (string) ($index_row['Key_name'] ?? '');
+            if ($index_name !== '') {
+                $index_names[$index_name] = true;
+            }
+        }
+
+        if (!isset($index_names['idx_status_started_id'])) {
+            $wpdb->query(
+                "ALTER TABLE {$attempt_table} ADD KEY idx_status_started_id (status, started_at, id)"
             );
         }
     }

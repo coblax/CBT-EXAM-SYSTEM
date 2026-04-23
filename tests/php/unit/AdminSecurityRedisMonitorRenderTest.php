@@ -54,6 +54,7 @@ final class AdminSecurityRedisMonitorRenderTest extends TestCase
         self::assertStringContainsString('Last Flush', $html);
         self::assertStringContainsString('Run Micro-Drain', $html);
         self::assertStringContainsString('Force Flush Now', $html);
+        self::assertStringContainsString('Clear Live Roster', $html);
         self::assertStringContainsString('Copy Diagnostics', $html);
         self::assertStringContainsString('Redis-first aktif. Audit permanen menyusul lewat batch flush.', $html);
         self::assertStringContainsString('data-security-log-monitor-field="worker_scheduled"', $html);

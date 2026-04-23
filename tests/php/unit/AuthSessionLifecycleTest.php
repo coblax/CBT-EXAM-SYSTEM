@@ -6,6 +6,12 @@ use CbtExamSystem\Tests\TestCase;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunClassInSeparateProcess;
 
+if (!class_exists('wpdb')) {
+    class wpdb
+    {
+    }
+}
+
 #[RunClassInSeparateProcess]
 #[PreserveGlobalState(false)]
 final class AuthSessionLifecycleTest extends TestCase
@@ -29,6 +35,7 @@ final class AuthSessionLifecycleTest extends TestCase
         update_user_meta(9, 'kode_ruang', 'R1');
         update_user_meta(9, 'agama', 'Islam');
         update_user_meta(9, 'foto', 'https://example.com/avatar.jpg');
+        update_user_meta(9, 'nisn', '90009');
         $this->useFakeRedisClient();
         $this->useFakeProfileRedisClient();
         $this->useFakeLoginSnapshotRedisClient();
@@ -156,6 +163,58 @@ final class AuthSessionLifecycleTest extends TestCase
         self::assertSame('N/A', (string) $summary['hit_rate_label']);
     }
 
+    public function test_canonical_login_resolves_by_email_nisn_and_fallback_email(): void
+    {
+        $emailResult = CBT_Auth::login('ayu@example.com', 'secret');
+        self::assertIsArray($emailResult);
+        self::assertSame('ayu', $emailResult['username']);
+        CBT_Auth::clear_login_session(9);
+
+        cbt_test_register_user([
+            'ID' => 10,
+            'display_name' => 'Bima',
+            'roles' => ['student'],
+            'user_email' => 'bima@example.com',
+            'user_login' => 'bima',
+            'user_pass' => 'nisn-secret',
+        ]);
+        update_user_meta(10, 'kode_kelas', 'XI-B');
+        update_user_meta(10, 'nisn', '90010');
+        $this->useFakeCohortIndex([
+            10 => [
+                'user_id' => 10,
+                'is_student' => 1,
+                'user_login' => 'bima',
+                'display_name' => 'Bima',
+                'user_email' => 'bima@example.com',
+                'nisn' => '90010',
+                'kode_kelas' => 'XI-B',
+                'kode_ruang' => '',
+                'agama' => '',
+                'updated_at' => '',
+                'indexed_at' => '2026-03-24 12:00:00',
+            ],
+        ]);
+
+        $nisnResult = CBT_Auth::login('90010', 'nisn-secret');
+        self::assertIsArray($nisnResult);
+        self::assertSame('bima', $nisnResult['username']);
+        CBT_Auth::clear_login_session(10);
+
+        cbt_test_register_user([
+            'ID' => 13,
+            'display_name' => 'Cici',
+            'roles' => ['student'],
+            'user_email' => '90013@student.sch.id',
+            'user_login' => 'cici',
+            'user_pass' => 'fallback-secret',
+        ]);
+
+        $fallbackResult = CBT_Auth::login('90013', 'fallback-secret');
+        self::assertIsArray($fallbackResult);
+        self::assertSame('cici', $fallbackResult['username']);
+    }
+
     public function test_clear_login_session_rejects_wrong_session_key_and_logout_current_session_only_clears_matching_session(): void
     {
         $sessionKey = CBT_Auth::reset_login_session(9);
@@ -267,7 +326,7 @@ final class AuthSessionLifecycleTest extends TestCase
     private function resetAuthRuntimeState(): void
     {
         $reflection = new \ReflectionClass(CBT_Auth::class);
-        foreach (['decoded_token_cache', 'auth_redis', 'auth_redis_connection_attempted', 'auth_redis_last_connection_error'] as $property_name) {
+        foreach (['decoded_token_cache', 'auth_redis', 'auth_redis_connection_attempted', 'auth_redis_last_connection_error', 'identifier_lookup_cache'] as $property_name) {
             if (!$reflection->hasProperty($property_name)) {
                 continue;
             }
@@ -280,6 +339,8 @@ final class AuthSessionLifecycleTest extends TestCase
                 $property->setValue(null, false);
             } elseif ($property_name === 'auth_redis_last_connection_error') {
                 $property->setValue(null, '');
+            } elseif ($property_name === 'identifier_lookup_cache') {
+                $property->setValue(null, []);
             } else {
                 $property->setValue(null, null);
             }
@@ -373,6 +434,24 @@ final class AuthSessionLifecycleTest extends TestCase
         $errorProperty->setValue(null, '');
     }
 
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     */
+    private function useFakeCohortIndex(array $rows): void
+    {
+        if (!class_exists('CBT_Student_Cohort_Index_Service')) {
+            require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-cohort-index-service.php';
+        }
+
+        global $wpdb;
+        $wpdb = new AuthSessionCohortFakeWpdb($rows);
+        CBT_Student_Cohort_Index_Service::reset_availability_cache();
+        update_option('cbt_student_cohort_index_enabled', '1');
+
+        $this->resetAuthRuntimeState();
+        $this->useFakeRedisClient();
+    }
+
     private function writeRedisSession(int $userId, string $sessionKey, int $touchedAt): void
     {
         $GLOBALS['cbt_test_redis_storage'][$this->redisSessionKey($userId)] = json_encode([
@@ -448,5 +527,63 @@ PHP);
         if (!class_exists('CBT_Auth')) {
             require_once dirname(__DIR__, 3) . '/includes/class-cbt-auth.php';
         }
+    }
+}
+
+final class AuthSessionCohortFakeWpdb extends wpdb
+{
+    public string $prefix = 'wp_';
+    /** @var array<int,array<string,mixed>> */
+    public array $rows = [];
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     */
+    public function __construct(array $rows)
+    {
+        $this->rows = $rows;
+    }
+
+    public function prepare(string $query, ...$args): array
+    {
+        return [
+            'query' => $query,
+            'args' => $args,
+        ];
+    }
+
+    public function get_var($prepared)
+    {
+        $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
+        $args = is_array($prepared) ? (array) ($prepared['args'] ?? []) : [];
+        if (str_starts_with($query, 'SHOW TABLES LIKE')) {
+            return $this->prefix . 'cbt_student_cohort_index';
+        }
+
+        if (str_contains($query, 'SELECT user_id FROM') && str_contains($query, 'nisn = %s')) {
+            $nisn = (string) ($args[0] ?? '');
+            foreach ($this->rows as $row) {
+                if ((int) ($row['is_student'] ?? 0) === 1 && (string) ($row['nisn'] ?? '') === $nisn) {
+                    return (int) ($row['user_id'] ?? 0);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public function get_row($query, $output = ARRAY_A): array
+    {
+        $indexed = count($this->rows);
+        $students = count(array_filter($this->rows, static function (array $row): bool {
+            return (int) ($row['is_student'] ?? 0) === 1;
+        }));
+
+        return [
+            'indexed_total' => $indexed,
+            'student_total' => $students,
+            'non_student_total' => max(0, $indexed - $students),
+            'last_indexed_at' => '2026-03-24 12:00:00',
+        ];
     }
 }

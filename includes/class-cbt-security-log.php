@@ -538,7 +538,6 @@ class CBT_Security_Log
         $table = self::get_table_name($wpdb);
         $exam_table = $wpdb->prefix . 'cbt_exams';
         $users_table = $wpdb->users;
-        $usermeta_table = $wpdb->usermeta;
         $where = [];
         $params = [];
 
@@ -567,22 +566,6 @@ class CBT_Security_Log
                     l.created_at,
                     u.display_name AS student_display_name,
                     u.user_login AS student_login,
-                    (
-                        SELECT um.meta_value
-                        FROM {$usermeta_table} um
-                        WHERE um.user_id = l.student_id
-                          AND um.meta_key = 'kode_kelas'
-                        ORDER BY um.umeta_id DESC
-                        LIMIT 1
-                    ) AS student_kode_kelas,
-                    (
-                        SELECT um.meta_value
-                        FROM {$usermeta_table} um
-                        WHERE um.user_id = l.student_id
-                          AND um.meta_key = 'kode_ruang'
-                        ORDER BY um.umeta_id DESC
-                        LIMIT 1
-                    ) AS student_kode_ruang,
                     e.title AS exam_title
              FROM {$table} l
              LEFT JOIN {$users_table} u ON u.ID = l.student_id
@@ -598,6 +581,7 @@ class CBT_Security_Log
             return [];
         }
 
+        $rows = self::hydrate_student_security_profile_fields($rows);
         $definitions = self::event_definitions();
 
         return array_map(static function ($row) use ($definitions): array {
@@ -761,7 +745,6 @@ class CBT_Security_Log
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
         $exam_table = $wpdb->prefix . 'cbt_exams';
         $users_table = $wpdb->users;
-        $usermeta_table = $wpdb->usermeta;
         $event_placeholders = implode(',', array_fill(0, count($tracked_events), '%s'));
         $where_parts = ["a.status = 'in_progress'", "l.event_type IN ({$event_placeholders})"];
         $params = $tracked_events;
@@ -783,22 +766,6 @@ class CBT_Security_Log
                     l.occurred_at,
                     u.display_name AS student_display_name,
                     u.user_login AS student_login,
-                    (
-                        SELECT um.meta_value
-                        FROM {$usermeta_table} um
-                        WHERE um.user_id = l.student_id
-                          AND um.meta_key = 'kode_kelas'
-                        ORDER BY um.umeta_id DESC
-                        LIMIT 1
-                    ) AS student_kode_kelas,
-                    (
-                        SELECT um.meta_value
-                        FROM {$usermeta_table} um
-                        WHERE um.user_id = l.student_id
-                          AND um.meta_key = 'kode_ruang'
-                        ORDER BY um.umeta_id DESC
-                        LIMIT 1
-                    ) AS student_kode_ruang,
                     e.title AS exam_title
              FROM {$table} l
              INNER JOIN {$attempt_table} a ON a.id = l.attempt_id
@@ -835,8 +802,6 @@ class CBT_Security_Log
             $student_name = $student_display_name !== ''
                 ? $student_display_name
                 : ($student_login !== '' ? $student_login : ('User #' . (int) ($row['student_id'] ?? 0)));
-            $student_kode_kelas = trim(sanitize_text_field((string) ($row['student_kode_kelas'] ?? '')));
-            $student_kode_ruang = trim(sanitize_text_field((string) ($row['student_kode_ruang'] ?? '')));
             $device_summary = self::build_device_summary_from_context($context, $event_type);
 
             if (!isset($aggregated[$attempt_id])) {
@@ -846,8 +811,8 @@ class CBT_Security_Log
                     'student_id' => (int) ($row['student_id'] ?? 0),
                     'student_name' => $student_name,
                     'student_login' => $student_login,
-                    'student_kode_kelas' => $student_kode_kelas,
-                    'student_kode_ruang' => $student_kode_ruang,
+                    'student_kode_kelas' => '',
+                    'student_kode_ruang' => '',
                     'exam_title' => trim((string) ($row['exam_title'] ?? '')) !== ''
                         ? (string) $row['exam_title']
                         : ('Exam #' . (int) ($row['exam_id'] ?? 0)),
@@ -899,7 +864,108 @@ class CBT_Security_Log
             }
         }
 
-        return self::finalize_must_watch_attempts($aggregated, $limit);
+        return self::hydrate_student_security_profile_fields(
+            self::finalize_must_watch_attempts($aggregated, $limit)
+        );
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<int,array<string,mixed>>
+     */
+    private static function hydrate_student_security_profile_fields(array $rows): array
+    {
+        if (empty($rows)) {
+            return [];
+        }
+
+        $student_ids = [];
+        foreach ($rows as $row) {
+            $student_id = absint($row['student_id'] ?? 0);
+            if ($student_id > 0) {
+                $student_ids[$student_id] = $student_id;
+            }
+        }
+
+        $profiles = self::load_student_security_profile_fields(array_values($student_ids));
+        foreach ($rows as $index => $row) {
+            $student_id = absint($row['student_id'] ?? 0);
+            $profile = $student_id > 0 && isset($profiles[$student_id]) && is_array($profiles[$student_id])
+                ? $profiles[$student_id]
+                : [];
+
+            $rows[$index]['student_kode_kelas'] = sanitize_text_field((string) (
+                $profile['kode_kelas']
+                ?? $row['student_kode_kelas']
+                ?? ''
+            ));
+            $rows[$index]['student_kode_ruang'] = sanitize_text_field((string) (
+                $profile['kode_ruang']
+                ?? $row['student_kode_ruang']
+                ?? ''
+            ));
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param int[] $student_ids
+     * @return array<int,array{kode_kelas:string,kode_ruang:string}>
+     */
+    private static function load_student_security_profile_fields(array $student_ids): array
+    {
+        $student_ids = array_values(array_unique(array_filter(array_map('absint', $student_ids))));
+        if (empty($student_ids)) {
+            return [];
+        }
+
+        global $wpdb;
+
+        $usermeta_table = $wpdb->usermeta;
+        $meta_keys = ['kode_kelas', 'kode_ruang'];
+        $user_placeholders = implode(',', array_fill(0, count($student_ids), '%d'));
+        $meta_placeholders = implode(',', array_fill(0, count($meta_keys), '%s'));
+        $params = array_merge($student_ids, $meta_keys);
+
+        $query = $wpdb->prepare(
+            "SELECT um.user_id, um.meta_key, um.meta_value
+             FROM {$usermeta_table} um
+             INNER JOIN (
+                 SELECT user_id, meta_key, MAX(umeta_id) AS latest_umeta_id
+                 FROM {$usermeta_table}
+                 WHERE user_id IN ({$user_placeholders})
+                   AND meta_key IN ({$meta_placeholders})
+                 GROUP BY user_id, meta_key
+             ) latest ON latest.latest_umeta_id = um.umeta_id",
+            $params
+        );
+
+        $rows = $wpdb->get_results($query, ARRAY_A);
+        if (!is_array($rows) || empty($rows)) {
+            return [];
+        }
+
+        $profiles = [];
+        foreach ($rows as $row) {
+            $student_id = absint($row['user_id'] ?? 0);
+            $meta_key = (string) ($row['meta_key'] ?? '');
+            if ($student_id <= 0 || !in_array($meta_key, $meta_keys, true)) {
+                continue;
+            }
+
+            if (!isset($profiles[$student_id])) {
+                $profiles[$student_id] = [
+                    'kode_kelas' => '',
+                    'kode_ruang' => '',
+                ];
+            }
+
+            $field = $meta_key === 'kode_kelas' ? 'kode_kelas' : 'kode_ruang';
+            $profiles[$student_id][$field] = sanitize_text_field((string) ($row['meta_value'] ?? ''));
+        }
+
+        return $profiles;
     }
 
     /**

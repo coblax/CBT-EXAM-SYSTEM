@@ -73,6 +73,11 @@ final class CBT_Student_Cohort_Index_Service
         }
     }
 
+    public static function deactivate(): void
+    {
+        self::clear_rebuild_event();
+    }
+
     /**
      * @param array<string,array<string,mixed>> $schedules
      * @return array<string,array<string,mixed>>
@@ -172,6 +177,32 @@ final class CBT_Student_Cohort_Index_Service
     {
         $health = self::get_health_summary();
         return !empty($health['ready']);
+    }
+
+    public static function find_user_id_by_nisn(string $nisn): int
+    {
+        $nisn = self::normalize_meta_value($nisn, false);
+        if ($nisn === '' || !self::is_ready()) {
+            return 0;
+        }
+
+        global $wpdb;
+        if (!$wpdb instanceof wpdb || !method_exists($wpdb, 'get_var')) {
+            return 0;
+        }
+
+        $table = self::get_table_name($wpdb);
+        try {
+            $user_id = $wpdb->get_var(self::prepare_sql(
+                $wpdb,
+                "SELECT user_id FROM {$table} WHERE is_student = 1 AND nisn = %s ORDER BY user_id ASC LIMIT 1",
+                [$nisn]
+            ));
+        } catch (Throwable $throwable) {
+            return 0;
+        }
+
+        return absint($user_id);
     }
 
     /**

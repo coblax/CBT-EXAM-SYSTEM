@@ -3796,6 +3796,8 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                 isDisabled = refreshInFlight || monitorActionInFlight;
                             } else if (actionName === 'copy_diagnostics') {
                                 isDisabled = false;
+                            } else if (actionName === 'clear_live_state') {
+                                isDisabled = ingestActionEndpoint === '' || refreshInFlight || monitorActionInFlight;
                             } else {
                                 isDisabled = !canRunActions || refreshInFlight || monitorActionInFlight;
                             }
@@ -3893,6 +3895,10 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                             return 'Micro-drain selesai: ' + String(persisted) + ' event persisted.';
                         }
 
+                        if (action === 'clear_live_state') {
+                            return 'Live roster dibersihkan. Histori log tetap aman.';
+                        }
+
                         if (skipped > 0 && reason !== '') {
                             return 'Flush dilewati: ' + reason + '.';
                         }
@@ -3951,8 +3957,16 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
 
                         monitorActionInFlight = true;
                         updateRedisMonitorActionButtons(currentSecurityStatusSnapshot || {});
-                        setRedisMonitorStatus(actionName === 'micro_drain' ? 'Menjalankan micro-drain...' : 'Menjalankan flush batch...');
-                        setLiveStatus(actionName === 'micro_drain' ? 'Menjalankan micro-drain...' : 'Menjalankan flush batch...', 'loading');
+                        if (actionName === 'micro_drain') {
+                            setRedisMonitorStatus('Menjalankan micro-drain...');
+                            setLiveStatus('Menjalankan micro-drain...', 'loading');
+                        } else if (actionName === 'clear_live_state') {
+                            setRedisMonitorStatus('Membersihkan live roster...');
+                            setLiveStatus('Membersihkan live roster...', 'loading');
+                        } else {
+                            setRedisMonitorStatus('Menjalankan flush batch...');
+                            setLiveStatus('Menjalankan flush batch...', 'loading');
+                        }
 
                         requestBody = JSON.stringify({
                             action: actionName
@@ -5075,7 +5089,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                 return;
                             }
 
-                            if (actionName === 'micro_drain' || actionName === 'flush_now') {
+                            if (actionName === 'micro_drain' || actionName === 'flush_now' || actionName === 'clear_live_state') {
                                 triggerSecurityIngestAdminAction(actionName);
                             }
                             return;

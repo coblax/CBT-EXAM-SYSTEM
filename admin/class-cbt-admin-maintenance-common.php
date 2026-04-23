@@ -74,6 +74,8 @@ final class CBT_Admin_Maintenance_Common
             $prefix . 'cbt_answers',
             $prefix . 'cbt_attempts',
             $prefix . 'cbt_security_logs',
+            $prefix . 'cbt_exam_incidents',
+            $prefix . 'cbt_student_cohort_index',
             $prefix . 'cbt_options',
             $prefix . 'cbt_question_essay',
             $prefix . 'cbt_question_short_answer',

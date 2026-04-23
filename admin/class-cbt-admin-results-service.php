@@ -38,8 +38,8 @@ final class CBT_Admin_Results_Service
 
     public static function init(): void
     {
-        if (function_exists('add_action')) {
-            add_action(self::EXPIRED_ATTEMPT_AUTO_COMPLETE_CRON_HOOK, [self::class, 'handle_expired_auto_finalize_cron'], 10, 1);
+        if (class_exists('CBT_Expired_Attempt_Finalize_Service')) {
+            CBT_Expired_Attempt_Finalize_Service::init();
         }
     }
 

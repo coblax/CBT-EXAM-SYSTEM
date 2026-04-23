@@ -20,7 +20,7 @@ if (!defined('CBT_EXAM_SYSTEM_URL')) {
 }
 
 if (!defined('CBT_EXAM_SYSTEM_VERSION')) {
-    define('CBT_EXAM_SYSTEM_VERSION', '2.0.0');
+    define('CBT_EXAM_SYSTEM_VERSION', '3.0.0');
 }
 
 if (!defined('WP_PLUGIN_DIR')) {
@@ -448,7 +448,7 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
                 $cache->setAccessible(true);
                 $cache->setValue(null, []);
             }
-            foreach (['auth_redis', 'auth_redis_connection_attempted', 'auth_redis_last_connection_error'] as $property_name) {
+            foreach (['auth_redis', 'auth_redis_connection_attempted', 'auth_redis_last_connection_error', 'identifier_lookup_cache'] as $property_name) {
                 if ($reflection->hasProperty($property_name)) {
                     $property = $reflection->getProperty($property_name);
                     $property->setAccessible(true);
@@ -456,6 +456,8 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
                         $property->setValue(null, false);
                     } elseif ($property_name === 'auth_redis_last_connection_error') {
                         $property->setValue(null, '');
+                    } elseif ($property_name === 'identifier_lookup_cache') {
+                        $property->setValue(null, []);
                     } else {
                         $property->setValue(null, null);
                     }

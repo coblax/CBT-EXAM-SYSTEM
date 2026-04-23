@@ -253,6 +253,22 @@ final class LoginAuthSnapshotCacheTest extends TestCase
         self::assertSame(11, (int) $lookup['resolved_user_id']);
     }
 
+    public function test_get_snapshot_lookup_result_can_skip_miss_user_resolution_for_auth_path(): void
+    {
+        $lookup = CBT_Login_Auth_Snapshot_Cache::get_snapshot_lookup_result('salsa', false);
+
+        self::assertNull($lookup['snapshot']);
+        self::assertSame('miss', $lookup['lookup_status']);
+        self::assertSame('not_prepared', $lookup['snapshot_miss_reason']);
+        self::assertSame(0, (int) $lookup['resolved_user_id']);
+
+        CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'auth_lookup');
+        $readyLookup = CBT_Login_Auth_Snapshot_Cache::get_snapshot_lookup_result('salsa', false);
+        self::assertIsArray($readyLookup['snapshot']);
+        self::assertSame('ready', $readyLookup['lookup_status']);
+        self::assertSame(11, (int) $readyLookup['resolved_user_id']);
+    }
+
     public function test_get_user_snapshot_freshness_map_reports_status_ttl_and_refresh_eligibility(): void
     {
         CBT_Login_Auth_Snapshot_Cache::warm_user_snapshot(11, 'freshness');

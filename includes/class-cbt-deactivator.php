@@ -24,11 +24,17 @@ class CBT_Deactivator
         if (class_exists('CBT_Adaptive_Load_Service')) {
             CBT_Adaptive_Load_Service::deactivate();
         }
+        if (class_exists('CBT_Expired_Attempt_Finalize_Service')) {
+            CBT_Expired_Attempt_Finalize_Service::deactivate();
+        }
         if (class_exists('CBT_Security_Event_Ingest')) {
             CBT_Security_Event_Ingest::deactivate();
         }
         if (class_exists('CBT_Login_Readiness_Warm_Queue_Service')) {
             CBT_Login_Readiness_Warm_Queue_Service::deactivate();
+        }
+        if (class_exists('CBT_Student_Cohort_Index_Service')) {
+            CBT_Student_Cohort_Index_Service::deactivate();
         }
         // Keep data and roles on deactivate to avoid accidental data loss.
     }

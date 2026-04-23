@@ -3,12 +3,24 @@
 declare(strict_types=1);
 
 use CbtExamSystem\Tests\TestCase;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-cohort-index-service.php';
 
 if (!class_exists('wpdb')) {
     class wpdb
     {
+    }
+}
+
+if (!function_exists('wp_clear_scheduled_hook')) {
+    function wp_clear_scheduled_hook($hook, ...$args): int
+    {
+        $safe_hook = (string) $hook;
+        $GLOBALS['cbt_test_cleared_scheduled_hooks'][] = $safe_hook;
+        unset($GLOBALS['cbt_test_scheduled_hooks'][$safe_hook]);
+
+        return 1;
     }
 }
 
@@ -93,6 +105,42 @@ final class StudentCohortIndexServiceTest extends TestCase
         self::assertTrue(CBT_Student_Cohort_Index_Service::delete_user(11));
         $queryAfterDelete = CBT_Student_Cohort_Index_Service::query_students(['kelas' => 'XI-A']);
         self::assertSame([], $queryAfterDelete['user_ids']);
+    }
+
+    public function test_find_user_id_by_nisn_uses_exact_student_index_match(): void
+    {
+        cbt_test_register_user([
+            'ID' => 41,
+            'display_name' => 'Salsa',
+            'user_login' => 'salsa',
+            'user_email' => 'salsa@example.com',
+            'roles' => ['student'],
+        ]);
+        update_user_meta(41, 'nisn', '880041');
+
+        cbt_test_register_user([
+            'ID' => 42,
+            'display_name' => 'Operator',
+            'user_login' => 'operator',
+            'user_email' => 'operator@example.com',
+            'roles' => ['administrator'],
+        ]);
+        update_user_meta(42, 'nisn', '880042');
+
+        self::assertTrue(CBT_Student_Cohort_Index_Service::upsert_user(41));
+        self::assertTrue(CBT_Student_Cohort_Index_Service::upsert_user(42));
+
+        self::assertSame(41, CBT_Student_Cohort_Index_Service::find_user_id_by_nisn('880041'));
+        self::assertSame(0, CBT_Student_Cohort_Index_Service::find_user_id_by_nisn('88004'));
+        self::assertSame(0, CBT_Student_Cohort_Index_Service::find_user_id_by_nisn('880042'));
+    }
+
+    public function test_find_user_id_by_nisn_returns_zero_when_index_unavailable(): void
+    {
+        $this->fakeWpdb->tableExists = false;
+        CBT_Student_Cohort_Index_Service::reset_availability_cache();
+
+        self::assertSame(0, CBT_Student_Cohort_Index_Service::find_user_id_by_nisn('880041'));
     }
 
     public function test_rebuild_batch_indexes_users_by_cursor_without_scanning_user_objects_first(): void
@@ -182,6 +230,31 @@ final class StudentCohortIndexServiceTest extends TestCase
         $query = CBT_Student_Cohort_Index_Service::query_students(['kelas' => 'X-A']);
         self::assertSame([31, 32], $query['user_ids']);
     }
+
+    #[RunInSeparateProcess]
+    public function test_deactivate_clears_rebuild_cron_without_deleting_state(): void
+    {
+        $GLOBALS['cbt_test_scheduled_hooks'] = [
+            CBT_Student_Cohort_Index_Service::CRON_HOOK => true,
+        ];
+        $GLOBALS['cbt_test_cleared_scheduled_hooks'] = [];
+        update_option('cbt_student_cohort_index_rebuild_state', [
+            'active' => true,
+            'status' => 'active',
+        ]);
+
+        CBT_Student_Cohort_Index_Service::deactivate();
+
+        self::assertContains(
+            CBT_Student_Cohort_Index_Service::CRON_HOOK,
+            $GLOBALS['cbt_test_cleared_scheduled_hooks']
+        );
+        self::assertArrayNotHasKey(
+            CBT_Student_Cohort_Index_Service::CRON_HOOK,
+            $GLOBALS['cbt_test_scheduled_hooks']
+        );
+        self::assertSame('active', get_option('cbt_student_cohort_index_rebuild_state')['status']);
+    }
 }
 
 final class StudentCohortIndexFakeWpdb extends wpdb
@@ -210,6 +283,16 @@ final class StudentCohortIndexFakeWpdb extends wpdb
         $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
         if (str_starts_with($query, 'SHOW TABLES LIKE')) {
             return $this->tableExists ? $this->prefix . 'cbt_student_cohort_index' : null;
+        }
+        if (str_contains($query, 'SELECT user_id FROM') && str_contains($query, 'nisn = %s')) {
+            $nisn = (string) (($prepared['args'] ?? [])[0] ?? '');
+            foreach ($this->rows as $row) {
+                if ((int) ($row['is_student'] ?? 0) === 1 && (string) ($row['nisn'] ?? '') === $nisn) {
+                    return (int) ($row['user_id'] ?? 0);
+                }
+            }
+
+            return null;
         }
         if (str_contains($query, 'SELECT COUNT(*) FROM') && str_contains($query, 'cbt_student_cohort_index')) {
             return count($this->filterRows($prepared));

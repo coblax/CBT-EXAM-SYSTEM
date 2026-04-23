@@ -148,6 +148,33 @@ final class AdminSecurityObservabilityRestTest extends TestCase
         self::assertIsArray($data['action_result'] ?? null);
         self::assertSame('admin_force_flush', $data['action_result']['source'] ?? '');
     }
+
+    #[RunInSeparateProcess]
+    public function test_security_ingest_admin_action_accepts_clear_live_state_without_clearing_history(): void
+    {
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-setup-service.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-live-counters.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-security-service.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new AdminSecurityObservabilityRestFakeWpdb();
+
+        $response = \CBT_REST::security_ingest_admin_action(
+            new \WP_REST_Request([], ['action' => 'clear_live_state'], [], '/cbt/v1/security_ingest_admin_action', 'POST')
+        );
+        $data = is_array($response)
+            ? $response
+            : ($response instanceof \WP_REST_Response ? $response->get_data() : []);
+
+        self::assertSame(true, $data['ok'] ?? false);
+        self::assertSame('clear_live_state', $data['action'] ?? '');
+        self::assertIsArray($data['action_result'] ?? null);
+        self::assertSame(1, $data['action_result']['history_preserved'] ?? 0);
+        self::assertArrayHasKey('status_snapshot', $data);
+        self::assertIsArray($data['status_snapshot']);
+    }
 }
 
 final class AdminSecurityObservabilityRestFakeWpdb extends \wpdb

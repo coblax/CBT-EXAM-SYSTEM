@@ -628,6 +628,18 @@ final class CBT_Plugin_Redis_Reset_Service
         if (class_exists('CBT_Login_Snapshot_Freshness_Service')) {
             CBT_Login_Snapshot_Freshness_Service::deactivate();
         }
+        if (class_exists('CBT_Adaptive_Load_Service')) {
+            CBT_Adaptive_Load_Service::deactivate();
+        }
+        if (class_exists('CBT_Expired_Attempt_Finalize_Service')) {
+            CBT_Expired_Attempt_Finalize_Service::deactivate();
+        }
+        if (class_exists('CBT_Login_Readiness_Warm_Queue_Service')) {
+            CBT_Login_Readiness_Warm_Queue_Service::deactivate();
+        }
+        if (class_exists('CBT_Student_Cohort_Index_Service')) {
+            CBT_Student_Cohort_Index_Service::deactivate();
+        }
 
         foreach ([
             'cbt_exam_preflight_state',
@@ -637,6 +649,9 @@ final class CBT_Plugin_Redis_Reset_Service
             'cbt_exam_availability_rewarm_queue_state',
             'cbt_snapshot_auto_heal_queue_state',
             'cbt_login_snapshot_freshness_state',
+            'cbt_adaptive_load_state',
+            'cbt_login_readiness_warm_queue_state',
+            'cbt_student_cohort_index_rebuild_state',
         ] as $option_name) {
             if (function_exists('delete_option') && delete_option($option_name)) {
                 $deleted_options++;

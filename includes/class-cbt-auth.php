@@ -8,6 +8,10 @@ if (!class_exists('CBT_Student_Profile_Cache')) {
     require_once __DIR__ . '/class-cbt-student-profile-cache.php';
 }
 
+if (!class_exists('CBT_Student_Cohort_Index_Service')) {
+    require_once __DIR__ . '/class-cbt-student-cohort-index-service.php';
+}
+
 if (!class_exists('CBT_Login_Auth_Snapshot_Cache')) {
     require_once __DIR__ . '/class-cbt-login-auth-snapshot-cache.php';
 }
@@ -51,9 +55,18 @@ class CBT_Auth
     private static $auth_redis_connection_attempted = false;
     /** @var string */
     private static $auth_redis_last_connection_error = '';
+    /**
+     * Cache identifier lookup selama satu request login supaya canonical fallback tidak
+     * mengulang rangkaian query email/login/NISN/fallback email.
+     *
+     * @var array<string,array{user:WP_User|null,matched_by:string,user_id:int}>
+     */
+    private static $identifier_lookup_cache = [];
 
     public static function login(string $identifier, string $password)
     {
+        self::$identifier_lookup_cache = [];
+
         $lib_check = self::ensure_jwt_library();
         if (is_wp_error($lib_check)) {
             return $lib_check;
@@ -442,7 +455,7 @@ class CBT_Auth
             ];
         }
 
-        $lookup = CBT_Login_Auth_Snapshot_Cache::get_snapshot_lookup_result($identifier);
+        $lookup = CBT_Login_Auth_Snapshot_Cache::get_snapshot_lookup_result($identifier, false);
         $snapshot = is_array($lookup['snapshot'] ?? null) ? $lookup['snapshot'] : null;
         if (!is_array($snapshot)) {
             return [
@@ -512,13 +525,17 @@ class CBT_Auth
         array $snapshot_attempt = []
     ): array
     {
+        $lookup = self::normalize_snapshot_lookup_meta($snapshot_attempt['lookup'] ?? []);
         $user = self::find_user_by_identifier($identifier);
+        if ($user instanceof WP_User) {
+            $lookup = self::enrich_snapshot_lookup_after_canonical_resolution($lookup, (int) $user->ID);
+        }
 
         if (!$user || !wp_check_password($password, $user->user_pass, $user->ID)) {
             return [
                 'status' => 'invalid_credentials',
                 'result' => new WP_Error('invalid_credentials', 'Invalid identifier or password', ['status' => 401]),
-                'lookup' => self::normalize_snapshot_lookup_meta($snapshot_attempt['lookup'] ?? []),
+                'lookup' => $lookup,
             ];
         }
 
@@ -547,8 +564,48 @@ class CBT_Auth
         return [
             'status' => is_wp_error($result) ? $result->get_error_code() : 'success',
             'result' => $result,
-            'lookup' => self::normalize_snapshot_lookup_meta($snapshot_attempt['lookup'] ?? []),
+            'lookup' => $lookup,
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $lookup
+     * @return array<string,mixed>
+     */
+    private static function enrich_snapshot_lookup_after_canonical_resolution(array $lookup, int $user_id): array
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0 || !class_exists('CBT_Login_Auth_Snapshot_Cache')) {
+            return $lookup;
+        }
+
+        $reason = sanitize_key((string) ($lookup['snapshot_miss_reason'] ?? ''));
+        $status = sanitize_key((string) ($lookup['lookup_status'] ?? ''));
+        if (!in_array($status, ['miss', 'invalid', 'unavailable'], true) || ($reason !== '' && $reason !== 'not_prepared')) {
+            $lookup['resolved_user_id'] = $user_id;
+            return $lookup;
+        }
+
+        try {
+            $diagnostics = CBT_Login_Auth_Snapshot_Cache::get_snapshot_diagnostics($user_id);
+        } catch (Throwable $throwable) {
+            $lookup['resolved_user_id'] = $user_id;
+            return $lookup;
+        }
+
+        $diagnostic_status = sanitize_key((string) ($diagnostics['snapshot_status'] ?? ''));
+        $diagnostic_reason = sanitize_key((string) ($diagnostics['snapshot_miss_reason'] ?? ''));
+        if (in_array($diagnostic_status, ['miss', 'invalid', 'unavailable'], true) && $diagnostic_reason !== '' && $diagnostic_reason !== 'idle') {
+            $lookup['lookup_status'] = $diagnostic_status === 'invalid'
+                ? 'invalid'
+                : ($diagnostic_status === 'unavailable' ? 'unavailable' : 'miss');
+            $lookup['snapshot_miss_reason'] = $diagnostic_reason;
+            $lookup['snapshot_miss_reason_label'] = (string) ($diagnostics['snapshot_miss_reason_label'] ?? '');
+        }
+
+        $lookup['source_path'] = 'canonical';
+        $lookup['resolved_user_id'] = $user_id;
+        return self::normalize_snapshot_lookup_meta($lookup);
     }
 
     /**
@@ -684,38 +741,47 @@ class CBT_Auth
 
     private static function find_user_by_identifier(string $identifier): ?WP_User
     {
+        $lookup = self::resolve_login_user_by_identifier($identifier);
+        return ($lookup['user'] ?? null) instanceof WP_User ? $lookup['user'] : null;
+    }
+
+    /**
+     * @return array{user:WP_User|null,matched_by:string,user_id:int}
+     */
+    private static function resolve_login_user_by_identifier(string $identifier): array
+    {
         $identifier = trim($identifier);
         if ($identifier === '') {
-            return null;
+            return [
+                'user' => null,
+                'matched_by' => '',
+                'user_id' => 0,
+            ];
+        }
+
+        $cache_key = self::login_identifier_cache_key($identifier);
+        if (array_key_exists($cache_key, self::$identifier_lookup_cache)) {
+            return self::$identifier_lookup_cache[$cache_key];
         }
 
         if (is_email($identifier)) {
             $by_email = get_user_by('email', sanitize_email($identifier));
             if ($by_email instanceof WP_User) {
-                return $by_email;
+                return self::store_login_identifier_lookup($cache_key, $by_email, 'email');
             }
         }
 
         $by_login = get_user_by('login', sanitize_user($identifier, true));
         if ($by_login instanceof WP_User) {
-            return $by_login;
+            return self::store_login_identifier_lookup($cache_key, $by_login, 'login');
         }
 
-        $by_nisn_ids = get_users([
-            'number' => 1,
-            'count_total' => false,
-            'fields' => 'ids',
-            'meta_key' => 'nisn',
-            'meta_value' => sanitize_text_field($identifier),
-            'meta_compare' => '=',
-        ]);
-        if (!empty($by_nisn_ids)) {
-            $nisn_user_id = (int) $by_nisn_ids[0];
-            if ($nisn_user_id > 0) {
-                $by_nisn = get_user_by('id', $nisn_user_id);
-                if ($by_nisn instanceof WP_User) {
-                    return $by_nisn;
-                }
+        $nisn_lookup = self::resolve_user_id_by_nisn($identifier);
+        $nisn_user_id = (int) ($nisn_lookup['user_id'] ?? 0);
+        if ($nisn_user_id > 0) {
+            $by_nisn = get_user_by('id', $nisn_user_id);
+            if ($by_nisn instanceof WP_User) {
+                return self::store_login_identifier_lookup($cache_key, $by_nisn, (string) ($nisn_lookup['matched_by'] ?? 'nisn'));
             }
         }
 
@@ -724,12 +790,79 @@ class CBT_Auth
             if ($fallback_email !== '') {
                 $fallback_user = get_user_by('email', $fallback_email);
                 if ($fallback_user instanceof WP_User) {
-                    return $fallback_user;
+                    return self::store_login_identifier_lookup($cache_key, $fallback_user, 'fallback_email');
                 }
             }
         }
 
-        return null;
+        return self::store_login_identifier_lookup($cache_key, null, '');
+    }
+
+    private static function login_identifier_cache_key(string $identifier): string
+    {
+        return strtolower(trim($identifier));
+    }
+
+    /**
+     * @return array{user:WP_User|null,matched_by:string,user_id:int}
+     */
+    private static function store_login_identifier_lookup(string $cache_key, ?WP_User $user, string $matched_by): array
+    {
+        $row = [
+            'user' => $user,
+            'matched_by' => sanitize_key($matched_by),
+            'user_id' => $user instanceof WP_User ? (int) $user->ID : 0,
+        ];
+        self::$identifier_lookup_cache[$cache_key] = $row;
+        return $row;
+    }
+
+    /**
+     * @return array{user_id:int,matched_by:string}
+     */
+    private static function resolve_user_id_by_nisn(string $identifier): array
+    {
+        $nisn = sanitize_text_field($identifier);
+        if ($nisn === '') {
+            return [
+                'user_id' => 0,
+                'matched_by' => '',
+            ];
+        }
+
+        if (class_exists('CBT_Student_Cohort_Index_Service') && method_exists('CBT_Student_Cohort_Index_Service', 'find_user_id_by_nisn')) {
+            try {
+                $cohort_user_id = CBT_Student_Cohort_Index_Service::find_user_id_by_nisn($nisn);
+                if ($cohort_user_id > 0) {
+                    return [
+                        'user_id' => $cohort_user_id,
+                        'matched_by' => 'nisn_cohort',
+                    ];
+                }
+            } catch (Throwable $throwable) {
+                // Cohort index adalah akselerator; canonical usermeta tetap fallback aman.
+            }
+        }
+
+        $by_nisn_ids = get_users([
+            'number' => 1,
+            'count_total' => false,
+            'fields' => 'ids',
+            'meta_key' => 'nisn',
+            'meta_value' => $nisn,
+            'meta_compare' => '=',
+        ]);
+        if (!empty($by_nisn_ids)) {
+            return [
+                'user_id' => absint($by_nisn_ids[0]),
+                'matched_by' => 'nisn_usermeta',
+            ];
+        }
+
+        return [
+            'user_id' => 0,
+            'matched_by' => '',
+        ];
     }
 
     private static function request_cache_key(WP_REST_Request $request): string

@@ -195,8 +195,51 @@ trait CBT_REST_Security_Events_Routes
     public static function security_ingest_admin_action(WP_REST_Request $request)
     {
         $action = sanitize_key((string) self::get_request_payload_value($request, 'action'));
-        if ($action !== 'micro_drain' && $action !== 'flush_now') {
+        if ($action !== 'micro_drain' && $action !== 'flush_now' && $action !== 'clear_live_state') {
             return new WP_Error('invalid_action', 'Security ingest action is not allowed.', ['status' => 400]);
+        }
+
+        if ($action === 'clear_live_state') {
+            $cleared = [];
+            $skipped = [];
+
+            if (class_exists('CBT_Security_Live_Counters')) {
+                CBT_Security_Live_Counters::clear_all();
+                $cleared[] = 'live_counters';
+            } else {
+                $skipped[] = 'live_counters_missing';
+            }
+
+            if (class_exists('CBT_Live_Proctoring_Presence')) {
+                CBT_Live_Proctoring_Presence::clear_all();
+                $cleared[] = 'presence';
+            } else {
+                $skipped[] = 'presence_missing';
+            }
+
+            if (class_exists('CBT_Live_Attempt_Roster_Index')) {
+                CBT_Live_Attempt_Roster_Index::clear_all();
+                $cleared[] = 'roster_index';
+            } else {
+                $skipped[] = 'roster_index_missing';
+            }
+
+            $status_snapshot = class_exists('CBT_Admin_Security_Service')
+                ? (array) (CBT_Admin_Security_Service::build_security_observability_snapshot(false)['status_snapshot'] ?? [])
+                : [];
+
+            return rest_ensure_response([
+                'ok' => true,
+                'action' => $action,
+                'action_result' => [
+                    'cleared' => count($cleared),
+                    'cleared_targets' => $cleared,
+                    'skipped' => count($skipped),
+                    'skipped_targets' => $skipped,
+                    'history_preserved' => 1,
+                ],
+                'status_snapshot' => $status_snapshot,
+            ]);
         }
 
         if (!class_exists('CBT_Security_Event_Ingest')) {

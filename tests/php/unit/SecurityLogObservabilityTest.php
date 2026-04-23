@@ -211,15 +211,29 @@ final class SecurityLogObservabilityTest extends TestCase
                 'exam_title' => 'Security Fixture',
             ],
         ];
+        $wpdb->studentMetaRows = [
+            ['umeta_id' => 10, 'user_id' => 71, 'meta_key' => 'kode_kelas', 'meta_value' => 'OLD-X'],
+            ['umeta_id' => 11, 'user_id' => 71, 'meta_key' => 'kode_ruang', 'meta_value' => 'OLD-R'],
+            ['umeta_id' => 20, 'user_id' => 71, 'meta_key' => 'kode_kelas', 'meta_value' => 'X-A'],
+            ['umeta_id' => 21, 'user_id' => 71, 'meta_key' => 'kode_ruang', 'meta_value' => 'R1'],
+        ];
 
         $logs = \CBT_Security_Log::get_recent_logs();
 
         self::assertCount(2, $logs);
+        self::assertSame('X-A', $logs[0]['student_kode_kelas']);
+        self::assertSame('R1', $logs[0]['student_kode_ruang']);
         self::assertSame('Clipboard diblokir', $logs[0]['event_label']);
         self::assertStringContainsString('Diakses dari: Desktop • Windows • 1440x900.', $logs[0]['message_display']);
         self::assertStringContainsString('Sumber deteksi: Shortcut atau menu copy.', $logs[0]['message_display']);
         self::assertSame('server', $logs[1]['device_type']);
         self::assertStringContainsString('Sumber deteksi: Panel admin.', $logs[1]['message_display']);
+        $securityLogQueries = array_values(array_filter($wpdb->getResultsQueries, static function (string $query): bool {
+            return str_contains($query, 'cbt_security_logs');
+        }));
+        self::assertNotEmpty($securityLogQueries);
+        self::assertStringNotContainsString('WHERE um.user_id = l.student_id', implode("\n", $securityLogQueries));
+        self::assertStringNotContainsString('SELECT um.meta_value', implode("\n", $securityLogQueries));
     }
 
     #[RunInSeparateProcess]
@@ -297,17 +311,35 @@ final class SecurityLogObservabilityTest extends TestCase
                 'exam_title' => 'Exam B',
             ],
         ];
+        $wpdb->studentMetaRows = [
+            ['umeta_id' => 10, 'user_id' => 71, 'meta_key' => 'kode_kelas', 'meta_value' => 'OLD-X-A'],
+            ['umeta_id' => 11, 'user_id' => 71, 'meta_key' => 'kode_ruang', 'meta_value' => 'OLD-R1'],
+            ['umeta_id' => 20, 'user_id' => 71, 'meta_key' => 'kode_kelas', 'meta_value' => 'X-A'],
+            ['umeta_id' => 21, 'user_id' => 71, 'meta_key' => 'kode_ruang', 'meta_value' => 'R1'],
+            ['umeta_id' => 30, 'user_id' => 72, 'meta_key' => 'kode_kelas', 'meta_value' => 'X-B'],
+            ['umeta_id' => 31, 'user_id' => 72, 'meta_key' => 'kode_ruang', 'meta_value' => 'R2'],
+        ];
 
         $attempts = \CBT_Security_Log::get_must_watch_attempts();
 
         self::assertCount(2, $attempts);
         self::assertSame(22, $attempts[0]['attempt_id']);
+        self::assertSame('X-B', $attempts[0]['student_kode_kelas']);
+        self::assertSame('R2', $attempts[0]['student_kode_ruang']);
         self::assertSame(5.0, $attempts[0]['risk_score']);
         self::assertSame(2, $attempts[0]['event_total']);
         self::assertSame(1, $attempts[0]['session_revoked_count']);
         self::assertSame('Sesi dicabut', $attempts[0]['primary_event_label']);
         self::assertSame(['1x Sesi dicabut', '1x Clipboard diblokir'], $attempts[0]['top_indicators']);
         self::assertSame(21, $attempts[1]['attempt_id']);
+        self::assertSame('X-A', $attempts[1]['student_kode_kelas']);
+        self::assertSame('R1', $attempts[1]['student_kode_ruang']);
+        $securityLogQueries = array_values(array_filter($wpdb->getResultsQueries, static function (string $query): bool {
+            return str_contains($query, 'cbt_security_logs');
+        }));
+        self::assertNotEmpty($securityLogQueries);
+        self::assertStringNotContainsString('WHERE um.user_id = l.student_id', implode("\n", $securityLogQueries));
+        self::assertStringNotContainsString('SELECT um.meta_value', implode("\n", $securityLogQueries));
     }
 
     #[RunInSeparateProcess]
@@ -1007,6 +1039,12 @@ class SecurityLogFakeWpdb extends \wpdb
     /** @var array<int,array<string,mixed>> */
     public array $mustWatchRows = [];
 
+    /** @var array<int,array{umeta_id:int,user_id:int,meta_key:string,meta_value:string}> */
+    public array $studentMetaRows = [];
+
+    /** @var string[] */
+    public array $getResultsQueries = [];
+
     /** @var array<int,array<string,mixed>> */
     public array $updatedRows = [];
 
@@ -1149,6 +1187,13 @@ class SecurityLogFakeWpdb extends \wpdb
 
     public function get_results($query, $output = ARRAY_A): array
     {
+        $query = (string) $query;
+        $this->getResultsQueries[] = $query;
+
+        if (str_contains($query, "FROM {$this->usermeta} um")) {
+            return $this->latestStudentMetaRowsForQuery($query);
+        }
+
         if (str_contains((string) $query, "INNER JOIN {$this->prefix}cbt_attempts a ON a.id = l.attempt_id")) {
             $this->mustWatchQueryCount++;
             return $this->mustWatchRows;
@@ -1176,5 +1221,51 @@ class SecurityLogFakeWpdb extends \wpdb
         }
 
         return $rows;
+    }
+
+    /** @return array<int,array{user_id:int,meta_key:string,meta_value:string}> */
+    private function latestStudentMetaRowsForQuery(string $query): array
+    {
+        if (empty($this->studentMetaRows)) {
+            return [];
+        }
+
+        $allowedUserIds = [];
+        if (preg_match('/user_id IN \\(([^)]+)\\)/', $query, $matches)) {
+            foreach (explode(',', $matches[1]) as $rawId) {
+                $userId = (int) trim($rawId, " '");
+                if ($userId > 0) {
+                    $allowedUserIds[$userId] = true;
+                }
+            }
+        }
+
+        $latestByUserAndKey = [];
+        foreach ($this->studentMetaRows as $row) {
+            $userId = (int) ($row['user_id'] ?? 0);
+            $metaKey = (string) ($row['meta_key'] ?? '');
+            $umetaId = (int) ($row['umeta_id'] ?? 0);
+            if ($userId <= 0 || !isset($allowedUserIds[$userId]) || !in_array($metaKey, ['kode_kelas', 'kode_ruang'], true)) {
+                continue;
+            }
+
+            $lookupKey = $userId . ':' . $metaKey;
+            if (!isset($latestByUserAndKey[$lookupKey]) || $umetaId > (int) ($latestByUserAndKey[$lookupKey]['umeta_id'] ?? 0)) {
+                $latestByUserAndKey[$lookupKey] = [
+                    'umeta_id' => $umetaId,
+                    'user_id' => $userId,
+                    'meta_key' => $metaKey,
+                    'meta_value' => (string) ($row['meta_value'] ?? ''),
+                ];
+            }
+        }
+
+        return array_values(array_map(static function (array $row): array {
+            return [
+                'user_id' => (int) ($row['user_id'] ?? 0),
+                'meta_key' => (string) ($row['meta_key'] ?? ''),
+                'meta_value' => (string) ($row['meta_value'] ?? ''),
+            ];
+        }, $latestByUserAndKey));
     }
 }
