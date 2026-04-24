@@ -1,0 +1,400 @@
+.cbt-supervisor-dashboard,
+.cbt-supervisor-login-layout {
+    width: min(100%, 1180px);
+}
+
+.cbt-supervisor-login-layout {
+    margin: 0 auto;
+}
+
+.cbt-supervisor-login-card,
+.cbt-supervisor-panel,
+.cbt-supervisor-status-card {
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(176, 200, 233, 0.55);
+    border-radius: 28px;
+    box-shadow: 0 18px 44px rgba(35, 73, 132, 0.12);
+    backdrop-filter: blur(10px);
+}
+
+.cbt-supervisor-login-card {
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 28px 24px;
+}
+
+.cbt-supervisor-login-card h1,
+.cbt-supervisor-hero h1,
+.cbt-supervisor-panel h2,
+.cbt-supervisor-section-head h3 {
+    margin: 0;
+    color: #143861;
+    letter-spacing: -0.02em;
+}
+
+.cbt-supervisor-login-card p,
+.cbt-supervisor-hero p,
+.cbt-supervisor-section-head p {
+    margin: 0;
+    color: #506a86;
+    line-height: 1.55;
+}
+
+.cbt-supervisor-kicker,
+.cbt-supervisor-login-kicker {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(15, 111, 215, 0.1);
+    color: #1257a6;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.cbt-supervisor-login-form,
+.cbt-supervisor-filter-bar,
+.cbt-supervisor-dashboard,
+.cbt-supervisor-status-card,
+.cbt-supervisor-panel,
+.cbt-supervisor-watch-card,
+.cbt-supervisor-watchlist-item {
+    display: grid;
+    gap: 16px;
+}
+
+.cbt-supervisor-field {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.cbt-supervisor-field span {
+    font-size: 13px;
+    font-weight: 700;
+    color: #33587e;
+}
+
+.cbt-supervisor-field input,
+.cbt-supervisor-field select {
+    width: 100%;
+    min-height: 46px;
+    border: 1px solid rgba(160, 185, 220, 0.92);
+    border-radius: 16px;
+    padding: 11px 14px;
+    font: inherit;
+    color: #143861;
+    background: #f8fbff;
+}
+
+.cbt-supervisor-field-search {
+    min-width: min(320px, 100%);
+}
+
+.cbt-supervisor-login-actions,
+.cbt-supervisor-filter-actions,
+.cbt-supervisor-panel-actions,
+.cbt-supervisor-watch-actions,
+.cbt-supervisor-pagination {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.cbt-supervisor-button {
+    appearance: none;
+    border: 1px solid rgba(157, 183, 221, 0.9);
+    border-radius: 999px;
+    background: #fff;
+    color: #1a4d93;
+    font: inherit;
+    font-weight: 700;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.cbt-supervisor-button:hover,
+.cbt-supervisor-button:focus {
+    background: #eff5ff;
+    border-color: #0f6fd7;
+    color: #0f4eb3;
+}
+
+.cbt-supervisor-button[disabled] {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.cbt-supervisor-button.is-primary {
+    background: linear-gradient(135deg, #0f6fd7 0%, #2f8ef2 100%);
+    border-color: #0f6fd7;
+    color: #fff;
+}
+
+.cbt-supervisor-button.is-small {
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+.cbt-supervisor-alert {
+    padding: 12px 14px;
+    border-radius: 16px;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.cbt-supervisor-alert.is-success {
+    background: #ebfff4;
+    border: 1px solid #8fd3a7;
+    color: #17633a;
+}
+
+.cbt-supervisor-alert.is-error {
+    background: #fff2f2;
+    border: 1px solid #efb5b5;
+    color: #8e2424;
+}
+
+.cbt-supervisor-hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    align-items: flex-start;
+    padding: 26px 28px;
+    border-radius: 28px;
+    background: linear-gradient(135deg, #0f6fd7 0%, #2f8ef2 52%, #5da8ff 100%);
+    color: #fff;
+    box-shadow: 0 24px 52px rgba(18, 86, 176, 0.22);
+}
+
+.cbt-supervisor-hero .cbt-supervisor-kicker {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+}
+
+.cbt-supervisor-hero h1,
+.cbt-supervisor-hero p {
+    color: inherit;
+}
+
+.cbt-supervisor-hero-meta {
+    display: grid;
+    gap: 4px;
+    justify-items: end;
+    text-align: right;
+}
+
+.cbt-supervisor-status-card,
+.cbt-supervisor-panel {
+    padding: 22px 24px;
+}
+
+.cbt-supervisor-status-head,
+.cbt-supervisor-panel-head,
+.cbt-supervisor-section-head,
+.cbt-supervisor-watch-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.cbt-supervisor-status-grid,
+.cbt-supervisor-summary-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.cbt-supervisor-status-grid div,
+.cbt-supervisor-summary-card {
+    padding: 16px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
+    border: 1px solid rgba(176, 200, 233, 0.48);
+}
+
+.cbt-supervisor-status-grid span,
+.cbt-supervisor-summary-card span,
+.cbt-supervisor-watch-card span,
+.cbt-supervisor-watchlist-item span {
+    display: block;
+    color: #506a86;
+    font-size: 13px;
+}
+
+.cbt-supervisor-status-grid strong,
+.cbt-supervisor-summary-card strong,
+.cbt-supervisor-watch-card strong,
+.cbt-supervisor-watchlist-item strong {
+    color: #143861;
+}
+
+.cbt-supervisor-status-badge,
+.cbt-supervisor-pill,
+.cbt-supervisor-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.cbt-supervisor-status-badge,
+.cbt-supervisor-pill.is-online,
+.cbt-supervisor-pill.is-in_progress {
+    background: rgba(30, 167, 95, 0.14);
+    color: #17633a;
+}
+
+.cbt-supervisor-pill.is-stale,
+.cbt-supervisor-pill.is-watch,
+.cbt-supervisor-pill.is-watchlist {
+    background: rgba(230, 152, 0, 0.14);
+    color: #9b5d00;
+}
+
+.cbt-supervisor-pill.is-offline,
+.cbt-supervisor-pill.is-high_risk,
+.cbt-supervisor-pill.is-completed {
+    background: rgba(195, 31, 49, 0.12);
+    color: #9d1c2f;
+}
+
+.cbt-supervisor-pill.is-normal {
+    background: rgba(15, 111, 215, 0.12);
+    color: #1257a6;
+}
+
+.cbt-supervisor-tab-bar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.cbt-supervisor-tab {
+    appearance: none;
+    border: 1px solid rgba(176, 200, 233, 0.55);
+    border-radius: 18px;
+    background: #f7fbff;
+    color: #32557c;
+    font: inherit;
+    font-weight: 700;
+    padding: 12px 16px;
+    cursor: pointer;
+}
+
+.cbt-supervisor-tab.is-active {
+    background: #fff;
+    border-color: #0f6fd7;
+    color: #0f4eb3;
+    box-shadow: 0 12px 28px rgba(15, 111, 215, 0.12);
+}
+
+.cbt-supervisor-tab-panel,
+.cbt-supervisor-submit-health {
+    display: grid;
+    gap: 18px;
+}
+
+.cbt-supervisor-table-wrap {
+    overflow-x: auto;
+}
+
+.cbt-supervisor-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.cbt-supervisor-table th,
+.cbt-supervisor-table td {
+    padding: 14px 12px;
+    border-bottom: 1px solid rgba(205, 219, 239, 0.85);
+    vertical-align: top;
+    text-align: left;
+}
+
+.cbt-supervisor-table th {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #5a7391;
+}
+
+.cbt-supervisor-table td small,
+.cbt-supervisor-watch-card small,
+.cbt-supervisor-watchlist-item small {
+    display: block;
+    margin-top: 4px;
+    color: #617a95;
+}
+
+.cbt-supervisor-watch-grid,
+.cbt-supervisor-watchlist-list {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.cbt-supervisor-watch-card,
+.cbt-supervisor-watchlist-item {
+    padding: 18px;
+    border-radius: 22px;
+    background: linear-gradient(180deg, #fbfdff 0%, #f1f7ff 100%);
+    border: 1px solid rgba(176, 200, 233, 0.5);
+}
+
+.cbt-supervisor-watch-card p,
+.cbt-supervisor-watchlist-item p {
+    margin: 0;
+    color: #48637f;
+    line-height: 1.5;
+}
+
+.cbt-supervisor-watch-meta,
+.cbt-supervisor-chip-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.cbt-supervisor-chip {
+    background: rgba(15, 111, 215, 0.08);
+    color: #1257a6;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.cbt-supervisor-empty-state {
+    padding: 18px;
+    border-radius: 20px;
+    background: #f7fbff;
+    border: 1px dashed rgba(176, 200, 233, 0.8);
+    color: #567089;
+}
+
+@media (max-width: 900px) {
+    .cbt-supervisor-hero,
+    .cbt-supervisor-status-head,
+    .cbt-supervisor-panel-head,
+    .cbt-supervisor-section-head,
+    .cbt-supervisor-watch-head {
+        flex-direction: column;
+    }
+
+    .cbt-supervisor-hero-meta {
+        justify-items: start;
+        text-align: left;
+    }
+
+    .cbt-supervisor-filter-bar {
+        grid-template-columns: 1fr;
+    }
+}

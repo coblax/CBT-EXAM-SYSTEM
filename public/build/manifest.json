@@ -20,39 +20,43 @@
       "assets/frontend-feature-calculator-BzSqRsRa.css"
     ]
   },
-  "_frontend-shared-review-Ckk9yafR.js": {
-    "file": "assets/frontend-shared-review-Ckk9yafR.js",
+  "_frontend-shared-review-DK4Bt0vw.js": {
+    "file": "assets/frontend-shared-review-DK4Bt0vw.js",
     "name": "frontend-shared-review"
   },
   "_frontend-stage-exam-B2bv2S6b.css": {
     "file": "assets/frontend-stage-exam-B2bv2S6b.css",
     "src": "_frontend-stage-exam-B2bv2S6b.css"
   },
-  "_frontend-stage-exam-BHykID1u.js": {
-    "file": "assets/frontend-stage-exam-BHykID1u.js",
+  "_frontend-stage-exam-Br275uiE.js": {
+    "file": "assets/frontend-stage-exam-Br275uiE.js",
     "name": "frontend-stage-exam",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
-      "_frontend-shared-review-Ckk9yafR.js"
+      "_frontend-shared-review-DK4Bt0vw.js"
     ],
     "css": [
       "assets/frontend-stage-exam-B2bv2S6b.css"
     ]
   },
-  "_frontend-stage-result-CXtg3x37.js": {
-    "file": "assets/frontend-stage-result-CXtg3x37.js",
+  "_frontend-stage-result-DA1JA-0T.css": {
+    "file": "assets/frontend-stage-result-DA1JA-0T.css",
+    "src": "_frontend-stage-result-DA1JA-0T.css"
+  },
+  "_frontend-stage-result-DOPbg3Bl.js": {
+    "file": "assets/frontend-stage-result-DOPbg3Bl.js",
     "name": "frontend-stage-result",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
-      "_frontend-shared-review-Ckk9yafR.js"
+      "_frontend-shared-review-DK4Bt0vw.js"
     ],
     "css": [
       "assets/frontend-stage-result-DA1JA-0T.css"
     ]
   },
-  "_frontend-stage-result-DA1JA-0T.css": {
-    "file": "assets/frontend-stage-result-DA1JA-0T.css",
-    "src": "_frontend-stage-result-DA1JA-0T.css"
+  "_html-Cv6hOyHa.js": {
+    "file": "assets/html-Cv6hOyHa.js",
+    "name": "html"
   },
   "_math-render-DvP1Qxaf.css": {
     "file": "assets/math-render-DvP1Qxaf.css",
@@ -398,7 +402,7 @@
     "src": "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.woff2"
   },
   "src/admin/math-main.js": {
-    "file": "assets/frontend-core-Bx9fC0Yy.js",
+    "file": "assets/adminMath-DTOaNxWR.js",
     "name": "adminMath",
     "src": "src/admin/math-main.js",
     "isEntry": true,
@@ -415,21 +419,45 @@
     "src": "src/frontend/app/core/debug-panel.js",
     "isDynamicEntry": true
   },
+  "src/frontend/app/runtime.js": {
+    "file": "assets/runtime-BTuLW4NQ.js",
+    "name": "runtime",
+    "src": "src/frontend/app/runtime.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/frontend/main.js",
+      "_html-Cv6hOyHa.js"
+    ],
+    "dynamicImports": [
+      "_frontend-exam-runtime-DEN3jK-l.js",
+      "_math-render-z4EJh76n.js",
+      "_frontend-stage-exam-Br275uiE.js",
+      "_frontend-stage-result-DOPbg3Bl.js",
+      "_frontend-feature-calculator-CuFD8t3I.js",
+      "src/frontend/app/core/debug-panel.js"
+    ]
+  },
+  "src/frontend/app/supervisor/runtime.js": {
+    "file": "assets/runtime-BS6qJMz_.js",
+    "name": "runtime",
+    "src": "src/frontend/app/supervisor/runtime.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/frontend/main.js",
+      "_html-Cv6hOyHa.js"
+    ]
+  },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-WRxxcGo6.js",
+    "file": "assets/frontend-core-Drg_6M_y.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
     "dynamicImports": [
-      "_frontend-exam-runtime-DEN3jK-l.js",
-      "_math-render-z4EJh76n.js",
-      "_frontend-stage-exam-BHykID1u.js",
-      "_frontend-stage-result-CXtg3x37.js",
-      "_frontend-feature-calculator-CuFD8t3I.js",
-      "src/frontend/app/core/debug-panel.js"
+      "src/frontend/app/supervisor/runtime.js",
+      "src/frontend/app/runtime.js"
     ],
     "css": [
-      "assets/frontend-4lAgw6Rs.css"
+      "assets/frontend-ykMmUfmY.css"
     ],
     "assets": [
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",

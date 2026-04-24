@@ -60,6 +60,10 @@ if (!class_exists('CBT_Live_Attempt_Roster_Index')) {
     require_once __DIR__ . '/class-cbt-live-attempt-roster-index.php';
 }
 
+if (!class_exists('CBT_Supervisor_Dashboard_Service')) {
+    require_once __DIR__ . '/class-cbt-supervisor-dashboard-service.php';
+}
+
 if (!trait_exists('CBT_REST_Login_Routes')) {
     require_once __DIR__ . '/class-cbt-rest-login.php';
 }
@@ -104,6 +108,10 @@ if (!trait_exists('CBT_REST_Start_Attempt_Routes')) {
     require_once __DIR__ . '/class-cbt-rest-start-attempt.php';
 }
 
+if (!trait_exists('CBT_REST_Supervisor_Routes')) {
+    require_once __DIR__ . '/class-cbt-rest-supervisor.php';
+}
+
 class CBT_REST
 {
     use CBT_REST_Exam_Availability_Helpers;
@@ -117,6 +125,7 @@ class CBT_REST
     use CBT_REST_Question_Snapshot_Helpers;
     use CBT_REST_Start_Attempt_Routes;
     use CBT_REST_Submit_Answer_Routes;
+    use CBT_REST_Supervisor_Routes;
 
     private const PRIORITY_WINDOW_TRANSIENT_KEY = 'cbt_exam_priority_window_until';
     private const AVAILABILITY_BASE_CATALOG_TTL = 900;
@@ -143,6 +152,55 @@ class CBT_REST
             'methods' => WP_REST_Server::CREATABLE,
             'callback' => [self::class, 'logout'],
             'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
+        ]);
+
+        register_rest_route('cbt/v1', '/supervisor_dashboard', [
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => [self::class, 'supervisor_dashboard'],
+            'permission_callback' => [CBT_Auth::class, 'permission_supervisor_dashboard'],
+            'args' => [
+                'tab' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_key',
+                ],
+                'exam_id' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+                'kelas' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'student_keyword' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'status' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_key',
+                ],
+                'roster_page' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+                'attempts_page' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+            ],
+        ]);
+
+        register_rest_route('cbt/v1', '/supervisor_reset_login', [
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => [self::class, 'supervisor_reset_login'],
+            'permission_callback' => [CBT_Auth::class, 'permission_supervisor_dashboard'],
         ]);
 
         register_rest_route('cbt/v1', '/session', [

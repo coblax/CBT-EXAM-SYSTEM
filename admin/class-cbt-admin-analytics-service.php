@@ -1311,6 +1311,7 @@ final class CBT_Admin_Analytics_Service
             } elseif ((string) ($row['question_type'] ?? '') === 'multiple_answer') {
                 $option_analysis = self::build_multiple_answer_option_analysis_rows((array) ($row['option_analysis_map'] ?? []), $seen_count, $upper_group_size, $lower_group_size);
             }
+            $option_analysis = self::decorate_item_option_analysis_display($option_analysis);
 
             $matrix_analysis = [];
             if ((string) ($row['question_type'] ?? '') === 'true_false_matrix') {
@@ -1380,16 +1381,22 @@ final class CBT_Admin_Analytics_Service
             $row['essay_analysis'] = $essay_analysis;
             $row['insight_label'] = (string) ($insight['label'] ?? '-');
             $row['insight_tone'] = (string) ($insight['tone'] ?? 'neutral');
+            $row['insight_key'] = self::build_item_insight_key($row['insight_label']);
+            $row['insight_display_label'] = self::localize_item_insight_label($row['insight_label']);
+            $row['insight_short_explainer'] = self::build_item_insight_short_explainer($row['insight_label']);
+            $row['insight_reason_detail'] = self::build_item_insight_reason_detail(
+                $row['insight_label'],
+                (string) ($row['question_type'] ?? ''),
+                $seen_count,
+                $manual_count,
+                $discrimination,
+                $omission,
+                $option_analysis
+            );
+            $row['insight_next_step'] = self::build_item_insight_next_step($row['insight_label']);
+            $row['difficulty_short_explainer'] = self::build_item_difficulty_short_explainer($row['difficulty_label']);
             $row['note'] = trim(implode(' ', $note_parts));
-            $row['search_text'] = strtolower(implode(' ', [
-                (string) ($row['question_number'] ?? ''),
-                (string) ($row['question_type_label'] ?? ''),
-                (string) ($row['question_preview'] ?? ''),
-                (string) ($row['difficulty_label'] ?? ''),
-                (string) ($row['discrimination_label'] ?? ''),
-                (string) ($row['insight_label'] ?? ''),
-                (string) ($row['omission_label'] ?? ''),
-            ]));
+            $row['search_text'] = self::build_item_search_text($row, $option_analysis);
 
             unset(
                 $row['option_analysis_map'],
@@ -2145,6 +2152,281 @@ final class CBT_Admin_Analytics_Service
     }
 
     /**
+     * @param array<int,array<string,mixed>> $option_analysis
+     * @return array<int,array<string,mixed>>
+     */
+    private static function decorate_item_option_analysis_display(array $option_analysis): array
+    {
+        foreach ($option_analysis as $index => $option_row) {
+            $row = (array) $option_row;
+            $flags = array_values(array_filter(array_map('strval', (array) ($row['flags'] ?? []))));
+            $row['flags_display'] = array_values(array_map([self::class, 'localize_option_analysis_flag'], $flags));
+            $option_analysis[$index] = $row;
+        }
+
+        return $option_analysis;
+    }
+
+    private static function build_item_insight_key(string $label): string
+    {
+        $normalized = strtolower(trim($label));
+        switch ($normalized) {
+            case 'insufficient data':
+                return 'insufficient_data';
+            case 'pending manual review':
+                return 'pending_manual_review';
+            case 'inverse discrimination':
+                return 'inverse_discrimination';
+            case 'weak discrimination':
+                return 'weak_discrimination';
+            case 'high omission':
+                return 'high_omission';
+            case 'attractive distractor':
+                return 'attractive_distractor';
+            case 'distractor issue':
+                return 'distractor_issue';
+            default:
+                if ($normalized === '') {
+                    return 'stable';
+                }
+
+                $fallback = preg_replace('/[^a-z0-9]+/', '_', $normalized);
+
+                return is_string($fallback) && $fallback !== '' ? trim($fallback, '_') : 'stable';
+        }
+    }
+
+    private static function localize_item_insight_label(string $label): string
+    {
+        switch (trim($label)) {
+            case 'Insufficient Data':
+                return 'Data Belum Cukup';
+            case 'Pending Manual Review':
+                return 'Menunggu Koreksi Manual';
+            case 'Inverse Discrimination':
+                return 'Daya Beda Terbalik';
+            case 'Weak Discrimination':
+                return 'Daya Beda Lemah';
+            case 'High Omission':
+                return 'Sering Dikosongkan';
+            case 'Attractive Distractor':
+                return 'Distraktor Menarik';
+            case 'Distractor Issue':
+                return 'Distraktor Bermasalah';
+            case 'Stable':
+                return 'Stabil';
+            default:
+                return trim($label) !== '' ? trim($label) : 'Stabil';
+        }
+    }
+
+    private static function localize_option_analysis_flag(string $flag): string
+    {
+        switch (trim($flag)) {
+            case 'Attractive Distractor':
+                return 'Distraktor Menarik';
+            case 'Non-Functioning Distractor':
+                return 'Distraktor Tidak Berfungsi';
+            default:
+                return trim($flag) !== '' ? trim($flag) : '-';
+        }
+    }
+
+    private static function build_item_insight_short_explainer(string $label): string
+    {
+        switch (trim($label)) {
+            case 'Insufficient Data':
+                return 'Belum cukup data final untuk menyimpulkan kondisi utama soal.';
+            case 'Pending Manual Review':
+                return 'Soal ini masih menunggu koreksi guru sebelum insight-nya final.';
+            case 'Inverse Discrimination':
+                return 'Kelompok bawah justru tampil lebih baik daripada kelompok atas pada butir ini.';
+            case 'Weak Discrimination':
+                return 'Soal belum cukup kuat membedakan peserta kuat dan lemah.';
+            case 'High Omission':
+                return 'Cukup banyak peserta melewati soal ini tanpa jawaban.';
+            case 'Attractive Distractor':
+                return 'Ada opsi salah yang efektif menarik peserta yang lebih lemah.';
+            case 'Distractor Issue':
+                return 'Ada distraktor yang kurang berfungsi sehingga butir perlu ditinjau.';
+            default:
+                return 'Tidak ada sinyal utama yang dominan pada butir ini.';
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $discrimination
+     * @param array<string,mixed> $omission
+     * @param array<int,array<string,mixed>> $option_analysis
+     */
+    private static function build_item_insight_reason_detail(
+        string $label,
+        string $question_type,
+        int $seen_count,
+        int $manual_count,
+        array $discrimination,
+        array $omission,
+        array $option_analysis
+    ): string {
+        switch (trim($label)) {
+            case 'Insufficient Data':
+                if ($seen_count <= 0) {
+                    return 'Belum ada peserta final yang cukup untuk membaca butir ini.';
+                }
+                if ($question_type === 'essay' && $manual_count <= 0) {
+                    return 'Butir essay dibaca melalui koreksi manual sehingga insight statistik objective tidak menjadi acuan utamanya.';
+                }
+                if ($manual_count > 0) {
+                    return sprintf(
+                        'Masih ada %d jawaban manual/essay yang belum final sehingga insight belum stabil.',
+                        $manual_count
+                    );
+                }
+
+                return 'Data peserta final yang layak untuk menghitung daya beda butir ini belum cukup.';
+            case 'Pending Manual Review':
+                return sprintf(
+                    'Masih ada %d jawaban yang perlu koreksi manual sebelum kondisi soal bisa dibaca final.',
+                    max(1, $manual_count)
+                );
+            case 'Inverse Discrimination':
+                return sprintf(
+                    'Nilai discrimination %s menunjukkan kelompok bawah tampil lebih baik daripada kelompok atas.',
+                    (string) ($discrimination['display'] ?? '0.00')
+                );
+            case 'Weak Discrimination':
+                return sprintf(
+                    'Nilai discrimination %s masih lemah sehingga butir ini belum cukup membedakan peserta.',
+                    (string) ($discrimination['display'] ?? '0.00')
+                );
+            case 'High Omission':
+                return sprintf(
+                    'Omission rate %s menunjukkan cukup banyak peserta membiarkan butir ini kosong.',
+                    self::format_percent((float) ($omission['value'] ?? 0.0))
+                );
+            case 'Attractive Distractor':
+                $labels = self::collect_item_option_labels_by_flag($option_analysis, 'Attractive Distractor');
+                if (!empty($labels)) {
+                    return sprintf(
+                        'Flag distraktor menarik muncul pada opsi %s sehingga pengecoh terasa sangat meyakinkan bagi peserta yang lebih lemah.',
+                        implode(', ', $labels)
+                    );
+                }
+
+                return 'Ada distraktor yang lebih sering menarik kelompok bawah daripada kelompok atas.';
+            case 'Distractor Issue':
+                $labels = self::collect_item_option_labels_by_flag($option_analysis, 'Non-Functioning Distractor');
+                if (!empty($labels)) {
+                    return sprintf(
+                        'Ada distraktor yang jarang dipilih sehingga kurang berfungsi; terlihat pada opsi %s.',
+                        implode(', ', $labels)
+                    );
+                }
+
+                return 'Ada distraktor yang kurang berfungsi sehingga kualitas pengecohnya perlu ditinjau.';
+            default:
+                return sprintf(
+                    'Nilai discrimination %s, omission %s, dan analisis opsi tidak menunjukkan sinyal utama yang dominan.',
+                    (string) ($discrimination['display'] ?? '0.00'),
+                    self::format_percent((float) ($omission['value'] ?? 0.0))
+                );
+        }
+    }
+
+    private static function build_item_insight_next_step(string $label): string
+    {
+        switch (trim($label)) {
+            case 'Insufficient Data':
+                return 'Tunggu lebih banyak respons final atau selesaikan koreksi manual sebelum menarik kesimpulan.';
+            case 'Pending Manual Review':
+                return 'Selesaikan koreksi manual terlebih dahulu agar insight butir ini benar-benar final.';
+            case 'Inverse Discrimination':
+                return 'Periksa kembali kunci jawaban, redaksi stem, dan kesesuaian opsi karena daya beda terbalik.';
+            case 'Weak Discrimination':
+                return 'Tinjau ulang stem, tingkat kesulitan, dan kualitas opsi agar daya beda naik.';
+            case 'High Omission':
+                return 'Periksa apakah soal terlalu panjang, ambigu, atau petunjuknya kurang jelas.';
+            case 'Attractive Distractor':
+                return 'Cek apakah distraktor terlalu mirip dengan kunci atau stem belum cukup tegas.';
+            case 'Distractor Issue':
+                return 'Perbaiki distraktor agar lebih masuk akal dan benar-benar dipertimbangkan peserta.';
+            default:
+                return 'Butir ini relatif sehat; lanjutkan pemantauan bersama butir lain di paket exam.';
+        }
+    }
+
+    private static function build_item_difficulty_short_explainer(string $label): string
+    {
+        switch (trim($label)) {
+            case 'Pending Manual Review':
+                return 'Tingkat kesulitan ditahan karena masih ada koreksi manual yang belum final.';
+            case 'Mudah':
+                return 'Mayoritas peserta menjawab butir ini dengan benar.';
+            case 'Sedang':
+                return 'Butir ini berada di rentang tengah dan masih cukup seimbang antara benar dan salah.';
+            default:
+                return 'Peserta yang menjawab benar masih relatif sedikit pada butir ini.';
+        }
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $option_analysis
+     * @return list<string>
+     */
+    private static function collect_item_option_labels_by_flag(array $option_analysis, string $flag): array
+    {
+        $labels = [];
+        foreach ($option_analysis as $option_row) {
+            $row = (array) $option_row;
+            $flags = array_values(array_filter(array_map('strval', (array) ($row['flags'] ?? []))));
+            if (in_array($flag, $flags, true)) {
+                $labels[] = (string) ($row['label'] ?? '-');
+            }
+        }
+
+        $labels = array_values(array_unique(array_filter($labels, static function ($label): bool {
+            return is_string($label) && trim($label) !== '';
+        })));
+
+        return array_slice($labels, 0, 3);
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @param array<int,array<string,mixed>> $option_analysis
+     */
+    private static function build_item_search_text(array $row, array $option_analysis = []): string
+    {
+        $terms = [
+            (string) ($row['question_number'] ?? ''),
+            (string) ($row['question_type_label'] ?? ''),
+            (string) ($row['question_preview'] ?? ''),
+            (string) ($row['difficulty_label'] ?? ''),
+            (string) ($row['difficulty_short_explainer'] ?? ''),
+            (string) ($row['discrimination_label'] ?? ''),
+            (string) ($row['insight_label'] ?? ''),
+            (string) ($row['insight_display_label'] ?? ''),
+            (string) ($row['insight_short_explainer'] ?? ''),
+            (string) ($row['omission_label'] ?? ''),
+        ];
+
+        foreach ($option_analysis as $option_row) {
+            $option = (array) $option_row;
+            $terms[] = (string) ($option['label'] ?? '');
+            foreach ((array) ($option['flags'] ?? []) as $flag) {
+                $terms[] = (string) $flag;
+            }
+            foreach ((array) ($option['flags_display'] ?? []) as $flag) {
+                $terms[] = (string) $flag;
+            }
+        }
+
+        return strtolower(trim(implode(' ', array_values(array_filter(array_map(static function ($value): string {
+            return is_scalar($value) ? trim((string) $value) : '';
+        }, $terms))))));
+    }
+
+    /**
      * @return array{value:?float,label:string,tone:string,display:string}
      */
     private static function build_discrimination_meta(?float $value, int $completed_attempts, int $manual_count): array
@@ -2183,18 +2465,18 @@ final class CBT_Admin_Analytics_Service
     }
 
     /**
-     * @return array{label:string,tone:string}
+     * @return array{value:float,label:string,tone:string}
      */
     private static function build_omission_meta(float $value): array
     {
         if ($value >= 20.0) {
-            return ['label' => 'High', 'tone' => 'fail'];
+            return ['value' => $value, 'label' => 'High', 'tone' => 'fail'];
         }
         if ($value >= 10.0) {
-            return ['label' => 'Medium', 'tone' => 'warning'];
+            return ['value' => $value, 'label' => 'Medium', 'tone' => 'warning'];
         }
 
-        return ['label' => 'Low', 'tone' => 'ok'];
+        return ['value' => $value, 'label' => 'Low', 'tone' => 'ok'];
     }
 
     private static function calculate_item_score_ratio(float $scoreAwarded, float $itemPoints): float

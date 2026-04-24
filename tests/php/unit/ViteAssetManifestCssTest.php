@@ -80,28 +80,16 @@ final class ViteAssetManifestCssTest extends TestCase
         $entry = $manifest['src/frontend/main.js'];
         self::assertIsArray($entry);
 
-        $static_import_names = array_map(
-            static function ($import_key) use ($manifest): string {
-                if (!is_string($import_key) || !isset($manifest[$import_key]) || !is_array($manifest[$import_key])) {
-                    return '';
-                }
-
-                return (string) ($manifest[$import_key]['name'] ?? '');
-            },
+        $static_import_names = $this->resolveManifestImportNames(
+            $manifest,
             is_array($entry['imports'] ?? null) ? $entry['imports'] : []
         );
 
         self::assertNotContains('math-render', $static_import_names);
         self::assertNotContains('frontend-exam-runtime', $static_import_names);
 
-        $dynamic_import_names = array_map(
-            static function ($import_key) use ($manifest): string {
-                if (!is_string($import_key) || !isset($manifest[$import_key]) || !is_array($manifest[$import_key])) {
-                    return '';
-                }
-
-                return (string) ($manifest[$import_key]['name'] ?? '');
-            },
+        $dynamic_import_names = $this->resolveManifestImportNamesRecursive(
+            $manifest,
             is_array($entry['dynamicImports'] ?? null) ? $entry['dynamicImports'] : []
         );
 
@@ -119,5 +107,60 @@ final class ViteAssetManifestCssTest extends TestCase
         $method->setAccessible(true);
 
         return $method->invokeArgs(null, $arguments);
+    }
+
+    /**
+     * @param array<string,mixed> $manifest
+     * @param array<int,mixed> $importKeys
+     * @return array<int,string>
+     */
+    private function resolveManifestImportNames(array $manifest, array $importKeys): array
+    {
+        return array_values(array_filter(array_map(
+            static function ($import_key) use ($manifest): string {
+                if (!is_string($import_key) || !isset($manifest[$import_key]) || !is_array($manifest[$import_key])) {
+                    return '';
+                }
+
+                return (string) ($manifest[$import_key]['name'] ?? '');
+            },
+            $importKeys
+        )));
+    }
+
+    /**
+     * @param array<string,mixed> $manifest
+     * @param array<int,mixed> $importKeys
+     * @return array<int,string>
+     */
+    private function resolveManifestImportNamesRecursive(array $manifest, array $importKeys): array
+    {
+        $resolved = [];
+        $visited = [];
+        $stack = array_values($importKeys);
+
+        while ($stack !== []) {
+            $import_key = array_shift($stack);
+            if (!is_string($import_key) || isset($visited[$import_key])) {
+                continue;
+            }
+            $visited[$import_key] = true;
+
+            if (!isset($manifest[$import_key]) || !is_array($manifest[$import_key])) {
+                continue;
+            }
+
+            $entry = $manifest[$import_key];
+            $name = (string) ($entry['name'] ?? '');
+            if ($name !== '') {
+                $resolved[] = $name;
+            }
+
+            foreach ((array) ($entry['dynamicImports'] ?? []) as $nested_import_key) {
+                $stack[] = $nested_import_key;
+            }
+        }
+
+        return array_values(array_unique($resolved));
     }
 }

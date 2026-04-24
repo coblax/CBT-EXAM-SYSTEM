@@ -619,6 +619,11 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             border-radius: 14px;
             background: #fff;
         }
+        .cbt-analytics-inline-card.is-insight-summary {
+            border-color: #bfdbfe;
+            background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
+            box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.08);
+        }
         .cbt-analytics-inline-card strong {
             display: block;
             margin-bottom: 8px;
@@ -631,6 +636,14 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             margin: 0;
             color: #526174;
             line-height: 1.65;
+        }
+        .cbt-analytics-inline-card p strong {
+            display: inline;
+            margin: 0;
+            color: #0f172a;
+        }
+        .cbt-analytics-inline-card p + p {
+            margin-top: 8px;
         }
         .cbt-analytics-quality-card,
         .cbt-analytics-quality-admin-card {
@@ -953,6 +966,78 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
         .cbt-analytics-table.is-compact .cbt-analytics-badge {
             padding: 3px 7px;
             font-size: 10px;
+        }
+        .cbt-analytics-insight-cell {
+            position: relative;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .cbt-analytics-insight-badges {
+            display: grid;
+            gap: 6px;
+        }
+        .cbt-analytics-insight-help {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            margin-top: 1px;
+            border: 1px solid #cbd5e1;
+            border-radius: 999px;
+            background: #ffffff;
+            color: #1d4ed8;
+            font-size: 11px;
+            font-weight: 800;
+            line-height: 1;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+        }
+        .cbt-analytics-insight-help:hover,
+        .cbt-analytics-insight-help:focus {
+            border-color: #93c5fd;
+            background: #eff6ff;
+            color: #1e40af;
+            outline: none;
+        }
+        .cbt-analytics-insight-tooltip {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            z-index: 20;
+            width: min(280px, 72vw);
+            padding: 12px 14px;
+            border: 1px solid #dbe4f0;
+            border-radius: 14px;
+            background: #ffffff;
+            box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14);
+            display: none;
+        }
+        .cbt-analytics-insight-cell:hover .cbt-analytics-insight-tooltip,
+        .cbt-analytics-insight-cell:focus-within .cbt-analytics-insight-tooltip {
+            display: block;
+        }
+        .cbt-analytics-insight-tooltip > strong {
+            display: block;
+            margin: 0 0 8px;
+            color: #0f172a;
+            font-size: 12px;
+        }
+        .cbt-analytics-insight-tooltip p strong {
+            display: inline;
+            margin: 0;
+            color: #0f172a;
+            font-size: inherit;
+        }
+        .cbt-analytics-insight-tooltip p {
+            margin: 0;
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.55;
+        }
+        .cbt-analytics-insight-tooltip p + p {
+            margin-top: 8px;
         }
         .cbt-analytics-overview-list {
             display: grid;
@@ -1578,7 +1663,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                     </article>
                     <article class="cbt-analytics-mini-glossary-item">
                         <strong>Insight / Manual</strong>
-                        <p><em>Insight</em> adalah ringkasan kondisi soal. <em>Manual</em> berarti masih ada koreksi guru yang belum final.</p>
+                        <p><em>Insight</em> adalah ringkasan prioritas utama dari sinyal soal. <em>Manual</em> berarti hasil masih dipengaruhi koreksi guru yang belum final.</p>
                     </article>
                 </div>
                 <?php if (!$has_selected_exam): ?>
@@ -1686,6 +1771,43 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                     neutral: 'is-neutral'
                 }[String(tone || '')] || 'is-ok';
                 return '<span class="cbt-analytics-badge ' + toneClass + '">' + escapeHtml(label) + '</span>';
+            }
+
+            function buildInsightTooltipTitle(row) {
+                return [
+                    String(row.insight_display_label || row.insight_label || '-'),
+                    String(row.insight_short_explainer || ''),
+                    String(row.insight_reason_detail || '')
+                ].filter(Boolean).join(' — ');
+            }
+
+            function buildInsightCell(row) {
+                const insightLabel = String(row.insight_display_label || row.insight_label || '-');
+                const difficultyLabel = String(row.difficulty_label || '-');
+                const tooltipTitle = buildInsightTooltipTitle(row);
+                const tooltipParts = [
+                    '<div class="cbt-analytics-insight-tooltip" role="tooltip">',
+                    '<strong>' + escapeHtml(insightLabel) + '</strong>'
+                ];
+
+                if (row.insight_short_explainer) {
+                    tooltipParts.push('<p>' + escapeHtml(String(row.insight_short_explainer)) + '</p>');
+                }
+                if (row.insight_reason_detail) {
+                    tooltipParts.push('<p><strong>Kenapa muncul:</strong> ' + escapeHtml(String(row.insight_reason_detail)) + '</p>');
+                }
+
+                tooltipParts.push('</div>');
+
+                return '' +
+                    '<div class="cbt-analytics-insight-cell" title="' + escapeHtml(tooltipTitle) + '">' +
+                        '<div class="cbt-analytics-insight-badges">' +
+                            createBadge(insightLabel, row.insight_tone || '') +
+                            '<span class="cbt-analytics-muted">' + createBadge(difficultyLabel, row.difficulty_tone || '') + '</span>' +
+                        '</div>' +
+                        '<button type="button" class="cbt-analytics-insight-help" aria-label="' + escapeHtml('Lihat penjelasan insight soal #' + String(row.question_number || '-')) + '" title="' + escapeHtml(tooltipTitle) + '">?</button>' +
+                        tooltipParts.join('') +
+                    '</div>';
             }
 
             function buildPaginationMeta(total, page, perPage) {
@@ -1878,7 +2000,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                             '<td>' + createBadge(row.omission_label || '-', row.omission_tone || '') + '<br><span class="cbt-analytics-muted">' + escapeHtml(row.omission_rate_display || '0.00%') + '</span></td>' +
                             '<td>' + createBadge(row.discrimination_label || '-', row.discrimination_tone || '') + '<br><span class="cbt-analytics-muted">' + escapeHtml(row.discrimination_display || 'Insufficient Data') + '</span></td>' +
                             '<td>' + escapeHtml(row.average_awarded_score_display || '0.00') + '</td>' +
-                            '<td>' + createBadge(row.insight_label || '-', row.insight_tone || '') + '<br><span class="cbt-analytics-muted">' + createBadge(row.difficulty_label || '-', row.difficulty_tone || '') + '</span></td>' +
+                            '<td>' + buildInsightCell(row) + '</td>' +
                             '<td><button type="button" class="button button-small" data-action="toggle-detail" data-row-id="' + escapeHtml(row.question_id || '') + '">' + (isExpanded ? 'Hide' : 'View') + '</button></td>' +
                         '</tr>';
                 },
@@ -1887,7 +2009,9 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                         ? (function () {
                             const header = (row.question_type === 'multiple_answer') ? 'Option Selection Analysis' : 'Distractor Analysis';
                             const rows = row.option_analysis.map(function (item) {
-                                const flagsList = Array.isArray(item.flags) ? item.flags.filter(Boolean) : [];
+                                const flagsList = Array.isArray(item.flags_display) && item.flags_display.length
+                                    ? item.flags_display.filter(Boolean)
+                                    : (Array.isArray(item.flags) ? item.flags.filter(Boolean) : []);
                                 const roleBadge = item.is_correct
                                     ? createBadge('Opsi Benar', 'pass')
                                     : createBadge(row.question_type === 'multiple_answer' ? 'Opsi Pilihan' : 'Distraktor', 'neutral');
@@ -2035,22 +2159,33 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                                 '<div class="cbt-analytics-inline-detail-wrap">' +
                                     '<div class="cbt-analytics-inline-detail">' +
                                         '<div class="cbt-analytics-inline-detail-grid">' +
+                                            '<div class="cbt-analytics-inline-card is-insight-summary">' +
+                                                '<strong>Ringkasan Insight</strong>' +
+                                                '<div class="cbt-analytics-inline-chip-list">' +
+                                                    createBadge(row.insight_display_label || row.insight_label || '-', row.insight_tone || '') +
+                                                    createBadge(row.difficulty_label || '-', row.difficulty_tone || '') +
+                                                '</div>' +
+                                                '<p><strong>Status:</strong> ' + escapeHtml(row.insight_display_label || row.insight_label || '-') + '</p>' +
+                                                '<p><strong>Apa artinya:</strong> ' + escapeHtml(row.insight_short_explainer || '-') + '</p>' +
+                                                '<p><strong>Kenapa muncul:</strong> ' + escapeHtml(row.insight_reason_detail || '-') + '</p>' +
+                                                '<p><strong>Tindakan yang disarankan:</strong> ' + escapeHtml(row.insight_next_step || '-') + '</p>' +
+                                            '</div>' +
                                             '<div class="cbt-analytics-inline-card">' +
                                                 '<strong>Preview Soal</strong>' +
                                                 '<p>' + escapeHtml(row.question_text || row.question_preview || '-') + '</p>' +
                                             '</div>' +
+                                        '</div>' +
+                                        '<div class="cbt-analytics-inline-detail-grid">' +
                                             '<div class="cbt-analytics-inline-card">' +
                                                 '<strong>Jawaban Benar / Kunci</strong>' +
                                                 '<p>' + escapeHtml(row.correct_answer_summary || '-') + '</p>' +
                                             '</div>' +
-                                        '</div>' +
-                                        '<div class="cbt-analytics-inline-detail-grid">' +
                                             '<div class="cbt-analytics-inline-card">' +
                                                 '<strong>Technical Metrics</strong>' +
-                                                '<p>Difficulty: ' + escapeHtml(row.difficulty_label || '-') + '<br>' +
+                                                '<p>Difficulty: ' + escapeHtml(row.difficulty_label || '-') + ' - ' + escapeHtml(row.difficulty_short_explainer || '-') + '<br>' +
                                                 'Omission Rate: ' + escapeHtml(row.omission_rate_display || '0.00%') + ' (' + escapeHtml(row.omission_label || '-') + ')<br>' +
                                                 'Discrimination: ' + escapeHtml(row.discrimination_display || 'Insufficient Data') + ' (' + escapeHtml(row.discrimination_label || '-') + ')<br>' +
-                                                'Insight: ' + escapeHtml(row.insight_label || '-') + '<br>' +
+                                                'Insight: ' + escapeHtml(row.insight_display_label || row.insight_label || '-') + '<br>' +
                                                 'Effective Max Score: ' + escapeHtml(row.effective_max_score_display || row.points_display || '0.00') + '</p>' +
                                             '</div>' +
                                             '<div class="cbt-analytics-inline-card">' +

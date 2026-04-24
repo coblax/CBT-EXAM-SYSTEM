@@ -62,6 +62,9 @@ export function getFrontendConfig(win) {
     }
 
     return Object.assign({}, raw, {
+        frontendMode: String(raw.frontendMode || '').trim().toLowerCase() === 'supervisor' ? 'supervisor' : 'student',
+        studentFrontendUrl: String(raw.studentFrontendUrl || raw.homeUrl || '').trim(),
+        supervisorFrontendUrl: String(raw.supervisorFrontendUrl || raw.homeUrl || '').trim(),
         securityForceFullscreen: normalizeBooleanFlag(raw.securityForceFullscreen),
         securityBlockCopyPaste: normalizeBooleanFlag(raw.securityBlockCopyPaste),
         securityBlockBrowserInspectionShortcuts: normalizeBooleanFlag(raw.securityBlockBrowserInspectionShortcuts),

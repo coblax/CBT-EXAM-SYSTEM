@@ -32,7 +32,21 @@ export default defineConfig(({ command }) => ({
                 adminMath: resolve(__dirname, 'src/admin/math-main.js'),
             },
             output: {
-                entryFileNames: 'assets/frontend-core-[hash].js',
+                entryFileNames(chunkInfo) {
+                    var facadePath = String(chunkInfo.facadeModuleId || '');
+
+                    if (facadePath.includes('/src/frontend/main.js')) {
+                        return 'assets/frontend-core-[hash].js';
+                    }
+                    if (facadePath.includes('/src/frontend/app/runtime.js')) {
+                        return 'assets/frontend-runtime-[hash].js';
+                    }
+                    if (facadePath.includes('/src/frontend/app/supervisor/runtime.js')) {
+                        return 'assets/frontend-supervisor-runtime-[hash].js';
+                    }
+
+                    return 'assets/[name]-[hash].js';
+                },
                 chunkFileNames: 'assets/[name]-[hash].js',
                 assetFileNames: 'assets/[name]-[hash][extname]',
                 manualChunks(id) {

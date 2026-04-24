@@ -20,6 +20,10 @@ if (!class_exists('CBT_Expired_Attempt_Finalize_Service')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-expired-attempt-finalize-service.php';
 }
 
+if (!class_exists('CBT_Admin_Results_Helper')) {
+    require_once __DIR__ . '/class-cbt-admin-results-helper.php';
+}
+
 final class CBT_Admin_Results_Service
 {
     private const TEST_REDIRECT_SIGNAL = '__cbt_admin_results_redirect__';
@@ -360,6 +364,304 @@ final class CBT_Admin_Results_Service
         unset($query, $wpdb);
 
         return get_defined_vars();
+    }
+
+    /**
+     * @param array<string,mixed> $filters
+     * @return array<string,mixed>
+     */
+    public static function build_frontend_monitoring_context(array $filters): array
+    {
+        global $wpdb;
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $option_table = $wpdb->prefix . 'cbt_options';
+        $is_admin_scope = !empty($filters['is_admin_scope']);
+        $current_user_id = max(0, (int) ($filters['current_user_id'] ?? 0));
+        $selected_exam_id = max(0, (int) ($filters['selected_exam_id'] ?? 0));
+        $selected_status = sanitize_key((string) ($filters['selected_status'] ?? ''));
+        $selected_kelas = trim(sanitize_text_field((string) ($filters['selected_kelas'] ?? '')));
+        $student_keyword = trim(sanitize_text_field((string) ($filters['student_keyword'] ?? '')));
+        $current_page = max(1, (int) ($filters['current_page'] ?? 1));
+        $per_page = max(1, min(50, (int) ($filters['per_page'] ?? 8)));
+
+        $attempt_base_where_parts = ['1=1'];
+        $attempt_base_where_params = [];
+        if (!$is_admin_scope) {
+            $attempt_base_where_parts[] = 'e.created_by = %d';
+            $attempt_base_where_params[] = $current_user_id;
+        }
+        if ($selected_exam_id > 0) {
+            $attempt_base_where_parts[] = 'a.exam_id = %d';
+            $attempt_base_where_params[] = $selected_exam_id;
+        }
+        if ($selected_kelas !== '') {
+            $attempt_base_where_parts[] = 'kelas_meta.meta_value = %s';
+            $attempt_base_where_params[] = $selected_kelas;
+        }
+        if ($student_keyword !== '') {
+            $student_like = '%' . $wpdb->esc_like($student_keyword) . '%';
+            $attempt_base_where_parts[] = '(u.display_name LIKE %s OR u.user_login LIKE %s OR nisn_meta.meta_value LIKE %s)';
+            $attempt_base_where_params[] = $student_like;
+            $attempt_base_where_params[] = $student_like;
+            $attempt_base_where_params[] = $student_like;
+        }
+
+        $attempts_from_sql = "FROM {$attempt_table} a
+                              INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                              INNER JOIN {$wpdb->users} u ON u.ID = a.student_id
+                              LEFT JOIN (
+                                  SELECT user_id, MAX(meta_value) AS meta_value
+                                  FROM {$wpdb->usermeta}
+                                  WHERE meta_key = 'kode_kelas'
+                                  GROUP BY user_id
+                              ) kelas_meta ON kelas_meta.user_id = u.ID
+                              LEFT JOIN (
+                                  SELECT user_id, MAX(meta_value) AS meta_value
+                                  FROM {$wpdb->usermeta}
+                                  WHERE meta_key = 'nisn'
+                                  GROUP BY user_id
+                              ) nisn_meta ON nisn_meta.user_id = u.ID";
+
+        $attempt_where_parts = $attempt_base_where_parts;
+        $attempt_where_params = $attempt_base_where_params;
+        if ($selected_status !== '') {
+            $attempt_where_parts[] = 'a.status = %s';
+            $attempt_where_params[] = $selected_status;
+        } else {
+            $attempt_where_parts[] = "a.status IN ('in_progress', 'completed')";
+        }
+        $attempt_where = ' WHERE ' . implode(' AND ', $attempt_where_parts);
+
+        $attempt_count_sql = "SELECT COUNT(*) {$attempts_from_sql} {$attempt_where}";
+        if (!empty($attempt_where_params)) {
+            $attempt_count_sql = $wpdb->prepare($attempt_count_sql, $attempt_where_params);
+        }
+        $total_attempts = max(0, (int) $wpdb->get_var($attempt_count_sql));
+        $total_pages = max(1, (int) ceil($total_attempts / $per_page));
+        if ($current_page > $total_pages) {
+            $current_page = $total_pages;
+        }
+        $offset = ($current_page - 1) * $per_page;
+
+        $attempt_sql = "SELECT a.*,
+                               e.title AS exam_title,
+                               e.duration_minutes AS exam_duration_minutes,
+                               e.created_by AS exam_created_by,
+                               u.display_name AS student_name,
+                               u.user_login AS student_username,
+                               kelas_meta.meta_value AS student_kelas,
+                               nisn_meta.meta_value AS student_nisn,
+                               (SELECT COUNT(*) FROM {$answer_table} ans WHERE ans.attempt_id = a.id) AS answer_count,
+                               (SELECT COUNT(*) FROM {$question_table} qcount WHERE qcount.exam_id = a.exam_id AND COALESCE(qcount.is_active, 1) = 1) AS question_count,
+                               CASE
+                                   WHEN COALESCE(a.max_score, 0) > 0 THEN a.max_score
+                                   ELSE (SELECT COALESCE(SUM(qpoints.points), 0) FROM {$question_table} qpoints WHERE qpoints.exam_id = a.exam_id AND COALESCE(qpoints.is_active, 1) = 1)
+                               END AS total_points,
+                               (SELECT COALESCE(SUM(qanswered.points), 0)
+                                FROM {$answer_table} ansanswered
+                                INNER JOIN {$question_table} qanswered ON qanswered.id = ansanswered.question_id
+                                WHERE ansanswered.attempt_id = a.id) AS answered_points,
+                               CASE
+                                   WHEN a.status = 'completed' THEN COALESCE(a.score, 0)
+                                   ELSE (SELECT COALESCE(SUM(anscore.score_awarded), 0) FROM {$answer_table} anscore WHERE anscore.attempt_id = a.id)
+                               END AS earned_points
+                        {$attempts_from_sql}
+                        {$attempt_where}
+                        ORDER BY a.id DESC
+                        LIMIT %d OFFSET %d";
+        $attempt_sql = $wpdb->prepare($attempt_sql, array_merge($attempt_where_params, [$per_page, $offset]));
+        $attempts = $wpdb->get_results($attempt_sql, ARRAY_A);
+        $attempts = self::overlay_attempt_presence_payloads((array) $attempts);
+        $attempt_answer_progress_map = CBT_Admin_Results_Helper::build_attempt_answer_progress_map(
+            $attempts,
+            $question_table,
+            $answer_table,
+            $option_table
+        );
+        $auto_finalize_context = self::maybe_schedule_expired_attempt_auto_finalize_for_results_scope(
+            $is_admin_scope,
+            $current_user_id
+        );
+
+        $items = [];
+        foreach ((array) $attempts as $attempt) {
+            $attempt_id = (int) ($attempt['id'] ?? 0);
+            $progress_summary = isset($attempt_answer_progress_map[$attempt_id]) && is_array($attempt_answer_progress_map[$attempt_id])
+                ? CBT_Admin_Results_Helper::summarize_attempt_answer_progress_items($attempt_answer_progress_map[$attempt_id])
+                : [];
+            $answer_count = array_key_exists('answer_count', $progress_summary)
+                ? (int) $progress_summary['answer_count']
+                : (int) ($attempt['answer_count'] ?? 0);
+            $question_count = array_key_exists('question_count', $progress_summary)
+                ? (int) $progress_summary['question_count']
+                : (int) ($attempt['question_count'] ?? 0);
+            $answered_percentage = $question_count > 0 ? round(($answer_count / $question_count) * 100, 2) : 0.0;
+            $attempt_base_duration_minutes = max(1, (int) ($attempt['exam_duration_minutes'] ?? 0));
+            $attempt_extra_time_minutes = max(0, (int) ($attempt['extra_time_minutes'] ?? 0));
+            $attempt_effective_duration_minutes = $attempt_base_duration_minutes + $attempt_extra_time_minutes;
+            $attempt_status = (string) ($attempt['status'] ?? '');
+            $total_points = max(0.0, (float) ($attempt['total_points'] ?? 0.0));
+            $earned_points = max(0.0, (float) ($attempt['earned_points'] ?? 0.0));
+            $answered_points = max(0.0, (float) ($attempt['answered_points'] ?? 0.0));
+            $wrong_points = max(0.0, $answered_points - $earned_points);
+            $unanswered_points = max(0.0, $total_points - $answered_points);
+            $percentage = $total_points > 0 ? round(($earned_points / $total_points) * 100, 2) : 0.0;
+            $remaining_seconds = CBT_Admin_Results_Helper::calculate_attempt_remaining_seconds(
+                (string) ($attempt['started_at'] ?? ''),
+                $attempt_effective_duration_minutes,
+                $attempt_status
+            );
+            $auto_finalize = CBT_Expired_Attempt_Finalize_Service::maybe_schedule_for_attempt(
+                $attempt,
+                $attempt_effective_duration_minutes,
+                $is_admin_scope ? 0 : $current_user_id
+            );
+            $presence_status = sanitize_key((string) ($attempt['presence_status'] ?? ''));
+            $presence_label = $presence_status === 'online'
+                ? 'Online'
+                : ($presence_status === 'stale' ? 'Stale' : ($presence_status === 'offline' ? 'Offline' : '-'));
+
+            $items[] = [
+                'attempt_id' => $attempt_id,
+                'exam_id' => (int) ($attempt['exam_id'] ?? 0),
+                'exam_title' => (string) ($attempt['exam_title'] ?? '-'),
+                'student_id' => (int) ($attempt['student_id'] ?? 0),
+                'student_name' => (string) ($attempt['student_name'] ?? '-'),
+                'student_username' => (string) ($attempt['student_username'] ?? ''),
+                'student_nisn' => (string) ($attempt['student_nisn'] ?? ''),
+                'student_kelas' => (string) ($attempt['student_kelas'] ?? ''),
+                'status' => $attempt_status,
+                'status_label' => $attempt_status === 'in_progress' ? 'Berjalan' : 'Selesai',
+                'score_percentage' => $percentage,
+                'score_percentage_label' => number_format_i18n($percentage, 2) . '%',
+                'earned_points' => $earned_points,
+                'wrong_points' => $wrong_points,
+                'unanswered_points' => $unanswered_points,
+                'total_points' => $total_points,
+                'answer_count' => $answer_count,
+                'question_count' => $question_count,
+                'answered_percentage' => $answered_percentage,
+                'answered_percentage_label' => number_format_i18n($answered_percentage, 2) . '%',
+                'started_at' => (string) ($attempt['started_at'] ?? ''),
+                'finished_at' => (string) ($attempt['finished_at'] ?? ''),
+                'duration_minutes' => $attempt_effective_duration_minutes,
+                'extra_time_minutes' => $attempt_extra_time_minutes,
+                'remaining_seconds' => $remaining_seconds,
+                'remaining_label' => $attempt_status === 'in_progress'
+                    ? ($remaining_seconds > 0 ? CBT_Admin_Results_Helper::format_attempt_remaining_label($remaining_seconds) : 'Diproses')
+                    : 'Selesai',
+                'finalize_pending' => !empty($auto_finalize['finalize_pending']),
+                'finalize_poll_after_ms' => max(250, (int) ($auto_finalize['finalize_poll_after_ms'] ?? 3000)),
+                'presence_status' => $presence_status,
+                'presence_label' => $presence_label,
+                'presence_last_seen_at' => (string) ($attempt['presence_last_seen_at'] ?? ''),
+                'presence_connection_status' => (string) ($attempt['presence_connection_status'] ?? ''),
+                'presence_visibility_state' => (string) ($attempt['presence_visibility_state'] ?? ''),
+                'presence_has_focus' => array_key_exists('presence_has_focus', $attempt) ? $attempt['presence_has_focus'] : null,
+                'presence_pending_sync_count' => max(0, (int) ($attempt['presence_pending_sync_count'] ?? 0)),
+                'presence_heartbeat_lost_active' => !empty($attempt['presence_heartbeat_lost_active']),
+            ];
+        }
+
+        $submit_flow_monitoring = self::build_submit_flow_monitoring_context([
+            'is_admin_scope' => $is_admin_scope,
+            'current_user_id' => $current_user_id,
+            'selected_exam_id' => $selected_exam_id,
+            'selected_status' => $selected_status,
+            'selected_kelas' => $selected_kelas,
+            'student_keyword' => $student_keyword,
+            'show_exam_column' => $selected_exam_id <= 0,
+        ]);
+
+        return [
+            'items' => $items,
+            'total' => $total_attempts,
+            'pagination' => [
+                'current_page' => $current_page,
+                'per_page' => $per_page,
+                'total_pages' => $total_pages,
+                'total_items' => $total_attempts,
+            ],
+            'auto_finalize' => $auto_finalize_context,
+            'submit_health' => (array) ($submit_flow_monitoring['submit_health'] ?? []),
+            'submit_watchlist' => (array) ($submit_flow_monitoring['submit_watchlist'] ?? []),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|WP_Error
+     */
+    public static function reset_login_for_attempt_with_scope(
+        int $attempt_id,
+        bool $is_admin_scope,
+        int $scope_user_id,
+        int $actor_user_id = 0,
+        string $action_source = 'admin_reset_user_login'
+    ) {
+        global $wpdb;
+
+        $attempt_id = absint($attempt_id);
+        $scope_user_id = max(0, $scope_user_id);
+        $actor_user_id = max(0, $actor_user_id);
+        if ($attempt_id <= 0) {
+            return new WP_Error('invalid_attempt', 'Attempt tidak valid.', ['status' => 400]);
+        }
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        if ($is_admin_scope) {
+            $attempt = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT a.id, a.exam_id, a.student_id
+                     FROM {$attempt_table} a
+                     WHERE a.id = %d",
+                    $attempt_id
+                ),
+                ARRAY_A
+            );
+        } else {
+            $attempt = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT a.id, a.exam_id, a.student_id
+                     FROM {$attempt_table} a
+                     INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                     WHERE a.id = %d AND e.created_by = %d",
+                    $attempt_id,
+                    $scope_user_id
+                ),
+                ARRAY_A
+            );
+        }
+
+        if (!$attempt) {
+            return new WP_Error('attempt_not_found', 'Attempt tidak ditemukan atau tidak bisa diakses.', ['status' => 404]);
+        }
+
+        $student_id = (int) ($attempt['student_id'] ?? 0);
+        if ($student_id <= 0) {
+            return new WP_Error('invalid_student', 'Student pada attempt ini tidak valid.', ['status' => 400]);
+        }
+
+        if (!CBT_Auth::clear_login_session($student_id)) {
+            return new WP_Error('reset_login_failed', 'Gagal mereset sesi login siswa.', ['status' => 500]);
+        }
+
+        CBT_Cache::invalidate_user($student_id);
+        CBT_Security_Log::record_attempt_event((int) ($attempt['id'] ?? 0), 'admin_reset_login', [
+            'actor_user_id' => $actor_user_id,
+            'source' => sanitize_key($action_source),
+        ]);
+
+        return [
+            'attempt_id' => (int) ($attempt['id'] ?? 0),
+            'exam_id' => (int) ($attempt['exam_id'] ?? 0),
+            'student_id' => $student_id,
+            'message' => 'Login siswa berhasil di-reset. Browser lama akan diminta login ulang dan siswa bisa login kembali.',
+        ];
     }
 
     public static function handle_expired_auto_finalize_cron(int $created_by_user_id = 0): void
@@ -2604,59 +2906,21 @@ final class CBT_Admin_Results_Service
 
         check_admin_referer('cbt_reset_user_login_' . $attempt_id);
 
-        global $wpdb;
-
-        $attempt_table = $wpdb->prefix . 'cbt_attempts';
-        $exam_table = $wpdb->prefix . 'cbt_exams';
         $is_admin_scope = self::is_admin_scope();
-
-        if ($is_admin_scope) {
-            $attempt = $wpdb->get_row(
-                $wpdb->prepare(
-                    "SELECT a.id, a.exam_id, a.student_id
-                     FROM {$attempt_table} a
-                     WHERE a.id = %d",
-                    $attempt_id
-                ),
-                ARRAY_A
-            );
-        } else {
-            $attempt = $wpdb->get_row(
-                $wpdb->prepare(
-                    "SELECT a.id, a.exam_id, a.student_id
-                     FROM {$attempt_table} a
-                     INNER JOIN {$exam_table} e ON e.id = a.exam_id
-                     WHERE a.id = %d AND e.created_by = %d",
-                    $attempt_id,
-                    get_current_user_id()
-                ),
-                ARRAY_A
-            );
-        }
-
-        if (!$attempt) {
-            $redirect_with(null, 'Attempt tidak ditemukan atau tidak bisa diakses.');
-        }
-
-        $student_id = (int) ($attempt['student_id'] ?? 0);
-        if ($student_id <= 0) {
-            $redirect_with(null, 'Student pada attempt ini tidak valid.');
-        }
-
-        $cleared = CBT_Auth::clear_login_session($student_id);
-        if (!$cleared) {
-            $redirect_with(null, 'Gagal mereset sesi login siswa.');
-        }
-
-        CBT_Cache::invalidate_user($student_id);
         $return_page = (string) ($return_context['page'] ?? '');
         $action_source = in_array($return_page, ['cbt-setup', 'cbt-security'], true) ? 'must_watch_panel' : 'admin_reset_user_login';
-        CBT_Security_Log::record_attempt_event((int) ($attempt['id'] ?? 0), 'admin_reset_login', [
-            'actor_user_id' => get_current_user_id(),
-            'source' => $action_source,
-        ]);
+        $result = self::reset_login_for_attempt_with_scope(
+            $attempt_id,
+            $is_admin_scope,
+            get_current_user_id(),
+            get_current_user_id(),
+            $action_source
+        );
+        if (is_wp_error($result)) {
+            $redirect_with(null, $result->get_error_message());
+        }
 
-        $redirect_with('Login siswa berhasil di-reset. Browser lama akan diminta login ulang dan siswa bisa login kembali.');
+        $redirect_with((string) ($result['message'] ?? 'Login siswa berhasil di-reset.'));
     }
 
     public static function handle_force_complete_attempt(): void

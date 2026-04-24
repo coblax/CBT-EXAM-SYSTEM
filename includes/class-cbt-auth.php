@@ -254,6 +254,32 @@ class CBT_Auth
         return true;
     }
 
+    public static function permission_supervisor_dashboard(WP_REST_Request $request)
+    {
+        $decoded = self::verify_request_token($request);
+        if (is_wp_error($decoded)) {
+            return $decoded;
+        }
+
+        $role = self::decoded_token_value($decoded, 'role');
+        $role = is_scalar($role) ? (string) $role : '';
+        if (!self::is_supervisor_role($role)) {
+            return new WP_Error('forbidden', 'You do not have permission to access this endpoint', ['status' => 403]);
+        }
+
+        return true;
+    }
+
+    public static function is_supervisor_role(string $role): bool
+    {
+        return in_array(sanitize_key($role), ['admin', 'administrator', 'guru', 'teacher'], true);
+    }
+
+    public static function is_admin_role(string $role): bool
+    {
+        return in_array(sanitize_key($role), ['admin', 'administrator'], true);
+    }
+
     /**
      * @return array<string,int|string>
      */

@@ -139,6 +139,10 @@ add_action('plugins_loaded', static function () {
     CBT_REST::init();
 });
 
+add_action('init', static function () {
+    CBT_Activator::maybe_sync_frontend_pages();
+}, 20);
+
 add_action('wp_head', static function () {
     if (is_admin()) {
         return;

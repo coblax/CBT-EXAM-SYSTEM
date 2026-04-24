@@ -8,6 +8,8 @@ class CBT_Activator
 {
     private const OPTION_DB_VERSION = 'cbt_exam_system_db_version';
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
+    private const OPTION_SUPERVISOR_FRONTEND_PAGE_ID = 'cbt_exam_system_supervisor_page_id';
+    private const OPTION_FRONTEND_PAGE_SYNC_PENDING = 'cbt_exam_system_frontend_page_sync_pending';
     private const DB_VERSION = '1.6.14';
 
     public static function activate(): void
@@ -47,7 +49,9 @@ class CBT_Activator
     {
         // Keep roles/capabilities in sync even if DB schema version is unchanged.
         self::register_roles();
-        self::ensure_frontend_page();
+        if (self::frontend_pages_need_sync()) {
+            self::request_frontend_page_sync();
+        }
 
         $installed = (string) get_option(self::OPTION_DB_VERSION, '');
         if ($installed === self::DB_VERSION) {
@@ -242,11 +246,21 @@ class CBT_Activator
         self::migrate_question_type_details($wpdb);
         self::seed_default_subjects($wpdb);
         self::register_roles();
-        self::ensure_frontend_page();
+        self::request_frontend_page_sync();
         update_option(self::OPTION_DB_VERSION, self::DB_VERSION);
         if (class_exists('CBT_Student_Cohort_Index_Service')) {
             CBT_Student_Cohort_Index_Service::activate();
         }
+    }
+
+    public static function maybe_sync_frontend_pages(): void
+    {
+        if (!self::should_sync_frontend_pages_now()) {
+            return;
+        }
+
+        self::ensure_frontend_pages();
+        delete_option(self::OPTION_FRONTEND_PAGE_SYNC_PENDING);
     }
 
     private static function maybe_add_foreign_keys(wpdb $wpdb): void
@@ -614,11 +628,41 @@ class CBT_Activator
         }
     }
 
-    private static function ensure_frontend_page(): void
+    private static function ensure_frontend_pages(): void
     {
-        $shortcode = '[cbt_exam_frontend]';
+        self::ensure_frontend_page(
+            self::OPTION_FRONTEND_PAGE_ID,
+            'cbt-ujian',
+            'CBT Ujian',
+            '[cbt_exam_frontend]'
+        );
+        self::ensure_frontend_page(
+            self::OPTION_SUPERVISOR_FRONTEND_PAGE_ID,
+            'pengawas',
+            'CBT Pengawas',
+            '[cbt_exam_supervisor_frontend]'
+        );
+    }
 
-        $existing_id = (int) get_option(self::OPTION_FRONTEND_PAGE_ID, 0);
+    private static function ensure_frontend_page(
+        string $option_key,
+        string $page_slug,
+        string $page_title,
+        string $shortcode
+    ): void {
+        $by_slug = get_page_by_path($page_slug, OBJECT, 'page');
+        if ($by_slug instanceof WP_Post) {
+            update_option($option_key, (int) $by_slug->ID);
+            if (strpos((string) $by_slug->post_content, $shortcode) === false) {
+                wp_update_post([
+                    'ID' => (int) $by_slug->ID,
+                    'post_content' => trim((string) $by_slug->post_content . "\n\n" . $shortcode),
+                ]);
+            }
+            return;
+        }
+
+        $existing_id = (int) get_option($option_key, 0);
         if ($existing_id > 0) {
             $existing_page = get_post($existing_id);
             if (
@@ -636,29 +680,72 @@ class CBT_Activator
             }
         }
 
-        $by_slug = get_page_by_path('cbt-ujian', OBJECT, 'page');
-        if ($by_slug instanceof WP_Post) {
-            update_option(self::OPTION_FRONTEND_PAGE_ID, (int) $by_slug->ID);
-            if (strpos((string) $by_slug->post_content, $shortcode) === false) {
-                wp_update_post([
-                    'ID' => (int) $by_slug->ID,
-                    'post_content' => trim((string) $by_slug->post_content . "\n\n" . $shortcode),
-                ]);
-            }
-            return;
-        }
-
         $page_id = wp_insert_post([
             'post_type' => 'page',
             'post_status' => 'publish',
-            'post_title' => 'CBT Ujian',
-            'post_name' => 'cbt-ujian',
+            'post_title' => $page_title,
+            'post_name' => $page_slug,
             'post_content' => $shortcode,
         ], true);
 
         if (!is_wp_error($page_id) && (int) $page_id > 0) {
-            update_option(self::OPTION_FRONTEND_PAGE_ID, (int) $page_id);
+            update_option($option_key, (int) $page_id);
         }
+    }
+
+    private static function should_sync_frontend_pages_now(): bool
+    {
+        if ((int) get_option(self::OPTION_FRONTEND_PAGE_SYNC_PENDING, 0) > 0) {
+            return true;
+        }
+
+        return self::frontend_pages_need_sync();
+    }
+
+    private static function request_frontend_page_sync(): void
+    {
+        update_option(self::OPTION_FRONTEND_PAGE_SYNC_PENDING, 1);
+    }
+
+    private static function frontend_pages_need_sync(): bool
+    {
+        return !self::has_valid_frontend_page(
+            self::OPTION_FRONTEND_PAGE_ID,
+            'cbt-ujian',
+            '[cbt_exam_frontend]'
+        ) || !self::has_valid_frontend_page(
+            self::OPTION_SUPERVISOR_FRONTEND_PAGE_ID,
+            'pengawas',
+            '[cbt_exam_supervisor_frontend]'
+        );
+    }
+
+    private static function has_valid_frontend_page(string $option_key, string $page_slug, string $shortcode): bool
+    {
+        if (function_exists('get_page_by_path')) {
+            $by_slug = get_page_by_path($page_slug, OBJECT, 'page');
+            if ($by_slug instanceof WP_Post) {
+                return (int) get_option($option_key, 0) === (int) $by_slug->ID
+                    && $by_slug->post_status !== 'trash'
+                    && strpos((string) $by_slug->post_content, $shortcode) !== false;
+            }
+        }
+
+        $existing_id = (int) get_option($option_key, 0);
+        if ($existing_id <= 0 || !function_exists('get_post')) {
+            return false;
+        }
+
+        $existing_page = get_post($existing_id);
+        if (
+            !($existing_page instanceof WP_Post) ||
+            $existing_page->post_type !== 'page' ||
+            $existing_page->post_status === 'trash'
+        ) {
+            return false;
+        }
+
+        return strpos((string) $existing_page->post_content, $shortcode) !== false;
     }
 
     private static function register_roles(): void

@@ -6,9 +6,12 @@ if (!defined('ABSPATH')) {
 
 class CBT_Frontend
 {
-    private const SHORTCODE = 'cbt_exam_frontend';
-    private const FRONTEND_PAGE_OPTION = 'cbt_exam_system_frontend_page_id';
-    private const FRONTEND_PAGE_SLUG = 'cbt-ujian';
+    private const STUDENT_SHORTCODE = 'cbt_exam_frontend';
+    private const SUPERVISOR_SHORTCODE = 'cbt_exam_supervisor_frontend';
+    private const STUDENT_FRONTEND_PAGE_OPTION = 'cbt_exam_system_frontend_page_id';
+    private const SUPERVISOR_FRONTEND_PAGE_OPTION = 'cbt_exam_system_supervisor_page_id';
+    private const STUDENT_FRONTEND_PAGE_SLUG = 'cbt-ujian';
+    private const SUPERVISOR_FRONTEND_PAGE_SLUG = 'pengawas';
     private const MINIMAL_TEMPLATE_RELATIVE = 'templates/frontend/minimal-template.php';
     private const SETUP_BRANDING_OPTION = 'cbt_setup_branding';
     private const SETUP_SECURITY_OPTION = 'cbt_setup_security';
@@ -31,7 +34,8 @@ class CBT_Frontend
 
     public static function init(): void
     {
-        add_shortcode(self::SHORTCODE, [self::class, 'render_shortcode']);
+        add_shortcode(self::STUDENT_SHORTCODE, [self::class, 'render_shortcode']);
+        add_shortcode(self::SUPERVISOR_SHORTCODE, [self::class, 'render_supervisor_shortcode']);
         add_filter('body_class', [self::class, 'filter_body_class']);
         add_filter('show_admin_bar', [self::class, 'filter_show_admin_bar']);
         add_filter('template_include', [self::class, 'filter_template_include'], 99);
@@ -57,6 +61,16 @@ class CBT_Frontend
     }
 
     /**
+     * @param array<string,mixed> $atts
+     */
+    public static function render_supervisor_shortcode(array $atts = []): string
+    {
+        unset($atts);
+        self::ensure_frontend_assets_prepared();
+        return self::render_frontend_markup(false);
+    }
+
+    /**
      * @param array<int,string> $classes
      * @return array<int,string>
      */
@@ -71,6 +85,7 @@ class CBT_Frontend
         if (self::is_fallback_frontend_shortcode_page()) {
             $classes[] = 'cbt-exam-page-fallback';
         }
+        $classes[] = 'cbt-exam-page-mode-' . self::current_frontend_mode();
 
         return $classes;
     }
@@ -623,6 +638,7 @@ class CBT_Frontend
         $debug_context = self::resolve_frontend_debug_context();
         $diagnostics_context = self::resolve_frontend_diagnostics_context();
         $storage_debug_config = self::get_frontend_storage_debug_config();
+        $frontend_mode = self::current_frontend_mode();
         $rest_base_absolute = trailingslashit((string) rest_url('cbt/v1'));
         $rest_base_path = (string) wp_parse_url($rest_base_absolute, PHP_URL_PATH);
         $rest_base_path = trailingslashit($rest_base_path !== '' ? $rest_base_path : '/wp-json/cbt/v1/');
@@ -654,6 +670,9 @@ class CBT_Frontend
             'securityIdleThresholdMinutes' => $security['idle_threshold_minutes'],
             'securityIdleThresholdSeconds' => $security['idle_threshold_minutes'] * MINUTE_IN_SECONDS,
             'homeUrl' => (string) home_url('/'),
+            'frontendMode' => $frontend_mode,
+            'studentFrontendUrl' => self::frontend_page_url('student'),
+            'supervisorFrontendUrl' => self::frontend_page_url('supervisor'),
             'tokenMinLength' => 6,
             'tokenLength' => 6,
             'frontendDebugUi' => !empty($debug_context['enabled']) ? 1 : 0,
@@ -701,7 +720,8 @@ class CBT_Frontend
             return false;
         }
 
-        return has_shortcode((string) $post->post_content, self::SHORTCODE);
+        return has_shortcode((string) $post->post_content, self::STUDENT_SHORTCODE)
+            || has_shortcode((string) $post->post_content, self::SUPERVISOR_SHORTCODE);
     }
 
     private static function is_fallback_frontend_shortcode_page(): bool
@@ -725,27 +745,87 @@ class CBT_Frontend
             return false;
         }
 
-        $canonical_id = self::get_canonical_frontend_page_id();
-        if ($canonical_id > 0) {
-            return (int) $post->ID === $canonical_id;
+        $student_page_id = self::get_canonical_frontend_page_id('student');
+        if ($student_page_id > 0 && (int) $post->ID === $student_page_id) {
+            return true;
         }
 
-        return sanitize_title((string) $post->post_name) === self::FRONTEND_PAGE_SLUG;
+        $supervisor_page_id = self::get_canonical_frontend_page_id('supervisor');
+        if ($supervisor_page_id > 0 && (int) $post->ID === $supervisor_page_id) {
+            return true;
+        }
+
+        $post_slug = sanitize_title((string) $post->post_name);
+        return in_array($post_slug, [self::STUDENT_FRONTEND_PAGE_SLUG, self::SUPERVISOR_FRONTEND_PAGE_SLUG], true);
     }
 
-    private static function get_canonical_frontend_page_id(): int
+    private static function get_canonical_frontend_page_id(string $mode = 'student'): int
     {
-        $stored_id = (int) get_option(self::FRONTEND_PAGE_OPTION, 0);
+        $normalized_mode = $mode === 'supervisor' ? 'supervisor' : 'student';
+        $option_key = $normalized_mode === 'supervisor'
+            ? self::SUPERVISOR_FRONTEND_PAGE_OPTION
+            : self::STUDENT_FRONTEND_PAGE_OPTION;
+        $slug = $normalized_mode === 'supervisor'
+            ? self::SUPERVISOR_FRONTEND_PAGE_SLUG
+            : self::STUDENT_FRONTEND_PAGE_SLUG;
+
+        $stored_id = (int) get_option($option_key, 0);
         if ($stored_id > 0) {
             return $stored_id;
         }
 
-        $page = get_page_by_path(self::FRONTEND_PAGE_SLUG, OBJECT, 'page');
+        $page = get_page_by_path($slug, OBJECT, 'page');
         if ($page instanceof WP_Post) {
             return (int) $page->ID;
         }
 
         return 0;
+    }
+
+    private static function current_frontend_mode(): string
+    {
+        if (!is_singular()) {
+            return 'student';
+        }
+
+        $post = get_queried_object();
+        if (!($post instanceof WP_Post)) {
+            return 'student';
+        }
+
+        $post_content = (string) $post->post_content;
+        if (has_shortcode($post_content, self::SUPERVISOR_SHORTCODE)) {
+            return 'supervisor';
+        }
+
+        $supervisor_page_id = self::get_canonical_frontend_page_id('supervisor');
+        if ($supervisor_page_id > 0 && (int) $post->ID === $supervisor_page_id) {
+            return 'supervisor';
+        }
+
+        if (sanitize_title((string) $post->post_name) === self::SUPERVISOR_FRONTEND_PAGE_SLUG) {
+            return 'supervisor';
+        }
+
+        return 'student';
+    }
+
+    private static function frontend_page_url(string $mode = 'student'): string
+    {
+        $normalized_mode = $mode === 'supervisor' ? 'supervisor' : 'student';
+        $page_id = self::get_canonical_frontend_page_id($normalized_mode);
+        if ($page_id > 0) {
+            $permalink = get_permalink($page_id);
+            if (is_string($permalink) && $permalink !== '') {
+                return $permalink;
+            }
+        }
+
+        $slug = $normalized_mode === 'supervisor'
+            ? self::SUPERVISOR_FRONTEND_PAGE_SLUG
+            : self::STUDENT_FRONTEND_PAGE_SLUG;
+
+        return trailingslashit((string) home_url('/' . $slug));
     }
 
     private static function render_frontend_markup(bool $include_boot_shell): string
@@ -768,14 +848,21 @@ class CBT_Frontend
 
     private static function render_boot_shell_markup(): string
     {
+        $is_supervisor_mode = self::current_frontend_mode() === 'supervisor';
+        $status_label = $is_supervisor_mode ? 'Memuat Pengawas' : 'Memuat CBT';
+        $title = $is_supervisor_mode ? 'Booting Dashboard Pengawas' : 'Booting App';
+        $description = $is_supervisor_mode
+            ? 'Dashboard pengawas sedang disiapkan dan akan tampil sesaat lagi.'
+            : 'Antarmuka ujian sedang disiapkan dan akan tampil sesaat lagi.';
+
         return implode('', [
             '<div class="cbt-frontpage__shell">',
             '<div class="cbt-boot-shell cbt-boot-shell--compact" role="status" aria-live="polite" aria-busy="true">',
             '<section class="cbt-boot-shell__card cbt-boot-shell__card--compact">',
             '<div class="cbt-boot-shell__block cbt-boot-shell__app cbt-boot-shell__app--compact">',
-            '<span class="cbt-boot-shell__status"><span class="cbt-boot-shell__dot" aria-hidden="true"></span>Memuat CBT</span>',
-            '<h2>Booting App</h2>',
-            '<p>Antarmuka ujian sedang disiapkan dan akan tampil sesaat lagi.</p>',
+            '<span class="cbt-boot-shell__status"><span class="cbt-boot-shell__dot" aria-hidden="true"></span>' . esc_html($status_label) . '</span>',
+            '<h2>' . esc_html($title) . '</h2>',
+            '<p>' . esc_html($description) . '</p>',
             '<div class="cbt-boot-shell__progress" aria-hidden="true"><span id="cbt-boot-progress-fill" class="cbt-boot-shell__progress-fill"></span></div>',
             '<div class="cbt-boot-shell__progress-meta"><span id="cbt-boot-progress-label" class="cbt-boot-shell__progress-label">Memuat konfigurasi frontend</span><strong id="cbt-boot-progress-value" class="cbt-boot-shell__progress-value">12%</strong></div>',
             '<div class="cbt-boot-shell__meta">',

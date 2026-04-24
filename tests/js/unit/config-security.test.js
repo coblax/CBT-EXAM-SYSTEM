@@ -33,4 +33,18 @@ describe('getFrontendConfig security settings', function () {
         expect(config.securityIdleThresholdMinutes).toBe(9);
         expect(config.securityIdleThresholdSeconds).toBe(540);
     });
+
+    it('normalizes supervisor mode and frontend urls from localized config', function () {
+        var config = getFrontendConfig({
+            CBTExamFrontendConfig: {
+                frontendMode: 'SUPERVISOR',
+                studentFrontendUrl: '/cbt-ujian/',
+                supervisorFrontendUrl: '/pengawas/'
+            }
+        });
+
+        expect(config.frontendMode).toBe('supervisor');
+        expect(config.studentFrontendUrl).toBe('/cbt-ujian/');
+        expect(config.supervisorFrontendUrl).toBe('/pengawas/');
+    });
 });
