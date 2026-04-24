@@ -156,6 +156,8 @@ Plugin mengenal tiga sumber asset frontend:
 
 ## Instalasi dan Setup Lokal
 
+Untuk instalasi server produksi Nginx + PHP-FPM dengan baseline tuning `16 Core / 16 GB`, lihat [`INSTALL-NGINX-PHP-FPM.md`](INSTALL-NGINX-PHP-FPM.md).
+
 ### 1. Siapkan dependency
 
 Jalankan dari root plugin ini:
