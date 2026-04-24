@@ -147,6 +147,22 @@ EXIT;
 
 User `pma_cbt_admin` di atas hanya diberi akses ke database `wordpress_cbt`. Jika nama database Anda berbeda, ganti `wordpress_cbt.*` sesuai database WordPress yang dibuat pada tahap sebelumnya.
 
+Jika ingin username Linux bisa dipakai juga untuk login phpMyAdmin, buat user MySQL dengan nama yang sama. Contoh untuk user Linux `coblax`:
+
+```bash
+sudo mysql
+```
+
+```sql
+CREATE USER IF NOT EXISTS 'coblax'@'localhost' IDENTIFIED BY 'ganti_password_mysql_coblax_yang_kuat';
+ALTER USER 'coblax'@'localhost' IDENTIFIED BY 'ganti_password_mysql_coblax_yang_kuat';
+GRANT ALL PRIVILEGES ON wordpress_cbt.* TO 'coblax'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+Catatan: password ini adalah password MySQL, bukan otomatis sama dengan password login Linux. Untuk produksi, lebih aman tetap memakai user khusus seperti `pma_cbt_admin`.
+
 Nginx alias untuk phpMyAdmin ditambahkan pada tahap konfigurasi Nginx di bawah. Setelah Nginx direload, akses:
 
 ```text
@@ -231,6 +247,14 @@ server {
         try_files $uri $uri/ =404;
     }
 
+    # Wajib sebelum blok static WordPress umum agar asset phpMyAdmin tidak dicari ke root WordPress.
+    location ~* ^/phpmyadmin/(.+\.(?:css|js|png|jpe?g|gif|ico|svg|woff2?|ttf|eot|map))$ {
+        alias /usr/share/phpmyadmin/$1;
+        expires 7d;
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
     location ~ ^/phpmyadmin/(.+\.php)$ {
         alias /usr/share/phpmyadmin/$1;
         include fastcgi_params;
@@ -243,6 +267,7 @@ server {
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
+        fastcgi_param HTTP_AUTHORIZATION $http_authorization;
         fastcgi_pass unix:/run/php/php8.3-fpm.sock;
         fastcgi_read_timeout 120;
         fastcgi_send_timeout 120;
@@ -427,7 +452,7 @@ Jika repo/plugin belum ada, salin atau clone plugin ke folder WordPress:
 
 ```bash
 cd /var/www/wordpress/wp-content/plugins
-sudo -u www-data git clone <URL_REPO_ANDA> cbt-exam-system
+sudo -u www-data git clone https://github.com/coblax/CBT-EXAM-SYSTEM cbt-exam-system
 ```
 
 Masuk ke folder plugin:
@@ -439,20 +464,85 @@ cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
 Install dependency PHP produksi:
 
 ```bash
-composer install --no-dev --optimize-autoloader
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo chown -R www-data:www-data .
+sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
 ```
 
-Build asset frontend jika `public/build/manifest.json` belum tersedia atau source frontend berubah:
+Jalankan Composer dengan user yang punya ownership folder plugin. Di dokumen ini folder plugin di-clone sebagai `www-data`, jadi Composer juga dijalankan sebagai `www-data`. Jangan campur `sudo composer install`, user login biasa, dan `www-data` dalam folder yang sama karena bisa membuat file `vendor/` berbeda ownership.
+
+Catatan penting untuk checklist unit test:
+
+- Command produksi di atas memakai `--no-dev`, jadi `vendor/bin/phpunit` memang tidak akan ada.
+- Di server produksi, unit test tidak wajib dijalankan. Lanjutkan ke smoke test WordPress/plugin.
+- Jika Anda ingin menjalankan checklist unit test di server staging/instalasi, gunakan langkah khusus di bawah sebelum kembali ke mode produksi.
+
+Jalankan checklist unit test hanya jika dibutuhkan:
 
 ```bash
-npm ci
-npm run build
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo chown -R www-data:www-data .
+
+# Install dependency PHP termasuk require-dev agar vendor/bin/phpunit tersedia.
+sudo -u www-data env HOME=/tmp composer install --optimize-autoloader
+
+# Install dependency JS agar vitest tersedia.
+sudo -u www-data env HOME=/tmp npm ci
+
+# Jalankan test.
+sudo -u www-data env HOME=/tmp composer test:php
+sudo -u www-data env HOME=/tmp npm run test:js
+```
+
+Jika muncul `./node_modules/.bin/vitest: Permission denied`, biasanya permission `node_modules` rusak karena pernah menjalankan `chmod 644` ke semua file. Cara paling bersih:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo rm -rf node_modules
+sudo -u www-data env HOME=/tmp npm ci
+sudo -u www-data env HOME=/tmp npm run test:js
+```
+
+Jika muncul `vendor/bin/phpunit: No such file or directory`, berarti dependency dev belum dipasang atau sebelumnya Composer dijalankan dengan `--no-dev`:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo -u www-data env HOME=/tmp composer install --optimize-autoloader
+sudo -u www-data env HOME=/tmp composer test:php
+```
+
+Setelah checklist unit test selesai dan server akan dipakai produksi, kembalikan dependency PHP ke mode produksi:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
+```
+
+Build asset frontend dari folder plugin. Langkah ini wajib jika hasil clone belum membawa folder `public/build/` atau file `public/build/manifest.json` belum ada. Jika repo/release yang Anda deploy sudah membawa `public/build/manifest.json`, langkah `npm ci` dan `npm run build` boleh dilewati.
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo -u www-data env HOME=/tmp npm ci
+sudo -u www-data env HOME=/tmp npm run build
+test -f public/build/manifest.json
+```
+
+File `public/build/manifest.json` adalah daftar asset produksi yang dibaca WordPress. Tanpa file ini, halaman CBT siswa bisa tampil tanpa JavaScript/CSS produksi.
+
+Setelah build berhasil di server produksi, folder `node_modules` boleh dihapus untuk menghemat ruang disk:
+
+```bash
 rm -rf node_modules
 ```
 
-Pastikan manifest produksi ada:
+Jika `npm run build` gagal, jangan lanjut aktivasi produksi dulu. Cek versi Node.js dan ulangi dari folder plugin:
 
 ```bash
+node -v
+npm -v
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo -u www-data env HOME=/tmp npm ci
+sudo -u www-data env HOME=/tmp npm run build
 test -f public/build/manifest.json
 ```
 
@@ -462,7 +552,10 @@ Rapikan permission:
 sudo chown -R www-data:www-data /var/www/wordpress/wp-content/plugins/cbt-exam-system
 sudo find /var/www/wordpress/wp-content/plugins/cbt-exam-system -type d -exec chmod 755 {} \;
 sudo find /var/www/wordpress/wp-content/plugins/cbt-exam-system -type f -exec chmod 644 {} \;
+sudo find /var/www/wordpress/wp-content/plugins/cbt-exam-system/vendor/bin -type f -exec chmod 755 {} \; 2>/dev/null || true
 ```
+
+Jalankan perapihan permission setelah build asset selesai. Jangan menjalankan unit test setelah langkah ini kecuali Anda mengulang `npm ci` atau mengembalikan execute permission binary test.
 
 ## 9. Selesaikan Instalasi WordPress
 
@@ -492,27 +585,58 @@ Saat aktivasi plugin:
 
 ## 10. Atur Permalink dan Cron
 
-Aktifkan permalink:
+Jalankan bagian ini setelah WordPress selesai diinstall dan plugin CBT sudah aktif. Command `wp ...` sebaiknya dijalankan dari folder WordPress `/var/www/wordpress`.
+
+Aktifkan permalink WordPress agar URL halaman dan REST API rapi:
 
 ```bash
 cd /var/www/wordpress
-sudo -u www-data wp rewrite structure '/%postname%/' --hard
-sudo -u www-data wp rewrite flush --hard
+sudo -u www-data env HOME=/tmp wp rewrite structure '/%postname%/' --hard
+sudo -u www-data env HOME=/tmp wp rewrite flush --hard
 ```
 
-Karena `DISABLE_WP_CRON` disarankan aktif, buat cron OS:
+Penjelasan singkat:
+
+- `wp rewrite structure '/%postname%/' --hard` mengatur permalink WordPress ke format slug.
+- `wp rewrite flush --hard` menyegarkan aturan rewrite agar URL baru langsung aktif.
+- `env HOME=/tmp` mencegah error WP-CLI saat user `www-data` tidak punya home directory yang writable.
+
+Di `wp-config.php` sebelumnya kita mengaktifkan:
+
+```php
+define('DISABLE_WP_CRON', true);
+```
+
+Artinya WordPress tidak menjalankan cron otomatis dari request pengunjung. Karena itu, kita wajib membuat cron OS agar worker WordPress dan CBT tetap berjalan.
+
+Buka crontab untuk user `www-data`:
 
 ```bash
 sudo crontab -u www-data -e
 ```
 
-Tambahkan:
+Tambahkan satu baris ini, lalu simpan:
 
 ```cron
 * * * * * /usr/bin/php /var/www/wordpress/wp-cron.php > /dev/null 2>&1
 ```
 
-Cron ini penting untuk worker CBT seperti flush runtime, finalisasi attempt expired, security ingest, preflight, cohort index, dan warm readiness.
+Artinya server menjalankan `wp-cron.php` setiap 1 menit memakai PHP CLI.
+
+Cek crontab sudah tersimpan:
+
+```bash
+sudo crontab -u www-data -l
+```
+
+Cek event cron WordPress dan CBT:
+
+```bash
+cd /var/www/wordpress
+sudo -u www-data env HOME=/tmp wp cron event list | grep -E 'cbt|hook|next_run'
+```
+
+Cron ini penting untuk worker CBT seperti flush runtime, finalisasi attempt expired, security ingest, preflight, cohort index, dan warm readiness. Jika cron ini tidak berjalan, attempt expired, buffer jawaban, dan beberapa proses background bisa terlambat diproses.
 
 ## 11. Setup Awal CBT
 
@@ -532,22 +656,50 @@ Di dashboard WordPress:
 https://ujian.example.sch.id/cbt-ujian/
 ```
 
+Jika ingin siswa langsung membuka domain utama tanpa path `/cbt-ujian/`, jadikan halaman CBT sebagai homepage WordPress.
+
+Cara dashboard:
+
+1. Buka `Settings > Reading`.
+2. Pada `Your homepage displays`, pilih `A static page`.
+3. Pilih halaman `CBT Ujian` atau halaman dengan slug `cbt-ujian` sebagai `Homepage`.
+4. Simpan perubahan.
+
+Cara WP-CLI:
+
+```bash
+cd /var/www/wordpress
+FRONT_PAGE_ID=$(sudo -u www-data env HOME=/tmp wp option get cbt_exam_system_frontend_page_id)
+sudo -u www-data env HOME=/tmp wp option update show_on_front page
+sudo -u www-data env HOME=/tmp wp option update page_on_front "$FRONT_PAGE_ID"
+sudo -u www-data env HOME=/tmp wp rewrite flush --hard
+```
+
+Setelah itu halaman siswa bisa dibuka dari:
+
+```text
+https://ujian.example.sch.id/
+```
+
 ## 12. Smoke Test
 
 Jalankan dari server:
 
 ```bash
 curl -I https://ujian.example.sch.id/
+
+# Jalankan ini jika halaman CBT tetap memakai slug /cbt-ujian/.
+# Jika CBT sudah dijadikan homepage, test domain utama di atas sudah cukup.
 curl -I https://ujian.example.sch.id/cbt-ujian/
 
 # Opsional jika phpMyAdmin dipasang:
 curl -I https://ujian.example.sch.id/phpmyadmin/
 
 cd /var/www/wordpress
-sudo -u www-data wp plugin status cbt-exam-system
-sudo -u www-data wp option get cbt_exam_system_db_version
-sudo -u www-data wp cron event list | grep cbt
-sudo -u www-data wp eval 'var_dump(wp_using_ext_object_cache());'
+sudo -u www-data env HOME=/tmp wp plugin status cbt-exam-system
+sudo -u www-data env HOME=/tmp wp option get cbt_exam_system_db_version
+sudo -u www-data env HOME=/tmp wp cron event list | grep cbt
+sudo -u www-data env HOME=/tmp wp eval 'var_dump(wp_using_ext_object_cache());'
 ```
 
 Jalankan dari folder plugin:
@@ -565,7 +717,7 @@ Lakukan uji manual:
 3. Buat user siswa.
 4. Buat exam kecil dengan beberapa soal.
 5. Publish exam.
-6. Login dari `/cbt-ujian/` sebagai siswa.
+6. Login sebagai siswa dari domain utama `/` jika CBT dijadikan homepage, atau dari `/cbt-ujian/` jika masih memakai slug bawaan.
 7. Start attempt, isi jawaban, finish exam.
 8. Cek hasil di `CBT Results`.
 
@@ -636,6 +788,25 @@ Frontend CBT blank atau asset tidak muncul
 - Jalankan `npm ci` lalu `npm run build` dari folder plugin.
 - Pastikan permission folder plugin bisa dibaca `www-data`.
 
+Composer gagal `Could not delete ... vendor/...`
+
+- Penyebab paling umum: folder `vendor/` dibuat oleh user berbeda, misalnya pernah menjalankan `sudo composer install`, lalu sekarang Composer dijalankan sebagai `www-data`.
+- Perbaiki ownership folder plugin, lalu ulangi Composer:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo chown -R www-data:www-data .
+sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
+```
+
+- Jika masih gagal dan Anda yakin folder ini adalah hasil clone/deploy plugin, hapus `vendor/` lalu install ulang dari `composer.lock`:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo rm -rf vendor
+sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
+```
+
 Redis masih fallback
 
 - Pastikan `redis-cli ping` menghasilkan `PONG`.
@@ -650,6 +821,67 @@ phpMyAdmin 404 atau file PHP terunduh
 - Pastikan blok `location /phpmyadmin/` dan `location ~ ^/phpmyadmin/(.+\.php)$` ada di server block Nginx.
 - Pastikan blok phpMyAdmin berada sebelum blok umum `location ~ \.php$`.
 - Pastikan `fastcgi_pass` pada blok phpMyAdmin memakai socket PHP-FPM yang benar.
+
+phpMyAdmin `Cannot log in to the MySQL server`
+
+- phpMyAdmin memakai user MySQL/MariaDB, bukan user Linux. User server seperti `coblax` tidak otomatis bisa login ke MySQL.
+- Gunakan user yang dibuat pada tahap phpMyAdmin, misalnya `pma_cbt_admin`, atau buat/reset user MySQL khusus. Jika ingin login dengan username `coblax`, buat user MySQL bernama `coblax`:
+
+```bash
+sudo mysql
+```
+
+```sql
+CREATE USER IF NOT EXISTS 'coblax'@'localhost' IDENTIFIED BY 'ganti_password_mysql_coblax_yang_kuat';
+ALTER USER 'coblax'@'localhost' IDENTIFIED BY 'ganti_password_mysql_coblax_yang_kuat';
+GRANT ALL PRIVILEGES ON wordpress_cbt.* TO 'coblax'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+- Login phpMyAdmin dengan username `coblax` dan password MySQL yang baru dibuat.
+- Jika nama database bukan `wordpress_cbt`, ganti `wordpress_cbt.*` sesuai nama database WordPress Anda.
+
+Login siswa berhasil, tetapi saat pilih exam kembali ke login
+
+Gejala ini biasanya terjadi karena request setelah login ke endpoint seperti `/wp-json/cbt/v1/exams`, `/wp-json/cbt/v1/session`, atau `/wp-json/cbt/v1/start_attempt` mendapat `401`. Penyebab paling umum pada Nginx + PHP-FPM adalah header `Authorization` tidak diteruskan ke PHP-FPM.
+
+Pastikan blok PHP WordPress di Nginx memiliki baris ini:
+
+```nginx
+location ~ \.php$ {
+    include snippets/fastcgi-php.conf;
+    fastcgi_param HTTP_AUTHORIZATION $http_authorization;
+    fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+}
+```
+
+Setelah mengubah Nginx:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Cek juga URL WordPress konsisten dengan URL yang dipakai siswa. Jangan campur akses lewat `http://192.168.x.x`, `https://domain`, dan `www.domain` saat ujian:
+
+```bash
+cd /var/www/wordpress
+sudo -u www-data env HOME=/tmp wp option get home
+sudo -u www-data env HOME=/tmp wp option get siteurl
+```
+
+Jika siswa membuka ujian dari IP lokal, `home` dan `siteurl` sebaiknya juga mengarah ke alamat yang sama. Jika siswa membuka dari domain, gunakan domain yang sama dari awal login sampai ujian.
+
+Cara cek cepat dari browser:
+
+1. Buka DevTools `Network`.
+2. Login siswa.
+3. Klik/pilih exam.
+4. Cari request `/wp-json/cbt/v1/exams`, `/session`, atau `/start_attempt`.
+5. Jika status `401` dengan pesan `Authorization token not found`, fix-nya adalah baris `fastcgi_param HTTP_AUTHORIZATION $http_authorization;` di atas.
+6. Jika status `401` dengan pesan `Invalid or expired token`, pastikan `wp-config.php` tidak sering berubah salt/key dan jam server benar.
+7. Jika pesan `Sesi login ini sudah digantikan oleh login lain`, akun siswa sedang dianggap login di browser/perangkat lain. Reset login siswa dari dashboard/admin CBT atau logout dari browser sebelumnya.
 
 Import soal/user gagal
 
@@ -689,14 +921,14 @@ Edit pool PHP-FPM:
 sudo nano /etc/php/8.3/fpm/pool.d/www.conf
 ```
 
-Contoh baseline untuk server `16 core / 16 GB RAM` dengan MySQL dan Redis masih satu host:
+Contoh baseline aman untuk server `16 core / 16 GB RAM` dengan MySQL dan Redis masih satu host:
 
 ```ini
 pm = dynamic
-pm.max_children = 80
-pm.start_servers = 20
-pm.min_spare_servers = 12
-pm.max_spare_servers = 36
+pm.max_children = 64
+pm.start_servers = 16
+pm.min_spare_servers = 8
+pm.max_spare_servers = 24
 pm.max_requests = 500
 request_terminate_timeout = 60s
 request_slowlog_timeout = 5s
@@ -705,9 +937,9 @@ slowlog = /var/log/php-fpm-www-slow.log
 
 Catatan sizing:
 
-- `pm.max_children = 80` adalah titik awal aman untuk server 16 GB jika MySQL dan Redis masih satu host.
-- Jika RAM sering hampir habis atau swap aktif, turunkan bertahap ke `64`, lalu `56`.
-- Jika antrean PHP-FPM tinggi, CPU masih longgar, dan RAM masih aman, naikkan bertahap ke `96` atau `112`.
+- `pm.max_children = 64` adalah titik awal aman untuk server 16 GB jika MySQL dan Redis masih satu host.
+- Jika RAM sering hampir habis atau swap aktif, turunkan bertahap ke `56`, lalu `48`.
+- Jika antrean PHP-FPM tinggi, CPU masih longgar, dan RAM masih aman, naikkan bertahap ke `80` atau `96`.
 - Jika database sudah dipisah ke server lain, `pm.max_children` biasanya bisa dinaikkan lebih agresif karena RAM lokal tidak dipakai InnoDB besar.
 - Jangan langsung menaikkan `memory_limit` terlalu besar; limit tinggi membuat risiko OOM lebih besar saat request import/report berjalan bersamaan.
 
@@ -776,15 +1008,15 @@ innodb_io_capacity_max=4000
 innodb_read_io_threads=8
 innodb_write_io_threads=8
 
-max_connections=350
+max_connections=200
 thread_cache_size=128
 table_open_cache=8192
 table_definition_cache=4096
 
-tmp_table_size=128M
-max_heap_table_size=128M
-sort_buffer_size=4M
-join_buffer_size=4M
+tmp_table_size=64M
+max_heap_table_size=64M
+sort_buffer_size=2M
+join_buffer_size=2M
 
 slow_query_log=1
 slow_query_log_file=/var/log/mysql/slow-query.log
@@ -801,6 +1033,7 @@ sudo systemctl status mysql --no-pager
 Catatan sizing:
 
 - `innodb_buffer_pool_size=6G` cocok untuk single server 16 GB karena masih menyisakan RAM untuk PHP-FPM, Redis, Nginx, dan OS cache.
+- `max_connections=200` cukup untuk baseline karena PHP-FPM dimulai dari `64` child; nilai terlalu besar membuat risiko RAM MySQL membengkak saat traffic padat.
 - Jika database dipisah ke server sendiri dengan RAM 16 GB, buffer pool bisa dinaikkan ke `10G` sampai `11G`.
 - Jika server mulai swap, turunkan buffer pool ke `5G` dan turunkan `pm.max_children` PHP-FPM.
 
