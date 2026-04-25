@@ -525,6 +525,17 @@ export function createAppEventManager(deps) {
             return true;
         }
 
+        if (action === 'dismiss-alert') {
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            clearMessages();
+            render('dismiss-alert', {
+                action: action
+            });
+            return true;
+        }
+
         if (isExamFullscreenBlockingActive() && action !== 'logout' && action !== 'toggle-theme') {
             event.preventDefault();
             return true;

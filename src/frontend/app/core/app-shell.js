@@ -61,13 +61,13 @@ export function createAppShellManager(deps) {
             '</span>'
         ].join('');
 
-        var stageLabel = 'Login';
+        var stageLabel = 'LOGIN';
         if (state.stage === 'confirm') {
-            stageLabel = 'Konfirmasi Ujian';
+            stageLabel = 'KONFIRMASI UJIAN';
         } else if (state.stage === 'exam') {
-            stageLabel = 'Sedang Ujian';
+            stageLabel = 'SEDANG UJIAN';
         } else if (state.stage === 'result') {
-            stageLabel = 'Hasil Ujian';
+            stageLabel = 'HASIL UJIAN';
         }
 
         var timerChip = '';
@@ -304,8 +304,8 @@ export function createAppShellManager(deps) {
         var finishProgressDetail = String(state.finishProgressDetail || 'Mohon tunggu sebentar, kami sedang memastikan hasil ujian Anda tersimpan.');
         var showFinishLiveProgress = state.isFinishing || finishProgressStepIndex > 0 || state.examLockedForPendingFinish;
         var finishTitle = showFinishLiveProgress
-            ? 'Proses'
-            : 'Konfirmasi Pengumpulan Ujian';
+            ? 'PROSES'
+            : 'KONFIRMASI PENGUMPULAN UJIAN';
         var finishSubtitle = state.isFinishing
             ? 'Finalisasi sedang berjalan. Jangan tutup halaman ini sampai hasil muncul.'
             : (showFinishLiveProgress

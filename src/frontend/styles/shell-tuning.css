@@ -151,6 +151,22 @@
     backdrop-filter: blur(12px);
 }
 
+body.cbt-exam-page:not(.cbt-stage-login) .cbt-web-shell {
+    padding-top: 0;
+}
+
+body.cbt-exam-page:not(.cbt-stage-login) .cbt-topbar {
+    width: 100vw;
+    margin-top: 0;
+    margin-right: calc(50% - 50vw);
+    margin-left: calc(50% - 50vw);
+    padding: 14px clamp(18px, 2.8vw, 28px);
+    border-top: 0;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+}
+
 @media (min-width: 821px) {
     .cbt-topbar {
         flex-wrap: nowrap;

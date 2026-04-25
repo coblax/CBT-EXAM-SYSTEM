@@ -4202,6 +4202,7 @@ export function createExamSessionManager(deps) {
                 state.busy = false;
 
                 if (!selectedExam) {
+                    resetResultProgressState();
                     state.error = 'Exam yang dipilih sudah tidak tersedia.';
                     render('view-result-error', {
                         reason: 'selected-exam-missing-after-refresh'
@@ -4210,6 +4211,7 @@ export function createExamSessionManager(deps) {
                 }
 
                 if (String(refreshedResultSelection && refreshedResultSelection.action ? refreshedResultSelection.action : '') === 'finalizing') {
+                    resetResultProgressState();
                     state.notice = 'Hasil sedang diproses di background.';
                     scheduleExamFinalizePendingPoll();
                     render('view-result-finalizing', {
@@ -4219,6 +4221,7 @@ export function createExamSessionManager(deps) {
                 }
 
                 if (String(refreshedResultSelection && refreshedResultSelection.action ? refreshedResultSelection.action : '') === 'start-exam') {
+                    resetResultProgressState();
                     recordActionTrailEntry('result:view:rerouted', 'Status exam berubah menjadi aktif, mengalihkan ke sesi ujian.', {
                         selectedExamId: Number(selectedExam.id) || 0
                     });
@@ -4228,6 +4231,7 @@ export function createExamSessionManager(deps) {
                     });
                 }
             } catch (error) {
+                resetResultProgressState();
                 state.busy = false;
                 state.error = error instanceof Error ? error.message : 'Gagal memperbarui status exam.';
                 render('view-result-error', {

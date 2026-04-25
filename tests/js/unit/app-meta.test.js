@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createAppMetaManager } from '../../../src/frontend/app/core/app-meta.js';
 
-function createManager() {
+function createManager(overrides = {}) {
     return createAppMetaManager({
-        config: {},
+        config: overrides.config || {},
         escapeHtml: function (value) {
             return String(value || '');
         },
-        state: {},
-        windowRef: window
+        state: overrides.state || {},
+        windowRef: overrides.windowRef || window
     });
 }
 
@@ -107,5 +107,38 @@ describe('createAppMetaManager normalizePhotoUrl', function () {
 
         expect(manager.normalizePhotoUrl('https://cdn.example.com/avatar.jpg'))
             .toBe('https://cdn.example.com/avatar.jpg');
+    });
+});
+
+describe('createAppMetaManager renderAlert', function () {
+    it('renders a dismiss button for explicit error messages', function () {
+        var manager = createManager({
+            state: {
+                error: 'Mode fullscreen wajib aktif untuk ujian ini.'
+            }
+        });
+
+        var html = manager.renderAlert();
+
+        expect(html).toContain('cbt-alert-error');
+        expect(html).toContain('data-action="dismiss-alert"');
+        expect(html).toContain('Tutup informasi');
+    });
+
+    it('keeps sync status alerts non-dismissible because they reflect live runtime state', function () {
+        var manager = createManager({
+            state: {
+                attemptId: 77,
+                connectionStatus: 'online',
+                pendingSyncCount: 2,
+                lastSyncError: '',
+                stage: 'exam'
+            }
+        });
+
+        var html = manager.renderAlert();
+
+        expect(html).toContain('cbt-alert-warning');
+        expect(html).not.toContain('data-action="dismiss-alert"');
     });
 });

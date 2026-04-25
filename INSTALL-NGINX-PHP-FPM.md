@@ -1,64 +1,142 @@
-# Instalasi Produksi Nginx + PHP-FPM (16 Core / 16 GB)
+# Panduan Instalasi: WordPress + CBT Exam System (Nginx + PHP-FPM)
 
-Dokumen tunggal ini menjelaskan langkah instalasi WordPress + plugin CBT Exam System di server Linux dengan Nginx sebagai web server dan PHP-FPM sebagai runtime PHP. Tuning di dalamnya disiapkan untuk server `16 core / 16 GB RAM`, supaya setup utama cukup dibaca dari file ini saja.
+Dokumen ini menjelaskan langkah-langkah instalasi WordPress beserta plugin **CBT Exam System** di server Linux menggunakan **Nginx** sebagai web server dan **PHP-FPM** sebagai runtime PHP. Tuning di dalamnya disiapkan untuk server **16 core / 16 GB RAM**.
 
-## 0. Asumsi
+Dokumen ini ditulis agar bisa diikuti oleh siapa saja, bukan hanya pengembang plugin. Setiap langkah disusun berurutan — langkah berikutnya bergantung pada langkah sebelumnya.
 
-- Sistem operasi: Ubuntu/Debian atau turunannya.
-- Web root WordPress: `/var/www/wordpress`.
-- Domain contoh: `ujian.example.sch.id`.
-- User web server: `www-data`.
-- Plugin berada di: `/var/www/wordpress/wp-content/plugins/cbt-exam-system`.
-- Profil server target: `16 core / 16 GB RAM`.
-- Mode baseline: Nginx, PHP-FPM, MySQL/MariaDB, Redis, dan WordPress berada dalam satu server.
-- Stack minimum plugin:
-  - WordPress `6.0+`
-  - PHP `8.0+` sesuai header plugin
-  - PHP `8.1+` direkomendasikan untuk instalasi dari repo ini, karena dependency Composer saat ini membutuhkan PHP `>=8.1`
-  - MySQL/MariaDB kompatibel WordPress
-  - Composer `2+`
-  - Node.js `20+` bila asset frontend perlu dibuild di server
-  - Redis opsional, tetapi sangat direkomendasikan untuk ujian serentak
+---
 
-Ganti semua nilai contoh seperti domain, nama database, user database, password, dan versi PHP sesuai server Anda. Jika jumlah peserta sangat besar atau ujian berjalan paralel banyak sesi, pisahkan database ke server sendiri agar beban MySQL tidak berebut RAM dengan PHP-FPM.
+## Ringkasan Alur Instalasi
 
-## 1. Install Paket Server
+Berikut gambaran besar tahapan yang akan dilalui. Ikuti urutan ini dari atas ke bawah:
+
+```text
+┌─────────────────────────────────────────────┐
+│  1. Prasyarat Server                        │  ← Timezone, update OS
+│  2. Install Paket Dasar                     │  ← Nginx, PHP-FPM, MySQL, Redis
+│  3. Install Tool Pendukung                  │  ← Composer, Node.js, WP-CLI
+│  4. Siapkan Database MySQL                  │  ← Buat database & user
+│  5. Konfigurasi Nginx                       │  ← Server block WordPress
+│  6. Install phpMyAdmin (Opsional)           │  ← Manajemen database via browser
+│  7. Install WordPress                       │  ← Download, wp-config.php
+│  8. Aktifkan HTTPS                          │  ← Sertifikat SSL / Cloudflare Tunnel
+│  9. Aktifkan Redis Object Cache             │  ← Plugin Redis Cache
+│ 10. Install Plugin CBT Exam System          │  ← Clone, Composer, build asset
+│ 11. Aktifkan Plugin & Selesaikan WordPress  │  ← Aktivasi, permalink, cron
+│ 12. Setup Awal CBT                          │  ← Branding, subject, user, soal
+│ 13. Smoke Test                              │  ← Verifikasi semuanya jalan
+│ 14. Backup & Restore                        │  ← Backup database & file
+│ 15. Catatan Cache & CDN                     │  ← Apa yang boleh/tidak dicache
+│ 16. Monitoring Saat Ujian                   │  ← Pantau resource server
+│ 17. Checklist Sebelum Tuning                │  ← Pastikan semua siap
+│ 18. Tuning Produksi (16 Core / 16 GB)       │  ← PHP-FPM, MySQL, Redis, Nginx
+│ 19. Troubleshooting                         │  ← Solusi masalah umum
+└─────────────────────────────────────────────┘
+```
+
+---
+
+## Asumsi & Persyaratan
+
+| Item | Nilai |
+|------|-------|
+| Sistem operasi | Ubuntu/Debian atau turunannya |
+| Web root WordPress | `/var/www/wordpress` |
+| Domain contoh | `ujian.example.sch.id` |
+| User web server | `www-data` |
+| Folder plugin | `/var/www/wordpress/wp-content/plugins/cbt-exam-system` |
+| Profil server | 16 core / 16 GB RAM |
+| Mode | Single server (Nginx + PHP-FPM + MySQL + Redis) |
+
+**Stack minimum plugin:**
+
+- WordPress `6.0+`
+- PHP `8.0+` (minimum), **PHP `8.1+` direkomendasikan** karena dependency Composer membutuhkan `>=8.1`
+- MySQL/MariaDB kompatibel WordPress
+- Composer `2+`
+- Node.js `20+` (hanya jika asset frontend perlu dibuild di server)
+- Redis — opsional, tetapi **sangat direkomendasikan** untuk ujian serentak
+
+> **Catatan:** Ganti semua nilai contoh (domain, nama database, user, password, versi PHP) sesuai server Anda. Jika peserta sangat banyak atau banyak sesi paralel, pertimbangkan memisahkan database ke server sendiri.
+
+---
+
+## 1. Prasyarat Server
+
+Sebelum menginstall apa pun, pastikan server dalam kondisi siap.
+
+**Atur timezone dan aktifkan sinkronisasi waktu (NTP):**
+
+Timezone yang benar penting karena plugin CBT menggunakan waktu server untuk jadwal ujian, durasi attempt, dan validasi token.
 
 ```bash
-sudo apt update
+sudo timedatectl set-timezone Asia/Jakarta
+timedatectl status
+```
+
+Pastikan output menunjukkan `NTP synchronized: yes`. Jika belum:
+
+```bash
+sudo apt install -y systemd-timesyncd
+sudo systemctl enable --now systemd-timesyncd
+timedatectl status
+```
+
+**Update repository OS:**
+
+```bash
+sudo apt update && sudo apt upgrade -y
+```
+
+---
+
+## 2. Install Paket Dasar
+
+Install Nginx, MySQL, Redis, dan PHP-FPM beserta ekstensi yang dibutuhkan plugin:
+
+```bash
 sudo apt install -y nginx mysql-server redis-server redis-tools curl unzip git acl
-sudo apt install -y php-fpm php-cli php-mysql php-curl php-mbstring php-xml php-zip php-gd php-intl php-bcmath php-redis
+sudo apt install -y php-fpm php-cli php-mysql php-curl php-mbstring php-xml \
+  php-zip php-gd php-intl php-bcmath php-redis php-imagick
 ```
 
-Cek service PHP-FPM yang tersedia:
+**Verifikasi instalasi:**
 
 ```bash
-systemctl list-unit-files 'php*-fpm.service' --no-legend
-ls /run/php/php*-fpm.sock
+# Cek versi PHP dan service PHP-FPM yang terinstall
 php -v
-php -m | grep -Ei 'redis|zip|xml|mbstring|gd|intl'
+systemctl list-unit-files 'php*-fpm.service' --no-legend
+
+# Cek socket PHP-FPM (catat path ini, akan dipakai di konfigurasi Nginx)
+ls /run/php/php*-fpm.sock
+
+# Cek ekstensi PHP yang dibutuhkan plugin dan fitur export/media
+php -m | grep -Ei 'redis|zip|xml|mbstring|gd|intl|imagick'
 ```
 
-Jika `php-redis` belum terbaca oleh PHP-FPM, restart PHP-FPM:
+Jika `redis` belum muncul di daftar ekstensi, restart PHP-FPM:
 
 ```bash
+# Sesuaikan versi, misalnya php8.3-fpm
 sudo systemctl restart php8.3-fpm
 ```
 
-Sesuaikan `php8.3-fpm` dengan unit yang ada di server Anda.
+---
 
-Install tool pendukung jika belum tersedia.
+## 3. Install Tool Pendukung
 
-Composer:
+### 3.1 Composer (Wajib)
+
+Composer dipakai untuk menginstall dependency PHP plugin.
 
 ```bash
 sudo apt install -y composer
 composer --version
 ```
 
-Command install Composer di atas bebas dijalankan dari folder mana saja, karena Composer dipasang sebagai tool global. Nanti command `composer install --no-dev --optimize-autoloader` harus dijalankan dari folder plugin `/var/www/wordpress/wp-content/plugins/cbt-exam-system`, karena di sana file `composer.json` berada.
+### 3.2 Node.js 20 (Kondisional)
 
-Node.js 20 untuk build asset frontend:
+Node.js dibutuhkan **hanya jika** Anda perlu mem-build asset frontend di server. Jika Anda men-deploy dari release/artifact yang sudah membawa folder `public/build/`, Node.js tidak wajib.
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
@@ -67,7 +145,9 @@ node -v
 npm -v
 ```
 
-WP-CLI untuk aktivasi, rewrite, cron check, dan smoke test:
+### 3.3 WP-CLI (Sangat Direkomendasikan)
+
+WP-CLI mempermudah aktivasi plugin, pengaturan permalink, dan troubleshooting dari terminal.
 
 ```bash
 cd /tmp
@@ -78,26 +158,15 @@ sudo chmod +x /usr/local/bin/wp
 wp --info
 ```
 
-Jika deployment memakai artifact release yang sudah berisi `vendor/` dan `public/build/`, Node.js tidak wajib dipasang di server produksi.
+---
 
-Pastikan timezone server sesuai dan NTP aktif:
+## 4. Siapkan Database MySQL
 
-```bash
-sudo timedatectl set-timezone Asia/Jakarta
-timedatectl status
-```
-
-Catatan alur: dokumen ini menaruh tuning produksi di bagian paling akhir. Tahap awal fokus membuat stack hidup dulu: database siap, Nginx melayani WordPress, WordPress aktif, plugin CBT aktif, lalu tuning `16 core / 16 GB RAM` diterapkan setelah smoke test dasar berhasil.
-
-## 2. Siapkan Database
-
-Masuk ke MySQL/MariaDB:
+Buat database dan user khusus untuk WordPress. Jangan pakai user `root` MySQL untuk aplikasi.
 
 ```bash
 sudo mysql
 ```
-
-Buat database dan user:
 
 ```sql
 CREATE DATABASE wordpress_cbt CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
@@ -107,95 +176,21 @@ FLUSH PRIVILEGES;
 EXIT;
 ```
 
-Jika database berada di server berbeda, ganti `localhost` dengan host yang sesuai dan pastikan firewall mengizinkan koneksi dari server WordPress.
+> **Catatan:** Jika database berada di server berbeda, ganti `localhost` dengan host yang sesuai dan pastikan firewall mengizinkan koneksi dari server WordPress.
 
-## 3. Install phpMyAdmin untuk Nginx (Opsional)
+---
 
-Bagian ini opsional. phpMyAdmin berguna untuk cek database lewat browser, tetapi jangan jadikan satu-satunya alat administrasi database di produksi. Command install phpMyAdmin bebas dijalankan dari folder mana saja.
+## 5. Konfigurasi Nginx
 
-Install paket:
+Tahap ini menyiapkan Nginx untuk melayani WordPress. Pastikan Anda sudah mencatat path socket PHP-FPM dari Langkah 2.
 
-```bash
-sudo apt install -y phpmyadmin
-```
-
-Saat installer bertanya:
-
-- Pilihan web server otomatis: jangan pilih `apache2`, karena server ini memakai Nginx.
-- `Configure database for phpmyadmin with dbconfig-common?`: pilih `Yes` jika ingin paket membuat database kontrol phpMyAdmin.
-- Masukkan password aplikasi phpMyAdmin bila diminta, atau biarkan installer membuat otomatis jika opsi itu tersedia.
-
-Pastikan folder phpMyAdmin tersedia:
-
-```bash
-test -d /usr/share/phpmyadmin
-ls -la /usr/share/phpmyadmin | head
-```
-
-Buat user MySQL khusus untuk login phpMyAdmin. Ini menghindari kebingungan karena user `root` MySQL pada Ubuntu/Debian sering memakai `auth_socket`, sehingga tidak bisa login dari phpMyAdmin dengan password biasa.
-
-```bash
-sudo mysql
-```
-
-```sql
-CREATE USER 'pma_cbt_admin'@'localhost' IDENTIFIED BY 'ganti_password_phpmyadmin_yang_kuat';
-GRANT ALL PRIVILEGES ON wordpress_cbt.* TO 'pma_cbt_admin'@'localhost';
-FLUSH PRIVILEGES;
-EXIT;
-```
-
-User `pma_cbt_admin` di atas hanya diberi akses ke database `wordpress_cbt`. Jika nama database Anda berbeda, ganti `wordpress_cbt.*` sesuai database WordPress yang dibuat pada tahap sebelumnya.
-
-Jika ingin username Linux bisa dipakai juga untuk login phpMyAdmin, buat user MySQL dengan nama yang sama. Contoh untuk user Linux `coblax`:
-
-```bash
-sudo mysql
-```
-
-```sql
-CREATE USER IF NOT EXISTS 'coblax'@'localhost' IDENTIFIED BY 'ganti_password_mysql_coblax_yang_kuat';
-ALTER USER 'coblax'@'localhost' IDENTIFIED BY 'ganti_password_mysql_coblax_yang_kuat';
-GRANT ALL PRIVILEGES ON wordpress_cbt.* TO 'coblax'@'localhost';
-FLUSH PRIVILEGES;
-EXIT;
-```
-
-Catatan: password ini adalah password MySQL, bukan otomatis sama dengan password login Linux. Untuk produksi, lebih aman tetap memakai user khusus seperti `pma_cbt_admin`.
-
-Nginx alias untuk phpMyAdmin ditambahkan pada tahap konfigurasi Nginx di bawah. Setelah Nginx direload, akses:
-
-```text
-https://ujian.example.sch.id/phpmyadmin/
-```
-
-Hardening yang disarankan:
-
-- Pakai password kuat dan unik untuk user `pma_cbt_admin`.
-- Jangan pakai user MySQL `root` untuk login phpMyAdmin.
-- Batasi akses `/phpmyadmin/` lewat firewall, VPN, basic auth, atau allowlist IP admin jika server berada di internet publik.
-- Hapus phpMyAdmin jika sudah tidak dibutuhkan:
-
-```bash
-sudo apt purge -y phpmyadmin
-sudo apt autoremove -y
-```
-
-## 4. Konfigurasi Nginx
-
-Cari socket PHP-FPM:
-
-```bash
-ls /run/php/php*-fpm.sock
-```
-
-Pastikan konfigurasi Nginx memuat folder `sites-enabled`:
+### 5.1 Pastikan Nginx memuat sites-enabled
 
 ```bash
 sudo nginx -T | grep -E 'sites-enabled|conf.d'
 ```
 
-Jika tidak ada baris `include /etc/nginx/sites-enabled/*;`, tambahkan include tersebut di dalam blok `http` pada `/etc/nginx/nginx.conf`. Tuning global Nginx detail ada di bagian paling akhir dokumen.
+Jika tidak ada baris `include /etc/nginx/sites-enabled/*;`, tambahkan di dalam blok `http` pada `/etc/nginx/nginx.conf`:
 
 ```nginx
 http {
@@ -204,22 +199,22 @@ http {
 }
 ```
 
-Buat server block WordPress:
+### 5.2 Buat folder web root
 
 ```bash
 sudo mkdir -p /var/www/wordpress
 sudo chown www-data:www-data /var/www/wordpress
 ```
 
+### 5.3 Buat server block
+
 ```bash
 sudo nano /etc/nginx/sites-available/wordpress-cbt
 ```
 
-Letakkan seluruh konfigurasi `server { ... }` di file `/etc/nginx/sites-available/wordpress-cbt`. Jangan masukkan blok `server { ... }` ini langsung ke `/etc/nginx/nginx.conf`, kecuali Anda memang sengaja mengelola site langsung dari file utama Nginx.
+> **Penting:** Letakkan konfigurasi `server { ... }` di file terpisah ini, jangan langsung di `/etc/nginx/nginx.conf`.
 
-Blok phpMyAdmin harus berada di dalam `server { ... }` yang sama dengan WordPress, dan posisinya harus sebelum blok PHP umum `location ~ \.php$`.
-
-Isi contoh:
+Isi file:
 
 ```nginx
 server {
@@ -233,10 +228,12 @@ server {
     access_log /var/log/nginx/wordpress-cbt.access.log;
     error_log /var/log/nginx/wordpress-cbt.error.log;
 
+    # Permalink WordPress
     location / {
         try_files $uri $uri/ /index.php?$args;
     }
 
+    # === phpMyAdmin (opsional — hapus blok ini jika tidak install phpMyAdmin di Langkah 6) ===
     location = /phpmyadmin {
         return 301 /phpmyadmin/;
     }
@@ -247,7 +244,6 @@ server {
         try_files $uri $uri/ =404;
     }
 
-    # Wajib sebelum blok static WordPress umum agar asset phpMyAdmin tidak dicari ke root WordPress.
     location ~* ^/phpmyadmin/(.+\.(?:css|js|png|jpe?g|gif|ico|svg|woff2?|ttf|eot|map))$ {
         alias /usr/share/phpmyadmin/$1;
         expires 7d;
@@ -264,7 +260,9 @@ server {
         fastcgi_send_timeout 120;
         fastcgi_connect_timeout 60;
     }
+    # === Akhir blok phpMyAdmin ===
 
+    # PHP handler — pastikan HTTP_AUTHORIZATION diteruskan (wajib untuk login CBT)
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_param HTTP_AUTHORIZATION $http_authorization;
@@ -276,6 +274,7 @@ server {
         fastcgi_buffer_size 32k;
     }
 
+    # Cache asset build CBT (vite manifest hash = immutable)
     location ~* ^/wp-content/plugins/cbt-exam-system/public/build/ {
         expires 30d;
         add_header Cache-Control "public, immutable";
@@ -283,6 +282,7 @@ server {
         access_log off;
     }
 
+    # Cache static asset umum
     location ~* \.(?:css|js|jpg|jpeg|gif|png|webp|svg|ico|woff|woff2|ttf|eot)$ {
         expires 30d;
         add_header Cache-Control "public";
@@ -290,21 +290,26 @@ server {
         access_log off;
     }
 
+    # Blokir eksekusi PHP di folder upload
     location ~* /(?:uploads|files)/.*\.php$ {
         deny all;
     }
 
+    # Lindungi wp-config.php
     location = /wp-config.php {
         deny all;
     }
 
+    # Blokir dotfiles (kecuali .well-known untuk SSL)
     location ~ /\.(?!well-known).* {
         deny all;
     }
 }
 ```
 
-Aktifkan site:
+> **Penting:** Ganti semua `php8.3-fpm.sock` sesuai versi PHP di server Anda.
+
+### 5.4 Aktifkan site
 
 ```bash
 sudo rm -f /etc/nginx/sites-enabled/default
@@ -313,11 +318,73 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Jika memakai socket PHP-FPM berbeda, ganti semua `fastcgi_pass unix:/run/php/php8.3-fpm.sock;` sesuai hasil `ls /run/php/php*-fpm.sock`, termasuk blok phpMyAdmin.
+---
 
-## 5. Install WordPress
+## 6. Install phpMyAdmin (Opsional)
 
-Pada tahap ini Nginx dan PHP-FPM sudah siap. Sekarang isi web root `/var/www/wordpress` dengan WordPress.
+phpMyAdmin berguna untuk mengelola database lewat browser. Bagian ini opsional dan bisa dilewati.
+
+### 6.1 Install paket
+
+```bash
+sudo apt install -y phpmyadmin
+```
+
+Saat installer bertanya:
+- **Web server**: jangan pilih `apache2` (kita pakai Nginx)
+- **Configure database with dbconfig-common**: pilih `Yes`
+- **Password**: masukkan password aplikasi phpMyAdmin atau biarkan auto-generate
+
+### 6.2 Buat user MySQL untuk phpMyAdmin
+
+User `root` MySQL pada Ubuntu sering memakai `auth_socket`, sehingga tidak bisa login dari phpMyAdmin. Buat user khusus:
+
+```bash
+sudo mysql
+```
+
+```sql
+CREATE USER 'pma_cbt_admin'@'localhost' IDENTIFIED BY 'ganti_password_phpmyadmin_yang_kuat';
+GRANT ALL PRIVILEGES ON wordpress_cbt.* TO 'pma_cbt_admin'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+### 6.3 Verifikasi Nginx dan akses phpMyAdmin
+
+Blok Nginx untuk phpMyAdmin sudah termasuk dalam server block di **Langkah 5.3**. Jika Anda melewati blok tersebut saat konfigurasi Nginx, tambahkan sekarang lalu reload:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Akses phpMyAdmin:
+
+```text
+https://ujian.example.sch.id/phpmyadmin/
+```
+
+### 6.4 Hardening phpMyAdmin
+
+- Pakai password kuat untuk user `pma_cbt_admin`.
+- Jangan login dengan user MySQL `root`.
+- Batasi akses `/phpmyadmin/` lewat firewall, VPN, atau allowlist IP admin.
+- Hapus phpMyAdmin jika sudah tidak dibutuhkan:
+
+```bash
+sudo apt purge -y phpmyadmin
+sudo apt autoremove -y
+```
+
+
+---
+
+## 7. Install WordPress
+
+Nginx sudah siap melayani request. Sekarang isi web root dengan WordPress.
+
+### 7.1 Download dan ekstrak
 
 ```bash
 cd /var/www
@@ -329,7 +396,51 @@ sudo find /var/www/wordpress -type d -exec chmod 755 {} \;
 sudo find /var/www/wordpress -type f -exec chmod 644 {} \;
 ```
 
-Buat `wp-config.php`:
+### 7.2 Buat wp-config.php
+
+Ada dua cara: lewat **browser** (lebih mudah) atau lewat **terminal**. Pilih salah satu.
+
+---
+
+#### Opsi A: Via Browser (Direkomendasikan untuk Pemula)
+
+WordPress menyediakan wizard instalasi yang otomatis membuat `wp-config.php`. Cukup buka browser dan ikuti langkah di layar.
+
+1. Buka browser, akses server Anda:
+
+```text
+http://ujian.example.sch.id/
+```
+
+> Jika HTTPS belum aktif (Langkah 8 belum dilakukan), gunakan `http://` dulu. Jika domain belum diarahkan ke server, gunakan IP server: `http://IP_SERVER/`.
+
+2. WordPress akan menampilkan halaman **"Let's go!"** — klik tombolnya.
+
+3. Isi form database sesuai yang dibuat di Langkah 4:
+
+| Field | Isi |
+|-------|-----|
+| Database Name | `wordpress_cbt` |
+| Username | `wp_cbt` |
+| Password | *(password dari Langkah 4)* |
+| Database Host | `localhost` |
+| Table Prefix | `wp_` (biarkan default) |
+
+4. Klik **"Submit"**, lalu **"Run the installation"**.
+
+5. Isi informasi situs (judul, admin user, password, email), lalu klik **"Install WordPress"**.
+
+6. Setelah berhasil, login ke dashboard WordPress.
+
+> **Catatan:** Wizard ini otomatis men-generate authentication keys/salts yang unik. Anda tidak perlu menjalankan command `curl` untuk generate salt secara manual.
+
+WordPress sudah berjalan. Sekarang **tambahkan konfigurasi runtime** (langkah di bawah tetap wajib untuk kedua opsi).
+
+---
+
+#### Opsi B: Via Terminal
+
+Jika Anda lebih nyaman bekerja dari terminal, atau server tidak bisa diakses via browser saat ini:
 
 ```bash
 cd /var/www/wordpress
@@ -337,7 +448,7 @@ sudo -u www-data cp wp-config-sample.php wp-config.php
 sudo nano wp-config.php
 ```
 
-Isi konfigurasi database:
+**Isi konfigurasi database** (sesuaikan dengan user/password dari Langkah 4):
 
 ```php
 define('DB_NAME', 'wordpress_cbt');
@@ -348,36 +459,60 @@ define('DB_CHARSET', 'utf8mb4');
 define('DB_COLLATE', '');
 ```
 
-Ganti authentication keys dan salts dengan nilai unik:
+**Ganti authentication keys/salts** dengan nilai unik:
 
 ```bash
 curl -s https://api.wordpress.org/secret-key/1.1/salt/
 ```
 
-Salin output command tersebut ke bagian keys/salts di `wp-config.php`.
+Salin seluruh output command tersebut, lalu ganti blok placeholder keys/salts di `wp-config.php`.
 
-Tambahkan konfigurasi runtime berikut sebelum baris `/* That's all, stop editing! */`:
+---
+
+#### Konfigurasi Tambahan (Wajib — Berlaku untuk Opsi A dan B)
+
+**Tambahkan konfigurasi runtime** berikut **sebelum** baris `/* That's all, stop editing! */`:
 
 ```php
+/* === WordPress Performance === */
 define('WP_MEMORY_LIMIT', '256M');
 define('WP_MAX_MEMORY_LIMIT', '512M');
-define('DISABLE_WP_CRON', true);
+define('DISABLE_WP_CRON', true);        // Akan diganti cron OS di Langkah 11
 define('AUTOSAVE_INTERVAL', 120);
 define('WP_POST_REVISIONS', 5);
 
+/* === HTTPS Proxy Header (wajib jika memakai Cloudflare Tunnel / reverse proxy SSL) === */
+if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+    $_SERVER['HTTPS'] = 'on';
+}
+
+/* === Redis Object Cache (diaktifkan di Langkah 9) === */
 define('WP_CACHE', true);
 define('WP_REDIS_HOST', '127.0.0.1');
 define('WP_REDIS_PORT', 6379);
 define('WP_REDIS_DATABASE', 1);
 define('WP_REDIS_PREFIX', 'cbt_exam_system:');
 
+/* === CBT Runtime Buffer (Redis DB terpisah untuk data ujian realtime) === */
 define('CBT_RUNTIME_BUFFER_ENABLED', true);
 define('CBT_RUNTIME_BUFFER_FALLBACK_TO_DB', true);
 define('CBT_RUNTIME_REDIS_HOST', '127.0.0.1');
 define('CBT_RUNTIME_REDIS_PORT', 6379);
 define('CBT_RUNTIME_REDIS_DATABASE', 2);
-define('CBT_RUNTIME_REDIS_DB', 2);
+define('CBT_RUNTIME_REDIS_DB', 2);       // Alias kompatibilitas
 define('CBT_RUNTIME_REDIS_PREFIX', 'cbt_runtime:');
+
+/* === CBT Auth & Gate Redis (default sama dengan Runtime, bisa dipisah jika perlu) === */
+define('CBT_REDIS_HOST', '127.0.0.1');
+define('CBT_REDIS_PORT', 6379);
+define('CBT_REDIS_DATABASE', 2);
+
+/* === CBT JWT Secret (wajib untuk produksi) === */
+// Jika tidak didefinisikan, plugin fallback ke wp_salt('auth').
+// Mendefinisikan secret sendiri mencegah semua token siswa invalid
+// saat salt WordPress berubah (misal reinstall atau migrasi).
+// Buat nilai acak dengan: openssl rand -base64 48
+define('CBT_JWT_SECRET', 'ganti_dengan_random_string_panjang_64_karakter');
 ```
 
 Jika Redis memakai password, tambahkan juga:
@@ -385,43 +520,149 @@ Jika Redis memakai password, tambahkan juga:
 ```php
 define('WP_REDIS_PASSWORD', 'ganti_password_redis');
 define('CBT_RUNTIME_REDIS_PASSWORD', 'ganti_password_redis');
+define('CBT_REDIS_PASSWORD', 'ganti_password_redis');
 ```
 
-Catatan: `CBT_RUNTIME_REDIS_DATABASE` dipakai runtime utama. `CBT_RUNTIME_REDIS_DB` disiapkan sebagai alias kompatibilitas untuk beberapa snapshot cache plugin.
+> **Catatan:** Konfigurasi Redis di atas sudah ditulis sekarang supaya tidak perlu mengedit `wp-config.php` dua kali. Redis sendiri diaktifkan di **Langkah 9**.
 
-## 6. Aktifkan HTTPS
+---
+
+## 8. Aktifkan HTTPS
+
+HTTPS **wajib** untuk ujian produksi. Jangan jalankan halaman ujian siswa di HTTP polos.
+
+Pilih salah satu metode sesuai infrastruktur Anda:
+
+### Opsi A: Cloudflare Tunnel (Direkomendasikan)
+
+Jika Anda menggunakan **Cloudflare Tunnel** (`cloudflared`), sertifikat SSL dikelola otomatis oleh Cloudflare. Nginx cukup listen di port 80 (HTTP) — tunnel yang mengenkripsi koneksi ke client. Anda **tidak perlu** membuka port 80/443 di firewall server.
+
+**Prasyarat:** Domain Anda sudah ditambahkan ke akun Cloudflare dan nameserver sudah diarahkan ke Cloudflare.
+
+> **Penting:** Jika SSL berhenti di Cloudflare/Tunnel/reverse proxy, pastikan blok `HTTPS Proxy Header` sudah ditambahkan di `wp-config.php` pada Langkah 7.2. Tanpa itu, WordPress bisa mengira request masih HTTP dan memicu redirect loop, mixed content, atau URL asset yang salah.
+
+**Langkah 1 — Install `cloudflared`:**
+
+```bash
+# Tambah repository Cloudflare
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+
+sudo apt update
+sudo apt install -y cloudflared
+cloudflared --version
+```
+
+**Langkah 2 — Login ke akun Cloudflare:**
+
+```bash
+cloudflared tunnel login
+```
+
+Perintah ini akan menampilkan URL. Buka URL tersebut di browser, pilih domain yang akan dipakai, lalu otorisasi. Setelah berhasil, file credential tersimpan di `~/.cloudflared/cert.pem`.
+
+**Langkah 3 — Buat tunnel baru:**
+
+```bash
+cloudflared tunnel create cbt-ujian
+```
+
+Output akan menampilkan **Tunnel ID** (format UUID). Catat ID ini. File credential tunnel tersimpan di `~/.cloudflared/<TUNNEL_ID>.json`.
+
+**Langkah 4 — Buat DNS record:**
+
+Perintah ini otomatis membuat CNAME record di Cloudflare yang mengarah ke tunnel Anda:
+
+```bash
+cloudflared tunnel route dns cbt-ujian ujian.example.sch.id
+```
+
+> Ganti `ujian.example.sch.id` dengan subdomain/domain Anda. Anda bisa mengecek hasilnya di dashboard Cloudflare pada menu DNS.
+
+**Langkah 5 — Buat file konfigurasi tunnel:**
+
+```bash
+nano ~/.cloudflared/config.yml
+```
+
+Isi dengan (ganti `<TUNNEL_ID>` dengan ID dari Langkah 3):
+
+```yaml
+tunnel: <TUNNEL_ID>
+credentials-file: /root/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: ujian.example.sch.id
+    service: http://localhost:80
+  - service: http_status:404
+```
+
+**Langkah 6 — Test tunnel secara manual (opsional):**
+
+```bash
+cloudflared tunnel run cbt-ujian
+```
+
+Buka browser dan cek apakah `https://ujian.example.sch.id/` sudah bisa diakses. Tekan `Ctrl+C` untuk menghentikan setelah selesai test.
+
+**Langkah 7 — Jalankan sebagai service (agar otomatis jalan saat boot):**
+
+```bash
+sudo cloudflared service install
+sudo systemctl enable --now cloudflared
+sudo systemctl status cloudflared --no-pager
+```
+
+**Verifikasi:**
+
+```text
+https://ujian.example.sch.id/
+```
+
+### Opsi B: Certbot (SSL Langsung di Server)
+
+Jika server langsung menghadap internet tanpa tunnel/proxy:
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d ujian.example.sch.id
 ```
 
-Cek pembaruan sertifikat:
+Verifikasi auto-renewal:
 
 ```bash
 sudo certbot renew --dry-run
 ```
 
-Untuk pelaksanaan ujian produksi, gunakan HTTPS. Jangan menjalankan halaman ujian siswa di HTTP polos.
+---
 
-## 7. Aktifkan Redis Object Cache WordPress
+**Setelah HTTPS aktif** (dengan cara apa pun), buka browser dan pastikan WordPress bisa diakses:
 
-Jalankan Redis:
+```text
+https://ujian.example.sch.id/
+```
+
+Jika sebelumnya Anda memilih **Opsi B** di Langkah 7.2 (terminal), WordPress akan menampilkan wizard instalasi saat pertama kali dibuka. Selesaikan wizard tersebut (buat akun administrator) sebelum lanjut. Jika sudah memakai **Opsi A** di Langkah 7.2 (browser), wizard sudah selesai — cukup pastikan situs bisa diakses via HTTPS.
+
+---
+
+## 9. Aktifkan Redis Object Cache
+
+Redis mempercepat WordPress dengan menyimpan query database yang sering diakses di memori. Plugin CBT juga menggunakan Redis untuk buffer jawaban realtime saat ujian.
+
+### 9.1 Jalankan Redis
 
 ```bash
 sudo systemctl enable --now redis-server
 redis-cli ping
 ```
 
-Output yang diharapkan:
+Output yang diharapkan: `PONG`
 
-```text
-PONG
-```
+### 9.2 Install plugin Redis Object Cache
 
-Untuk WordPress object cache, gunakan salah satu jalur berikut.
-
-Jalur WP-CLI:
+**Via WP-CLI (direkomendasikan):**
 
 ```bash
 cd /var/www/wordpress
@@ -429,39 +670,35 @@ sudo -u www-data wp plugin install redis-cache --activate
 sudo -u www-data wp redis enable
 ```
 
-Jalur dashboard WordPress:
+**Via dashboard WordPress:**
 
-1. Masuk ke `Plugins`.
-2. Install plugin `Redis Object Cache`.
+1. Masuk ke `Plugins > Add New`.
+2. Cari dan install `Redis Object Cache`.
 3. Aktifkan plugin.
 4. Klik `Enable Object Cache`.
 
-Verifikasi:
+### 9.3 Verifikasi
 
 ```bash
 cd /var/www/wordpress
 sudo -u www-data wp eval 'var_dump(wp_using_ext_object_cache());'
-test -f /var/www/wordpress/wp-content/object-cache.php
+test -f /var/www/wordpress/wp-content/object-cache.php && echo "object-cache.php OK"
 ```
 
 Output `wp_using_ext_object_cache()` harus `bool(true)`.
 
-## 8. Install Plugin CBT Exam System
+---
 
-Jika repo/plugin belum ada, salin atau clone plugin ke folder WordPress:
+## 10. Install Plugin CBT Exam System
+
+### 10.1 Clone atau salin plugin
 
 ```bash
 cd /var/www/wordpress/wp-content/plugins
 sudo -u www-data git clone https://github.com/coblax/CBT-EXAM-SYSTEM cbt-exam-system
 ```
 
-Masuk ke folder plugin:
-
-```bash
-cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
-```
-
-Install dependency PHP produksi:
+### 10.2 Install dependency PHP (Composer)
 
 ```bash
 cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
@@ -469,84 +706,35 @@ sudo chown -R www-data:www-data .
 sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
 ```
 
-Jalankan Composer dengan user yang punya ownership folder plugin. Di dokumen ini folder plugin di-clone sebagai `www-data`, jadi Composer juga dijalankan sebagai `www-data`. Jangan campur `sudo composer install`, user login biasa, dan `www-data` dalam folder yang sama karena bisa membuat file `vendor/` berbeda ownership.
+> **Penting tentang ownership:** Selalu jalankan Composer dengan user yang sama dengan pemilik folder plugin (`www-data`). Jangan campur `sudo composer install` dengan `sudo -u www-data composer install` — ini menyebabkan file `vendor/` berbeda ownership dan Composer gagal di kemudian hari.
 
-Catatan penting untuk checklist unit test:
+### 10.3 Build asset frontend
 
-- Command produksi di atas memakai `--no-dev`, jadi `vendor/bin/phpunit` memang tidak akan ada.
-- Di server produksi, unit test tidak wajib dijalankan. Lanjutkan ke smoke test WordPress/plugin.
-- Jika Anda ingin menjalankan checklist unit test di server staging/instalasi, gunakan langkah khusus di bawah sebelum kembali ke mode produksi.
-
-Jalankan checklist unit test hanya jika dibutuhkan:
-
-```bash
-cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
-sudo chown -R www-data:www-data .
-
-# Install dependency PHP termasuk require-dev agar vendor/bin/phpunit tersedia.
-sudo -u www-data env HOME=/tmp composer install --optimize-autoloader
-
-# Install dependency JS agar vitest tersedia.
-sudo -u www-data env HOME=/tmp npm ci
-
-# Jalankan test.
-sudo -u www-data env HOME=/tmp composer test:php
-sudo -u www-data env HOME=/tmp npm run test:js
-```
-
-Jika muncul `./node_modules/.bin/vitest: Permission denied`, biasanya permission `node_modules` rusak karena pernah menjalankan `chmod 644` ke semua file. Cara paling bersih:
-
-```bash
-cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
-sudo rm -rf node_modules
-sudo -u www-data env HOME=/tmp npm ci
-sudo -u www-data env HOME=/tmp npm run test:js
-```
-
-Jika muncul `vendor/bin/phpunit: No such file or directory`, berarti dependency dev belum dipasang atau sebelumnya Composer dijalankan dengan `--no-dev`:
-
-```bash
-cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
-sudo -u www-data env HOME=/tmp composer install --optimize-autoloader
-sudo -u www-data env HOME=/tmp composer test:php
-```
-
-Setelah checklist unit test selesai dan server akan dipakai produksi, kembalikan dependency PHP ke mode produksi:
-
-```bash
-cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
-sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
-```
-
-Build asset frontend dari folder plugin. Langkah ini wajib jika hasil clone belum membawa folder `public/build/` atau file `public/build/manifest.json` belum ada. Jika repo/release yang Anda deploy sudah membawa `public/build/manifest.json`, langkah `npm ci` dan `npm run build` boleh dilewati.
+Langkah ini **wajib** jika folder `public/build/` belum ada atau file `public/build/manifest.json` tidak ditemukan. Jika Anda men-deploy dari release yang sudah membawa `public/build/manifest.json`, langkah ini boleh dilewati.
 
 ```bash
 cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
 sudo -u www-data env HOME=/tmp npm ci
 sudo -u www-data env HOME=/tmp npm run build
-test -f public/build/manifest.json
 ```
 
-File `public/build/manifest.json` adalah daftar asset produksi yang dibaca WordPress. Tanpa file ini, halaman CBT siswa bisa tampil tanpa JavaScript/CSS produksi.
+Verifikasi build berhasil:
 
-Setelah build berhasil di server produksi, folder `node_modules` boleh dihapus untuk menghemat ruang disk:
+```bash
+test -f public/build/manifest.json && echo "Build OK" || echo "BUILD GAGAL - jangan lanjut!"
+```
+
+> **Jika build gagal**, jangan lanjutkan ke aktivasi. Cek versi Node.js (`node -v`) dan pastikan minimal versi 20.
+
+Setelah build berhasil, folder `node_modules` boleh dihapus untuk menghemat disk:
 
 ```bash
 rm -rf node_modules
 ```
 
-Jika `npm run build` gagal, jangan lanjut aktivasi produksi dulu. Cek versi Node.js dan ulangi dari folder plugin:
+### 10.4 Rapikan permission
 
-```bash
-node -v
-npm -v
-cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
-sudo -u www-data env HOME=/tmp npm ci
-sudo -u www-data env HOME=/tmp npm run build
-test -f public/build/manifest.json
-```
-
-Rapikan permission:
+Jalankan **setelah** Composer dan build asset selesai:
 
 ```bash
 sudo chown -R www-data:www-data /var/www/wordpress/wp-content/plugins/cbt-exam-system
@@ -555,19 +743,137 @@ sudo find /var/www/wordpress/wp-content/plugins/cbt-exam-system -type f -exec ch
 sudo find /var/www/wordpress/wp-content/plugins/cbt-exam-system/vendor/bin -type f -exec chmod 755 {} \; 2>/dev/null || true
 ```
 
-Jalankan perapihan permission setelah build asset selesai. Jangan menjalankan unit test setelah langkah ini kecuali Anda mengulang `npm ci` atau mengembalikan execute permission binary test.
+### 10.5 Unit Test (Opsional — hanya untuk staging)
 
-## 9. Selesaikan Instalasi WordPress
+Di server **produksi**, unit test tidak perlu dijalankan. Lanjut ke Langkah 11.
 
-Buka browser:
+Jika ingin menjalankan unit test di staging, ikuti langkah-langkah berikut:
 
-```text
-https://ujian.example.sch.id/
+**Langkah 1 — Install PHPUnit (PHP Unit Test):**
+
+Pada Langkah 10.2 sebelumnya, Composer dijalankan dengan `--no-dev` sehingga package test tidak diinstall. Jalankan ulang **tanpa** `--no-dev` agar PHPUnit, Brain Monkey, dan Mockery tersedia:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo chown -R www-data:www-data .
+sudo -u www-data env HOME=/tmp composer install --optimize-autoloader
 ```
 
-Selesaikan wizard WordPress, buat akun administrator, lalu masuk ke dashboard.
+Verifikasi PHPUnit terinstall:
 
-Aktifkan plugin:
+```bash
+vendor/bin/phpunit --version
+```
+
+**Langkah 2 — Install Vitest (JS Unit Test):**
+
+Vitest sudah termasuk dalam `devDependencies` di `package.json`. Jika `node_modules` sudah ada dari Langkah 10.3, Vitest sudah tersedia. Jika `node_modules` sudah dihapus, install ulang:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo -u www-data env HOME=/tmp npm ci
+```
+
+Verifikasi Vitest terinstall:
+
+```bash
+./node_modules/.bin/vitest --version
+```
+
+**Langkah 3 — Jalankan test:**
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+
+# PHP Unit Test (PHPUnit + Brain Monkey + Mockery)
+sudo -u www-data env HOME=/tmp composer test:php
+
+# JS Unit Test (Vitest + jsdom)
+sudo -u www-data env HOME=/tmp npm run test:js
+```
+
+**Langkah 4 — Kembalikan ke mode produksi:**
+
+Setelah test selesai, hapus dependency dev agar folder `vendor/` tetap ringan:
+
+```bash
+sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
+```
+
+### 10.6 Playwright E2E & CBT Test Hub (Opsional — hanya untuk staging)
+
+Plugin CBT memiliki **Test Hub** di dashboard admin (`CBT Test Hub`) yang bisa menjalankan unit test dan **flow check E2E** (end-to-end) menggunakan Playwright. Fitur ini berguna untuk memverifikasi alur ujian secara menyeluruh: login → start → autosave → finish → result.
+
+> **Catatan:** Bagian ini hanya untuk server staging/development. Di server produksi, Test Hub tetap bisa menjalankan unit test (PHPUnit/Vitest), tetapi flow check E2E membutuhkan browser headless yang tidak lazim dipasang di produksi.
+
+**Langkah 1 — Install dependency sistem untuk Chromium headless:**
+
+Playwright membutuhkan library sistem untuk menjalankan browser. Di Ubuntu/Debian:
+
+```bash
+sudo apt install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+  libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 \
+  libcairo2 libasound2 libxshmfence1
+```
+
+**Langkah 2 — Install Chromium via Playwright:**
+
+Plugin menyimpan browser Chromium di folder lokal `.playwright-browsers` agar tidak mengganggu sistem:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo -u www-data env HOME=/tmp npm run playwright:install:chromium
+```
+
+Verifikasi:
+
+```bash
+ls .playwright-browsers/
+```
+
+Harus ada folder `chromium-*` di dalamnya.
+
+**Langkah 3 — Konfigurasi base URL:**
+
+Playwright perlu tahu URL WordPress yang bisa diakses. Set via environment variable atau dari dashboard **CBT Test Hub > Settings**:
+
+```bash
+# Via environment variable (untuk CLI)
+export CBT_E2E_BASE_URL="https://ujian.example.sch.id"
+```
+
+Atau via dashboard: buka `CBT Test Hub`, klik tab **Settings**, isi **E2E Base URL**.
+
+**Langkah 4 — Jalankan E2E test:**
+
+**Via CLI:**
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+
+# Jalankan semua E2E test
+sudo -u www-data env HOME=/tmp PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers \
+  CBT_E2E_BASE_URL="https://ujian.example.sch.id" npm run test:e2e
+
+# Jalankan flow check spesifik (contoh: recovery)
+sudo -u www-data env HOME=/tmp PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers \
+  CBT_E2E_BASE_URL="https://ujian.example.sch.id" npm run test:e2e:recovery
+```
+
+**Via dashboard CBT Test Hub:**
+
+1. Buka `CBT Test Hub` di dashboard admin.
+2. Pilih tab area yang ingin ditest (Recovery, Sync, Auth, Timer, dll).
+3. Klik **Queue Checklist Flow Check** untuk mengantrekan flow E2E ke background job.
+4. Hasil flow check bisa dilihat langsung di panel Test Hub.
+
+> **Penting:** Flow check dari Test Hub membutuhkan `proc_open` aktif di PHP (default aktif). Jika dinonaktifkan di `php.ini` (`disable_functions`), runner test tidak bisa berjalan.
+
+---
+
+## 11. Aktifkan Plugin & Selesaikan Konfigurasi
+
+### 11.1 Aktifkan plugin CBT
 
 ```bash
 cd /var/www/wordpress
@@ -576,18 +882,15 @@ sudo -u www-data wp plugin activate cbt-exam-system
 
 Atau aktifkan dari `Dashboard > Plugins`.
 
-Saat aktivasi plugin:
+Saat aktivasi, plugin otomatis:
+- Membuat/migrasi tabel database CBT
+- Menyiapkan role dan capability CBT
+- Membuat halaman frontend kanonik CBT
+- Menjadwalkan cron worker plugin
 
-- tabel CBT dibuat atau dimigrasikan
-- role dan capability CBT disiapkan
-- halaman frontend kanonik CBT dibuat/disinkronkan
-- cron worker plugin dijadwalkan
+### 11.2 Atur permalink
 
-## 10. Atur Permalink dan Cron
-
-Jalankan bagian ini setelah WordPress selesai diinstall dan plugin CBT sudah aktif. Command `wp ...` sebaiknya dijalankan dari folder WordPress `/var/www/wordpress`.
-
-Aktifkan permalink WordPress agar URL halaman dan REST API rapi:
+Permalink harus aktif agar URL halaman dan REST API bekerja dengan benar.
 
 ```bash
 cd /var/www/wordpress
@@ -595,77 +898,70 @@ sudo -u www-data env HOME=/tmp wp rewrite structure '/%postname%/' --hard
 sudo -u www-data env HOME=/tmp wp rewrite flush --hard
 ```
 
-Penjelasan singkat:
+> **Penjelasan:** `env HOME=/tmp` mencegah error WP-CLI saat user `www-data` tidak punya home directory yang writable.
 
-- `wp rewrite structure '/%postname%/' --hard` mengatur permalink WordPress ke format slug.
-- `wp rewrite flush --hard` menyegarkan aturan rewrite agar URL baru langsung aktif.
-- `env HOME=/tmp` mencegah error WP-CLI saat user `www-data` tidak punya home directory yang writable.
+### 11.3 Atur cron OS
 
-Di `wp-config.php` sebelumnya kita mengaktifkan:
-
-```php
-define('DISABLE_WP_CRON', true);
-```
-
-Artinya WordPress tidak menjalankan cron otomatis dari request pengunjung. Karena itu, kita wajib membuat cron OS agar worker WordPress dan CBT tetap berjalan.
-
-Buka crontab untuk user `www-data`:
+Di `wp-config.php` sebelumnya kita menonaktifkan cron bawaan WordPress (`DISABLE_WP_CRON = true`) karena cron bawaan hanya berjalan saat ada pengunjung — tidak reliable untuk ujian. Sebagai gantinya, kita buat cron OS yang berjalan setiap menit.
 
 ```bash
 sudo crontab -u www-data -e
 ```
 
-Tambahkan satu baris ini, lalu simpan:
+Tambahkan baris ini, lalu simpan:
 
 ```cron
 * * * * * /usr/bin/php /var/www/wordpress/wp-cron.php > /dev/null 2>&1
 ```
 
-Artinya server menjalankan `wp-cron.php` setiap 1 menit memakai PHP CLI.
-
-Cek crontab sudah tersimpan:
+Verifikasi:
 
 ```bash
 sudo crontab -u www-data -l
 ```
 
-Cek event cron WordPress dan CBT:
+Cek event cron CBT sudah terdaftar:
 
 ```bash
 cd /var/www/wordpress
 sudo -u www-data env HOME=/tmp wp cron event list | grep -E 'cbt|hook|next_run'
 ```
 
-Cron ini penting untuk worker CBT seperti flush runtime, finalisasi attempt expired, security ingest, preflight, cohort index, dan warm readiness. Jika cron ini tidak berjalan, attempt expired, buffer jawaban, dan beberapa proses background bisa terlambat diproses.
+> **Mengapa cron ini penting?** Worker CBT seperti flush runtime buffer, finalisasi attempt expired, security ingest, preflight check, dan warm readiness semuanya bergantung pada cron ini. Jika tidak berjalan, jawaban siswa bisa terlambat disimpan dan attempt expired tidak terproses.
 
-## 11. Setup Awal CBT
+---
 
-Di dashboard WordPress:
+## 12. Setup Awal CBT
 
-1. Buka `CBT Cache`.
-2. Pastikan `Readiness = ready`, `Backend Hint = redis`, dan `Probe Status = passed`.
-3. Jika belum siap, ikuti checklist di halaman `CBT Cache`.
-4. Buka `CBT Branding` untuk identitas sekolah.
-5. Buka `CBT Subjects` untuk membuat mata pelajaran.
-6. Buka `CBT Users` untuk import guru/siswa.
-7. Buka `CBT Questions` untuk import atau membuat bank soal.
-8. Buka `CBT Exams` untuk membuat ujian, jadwal, target kelas, token, dan opsi randomisasi.
-9. Buka halaman siswa:
+Setelah plugin aktif, lakukan konfigurasi awal dari dashboard WordPress:
+
+| No | Menu | Tujuan |
+|----|------|--------|
+| 1 | **CBT Cache** | Pastikan `Readiness = ready`, `Backend Hint = redis`, `Probe Status = passed` |
+| 2 | **CBT Branding** | Atur identitas sekolah (logo, nama, warna) |
+| 3 | **CBT Subjects** | Buat mata pelajaran |
+| 4 | **CBT Users** | Import atau buat akun guru dan siswa |
+| 5 | **CBT Questions** | Import atau buat bank soal |
+| 6 | **CBT Exams** | Buat ujian, atur jadwal, target kelas, token, randomisasi |
+
+Halaman ujian siswa bisa diakses di:
 
 ```text
 https://ujian.example.sch.id/cbt-ujian/
 ```
 
-Jika ingin siswa langsung membuka domain utama tanpa path `/cbt-ujian/`, jadikan halaman CBT sebagai homepage WordPress.
+### Jadikan halaman CBT sebagai homepage
 
-Cara dashboard:
+Agar siswa langsung melihat halaman ujian saat membuka domain utama (tanpa harus mengetik `/cbt-ujian/`):
+
+**Via dashboard:**
 
 1. Buka `Settings > Reading`.
-2. Pada `Your homepage displays`, pilih `A static page`.
-3. Pilih halaman `CBT Ujian` atau halaman dengan slug `cbt-ujian` sebagai `Homepage`.
-4. Simpan perubahan.
+2. Pilih `A static page` pada "Your homepage displays".
+3. Pilih halaman `CBT Ujian` sebagai Homepage.
+4. Simpan.
 
-Cara WP-CLI:
+**Via WP-CLI:**
 
 ```bash
 cd /var/www/wordpress
@@ -675,26 +971,22 @@ sudo -u www-data env HOME=/tmp wp option update page_on_front "$FRONT_PAGE_ID"
 sudo -u www-data env HOME=/tmp wp rewrite flush --hard
 ```
 
-Setelah itu halaman siswa bisa dibuka dari:
+---
 
-```text
-https://ujian.example.sch.id/
-```
+## 13. Smoke Test
 
-## 12. Smoke Test
+Jalankan pengecekan ini untuk memastikan semua komponen berjalan sebelum lanjut ke tuning.
 
-Jalankan dari server:
+### 13.1 Test dari terminal
 
 ```bash
+# Test akses HTTPS
 curl -I https://ujian.example.sch.id/
 
-# Jalankan ini jika halaman CBT tetap memakai slug /cbt-ujian/.
-# Jika CBT sudah dijadikan homepage, test domain utama di atas sudah cukup.
+# Test halaman CBT (jika belum dijadikan homepage)
 curl -I https://ujian.example.sch.id/cbt-ujian/
 
-# Opsional jika phpMyAdmin dipasang:
-curl -I https://ujian.example.sch.id/phpmyadmin/
-
+# Cek status plugin
 cd /var/www/wordpress
 sudo -u www-data env HOME=/tmp wp plugin status cbt-exam-system
 sudo -u www-data env HOME=/tmp wp option get cbt_exam_system_db_version
@@ -702,28 +994,120 @@ sudo -u www-data env HOME=/tmp wp cron event list | grep cbt
 sudo -u www-data env HOME=/tmp wp eval 'var_dump(wp_using_ext_object_cache());'
 ```
 
-Jalankan dari folder plugin:
+### 13.2 Test file plugin
 
 ```bash
 cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
-test -f vendor/autoload.php
-test -f public/build/manifest.json
+test -f vendor/autoload.php && echo "Composer OK" || echo "GAGAL: vendor/autoload.php tidak ada"
+test -f public/build/manifest.json && echo "Build OK" || echo "GAGAL: manifest.json tidak ada"
 ```
 
-Lakukan uji manual:
+### 13.3 Test manual (wajib sebelum ujian nyata)
 
-1. Login sebagai admin.
-2. Buat subject kecil.
-3. Buat user siswa.
-4. Buat exam kecil dengan beberapa soal.
+1. Login sebagai admin WordPress.
+2. Buat 1 subject kecil.
+3. Buat 1 user siswa.
+4. Buat 1 exam kecil (3-5 soal).
 5. Publish exam.
-6. Login sebagai siswa dari domain utama `/` jika CBT dijadikan homepage, atau dari `/cbt-ujian/` jika masih memakai slug bawaan.
+6. Login sebagai siswa dari halaman ujian.
 7. Start attempt, isi jawaban, finish exam.
 8. Cek hasil di `CBT Results`.
 
-## 13. Catatan Cache dan CDN
+> **Jika semua test di atas berhasil**, stack dasar sudah hidup. Lanjutkan ke langkah berikutnya.
 
-Jangan cache halaman HTML ujian dan endpoint REST CBT dengan page cache agresif. Jika memakai CDN, reverse proxy, atau FastCGI cache, bypass minimal untuk:
+---
+
+## 14. Backup & Restore
+
+Backup adalah langkah krusial yang sering terlupakan. Lakukan backup **sebelum dan sesudah** setiap periode ujian.
+
+### 14.1 Backup database
+
+```bash
+# Backup seluruh database WordPress + data CBT
+mysqldump -u wp_cbt -p wordpress_cbt --single-transaction --routines --triggers \
+  > /var/backups/wordpress_cbt_$(date +%Y%m%d_%H%M%S).sql
+```
+
+> **Penting:** Gunakan `--single-transaction` agar backup tidak mengunci tabel saat ujian berlangsung.
+
+### 14.2 Backup file
+
+```bash
+# Backup wp-content (plugin, upload, tema)
+sudo tar -czf /var/backups/wp-content_$(date +%Y%m%d_%H%M%S).tar.gz \
+  -C /var/www/wordpress wp-content
+
+# Backup wp-config.php secara terpisah
+sudo cp /var/www/wordpress/wp-config.php \
+  /var/backups/wp-config_$(date +%Y%m%d_%H%M%S).php
+```
+
+### 14.3 Otomasi backup harian (direkomendasikan)
+
+Buat script backup dan jadwalkan via cron:
+
+```bash
+sudo nano /usr/local/bin/backup-cbt.sh
+```
+
+Isi:
+
+```bash
+#!/bin/bash
+BACKUP_DIR="/var/backups/cbt"
+mkdir -p "$BACKUP_DIR"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+# Database
+mysqldump -u wp_cbt -p'GANTI_PASSWORD' wordpress_cbt \
+  --single-transaction --routines --triggers \
+  | gzip > "$BACKUP_DIR/db_$TIMESTAMP.sql.gz"
+
+# File
+tar -czf "$BACKUP_DIR/files_$TIMESTAMP.tar.gz" \
+  -C /var/www/wordpress wp-content wp-config.php
+
+# Hapus backup lebih dari 14 hari
+find "$BACKUP_DIR" -name "*.gz" -mtime +14 -delete
+
+echo "Backup selesai: $TIMESTAMP"
+```
+
+```bash
+sudo chmod +x /usr/local/bin/backup-cbt.sh
+```
+
+Jadwalkan backup harian pukul 02:00:
+
+```bash
+sudo crontab -e
+```
+
+Tambahkan:
+
+```text
+0 2 * * * /usr/local/bin/backup-cbt.sh >> /var/log/backup-cbt.log 2>&1
+```
+
+### 14.4 Restore (jika diperlukan)
+
+```bash
+# Restore database
+gunzip < /var/backups/cbt/db_YYYYMMDD_HHMMSS.sql.gz | mysql -u wp_cbt -p wordpress_cbt
+
+# Restore file
+sudo tar -xzf /var/backups/cbt/files_YYYYMMDD_HHMMSS.tar.gz -C /var/www/wordpress
+sudo chown -R www-data:www-data /var/www/wordpress/wp-content
+```
+
+> **Tips:** Simpan salinan backup ke lokasi eksternal (cloud storage, external drive) untuk perlindungan dari kegagalan hardware.
+
+---
+
+## 15. Catatan Cache & CDN
+
+Jangan cache halaman HTML ujian dan endpoint REST CBT. Jika memakai CDN, reverse proxy, atau FastCGI cache, **bypass** minimal untuk:
 
 ```text
 /wp-admin/*
@@ -733,187 +1117,69 @@ Jangan cache halaman HTML ujian dan endpoint REST CBT dengan page cache agresif.
 /phpmyadmin/*
 ```
 
-Static asset seperti CSS, JS, font, dan gambar boleh dicache. Nginx config di atas hanya memberi cache header untuk file statis.
+Static asset (CSS, JS, font, gambar) **boleh** dicache. Konfigurasi Nginx di atas sudah memberi cache header untuk file statis.
 
-## 14. Monitoring Saat Ujian
+---
 
-Pantau service utama selama ujian:
+## 16. Monitoring Saat Ujian
+
+Pantau service utama selama ujian berlangsung:
 
 ```bash
+# Resource server
 htop
 free -h
 df -h
+
+# Status service
 systemctl status nginx php8.3-fpm mysql redis-server --no-pager
+
+# Log realtime
 journalctl -u php8.3-fpm -n 100 --no-pager
 journalctl -u nginx -n 100 --no-pager
 tail -f /var/log/nginx/wordpress-cbt.error.log
 tail -f /var/log/mysql/slow-query.log
+
+# Redis memory
 redis-cli info memory
 ```
 
-Indikator yang perlu cepat ditangani:
+**Tanda-tanda yang perlu ditangani segera:**
 
-- RAM habis atau swap aktif terus-menerus.
-- PHP-FPM mencapai `pm.max_children`.
-- Error Nginx `502` atau `504`.
-- Slow query MySQL muncul berulang saat ujian.
-- Redis memory mendekati `maxmemory` dan eviction tinggi.
-- Latency endpoint `/wp-json/cbt/v1/*` terasa lambat saat login/start/submit.
+| Masalah | Tindakan |
+|---------|----------|
+| RAM habis / swap aktif terus | Turunkan `pm.max_children` PHP-FPM |
+| PHP-FPM mencapai `pm.max_children` | Naikkan jika RAM masih longgar |
+| Error Nginx `502` atau `504` | Cek socket PHP-FPM dan log |
+| Slow query MySQL berulang | Cek index tabel, restart jika perlu |
+| Redis mendekati `maxmemory` | Naikkan limit atau pisahkan server |
+| Latency REST API CBT tinggi | Matikan plugin WP yang tidak penting |
 
-Jika server mulai berat saat ujian:
+---
 
-1. Turunkan traffic non-ujian dan matikan plugin WordPress yang tidak penting.
-2. Pastikan CDN/page cache tidak mengenai REST CBT dan halaman `/cbt-ujian/`.
-3. Naikkan `pm.max_children` hanya jika RAM masih longgar.
-4. Jika RAM menipis, turunkan `pm.max_children` lebih dulu.
-5. Cek slow query dan Redis readiness dari menu `CBT Cache`.
+## 17. Checklist Sebelum Tuning Produksi
 
-## 15. Troubleshooting Cepat
+Sebelum menerapkan tuning, pastikan semua item berikut sudah terpenuhi:
 
-`502 Bad Gateway`
+- [ ] HTTPS aktif dan sertifikat valid
+- [ ] Jam server sinkron via NTP
+- [ ] Backup database dan `wp-content/uploads` tersedia
+- [ ] Redis object cache aktif dan CBT Cache readiness `ready`
+- [ ] `public/build/manifest.json` tersedia
+- [ ] Cron OS berjalan tiap menit
+- [ ] Tidak ada page cache untuk `/wp-json/cbt/v1/*` dan `/cbt-ujian/*`
+- [ ] phpMyAdmin dibatasi aksesnya atau dihapus jika tidak dibutuhkan
+- [ ] Minimal satu simulasi login → start → autosave → finish → result berhasil
+- [ ] Log Nginx, PHP-FPM, MySQL, dan Redis mudah dipantau
+- [ ] Nilai bawaan PHP-FPM, MySQL, Redis, dan Nginx sudah dicatat (untuk rollback)
 
-- Cek socket `fastcgi_pass` sesuai hasil `ls /run/php/php*-fpm.sock`.
-- Cek `sudo systemctl status php8.3-fpm`.
-- Cek log `/var/log/nginx/wordpress-cbt.error.log`.
+---
 
-`404` pada halaman atau REST API
+## 18. Tuning Produksi (16 Core / 16 GB RAM)
 
-- Pastikan permalink aktif.
-- Jalankan `wp rewrite flush --hard`.
-- Pastikan blok Nginx memakai `try_files $uri $uri/ /index.php?$args;`.
+Lakukan bagian ini **setelah** semua checklist di Langkah 17 terpenuhi. Tujuannya: jika ada error saat tuning, Anda tahu stack dasarnya sudah berjalan.
 
-Frontend CBT blank atau asset tidak muncul
-
-- Pastikan `public/build/manifest.json` ada.
-- Jalankan `npm ci` lalu `npm run build` dari folder plugin.
-- Pastikan permission folder plugin bisa dibaca `www-data`.
-
-Composer gagal `Could not delete ... vendor/...`
-
-- Penyebab paling umum: folder `vendor/` dibuat oleh user berbeda, misalnya pernah menjalankan `sudo composer install`, lalu sekarang Composer dijalankan sebagai `www-data`.
-- Perbaiki ownership folder plugin, lalu ulangi Composer:
-
-```bash
-cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
-sudo chown -R www-data:www-data .
-sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
-```
-
-- Jika masih gagal dan Anda yakin folder ini adalah hasil clone/deploy plugin, hapus `vendor/` lalu install ulang dari `composer.lock`:
-
-```bash
-cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
-sudo rm -rf vendor
-sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
-```
-
-Redis masih fallback
-
-- Pastikan `redis-cli ping` menghasilkan `PONG`.
-- Pastikan `php -m | grep -i redis` menampilkan Redis.
-- Pastikan `wp-content/object-cache.php` ada.
-- Pastikan `wp_using_ext_object_cache()` bernilai `true`.
-- Buka `CBT Cache` dan ikuti next step yang muncul.
-
-phpMyAdmin 404 atau file PHP terunduh
-
-- Pastikan paket `phpmyadmin` sudah terpasang dan folder `/usr/share/phpmyadmin` ada.
-- Pastikan blok `location /phpmyadmin/` dan `location ~ ^/phpmyadmin/(.+\.php)$` ada di server block Nginx.
-- Pastikan blok phpMyAdmin berada sebelum blok umum `location ~ \.php$`.
-- Pastikan `fastcgi_pass` pada blok phpMyAdmin memakai socket PHP-FPM yang benar.
-
-phpMyAdmin `Cannot log in to the MySQL server`
-
-- phpMyAdmin memakai user MySQL/MariaDB, bukan user Linux. User server seperti `coblax` tidak otomatis bisa login ke MySQL.
-- Gunakan user yang dibuat pada tahap phpMyAdmin, misalnya `pma_cbt_admin`, atau buat/reset user MySQL khusus. Jika ingin login dengan username `coblax`, buat user MySQL bernama `coblax`:
-
-```bash
-sudo mysql
-```
-
-```sql
-CREATE USER IF NOT EXISTS 'coblax'@'localhost' IDENTIFIED BY 'ganti_password_mysql_coblax_yang_kuat';
-ALTER USER 'coblax'@'localhost' IDENTIFIED BY 'ganti_password_mysql_coblax_yang_kuat';
-GRANT ALL PRIVILEGES ON wordpress_cbt.* TO 'coblax'@'localhost';
-FLUSH PRIVILEGES;
-EXIT;
-```
-
-- Login phpMyAdmin dengan username `coblax` dan password MySQL yang baru dibuat.
-- Jika nama database bukan `wordpress_cbt`, ganti `wordpress_cbt.*` sesuai nama database WordPress Anda.
-
-Login siswa berhasil, tetapi saat pilih exam kembali ke login
-
-Gejala ini biasanya terjadi karena request setelah login ke endpoint seperti `/wp-json/cbt/v1/exams`, `/wp-json/cbt/v1/session`, atau `/wp-json/cbt/v1/start_attempt` mendapat `401`. Penyebab paling umum pada Nginx + PHP-FPM adalah header `Authorization` tidak diteruskan ke PHP-FPM.
-
-Pastikan blok PHP WordPress di Nginx memiliki baris ini:
-
-```nginx
-location ~ \.php$ {
-    include snippets/fastcgi-php.conf;
-    fastcgi_param HTTP_AUTHORIZATION $http_authorization;
-    fastcgi_pass unix:/run/php/php8.3-fpm.sock;
-}
-```
-
-Setelah mengubah Nginx:
-
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-Cek juga URL WordPress konsisten dengan URL yang dipakai siswa. Jangan campur akses lewat `http://192.168.x.x`, `https://domain`, dan `www.domain` saat ujian:
-
-```bash
-cd /var/www/wordpress
-sudo -u www-data env HOME=/tmp wp option get home
-sudo -u www-data env HOME=/tmp wp option get siteurl
-```
-
-Jika siswa membuka ujian dari IP lokal, `home` dan `siteurl` sebaiknya juga mengarah ke alamat yang sama. Jika siswa membuka dari domain, gunakan domain yang sama dari awal login sampai ujian.
-
-Cara cek cepat dari browser:
-
-1. Buka DevTools `Network`.
-2. Login siswa.
-3. Klik/pilih exam.
-4. Cari request `/wp-json/cbt/v1/exams`, `/session`, atau `/start_attempt`.
-5. Jika status `401` dengan pesan `Authorization token not found`, fix-nya adalah baris `fastcgi_param HTTP_AUTHORIZATION $http_authorization;` di atas.
-6. Jika status `401` dengan pesan `Invalid or expired token`, pastikan `wp-config.php` tidak sering berubah salt/key dan jam server benar.
-7. Jika pesan `Sesi login ini sudah digantikan oleh login lain`, akun siswa sedang dianggap login di browser/perangkat lain. Reset login siswa dari dashboard/admin CBT atau logout dari browser sebelumnya.
-
-Import soal/user gagal
-
-- Cek `upload_max_filesize`, `post_max_size`, dan `max_execution_time`.
-- Pastikan ekstensi `zip`, `xml`, `mbstring`, `gd`, dan `intl` aktif.
-- Cek permission `wp-content/uploads`.
-
-Worker CBT tidak berjalan
-
-- Pastikan cron OS untuk `wp-cron.php` aktif setiap menit.
-- Jalankan `wp cron event list | grep cbt`.
-- Cek apakah `DISABLE_WP_CRON` sudah diimbangi dengan cron OS.
-
-## 16. Checklist Sebelum Tuning Produksi
-
-- HTTPS aktif dan sertifikat valid.
-- Jam server sinkron via NTP.
-- Backup database dan `wp-content/uploads` tersedia.
-- Redis object cache aktif dan CBT Cache readiness `ready`.
-- `public/build/manifest.json` tersedia.
-- Cron OS berjalan tiap menit.
-- Tidak ada page cache untuk `/wp-json/cbt/v1/*` dan `/cbt-ujian/*`.
-- phpMyAdmin dibatasi aksesnya atau dihapus jika tidak dibutuhkan saat ujian.
-- Minimal satu simulasi login, start, autosave, finish, dan result sudah berhasil.
-- Log Nginx, PHP-FPM, MySQL, dan Redis mudah dipantau saat ujian.
-- Nilai bawaan PHP-FPM, MySQL, Redis, dan Nginx sudah dicatat supaya mudah rollback jika tuning akhir perlu dibatalkan.
-
-## 17. Tuning Produksi Terakhir untuk 16 Core / 16 GB
-
-Lakukan bagian ini setelah WordPress, plugin CBT, Redis object cache, cron, dan smoke test dasar sudah berhasil. Tujuannya supaya jika ada error saat tuning, Anda tahu stack dasarnya sudah hidup.
-
-### 17.1 Tuning PHP-FPM
+### 18.1 Tuning PHP-FPM
 
 Edit pool PHP-FPM:
 
@@ -921,7 +1187,7 @@ Edit pool PHP-FPM:
 sudo nano /etc/php/8.3/fpm/pool.d/www.conf
 ```
 
-Contoh baseline aman untuk server `16 core / 16 GB RAM` dengan MySQL dan Redis masih satu host:
+Baseline untuk 16 core / 16 GB (MySQL dan Redis satu host):
 
 ```ini
 pm = dynamic
@@ -935,21 +1201,19 @@ request_slowlog_timeout = 5s
 slowlog = /var/log/php-fpm-www-slow.log
 ```
 
-Catatan sizing:
+**Panduan penyesuaian:**
 
-- `pm.max_children = 64` adalah titik awal aman untuk server 16 GB jika MySQL dan Redis masih satu host.
-- Jika RAM sering hampir habis atau swap aktif, turunkan bertahap ke `56`, lalu `48`.
-- Jika antrean PHP-FPM tinggi, CPU masih longgar, dan RAM masih aman, naikkan bertahap ke `80` atau `96`.
-- Jika database sudah dipisah ke server lain, `pm.max_children` biasanya bisa dinaikkan lebih agresif karena RAM lokal tidak dipakai InnoDB besar.
-- Jangan langsung menaikkan `memory_limit` terlalu besar; limit tinggi membuat risiko OOM lebih besar saat request import/report berjalan bersamaan.
+| Kondisi | Tindakan |
+|---------|----------|
+| RAM sering hampir habis / swap aktif | Turunkan `max_children` ke 56 → 48 |
+| Antrean PHP-FPM tinggi, CPU & RAM longgar | Naikkan `max_children` ke 80 → 96 |
+| Database sudah dipisah ke server lain | `max_children` bisa lebih agresif |
 
 Edit konfigurasi PHP:
 
 ```bash
 sudo nano /etc/php/8.3/fpm/php.ini
 ```
-
-Contoh nilai produksi:
 
 ```ini
 memory_limit = 512M
@@ -971,7 +1235,7 @@ realpath_cache_size=4096K
 realpath_cache_ttl=600
 ```
 
-Opsional, buat file slowlog agar PHP-FPM bisa menulis log request lambat:
+Buat file slowlog:
 
 ```bash
 sudo touch /var/log/php-fpm-www-slow.log
@@ -985,15 +1249,11 @@ Restart PHP-FPM:
 sudo systemctl restart php8.3-fpm
 ```
 
-### 17.2 Tuning MySQL/MariaDB
-
-Buat file konfigurasi khusus:
+### 18.2 Tuning MySQL/MariaDB
 
 ```bash
 sudo nano /etc/mysql/conf.d/cbt-16core.cnf
 ```
-
-Isi baseline:
 
 ```ini
 [mysqld]
@@ -1023,29 +1283,22 @@ slow_query_log_file=/var/log/mysql/slow-query.log
 long_query_time=1
 ```
 
-Restart database:
+**Catatan sizing:**
+- `innodb_buffer_pool_size=6G` menyisakan RAM untuk PHP-FPM, Redis, Nginx, dan OS
+- `max_connections=200` cukup untuk 64 PHP-FPM child
+- Jika database dipisah ke server sendiri (16 GB), buffer pool bisa naik ke 10-11G
+- Jika server mulai swap, turunkan buffer pool ke 5G
 
 ```bash
 sudo systemctl restart mysql
 sudo systemctl status mysql --no-pager
 ```
 
-Catatan sizing:
-
-- `innodb_buffer_pool_size=6G` cocok untuk single server 16 GB karena masih menyisakan RAM untuk PHP-FPM, Redis, Nginx, dan OS cache.
-- `max_connections=200` cukup untuk baseline karena PHP-FPM dimulai dari `64` child; nilai terlalu besar membuat risiko RAM MySQL membengkak saat traffic padat.
-- Jika database dipisah ke server sendiri dengan RAM 16 GB, buffer pool bisa dinaikkan ke `10G` sampai `11G`.
-- Jika server mulai swap, turunkan buffer pool ke `5G` dan turunkan `pm.max_children` PHP-FPM.
-
-### 17.3 Tuning Redis
-
-Edit konfigurasi Redis:
+### 18.3 Tuning Redis
 
 ```bash
 sudo nano /etc/redis/redis.conf
 ```
-
-Pastikan nilai berikut ada atau disesuaikan:
 
 ```conf
 supervised systemd
@@ -1062,7 +1315,10 @@ save 300 10
 save 60 10000
 ```
 
-Restart Redis:
+**Catatan:**
+- `noeviction` — key runtime ujian tidak akan dibuang diam-diam saat memori penuh
+- `appendonly yes` + `appendfsync everysec` — perlindungan jika Redis restart saat ujian
+- Jika mendekati `maxmemory`, naikkan ke `2gb` jika RAM server longgar
 
 ```bash
 sudo systemctl restart redis-server
@@ -1070,21 +1326,13 @@ redis-cli ping
 redis-cli info memory | grep -E 'used_memory_human|maxmemory_human|maxmemory_policy'
 ```
 
-Catatan Redis:
-
-- `noeviction` dipilih agar key runtime ujian tidak dibuang diam-diam ketika memori penuh.
-- `appendonly yes` dengan `appendfsync everysec` memberi perlindungan lebih baik jika Redis/service restart saat ujian.
-- Jika Redis mendekati `maxmemory`, naikkan ke `2gb` hanya jika RAM server masih longgar, atau pisahkan Redis ke server sendiri.
-
-### 17.4 Tuning Global Nginx
-
-Edit konfigurasi global Nginx:
+### 18.4 Tuning Global Nginx
 
 ```bash
 sudo nano /etc/nginx/nginx.conf
 ```
 
-Pastikan nilai globalnya seperti ini. Jika file sudah berisi blok `events` dan `http`, sesuaikan nilainya di blok yang sudah ada, jangan membuat blok dobel.
+Sesuaikan nilai di blok yang sudah ada (jangan buat blok dobel):
 
 ```nginx
 user www-data;
@@ -1129,11 +1377,124 @@ http {
 }
 ```
 
-Validasi dan reload:
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+> **Setelah semua tuning diterapkan**, ulangi smoke test (Langkah 13) dan pantau RAM, CPU, slow query, Redis memory, serta error log saat simulasi beban.
+
+---
+
+## 19. Troubleshooting
+
+### 502 Bad Gateway
+
+- Cek socket `fastcgi_pass` sesuai hasil `ls /run/php/php*-fpm.sock`.
+- Cek `sudo systemctl status php8.3-fpm`.
+- Cek log `/var/log/nginx/wordpress-cbt.error.log`.
+
+### 404 pada halaman atau REST API
+
+- Pastikan permalink aktif: `wp rewrite flush --hard`.
+- Pastikan Nginx memakai `try_files $uri $uri/ /index.php?$args;`.
+
+### Frontend CBT blank / asset tidak muncul
+
+- Pastikan `public/build/manifest.json` ada di folder plugin.
+- Jalankan `npm ci` lalu `npm run build` dari folder plugin.
+- Pastikan permission folder plugin bisa dibaca `www-data`.
+
+### Composer gagal "Could not delete ... vendor/..."
+
+Penyebab: folder `vendor/` dibuat oleh user berbeda.
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo chown -R www-data:www-data .
+sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
+```
+
+Jika masih gagal, hapus `vendor/` lalu install ulang:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+sudo rm -rf vendor
+sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
+```
+
+### Redis masih fallback
+
+- `redis-cli ping` harus menghasilkan `PONG`.
+- `php -m | grep -i redis` harus menampilkan `redis`.
+- File `wp-content/object-cache.php` harus ada.
+- `wp_using_ext_object_cache()` harus bernilai `true`.
+- Buka `CBT Cache` di dashboard dan ikuti next step yang muncul.
+
+### phpMyAdmin 404 atau file PHP terunduh
+
+- Pastikan paket `phpmyadmin` terinstall dan folder `/usr/share/phpmyadmin` ada.
+- Pastikan blok `location /phpmyadmin/` dan `location ~ ^/phpmyadmin/(.+\.php)$` ada di server block Nginx dan posisinya **sebelum** blok umum `location ~ \.php$`.
+- Pastikan `fastcgi_pass` pada blok phpMyAdmin memakai socket PHP-FPM yang benar.
+
+### phpMyAdmin "Cannot log in to the MySQL server"
+
+phpMyAdmin memakai user MySQL, bukan user Linux. Gunakan user yang dibuat di Langkah 6 (`pma_cbt_admin`). Jika ingin login dengan username Linux (misal `coblax`), buat user MySQL dengan nama yang sama:
+
+```bash
+sudo mysql
+```
+
+```sql
+CREATE USER IF NOT EXISTS 'coblax'@'localhost' IDENTIFIED BY 'ganti_password_mysql_yang_kuat';
+ALTER USER 'coblax'@'localhost' IDENTIFIED BY 'ganti_password_mysql_yang_kuat';
+GRANT ALL PRIVILEGES ON wordpress_cbt.* TO 'coblax'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+### Login siswa berhasil tapi saat pilih exam kembali ke login
+
+Gejala: request ke `/wp-json/cbt/v1/exams`, `/session`, atau `/start_attempt` mendapat `401`.
+
+**Penyebab paling umum:** header `Authorization` tidak diteruskan ke PHP-FPM. Pastikan blok PHP di Nginx memiliki:
+
+```nginx
+fastcgi_param HTTP_AUTHORIZATION $http_authorization;
+```
+
+Setelah mengubah Nginx:
 
 ```bash
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Setelah semua tuning diterapkan, ulangi smoke test dan pantau RAM, CPU, slow query MySQL, Redis memory, serta error Nginx/PHP-FPM saat simulasi beban.
+**Cek juga URL konsisten.** Jangan campur akses lewat `http://192.168.x.x`, `https://domain`, dan `www.domain`:
+
+```bash
+cd /var/www/wordpress
+sudo -u www-data env HOME=/tmp wp option get home
+sudo -u www-data env HOME=/tmp wp option get siteurl
+```
+
+**Cara debug dari browser:**
+
+1. Buka DevTools > Network.
+2. Login siswa, lalu pilih exam.
+3. Cari request `/wp-json/cbt/v1/exams`, `/session`, atau `/start_attempt`.
+4. Jika `401` + "Authorization token not found" → tambahkan `fastcgi_param HTTP_AUTHORIZATION` di Nginx.
+5. Jika `401` + "Invalid or expired token" → pastikan salt/key di `wp-config.php` tidak berubah dan jam server benar.
+6. Jika "Sesi login ini sudah digantikan oleh login lain" → reset login siswa dari dashboard admin CBT.
+
+### Import soal/user gagal
+
+- Cek `upload_max_filesize`, `post_max_size`, dan `max_execution_time` di php.ini.
+- Pastikan ekstensi `zip`, `xml`, `mbstring`, `gd`, dan `intl` aktif.
+- Cek permission `wp-content/uploads`.
+
+### Worker CBT tidak berjalan
+
+- Pastikan cron OS untuk `wp-cron.php` aktif setiap menit (Langkah 11.3).
+- Jalankan `wp cron event list | grep cbt`.
+- Pastikan `DISABLE_WP_CRON` di `wp-config.php` diimbangi dengan cron OS.

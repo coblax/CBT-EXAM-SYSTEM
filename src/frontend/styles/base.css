@@ -245,6 +245,9 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login::-webkit-s
     margin-top: 2px;
     color: rgba(255, 255, 255, 0.78);
     font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .cbt-topbar-right {

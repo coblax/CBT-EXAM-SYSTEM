@@ -11,8 +11,12 @@ function createFixture(overrides = {}) {
     var root = document.createElement('div');
     document.body.appendChild(root);
     var calls = {
+        clearMessages: 0,
         render: []
     };
+    var clearMessages = overrides.clearMessages || vi.fn(function () {
+        calls.clearMessages += 1;
+    });
     var retrySessionRecovery = overrides.retrySessionRecovery || vi.fn(function () {
         return Promise.resolve(true);
     });
@@ -31,7 +35,7 @@ function createFixture(overrides = {}) {
     }, overrides.state || {});
 
     var manager = createAppEventManager({
-        clearMessages: function () {},
+        clearMessages: clearMessages,
         closeFinishConfirmModal: function () {},
         debugManager: null,
         documentRef: document,
@@ -117,6 +121,7 @@ function createFixture(overrides = {}) {
 
     return {
         calls: calls,
+        clearMessages: clearMessages,
         loadExams: loadExams,
         manager: manager,
         retrySessionRecovery: retrySessionRecovery,
@@ -126,6 +131,25 @@ function createFixture(overrides = {}) {
 }
 
 describe('createAppEventManager session recovery actions', function () {
+    it('dismisses explicit alerts and rerenders the current stage', function () {
+        var fixture = createFixture();
+        fixture.root.innerHTML = '<button type="button" data-action="dismiss-alert">x</button>';
+        var button = fixture.root.querySelector('[data-action="dismiss-alert"]');
+        var event = {
+            preventDefault: vi.fn(),
+            target: button
+        };
+
+        var handled = fixture.manager.handleRootClick(event);
+
+        expect(handled).toBe(true);
+        expect(event.preventDefault).toHaveBeenCalledTimes(1);
+        expect(fixture.clearMessages).toHaveBeenCalledTimes(1);
+        expect(fixture.calls.render.at(-1)).toMatchObject({
+            reason: 'dismiss-alert'
+        });
+    });
+
     it('delegates retry-session-recovery actions without forcing logout or reset', function () {
         var fixture = createFixture();
         fixture.root.innerHTML = '<button type="button" data-action="retry-session-recovery">Retry</button>';

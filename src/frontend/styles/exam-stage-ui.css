@@ -68,6 +68,22 @@
     margin-top: 4px;
 }
 
+.cbt-exam-fullscreen-guard-actions .cbt-button {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.cbt-exam-fullscreen-guard-actions .cbt-button[data-action="logout"] {
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    border-color: #b91c1c;
+    color: #fff;
+    box-shadow: 0 12px 24px rgba(185, 28, 28, 0.22);
+}
+
+.cbt-exam-fullscreen-guard-actions .cbt-button[data-action="logout"]:hover:not(:disabled) {
+    filter: brightness(0.96);
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-exam-fullscreen-guard {
     background: rgba(2, 6, 23, 0.58);
 }
@@ -91,6 +107,13 @@
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-fullscreen-guard-card p {
     color: #cbd5e1;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-fullscreen-guard-actions .cbt-button[data-action="logout"] {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    border-color: #f87171;
+    color: #fff5f5;
+    box-shadow: 0 14px 28px rgba(127, 29, 29, 0.34);
 }
 
 .cbt-calculator-toggle {

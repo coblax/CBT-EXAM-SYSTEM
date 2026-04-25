@@ -3,7 +3,8 @@
     width: min(100%, 1180px);
 }
 
-.cbt-supervisor-login-layout {
+.cbt-supervisor-login-layout,
+.cbt-frontpage__shell {
     margin: 0 auto;
 }
 
@@ -65,6 +66,17 @@
     gap: 16px;
 }
 
+.cbt-supervisor-filter-bar {
+    grid-template-columns:
+        minmax(150px, 1.05fr)
+        minmax(150px, 0.95fr)
+        minmax(260px, 1.55fr)
+        minmax(150px, 0.95fr)
+        auto;
+    align-items: end;
+    gap: 14px;
+}
+
 .cbt-supervisor-field {
     display: grid;
     gap: 8px;
@@ -91,6 +103,12 @@
 
 .cbt-supervisor-field-search {
     min-width: min(320px, 100%);
+}
+
+.cbt-supervisor-filter-actions {
+    justify-self: end;
+    align-self: end;
+    flex-wrap: nowrap;
 }
 
 .cbt-supervisor-login-actions,
@@ -160,20 +178,51 @@
 }
 
 .cbt-supervisor-hero {
+    position: relative;
+    width: 100vw;
+    margin-top: -16px;
+    margin-right: calc(50% - 50vw);
+    margin-left: calc(50% - 50vw);
+    padding: 0;
+    overflow: hidden;
+    border-radius: 0;
+    background:
+        radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.18), transparent 24%),
+        radial-gradient(circle at 88% 20%, rgba(255, 255, 255, 0.14), transparent 22%),
+        linear-gradient(135deg, #0858be 0%, #1275db 38%, #3a93f1 68%, #6ab3ff 100%);
+    color: #fff;
+    box-shadow: 0 20px 44px rgba(18, 86, 176, 0.18);
+}
+
+.cbt-supervisor-hero::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.04));
+}
+
+.cbt-supervisor-hero-inner {
+    width: min(100%, 1180px);
+    margin: 0 auto;
+    padding: 34px 24px 30px;
     display: flex;
     justify-content: space-between;
-    gap: 18px;
+    gap: 24px;
     align-items: flex-start;
-    padding: 26px 28px;
-    border-radius: 28px;
-    background: linear-gradient(135deg, #0f6fd7 0%, #2f8ef2 52%, #5da8ff 100%);
-    color: #fff;
-    box-shadow: 0 24px 52px rgba(18, 86, 176, 0.22);
+}
+
+.cbt-supervisor-hero-copy {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
 }
 
 .cbt-supervisor-hero .cbt-supervisor-kicker {
-    background: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     color: #fff;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .cbt-supervisor-hero h1,
@@ -181,11 +230,58 @@
     color: inherit;
 }
 
+.cbt-supervisor-hero h1 {
+    font-size: clamp(34px, 4vw, 48px);
+    line-height: 0.98;
+    font-weight: 800;
+    text-wrap: balance;
+}
+
+.cbt-supervisor-hero p {
+    max-width: 700px;
+    font-size: 16px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.9);
+}
+
 .cbt-supervisor-hero-meta {
     display: grid;
-    gap: 4px;
+    gap: 6px;
+    min-width: 220px;
+    padding: 16px 18px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 20px;
     justify-items: end;
     text-align: right;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.08));
+    backdrop-filter: blur(12px);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.16),
+        0 18px 34px rgba(3, 37, 84, 0.16);
+}
+
+.cbt-supervisor-hero-meta-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.cbt-supervisor-hero-meta strong {
+    display: block;
+    font-size: 24px;
+    line-height: 1.05;
+    color: #fff;
+}
+
+.cbt-supervisor-hero-meta small {
+    display: block;
+    font-size: 13px;
+    line-height: 1.4;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.78);
 }
 
 .cbt-supervisor-status-card,
@@ -381,7 +477,6 @@
 }
 
 @media (max-width: 900px) {
-    .cbt-supervisor-hero,
     .cbt-supervisor-status-head,
     .cbt-supervisor-panel-head,
     .cbt-supervisor-section-head,
@@ -389,9 +484,16 @@
         flex-direction: column;
     }
 
+    .cbt-supervisor-hero-inner {
+        flex-direction: column;
+        padding: 28px 18px 24px;
+    }
+
     .cbt-supervisor-hero-meta {
         justify-items: start;
         text-align: left;
+        min-width: 0;
+        width: 100%;
     }
 
     .cbt-supervisor-filter-bar {

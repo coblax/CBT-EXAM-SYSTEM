@@ -500,18 +500,27 @@ export function createAppMetaManager(deps) {
     }
 
     function renderAlert() {
+        function renderDismissibleAlert(message, tone) {
+            return [
+                '<div class="cbt-alert cbt-alert-' + escapeHtml(tone || 'warning') + '">',
+                '<div class="cbt-alert-copy">' + escapeHtml(message || '') + '</div>',
+                '<button class="cbt-alert-dismiss" data-action="dismiss-alert" type="button" aria-label="Tutup informasi" title="Tutup informasi">x</button>',
+                '</div>'
+            ].join('');
+        }
+
         if (state.error) {
-            return '<div class="cbt-alert cbt-alert-error">' + escapeHtml(state.error) + '</div>';
+            return renderDismissibleAlert(state.error, 'error');
         }
         if (state.notice) {
-            return '<div class="cbt-alert cbt-alert-warning">' + escapeHtml(state.notice) + '</div>';
+            return renderDismissibleAlert(state.notice, 'warning');
         }
         var syncAlertMeta = getSyncStatusAlertMeta();
         if (syncAlertMeta) {
             return '<div class="cbt-alert cbt-alert-' + escapeHtml(syncAlertMeta.tone || 'warning') + '">' + escapeHtml(syncAlertMeta.message || '') + '</div>';
         }
         if (state.success) {
-            return '<div class="cbt-alert cbt-alert-success">' + escapeHtml(state.success) + '</div>';
+            return renderDismissibleAlert(state.success, 'success');
         }
         return '';
     }

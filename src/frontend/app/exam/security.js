@@ -349,8 +349,8 @@ export function createExamSecurityManager(deps) {
             '<h3>Mode Fullscreen Wajib Aktif</h3>',
             '<p>Ujian ini menggunakan pengamanan fullscreen. Aktifkan fullscreen terlebih dahulu untuk melanjutkan pengerjaan soal.</p>',
             '<div class="cbt-actions cbt-exam-fullscreen-guard-actions">',
-            '<button class="cbt-button cbt-button-primary" data-action="enter-fullscreen" type="button">Aktifkan Fullscreen</button>',
-            '<button class="cbt-button cbt-button-secondary" data-action="logout" type="button">Logout</button>',
+            '<button class="cbt-button cbt-button-primary" data-action="enter-fullscreen" type="button">AKTIFKAN FULLSCREEN</button>',
+            '<button class="cbt-button cbt-button-danger" data-action="logout" type="button">LOGOUT</button>',
             '</div>',
             '</div>',
             '</div>'

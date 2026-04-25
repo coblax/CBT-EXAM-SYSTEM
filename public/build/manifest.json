@@ -24,27 +24,23 @@
     "file": "assets/frontend-shared-review-DK4Bt0vw.js",
     "name": "frontend-shared-review"
   },
-  "_frontend-stage-exam-B2bv2S6b.css": {
-    "file": "assets/frontend-stage-exam-B2bv2S6b.css",
-    "src": "_frontend-stage-exam-B2bv2S6b.css"
+  "_frontend-stage-exam-C69hTOlP.css": {
+    "file": "assets/frontend-stage-exam-C69hTOlP.css",
+    "src": "_frontend-stage-exam-C69hTOlP.css"
   },
-  "_frontend-stage-exam-Br275uiE.js": {
-    "file": "assets/frontend-stage-exam-Br275uiE.js",
+  "_frontend-stage-exam-C_s275xS.js": {
+    "file": "assets/frontend-stage-exam-C_s275xS.js",
     "name": "frontend-stage-exam",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
       "_frontend-shared-review-DK4Bt0vw.js"
     ],
     "css": [
-      "assets/frontend-stage-exam-B2bv2S6b.css"
+      "assets/frontend-stage-exam-C69hTOlP.css"
     ]
   },
-  "_frontend-stage-result-CbT0gLnl.css": {
-    "file": "assets/frontend-stage-result-CbT0gLnl.css",
-    "src": "_frontend-stage-result-CbT0gLnl.css"
-  },
-  "_frontend-stage-result-Dz_ckL6K.js": {
-    "file": "assets/frontend-stage-result-Dz_ckL6K.js",
+  "_frontend-stage-result-Bx44vpO-.js": {
+    "file": "assets/frontend-stage-result-Bx44vpO-.js",
     "name": "frontend-stage-result",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
@@ -53,6 +49,10 @@
     "css": [
       "assets/frontend-stage-result-CbT0gLnl.css"
     ]
+  },
+  "_frontend-stage-result-CbT0gLnl.css": {
+    "file": "assets/frontend-stage-result-CbT0gLnl.css",
+    "src": "_frontend-stage-result-CbT0gLnl.css"
   },
   "_html-BVB59bdf.js": {
     "file": "assets/html-BVB59bdf.js",
@@ -420,7 +420,7 @@
     "isDynamicEntry": true
   },
   "src/frontend/app/runtime.js": {
-    "file": "assets/runtime-DvZINIGO.js",
+    "file": "assets/runtime-CFrH6x6J.js",
     "name": "runtime",
     "src": "src/frontend/app/runtime.js",
     "isDynamicEntry": true,
@@ -431,14 +431,14 @@
     "dynamicImports": [
       "_frontend-exam-runtime-DEN3jK-l.js",
       "_math-render-z4EJh76n.js",
-      "_frontend-stage-exam-Br275uiE.js",
-      "_frontend-stage-result-Dz_ckL6K.js",
+      "_frontend-stage-exam-C_s275xS.js",
+      "_frontend-stage-result-Bx44vpO-.js",
       "_frontend-feature-calculator-CuFD8t3I.js",
       "src/frontend/app/core/debug-panel.js"
     ]
   },
   "src/frontend/app/supervisor/runtime.js": {
-    "file": "assets/runtime-BCO9tyXv.js",
+    "file": "assets/runtime-CoLYEOb1.js",
     "name": "runtime",
     "src": "src/frontend/app/supervisor/runtime.js",
     "isDynamicEntry": true,
@@ -448,7 +448,7 @@
     ]
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-BV4kXeIH.js",
+    "file": "assets/frontend-core-CoBa7YXa.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
@@ -457,7 +457,7 @@
       "src/frontend/app/runtime.js"
     ],
     "css": [
-      "assets/frontend-ykMmUfmY.css"
+      "assets/frontend-vR-Trj_l.css"
     ],
     "assets": [
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",

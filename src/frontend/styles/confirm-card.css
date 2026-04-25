@@ -67,8 +67,10 @@
     color: #35506b;
     font-size: 12px;
     font-weight: 700;
+    letter-spacing: 0.04em;
     line-height: 1;
     text-align: center;
+    text-transform: uppercase;
     white-space: nowrap;
 }
 
@@ -826,11 +828,21 @@
 /* Final login flow redesign based on the latest direction from the user. */
 .cbt-login-flow-label {
     margin: 22px 0 0;
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    max-width: 100%;
+    padding: 8px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 999px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08));
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.14);
     font-size: 11px;
     font-weight: 800;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: rgba(219, 234, 254, 0.8);
+    color: rgba(248, 250, 252, 0.97);
+    text-shadow: 0 1px 0 rgba(15, 23, 42, 0.16);
 }
 
 .cbt-login-steps {
@@ -1016,14 +1028,19 @@
     color: #46607f;
     font-size: 11px;
     font-weight: 700;
+    letter-spacing: 0.04em;
     line-height: 1;
     text-align: center;
+    text-transform: uppercase;
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-login-flow-label {
-    color: #9bb7d3;
+    border-color: rgba(255, 255, 255, 0.12);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+    color: #dbeafe;
+    box-shadow: 0 14px 28px rgba(2, 6, 23, 0.34);
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-login-flow-card {

@@ -2231,6 +2231,10 @@ describe('createExamSessionManager', function () {
         expect(fixture.state.stage).toBe('exam');
         expect(fixture.state.error).toBe('');
         expect(fixture.state.attemptId).toBe(99);
+        expect(fixture.state.resultProgressVisible).toBe(false);
+        expect(fixture.calls.renderSnapshots.some(function (snapshot) {
+            return snapshot.stage === 'exam' && snapshot.resultProgressVisible === true;
+        })).toBe(false);
     });
 
     it('shows staged result progress while viewing results from the exam picker', async function () {

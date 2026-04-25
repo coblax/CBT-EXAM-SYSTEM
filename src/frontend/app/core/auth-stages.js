@@ -625,8 +625,6 @@ export function createAuthStageManager(deps) {
             '<div class="cbt-field cbt-confirm-field"><label>Mata Pelajaran</label><input class="cbt-input" value="' + escapeHtml(selectedExamSubject) + '" readonly /></div>',
             '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Mulai</label><input class="cbt-input" value="' + escapeHtml(selectedExamStartsAt) + '" readonly /></div>',
             '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Durasi</label><input class="cbt-input" value="' + escapeHtml(selectedExamDurationLabel) + '" readonly /></div>',
-            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Status Akses</label><input class="cbt-input" value="' + escapeHtml(selectedAccessLabel) + '" readonly /></div>',
-            '<div class="cbt-field cbt-confirm-field cbt-confirm-field-compact"><label>Status Attempt</label><input class="cbt-input" value="' + escapeHtml(selectedAttemptLabel) + '" readonly /></div>',
             (
                 tokenInputRequired
                     ? '<div class="cbt-field cbt-confirm-field cbt-confirm-field-token"><label for="cbt-exam-token">Token Ujian</label><input id="cbt-exam-token" class="cbt-input cbt-input-token" name="exam_token" maxlength="6" value="' + escapeHtml(state.examToken) + '" placeholder="6 karakter (tanpa 0 O I L)"' + (hasSelectedExam && !selectedExamCompleted ? '' : ' disabled') + ' /></div>'
