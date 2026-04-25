@@ -44,6 +44,30 @@ export function createApiClient(deps) {
         return fallback;
     }
 
+    function shouldExpireAuthSession(status, code, sentAuthToken) {
+        if (Number(status) !== 401) {
+            return false;
+        }
+
+        var normalizedCode = String(code || '').trim().toLowerCase();
+        if (normalizedCode === 'missing_token' && String(sentAuthToken || '') !== '') {
+            return false;
+        }
+
+        if (
+            normalizedCode === 'token_required' ||
+            normalizedCode === 'token_required_local' ||
+            normalizedCode === 'token_invalid' ||
+            normalizedCode === 'token_invalid_length' ||
+            normalizedCode === 'exam_token_required' ||
+            normalizedCode === 'exam_token_invalid'
+        ) {
+            return false;
+        }
+
+        return true;
+    }
+
     function buildUrl(path, query) {
         var baseInput = String(config.restBasePath || config.restBase || '/wp-json/cbt/v1/');
         var base;
@@ -230,7 +254,7 @@ export function createApiClient(deps) {
                 }
             }
 
-            if (response.status === 401 && useAuth) {
+            if (useAuth && shouldExpireAuthSession(response.status, requestError.code, authToken)) {
                 expireAuthSession(requestError.message);
             }
 

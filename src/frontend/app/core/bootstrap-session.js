@@ -209,6 +209,56 @@ export function createBootstrapSessionManager(deps) {
             : 'online';
     }
 
+    function getErrorCode(error) {
+        return String(error && error.code ? error.code : '').trim().toLowerCase();
+    }
+
+    function getErrorMessage(error, fallback) {
+        var message = error instanceof Error
+            ? String(error.message || '').trim()
+            : String(error && error.message ? error.message : '').trim();
+        return message || String(fallback || 'Sesi belum dapat dipulihkan.').trim();
+    }
+
+    function isTerminalAuthRecoveryError(error) {
+        var code = getErrorCode(error);
+        var message = getErrorMessage(error, '').toLowerCase();
+
+        if (code === 'missing_token') {
+            return !state.token;
+        }
+
+        if (code === 'session_revoked' || code === 'invalid_token' || code === 'unauthorized') {
+            return true;
+        }
+
+        return message.indexOf('sesi login ini sudah digantikan') >= 0
+            || message.indexOf('invalid or expired token') >= 0;
+    }
+
+    function holdSessionRecoveryForRetry(error, recoveryRunId) {
+        clearSessionRecoveryTimers();
+        updateSessionRecoveryProgress(
+            state.sessionRecoveryMode || 'confirm_restore',
+            Math.max(1, Number(state.sessionRecoveryStepIndex) || 1),
+            'Sesi belum dapat dipulihkan',
+            getErrorMessage(error, 'Koneksi/server belum siap. Coba lagi tanpa login ulang.'),
+            {
+                percent: Math.max(16, Number(state.sessionRecoveryPercent) || 16),
+                render: false,
+                runId: recoveryRunId
+            }
+        );
+        state.busy = false;
+        state.error = getErrorMessage(error, 'Sesi belum dapat dipulihkan. Coba lagi.');
+        state.sessionRecoveryCanRetry = true;
+        state.sessionRecoverySlowStage = 'hold';
+        render('session-recovery-error', {
+            code: getErrorCode(error),
+            selectedExamId: Number(state.selectedExamId) || 0
+        });
+    }
+
     function getPersistedSelectedExam() {
         var exams = Array.isArray(state.exams) ? state.exams : [];
         var selectedExamId = Number(state.selectedExamId) || 0;
@@ -494,16 +544,21 @@ export function createBootstrapSessionManager(deps) {
                 return;
             }
 
-            closeSessionRecovery(recoveryRunId);
-            if (!state.token) {
-                state.busy = false;
+            if (isTerminalAuthRecoveryError(error)) {
+                closeSessionRecovery(recoveryRunId);
+                if (!state.token) {
+                    state.busy = false;
+                    render();
+                    return;
+                }
+
+                await fullLogout();
+                state.error = getErrorMessage(error, 'Sesi login berakhir. Silakan login lagi.');
                 render();
                 return;
             }
 
-            fullLogout();
-            state.error = error instanceof Error && error.message ? error.message : 'Sesi login berakhir. Silakan login lagi.';
-            render();
+            holdSessionRecoveryForRetry(error, recoveryRunId);
         }
     }
 

@@ -36,10 +36,31 @@ if (staticImportNames.includes('frontend-exam-runtime')) {
     throw new Error('frontend-exam-runtime masih ikut sebagai static import pada frontend entry.');
 }
 
-const dynamicImportNames = (frontendEntry.dynamicImports || []).map((key) => {
-    const entry = manifest[key];
-    return entry && entry.name ? String(entry.name) : '';
-});
+function collectDynamicImportNames(entry, seen = new Set()) {
+    const names = [];
+
+    for (const key of entry.dynamicImports || []) {
+        if (seen.has(key)) {
+            continue;
+        }
+
+        seen.add(key);
+        const dynamicEntry = manifest[key];
+        if (!dynamicEntry || typeof dynamicEntry !== 'object') {
+            continue;
+        }
+
+        if (dynamicEntry.name) {
+            names.push(String(dynamicEntry.name));
+        }
+
+        names.push(...collectDynamicImportNames(dynamicEntry, seen));
+    }
+
+    return names;
+}
+
+const dynamicImportNames = collectDynamicImportNames(frontendEntry);
 
 for (const requiredName of ['frontend-exam-runtime', 'frontend-stage-exam', 'frontend-stage-result']) {
     if (!dynamicImportNames.includes(requiredName)) {

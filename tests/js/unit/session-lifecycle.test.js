@@ -15,6 +15,7 @@ function createTimerRoot() {
 function createLifecycleFixture(overrides = {}) {
     var calls = {
         bumpQuestionDataGeneration: 0,
+        cancelOpeningAttemptFlow: 0,
         clearAttemptUiStateSyncTimer: 0,
         clearAttemptUiSyncRuntimeState: 0,
         clearAutoSaveRuntimeState: 0,
@@ -94,6 +95,9 @@ function createLifecycleFixture(overrides = {}) {
         bumpQuestionDataGeneration: function () {
             calls.bumpQuestionDataGeneration += 1;
         },
+        cancelOpeningAttemptFlow: function () {
+            calls.cancelOpeningAttemptFlow += 1;
+        },
         clearAttemptUiStateSyncTimer: function () {
             calls.clearAttemptUiStateSyncTimer += 1;
         },
@@ -167,7 +171,7 @@ function createLifecycleFixture(overrides = {}) {
             calls.resetQuestionDataState += 1;
         },
         root,
-        sendLogoutRequestSilently: function (token) {
+        sendLogoutRequestSilently: overrides.sendLogoutRequestSilently || function (token) {
             calls.sendLogoutRequestSilently.push(String(token || ''));
         },
         state,
@@ -362,6 +366,45 @@ describe('createSessionLifecycleManager', function () {
         expect(fixture.calls.exitFullscreenSilently).toBe(1);
         expect(fixture.calls.clearPersistedAttemptUiState).toEqual([55]);
         expect(fixture.calls.clearPersistedQuestionCache).toEqual([55]);
+    });
+
+    it('cancels an opening attempt and waits for server logout before clearing local auth state', async function () {
+        var resolveLogoutRequest;
+        var logoutRequestPromise = new Promise(function (resolve) {
+            resolveLogoutRequest = resolve;
+        });
+        var fixture = createLifecycleFixture({
+            sendLogoutRequestSilently: function (token) {
+                fixture.calls.sendLogoutRequestSilently.push(String(token || ''));
+                return logoutRequestPromise;
+            },
+            state: {
+                attemptId: 0,
+                isOpeningAttempt: true,
+                questionOrderIds: [],
+                questions: [],
+                stage: 'exam',
+                totalQuestions: 0
+            }
+        });
+
+        var logoutPromise = fixture.manager.fullLogout();
+        await Promise.resolve();
+
+        expect(fixture.calls.cancelOpeningAttemptFlow).toBe(1);
+        expect(fixture.calls.sendLogoutRequestSilently).toEqual(['token-123']);
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.authProgressVisible).toBe(true);
+        expect(fixture.state.authProgressMode).toBe('logout');
+        expect(fixture.state.authProgressStepIndex).toBe(4);
+        expect(fixture.calls.clearPersistedAuthSession).toBe(0);
+
+        resolveLogoutRequest({ ok: true });
+        await logoutPromise;
+
+        expect(fixture.state.stage).toBe('login');
+        expect(fixture.state.authProgressVisible).toBe(false);
+        expect(fixture.calls.clearPersistedAuthSession).toBe(1);
     });
 
     it('waits for logout request completion before clearing local auth state during normal logout', async function () {

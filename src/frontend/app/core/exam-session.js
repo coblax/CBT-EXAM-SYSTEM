@@ -924,6 +924,131 @@ export function createExamSessionManager(deps) {
         );
     }
 
+    function validateStartExamToken(selectedExam, submittedToken) {
+        var selectedExamRequiresToken = Number(selectedExam && selectedExam.requires_token ? selectedExam.requires_token : 0) === 1;
+        var tokenInputRequired = Number(
+            selectedExam && selectedExam.token_input_required !== undefined
+                ? selectedExam.token_input_required
+                : (selectedExamRequiresToken ? 1 : 0)
+        ) === 1;
+        var safeSubmittedToken = String(submittedToken || '');
+
+        if (!tokenInputRequired) {
+            return {
+                ok: true,
+                submittedToken: ''
+            };
+        }
+
+        if (safeSubmittedToken === '') {
+            return {
+                code: 'token_required_local',
+                detail: 'Isi token ujian yang benar sebelum menekan lanjut ujian.',
+                message: 'Token ujian wajib diisi.',
+                ok: false,
+                status: 'Token ujian dibutuhkan',
+                submittedToken: safeSubmittedToken
+            };
+        }
+
+        if (safeSubmittedToken.length !== examTokenLength) {
+            return {
+                code: 'token_invalid_length',
+                detail: 'Token ujian harus 6 karakter. Perbaiki token sebelum menekan lanjut ujian.',
+                message: 'Token ujian harus 6 karakter (tanpa 0, O, I, L).',
+                ok: false,
+                status: 'Format token ujian belum valid',
+                submittedToken: safeSubmittedToken
+            };
+        }
+
+        return {
+            ok: true,
+            submittedToken: safeSubmittedToken
+        };
+    }
+
+    function validateStartExamAvailability(selectedExam) {
+        var latestAttemptStatus = getExamLatestAttemptStatus(selectedExam);
+        if (latestAttemptStatus === 'in_progress') {
+            return {
+                ok: true
+            };
+        }
+
+        if (selectedExam && selectedExam.is_class_allowed !== undefined && Number(selectedExam.is_class_allowed) !== 1) {
+            return {
+                code: 'class_not_allowed',
+                detail: 'Pilih exam lain yang sesuai dengan kelas akun ini.',
+                message: 'Exam ini tidak tersedia untuk kelas akun Anda.',
+                ok: false,
+                status: 'Exam tidak tersedia untuk kelas Anda'
+            };
+        }
+
+        if (selectedExam && selectedExam.is_available_now !== undefined && Number(selectedExam.is_available_now) !== 1) {
+            var availabilityReason = String(selectedExam.availability_reason || '').trim().toLowerCase();
+            if (availabilityReason === 'not_started') {
+                return {
+                    code: 'exam_not_started',
+                    detail: 'Tunggu sampai jadwal mulai, lalu refresh daftar exam.',
+                    message: 'Exam ini belum dimulai.',
+                    ok: false,
+                    status: 'Exam belum dimulai'
+                };
+            }
+            if (availabilityReason === 'ended') {
+                return {
+                    code: 'exam_ended',
+                    detail: 'Hubungi pengawas jika Anda masih harus mengerjakan exam ini.',
+                    message: 'Jadwal exam ini sudah selesai.',
+                    ok: false,
+                    status: 'Jadwal exam selesai'
+                };
+            }
+
+            return {
+                code: availabilityReason || 'exam_not_available',
+                detail: 'Refresh daftar exam atau pilih exam lain yang sudah tersedia.',
+                message: 'Exam ini belum tersedia untuk dikerjakan.',
+                ok: false,
+                status: 'Exam belum tersedia'
+            };
+        }
+
+        return {
+            ok: true
+        };
+    }
+
+    function blockStartExamForLocalValidation(validationResult, reason) {
+        var safeValidation = validationResult && typeof validationResult === 'object'
+            ? validationResult
+            : {};
+        cancelOpeningAttemptRequest();
+        resetOpeningRetryState();
+        resetOpeningAttemptProgressState();
+        clearOpeningAttemptServerState();
+        rememberOpeningAttemptLastResult(
+            safeValidation.code || 'token_required_local',
+            safeValidation.message || 'Token ujian wajib diisi.'
+        );
+        state.stage = 'confirm';
+        state.isOpeningAttempt = false;
+        state.busy = false;
+        state.error = String(safeValidation.message || 'Token ujian wajib diisi.');
+        state.notice = '';
+        state.success = '';
+        render(reason || 'start-exam-token-validation', {
+            code: String(safeValidation.code || ''),
+            selectedExamId: Number(state.selectedExamId) || 0
+        });
+    }
+
+    function blockStartExamForTokenValidation(validationResult, reason) {
+        blockStartExamForLocalValidation(validationResult, reason);
+    }
+
     function updateOpeningAttemptQueueState(queuePayload) {
         var queueTicket = String(queuePayload && queuePayload.queue_ticket ? queuePayload.queue_ticket : '').trim();
         var queuePosition = Math.max(0, Number(queuePayload && queuePayload.queue_position) || 0);
@@ -981,6 +1106,7 @@ export function createExamSessionManager(deps) {
     function isTerminalStartAttemptError(error) {
         var code = getErrorCode(error);
         return code === 'attempt_already_completed'
+            || code === 'missing_token'
             || code === 'token_invalid'
             || code === 'token_required'
             || code === 'forbidden'
@@ -1691,13 +1817,17 @@ export function createExamSessionManager(deps) {
             ? 'Token ujian tidak valid'
             : (normalized === 'token_required'
                 ? 'Token ujian dibutuhkan'
-                : 'Exam tidak dapat dilanjutkan');
+                : (normalized === 'missing_token'
+                    ? 'Sesi login tidak diterima server'
+                    : 'Exam tidak dapat dilanjutkan'));
 
         return {
             status: status,
             detail: suggestion || (normalized === 'token_invalid' || normalized === 'token_required'
                 ? 'Kembali ke daftar exam untuk memperbaiki token lalu coba lagi.'
-                : 'Kembali ke daftar exam untuk memeriksa status exam terbaru.')
+                : (normalized === 'missing_token'
+                    ? 'Minta admin memeriksa konfigurasi server agar header Authorization diteruskan ke PHP-FPM.'
+                    : 'Kembali ke daftar exam untuk memeriksa status exam terbaru.'))
         };
     }
 
@@ -3323,7 +3453,6 @@ export function createExamSessionManager(deps) {
 
         var resumeIntent = options.resumeIntentOverride === true
             || (options.resumeIntentOverride !== false && getExamLatestAttemptStatus(selectedExam) === 'in_progress');
-        var requestId = beginOpeningAttemptRequest();
         var submittedToken = options.submittedToken !== undefined
             ? String(options.submittedToken || '')
             : normalizeExamToken(state.examToken);
@@ -3332,6 +3461,22 @@ export function createExamSessionManager(deps) {
         var allowFreshStartFallback = options.allowFreshStartFallback !== false;
         var shouldSkipBlockingRefresh = options.skipExamRefresh === true || resumeIntent;
         var startIntentKey = '';
+        var availabilityValidation = validateStartExamAvailability(selectedExam);
+        if (!resumeIntent && !forceResumeOnly && queueTicket === '' && !availabilityValidation.ok) {
+            blockStartExamForLocalValidation(availabilityValidation, 'start-exam-availability-validation');
+            return;
+        }
+
+        var tokenValidation = validateStartExamToken(selectedExam, submittedToken);
+
+        if (!resumeIntent && !forceResumeOnly && queueTicket === '' && !tokenValidation.ok) {
+            blockStartExamForTokenValidation(tokenValidation, 'start-exam-token-validation');
+            return;
+        }
+
+        submittedToken = String(tokenValidation.submittedToken || '');
+
+        var requestId = beginOpeningAttemptRequest();
 
         var allowProgressRegression = !state.isOpeningAttempt
             || Math.max(0, Number(state.attemptId) || 0) <= 0
@@ -3400,49 +3545,18 @@ export function createExamSessionManager(deps) {
                 }
             }
 
-            if (selectedExam.is_class_allowed !== undefined && Number(selectedExam.is_class_allowed) !== 1) {
-                markOpeningAttemptTerminalFailure(
-                    'Exam ini tidak tersedia untuk kelas akun Anda.',
-                    'class_not_allowed',
-                    {
-                        status: 'Exam tidak tersedia untuk kelas Anda',
-                        detail: 'Kembali ke daftar exam untuk memilih exam lain yang sesuai.'
-                    }
-                );
+            availabilityValidation = validateStartExamAvailability(selectedExam);
+            if (!resumeIntent && !forceResumeOnly && queueTicket === '' && !availabilityValidation.ok) {
+                blockStartExamForLocalValidation(availabilityValidation, 'start-exam-availability-validation-after-refresh');
                 return;
             }
 
-            var selectedExamRequiresToken = Number(selectedExam && selectedExam.requires_token ? selectedExam.requires_token : 0) === 1;
-            var tokenInputRequired = Number(
-                selectedExam && selectedExam.token_input_required !== undefined
-                    ? selectedExam.token_input_required
-                    : (selectedExamRequiresToken ? 1 : 0)
-            ) === 1;
-            if (tokenInputRequired && submittedToken === '') {
-                markOpeningAttemptTerminalFailure(
-                    'Token ujian wajib diisi.',
-                    'token_required_local',
-                    {
-                        status: 'Token ujian dibutuhkan',
-                        detail: 'Kembali ke daftar exam untuk mengisi token ujian yang benar.'
-                    }
-                );
+            tokenValidation = validateStartExamToken(selectedExam, submittedToken);
+            if (!resumeIntent && !forceResumeOnly && queueTicket === '' && !tokenValidation.ok) {
+                blockStartExamForTokenValidation(tokenValidation, 'start-exam-token-validation-after-refresh');
                 return;
             }
-            if (tokenInputRequired && submittedToken.length !== examTokenLength) {
-                markOpeningAttemptTerminalFailure(
-                    'Token ujian harus 6 karakter (tanpa 0, O, I, L).',
-                    'token_invalid_length',
-                    {
-                        status: 'Format token ujian belum valid',
-                        detail: 'Kembali ke daftar exam untuk memperbaiki token yang diinput.'
-                    }
-                );
-                return;
-            }
-            if (!tokenInputRequired) {
-                submittedToken = '';
-            }
+            submittedToken = String(tokenValidation.submittedToken || '');
 
             startIntentKey = resolveOpeningAttemptIntentKey(Number(selectedExam && selectedExam.id) || selectedExamId, options);
             rememberOpeningAttemptContext(selectedExam, submittedToken, resumeIntent, startIntentKey);

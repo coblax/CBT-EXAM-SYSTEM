@@ -23,6 +23,9 @@ export function createSessionLifecycleManager(deps) {
     var clearPersistedQuestionCache = deps.clearPersistedQuestionCache;
     var clearPersistedAuthSession = deps.clearPersistedAuthSession;
     var sendLogoutRequestSilently = deps.sendLogoutRequestSilently;
+    var cancelOpeningAttemptFlow = typeof deps.cancelOpeningAttemptFlow === 'function'
+        ? deps.cancelOpeningAttemptFlow
+        : function () {};
     var queueLoadedQuestionAnswersForFlush = deps.queueLoadedQuestionAnswersForFlush;
     var flushPendingAnswerBatch = deps.flushPendingAnswerBatch;
     var flushAttemptUiState = deps.flushAttemptUiState;
@@ -107,6 +110,16 @@ export function createSessionLifecycleManager(deps) {
                 stepIndex: state.authProgressStepIndex
             }, renderOptions);
         }
+    }
+
+    function waitForLogoutRequest(activeToken, timeoutMessage) {
+        return withTimeout(
+            Promise.resolve(sendLogoutRequestSilently(activeToken)).catch(function () {
+                return null;
+            }),
+            logoutSyncTimeoutMs,
+            timeoutMessage
+        );
     }
 
     function startTimer() {
@@ -395,7 +408,21 @@ export function createSessionLifecycleManager(deps) {
         );
 
         if (isOpeningExamShell) {
-            sendLogoutRequestSilently(activeToken);
+            cancelOpeningAttemptFlow();
+            updateAuthProgress(
+                82,
+                4,
+                'Menutup sesi server',
+                'Token login sedang dinonaktifkan sebelum halaman login ditampilkan.'
+            );
+            try {
+                await waitForLogoutRequest(
+                    activeToken,
+                    'Logout server terlalu lama. Sesi lokal dibersihkan, tetapi sesi server mungkin belum tertutup sempurna.'
+                );
+            } catch (error) {
+                // Tetap lanjutkan clear state lokal agar UI tidak tersangkut.
+            }
             clearAuthenticatedFrontendState({
                 stage: 'login'
             });
@@ -471,11 +498,8 @@ export function createSessionLifecycleManager(deps) {
             'Token login sedang dinonaktifkan dan sesi lokal akan dibersihkan.'
         );
         try {
-            await withTimeout(
-                Promise.resolve(sendLogoutRequestSilently(activeToken)).catch(function () {
-                    return null;
-                }),
-                logoutSyncTimeoutMs,
+            await waitForLogoutRequest(
+                activeToken,
                 'Logout server terlalu lama. Sesi lokal dibersihkan, tetapi sesi server mungkin belum tertutup sempurna.'
             );
         } catch (error) {

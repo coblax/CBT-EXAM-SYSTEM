@@ -1106,6 +1106,12 @@ export function bootstrapFrontendApp() {
     var acknowledgeQuestionRevisionMarker = bindExamRuntimeMethod('questionRuntimeManager', 'acknowledgeQuestionRevisionMarker', undefined);
     sessionLifecycleManager = createSessionLifecycleManager({
         bumpQuestionDataGeneration: bumpQuestionDataGeneration,
+        cancelOpeningAttemptFlow: function () {
+            if (examSessionManager && typeof examSessionManager.cancelOpeningAttemptFlow === 'function') {
+                return examSessionManager.cancelOpeningAttemptFlow();
+            }
+            return undefined;
+        },
         clearAttemptUiStateSyncTimer: clearAttemptUiStateSyncTimer,
         clearAttemptUiSyncRuntimeState: function () {
             attemptUiSyncManager.clearRuntimeState();

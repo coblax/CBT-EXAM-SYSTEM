@@ -391,6 +391,66 @@ describe('createBootstrapSessionManager', function () {
         expect(fixture.calls.render).toBeGreaterThan(0);
     });
 
+    it('keeps recovery retryable instead of logging out when bootstrap hits a network failure', async function () {
+        var fixture = createFixture({
+            persisted: {
+                token: 'token-123',
+                user: {
+                    user_id: 9,
+                    role: 'student'
+                },
+                selectedExamId: 44
+            },
+            loadExams: async function () {
+                var error = new Error('Gagal terhubung ke server.');
+                error.code = 'network_error';
+                error.status = 0;
+                throw error;
+            }
+        });
+
+        await fixture.manager.bootstrapFromPersistedSession();
+
+        expect(fixture.calls.fullLogout).toBe(0);
+        expect(fixture.state.token).toBe('token-123');
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.error).toBe('Gagal terhubung ke server.');
+        expect(fixture.state.sessionRecoveryVisible).toBe(true);
+        expect(fixture.state.sessionRecoveryCanRetry).toBe(true);
+        expect(fixture.state.sessionRecoverySlowStage).toBe('hold');
+        expect(fixture.calls.render).toBeGreaterThan(0);
+    });
+
+    it('keeps recovery retryable when an existing token is rejected as missing by the server', async function () {
+        var fixture = createFixture({
+            persisted: {
+                token: 'token-123',
+                user: {
+                    user_id: 9,
+                    role: 'student'
+                },
+                selectedExamId: 44
+            },
+            loadExams: async function () {
+                var error = new Error('Authorization token not found');
+                error.code = 'missing_token';
+                error.status = 401;
+                throw error;
+            }
+        });
+
+        await fixture.manager.bootstrapFromPersistedSession();
+
+        expect(fixture.calls.fullLogout).toBe(0);
+        expect(fixture.state.token).toBe('token-123');
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.sessionRecoveryVisible).toBe(true);
+        expect(fixture.state.sessionRecoveryCanRetry).toBe(true);
+        expect(fixture.state.sessionRecoveryStatus).toBe('Sesi belum dapat dipulihkan');
+        expect(fixture.state.sessionRecoveryDetail).toBe('Authorization token not found');
+    });
+
     it('renders safely when no persisted session is available', async function () {
         var fixture = createFixture();
 

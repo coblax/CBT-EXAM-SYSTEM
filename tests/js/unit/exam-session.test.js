@@ -868,6 +868,190 @@ describe('createExamSessionManager', function () {
         expect(fixture.state.loginPassword).toBe('');
     });
 
+    it('keeps login successful and safe when the account has no visible exams', async function () {
+        var fixture = createFixture({
+            state: {
+                selectedExamId: 99,
+                stage: 'login'
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'login') {
+                    return {
+                        token: 'token-login-123',
+                        user_id: 19,
+                        role: 'student',
+                        display_name: 'Ayu',
+                        username: 'ayu',
+                        email: 'ayu@example.test',
+                        kode_kelas: 'XII IPA 1',
+                        kode_ruang: 'R-3',
+                        agama: 'Islam',
+                        foto: ''
+                    };
+                }
+
+                if (endpoint === 'exams') {
+                    return {
+                        current_user: {
+                            user_id: 19,
+                            role: 'student',
+                            display_name: 'Ayu',
+                            username: 'ayu',
+                            email: 'ayu@example.test',
+                            kode_kelas: 'XII IPA 1',
+                            kode_ruang: 'R-3',
+                            agama: 'Islam',
+                            foto: ''
+                        },
+                        items: []
+                    };
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+        var form = document.createElement('form');
+        form.innerHTML = [
+            '<input name="identifier" value="ayu" />',
+            '<input name="password" value="secret-pass" />'
+        ].join('');
+
+        await fixture.manager.handleLogin(form);
+
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint;
+        })).toEqual(['login', 'exams', 'entry_flow_metric']);
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.exams).toEqual([]);
+        expect(fixture.state.selectedExamId).toBe(0);
+        expect(fixture.state.examToken).toBe('');
+        expect(fixture.state.token).toBe('token-login-123');
+        expect(fixture.state.error).toBe('');
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.isOpeningAttempt).toBe(false);
+    });
+
+    it('keeps the student on confirm when manual exam token is missing', async function () {
+        var fixture = createFixture({
+            state: {
+                examToken: '',
+                selectedExamId: 55,
+                stage: 'confirm'
+            },
+            selectedExam: {
+                id: 55,
+                duration_minutes: 60,
+                is_class_allowed: 1,
+                latest_attempt_status: '',
+                requires_token: 1,
+                token_input_required: 1
+            },
+            apiRequest: async function (endpoint) {
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.handleStartExam();
+
+        expect(fixture.calls.apiCalls).toHaveLength(0);
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.isOpeningAttempt).toBe(false);
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.error).toBe('Token ujian wajib diisi.');
+        expect(fixture.state.openingAttemptProgressStatus).toBe('');
+        expect(fixture.calls.renderCalls[0]).toMatchObject({
+            meta: {
+                code: 'token_required_local',
+                selectedExamId: 55
+            },
+            reason: 'start-exam-token-validation'
+        });
+    });
+
+    it('keeps the student on confirm when the selected exam is not locally available', async function () {
+        var fixture = createFixture({
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_available_now: 0,
+                        is_class_allowed: 1,
+                        is_within_schedule: 0,
+                        availability_reason: 'not_started',
+                        latest_attempt_id: 0,
+                        latest_attempt_status: '',
+                        requires_token: 0,
+                        token_input_required: 0
+                    }
+                ],
+                selectedExamId: 55,
+                stage: 'confirm'
+            },
+            apiRequest: async function (endpoint) {
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.handleStartExam();
+
+        expect(fixture.calls.apiCalls).toHaveLength(0);
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.isOpeningAttempt).toBe(false);
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.error).toBe('Exam ini belum dimulai.');
+        expect(fixture.calls.renderCalls[0]).toMatchObject({
+            meta: {
+                code: 'exam_not_started',
+                selectedExamId: 55
+            },
+            reason: 'start-exam-availability-validation'
+        });
+    });
+
+    it('keeps auth local and shows a terminal opening message when server misses the auth header', async function () {
+        var fixture = createFixture({
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_available_now: 1,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: '',
+                        requires_token: 0,
+                        token_input_required: 0
+                    }
+                ],
+                selectedExamId: 55,
+                stage: 'confirm'
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'start_attempt') {
+                    var error = new Error('Authorization token not found');
+                    error.code = 'missing_token';
+                    error.status = 401;
+                    throw error;
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.handleStartExam({
+            skipExamRefresh: true
+        });
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.isOpeningAttempt).toBe(true);
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.error).toBe('Authorization token not found');
+        expect(fixture.state.openingAttemptPhase).toBe('opening_terminal_error');
+        expect(fixture.state.openingAttemptCanBack).toBe(true);
+        expect(fixture.state.openingAttemptProgressStatus).toBe('Sesi login tidak diterima server');
+    });
+
     it('recovers a congested start flow by resuming the active attempt after a lock response', async function () {
         var restoredSnapshot = buildCachedQuestionSnapshot(40);
         var fixture = createFixture({
@@ -1726,7 +1910,7 @@ describe('createExamSessionManager', function () {
         await retryPromise;
     });
 
-    it('keeps the user in the opening shell when local token validation fails after the start button is pressed', async function () {
+    it('keeps the user in confirm when local token format validation fails', async function () {
         var fixture = createFixture({
             state: {
                 exams: [
@@ -1747,13 +1931,13 @@ describe('createExamSessionManager', function () {
 
         await fixture.manager.handleStartExam();
 
-        expect(fixture.state.stage).toBe('exam');
-        expect(fixture.state.isOpeningAttempt).toBe(true);
-        expect(fixture.state.openingAttemptPhase).toBe('opening_terminal_error');
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.isOpeningAttempt).toBe(false);
+        expect(fixture.state.openingAttemptPhase).toBe('');
         expect(fixture.state.error).toContain('Token ujian harus 6 karakter');
         expect(fixture.calls.apiCalls.map(function (entry) {
             return entry.endpoint;
-        })).toEqual(['exams']);
+        })).toEqual([]);
     });
 
     it('paints the result loading flow immediately before fetching review data', async function () {
