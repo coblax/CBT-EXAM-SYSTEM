@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createExamSessionManager } from '../../../src/frontend/app/core/exam-session.js';
 
 function buildCachedQuestionSnapshot(totalQuestions) {
@@ -929,6 +929,53 @@ describe('createExamSessionManager', function () {
         expect(fixture.state.error).toBe('');
         expect(fixture.state.busy).toBe(false);
         expect(fixture.state.isOpeningAttempt).toBe(false);
+    });
+
+    it('starts a login retry countdown when invalid credentials include retry_after', async function () {
+        vi.useFakeTimers();
+        try {
+            var fixture = createFixture({
+                state: {
+                    stage: 'login'
+                },
+                apiRequest: async function (endpoint) {
+                    if (endpoint === 'login') {
+                        var error = new Error('Invalid identifier or password');
+                        error.code = 'invalid_credentials';
+                        error.status = 401;
+                        error.data = {
+                            retry_after: 5
+                        };
+                        throw error;
+                    }
+
+                    throw new Error('Unexpected endpoint: ' + String(endpoint));
+                }
+            });
+            var form = document.createElement('form');
+            form.innerHTML = [
+                '<input name="identifier" value="ayu" />',
+                '<input name="password" value="wrong-pass" />'
+            ].join('');
+
+            await fixture.manager.handleLogin(form);
+
+            expect(fixture.state.stage).toBe('login');
+            expect(fixture.state.error).toBe('Invalid identifier or password');
+            expect(fixture.state.loginRateLimitRemaining).toBe(5);
+            expect(fixture.calls.apiCalls.map(function (entry) {
+                return entry.endpoint;
+            })).toEqual(['login']);
+
+            vi.advanceTimersByTime(1000);
+            expect(fixture.state.loginRateLimitRemaining).toBe(4);
+
+            vi.advanceTimersByTime(4000);
+            expect(fixture.state.loginRateLimitRemaining).toBe(0);
+            expect(fixture.state.error).toBe('');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('keeps the student on confirm when manual exam token is missing', async function () {

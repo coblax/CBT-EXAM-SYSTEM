@@ -4,6 +4,7 @@ import { createApiClient } from '../../../src/frontend/app/core/api.js';
 function createFixture(responsePayload, status = 401, overrides = {}) {
     var calls = {
         expireAuthSession: [],
+        expireAuthSessionContexts: [],
         fetch: [],
         schedulePendingAnswerRetry: [],
         setConnectionStatus: []
@@ -17,8 +18,9 @@ function createFixture(responsePayload, status = 401, overrides = {}) {
             restBasePath: '/wp-json/cbt/v1/'
         },
         diagnosticsManager: null,
-        expireAuthSession: function (message) {
+        expireAuthSession: function (message, context) {
             calls.expireAuthSession.push(message);
+            calls.expireAuthSessionContexts.push(context || {});
         },
         fetchImpl: async function (url, options) {
             calls.fetch.push({
@@ -103,7 +105,7 @@ describe('createApiClient auth expiry handling', function () {
         expect(fixture.calls.fetch[0].options.headers.Authorization).toBe('Bearer login-token');
     });
 
-    it('clears the login session when no bearer token is available locally', async function () {
+    it('does not clear local auth on missing bearer responses even when the local token is empty', async function () {
         var fixture = createFixture({
             code: 'missing_token',
             message: 'Authorization token not found'
@@ -118,7 +120,7 @@ describe('createApiClient auth expiry handling', function () {
             status: 401
         });
 
-        expect(fixture.calls.expireAuthSession).toEqual(['Authorization token not found']);
+        expect(fixture.calls.expireAuthSession).toHaveLength(0);
     });
 
     it('clears the login session for revoked sessions', async function () {
@@ -133,5 +135,11 @@ describe('createApiClient auth expiry handling', function () {
         });
 
         expect(fixture.calls.expireAuthSession).toEqual(['Sesi login ini sudah digantikan oleh login lain.']);
+        expect(fixture.calls.expireAuthSessionContexts[0]).toMatchObject({
+            code: 'session_revoked',
+            method: 'GET',
+            path: 'session',
+            status: 401
+        });
     });
 });

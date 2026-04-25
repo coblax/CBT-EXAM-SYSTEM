@@ -64,6 +64,18 @@ export function createAppEventManager(deps) {
     var IMAGE_RICH_ZOOM_SCALE_STEPS = [75, 100, 125, 150, 175, 200, 225, 250];
     var TABLE_RICH_ZOOM_SCALE_STEPS = [75, 100, 125, 150, 175, 200];
 
+    function getErrorCode(error) {
+        return String(error && error.code ? error.code : '').trim().toLowerCase();
+    }
+
+    function formatReloadExamsError(error) {
+        if (getErrorCode(error) === 'missing_token') {
+            return 'Server tidak menerima header Authorization. Periksa konfigurasi Nginx PHP-FPM: fastcgi_param HTTP_AUTHORIZATION $http_authorization;';
+        }
+
+        return error instanceof Error ? error.message : 'Gagal memuat exam.';
+    }
+
     function resolveEventElement(target) {
         if (target instanceof Element) {
             return target;
@@ -739,7 +751,7 @@ export function createAppEventManager(deps) {
                     state.error = '';
                 })
                 .catch(function (error) {
-                    state.error = error instanceof Error ? error.message : 'Gagal memuat exam.';
+                    state.error = formatReloadExamsError(error);
                 })
                 .finally(function () {
                     state.busy = false;

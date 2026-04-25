@@ -44,13 +44,13 @@ export function createApiClient(deps) {
         return fallback;
     }
 
-    function shouldExpireAuthSession(status, code, sentAuthToken) {
+    function shouldExpireAuthSession(status, code) {
         if (Number(status) !== 401) {
             return false;
         }
 
         var normalizedCode = String(code || '').trim().toLowerCase();
-        if (normalizedCode === 'missing_token' && String(sentAuthToken || '') !== '') {
+        if (normalizedCode === 'missing_token') {
             return false;
         }
 
@@ -254,8 +254,14 @@ export function createApiClient(deps) {
                 }
             }
 
-            if (useAuth && shouldExpireAuthSession(response.status, requestError.code, authToken)) {
-                expireAuthSession(requestError.message);
+            if (useAuth && shouldExpireAuthSession(response.status, requestError.code)) {
+                expireAuthSession(requestError.message, {
+                    code: requestError.code,
+                    method: method,
+                    path: String(path || '').replace(/^\/+/, ''),
+                    status: Number(response.status) || 0,
+                    url: requestUrl
+                });
             }
 
             if (diagnosticsManager && diagnosticsManager.enabled) {

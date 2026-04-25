@@ -1,11 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAppEventManager } from '../../../src/frontend/app/core/app-events.js';
 
+async function flushAsyncWork() {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+}
+
 function createFixture(overrides = {}) {
     var root = document.createElement('div');
     document.body.appendChild(root);
+    var calls = {
+        render: []
+    };
     var retrySessionRecovery = overrides.retrySessionRecovery || vi.fn(function () {
         return Promise.resolve(true);
+    });
+    var loadExams = overrides.loadExams || vi.fn(function () {
+        return Promise.resolve();
     });
     var state = Object.assign({
         stage: 'confirm',
@@ -72,9 +84,15 @@ function createFixture(overrides = {}) {
         isQuestionRevisionRefreshActive: function () {
             return false;
         },
-        loadExams: function () {},
+        loadExams: loadExams,
         noteQuestionPrefetchActivity: function () {},
-        render: function () {},
+        render: function (reason, meta, options) {
+            calls.render.push({
+                meta: meta || {},
+                options: options || {},
+                reason: reason
+            });
+        },
         requestExamFullscreen: function () {
             return Promise.resolve(false);
         },
@@ -98,9 +116,12 @@ function createFixture(overrides = {}) {
     });
 
     return {
+        calls: calls,
+        loadExams: loadExams,
         manager: manager,
         retrySessionRecovery: retrySessionRecovery,
-        root: root
+        root: root,
+        state: state
     };
 }
 
@@ -119,5 +140,33 @@ describe('createAppEventManager session recovery actions', function () {
         expect(handled).toBe(true);
         expect(event.preventDefault).toHaveBeenCalledTimes(1);
         expect(fixture.retrySessionRecovery).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the current screen and shows the nginx authorization hint when reload receives missing_token', async function () {
+        var error = new Error('Authorization token not found');
+        error.code = 'missing_token';
+        var fixture = createFixture({
+            loadExams: vi.fn(function () {
+                return Promise.reject(error);
+            })
+        });
+        fixture.root.innerHTML = '<button type="button" data-action="reload-exams">Refresh</button>';
+        var button = fixture.root.querySelector('[data-action="reload-exams"]');
+        var event = {
+            preventDefault: vi.fn(),
+            target: button
+        };
+
+        var handled = fixture.manager.handleRootClick(event);
+        await flushAsyncWork();
+
+        expect(handled).toBe(true);
+        expect(fixture.loadExams).toHaveBeenCalledTimes(1);
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.error).toContain('fastcgi_param HTTP_AUTHORIZATION');
+        expect(fixture.calls.render.at(-1)).toMatchObject({
+            reason: 'reload-exams'
+        });
     });
 });

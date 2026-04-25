@@ -2,6 +2,16 @@
     position: relative;
 }
 
+body.cbt-stage-result .cbt-stage-panel {
+    justify-items: center;
+}
+
+body.cbt-stage-result .cbt-stage-panel > .cbt-result-wrap {
+    justify-self: center;
+    margin-left: auto;
+    margin-right: auto;
+}
+
 .cbt-result-card--pass::before,
 .cbt-result-card--fail::before,
 .cbt-result-card--restricted::before {

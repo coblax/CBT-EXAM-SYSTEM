@@ -1,5 +1,7 @@
 export function createExamSessionManager(deps) {
     var LOGIN_PROGRESS_STEP_TOTAL = 4;
+    var LOGIN_IDENTIFIER_MAX_LENGTH = 191;
+    var LOGIN_PASSWORD_MAX_LENGTH = 1024;
     var OPEN_ATTEMPT_PROGRESS_STEP_TOTAL = 5;
     var RESULT_PROGRESS_STEP_TOTAL = 4;
     var START_ATTEMPT_TIMEOUT_MESSAGE = 'Gagal menyiapkan sesi ujian. Server terlalu lama merespons.';
@@ -2855,6 +2857,12 @@ export function createExamSessionManager(deps) {
             return;
         }
 
+        if (identifier.length > LOGIN_IDENTIFIER_MAX_LENGTH || password.length > LOGIN_PASSWORD_MAX_LENGTH) {
+            state.error = 'Identifier atau password terlalu panjang.';
+            render();
+            return;
+        }
+
         if (state.loginRateLimitRemaining > 0) {
             state.error = 'Harap tunggu ' + state.loginRateLimitRemaining + ' detik lagi sebelum mencoba login.';
             render();
@@ -2954,7 +2962,7 @@ export function createExamSessionManager(deps) {
             emitLoginEntryFlowMetricSuccess();
         } catch (error) {
             var retryAfter = parseInt(getErrorField(error, 'retry_after'), 10);
-            if (getErrorCode(error) === 'too_many_requests' && !isNaN(retryAfter) && retryAfter > 0) {
+            if (!isNaN(retryAfter) && retryAfter > 0) {
                 state.error = (error instanceof Error ? error.message : 'Terlalu banyak percobaan login gagal.');
                 state.loginRateLimitRemaining = retryAfter;
                 

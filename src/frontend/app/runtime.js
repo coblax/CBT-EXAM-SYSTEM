@@ -197,6 +197,7 @@ export function bootstrapFrontendApp() {
     var startupManager = null;
     var examRuntimeLoader = null;
     var examRuntimeLoadError = '';
+    var activeExamAuthRecoveryPromise = null;
 
     function buildFallbackQuestionRevision(revision, fallbackExamId) {
         var safeRevision = revision && typeof revision === 'object' ? revision : {};
@@ -922,7 +923,10 @@ export function bootstrapFrontendApp() {
     var apiClient = createApiClient({
         config: config,
         diagnosticsManager: diagnosticsManager,
-        expireAuthSession: function (message) {
+        expireAuthSession: function (message, context) {
+            if (recoverActiveExamAuthSession(message, context)) {
+                return;
+            }
             if (sessionLifecycleManager) {
                 sessionLifecycleManager.expireAuthSession(message);
             }
@@ -1104,6 +1108,95 @@ export function bootstrapFrontendApp() {
     });
     var clearStickyQuestionRevisionNotice = bindExamRuntimeMethod('questionRuntimeManager', 'clearStickyQuestionRevisionNotice', undefined);
     var acknowledgeQuestionRevisionMarker = bindExamRuntimeMethod('questionRuntimeManager', 'acknowledgeQuestionRevisionMarker', undefined);
+
+    function normalizeApiPath(path) {
+        return String(path || '').replace(/^\/+/, '').trim().toLowerCase();
+    }
+
+    function isActiveExamAuthRecoveryCandidate(context) {
+        var safeContext = context && typeof context === 'object' ? context : {};
+        var code = String(safeContext.code || '').trim().toLowerCase();
+        var path = normalizeApiPath(safeContext.path || '');
+
+        if (
+            code !== 'session_revoked'
+            && code !== 'invalid_token'
+            && code !== 'unauthorized'
+        ) {
+            return false;
+        }
+
+        if (
+            path !== 'session'
+            && path !== 'questions'
+            && path !== 'submit_answer'
+            && path !== 'submit_answers_batch'
+            && path !== 'ui_state'
+        ) {
+            return false;
+        }
+
+        return state.stage === 'exam'
+            && Number(state.attemptId) > 0
+            && String(state.token || '') !== ''
+            && !state.isFinishing
+            && !state.examLockedForPendingFinish;
+    }
+
+    function recoverActiveExamAuthSession(message, context) {
+        if (!isActiveExamAuthRecoveryCandidate(context)) {
+            return false;
+        }
+
+        if (activeExamAuthRecoveryPromise) {
+            return true;
+        }
+
+        var safeContext = context && typeof context === 'object' ? context : {};
+        var recoveryMessage = String(message || 'Sesi login perlu disambungkan ulang.').trim();
+        persistAuthSession();
+        persistCurrentAttemptUiStateLocally();
+        persistCurrentQuestionCacheLocally();
+        state.busy = false;
+        state.error = '';
+        state.notice = 'Sesi sempat tidak tervalidasi server. Sistem sedang menyambungkan ulang tanpa menghapus jawaban lokal.';
+        render('active-exam-auth-recovery-start', {
+            attemptId: Number(state.attemptId) || 0,
+            code: String(safeContext.code || ''),
+            path: normalizeApiPath(safeContext.path || '')
+        });
+
+        activeExamAuthRecoveryPromise = Promise.resolve()
+            .then(function () {
+                return new Promise(function (resolve) {
+                    window.setTimeout(resolve, 180);
+                });
+            })
+            .then(function () {
+                if (startupManager && typeof startupManager.bootstrapFromPersistedSession === 'function') {
+                    return startupManager.bootstrapFromPersistedSession({
+                        incrementRetry: true
+                    });
+                }
+
+                if (sessionLifecycleManager) {
+                    sessionLifecycleManager.expireAuthSession(recoveryMessage);
+                }
+                return null;
+            })
+            .finally(function () {
+                activeExamAuthRecoveryPromise = null;
+            });
+
+        activeExamAuthRecoveryPromise.catch(function () {
+            if (sessionLifecycleManager) {
+                sessionLifecycleManager.expireAuthSession(recoveryMessage);
+            }
+        });
+
+        return true;
+    }
+
     sessionLifecycleManager = createSessionLifecycleManager({
         bumpQuestionDataGeneration: bumpQuestionDataGeneration,
         cancelOpeningAttemptFlow: function () {

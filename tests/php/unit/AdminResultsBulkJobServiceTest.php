@@ -184,6 +184,7 @@ final class AdminResultsBulkJobServiceTest extends TestCase
         self::assertSame(2, $secondResponse['payload']['abandoned_count']);
         self::assertSame(1, CBT_Cache::$invalidateAnalyticsCalls);
         self::assertCount(101, CBT_Cache::$invalidatedAnalyticsExamIdsBatch);
+        self::assertSame([], CBT_Auth::$clearedLoginSessionUserIds);
         self::assertCount(2, array_filter(CBT_Runtime::$clearedAttemptIds, static fn ($attemptId): bool => $attemptId >= 5001));
         self::assertSame('', (string) get_transient('cbt_results_bulk_job_active_' . get_current_user_id()));
         self::assertFalse((bool) get_transient('cbt_results_bulk_job_' . $token));
@@ -524,6 +525,21 @@ class CBT_REST
 PHP);
         }
 
+        if (!class_exists('CBT_Auth')) {
+            eval(<<<'PHP'
+class CBT_Auth
+{
+    public static array $clearedLoginSessionUserIds = [];
+
+    public static function clear_login_session(int $user_id, ?string $session_key = null): bool
+    {
+        self::$clearedLoginSessionUserIds[] = $user_id;
+        return $user_id > 0;
+    }
+}
+PHP);
+        }
+
         CBT_Cache::$invalidatedAttemptIds = [];
         CBT_Cache::$invalidatedAttemptsBatches = [];
         CBT_Cache::$invalidatedUserIds = [];
@@ -536,6 +552,7 @@ PHP);
         CBT_UI_State::$clearedAttemptStatesByAttemptIds = [];
         CBT_REST::$calls = [];
         CBT_REST::$failingAttemptIds = [];
+        CBT_Auth::$clearedLoginSessionUserIds = [];
 
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-active-attempt-index.php';
         $this->useFakeActiveAttemptRedisClient();

@@ -39,23 +39,23 @@
       "assets/frontend-stage-exam-B2bv2S6b.css"
     ]
   },
-  "_frontend-stage-result-DA1JA-0T.css": {
-    "file": "assets/frontend-stage-result-DA1JA-0T.css",
-    "src": "_frontend-stage-result-DA1JA-0T.css"
+  "_frontend-stage-result-CbT0gLnl.css": {
+    "file": "assets/frontend-stage-result-CbT0gLnl.css",
+    "src": "_frontend-stage-result-CbT0gLnl.css"
   },
-  "_frontend-stage-result-DOPbg3Bl.js": {
-    "file": "assets/frontend-stage-result-DOPbg3Bl.js",
+  "_frontend-stage-result-Dz_ckL6K.js": {
+    "file": "assets/frontend-stage-result-Dz_ckL6K.js",
     "name": "frontend-stage-result",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
       "_frontend-shared-review-DK4Bt0vw.js"
     ],
     "css": [
-      "assets/frontend-stage-result-DA1JA-0T.css"
+      "assets/frontend-stage-result-CbT0gLnl.css"
     ]
   },
-  "_html-BmUA7zmA.js": {
-    "file": "assets/html-BmUA7zmA.js",
+  "_html-BVB59bdf.js": {
+    "file": "assets/html-BVB59bdf.js",
     "name": "html"
   },
   "_math-render-DvP1Qxaf.css": {
@@ -420,35 +420,35 @@
     "isDynamicEntry": true
   },
   "src/frontend/app/runtime.js": {
-    "file": "assets/runtime-DUPmzUgV.js",
+    "file": "assets/runtime-DvZINIGO.js",
     "name": "runtime",
     "src": "src/frontend/app/runtime.js",
     "isDynamicEntry": true,
     "imports": [
       "src/frontend/main.js",
-      "_html-BmUA7zmA.js"
+      "_html-BVB59bdf.js"
     ],
     "dynamicImports": [
       "_frontend-exam-runtime-DEN3jK-l.js",
       "_math-render-z4EJh76n.js",
       "_frontend-stage-exam-Br275uiE.js",
-      "_frontend-stage-result-DOPbg3Bl.js",
+      "_frontend-stage-result-Dz_ckL6K.js",
       "_frontend-feature-calculator-CuFD8t3I.js",
       "src/frontend/app/core/debug-panel.js"
     ]
   },
   "src/frontend/app/supervisor/runtime.js": {
-    "file": "assets/runtime-eQPIq9mL.js",
+    "file": "assets/runtime-BCO9tyXv.js",
     "name": "runtime",
     "src": "src/frontend/app/supervisor/runtime.js",
     "isDynamicEntry": true,
     "imports": [
       "src/frontend/main.js",
-      "_html-BmUA7zmA.js"
+      "_html-BVB59bdf.js"
     ]
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-Ddq62uUP.js",
+    "file": "assets/frontend-core-BV4kXeIH.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,

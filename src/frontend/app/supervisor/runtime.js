@@ -5,6 +5,8 @@ import { escapeHtml } from '../core/html.js';
 
 var SUPERVISOR_AUTH_STORAGE_KEY = 'cbt_exam_frontend_supervisor_auth_v1';
 var SUPERVISOR_AUTO_REFRESH_MS = 15000;
+var LOGIN_IDENTIFIER_MAX_LENGTH = 191;
+var LOGIN_PASSWORD_MAX_LENGTH = 1024;
 
 export function bootstrapSupervisorApp() {
     var root = document.getElementById('cbt-exam-app');
@@ -264,6 +266,21 @@ export function bootstrapSupervisorApp() {
     }
 
     async function submitLogin(identifier, password) {
+        identifier = String(identifier || '').trim();
+        password = String(password || '');
+        if (identifier === '' || password === '') {
+            state.error = 'Identifier dan password wajib diisi.';
+            state.notice = '';
+            render();
+            return;
+        }
+        if (identifier.length > LOGIN_IDENTIFIER_MAX_LENGTH || password.length > LOGIN_PASSWORD_MAX_LENGTH) {
+            state.error = 'Identifier atau password terlalu panjang.';
+            state.notice = '';
+            render();
+            return;
+        }
+
         state.loginBusy = true;
         state.error = '';
         state.notice = '';
@@ -417,11 +434,11 @@ export function bootstrapSupervisorApp() {
             '<form class="cbt-supervisor-login-form" data-supervisor-login-form>',
             '<label class="cbt-supervisor-field">',
             '<span>Identifier</span>',
-            '<input type="text" name="identifier" autocomplete="username" placeholder="Username, email, atau NISN" required ' + (state.loginBusy ? 'disabled' : '') + ' />',
+            '<input type="text" name="identifier" autocomplete="username" maxlength="191" placeholder="Username, email, atau NISN" required ' + (state.loginBusy ? 'disabled' : '') + ' />',
             '</label>',
             '<label class="cbt-supervisor-field">',
             '<span>Password</span>',
-            '<input type="password" name="password" autocomplete="current-password" placeholder="Masukkan password" required ' + (state.loginBusy ? 'disabled' : '') + ' />',
+            '<input type="password" name="password" autocomplete="current-password" maxlength="1024" placeholder="Masukkan password" required ' + (state.loginBusy ? 'disabled' : '') + ' />',
             '</label>',
             '<div class="cbt-supervisor-login-actions">',
             '<button class="cbt-supervisor-button is-primary" type="submit" ' + (state.loginBusy ? 'disabled' : '') + '>' + escapeHtml(state.loginBusy ? 'Memproses Login...' : 'Login Pengawas') + '</button>',

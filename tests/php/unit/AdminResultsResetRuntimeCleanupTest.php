@@ -51,6 +51,7 @@ final class AdminResultsResetRuntimeCleanupTest extends TestCase
         self::assertSame([9], CBT_Cache::$invalidatedAnalyticsExamIds);
         self::assertSame([[31, 32]], CBT_UI_State::$clearedAttemptStatesByAttemptIds);
         self::assertSame([[7, 44]], CBT_UI_State::$clearedAttemptStates);
+        self::assertSame([], CBT_Auth::$clearedLoginSessionUserIds);
         self::assertSame(44, CBT_Active_Attempt_Index::get_active_attempt_id(7, 9));
         self::assertStringContainsString('cbt_msg=Attempt+berhasil+di-reset.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
@@ -192,6 +193,21 @@ class CBT_UI_State
 PHP);
         }
 
+        if (!class_exists('CBT_Auth')) {
+            eval(<<<'PHP'
+class CBT_Auth
+{
+    public static array $clearedLoginSessionUserIds = [];
+
+    public static function clear_login_session(int $user_id, ?string $session_key = null): bool
+    {
+        self::$clearedLoginSessionUserIds[] = $user_id;
+        return $user_id > 0;
+    }
+}
+PHP);
+        }
+
         CBT_Cache::$invalidatedAttemptIds = [];
         CBT_Cache::$invalidatedAttemptsBatches = [];
         CBT_Cache::$invalidatedUserIds = [];
@@ -202,6 +218,7 @@ PHP);
         CBT_Runtime::$clearedAttemptIds = [];
         CBT_UI_State::$clearedAttemptStates = [];
         CBT_UI_State::$clearedAttemptStatesByAttemptIds = [];
+        CBT_Auth::$clearedLoginSessionUserIds = [];
 
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-active-attempt-index.php';
         $this->useFakeActiveAttemptRedisClient();

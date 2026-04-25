@@ -6,22 +6,121 @@ if (!defined('ABSPATH')) {
 
 trait CBT_REST_Login_Routes
 {
+    /**
+     * @return array{value:string,invalid:bool}
+     */
+    private static function read_login_text_param(WP_REST_Request $request, string $key, bool $trim = true): array
+    {
+        $value = $request->get_param($key);
+        if ($value === null) {
+            return [
+                'value' => '',
+                'invalid' => false,
+            ];
+        }
+
+        if (is_array($value) || is_object($value) || is_resource($value) || is_bool($value)) {
+            return [
+                'value' => '',
+                'invalid' => true,
+            ];
+        }
+
+        if (function_exists('wp_unslash')) {
+            $value = wp_unslash($value);
+        }
+
+        $value = (string) $value;
+        if ($trim) {
+            $value = trim($value);
+        }
+
+        return [
+            'value' => $value,
+            'invalid' => false,
+        ];
+    }
+
+    /**
+     * @param array<int,string> $keys
+     * @return array{value:string,invalid:bool}
+     */
+    private static function read_first_login_text_param(WP_REST_Request $request, array $keys, bool $trim = true): array
+    {
+        foreach ($keys as $key) {
+            $param = self::read_login_text_param($request, $key, $trim);
+            if (!empty($param['invalid'])) {
+                return $param;
+            }
+
+            if ($param['value'] !== '') {
+                return $param;
+            }
+        }
+
+        return [
+            'value' => '',
+            'invalid' => false,
+        ];
+    }
+
+    private static function get_login_rate_limit_delay(int $attempts): int
+    {
+        $penalized_attempts = max(1, $attempts - 4);
+        return min(240, $penalized_attempts * 5);
+    }
+
+    private static function get_login_rate_limit_attempt_ttl(): int
+    {
+        return 3600;
+    }
+
+    private static function build_login_rate_limited_error(int $retry_after): WP_Error
+    {
+        $retry_after = max(1, $retry_after);
+        return new WP_Error(
+            'too_many_requests',
+            'Terlalu banyak percobaan yang gagal. Coba lagi setelah jeda singkat.',
+            [
+                'status' => 429,
+                'retry_after' => $retry_after,
+                'retry_after_ms' => $retry_after * 1000,
+            ]
+        );
+    }
+
+    private static function attach_login_retry_after(WP_Error $error, int $retry_after): WP_Error
+    {
+        $data = $error->get_error_data();
+        if (!is_array($data)) {
+            $data = [];
+        }
+
+        $retry_after = max(1, $retry_after);
+        $data['retry_after'] = $retry_after;
+        $data['retry_after_ms'] = $retry_after * 1000;
+
+        return new WP_Error($error->get_error_code(), $error->get_error_message(), $data);
+    }
+
     public static function login(WP_REST_Request $request)
     {
-        $identifier = (string) $request->get_param('identifier');
-        if ($identifier === '') {
-            $identifier = (string) $request->get_param('email');
-        }
-        if ($identifier === '') {
-            $identifier = (string) $request->get_param('username');
-        }
-        if ($identifier === '') {
-            $identifier = (string) $request->get_param('nisn');
-        }
-        $password = (string) $request->get_param('password');
+        $identifier_param = self::read_first_login_text_param($request, ['identifier', 'email', 'username', 'nisn']);
+        $password_param = self::read_login_text_param($request, 'password', false);
 
-        if (!$identifier || !$password) {
+        if (!empty($identifier_param['invalid']) || !empty($password_param['invalid'])) {
+            return new WP_Error('invalid_payload', 'Identifier and password must be text values', ['status' => 400]);
+        }
+
+        $identifier = $identifier_param['value'];
+        $password = $password_param['value'];
+
+        if ($identifier === '' || $password === '') {
             return new WP_Error('invalid_payload', 'Identifier and password are required', ['status' => 400]);
+        }
+
+        if (strlen($identifier) > 191 || strlen($password) > 1024) {
+            return new WP_Error('invalid_payload', 'Identifier or password is too long', ['status' => 400]);
         }
 
         $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
@@ -29,26 +128,35 @@ trait CBT_REST_Login_Routes
         $block_key = $limit_key . '_block';
 
         $blocked_until = get_transient($block_key);
-        if ($blocked_until !== false && time() < (int)$blocked_until) {
-            $retry_after = max(1, (int)$blocked_until - time());
-            return new WP_Error('too_many_requests', 'Terlalu banyak percobaan yang gagal. Sistem melindungi akun dari serangan.', ['status' => 429, 'retry_after' => $retry_after]);
+        if ($blocked_until !== false && time() < (int) $blocked_until) {
+            $retry_after = max(1, (int) $blocked_until - time());
+            return self::build_login_rate_limited_error($retry_after);
+        }
+        if ($blocked_until !== false) {
+            delete_transient($block_key);
         }
 
         $result = CBT_Auth::login($identifier, $password);
         if (is_wp_error($result)) {
-            $attempts = (int) get_transient($limit_key);
-            $attempts++;
-            if ($attempts >= 5) {
-                set_transient($block_key, time() + 240, 240);
-                delete_transient($limit_key);
-                return new WP_Error('too_many_requests', 'Terlalu banyak percobaan yang gagal. Sistem melindungi akun dari serangan.', ['status' => 429, 'retry_after' => 240]);
-            } else {
-                set_transient($limit_key, $attempts, 600);
+            if ($result->get_error_code() !== 'invalid_credentials') {
+                return $result;
             }
-            return $result;
+
+            $attempts = max(0, (int) get_transient($limit_key)) + 1;
+            set_transient($limit_key, $attempts, self::get_login_rate_limit_attempt_ttl());
+
+            if ($attempts < 5) {
+                return $result;
+            }
+
+            $retry_after = self::get_login_rate_limit_delay($attempts);
+            set_transient($block_key, time() + $retry_after, $retry_after);
+
+            return self::attach_login_retry_after($result, $retry_after);
         }
 
         delete_transient($limit_key);
+        delete_transient($block_key);
 
         self::mark_priority_window('login');
 
