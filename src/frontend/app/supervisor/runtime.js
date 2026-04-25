@@ -417,6 +417,50 @@ export function bootstrapSupervisorApp() {
         return fragments.join('');
     }
 
+    function renderSupervisorIcon(name) {
+        var icons = {
+            activity: '<path d="M22 12h-4l-3 8-6-16-3 8H2"></path>',
+            alert: '<path d="M10.3 3.9 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path>',
+            bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path>',
+            clipboard: '<path d="M9 5h6"></path><path d="M9 12l2 2 4-4"></path><path d="M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"></path>',
+            dashboard: '<rect x="3" y="3" width="7" height="8" rx="1.5"></rect><rect x="14" y="3" width="7" height="5" rx="1.5"></rect><rect x="14" y="12" width="7" height="9" rx="1.5"></rect><rect x="3" y="15" width="7" height="6" rx="1.5"></rect>',
+            filter: '<path d="M3 5h18"></path><path d="M7 12h10"></path><path d="M10 19h4"></path>',
+            logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="M16 17l5-5-5-5"></path><path d="M21 12H9"></path>',
+            monitor: '<rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8"></path><path d="M12 16v4"></path>',
+            radio: '<path d="M4.9 19.1a10 10 0 0 1 0-14.2"></path><path d="M7.8 16.2a6 6 0 0 1 0-8.5"></path><circle cx="12" cy="12" r="2"></circle><path d="M16.2 7.8a6 6 0 0 1 0 8.5"></path><path d="M19.1 4.9a10 10 0 0 1 0 14.2"></path>',
+            refresh: '<path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 5v4h4"></path><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"></path>',
+            search: '<circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path>',
+            users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.9"></path><path d="M16 3.1a4 4 0 0 1 0 7.8"></path>'
+        };
+        var path = icons[name] || icons.activity;
+        return '<svg class="cbt-supervisor-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + path + '</svg>';
+    }
+
+    function renderLiveDot() {
+        return '<span class="cbt-supervisor-live-dot" aria-hidden="true"><span></span></span>';
+    }
+
+    function getInitialsFromText(text, fallback) {
+        var source = String(text || fallback || 'PG');
+        var parts = source.trim().split(/\s+/).filter(Boolean);
+        if (!parts.length) {
+            return String(fallback || 'PG').slice(0, 2).toUpperCase();
+        }
+        if (parts.length === 1) {
+            return parts[0].slice(0, 2).toUpperCase();
+        }
+        return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+    }
+
+    function getSupervisorInitials(user) {
+        return getInitialsFromText(user ? String(user.display_name || user.username || 'Pengawas') : 'Pengawas', 'PG');
+    }
+
+    function renderProgressBar(percent) {
+        var numericPercent = Math.max(0, Math.min(100, Number(percent) || 0));
+        return '<span class="cbt-supervisor-progress" aria-hidden="true"><span style="width:' + escapeHtml(String(numericPercent)) + '%"></span></span>';
+    }
+
     function renderLoginView() {
         var studentLink = String(config.studentFrontendUrl || '').trim();
         var alternateLink = studentLink !== ''
@@ -424,12 +468,29 @@ export function bootstrapSupervisorApp() {
             : '';
 
         return [
-            '<div class="cbt-frontpage__shell">',
-            '<div class="cbt-supervisor-login-layout">',
+            '<div class="cbt-supervisor-login-shell">',
+            '<header class="cbt-supervisor-topbar cbt-supervisor-topbar-login">',
+            '<div class="cbt-supervisor-brand">',
+            '<span class="cbt-supervisor-brand-mark">' + renderSupervisorIcon('monitor') + '</span>',
+            '<span><strong>ExamCommand</strong><small>Supervisor Frontend</small></span>',
+            '</div>',
+            '<div class="cbt-supervisor-topbar-status">' + renderLiveDot() + '<span>Light blue mode</span></div>',
+            '</header>',
+            '<main class="cbt-supervisor-login-main">',
+            '<section class="cbt-supervisor-login-copy">',
+            '<span class="cbt-supervisor-kicker">Panel Pengawas</span>',
+            '<h1>Monitoring ujian yang terang, cepat, dan rapi.</h1>',
+            '<p>Masuk sebagai guru atau admin untuk melihat roster live, must watch, monitoring attempts, dan status submit tanpa masuk ke wp-admin.</p>',
+            '<div class="cbt-supervisor-login-points">',
+            '<span>' + renderSupervisorIcon('radio') + '<strong>Live roster</strong><small>Status koneksi peserta</small></span>',
+            '<span>' + renderSupervisorIcon('alert') + '<strong>Must watch</strong><small>Prioritas risiko tertinggi</small></span>',
+            '<span>' + renderSupervisorIcon('clipboard') + '<strong>Attempts</strong><small>Progress dan finalisasi</small></span>',
+            '</div>',
+            '</section>',
             '<section class="cbt-supervisor-login-card">',
-            '<div class="cbt-supervisor-login-kicker">Supervisor Frontend</div>',
-            '<h1>Login Pengawas</h1>',
-            '<p>Masuk dengan akun guru atau admin untuk memantau roster live, must watch, dan monitoring attempts.</p>',
+            '<div class="cbt-supervisor-login-kicker">Login Pengawas</div>',
+            '<h2>Masuk ke dashboard</h2>',
+            '<p>Gunakan akun guru atau admin yang sudah terdaftar di WordPress.</p>',
             renderNoticeStack(),
             '<form class="cbt-supervisor-login-form" data-supervisor-login-form>',
             '<label class="cbt-supervisor-field">',
@@ -446,7 +507,7 @@ export function bootstrapSupervisorApp() {
             '</form>',
             alternateLink,
             '</section>',
-            '</div>',
+            '</main>',
             '</div>'
         ].join('');
     }
@@ -463,14 +524,15 @@ export function bootstrapSupervisorApp() {
             '<div>',
             '<span class="cbt-supervisor-kicker">Security Ingest</span>',
             '<h2>' + escapeHtml(statusLabel) + '</h2>',
+            '<p>' + escapeHtml(String(snapshot.live_label || 'Live telemetry')) + ' / ' + escapeHtml(String(snapshot.ingest_label || 'Ingest')) + ' / ' + escapeHtml(String(snapshot.persist_label || 'Persist')) + '</p>',
             '</div>',
-            '<span class="cbt-supervisor-status-badge">' + escapeHtml(mode.toUpperCase()) + '</span>',
+            '<span class="cbt-supervisor-status-badge">' + renderLiveDot() + escapeHtml(mode.toUpperCase()) + '</span>',
             '</div>',
             '<div class="cbt-supervisor-status-grid">',
-            '<div><span>Backlog</span><strong>' + escapeHtml(String(backlogCount)) + '</strong></div>',
-            '<div><span>Dead Letter</span><strong>' + escapeHtml(String(Math.max(0, Number(snapshot.dead_letter_count) || 0))) + '</strong></div>',
-            '<div><span>Last Flush</span><strong>' + escapeHtml(String(snapshot.last_flush_at || '-')) + '</strong></div>',
-            '<div><span>Next Flush</span><strong>' + escapeHtml(String(snapshot.next_flush_at || '-')) + '</strong></div>',
+            '<div><span>Backlog</span><strong>' + escapeHtml(String(backlogCount)) + '</strong><small>Event menunggu proses</small></div>',
+            '<div><span>Dead Letter</span><strong>' + escapeHtml(String(Math.max(0, Number(snapshot.dead_letter_count) || 0))) + '</strong><small>Butuh perhatian</small></div>',
+            '<div><span>Last Flush</span><strong>' + escapeHtml(String(snapshot.last_flush_at || '-')) + '</strong><small>Batch terakhir</small></div>',
+            '<div><span>Next Flush</span><strong>' + escapeHtml(String(snapshot.next_flush_at || '-')) + '</strong><small>Jadwal berikutnya</small></div>',
             '</div>',
             '</section>'
         ].join('');
@@ -485,11 +547,21 @@ export function bootstrapSupervisorApp() {
         return [
             '<section class="cbt-supervisor-summary-grid">',
             cards.map(function (card) {
+                var iconName = String(card.key || '') === 'live_roster'
+                    ? 'users'
+                    : String(card.key || '') === 'must_watch'
+                        ? 'alert'
+                        : String(card.key || '') === 'submit_watchlist'
+                            ? 'radio'
+                            : 'clipboard';
                 return [
                     '<article class="cbt-supervisor-summary-card">',
+                    '<span class="cbt-supervisor-summary-icon">' + renderSupervisorIcon(iconName) + '</span>',
+                    '<div>',
                     '<span>' + escapeHtml(String(card.label || '-')) + '</span>',
                     '<strong>' + escapeHtml(String(card.value || '0')) + '</strong>',
                     '<small>' + escapeHtml(String(card.meta || '')) + '</small>',
+                    '</div>',
                     '</article>'
                 ].join('');
             }).join(''),
@@ -536,7 +608,7 @@ export function bootstrapSupervisorApp() {
             '</select>',
             '</label>',
             '<div class="cbt-supervisor-filter-actions">',
-            '<button class="cbt-supervisor-button is-primary" type="submit"' + (state.dashboardBusy ? ' disabled' : '') + '>Terapkan</button>',
+            '<button class="cbt-supervisor-button is-primary" type="submit"' + (state.dashboardBusy ? ' disabled' : '') + '>' + renderSupervisorIcon('filter') + '<span>Terapkan</span></button>',
             '<button class="cbt-supervisor-button" type="button" data-action="clear-filters"' + (state.dashboardBusy ? ' disabled' : '') + '>Reset Filter</button>',
             '</div>',
             '</form>'
@@ -547,16 +619,16 @@ export function bootstrapSupervisorApp() {
         var tabs = [
             { id: 'live_roster', label: 'Live Roster' },
             { id: 'must_watch', label: 'Must Watch' },
-            { id: 'monitoring_attempts', label: 'Monitoring Attempts' }
+            { id: 'monitoring_attempts', label: 'Attempts' }
         ];
 
         return [
-            '<div class="cbt-supervisor-tab-bar" role="tablist" aria-label="Supervisor Tabs">',
+            '<nav class="cbt-supervisor-tab-bar" role="tablist" aria-label="Supervisor Tabs">',
             tabs.map(function (tab) {
                 var isActive = state.activeTab === tab.id;
                 return '<button class="cbt-supervisor-tab' + (isActive ? ' is-active' : '') + '" type="button" role="tab" aria-selected="' + (isActive ? 'true' : 'false') + '" data-action="switch-tab" data-tab="' + escapeHtml(tab.id) + '">' + escapeHtml(tab.label) + '</button>';
             }).join(''),
-            '</div>'
+            '</nav>'
         ].join('');
     }
 
@@ -583,12 +655,12 @@ export function bootstrapSupervisorApp() {
                 var resetBusy = Number(state.activeResetAttemptId) === Number(item.attempt_id);
                 return [
                     '<tr>',
-                    '<td><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><small>' + escapeHtml([item.student_login, item.student_kelas, item.student_ruang].filter(Boolean).join(' · ')) + '</small></td>',
+                    '<td><div class="cbt-supervisor-student-cell"><span class="cbt-supervisor-avatar">' + escapeHtml(getInitialsFromText(item.student_name, 'SW')) + '</span><span><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><small>' + escapeHtml([item.student_login, item.student_kelas, item.student_ruang].filter(Boolean).join(' · ')) + '</small></span></div></td>',
                     '<td><strong>' + escapeHtml(String(item.exam_title || '-')) + '</strong><small>Attempt #' + escapeHtml(String(item.attempt_id || 0)) + '</small></td>',
                     '<td><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.presence_status || 'unknown')) + '">' + escapeHtml(String(item.presence_label || '-')) + '</span><small>' + escapeHtml([item.connection_status, item.visibility_state, item.heartbeat_lost_active ? 'heartbeat lost' : ''].filter(Boolean).join(' · ')) + '</small></td>',
                     '<td><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.risk_tone || 'normal')) + '">' + escapeHtml(String(item.risk_label || 'Normal')) + '</span><small>Skor ' + escapeHtml(String(item.risk_score_label || '0')) + '</small></td>',
                     '<td><strong>' + escapeHtml(String(item.last_seen_at || '-')) + '</strong><small>Pending sync ' + escapeHtml(String(Number(item.pending_sync_count) || 0)) + '</small></td>',
-                    '<td><button class="cbt-supervisor-button is-small" type="button" data-action="reset-login" data-attempt-id="' + escapeHtml(String(item.attempt_id || 0)) + '"' + (resetBusy ? ' disabled' : '') + '>' + escapeHtml(resetBusy ? 'Mereset...' : 'Reset Login') + '</button></td>',
+                    '<td><button class="cbt-supervisor-button is-small" type="button" data-action="reset-login" data-attempt-id="' + escapeHtml(String(item.attempt_id || 0)) + '"' + (resetBusy ? ' disabled' : '') + '>' + renderSupervisorIcon('refresh') + '<span>' + escapeHtml(resetBusy ? 'Mereset...' : 'Reset Login') + '</span></button></td>',
                     '</tr>'
                 ].join('');
             }).join(''),
@@ -617,7 +689,7 @@ export function bootstrapSupervisorApp() {
                 return [
                     '<article class="cbt-supervisor-watch-card">',
                     '<div class="cbt-supervisor-watch-head">',
-                    '<div><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><span>' + escapeHtml([item.student_login, item.student_kelas, item.student_ruang].filter(Boolean).join(' · ')) + '</span></div>',
+                    '<div class="cbt-supervisor-student-cell"><span class="cbt-supervisor-avatar">' + escapeHtml(getInitialsFromText(item.student_name, 'SW')) + '</span><span><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><span>' + escapeHtml([item.student_login, item.student_kelas, item.student_ruang].filter(Boolean).join(' · ')) + '</span></span></div>',
                     '<span class="cbt-supervisor-pill is-watch">' + escapeHtml(String(item.risk_label || 'Must Watch')) + '</span>',
                     '</div>',
                     '<div class="cbt-supervisor-watch-meta">',
@@ -631,7 +703,7 @@ export function bootstrapSupervisorApp() {
                         return '<span class="cbt-supervisor-chip">' + escapeHtml(String(label || '')) + '</span>';
                     }).join('') : '') + '</div>',
                     '<div class="cbt-supervisor-watch-actions">',
-                    '<button class="cbt-supervisor-button is-small" type="button" data-action="reset-login" data-attempt-id="' + escapeHtml(String(item.attempt_id || 0)) + '"' + (resetBusy ? ' disabled' : '') + '>' + escapeHtml(resetBusy ? 'Mereset...' : 'Reset Login') + '</button>',
+                    '<button class="cbt-supervisor-button is-small" type="button" data-action="reset-login" data-attempt-id="' + escapeHtml(String(item.attempt_id || 0)) + '"' + (resetBusy ? ' disabled' : '') + '>' + renderSupervisorIcon('refresh') + '<span>' + escapeHtml(resetBusy ? 'Mereset...' : 'Reset Login') + '</span></button>',
                     '</div>',
                     '</article>'
                 ].join('');
@@ -658,15 +730,16 @@ export function bootstrapSupervisorApp() {
                 '<tbody>',
                 items.map(function (item) {
                     var resetBusy = Number(state.activeResetAttemptId) === Number(item.attempt_id);
+                    var answeredPercent = Number(String(item.answered_percentage_label || '0').replace('%', '')) || 0;
                     return [
                         '<tr>',
-                        '<td><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><small>' + escapeHtml([item.student_username, item.student_nisn, item.student_kelas].filter(Boolean).join(' · ')) + '</small></td>',
+                        '<td><div class="cbt-supervisor-student-cell"><span class="cbt-supervisor-avatar">' + escapeHtml(getInitialsFromText(item.student_name, 'SW')) + '</span><span><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><small>' + escapeHtml([item.student_username, item.student_nisn, item.student_kelas].filter(Boolean).join(' · ')) + '</small></span></div></td>',
                         '<td><strong>' + escapeHtml(String(item.exam_title || '-')) + '</strong><small>Attempt #' + escapeHtml(String(item.attempt_id || 0)) + '</small></td>',
                         '<td><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.status || 'completed')) + '">' + escapeHtml(String(item.status_label || '-')) + '</span><small>' + escapeHtml(String(item.presence_label || '-')) + '</small></td>',
                         '<td><strong>' + escapeHtml(String(item.score_percentage_label || '0%')) + '</strong><small>' + escapeHtml('Benar ' + String(item.earned_points || 0) + ' · Salah ' + String(item.wrong_points || 0)) + '</small></td>',
-                        '<td><strong>' + escapeHtml(String(item.answer_count || 0)) + ' / ' + escapeHtml(String(item.question_count || 0)) + '</strong><small>' + escapeHtml(String(item.answered_percentage_label || '0%') + ' progress') + '</small></td>',
+                        '<td><strong>' + escapeHtml(String(item.answer_count || 0)) + ' / ' + escapeHtml(String(item.question_count || 0)) + '</strong>' + renderProgressBar(answeredPercent) + '<small>' + escapeHtml(String(item.answered_percentage_label || '0%') + ' progress') + '</small></td>',
                         '<td><strong>' + escapeHtml(String(item.started_at || '-')) + '</strong><small>' + escapeHtml(item.finalize_pending ? 'Waktu habis, finalisasi background aktif.' : String(item.remaining_label || '-')) + '</small></td>',
-                        '<td><button class="cbt-supervisor-button is-small" type="button" data-action="reset-login" data-attempt-id="' + escapeHtml(String(item.attempt_id || 0)) + '"' + (resetBusy ? ' disabled' : '') + '>' + escapeHtml(resetBusy ? 'Mereset...' : 'Reset Login') + '</button></td>',
+                        '<td><button class="cbt-supervisor-button is-small" type="button" data-action="reset-login" data-attempt-id="' + escapeHtml(String(item.attempt_id || 0)) + '"' + (resetBusy ? ' disabled' : '') + '>' + renderSupervisorIcon('refresh') + '<span>' + escapeHtml(resetBusy ? 'Mereset...' : 'Reset Login') + '</span></button></td>',
                         '</tr>'
                     ].join('');
                 }).join(''),
@@ -682,7 +755,7 @@ export function bootstrapSupervisorApp() {
             ? '<div class="cbt-supervisor-watchlist-list">' + watchlistItems.map(function (item) {
                 return [
                     '<article class="cbt-supervisor-watchlist-item">',
-                    '<div><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><span>' + escapeHtml([item.student_username, item.student_nisn, item.student_kelas].filter(Boolean).join(' · ')) + '</span></div>',
+                    '<div class="cbt-supervisor-student-cell"><span class="cbt-supervisor-avatar">' + escapeHtml(getInitialsFromText(item.student_name, 'SW')) + '</span><span><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><span>' + escapeHtml([item.student_username, item.student_nisn, item.student_kelas].filter(Boolean).join(' · ')) + '</span></span></div>',
                     '<div><span class="cbt-supervisor-pill is-watchlist">' + escapeHtml(String(item.state_label || 'Unknown')) + '</span><small>' + escapeHtml(String(item.exam_title || '-')) + '</small></div>',
                     '<p>' + escapeHtml(String(item.detail || 'Status submit masih dipantau.')) + '</p>',
                     '</article>'
@@ -735,41 +808,55 @@ export function bootstrapSupervisorApp() {
 
     function renderDashboardView() {
         var userName = state.user ? String(state.user.display_name || state.user.username || 'Pengawas') : 'Pengawas';
+        var roleLabel = state.dashboard && state.dashboard.scope
+            ? String(state.dashboard.scope.role_label || state.user.role || '')
+            : String(state.user ? state.user.role || '' : '');
         var scopeLabel = state.dashboard && state.dashboard.scope ? String(state.dashboard.scope.scope_label || '') : '';
+        var snapshot = state.dashboard && state.dashboard.status_snapshot ? state.dashboard.status_snapshot : {};
+        var mode = String(snapshot.mode || 'online');
 
         return [
-            '<div class="cbt-frontpage__shell">',
-            '<div class="cbt-supervisor-dashboard">',
-            '<section class="cbt-supervisor-hero">',
-            '<div class="cbt-supervisor-hero-inner">',
-            '<div class="cbt-supervisor-hero-copy">',
-            '<span class="cbt-supervisor-kicker">Supervisor Frontend</span>',
-            '<h1>Dashboard Pengawas</h1>',
-            '<p>' + escapeHtml(scopeLabel !== '' ? scopeLabel : 'Pantau live roster, must watch, dan monitoring attempts.') + '</p>',
+            '<div class="cbt-supervisor-shell">',
+            '<header class="cbt-supervisor-topbar">',
+            '<div class="cbt-supervisor-brand">',
+            '<span class="cbt-supervisor-brand-mark">' + renderSupervisorIcon('monitor') + '</span>',
+            '<span><strong>ExamCommand</strong><small>Supervisor Frontend</small></span>',
             '</div>',
-            '<div class="cbt-supervisor-hero-meta">',
-            '<span class="cbt-supervisor-hero-meta-label">Supervisor</span>',
-            '<strong>' + escapeHtml(userName) + '</strong>',
-            '<small>' + escapeHtml(state.user ? String(state.user.role || '') : '') + '</small>',
+            renderTabs(),
+            '<div class="cbt-supervisor-topbar-actions">',
+            '<span class="cbt-supervisor-topbar-status">' + renderLiveDot() + '<span>' + escapeHtml(mode.toUpperCase()) + '</span></span>',
+            '<button class="cbt-supervisor-icon-button" type="button" data-action="refresh-dashboard"' + (state.dashboardBusy ? ' disabled' : '') + ' aria-label="Refresh dashboard" title="Refresh dashboard">' + renderSupervisorIcon('refresh') + '</button>',
+            '<button class="cbt-supervisor-icon-button" type="button" data-action="logout-supervisor" aria-label="Logout" title="Logout">' + renderSupervisorIcon('logout') + '</button>',
+            '<span class="cbt-supervisor-user-chip"><span><strong>' + escapeHtml(userName) + '</strong><small>' + escapeHtml(roleLabel) + '</small></span><span class="cbt-supervisor-avatar is-user">' + escapeHtml(getSupervisorInitials(state.user)) + '</span></span>',
             '</div>',
-            '</div>',
-            '</section>',
+            '</header>',
+            '<main class="cbt-supervisor-main">',
             renderNoticeStack(),
-            renderStatusSnapshot(),
+            '<section class="cbt-supervisor-page-head">',
+            '<div>',
+            '<div class="cbt-supervisor-breadcrumb"><span>Dashboard</span><span>/</span><strong>' + escapeHtml(scopeLabel !== '' ? scopeLabel : 'Semua exam') + '</strong></div>',
+            '<h1>Dashboard Pengawas</h1>',
+            '<p>Pantau roster live, siswa berisiko, progress attempts, dan status submit dari satu layar operasional.</p>',
+            '</div>',
+            '<aside class="cbt-supervisor-page-health">',
+            '<span class="cbt-supervisor-kicker">Auto refresh</span>',
+            '<strong>' + escapeHtml(state.dashboardBusy ? 'Memuat data' : 'Setiap 15 detik') + '</strong>',
+            '<small>' + escapeHtml(String(snapshot.status_label || 'Telemetry siap dipantau.')) + '</small>',
+            '</aside>',
+            '</section>',
             renderSummaryCards(),
+            renderStatusSnapshot(),
             '<section class="cbt-supervisor-panel">',
             '<div class="cbt-supervisor-panel-head">',
-            '<div><span class="cbt-supervisor-kicker">Operasional</span><h2>Monitoring Ujian</h2></div>',
+            '<div><span class="cbt-supervisor-kicker">Operasional</span><h2>Monitoring Ujian</h2><p>Filter scope lalu fokus ke tab aktif di navigasi atas.</p></div>',
             '<div class="cbt-supervisor-panel-actions">',
-            '<button class="cbt-supervisor-button" type="button" data-action="refresh-dashboard"' + (state.dashboardBusy ? ' disabled' : '') + '>' + escapeHtml(state.dashboardBusy ? 'Memuat...' : 'Refresh') + '</button>',
-            '<button class="cbt-supervisor-button" type="button" data-action="logout-supervisor">Logout</button>',
+            '<button class="cbt-supervisor-button" type="button" data-action="refresh-dashboard"' + (state.dashboardBusy ? ' disabled' : '') + '>' + renderSupervisorIcon('refresh') + '<span>' + escapeHtml(state.dashboardBusy ? 'Memuat...' : 'Refresh') + '</span></button>',
             '</div>',
             '</div>',
             renderFilterForm(),
-            renderTabs(),
             '<div class="cbt-supervisor-tab-panel">' + renderActivePanel() + '</div>',
             '</section>',
-            '</div>',
+            '</main>',
             '</div>'
         ].join('');
     }
