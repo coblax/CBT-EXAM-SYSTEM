@@ -112,10 +112,31 @@ export function createSessionLifecycleManager(deps) {
         }
     }
 
+    function logoutFailureMessage(error, fallback) {
+        var message = error instanceof Error ? String(error.message || '').trim() : '';
+        return message || String(fallback || 'Logout server gagal. Sesi lokal belum dibersihkan agar Anda bisa mencoba logout lagi.').trim();
+    }
+
+    function failLogout(error, fallbackMessage) {
+        state.busy = false;
+        state.notice = '';
+        resetAuthProgressState();
+        state.error = logoutFailureMessage(error, fallbackMessage);
+        render('logout-failed', {
+            attemptId: Number(state.attemptId) || 0,
+            stage: String(state.stage || '')
+        });
+    }
+
     function waitForLogoutRequest(activeToken, timeoutMessage) {
         return withTimeout(
-            Promise.resolve(sendLogoutRequestSilently(activeToken)).catch(function () {
-                return null;
+            Promise.resolve(sendLogoutRequestSilently(activeToken)).then(function (response) {
+                if (response && typeof response === 'object' && response.ok === false) {
+                    var error = new Error('Logout server gagal. Sesi lokal belum dibersihkan agar Anda bisa mencoba logout lagi.');
+                    error.status = Number(response.status) || 0;
+                    throw error;
+                }
+                return response;
             }),
             logoutSyncTimeoutMs,
             timeoutMessage
@@ -418,10 +439,11 @@ export function createSessionLifecycleManager(deps) {
             try {
                 await waitForLogoutRequest(
                     activeToken,
-                    'Logout server terlalu lama. Sesi lokal dibersihkan, tetapi sesi server mungkin belum tertutup sempurna.'
+                    'Logout server terlalu lama. Sesi lokal belum dibersihkan agar Anda bisa mencoba logout lagi.'
                 );
             } catch (error) {
-                // Tetap lanjutkan clear state lokal agar UI tidak tersangkut.
+                failLogout(error, 'Logout server terlalu lama. Sesi lokal belum dibersihkan agar Anda bisa mencoba logout lagi.');
+                return;
             }
             clearAuthenticatedFrontendState({
                 stage: 'login'
@@ -500,10 +522,11 @@ export function createSessionLifecycleManager(deps) {
         try {
             await waitForLogoutRequest(
                 activeToken,
-                'Logout server terlalu lama. Sesi lokal dibersihkan, tetapi sesi server mungkin belum tertutup sempurna.'
+                'Logout server terlalu lama. Sesi lokal belum dibersihkan agar Anda bisa mencoba logout lagi.'
             );
         } catch (error) {
-            // Tetap lanjutkan clear state lokal agar UI tidak tersangkut.
+            failLogout(error, 'Logout server terlalu lama. Sesi lokal belum dibersihkan agar Anda bisa mencoba logout lagi.');
+            return;
         }
         clearAuthenticatedFrontendState({
             stage: 'login'

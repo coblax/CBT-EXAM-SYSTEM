@@ -241,6 +241,94 @@ final class AuthSessionLifecycleTest extends TestCase
         self::assertSame($newSessionKey, get_user_meta(9, 'cbt_active_login_session', true));
     }
 
+    public function test_rest_logout_reports_session_mismatch_without_clearing_newer_active_session(): void
+    {
+        if (!class_exists('CBT_REST')) {
+            require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+        }
+
+        $newSessionKey = CBT_Auth::reset_login_session(9);
+        $staleToken = CBT_Auth::generate_token(9, 'student', 'stale-session');
+        $request = new WP_REST_Request([], [], [
+            'authorization' => 'Bearer ' . $staleToken,
+        ], '/cbt/v1/logout', 'POST');
+
+        $response = CBT_REST::logout($request);
+
+        self::assertTrue(is_wp_error($response));
+        self::assertSame('logout_session_mismatch', $response->get_error_code());
+        self::assertSame($newSessionKey, get_user_meta(9, 'cbt_active_login_session', true));
+    }
+
+    public function test_clear_login_session_reset_marker_invalidates_stale_redis_when_delete_happened_offline(): void
+    {
+        $oldSessionKey = CBT_Auth::reset_login_session(9);
+        self::assertNotSame('', $oldSessionKey);
+        self::assertSame($oldSessionKey, $this->readRedisSessionKey(9));
+
+        $this->setAuthRedisUnavailable();
+        self::assertTrue(CBT_Auth::clear_login_session(9));
+        self::assertSame('', (string) get_user_meta(9, 'cbt_active_login_session', true));
+        self::assertSame($oldSessionKey, $this->readRedisSessionKey(9));
+
+        $this->useFakeRedisClient();
+        $result = CBT_Auth::login('ayu', 'secret');
+
+        self::assertIsArray($result);
+        self::assertNotSame('', (string) ($result['token'] ?? ''));
+        self::assertNotSame($oldSessionKey, $this->readRedisSessionKey(9));
+        self::assertSame('', (string) get_user_meta(9, 'cbt_active_login_session_reset_at', true));
+    }
+
+    public function test_offline_login_uses_newer_legacy_session_when_redis_returns_with_stale_session(): void
+    {
+        $oldIssuedAt = time() - 120;
+        update_user_meta(9, 'cbt_active_login_session', 'old-session');
+        update_user_meta(9, 'cbt_active_login_session_touched_at', $oldIssuedAt);
+        update_user_meta(9, 'cbt_active_login_session_issued_at', $oldIssuedAt);
+        $this->writeRedisSession(9, 'old-session', $oldIssuedAt, $oldIssuedAt);
+
+        $this->setAuthRedisUnavailable();
+        $login = CBT_Auth::login('ayu', 'secret');
+
+        self::assertIsArray($login);
+        $newSessionKey = (string) get_user_meta(9, 'cbt_active_login_session', true);
+        self::assertNotSame('', $newSessionKey);
+        self::assertNotSame('old-session', $newSessionKey);
+        self::assertSame('old-session', $this->readRedisSessionKey(9));
+
+        $this->useFakeRedisClient();
+        $request = new WP_REST_Request([], [], [
+            'authorization' => 'Bearer ' . (string) ($login['token'] ?? ''),
+        ], '/cbt/v1/session', 'GET');
+
+        $verified = CBT_Auth::verify_request_token($request);
+
+        self::assertIsArray($verified);
+        self::assertSame($newSessionKey, $this->readRedisSessionKey(9));
+    }
+
+    public function test_reset_marker_invalidates_stale_redis_by_issued_at_even_after_old_session_touch(): void
+    {
+        $oldSessionKey = CBT_Auth::reset_login_session(9);
+        $oldIssuedAt = time() - 120;
+        $this->writeRedisSession(9, $oldSessionKey, $oldIssuedAt, $oldIssuedAt);
+        update_user_meta(9, 'cbt_active_login_session_issued_at', $oldIssuedAt);
+
+        $this->setAuthRedisUnavailable();
+        self::assertTrue(CBT_Auth::clear_login_session(9));
+
+        $resetAt = (int) get_user_meta(9, 'cbt_active_login_session_reset_at', true);
+        self::assertGreaterThan(0, $resetAt);
+        $this->writeRedisSession(9, $oldSessionKey, $resetAt + 30, $oldIssuedAt);
+
+        $login = CBT_Auth::login('ayu', 'secret');
+
+        self::assertIsArray($login);
+        self::assertNotSame($oldSessionKey, $this->readRedisSessionKey(9));
+        self::assertSame('', (string) get_user_meta(9, 'cbt_active_login_session_reset_at', true));
+    }
+
     public function test_verify_request_token_rejects_revoked_session_and_records_security_event_when_redis_mismatches(): void
     {
         update_user_meta(9, 'cbt_active_login_session', 'old-session');
@@ -452,12 +540,12 @@ final class AuthSessionLifecycleTest extends TestCase
         $this->useFakeRedisClient();
     }
 
-    private function writeRedisSession(int $userId, string $sessionKey, int $touchedAt): void
+    private function writeRedisSession(int $userId, string $sessionKey, int $touchedAt, ?int $issuedAt = null): void
     {
         $GLOBALS['cbt_test_redis_storage'][$this->redisSessionKey($userId)] = json_encode([
             'session_key' => $sessionKey,
             'touched_at' => $touchedAt,
-            'issued_at' => $touchedAt,
+            'issued_at' => $issuedAt ?? $touchedAt,
         ]);
         $this->useFakeRedisClient();
     }

@@ -543,4 +543,33 @@ describe('createSessionLifecycleManager', function () {
         expect(fixture.state.authProgressPercent).toBe(0);
         expect(fixture.calls.clearPersistedAuthSession).toBe(1);
     });
+
+    it('keeps local auth state when server logout fails so the user can retry logout', async function () {
+        var fixture = createLifecycleFixture({
+            sendLogoutRequestSilently: function (token) {
+                fixture.calls.sendLogoutRequestSilently.push(String(token || ''));
+                return Promise.resolve({
+                    ok: false,
+                    status: 409
+                });
+            },
+            state: {
+                stage: 'confirm',
+                attemptId: 0,
+                questionOrderIds: [],
+                questions: [],
+                totalQuestions: 0
+            }
+        });
+
+        await fixture.manager.fullLogout();
+
+        expect(fixture.calls.sendLogoutRequestSilently).toEqual(['token-123']);
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.token).toBe('token-123');
+        expect(fixture.state.user).toEqual({ user_id: 9 });
+        expect(fixture.state.authProgressVisible).toBe(false);
+        expect(fixture.state.error).toContain('Logout server gagal');
+        expect(fixture.calls.clearPersistedAuthSession).toBe(0);
+    });
 });

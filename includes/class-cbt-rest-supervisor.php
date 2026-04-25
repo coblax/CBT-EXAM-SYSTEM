@@ -23,10 +23,17 @@ trait CBT_REST_Supervisor_Routes
                 'tab' => $request->get_param('tab'),
                 'exam_id' => $request->get_param('exam_id'),
                 'kelas' => $request->get_param('kelas'),
+                'ruang' => $request->get_param('ruang'),
                 'student_keyword' => $request->get_param('student_keyword'),
                 'status' => $request->get_param('status'),
                 'roster_page' => $request->get_param('roster_page'),
                 'attempts_page' => $request->get_param('attempts_page'),
+                'security_page' => $request->get_param('security_page'),
+                'security_severity' => $request->get_param('security_severity'),
+                'security_event_type' => $request->get_param('security_event_type'),
+                'security_device_type' => $request->get_param('security_device_type'),
+                'attendance_page' => $request->get_param('attendance_page'),
+                'attendance_status' => $request->get_param('attendance_status'),
             ])
         );
     }

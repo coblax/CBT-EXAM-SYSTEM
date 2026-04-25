@@ -102,18 +102,8 @@ export function createRenderCycleManager(deps) {
             return;
         }
 
-        var examLayout = root.querySelector('.cbt-exam-layout');
-        var navPosition = getEffectiveNavPanelPosition();
-        if (examLayout instanceof HTMLElement) {
-            if (examLayout.classList.contains('cbt-nav-pos-left')) {
-                navPosition = 'left';
-            } else if (examLayout.classList.contains('cbt-nav-pos-right')) {
-                navPosition = 'right';
-            } else {
-                navPosition = 'top';
-            }
-        }
-        var treatAsTopLayout = (navPosition === 'top') || windowRef.innerWidth <= NAV_SIDE_LAYOUT_BREAKPOINT;
+        var navPosition = resolveRenderedNavigationPosition();
+        var treatAsTopLayout = isHorizontalNavigationLayout(navPosition);
 
         var currentItem = navGrid.querySelector('.cbt-nav-btn.is-current');
         if (!(currentItem instanceof HTMLElement)) {
@@ -173,18 +163,8 @@ export function createRenderCycleManager(deps) {
             return;
         }
 
-        var examLayout = root.querySelector('.cbt-exam-layout');
-        var navPosition = getEffectiveNavPanelPosition();
-        if (examLayout instanceof HTMLElement) {
-            if (examLayout.classList.contains('cbt-nav-pos-left')) {
-                navPosition = 'left';
-            } else if (examLayout.classList.contains('cbt-nav-pos-right')) {
-                navPosition = 'right';
-            } else {
-                navPosition = 'top';
-            }
-        }
-        var treatAsTopLayout = (navPosition === 'top') || windowRef.innerWidth <= NAV_SIDE_LAYOUT_BREAKPOINT;
+        var navPosition = resolveRenderedNavigationPosition();
+        var treatAsTopLayout = isHorizontalNavigationLayout(navPosition);
         if (!treatAsTopLayout) {
             navGrid.style.setProperty('--cbt-nav-rows', '1');
             return;
@@ -227,6 +207,32 @@ export function createRenderCycleManager(deps) {
         if (navGrid.style.getPropertyValue('--cbt-nav-rows') !== targetRows) {
             navGrid.style.setProperty('--cbt-nav-rows', targetRows);
         }
+    }
+
+    function resolveRenderedNavigationPosition() {
+        var examLayout = root.querySelector('.cbt-exam-layout');
+        if (examLayout instanceof HTMLElement) {
+            if (examLayout.classList.contains('cbt-nav-pos-left')) {
+                return 'left';
+            }
+            if (examLayout.classList.contains('cbt-nav-pos-right')) {
+                return 'right';
+            }
+            if (examLayout.classList.contains('cbt-nav-pos-bottom')) {
+                return 'bottom';
+            }
+            return 'top';
+        }
+
+        return getEffectiveNavPanelPosition();
+    }
+
+    function isHorizontalNavigationLayout(navPosition) {
+        if (navPosition === 'bottom') {
+            return false;
+        }
+
+        return (navPosition === 'top') || windowRef.innerWidth <= NAV_SIDE_LAYOUT_BREAKPOINT;
     }
 
     function scheduleNavigationGridLayout() {

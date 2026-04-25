@@ -142,4 +142,23 @@ describe('createApiClient auth expiry handling', function () {
             status: 401
         });
     });
+
+    it('does not clear the current login when an older in-flight token is revoked', async function () {
+        var fixture = createFixture({
+            code: 'session_revoked',
+            message: 'Sesi login ini sudah digantikan oleh login lain.'
+        }, 401);
+        fixture.state.token = 'new-login-token';
+
+        await expect(fixture.client.api('session', {
+            token: 'old-login-token'
+        })).rejects.toMatchObject({
+            code: 'session_revoked',
+            status: 401
+        });
+
+        expect(fixture.calls.fetch[0].options.headers.Authorization).toBe('Bearer old-login-token');
+        expect(fixture.calls.expireAuthSession).toHaveLength(0);
+        expect(fixture.state.token).toBe('new-login-token');
+    });
 });

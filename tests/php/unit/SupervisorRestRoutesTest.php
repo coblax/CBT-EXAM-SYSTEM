@@ -33,7 +33,20 @@ final class SupervisorRestRoutesTest extends TestCase
 
         $response = \SupervisorRestRoutesHarness::supervisor_dashboard(
             new \WP_REST_Request([
+                'tab' => 'security_log',
                 'exam_id' => 8,
+                'kelas' => 'XI TKJ 1',
+                'ruang' => 'R-2',
+                'student_keyword' => 'Indar',
+                'status' => 'in_progress',
+                'roster_page' => 2,
+                'attempts_page' => 3,
+                'security_page' => 4,
+                'security_severity' => 'critical',
+                'security_event_type' => 'tab_hidden',
+                'security_device_type' => 'mobile',
+                'attendance_page' => 5,
+                'attendance_status' => 'completed',
             ], [], [], '/cbt/v1/supervisor_dashboard', 'GET')
         );
         $data = is_array($response)
@@ -41,7 +54,15 @@ final class SupervisorRestRoutesTest extends TestCase
             : ($response instanceof \WP_REST_Response ? $response->get_data() : []);
 
         self::assertSame(true, $data['ok'] ?? false);
+        self::assertSame('security_log', $GLOBALS['cbt_test_supervisor_dashboard_query']['tab'] ?? '');
         self::assertSame(8, $GLOBALS['cbt_test_supervisor_dashboard_query']['exam_id'] ?? 0);
+        self::assertSame('R-2', $GLOBALS['cbt_test_supervisor_dashboard_query']['ruang'] ?? '');
+        self::assertSame(4, $GLOBALS['cbt_test_supervisor_dashboard_query']['security_page'] ?? 0);
+        self::assertSame('critical', $GLOBALS['cbt_test_supervisor_dashboard_query']['security_severity'] ?? '');
+        self::assertSame('tab_hidden', $GLOBALS['cbt_test_supervisor_dashboard_query']['security_event_type'] ?? '');
+        self::assertSame('mobile', $GLOBALS['cbt_test_supervisor_dashboard_query']['security_device_type'] ?? '');
+        self::assertSame(5, $GLOBALS['cbt_test_supervisor_dashboard_query']['attendance_page'] ?? 0);
+        self::assertSame('completed', $GLOBALS['cbt_test_supervisor_dashboard_query']['attendance_status'] ?? '');
         self::assertSame(77, $GLOBALS['cbt_test_supervisor_dashboard_scope']['user_id'] ?? 0);
         self::assertSame('teacher', $GLOBALS['cbt_test_supervisor_dashboard_scope']['role'] ?? '');
     }

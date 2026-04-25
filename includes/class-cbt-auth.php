@@ -31,6 +31,8 @@ class CBT_Auth
     private const OPTION_GLOBAL_EXAM_TOKEN_FRONTEND_AUTO_APPLY = 'cbt_global_exam_token_frontend_auto_apply';
     private const USER_META_ACTIVE_LOGIN_SESSION = 'cbt_active_login_session';
     private const USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT = 'cbt_active_login_session_touched_at';
+    private const USER_META_ACTIVE_LOGIN_SESSION_ISSUED_AT = 'cbt_active_login_session_issued_at';
+    private const USER_META_ACTIVE_LOGIN_SESSION_RESET_AT = 'cbt_active_login_session_reset_at';
     private const LOGIN_TOKEN_TTL_SECONDS = 43200;
     private const AUTH_REDIS_TTL_SECONDS = 44100;
     private const AUTH_REDIS_DEFAULT_HOST = '127.0.0.1';
@@ -139,13 +141,14 @@ class CBT_Auth
             return false;
         }
 
+        self::write_active_login_reset_marker($user_id);
         self::delete_active_login_state($user_id);
         return true;
     }
 
     public static function logout_current_session(WP_REST_Request $request): bool
     {
-        $decoded = self::verify_request_token($request);
+        $decoded = self::decode_request_token_payload($request);
         if (is_wp_error($decoded)) {
             return false;
         }
@@ -157,6 +160,17 @@ class CBT_Auth
         }
 
         return self::clear_login_session($user_id, $session_key);
+    }
+
+    public static function request_token_user_id(WP_REST_Request $request): int
+    {
+        $decoded = self::decode_request_token_payload($request);
+        if (is_wp_error($decoded)) {
+            return 0;
+        }
+
+        $user_id = self::decoded_token_value($decoded, 'user_id');
+        return (int) ($user_id ?? 0);
     }
 
     public static function verify_request_token(WP_REST_Request $request)
@@ -208,6 +222,25 @@ class CBT_Auth
             $error = new WP_Error('invalid_token', 'Invalid or expired token', ['status' => 401]);
             self::$decoded_token_cache[$cache_key] = $error;
             return $error;
+        }
+    }
+
+    private static function decode_request_token_payload(WP_REST_Request $request)
+    {
+        $lib_check = self::ensure_jwt_library();
+        if (is_wp_error($lib_check)) {
+            return $lib_check;
+        }
+
+        $token = self::extract_bearer_token($request);
+        if (!$token) {
+            return new WP_Error('missing_token', 'Authorization token not found', ['status' => 401]);
+        }
+
+        try {
+            return (array) JWT::decode($token, new Key(self::jwt_secret(), 'HS256'));
+        } catch (Throwable $exception) {
+            return new WP_Error('invalid_token', 'Invalid or expired token', ['status' => 401]);
         }
     }
 
@@ -1015,14 +1048,45 @@ class CBT_Auth
         }
 
         $redis_state = self::read_auth_redis_session($user_id, $redis_available);
+        $reset_at = self::get_active_login_session_reset_at($user_id);
         if ($redis_available) {
+            if (is_array($redis_state)) {
+                if (self::is_active_login_state_reset($redis_state, $reset_at)) {
+                    self::delete_auth_redis_session($user_id);
+                    $redis_state = null;
+                } else {
+                    $redis_state = array_merge($default_state, $redis_state);
+                }
+            }
+
+            $legacy_state = self::read_legacy_active_login_state($user_id);
+            if (is_array($legacy_state) && self::is_active_login_state_reset($legacy_state, $reset_at)) {
+                self::delete_legacy_active_login_state($user_id);
+                $legacy_state = null;
+            }
+
+            if (is_array($redis_state) && is_array($legacy_state)) {
+                if (self::should_prefer_legacy_active_login_state($legacy_state, $redis_state)) {
+                    self::hydrate_auth_redis_from_legacy($user_id, $legacy_state);
+                    $legacy_state['source'] = 'legacy';
+                    $legacy_state['redis_available'] = 1;
+                    return array_merge($default_state, $legacy_state);
+                }
+
+                $redis_state['source'] = 'redis';
+                $redis_state['redis_available'] = 1;
+                if (!hash_equals((string) ($legacy_state['session_key'] ?? ''), (string) ($redis_state['session_key'] ?? ''))) {
+                    self::write_legacy_active_login_state($user_id, $redis_state);
+                }
+                return array_merge($default_state, $redis_state);
+            }
+
             if (is_array($redis_state)) {
                 $redis_state['source'] = 'redis';
                 $redis_state['redis_available'] = 1;
                 return array_merge($default_state, $redis_state);
             }
 
-            $legacy_state = self::read_legacy_active_login_state($user_id);
             if (is_array($legacy_state)) {
                 self::hydrate_auth_redis_from_legacy($user_id, $legacy_state);
                 $legacy_state['source'] = 'legacy';
@@ -1035,12 +1099,94 @@ class CBT_Auth
         }
 
         $legacy_state = self::read_legacy_active_login_state($user_id);
+        if (is_array($legacy_state) && self::is_active_login_state_reset($legacy_state, $reset_at)) {
+            self::delete_legacy_active_login_state($user_id);
+            $legacy_state = null;
+        }
+
         if (is_array($legacy_state)) {
             $legacy_state['source'] = 'legacy';
             return array_merge($default_state, $legacy_state);
         }
 
         return $default_state;
+    }
+
+    /**
+     * @param array{session_key:string,touched_at:int,issued_at:int} $state
+     */
+    private static function is_active_login_state_reset(array $state, int $reset_at): bool
+    {
+        if ($reset_at <= 0) {
+            return false;
+        }
+
+        $issued_at = max(0, (int) ($state['issued_at'] ?? 0));
+        if ($issued_at > 0) {
+            return $issued_at <= $reset_at;
+        }
+
+        $state_timestamp = max(0, (int) ($state['touched_at'] ?? 0));
+
+        if ($state_timestamp <= 0) {
+            return true;
+        }
+
+        return $state_timestamp <= $reset_at;
+    }
+
+    /**
+     * @param array{session_key:string,touched_at:int,issued_at:int} $legacy_state
+     * @param array{session_key:string,touched_at:int,issued_at:int} $redis_state
+     */
+    private static function should_prefer_legacy_active_login_state(array $legacy_state, array $redis_state): bool
+    {
+        $legacy_session_key = trim((string) ($legacy_state['session_key'] ?? ''));
+        $redis_session_key = trim((string) ($redis_state['session_key'] ?? ''));
+        if ($legacy_session_key === '') {
+            return false;
+        }
+        if ($redis_session_key === '') {
+            return true;
+        }
+
+        $legacy_issued_at = max(0, (int) ($legacy_state['issued_at'] ?? 0));
+        $redis_issued_at = max(0, (int) ($redis_state['issued_at'] ?? 0));
+        if ($legacy_issued_at > 0 || $redis_issued_at > 0) {
+            return $legacy_issued_at > $redis_issued_at;
+        }
+
+        return max(0, (int) ($legacy_state['touched_at'] ?? 0)) > max(0, (int) ($redis_state['touched_at'] ?? 0));
+    }
+
+    private static function get_active_login_session_reset_at(int $user_id): int
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return 0;
+        }
+
+        return max(0, (int) get_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_RESET_AT, true));
+    }
+
+    private static function write_active_login_reset_marker(int $user_id): void
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return;
+        }
+
+        update_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_RESET_AT, time());
+    }
+
+    private static function delete_active_login_reset_marker(int $user_id): void
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return;
+        }
+
+        delete_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_RESET_AT);
     }
 
     /**
@@ -1055,6 +1201,7 @@ class CBT_Auth
 
         self::write_auth_redis_session($user_id, $payload);
         self::write_legacy_active_login_state($user_id, $payload);
+        self::delete_active_login_reset_marker($user_id);
     }
 
     private static function delete_active_login_state(int $user_id): void
@@ -1089,11 +1236,14 @@ class CBT_Auth
         $touched_at = isset($meta[self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT][0])
             ? max(0, (int) $meta[self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT][0])
             : 0;
+        $issued_at = isset($meta[self::USER_META_ACTIVE_LOGIN_SESSION_ISSUED_AT][0])
+            ? max(0, (int) $meta[self::USER_META_ACTIVE_LOGIN_SESSION_ISSUED_AT][0])
+            : $touched_at;
 
         return [
             'session_key' => $session_key,
             'touched_at' => $touched_at,
-            'issued_at' => $touched_at,
+            'issued_at' => $issued_at,
         ];
     }
 
@@ -1109,12 +1259,14 @@ class CBT_Auth
 
         update_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION, (string) ($payload['session_key'] ?? ''));
         update_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT, max(0, (int) ($payload['touched_at'] ?? 0)));
+        update_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_ISSUED_AT, max(0, (int) ($payload['issued_at'] ?? $payload['touched_at'] ?? 0)));
     }
 
     private static function delete_legacy_active_login_state(int $user_id): void
     {
         delete_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION);
         delete_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT);
+        delete_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_ISSUED_AT);
     }
 
     /**

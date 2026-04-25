@@ -274,6 +274,78 @@ describe('createRenderCycleManager patchExamRegions', function () {
         expect(currentItem.scrollIntoView).not.toHaveBeenCalled();
     });
 
+    it('uses vertical navigation scrolling for the bottom question navigation panel', function () {
+        var rafCallbacks = [];
+        var windowRef = Object.create(window);
+        windowRef.innerWidth = 480;
+        windowRef.requestAnimationFrame = function (callback) {
+            rafCallbacks.push(callback);
+            return rafCallbacks.length;
+        };
+        windowRef.cancelAnimationFrame = function () {};
+        var fixture = createFixture({
+            navPanelPosition: 'bottom',
+            state: {
+                navPanelVisible: true
+            },
+            windowRef: windowRef
+        });
+
+        fixture.setRegions({
+            navigation: [
+                '<aside class="cbt-side-card">',
+                '<div class="cbt-exam-layout cbt-nav-pos-bottom">',
+                '<div class="cbt-nav-grid">',
+                '<button type="button" class="cbt-nav-btn">1</button>',
+                '<button type="button" class="cbt-nav-btn">2</button>',
+                '<button type="button" class="cbt-nav-btn is-current">3</button>',
+                '</div>',
+                '</div>',
+                '</aside>'
+            ].join('')
+        });
+
+        fixture.manager.render('initial');
+
+        var navGrid = fixture.root.querySelector('.cbt-nav-grid');
+        var currentItem = fixture.root.querySelector('.cbt-nav-btn.is-current');
+        Object.defineProperty(navGrid, 'clientHeight', {
+            configurable: true,
+            value: 120
+        });
+        Object.defineProperty(navGrid, 'scrollHeight', {
+            configurable: true,
+            value: 420
+        });
+        Object.defineProperty(navGrid, 'scrollWidth', {
+            configurable: true,
+            value: 420
+        });
+        Object.defineProperty(navGrid, 'clientWidth', {
+            configurable: true,
+            value: 120
+        });
+        navGrid.scrollTop = 0;
+        navGrid.scrollLeft = 0;
+        Object.defineProperty(currentItem, 'offsetTop', {
+            configurable: true,
+            value: 260
+        });
+        Object.defineProperty(currentItem, 'offsetHeight', {
+            configurable: true,
+            value: 32
+        });
+        currentItem.scrollIntoView = vi.fn();
+
+        expect(rafCallbacks).toHaveLength(1);
+        rafCallbacks[0]();
+
+        expect(navGrid.style.getPropertyValue('--cbt-nav-rows')).toBe('1');
+        expect(navGrid.scrollTop).toBeGreaterThan(0);
+        expect(navGrid.scrollLeft).toBe(0);
+        expect(currentItem.scrollIntoView).not.toHaveBeenCalled();
+    });
+
     it('suppresses generic loading copy while the session recovery overlay is active', function () {
         var fixture = createFixture({
             state: {

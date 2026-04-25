@@ -145,6 +145,8 @@ body.cbt-exam-page-mode-supervisor #cbt-exam-app.cbt-web-shell {
     align-items: center;
     justify-content: center;
     gap: 4px;
+    max-width: 100%;
+    overflow-x: auto;
     padding: 4px;
     border: 1px solid rgba(191, 212, 238, 0.9);
     border-radius: 8px;
@@ -348,6 +350,7 @@ body.cbt-exam-page-mode-supervisor #cbt-exam-app.cbt-web-shell {
 .cbt-supervisor-status-card,
 .cbt-supervisor-panel,
 .cbt-supervisor-summary-card,
+.cbt-supervisor-info-card,
 .cbt-supervisor-watch-card,
 .cbt-supervisor-watchlist-item {
     border: 1px solid var(--cbt-supervisor-border);
@@ -502,12 +505,7 @@ body.cbt-exam-page-mode-supervisor #cbt-exam-app.cbt-web-shell {
 
 .cbt-supervisor-filter-bar {
     display: grid;
-    grid-template-columns:
-        minmax(160px, 1fr)
-        minmax(140px, 0.8fr)
-        minmax(220px, 1.35fr)
-        minmax(140px, 0.8fr)
-        auto;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     align-items: end;
     gap: 12px;
     padding: 14px;
@@ -553,12 +551,13 @@ body.cbt-exam-page-mode-supervisor #cbt-exam-app.cbt-web-shell {
 }
 
 .cbt-supervisor-field-search {
-    min-width: min(320px, 100%);
+    min-width: min(260px, 100%);
 }
 
 .cbt-supervisor-filter-actions {
     justify-content: flex-end;
     flex-wrap: nowrap;
+    align-self: end;
 }
 
 .cbt-supervisor-button {
@@ -723,7 +722,8 @@ body.cbt-exam-page-mode-supervisor #cbt-exam-app.cbt-web-shell {
 
 .cbt-supervisor-pill.is-stale,
 .cbt-supervisor-pill.is-watch,
-.cbt-supervisor-pill.is-watchlist {
+.cbt-supervisor-pill.is-watchlist,
+.cbt-supervisor-pill.is-warning {
     background: #fffbeb;
     color: var(--cbt-supervisor-amber);
     border: 1px solid rgba(183, 121, 31, 0.22);
@@ -731,13 +731,16 @@ body.cbt-exam-page-mode-supervisor #cbt-exam-app.cbt-web-shell {
 
 .cbt-supervisor-pill.is-offline,
 .cbt-supervisor-pill.is-high_risk,
-.cbt-supervisor-pill.is-completed {
+.cbt-supervisor-pill.is-completed,
+.cbt-supervisor-pill.is-critical {
     background: #fef2f2;
     color: #b91c1c;
     border: 1px solid rgba(220, 38, 38, 0.2);
 }
 
 .cbt-supervisor-pill.is-normal,
+.cbt-supervisor-pill.is-info,
+.cbt-supervisor-pill.is-not_started,
 .cbt-supervisor-chip {
     background: var(--cbt-supervisor-blue-soft);
     color: var(--cbt-supervisor-blue-dark);
@@ -762,17 +765,49 @@ body.cbt-exam-page-mode-supervisor #cbt-exam-app.cbt-web-shell {
 }
 
 .cbt-supervisor-watch-grid,
-.cbt-supervisor-watchlist-list {
+.cbt-supervisor-watchlist-list,
+.cbt-supervisor-token-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 14px;
 }
 
 .cbt-supervisor-watch-card,
+.cbt-supervisor-info-card,
 .cbt-supervisor-watchlist-item {
     padding: 16px;
     display: grid;
     gap: 14px;
+}
+
+.cbt-supervisor-info-card {
+    grid-template-columns: 42px minmax(0, 1fr);
+    align-items: start;
+}
+
+.cbt-supervisor-info-card span:not(.cbt-supervisor-summary-icon) {
+    display: block;
+    color: var(--cbt-supervisor-muted);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.cbt-supervisor-info-card strong {
+    display: block;
+    margin-top: 8px;
+    color: var(--cbt-supervisor-text);
+    font-size: clamp(24px, 2.2vw, 34px);
+    font-weight: 900;
+    line-height: 1;
+    overflow-wrap: anywhere;
+}
+
+.cbt-supervisor-info-card small,
+.cbt-supervisor-log-message {
+    display: block;
+    margin-top: 8px;
+    color: var(--cbt-supervisor-muted);
+    line-height: 1.45;
 }
 
 .cbt-supervisor-watch-meta,

@@ -165,12 +165,20 @@ trait CBT_REST_Login_Routes
 
     public static function logout(WP_REST_Request $request)
     {
-        $user_id = CBT_Auth::current_user_id($request);
+        $user_id = CBT_Auth::request_token_user_id($request);
         if ($user_id <= 0) {
             return new WP_Error('unauthorized', 'Unauthorized', ['status' => 401]);
         }
 
-        CBT_Auth::logout_current_session($request);
+        $cleared = CBT_Auth::logout_current_session($request);
+        if (!$cleared) {
+            return new WP_Error(
+                'logout_session_mismatch',
+                'Sesi server tidak cocok dengan token logout. Muat ulang halaman atau minta reset login.',
+                ['status' => 409]
+            );
+        }
+
         CBT_Cache::invalidate_user($user_id);
 
         return rest_ensure_response([

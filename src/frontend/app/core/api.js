@@ -68,6 +68,15 @@ export function createApiClient(deps) {
         return true;
     }
 
+    function isCurrentAuthToken(authToken) {
+        var sentToken = String(authToken || '');
+        if (sentToken === '') {
+            return false;
+        }
+
+        return sentToken === String(state.token || '');
+    }
+
     function buildUrl(path, query) {
         var baseInput = String(config.restBasePath || config.restBase || '/wp-json/cbt/v1/');
         var base;
@@ -254,7 +263,7 @@ export function createApiClient(deps) {
                 }
             }
 
-            if (useAuth && shouldExpireAuthSession(response.status, requestError.code)) {
+            if (useAuth && shouldExpireAuthSession(response.status, requestError.code) && isCurrentAuthToken(authToken)) {
                 expireAuthSession(requestError.message, {
                     code: requestError.code,
                     method: method,

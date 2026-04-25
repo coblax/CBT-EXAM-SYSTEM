@@ -151,7 +151,7 @@ class CBT_REST
         register_rest_route('cbt/v1', '/logout', [
             'methods' => WP_REST_Server::CREATABLE,
             'callback' => [self::class, 'logout'],
-            'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
+            'permission_callback' => '__return_true',
         ]);
 
         register_rest_route('cbt/v1', '/supervisor_dashboard', [
@@ -170,6 +170,11 @@ class CBT_REST
                     'sanitize_callback' => 'absint',
                 ],
                 'kelas' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ],
+                'ruang' => [
                     'required' => false,
                     'type' => 'string',
                     'sanitize_callback' => 'sanitize_text_field',
@@ -193,6 +198,36 @@ class CBT_REST
                     'required' => false,
                     'type' => 'integer',
                     'sanitize_callback' => 'absint',
+                ],
+                'security_page' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+                'security_severity' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_key',
+                ],
+                'security_event_type' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_key',
+                ],
+                'security_device_type' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_key',
+                ],
+                'attendance_page' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+                'attendance_status' => [
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_key',
                 ],
             ],
         ]);
