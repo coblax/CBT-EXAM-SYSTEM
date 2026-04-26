@@ -158,6 +158,7 @@ export function createAttemptUiSyncManager(deps) {
         syncInFlight = apiRequest('ui_state', {
             method: 'POST',
             keepalive: !!options.keepalive,
+            suppressAuthExpiry: true,
             token: options.token,
             body: {
                 attempt_state: snapshot

@@ -161,4 +161,27 @@ describe('createApiClient auth expiry handling', function () {
         expect(fixture.calls.expireAuthSession).toHaveLength(0);
         expect(fixture.state.token).toBe('new-login-token');
     });
+
+    it('supports suppressing auth expiry for best-effort requests', async function () {
+        var fixture = createFixture({
+            code: 'session_revoked',
+            message: 'Sesi login ini sudah digantikan oleh login lain.'
+        }, 401);
+
+        await expect(fixture.client.api('ui_state', {
+            method: 'POST',
+            suppressAuthExpiry: true,
+            body: {
+                attempt_state: {
+                    attempt_id: 55
+                }
+            }
+        })).rejects.toMatchObject({
+            code: 'session_revoked',
+            status: 401
+        });
+
+        expect(fixture.calls.expireAuthSession).toHaveLength(0);
+        expect(fixture.state.token).toBe('login-token');
+    });
 });

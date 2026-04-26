@@ -201,6 +201,7 @@ export function createFinishFlowManager(deps) {
 
         Promise.resolve(apiRequest('submit_flow_metric', {
             method: 'POST',
+            suppressAuthExpiry: true,
             body: payload
         })).catch(function () {
             return null;

@@ -31,6 +31,7 @@ export function createSessionLifecycleManager(deps) {
     var flushAttemptUiState = deps.flushAttemptUiState;
     var handleFinish = deps.handleFinish;
     var logoutSyncTimeoutMs = Math.max(3000, Number(deps.logoutSyncTimeoutMs) || 8000);
+    var logoutInFlight = false;
 
     function recordTimelineEntry(kind, summary, meta) {
         if (typeof recordTimeline === 'function') {
@@ -402,6 +403,19 @@ export function createSessionLifecycleManager(deps) {
     }
 
     async function fullLogout() {
+        if (logoutInFlight) {
+            return;
+        }
+
+        logoutInFlight = true;
+        try {
+            await runFullLogout();
+        } finally {
+            logoutInFlight = false;
+        }
+    }
+
+    async function runFullLogout() {
         var activeToken = String(state.token || '');
         var hasLoadedQuestionOrder = Array.isArray(state.questionOrderIds) && state.questionOrderIds.length > 0;
         var hasLoadedQuestions = Array.isArray(state.questions) && state.questions.length > 0;

@@ -63,6 +63,35 @@ describe('createAuthSessionManager', function () {
         });
     });
 
+    it('does not overwrite a newer stored token during guarded recovery persist', function () {
+        var storage = globalThis.sessionStorage;
+        storage.setItem('cbt-auth-session', JSON.stringify({
+            token: 'token-new',
+            user: {
+                user_id: 9,
+                role: 'student',
+                display_name: 'Ayu'
+            },
+            selected_exam_id: 44,
+            last_stage: 'exam'
+        }));
+        var manager = createManager({
+            stage: 'exam',
+            token: 'token-old',
+            user: {
+                user_id: 9,
+                role: 'student',
+                display_name: 'Ayu'
+            },
+            selectedExamId: 44
+        }, storage);
+
+        expect(manager.persistAuthSession({
+            skipIfStorageTokenDiffers: true
+        })).toBe(false);
+        expect(JSON.parse(storage.getItem('cbt-auth-session')).token).toBe('token-new');
+    });
+
     it('normalizes persisted stage and drops unsupported values safely', function () {
         var manager = createManager();
 

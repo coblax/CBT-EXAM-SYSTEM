@@ -880,6 +880,7 @@ export function createAnswerSyncManager(deps) {
                 var legacyPayload = await apiRequest('submit_answer', {
                     method: 'POST',
                     keepalive: !!options.keepalive,
+                    suppressAuthExpiry: true,
                     body: {
                         attempt_id: state.attemptId,
                         question_id: item.question_id,
@@ -933,6 +934,7 @@ export function createAnswerSyncManager(deps) {
             var batchResponse = await apiRequest('submit_answers_batch', {
                 method: 'POST',
                 keepalive: !!options.keepalive,
+                suppressAuthExpiry: true,
                 body: {
                     attempt_id: state.attemptId,
                     answers: items.map(function (item) {

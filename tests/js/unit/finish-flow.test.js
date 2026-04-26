@@ -45,6 +45,7 @@ function createFixture(overrides = {}) {
         startTimer: 0,
         stopTimer: 0,
         submitFlowMetrics: [],
+        submitFlowMetricRequests: [],
         syncFullscreenState: [],
         syncPendingAnswerRuntimeState: []
     };
@@ -158,6 +159,7 @@ function createFixture(overrides = {}) {
         }
 
         if (path === 'submit_flow_metric') {
+            calls.submitFlowMetricRequests.push(options || {});
             calls.submitFlowMetrics.push(options && options.body ? options.body : null);
             return {
                 duplicate: false,
@@ -460,6 +462,9 @@ describe('createFinishFlowManager', function () {
         expect(events).toContain('finish_acknowledged');
         expect(events).toContain('finish_recovery_started');
         expect(events).toContain('finish_result_ready');
+        expect(fixture.calls.submitFlowMetricRequests.every(function (options) {
+            return options && options.suppressAuthExpiry === true;
+        })).toBe(true);
         expect(
             fixture.calls.submitFlowMetrics.some(function (payload) {
                 return payload

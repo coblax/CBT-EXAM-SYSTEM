@@ -107,6 +107,7 @@ export function createApiClient(deps) {
         var query = options.query || null;
         var keepalive = !!options.keepalive;
         var signal = options.signal && typeof options.signal === 'object' ? options.signal : null;
+        var suppressAuthExpiry = options.suppressAuthExpiry === true;
         var authToken = options.token !== undefined ? String(options.token || '') : String(state.token || '');
         var requestUrl = buildUrl(path, query);
         var startedAt = Date.now();
@@ -263,7 +264,7 @@ export function createApiClient(deps) {
                 }
             }
 
-            if (useAuth && shouldExpireAuthSession(response.status, requestError.code) && isCurrentAuthToken(authToken)) {
+            if (!suppressAuthExpiry && useAuth && shouldExpireAuthSession(response.status, requestError.code) && isCurrentAuthToken(authToken)) {
                 expireAuthSession(requestError.message, {
                     code: requestError.code,
                     method: method,

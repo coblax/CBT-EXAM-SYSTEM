@@ -49,15 +49,16 @@ export function createAuthSessionManager(deps) {
         }
     }
 
-    function persistAuthSession() {
+    function persistAuthSession(options) {
+        options = options || {};
         var storage = getSessionStorage();
         if (!storage || storageKey === '') {
-            return;
+            return false;
         }
 
         if (!state.token || !state.user) {
             clearPersistedAuthSession();
-            return;
+            return false;
         }
 
         var payload = {
@@ -69,13 +70,25 @@ export function createAuthSessionManager(deps) {
 
         if (!payload.user || payload.token === '') {
             clearPersistedAuthSession();
-            return;
+            return false;
         }
 
         try {
+            if (options.skipIfStorageTokenDiffers === true) {
+                var raw = storage.getItem(storageKey);
+                if (raw) {
+                    var parsed = JSON.parse(raw);
+                    var storedToken = parsed && typeof parsed === 'object' ? String(parsed.token || '') : '';
+                    if (storedToken !== '' && storedToken !== payload.token) {
+                        return false;
+                    }
+                }
+            }
             storage.setItem(storageKey, JSON.stringify(payload));
+            return true;
         } catch (error) {
             // Ignore storage failures (quota or disabled storage).
+            return false;
         }
     }
 

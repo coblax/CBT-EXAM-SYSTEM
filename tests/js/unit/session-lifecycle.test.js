@@ -407,6 +407,40 @@ describe('createSessionLifecycleManager', function () {
         expect(fixture.calls.clearPersistedAuthSession).toBe(1);
     });
 
+    it('ignores duplicate logout requests while the first logout is still in flight', async function () {
+        var resolveLogoutRequest;
+        var logoutRequestPromise = new Promise(function (resolve) {
+            resolveLogoutRequest = resolve;
+        });
+        var fixture = createLifecycleFixture({
+            sendLogoutRequestSilently: function (token) {
+                fixture.calls.sendLogoutRequestSilently.push(String(token || ''));
+                return logoutRequestPromise;
+            },
+            state: {
+                stage: 'confirm',
+                attemptId: 0,
+                questionOrderIds: [],
+                questions: [],
+                totalQuestions: 0
+            }
+        });
+
+        var firstLogout = fixture.manager.fullLogout();
+        var secondLogout = fixture.manager.fullLogout();
+        await Promise.resolve();
+
+        expect(fixture.calls.sendLogoutRequestSilently).toEqual(['token-123']);
+        expect(fixture.state.authProgressVisible).toBe(true);
+        expect(fixture.state.authProgressMode).toBe('logout');
+
+        resolveLogoutRequest({ ok: true });
+        await Promise.all([firstLogout, secondLogout]);
+
+        expect(fixture.state.stage).toBe('login');
+        expect(fixture.calls.clearPersistedAuthSession).toBe(1);
+    });
+
     it('waits for logout request completion before clearing local auth state during normal logout', async function () {
         var resolveLogoutRequest;
         var logoutRequestPromise = new Promise(function (resolve) {

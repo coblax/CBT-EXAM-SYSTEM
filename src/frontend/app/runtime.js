@@ -80,6 +80,11 @@ export function bootstrapFrontendApp() {
     if (!root) {
         return;
     }
+    if (isStudentRuntimeRootAlreadyMounted(root)) {
+        root.setAttribute('data-cbt-student-runtime-mounted', '1');
+        return;
+    }
+    root.setAttribute('data-cbt-student-runtime-mounted', '1');
 
     var config = getFrontendConfig(window);
     if (document.body) {
@@ -1113,16 +1118,19 @@ export function bootstrapFrontendApp() {
         return String(path || '').replace(/^\/+/, '').trim().toLowerCase();
     }
 
+    function isActiveExamRecoverableAuthCode(code) {
+        var normalizedCode = String(code || '').trim().toLowerCase();
+        return normalizedCode === 'session_revoked'
+            || normalizedCode === 'invalid_token'
+            || normalizedCode === 'unauthorized';
+    }
+
     function isActiveExamAuthRecoveryCandidate(context) {
         var safeContext = context && typeof context === 'object' ? context : {};
         var code = String(safeContext.code || '').trim().toLowerCase();
         var path = normalizeApiPath(safeContext.path || '');
 
-        if (
-            code !== 'session_revoked'
-            && code !== 'invalid_token'
-            && code !== 'unauthorized'
-        ) {
+        if (!isActiveExamRecoverableAuthCode(code)) {
             return false;
         }
 
@@ -1144,17 +1152,22 @@ export function bootstrapFrontendApp() {
     }
 
     function recoverActiveExamAuthSession(message, context) {
-        if (!isActiveExamAuthRecoveryCandidate(context)) {
+        var safeContext = context && typeof context === 'object' ? context : {};
+        var code = String(safeContext.code || '').trim().toLowerCase();
+        if (activeExamAuthRecoveryPromise) {
+            return isActiveExamRecoverableAuthCode(code)
+                && Number(state.attemptId) > 0
+                && String(state.token || '') !== '';
+        }
+
+        if (!isActiveExamAuthRecoveryCandidate(safeContext)) {
             return false;
         }
 
-        if (activeExamAuthRecoveryPromise) {
-            return true;
-        }
-
-        var safeContext = context && typeof context === 'object' ? context : {};
         var recoveryMessage = String(message || 'Sesi login perlu disambungkan ulang.').trim();
-        persistAuthSession();
+        persistAuthSession({
+            skipIfStorageTokenDiffers: true
+        });
         persistCurrentAttemptUiStateLocally();
         persistCurrentQuestionCacheLocally();
         state.busy = false;
@@ -1175,7 +1188,8 @@ export function bootstrapFrontendApp() {
             .then(function () {
                 if (startupManager && typeof startupManager.bootstrapFromPersistedSession === 'function') {
                     return startupManager.bootstrapFromPersistedSession({
-                        incrementRetry: true
+                        incrementRetry: true,
+                        preserveActiveExamStage: true
                     });
                 }
 
@@ -1874,4 +1888,21 @@ export function bootstrapFrontendApp() {
     } catch (error) {
         renderFatalRuntimeError('startup', error);
     }
+}
+
+function isStudentRuntimeRootAlreadyMounted(root) {
+    if (!root || typeof root.getAttribute !== 'function') {
+        return false;
+    }
+    if (root.getAttribute('data-cbt-student-runtime-mounted') === '1') {
+        return true;
+    }
+    if (!root.firstElementChild) {
+        return false;
+    }
+    if (root.querySelector('.cbt-boot-shell') || root.querySelector('#cbt-boot-progress-fill')) {
+        return false;
+    }
+
+    return root.children.length > 0 || String(root.textContent || '').trim() !== '';
 }

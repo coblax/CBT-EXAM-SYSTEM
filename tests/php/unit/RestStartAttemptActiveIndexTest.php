@@ -7,6 +7,8 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 final class RestStartAttemptActiveIndexTest extends TestCase
 {
+    private const ACTIVE_ATTEMPT_STARTED_AT = '2099-04-02 10:00:00';
+
     #[RunInSeparateProcess]
     public function test_start_attempt_prefers_active_attempt_index_and_skips_latest_attempt_query(): void
     {
@@ -26,7 +28,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
             'exam_id' => 15,
             'student_id' => 7,
             'status' => 'in_progress',
-            'started_at' => '2026-04-02 10:00:00',
+            'started_at' => self::ACTIVE_ATTEMPT_STARTED_AT,
             'question_order' => '[]',
             'option_order' => '',
             'extra_time_minutes' => 0,
@@ -203,7 +205,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
             'exam_id' => 15,
             'student_id' => 7,
             'status' => 'in_progress',
-            'started_at' => '2026-04-02 10:00:00',
+            'started_at' => self::ACTIVE_ATTEMPT_STARTED_AT,
             'question_order' => '[]',
             'option_order' => '',
             'extra_time_minutes' => 0,
@@ -281,7 +283,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
                     'exam_id' => 15,
                     'student_id' => 7,
                     'status' => 'in_progress',
-                    'started_at' => '2026-04-02 10:00:00',
+                    'started_at' => self::ACTIVE_ATTEMPT_STARTED_AT,
                     'finished_at' => '',
                     'question_order' => '[201,202]',
                     'option_order' => '',
@@ -301,7 +303,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertSame(0, $wpdb->latestAttemptQueryCount);
         self::assertSame(1, $wpdb->attemptByIdQueryCount);
         self::assertSame(90, $response['duration_minutes']);
-        self::assertSame('2026-04-02 10:00:00', $response['started_at']);
+        self::assertSame(self::ACTIVE_ATTEMPT_STARTED_AT, $response['started_at']);
         self::assertIsString($response['server_now']);
         self::assertNotSame('', (string) $response['question_order_signature']);
         self::assertIsArray($response['question_revision']);
@@ -347,7 +349,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
             activeAttemptRow: [
                 'id' => 81,
                 'status' => 'in_progress',
-                'started_at' => '2026-04-02 10:00:00',
+                'started_at' => self::ACTIVE_ATTEMPT_STARTED_AT,
                 'finished_at' => '',
                 'question_order' => '[]',
                 'option_order' => '',
@@ -533,7 +535,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
             activeAttemptRow: [
                 'id' => 82,
                 'status' => 'in_progress',
-                'started_at' => '2026-04-02 10:00:00',
+                'started_at' => self::ACTIVE_ATTEMPT_STARTED_AT,
                 'finished_at' => '',
                 'question_order' => '[301,302]',
                 'option_order' => '',
@@ -874,7 +876,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
                     'exam_id' => 15,
                     'student_id' => 7,
                     'status' => 'in_progress',
-                    'started_at' => '2026-04-02 10:00:00',
+                    'started_at' => self::ACTIVE_ATTEMPT_STARTED_AT,
                     'extra_time_minutes' => 0,
                     'question_order' => (string) ($wpdb->lastInsertData['question_order'] ?? '[]'),
                     'option_order' => (string) ($wpdb->lastInsertData['option_order'] ?? ''),
@@ -928,7 +930,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
                     'exam_id' => 15,
                     'student_id' => 7,
                     'status' => 'in_progress',
-                    'started_at' => '2026-04-02 10:00:00',
+                    'started_at' => self::ACTIVE_ATTEMPT_STARTED_AT,
                     'extra_time_minutes' => 0,
                     'question_order' => '[201]',
                     'option_order' => '',
@@ -1018,7 +1020,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
                     'exam_id' => 15,
                     'student_id' => 7,
                     'status' => 'in_progress',
-                    'started_at' => '2026-04-02 10:00:00',
+                    'started_at' => self::ACTIVE_ATTEMPT_STARTED_AT,
                     'extra_time_minutes' => 0,
                     'question_order' => (string) ($wpdb->lastInsertData['question_order'] ?? '[]'),
                     'option_order' => (string) ($wpdb->lastInsertData['option_order'] ?? ''),
@@ -1175,7 +1177,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
                 [
                     'id' => 83,
                     'status' => 'in_progress',
-                    'started_at' => '2026-04-02 10:00:00',
+                    'started_at' => self::ACTIVE_ATTEMPT_STARTED_AT,
                     'finished_at' => '',
                     'question_order' => '[]',
                     'option_order' => '',
@@ -1263,7 +1265,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
             'exam_id' => 15,
             'student_id' => 7,
             'status' => 'in_progress',
-            'started_at' => '2026-04-02 10:00:00',
+            'started_at' => self::ACTIVE_ATTEMPT_STARTED_AT,
             'question_order' => '[]',
             'option_order' => '',
             'extra_time_minutes' => 0,

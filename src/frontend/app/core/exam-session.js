@@ -91,6 +91,7 @@ export function createExamSessionManager(deps) {
     );
     var startAttemptRecoveryTimeoutMs = Math.max(5000, Number(deps.startAttemptRecoveryTimeoutMs) || 30000);
     var startAttemptRecoveryPollDelayMs = Math.max(0, Number(deps.startAttemptRecoveryPollDelayMs) || 1200);
+    var loginFlowSequence = 0;
     var OPENING_RETRY_JITTER_RATIO = 0.25;
     var OPENING_RETRY_STATUS_MIN_MS = 1500;
     var OPENING_RETRY_STATUS_MAX_MS = 15000;
@@ -379,6 +380,7 @@ export function createExamSessionManager(deps) {
         return apiRequest('entry_flow_metric', {
             method: 'POST',
             keepalive: true,
+            suppressAuthExpiry: true,
             body: payload
         }).then(function () {
             return true;
@@ -1606,6 +1608,7 @@ export function createExamSessionManager(deps) {
         });
 
         return apiRequest('ui_state', {
+            suppressAuthExpiry: true,
             query: {
                 attempt_id: safeAttemptId
             }
@@ -2838,10 +2841,12 @@ export function createExamSessionManager(deps) {
     }
 
     async function handleLogin(form) {
-        if (state.busy) {
+        if (state.busy || String(state.stage || '') !== 'login') {
             return;
         }
 
+        var loginRequestId = loginFlowSequence + 1;
+        loginFlowSequence = loginRequestId;
         var identifierEl = form.querySelector('[name="identifier"]');
         var passwordEl = form.querySelector('[name="password"]');
         var identifier = String(state.loginIdentifier || (identifierEl ? identifierEl.value || '' : '')).trim();
@@ -2900,6 +2905,9 @@ export function createExamSessionManager(deps) {
                 }
             });
             loginMetricContext.loginRequestFinishedAt = Date.now();
+            if (loginRequestId !== loginFlowSequence || String(state.stage || '') !== 'login') {
+                return;
+            }
             applyAdaptiveLoadPayload(loginPayload);
 
             updateAuthProgress(
@@ -2931,6 +2939,9 @@ export function createExamSessionManager(deps) {
             loginMetricContext.examListStartedAt = Date.now();
             await loadExams();
             loginMetricContext.examListFinishedAt = Date.now();
+            if (loginRequestId !== loginFlowSequence || String(state.stage || '') !== 'login') {
+                return;
+            }
             updateAuthProgress(
                 92,
                 4,
@@ -2961,6 +2972,9 @@ export function createExamSessionManager(deps) {
             );
             emitLoginEntryFlowMetricSuccess();
         } catch (error) {
+            if (loginRequestId !== loginFlowSequence || String(state.stage || '') !== 'login') {
+                return;
+            }
             var retryAfter = parseInt(getErrorField(error, 'retry_after'), 10);
             if (!isNaN(retryAfter) && retryAfter > 0) {
                 state.error = (error instanceof Error ? error.message : 'Terlalu banyak percobaan login gagal.');
@@ -2988,10 +3002,12 @@ export function createExamSessionManager(deps) {
                 stage: String(state.stage || '')
             });
         } finally {
-            clearLoginEntryFlowMetricContext();
-            state.busy = false;
-            resetAuthProgressState();
-            render();
+            if (loginRequestId === loginFlowSequence) {
+                clearLoginEntryFlowMetricContext();
+                state.busy = false;
+                resetAuthProgressState();
+                render();
+            }
         }
     }
 

@@ -569,6 +569,9 @@ describe('createExamSessionManager', function () {
         expect(fixture.calls.apiCalls.map(function (entry) {
             return entry.endpoint;
         })).toEqual(['ui_state']);
+        expect(fixture.calls.apiCalls[0].options).toMatchObject({
+            suppressAuthExpiry: true
+        });
         expect(fixture.calls.loadQuestionWindow).toHaveLength(1);
         expect(fixture.state.stage).toBe('exam');
 
@@ -827,6 +830,7 @@ describe('createExamSessionManager', function () {
         expect(fixture.calls.apiCalls[2].options.body).toMatchObject({
             flow: 'login_to_exam_list'
         });
+        expect(fixture.calls.apiCalls[2].options.suppressAuthExpiry).toBe(true);
         expect(Number(fixture.calls.apiCalls[2].options.body.duration_ms) || 0).toBeGreaterThanOrEqual(0);
         expect(fixture.calls.apiCalls[2].options.body.phase_durations).toHaveProperty('login_request_ms');
         expect(fixture.calls.apiCalls[2].options.body.phase_durations).toHaveProperty('login_exam_list_ms');
@@ -866,6 +870,34 @@ describe('createExamSessionManager', function () {
         expect(fixture.state.authProgressStatus).toBe('');
         expect(fixture.state.loginIdentifier).toBe('');
         expect(fixture.state.loginPassword).toBe('');
+    });
+
+    it('ignores stale login form submits after the app has left the login stage', async function () {
+        var fixture = createFixture({
+            state: {
+                stage: 'confirm',
+                token: 'token-active',
+                user: {
+                    user_id: 19,
+                    display_name: 'Ayu'
+                }
+            },
+            apiRequest: async function (endpoint) {
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+        var staleForm = document.createElement('form');
+        staleForm.innerHTML = [
+            '<input name="identifier" value="ayu" />',
+            '<input name="password" value="secret-pass" />'
+        ].join('');
+
+        await fixture.manager.handleLogin(staleForm);
+
+        expect(fixture.calls.apiCalls).toEqual([]);
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.token).toBe('token-active');
+        expect(fixture.state.error).toBe('');
     });
 
     it('keeps login successful and safe when the account has no visible exams', async function () {

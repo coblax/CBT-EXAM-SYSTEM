@@ -145,6 +145,23 @@ describe('createAttemptUiSyncManager', function () {
         ]);
     });
 
+    it('marks ui_state sync as best-effort so auth expiry is not triggered by that request', async function () {
+        var requestOptions = null;
+        var fixture = createAttemptUiSyncFixture({
+            apiRequest: async function (endpoint, options) {
+                requestOptions = options || {};
+                return null;
+            }
+        });
+
+        await fixture.manager.flush();
+
+        expect(requestOptions).toMatchObject({
+            method: 'POST',
+            suppressAuthExpiry: true
+        });
+    });
+
     it('does not re-sync when only updated_at changes in the local snapshot', async function () {
         vi.useFakeTimers();
         var apiCalls = 0;

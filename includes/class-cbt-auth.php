@@ -33,6 +33,7 @@ class CBT_Auth
     private const USER_META_ACTIVE_LOGIN_SESSION_TOUCHED_AT = 'cbt_active_login_session_touched_at';
     private const USER_META_ACTIVE_LOGIN_SESSION_ISSUED_AT = 'cbt_active_login_session_issued_at';
     private const USER_META_ACTIVE_LOGIN_SESSION_RESET_AT = 'cbt_active_login_session_reset_at';
+    private const USER_META_ACTIVE_LOGIN_SESSION_RESET_KEY = 'cbt_active_login_session_reset_key';
     private const LOGIN_TOKEN_TTL_SECONDS = 43200;
     private const AUTH_REDIS_TTL_SECONDS = 44100;
     private const AUTH_REDIS_DEFAULT_HOST = '127.0.0.1';
@@ -141,7 +142,7 @@ class CBT_Auth
             return false;
         }
 
-        self::write_active_login_reset_marker($user_id);
+        self::write_active_login_reset_marker($user_id, $active_session_key);
         self::delete_active_login_state($user_id);
         return true;
     }
@@ -1049,9 +1050,10 @@ class CBT_Auth
 
         $redis_state = self::read_auth_redis_session($user_id, $redis_available);
         $reset_at = self::get_active_login_session_reset_at($user_id);
+        $reset_session_key = self::get_active_login_session_reset_key($user_id);
         if ($redis_available) {
             if (is_array($redis_state)) {
-                if (self::is_active_login_state_reset($redis_state, $reset_at)) {
+                if (self::is_active_login_state_reset($redis_state, $reset_at, $reset_session_key)) {
                     self::delete_auth_redis_session($user_id);
                     $redis_state = null;
                 } else {
@@ -1060,7 +1062,7 @@ class CBT_Auth
             }
 
             $legacy_state = self::read_legacy_active_login_state($user_id);
-            if (is_array($legacy_state) && self::is_active_login_state_reset($legacy_state, $reset_at)) {
+            if (is_array($legacy_state) && self::is_active_login_state_reset($legacy_state, $reset_at, $reset_session_key)) {
                 self::delete_legacy_active_login_state($user_id);
                 $legacy_state = null;
             }
@@ -1099,7 +1101,7 @@ class CBT_Auth
         }
 
         $legacy_state = self::read_legacy_active_login_state($user_id);
-        if (is_array($legacy_state) && self::is_active_login_state_reset($legacy_state, $reset_at)) {
+        if (is_array($legacy_state) && self::is_active_login_state_reset($legacy_state, $reset_at, $reset_session_key)) {
             self::delete_legacy_active_login_state($user_id);
             $legacy_state = null;
         }
@@ -1115,15 +1117,22 @@ class CBT_Auth
     /**
      * @param array{session_key:string,touched_at:int,issued_at:int} $state
      */
-    private static function is_active_login_state_reset(array $state, int $reset_at): bool
+    private static function is_active_login_state_reset(array $state, int $reset_at, string $reset_session_key = ''): bool
     {
         if ($reset_at <= 0) {
             return false;
         }
 
+        $state_session_key = trim((string) ($state['session_key'] ?? ''));
+        if ($reset_session_key !== '' && $state_session_key !== '' && hash_equals($reset_session_key, $state_session_key)) {
+            return true;
+        }
+
         $issued_at = max(0, (int) ($state['issued_at'] ?? 0));
         if ($issued_at > 0) {
-            return $issued_at <= $reset_at;
+            // Reset markers are second-precision. A replacement login can be issued in
+            // the same second as an admin reset, so only older states are stale.
+            return $issued_at < $reset_at;
         }
 
         $state_timestamp = max(0, (int) ($state['touched_at'] ?? 0));
@@ -1132,7 +1141,7 @@ class CBT_Auth
             return true;
         }
 
-        return $state_timestamp <= $reset_at;
+        return $state_timestamp < $reset_at;
     }
 
     /**
@@ -1169,7 +1178,17 @@ class CBT_Auth
         return max(0, (int) get_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_RESET_AT, true));
     }
 
-    private static function write_active_login_reset_marker(int $user_id): void
+    private static function get_active_login_session_reset_key(int $user_id): string
+    {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return '';
+        }
+
+        return trim((string) get_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_RESET_KEY, true));
+    }
+
+    private static function write_active_login_reset_marker(int $user_id, string $session_key = ''): void
     {
         $user_id = absint($user_id);
         if ($user_id <= 0) {
@@ -1177,6 +1196,12 @@ class CBT_Auth
         }
 
         update_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_RESET_AT, time());
+        $session_key = trim($session_key);
+        if ($session_key !== '') {
+            update_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_RESET_KEY, $session_key);
+        } else {
+            delete_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_RESET_KEY);
+        }
     }
 
     private static function delete_active_login_reset_marker(int $user_id): void
@@ -1187,6 +1212,7 @@ class CBT_Auth
         }
 
         delete_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_RESET_AT);
+        delete_user_meta($user_id, self::USER_META_ACTIVE_LOGIN_SESSION_RESET_KEY);
     }
 
     /**

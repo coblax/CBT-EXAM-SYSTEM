@@ -391,6 +391,58 @@ describe('createBootstrapSessionManager', function () {
         expect(fixture.calls.render).toBeGreaterThan(0);
     });
 
+    it('keeps active exam recovery on the exam stage when a recovered request is still rejected', async function () {
+        var fixture = createFixture({
+            persisted: {
+                lastStage: 'exam',
+                token: 'token-123',
+                user: {
+                    user_id: 9,
+                    role: 'student'
+                },
+                selectedExamId: 44
+            },
+            state: {
+                attemptId: 91,
+                exams: [
+                    {
+                        id: 44,
+                        latest_attempt_id: 91,
+                        latest_attempt_status: 'in_progress'
+                    }
+                ],
+                stage: 'exam',
+                token: 'token-123',
+                user: {
+                    user_id: 9,
+                    role: 'student'
+                }
+            },
+            loadExams: async function () {
+                var error = new Error('Sesi login ini sudah digantikan oleh login lain.');
+                error.code = 'session_revoked';
+                error.status = 401;
+                throw error;
+            }
+        });
+
+        await fixture.manager.bootstrapFromPersistedSession({
+            incrementRetry: true,
+            preserveActiveExamStage: true
+        });
+
+        expect(fixture.calls.fullLogout).toBe(0);
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.token).toBe('token-123');
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.sessionRecoveryVisible).toBe(true);
+        expect(fixture.state.sessionRecoveryCanRetry).toBe(true);
+        expect(fixture.state.sessionRecoveryMode).toBe('exam_restore');
+        expect(fixture.calls.renderSnapshots.every(function (snapshot) {
+            return snapshot.stage !== 'login';
+        })).toBe(true);
+    });
+
     it('keeps recovery retryable instead of logging out when bootstrap hits a network failure', async function () {
         var fixture = createFixture({
             persisted: {

@@ -280,6 +280,30 @@ final class AuthSessionLifecycleTest extends TestCase
         self::assertSame('', (string) get_user_meta(9, 'cbt_active_login_session_reset_at', true));
     }
 
+    public function test_same_second_reset_marker_does_not_revoke_replacement_login_session(): void
+    {
+        $login = CBT_Auth::login('ayu', 'secret');
+        self::assertIsArray($login);
+
+        $newSessionKey = (string) get_user_meta(9, 'cbt_active_login_session', true);
+        $newIssuedAt = (int) get_user_meta(9, 'cbt_active_login_session_issued_at', true);
+        self::assertNotSame('', $newSessionKey);
+        self::assertGreaterThan(0, $newIssuedAt);
+
+        update_user_meta(9, 'cbt_active_login_session_reset_at', $newIssuedAt);
+        $this->resetDecodedTokenCache();
+
+        $request = new WP_REST_Request([], [], [
+            'authorization' => 'Bearer ' . (string) ($login['token'] ?? ''),
+        ], '/cbt/v1/exams', 'GET');
+
+        $verified = CBT_Auth::verify_request_token($request);
+
+        self::assertIsArray($verified);
+        self::assertSame($newSessionKey, get_user_meta(9, 'cbt_active_login_session', true));
+        self::assertSame($newSessionKey, $this->readRedisSessionKey(9));
+    }
+
     public function test_offline_login_uses_newer_legacy_session_when_redis_returns_with_stale_session(): void
     {
         $oldIssuedAt = time() - 120;

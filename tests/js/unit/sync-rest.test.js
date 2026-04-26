@@ -225,6 +225,64 @@ describe('createAnswerSyncManager', function () {
         })).toBe(false);
     });
 
+    it('marks answer autosave requests as best-effort auth so they cannot force a stage logout', async function () {
+        var fixture = createAnswerSyncFixture();
+        fixture.manager.queueQuestionAnswer(fixture.questions[0]);
+
+        await fixture.manager.flushPendingAnswerBatch({ flushAll: true });
+
+        expect(fixture.apiCalls[0]).toMatchObject({
+            path: 'submit_answers_batch',
+            options: {
+                suppressAuthExpiry: true
+            }
+        });
+    });
+
+    it('marks legacy answer fallback requests as best-effort auth too', async function () {
+        var fixture = createAnswerSyncFixture({
+            apiRequest: async function (path, options) {
+                if (path === 'submit_answers_batch') {
+                    throw Object.assign(new Error('Runtime buffer unavailable'), {
+                        code: 'runtime_buffer_unavailable',
+                        status: 503
+                    });
+                }
+
+                if (path === 'submit_answer') {
+                    return {
+                        question_id: Number(options.body.question_id) || 0,
+                        is_correct: null,
+                        score_awarded: 0,
+                        deferred: 0,
+                        cleared: 0
+                    };
+                }
+
+                throw new Error('Unexpected API path: ' + String(path));
+            }
+        });
+        fixture.manager.queueQuestionAnswer(fixture.questions[0]);
+
+        await fixture.manager.flushPendingAnswerBatch({ flushAll: true });
+
+        expect(fixture.apiCalls.map(function (entry) {
+            return {
+                path: entry.path,
+                suppressAuthExpiry: Boolean(entry.options && entry.options.suppressAuthExpiry)
+            };
+        })).toEqual([
+            {
+                path: 'submit_answers_batch',
+                suppressAuthExpiry: true
+            },
+            {
+                path: 'submit_answer',
+                suppressAuthExpiry: true
+            }
+        ]);
+    });
+
     it('keeps partial legacy successes applied while requeueing the remaining answers when a later legacy submit fails', async function () {
         var legacySubmitCount = 0;
         var fixture = createAnswerSyncFixture({

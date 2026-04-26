@@ -420,24 +420,30 @@ export function createBootstrapSessionManager(deps) {
             return;
         }
 
+        var preserveActiveExamStage = options.preserveActiveExamStage === true
+            && shouldAutoResumePersistedAttempt(persisted)
+            && String(state.stage || '').toLowerCase() === 'exam';
+        var recoveryMode = preserveActiveExamStage ? 'exam_restore' : 'confirm_restore';
         var retryCount = options.incrementRetry
             ? (Math.max(0, Number(state.sessionRecoveryRetryCount) || 0) + 1)
             : 0;
-        var recoveryRunId = startSessionRecovery('confirm_restore', {
+        var recoveryRunId = startSessionRecovery(recoveryMode, {
             retryCount: retryCount
         });
 
         state.token = persisted.token;
         state.user = persisted.user;
         state.selectedExamId = persisted.selectedExamId;
-        state.stage = 'confirm';
+        state.stage = preserveActiveExamStage ? 'exam' : 'confirm';
         state.busy = true;
         clearMessages();
         updateSessionRecoveryProgress(
-            'confirm_restore',
+            recoveryMode,
             1,
-            'Memulihkan sesi login',
-            'Menyiapkan token login tersimpan dan identitas peserta.',
+            preserveActiveExamStage ? 'Menyambung sesi ujian' : 'Memulihkan sesi login',
+            preserveActiveExamStage
+                ? 'Jawaban lokal tetap ditahan sambil sistem menyambungkan ulang sesi aktif.'
+                : 'Menyiapkan token login tersimpan dan identitas peserta.',
             {
                 percent: 16,
                 render: false,
@@ -448,7 +454,7 @@ export function createBootstrapSessionManager(deps) {
 
         try {
             updateSessionRecoveryProgress(
-                'confirm_restore',
+                recoveryMode,
                 2,
                 'Memuat daftar ujian',
                 'Kami sedang mengambil daftar ujian terbaru untuk akun ini.',
@@ -463,7 +469,7 @@ export function createBootstrapSessionManager(deps) {
             }
 
             updateSessionRecoveryProgress(
-                'confirm_restore',
+                recoveryMode,
                 3,
                 'Mengecek attempt aktif',
                 'Sistem sedang mencari apakah ada sesi ujian yang perlu disambungkan lagi.',
@@ -545,6 +551,10 @@ export function createBootstrapSessionManager(deps) {
             }
 
             if (isTerminalAuthRecoveryError(error)) {
+                if (preserveActiveExamStage) {
+                    holdSessionRecoveryForRetry(error, recoveryRunId);
+                    return;
+                }
                 closeSessionRecovery(recoveryRunId);
                 if (!state.token) {
                     state.busy = false;
