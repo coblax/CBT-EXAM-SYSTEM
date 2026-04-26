@@ -28,7 +28,7 @@ if (!function_exists('number_format_i18n')) {
 final class SupervisorDashboardServiceTest extends TestCase
 {
     #[RunInSeparateProcess]
-    public function test_build_dashboard_payload_uses_teacher_scope_and_returns_structured_sections(): void
+    public function test_overview_payload_uses_teacher_scope_and_keeps_heavy_tabs_lazy(): void
     {
         $this->bootstrapSupervisorStubs();
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-supervisor-dashboard-service.php';
@@ -56,18 +56,96 @@ final class SupervisorDashboardServiceTest extends TestCase
         self::assertArrayHasKey('attendance', $payload);
         self::assertArrayHasKey('submit_recovery', $payload);
         self::assertArrayHasKey('submit_watchlist', $payload);
+        self::assertArrayHasKey('action_required', $payload);
         self::assertSame(true, $payload['permissions']['can_reset_login'] ?? false);
         self::assertSame(false, $payload['permissions']['can_manage_token'] ?? true);
         self::assertSame(false, $payload['permissions']['can_delete_security_logs'] ?? true);
-        self::assertCount(1, $payload['live_roster']['items'] ?? []);
-        self::assertSame('Indar Bismoko', $payload['live_roster']['items'][0]['student_name'] ?? '');
-        self::assertSame('Must Watch', $payload['must_watch']['items'][0]['risk_label'] ?? '');
-        self::assertSame(1, $payload['monitoring_attempts']['total'] ?? 0);
-        self::assertSame(1, $payload['submit_watchlist']['display_count'] ?? 0);
+        self::assertSame(1, $payload['action_required']['total'] ?? 0);
+        self::assertSame(1, $payload['action_required']['severity_counts']['critical'] ?? 0);
+        self::assertSame([], $payload['action_required']['items'] ?? null);
+        self::assertSame([], $payload['live_roster']['items'] ?? null);
+        self::assertSame([], $payload['must_watch']['items'] ?? null);
+        self::assertSame(0, $payload['monitoring_attempts']['total'] ?? -1);
+        self::assertSame(0, $payload['submit_watchlist']['display_count'] ?? -1);
+        self::assertSame(0, $GLOBALS['cbt_test_supervisor_monitoring_calls'] ?? 0);
         self::assertNotEmpty($payload['filter_options']['exams'] ?? []);
         self::assertNotEmpty($payload['filter_options']['kelas'] ?? []);
         self::assertNotEmpty($payload['filter_options']['ruang'] ?? []);
         self::assertSame([], $payload['security_log']['items'] ?? null);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_live_roster_tab_hydrates_only_live_roster_context(): void
+    {
+        $this->bootstrapSupervisorStubs();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-supervisor-dashboard-service.php';
+
+        global $wpdb;
+        $wpdb = new SupervisorDashboardServiceFakeWpdb();
+
+        $payload = \CBT_Supervisor_Dashboard_Service::build_dashboard_payload(41, 'teacher', [
+            'tab' => 'live_roster',
+            'exam_id' => 8,
+            'kelas' => 'XI TKJ 1',
+            'student_keyword' => 'Indar',
+        ]);
+
+        self::assertSame('live_roster', $payload['filters']['tab'] ?? '');
+        self::assertCount(1, $payload['live_roster']['items'] ?? []);
+        self::assertSame('Indar Bismoko', $payload['live_roster']['items'][0]['student_name'] ?? '');
+        self::assertSame([], $payload['must_watch']['items'] ?? null);
+        self::assertSame(0, $payload['monitoring_attempts']['total'] ?? -1);
+        self::assertSame([], $payload['security_log']['items'] ?? null);
+        self::assertSame(0, $payload['action_required']['total'] ?? -1);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_action_required_tab_sorts_critical_items_and_respects_scope(): void
+    {
+        $this->bootstrapSupervisorStubs();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-supervisor-dashboard-service.php';
+
+        global $wpdb;
+        $wpdb = new SupervisorDashboardServiceFakeWpdb();
+
+        $payload = \CBT_Supervisor_Dashboard_Service::build_dashboard_payload(41, 'teacher', [
+            'tab' => 'action_required',
+            'exam_id' => 8,
+            'kelas' => 'XI TKJ 1',
+            'action_page' => 1,
+        ]);
+
+        self::assertSame('action_required', $payload['filters']['tab'] ?? '');
+        self::assertSame(1, $payload['action_required']['total'] ?? 0);
+        self::assertSame('critical', $payload['action_required']['items'][0]['severity'] ?? '');
+        self::assertSame('Indar Bismoko', $payload['action_required']['items'][0]['student_name'] ?? '');
+        self::assertStringContainsString('finalisasi', strtolower((string) ($payload['action_required']['items'][0]['detail'] ?? '')));
+        self::assertGreaterThan(0, $GLOBALS['cbt_test_supervisor_monitoring_calls'] ?? 0);
+        self::assertSame([], $payload['live_roster']['items'] ?? null);
+        self::assertSame(0, $payload['monitoring_attempts']['total'] ?? -1);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_attempt_detail_uses_teacher_scope_and_returns_read_only_context(): void
+    {
+        $this->bootstrapSupervisorStubs();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-supervisor-dashboard-service.php';
+
+        global $wpdb;
+        $wpdb = new SupervisorDashboardServiceFakeWpdb();
+
+        $detail = \CBT_Supervisor_Dashboard_Service::get_attempt_detail(55, 41, 'teacher');
+        self::assertIsArray($detail);
+        self::assertSame(true, $detail['ok'] ?? false);
+        self::assertSame(55, $detail['attempt']['attempt_id'] ?? 0);
+        self::assertSame('Indar Bismoko', $detail['student']['name'] ?? '');
+        self::assertSame('UTS', $detail['exam']['title'] ?? '');
+        self::assertSame(70, $detail['answer_progress']['question_count'] ?? 0);
+        self::assertNotEmpty($detail['security_events'] ?? []);
+
+        $blocked = \CBT_Supervisor_Dashboard_Service::get_attempt_detail(55, 42, 'teacher');
+        self::assertInstanceOf(\WP_Error::class, $blocked);
+        self::assertSame('attempt_not_found', $blocked->get_error_code());
     }
 
     #[RunInSeparateProcess]
@@ -321,6 +399,8 @@ class CBT_Admin_Results_Service
 {
     public static function build_frontend_monitoring_context(array $filters): array
     {
+        $GLOBALS['cbt_test_supervisor_monitoring_calls'] = (int) ($GLOBALS['cbt_test_supervisor_monitoring_calls'] ?? 0) + 1;
+
         return [
             'items' => [[
                 'attempt_id' => 55,
@@ -489,6 +569,7 @@ final class SupervisorDashboardServiceFakeWpdb extends \wpdb
     public function get_results($prepared, $output = null): array
     {
         $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
+        $args = is_array($prepared) ? (array) ($prepared['args'] ?? []) : [];
 
         if (strpos($query, 'SELECT id, title, status, target_kelas') !== false) {
             return [
@@ -532,6 +613,40 @@ final class SupervisorDashboardServiceFakeWpdb extends \wpdb
                     'started_at' => '',
                     'finished_at' => '',
                     'password' => 'secret',
+                ],
+            ];
+        }
+
+        if (strpos($query, 'a.id AS attempt_id') !== false && strpos($query, 'FROM wp_cbt_attempts a') !== false) {
+            if (isset($args[1]) && (int) $args[1] !== 41) {
+                return [];
+            }
+
+            return [
+                [
+                    'attempt_id' => 55,
+                    'exam_id' => 8,
+                    'student_id' => 71,
+                    'status' => 'in_progress',
+                    'score' => 11,
+                    'max_score' => 70,
+                    'started_at' => '2026-04-24 07:18:44',
+                    'finished_at' => '',
+                    'extra_time_minutes' => 0,
+                    'updated_at' => '2026-04-24 08:05:00',
+                    'exam_title' => 'UTS',
+                    'exam_status' => 'published',
+                    'exam_duration_minutes' => 90,
+                    'exam_created_by' => 41,
+                    'student_username' => 'indar',
+                    'student_name' => 'Indar Bismoko',
+                    'student_kelas' => 'XI TKJ 1',
+                    'student_ruang' => 'R-2',
+                    'student_nisn' => '1234567890',
+                    'answer_count' => 70,
+                    'question_count' => 70,
+                    'total_points' => 70,
+                    'earned_points' => 11,
                 ],
             ];
         }

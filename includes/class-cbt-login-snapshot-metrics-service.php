@@ -64,6 +64,14 @@ final class CBT_Login_Snapshot_Metrics_Service
     }
 
     /**
+     * @param array<string,mixed> $meta
+     */
+    public static function record_session_takeover_stale(array $meta = []): void
+    {
+        self::record('session_takeover_stale', $meta);
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public static function get_admin_summary(): array
@@ -241,6 +249,7 @@ final class CBT_Login_Snapshot_Metrics_Service
             'canonical_success' => 0,
             'invalid_credentials' => 0,
             'session_already_active' => 0,
+            'session_takeover_stale' => 0,
             'invalid_credentials_snapshot' => 0,
             'invalid_credentials_canonical' => 0,
             'invalid_credentials_unknown' => 0,
@@ -292,6 +301,7 @@ final class CBT_Login_Snapshot_Metrics_Service
             $summary['canonical_success'] += max(0, (int) ($hash['canonical_success'] ?? 0));
             $summary['invalid_credentials'] += max(0, (int) ($hash['invalid_credentials'] ?? 0));
             $summary['session_already_active'] += max(0, (int) ($hash['session_already_active'] ?? 0));
+            $summary['session_takeover_stale'] += max(0, (int) ($hash['session_takeover_stale'] ?? 0));
 
             foreach ((array) ($hash['snapshot_miss_by_reason'] ?? []) as $reason => $count) {
                 $safe_reason = sanitize_key((string) $reason);
@@ -347,6 +357,7 @@ final class CBT_Login_Snapshot_Metrics_Service
             'canonical_success' => 0,
             'invalid_credentials' => 0,
             'session_already_active' => 0,
+            'session_takeover_stale' => 0,
             'snapshot_miss_by_reason' => [],
             'hit_rate' => null,
             'hit_rate_label' => 'N/A',

@@ -63,6 +63,7 @@ export function getFrontendConfig(win) {
 
     return Object.assign({}, raw, {
         frontendMode: String(raw.frontendMode || '').trim().toLowerCase() === 'supervisor' ? 'supervisor' : 'student',
+        examProgramName: String(raw.examProgramName || '').trim(),
         studentFrontendUrl: String(raw.studentFrontendUrl || raw.homeUrl || '').trim(),
         supervisorFrontendUrl: String(raw.supervisorFrontendUrl || raw.homeUrl || '').trim(),
         securityForceFullscreen: normalizeBooleanFlag(raw.securityForceFullscreen),

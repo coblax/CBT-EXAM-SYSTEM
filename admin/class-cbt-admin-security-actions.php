@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Security_User_Agent_Guard')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-security-user-agent-guard.php';
+}
+
 final class CBT_Admin_Security_Actions
 {
     public static function handle_save_security_settings(): void
@@ -24,6 +28,10 @@ final class CBT_Admin_Security_Actions
         $idle_threshold_minutes = isset($_POST['idle_threshold_minutes'])
             ? max(1, absint(wp_unslash($_POST['idle_threshold_minutes'])))
             : 5;
+        $restrict_student_user_agent = isset($_POST['restrict_student_user_agent']) && (string) wp_unslash($_POST['restrict_student_user_agent']) === '1';
+        $allowed_user_agents = CBT_Security_User_Agent_Guard::normalize_allowed_user_agents(
+            isset($_POST['allowed_user_agents']) ? wp_unslash($_POST['allowed_user_agents']) : []
+        );
 
         update_option(
             CBT_Admin_Security_Service::security_option_key(),
@@ -36,6 +44,8 @@ final class CBT_Admin_Security_Actions
                 'detect_idle_during_exam' => $detect_idle_during_exam ? 1 : 0,
                 'detect_heartbeat_lost' => $detect_heartbeat_lost ? 1 : 0,
                 'idle_threshold_minutes' => $idle_threshold_minutes,
+                'restrict_student_user_agent' => $restrict_student_user_agent ? 1 : 0,
+                'allowed_user_agents' => $allowed_user_agents,
             ],
             false
         );

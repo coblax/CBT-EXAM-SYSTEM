@@ -2769,8 +2769,11 @@ export function createExamSessionManager(deps) {
         scheduleExamFinalizePendingPoll();
     }
 
-    async function loadExams() {
-        var payload = await apiRequest('exams');
+    async function loadExams(options) {
+        options = options || {};
+        var payload = await apiRequest('exams', {
+            suppressAuthExpiry: options.suppressAuthExpiry === true
+        });
         applyAdaptiveLoadPayload(payload);
         state.exams = Array.isArray(payload.items) ? payload.items : [];
         state.examPickerMobileOpen = false;

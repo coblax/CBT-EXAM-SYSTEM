@@ -41,6 +41,7 @@ final class SupervisorRestRoutesTest extends TestCase
                 'status' => 'in_progress',
                 'roster_page' => 2,
                 'attempts_page' => 3,
+                'action_page' => 6,
                 'security_page' => 4,
                 'security_severity' => 'critical',
                 'security_event_type' => 'tab_hidden',
@@ -58,6 +59,7 @@ final class SupervisorRestRoutesTest extends TestCase
         self::assertSame(8, $GLOBALS['cbt_test_supervisor_dashboard_query']['exam_id'] ?? 0);
         self::assertSame('R-2', $GLOBALS['cbt_test_supervisor_dashboard_query']['ruang'] ?? '');
         self::assertSame(4, $GLOBALS['cbt_test_supervisor_dashboard_query']['security_page'] ?? 0);
+        self::assertSame(6, $GLOBALS['cbt_test_supervisor_dashboard_query']['action_page'] ?? 0);
         self::assertSame('critical', $GLOBALS['cbt_test_supervisor_dashboard_query']['security_severity'] ?? '');
         self::assertSame('tab_hidden', $GLOBALS['cbt_test_supervisor_dashboard_query']['security_event_type'] ?? '');
         self::assertSame('mobile', $GLOBALS['cbt_test_supervisor_dashboard_query']['security_device_type'] ?? '');
@@ -80,6 +82,44 @@ final class SupervisorRestRoutesTest extends TestCase
 
         self::assertInstanceOf(\WP_Error::class, $response);
         self::assertSame('invalid_payload', $response->get_error_code());
+    }
+
+    #[RunInSeparateProcess]
+    public function test_supervisor_attempt_detail_requires_attempt_id(): void
+    {
+        $this->bootstrapRouteStubs('teacher');
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest-supervisor.php';
+        $this->defineHarnessClass();
+
+        $response = \SupervisorRestRoutesHarness::supervisor_attempt_detail(
+            new \WP_REST_Request([], [], [], '/cbt/v1/supervisor_attempt_detail', 'GET')
+        );
+
+        self::assertInstanceOf(\WP_Error::class, $response);
+        self::assertSame('invalid_payload', $response->get_error_code());
+    }
+
+    #[RunInSeparateProcess]
+    public function test_supervisor_attempt_detail_returns_scoped_service_payload_for_teacher(): void
+    {
+        $this->bootstrapRouteStubs('teacher');
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest-supervisor.php';
+        $this->defineHarnessClass();
+
+        $response = \SupervisorRestRoutesHarness::supervisor_attempt_detail(
+            new \WP_REST_Request([
+                'attempt_id' => 55,
+            ], [], [], '/cbt/v1/supervisor_attempt_detail', 'GET')
+        );
+        $data = is_array($response)
+            ? $response
+            : ($response instanceof \WP_REST_Response ? $response->get_data() : []);
+
+        self::assertSame(true, $data['ok'] ?? false);
+        self::assertSame(55, $data['attempt']['attempt_id'] ?? 0);
+        self::assertSame(55, $GLOBALS['cbt_test_supervisor_attempt_detail_scope']['attempt_id'] ?? 0);
+        self::assertSame(77, $GLOBALS['cbt_test_supervisor_attempt_detail_scope']['user_id'] ?? 0);
+        self::assertSame('teacher', $GLOBALS['cbt_test_supervisor_attempt_detail_scope']['role'] ?? '');
     }
 
     private function bootstrapRouteStubs(string $role): void
@@ -134,6 +174,22 @@ class CBT_Supervisor_Dashboard_Service
             'user_id' => $user_id,
             'role' => $role,
             'message' => 'Login siswa berhasil di-reset.',
+        ];
+    }
+
+    public static function get_attempt_detail(int $attempt_id, int $user_id, string $role): array
+    {
+        $GLOBALS['cbt_test_supervisor_attempt_detail_scope'] = [
+            'attempt_id' => $attempt_id,
+            'user_id' => $user_id,
+            'role' => $role,
+        ];
+
+        return [
+            'ok' => true,
+            'attempt' => [
+                'attempt_id' => $attempt_id,
+            ],
         ];
     }
 }

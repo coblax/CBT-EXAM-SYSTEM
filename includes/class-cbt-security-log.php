@@ -102,6 +102,11 @@ class CBT_Security_Log
                 'severity' => 'critical',
                 'message' => 'Sesi login attempt ini dicabut karena tidak lagi cocok dengan sesi aktif.',
             ],
+            'session_takeover_stale' => [
+                'label' => 'Sesi dipindahkan otomatis',
+                'severity' => 'info',
+                'message' => 'Login baru mengambil alih sesi lama yang sudah tidak aktif.',
+            ],
             'clipboard_blocked' => [
                 'label' => 'Clipboard diblokir',
                 'severity' => 'warning',

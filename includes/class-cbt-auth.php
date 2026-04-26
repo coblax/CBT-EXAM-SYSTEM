@@ -20,6 +20,10 @@ if (!class_exists('CBT_Login_Snapshot_Metrics_Service')) {
     require_once __DIR__ . '/class-cbt-login-snapshot-metrics-service.php';
 }
 
+if (!class_exists('CBT_Security_User_Agent_Guard')) {
+    require_once __DIR__ . '/class-cbt-security-user-agent-guard.php';
+}
+
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
@@ -44,8 +48,9 @@ class CBT_Auth
     private const DEFAULT_TOKEN_REFRESH_MINUTES = 15;
     private const EXAM_TOKEN_LENGTH = 6;
     private const EXAM_TOKEN_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ123456789';
-    private const ACTIVE_LOGIN_TTL_SECONDS = 45;
-    private const ACTIVE_LOGIN_TOUCH_DEBOUNCE_SECONDS = 15;
+    private const ACTIVE_LOGIN_FRESH_REJECT_SECONDS = 10;
+    private const ACTIVE_LOGIN_STALE_TAKEOVER_SECONDS = 25;
+    private const ACTIVE_LOGIN_TOUCH_DEBOUNCE_SECONDS = 5;
     /**
      * Cache decoded token selama satu request.
      *
@@ -283,6 +288,11 @@ class CBT_Auth
         $role = is_scalar($role) ? (string) $role : '';
         if (!in_array($role, ['admin', 'administrator', 'guru', 'teacher', 'siswa', 'student'], true)) {
             return new WP_Error('forbidden', 'You do not have permission to access this endpoint', ['status' => 403]);
+        }
+
+        $user_agent_guard = CBT_Security_User_Agent_Guard::guard_student_request($request, $role);
+        if (is_wp_error($user_agent_guard)) {
+            return $user_agent_guard;
         }
 
         return true;
@@ -749,15 +759,26 @@ class CBT_Auth
             return new WP_Error('invalid_credentials', 'Invalid identifier or password', ['status' => 401]);
         }
 
-        if (self::has_recent_active_login_session($user_id)) {
+        $active_login = self::evaluate_active_login_session($user_id);
+        if (!empty($active_login['has_session']) && empty($active_login['allow_takeover'])) {
+            $error_data = ['status' => 409];
+            $retry_after = max(0, (int) ($active_login['retry_after'] ?? 0));
+            if ($retry_after > 0 && (int) ($active_login['age_seconds'] ?? 0) >= self::ACTIVE_LOGIN_FRESH_REJECT_SECONDS) {
+                $error_data['retry_after'] = $retry_after;
+                $error_data['retry_after_ms'] = $retry_after * 1000;
+            }
+
             return new WP_Error(
                 'session_already_active',
                 'Akun ini masih aktif di browser lain. Logout dulu dari browser sebelumnya atau minta admin reset login.',
-                ['status' => 409]
+                $error_data
             );
         }
 
         $session_key = self::reset_login_session($user_id);
+        if (!empty($active_login['has_session']) && !empty($active_login['allow_takeover'])) {
+            self::record_stale_login_session_takeover($user_id, $active_login, $session_key);
+        }
         $token = self::generate_token($user_id, $role, $session_key);
 
         $payload = [
@@ -953,31 +974,62 @@ class CBT_Auth
         return null;
     }
 
-    private static function get_active_login_session(int $user_id): string
+    /**
+     * @return array{has_session:bool,allow_takeover:bool,retry_after:int,age_seconds:int,touched_at:int,issued_at:int,session_source:string}
+     */
+    private static function evaluate_active_login_session(int $user_id): array
     {
         $state = self::read_active_login_state($user_id);
-        return trim((string) ($state['session_key'] ?? ''));
-    }
-
-    private static function get_active_login_session_touched_at(int $user_id): int
-    {
-        $state = self::read_active_login_state($user_id);
-        return max(0, (int) ($state['touched_at'] ?? 0));
-    }
-
-    private static function has_recent_active_login_session(int $user_id): bool
-    {
-        $active_session_key = self::get_active_login_session($user_id);
-        if ($active_session_key === '') {
-            return false;
+        $active_session_key = trim((string) ($state['session_key'] ?? ''));
+        $touched_at = max(0, (int) ($state['touched_at'] ?? 0));
+        if ($active_session_key === '' || $touched_at <= 0) {
+            return [
+                'has_session' => false,
+                'allow_takeover' => true,
+                'retry_after' => 0,
+                'age_seconds' => 0,
+                'touched_at' => 0,
+                'issued_at' => 0,
+                'session_source' => (string) ($state['source'] ?? 'none'),
+            ];
         }
 
-        $touched_at = self::get_active_login_session_touched_at($user_id);
-        if ($touched_at <= 0) {
-            return false;
+        $age_seconds = max(0, time() - $touched_at);
+        $allow_takeover = $age_seconds >= self::ACTIVE_LOGIN_STALE_TAKEOVER_SECONDS;
+
+        return [
+            'has_session' => true,
+            'allow_takeover' => $allow_takeover,
+            'retry_after' => $allow_takeover ? 0 : max(1, self::ACTIVE_LOGIN_STALE_TAKEOVER_SECONDS - $age_seconds),
+            'age_seconds' => $age_seconds,
+            'touched_at' => $touched_at,
+            'issued_at' => max(0, (int) ($state['issued_at'] ?? 0)),
+            'session_source' => (string) ($state['source'] ?? 'none'),
+        ];
+    }
+
+    /**
+     * @param array{age_seconds:int,touched_at:int,issued_at:int,session_source:string} $previous_session
+     */
+    private static function record_stale_login_session_takeover(int $user_id, array $previous_session, string $new_session_key): void
+    {
+        $context = [
+            'source' => 'login',
+            'previous_session_age_seconds' => max(0, (int) ($previous_session['age_seconds'] ?? 0)),
+            'previous_session_touched_at' => max(0, (int) ($previous_session['touched_at'] ?? 0)),
+            'previous_session_issued_at' => max(0, (int) ($previous_session['issued_at'] ?? 0)),
+            'previous_session_source' => sanitize_key((string) ($previous_session['session_source'] ?? 'none')),
+            'new_session_issued_at' => time(),
+            'new_session_fingerprint' => $new_session_key !== '' ? substr(hash('sha256', $new_session_key), 0, 12) : '',
+        ];
+
+        if (class_exists('CBT_Security_Log') && method_exists('CBT_Security_Log', 'record_latest_student_attempt_event')) {
+            CBT_Security_Log::record_latest_student_attempt_event($user_id, 'session_takeover_stale', $context);
         }
 
-        return ($touched_at + self::ACTIVE_LOGIN_TTL_SECONDS) >= time();
+        if (class_exists('CBT_Login_Snapshot_Metrics_Service') && method_exists('CBT_Login_Snapshot_Metrics_Service', 'record_session_takeover_stale')) {
+            CBT_Login_Snapshot_Metrics_Service::record_session_takeover_stale($context);
+        }
     }
 
     private static function touch_login_session(int $user_id, string $session_key): void

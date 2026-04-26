@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Security_User_Agent_Guard')) {
+    require_once __DIR__ . '/class-cbt-security-user-agent-guard.php';
+}
+
 class CBT_Frontend
 {
     private const STUDENT_SHORTCODE = 'cbt_exam_frontend';
@@ -39,6 +43,7 @@ class CBT_Frontend
         add_filter('body_class', [self::class, 'filter_body_class']);
         add_filter('show_admin_bar', [self::class, 'filter_show_admin_bar']);
         add_filter('template_include', [self::class, 'filter_template_include'], 99);
+        add_action('template_redirect', [self::class, 'guard_student_user_agent_access'], 1);
         add_action('template_redirect', [self::class, 'send_nocache_headers']);
         add_action('wp_enqueue_scripts', [self::class, 'prepare_frontend_request'], 20);
         add_action('wp_enqueue_scripts', [self::class, 'strip_frontend_assets'], PHP_INT_MAX);
@@ -97,6 +102,34 @@ class CBT_Frontend
         }
 
         return $show;
+    }
+
+    public static function guard_student_user_agent_access(): void
+    {
+        if (!self::is_frontend_request_context() || self::current_frontend_mode() !== 'student') {
+            return;
+        }
+
+        if (CBT_Security_User_Agent_Guard::is_request_allowed()) {
+            return;
+        }
+
+        if (function_exists('status_header')) {
+            status_header(403);
+        }
+
+        if (function_exists('nocache_headers')) {
+            nocache_headers();
+        }
+
+        wp_die(
+            'Akses ujian hanya diizinkan dari aplikasi atau User-Agent yang terdaftar.',
+            'Akses Ujian Dibatasi',
+            [
+                'response' => 403,
+                'back_link' => false,
+            ]
+        );
     }
 
     public static function send_nocache_headers(): void
@@ -654,6 +687,7 @@ class CBT_Frontend
             'restBase' => $rest_base_absolute,
             'restBasePath' => $rest_base_path,
             'siteName' => $branding['school_name'],
+            'examProgramName' => $branding['exam_program_name'],
             'schoolName' => $branding['school_name'],
             'schoolMotto' => $branding['school_motto'],
             'schoolLogoUrl' => $branding['logo_url'],
@@ -972,7 +1006,7 @@ class CBT_Frontend
     }
 
     /**
-     * @return array{school_name:string,school_motto:string,logo_url:string,logo_1_url:string,logo_2_url:string}
+     * @return array{exam_program_name:string,school_name:string,school_motto:string,logo_url:string,logo_1_url:string,logo_2_url:string}
      */
     private static function get_setup_branding_config(): array
     {
@@ -993,6 +1027,9 @@ class CBT_Frontend
         }
         $school_motto = isset($raw['school_motto'])
             ? trim(sanitize_text_field((string) $raw['school_motto']))
+            : '';
+        $exam_program_name = isset($raw['exam_program_name'])
+            ? trim(sanitize_text_field((string) $raw['exam_program_name']))
             : '';
 
         $legacy_logo_attachment_id = isset($raw['logo_attachment_id']) ? absint($raw['logo_attachment_id']) : 0;
@@ -1027,6 +1064,7 @@ class CBT_Frontend
         }
 
         return [
+            'exam_program_name' => $exam_program_name,
             'school_name' => $school_name,
             'school_motto' => $school_motto,
             'logo_url' => $logo_1_url,

@@ -8,6 +8,53 @@ var SUPERVISOR_AUTO_REFRESH_MS = 15000;
 var LOGIN_IDENTIFIER_MAX_LENGTH = 191;
 var LOGIN_PASSWORD_MAX_LENGTH = 1024;
 
+export function normalizeSupervisorPercentValue(value, fallbackValue) {
+    var candidates = [value, fallbackValue];
+
+    for (var i = 0; i < candidates.length; i++) {
+        var candidate = candidates[i];
+        if (candidate === null || candidate === undefined) {
+            continue;
+        }
+
+        var numeric = Number(candidate);
+        if (typeof candidate === 'number' && Number.isFinite(numeric)) {
+            return Math.max(0, Math.min(100, numeric));
+        }
+
+        var raw = String(candidate).trim();
+        if (raw === '') {
+            continue;
+        }
+
+        raw = raw.replace(/%/g, '').replace(/\s+/g, '');
+        if (raw.indexOf(',') !== -1 && raw.indexOf('.') !== -1) {
+            raw = raw.lastIndexOf(',') > raw.lastIndexOf('.')
+                ? raw.replace(/\./g, '').replace(',', '.')
+                : raw.replace(/,/g, '');
+        } else if (raw.indexOf(',') !== -1) {
+            raw = raw.replace(',', '.');
+        }
+
+        numeric = Number(raw);
+        if (Number.isFinite(numeric)) {
+            return Math.max(0, Math.min(100, numeric));
+        }
+    }
+
+    return 0;
+}
+
+export function buildSupervisorDashboardCacheKey(query) {
+    var source = query && typeof query === 'object' ? query : {};
+    var normalized = {};
+    Object.keys(source).sort().forEach(function (key) {
+        normalized[key] = source[key];
+    });
+
+    return JSON.stringify(normalized);
+}
+
 export function bootstrapSupervisorApp() {
     var root = document.getElementById('cbt-exam-app');
     if (!root) {
@@ -22,6 +69,7 @@ export function bootstrapSupervisorApp() {
     var browserStorage = createBrowserStorageAccess(window);
     var refreshTimer = 0;
     var requestCounter = 0;
+    var detailRequestCounter = 0;
     var state = {
         token: '',
         user: null,
@@ -35,12 +83,22 @@ export function bootstrapSupervisorApp() {
             status: '',
             rosterPage: 1,
             attemptsPage: 1,
+            actionPage: 1,
             securityPage: 1,
             securitySeverity: 'all',
             securityEventType: 'all',
             securityDeviceType: 'all',
             attendancePage: 1,
             attendanceStatus: ''
+        },
+        dashboardCache: {},
+        loadingTabs: {},
+        detailDrawer: {
+            open: false,
+            busy: false,
+            error: '',
+            attemptId: 0,
+            data: null
         },
         loginBusy: false,
         dashboardBusy: false,
@@ -212,23 +270,92 @@ export function bootstrapSupervisorApp() {
         }, SUPERVISOR_AUTO_REFRESH_MS);
     }
 
+    function getActiveFilterMode(tab) {
+        var activeTab = String(tab || state.activeTab || 'overview');
+        if (activeTab === 'token_gate') {
+            return 'token';
+        }
+        if (activeTab === 'security_log') {
+            return 'security';
+        }
+        if (activeTab === 'attendance') {
+            return 'attendance';
+        }
+        if (activeTab === 'action_required') {
+            return 'action';
+        }
+        if (activeTab === 'submit_recovery') {
+            return 'submit';
+        }
+        if (activeTab === 'live_roster' || activeTab === 'must_watch' || activeTab === 'monitoring_attempts') {
+            return 'operational';
+        }
+
+        return 'overview';
+    }
+
+    function shouldSendExamFilter(mode) {
+        return ['token', 'attendance', 'action', 'submit', 'operational'].indexOf(String(mode || '')) !== -1;
+    }
+
+    function shouldSendOperationalFilters(mode) {
+        return ['action', 'operational', 'submit'].indexOf(String(mode || '')) !== -1;
+    }
+
     function buildDashboardQuery() {
-        return {
-            tab: state.activeTab,
-            exam_id: Number(state.filters.examId) || 0,
-            kelas: String(state.filters.kelas || ''),
-            ruang: String(state.filters.ruang || ''),
-            student_keyword: String(state.filters.studentKeyword || ''),
-            status: String(state.filters.status || ''),
-            roster_page: Number(state.filters.rosterPage) || 1,
-            attempts_page: Number(state.filters.attemptsPage) || 1,
-            security_page: Number(state.filters.securityPage) || 1,
-            security_severity: String(state.filters.securitySeverity || 'all'),
-            security_event_type: String(state.filters.securityEventType || 'all'),
-            security_device_type: String(state.filters.securityDeviceType || 'all'),
-            attendance_page: Number(state.filters.attendancePage) || 1,
-            attendance_status: String(state.filters.attendanceStatus || '')
+        var mode = getActiveFilterMode(state.activeTab);
+        var activeTab = String(state.activeTab || 'overview');
+        var query = {
+            tab: activeTab,
+            exam_id: 0,
+            kelas: '',
+            ruang: '',
+            student_keyword: '',
+            status: '',
+            roster_page: activeTab === 'live_roster' ? (Number(state.filters.rosterPage) || 1) : 1,
+            attempts_page: activeTab === 'monitoring_attempts' || activeTab === 'submit_recovery' ? (Number(state.filters.attemptsPage) || 1) : 1,
+            action_page: activeTab === 'action_required' ? (Number(state.filters.actionPage) || 1) : 1,
+            security_page: activeTab === 'security_log' ? (Number(state.filters.securityPage) || 1) : 1,
+            security_severity: 'all',
+            security_event_type: 'all',
+            security_device_type: 'all',
+            attendance_page: activeTab === 'attendance' ? (Number(state.filters.attendancePage) || 1) : 1,
+            attendance_status: ''
         };
+
+        if (shouldSendExamFilter(mode)) {
+            query.exam_id = Number(state.filters.examId) || 0;
+        }
+        if (shouldSendOperationalFilters(mode)) {
+            query.kelas = String(state.filters.kelas || '');
+            query.ruang = String(state.filters.ruang || '');
+            query.student_keyword = String(state.filters.studentKeyword || '');
+        }
+        if (mode === 'operational') {
+            query.status = String(state.filters.status || '');
+        }
+        if (mode === 'security') {
+            query.security_severity = String(state.filters.securitySeverity || 'all');
+            query.security_event_type = String(state.filters.securityEventType || 'all');
+            query.security_device_type = String(state.filters.securityDeviceType || 'all');
+        }
+        if (mode === 'attendance') {
+            query.attendance_status = String(state.filters.attendanceStatus || '');
+        }
+
+        return query;
+    }
+
+    function isActiveTabLoading() {
+        return !!state.loadingTabs[String(state.activeTab || 'overview')];
+    }
+
+    function isDashboardForActiveTab() {
+        return !!(
+            state.dashboard
+            && state.dashboard.filters
+            && String(state.dashboard.filters.tab || 'overview') === String(state.activeTab || 'overview')
+        );
     }
 
     async function loadDashboard(options) {
@@ -237,26 +364,38 @@ export function bootstrapSupervisorApp() {
             return null;
         }
 
+        var query = buildDashboardQuery();
+        var cacheKey = buildSupervisorDashboardCacheKey(query);
+        var activeTab = String(state.activeTab || 'overview');
+        var cachedPayload = state.dashboardCache[cacheKey];
+        if (cachedPayload && typeof cachedPayload === 'object') {
+            state.dashboard = cachedPayload;
+        }
+
         state.dashboardBusy = options.silent !== true;
         if (options.keepNotice !== true) {
             state.notice = '';
         }
         state.error = '';
-        if (options.silent !== true) {
+        var requestId = ++requestCounter;
+        state.loadingTabs[activeTab] = requestId;
+        if (options.silent !== true || !cachedPayload) {
             render();
         }
 
-        var requestId = ++requestCounter;
         try {
             var payload = await apiClient.api('supervisor_dashboard', {
                 method: 'GET',
-                query: buildDashboardQuery()
+                query: query
             });
             if (requestId !== requestCounter) {
                 return payload;
             }
 
             state.dashboard = payload && typeof payload === 'object' ? payload : null;
+            if (state.dashboard) {
+                state.dashboardCache[cacheKey] = state.dashboard;
+            }
             return state.dashboard;
         } catch (error) {
             if (requestId !== requestCounter) {
@@ -272,6 +411,9 @@ export function bootstrapSupervisorApp() {
             }
             return null;
         } finally {
+            if (state.loadingTabs[activeTab] === requestId) {
+                delete state.loadingTabs[activeTab];
+            }
             if (requestId === requestCounter) {
                 state.dashboardBusy = false;
                 render();
@@ -396,6 +538,7 @@ export function bootstrapSupervisorApp() {
             state.notice = payload && payload.message
                 ? String(payload.message)
                 : 'Login siswa berhasil di-reset.';
+            state.dashboardCache = {};
             await loadDashboard({
                 silent: true,
                 keepNotice: true
@@ -408,19 +551,94 @@ export function bootstrapSupervisorApp() {
         }
     }
 
+    async function openAttemptDetail(attemptId) {
+        var safeAttemptId = Number(attemptId) || 0;
+        if (safeAttemptId <= 0) {
+            return;
+        }
+
+        var requestId = ++detailRequestCounter;
+        state.detailDrawer = {
+            open: true,
+            busy: true,
+            error: '',
+            attemptId: safeAttemptId,
+            data: null
+        };
+        render();
+
+        try {
+            var payload = await apiClient.api('supervisor_attempt_detail', {
+                method: 'GET',
+                query: {
+                    attempt_id: safeAttemptId
+                }
+            });
+            if (requestId !== detailRequestCounter) {
+                return;
+            }
+
+            state.detailDrawer.data = payload && typeof payload === 'object' ? payload : null;
+            state.detailDrawer.error = state.detailDrawer.data ? '' : 'Detail attempt kosong.';
+        } catch (error) {
+            if (requestId !== detailRequestCounter) {
+                return;
+            }
+
+            state.detailDrawer.error = error instanceof Error ? error.message : 'Gagal memuat detail attempt.';
+            state.detailDrawer.data = null;
+        } finally {
+            if (requestId === detailRequestCounter) {
+                state.detailDrawer.busy = false;
+                render();
+            }
+        }
+    }
+
+    function closeAttemptDetail() {
+        detailRequestCounter++;
+        state.detailDrawer = {
+            open: false,
+            busy: false,
+            error: '',
+            attemptId: 0,
+            data: null
+        };
+        render();
+    }
+
     function applyFilterForm(form) {
         var data = new window.FormData(form);
-        state.filters.examId = Number(data.get('exam_id')) || 0;
-        state.filters.kelas = String(data.get('kelas') || '');
-        state.filters.ruang = String(data.get('ruang') || '');
-        state.filters.studentKeyword = String(data.get('student_keyword') || '').trim();
-        state.filters.status = String(data.get('status') || '');
-        state.filters.securitySeverity = String(data.get('security_severity') || 'all');
-        state.filters.securityEventType = String(data.get('security_event_type') || 'all');
-        state.filters.securityDeviceType = String(data.get('security_device_type') || 'all');
-        state.filters.attendanceStatus = String(data.get('attendance_status') || '');
+        if (data.has('exam_id')) {
+            state.filters.examId = Number(data.get('exam_id')) || 0;
+        }
+        if (data.has('kelas')) {
+            state.filters.kelas = String(data.get('kelas') || '');
+        }
+        if (data.has('ruang')) {
+            state.filters.ruang = String(data.get('ruang') || '');
+        }
+        if (data.has('student_keyword')) {
+            state.filters.studentKeyword = String(data.get('student_keyword') || '').trim();
+        }
+        if (data.has('status')) {
+            state.filters.status = String(data.get('status') || '');
+        }
+        if (data.has('security_severity')) {
+            state.filters.securitySeverity = String(data.get('security_severity') || 'all');
+        }
+        if (data.has('security_event_type')) {
+            state.filters.securityEventType = String(data.get('security_event_type') || 'all');
+        }
+        if (data.has('security_device_type')) {
+            state.filters.securityDeviceType = String(data.get('security_device_type') || 'all');
+        }
+        if (data.has('attendance_status')) {
+            state.filters.attendanceStatus = String(data.get('attendance_status') || '');
+        }
         state.filters.rosterPage = 1;
         state.filters.attemptsPage = 1;
+        state.filters.actionPage = 1;
         state.filters.securityPage = 1;
         state.filters.attendancePage = 1;
     }
@@ -446,6 +664,7 @@ export function bootstrapSupervisorApp() {
             calendar: '<path d="M8 2v4"></path><path d="M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path>',
             clipboard: '<path d="M9 5h6"></path><path d="M9 12l2 2 4-4"></path><path d="M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"></path>',
             dashboard: '<rect x="3" y="3" width="7" height="8" rx="1.5"></rect><rect x="14" y="3" width="7" height="5" rx="1.5"></rect><rect x="14" y="12" width="7" height="9" rx="1.5"></rect><rect x="3" y="15" width="7" height="6" rx="1.5"></rect>',
+            eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle>',
             filter: '<path d="M3 5h18"></path><path d="M7 12h10"></path><path d="M10 19h4"></path>',
             key: '<path d="M21 2l-2 2"></path><path d="M15 8l-2 2"></path><path d="m7 16 3-3"></path><circle cx="7.5" cy="16.5" r="4.5"></circle><path d="m11 13 8-8 2 2-8 8"></path>',
             logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="M16 17l5-5-5-5"></path><path d="M21 12H9"></path>',
@@ -453,7 +672,8 @@ export function bootstrapSupervisorApp() {
             radio: '<path d="M4.9 19.1a10 10 0 0 1 0-14.2"></path><path d="M7.8 16.2a6 6 0 0 1 0-8.5"></path><circle cx="12" cy="12" r="2"></circle><path d="M16.2 7.8a6 6 0 0 1 0 8.5"></path><path d="M19.1 4.9a10 10 0 0 1 0 14.2"></path>',
             refresh: '<path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 5v4h4"></path><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"></path>',
             search: '<circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path>',
-            users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.9"></path><path d="M16 3.1a4 4 0 0 1 0 7.8"></path>'
+            users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.9"></path><path d="M16 3.1a4 4 0 0 1 0 7.8"></path>',
+            x: '<path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>'
         };
         var path = icons[name] || icons.activity;
         return '<svg class="cbt-supervisor-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + path + '</svg>';
@@ -479,13 +699,166 @@ export function bootstrapSupervisorApp() {
         return getInitialsFromText(user ? String(user.display_name || user.username || 'Pengawas') : 'Pengawas', 'PG');
     }
 
+    function normalizeBrandUrl(value) {
+        var text = String(value || '').trim();
+        if (!text) {
+            return '';
+        }
+        if (!/^https?:\/\//i.test(text) && !/^\/\//.test(text) && text.charAt(0) !== '/') {
+            return '';
+        }
+
+        return text;
+    }
+
+    function getSupervisorBranding() {
+        var schoolName = String(config.schoolName || config.siteName || '').replace(/\s+/g, ' ').trim();
+        var programName = String(config.examProgramName || '').replace(/\s+/g, ' ').trim();
+        var motto = String(config.schoolMotto || '').replace(/\s+/g, ' ').trim();
+        var logoPrimaryUrl = normalizeBrandUrl(config.schoolLogoUrl || config.schoolLogo1Url || '');
+        var logoSecondaryUrl = normalizeBrandUrl(config.schoolLogo2Url || '');
+
+        if (schoolName === '') {
+            schoolName = 'CBT Exam';
+        }
+        if (programName === '') {
+            programName = 'Dashboard Pengawas';
+        }
+
+        return {
+            schoolName: schoolName,
+            programName: programName,
+            motto: motto,
+            logoPrimaryUrl: logoPrimaryUrl,
+            logoSecondaryUrl: logoSecondaryUrl
+        };
+    }
+
+    function renderSupervisorBrandMark(branding) {
+        var brand = branding && typeof branding === 'object' ? branding : getSupervisorBranding();
+        if (String(brand.logoPrimaryUrl || '') !== '') {
+            return '<span class="cbt-supervisor-brand-mark has-logo"><img class="cbt-supervisor-brand-logo" src="' + escapeHtml(String(brand.logoPrimaryUrl || '')) + '" alt="' + escapeHtml(String(brand.schoolName || 'CBT Exam')) + '" loading="lazy" decoding="async" /></span>';
+        }
+
+        return '<span class="cbt-supervisor-brand-mark">' + renderSupervisorIcon('monitor') + '</span>';
+    }
+
+    function renderSupervisorBrandIdentity() {
+        var branding = getSupervisorBranding();
+
+        return [
+            '<div class="cbt-supervisor-brand">',
+            renderSupervisorBrandMark(branding),
+            '<span><strong>' + escapeHtml(branding.schoolName) + '</strong><small>' + escapeHtml(branding.programName) + '</small></span>',
+            '</div>'
+        ].join('');
+    }
+
     function renderProgressBar(percent) {
-        var numericPercent = Math.max(0, Math.min(100, Number(percent) || 0));
+        var numericPercent = normalizeSupervisorPercentValue(percent);
         return '<span class="cbt-supervisor-progress" aria-hidden="true"><span style="width:' + escapeHtml(String(numericPercent)) + '%"></span></span>';
+    }
+
+    function formatSupervisorPercentLabel(percent, preferredLabel) {
+        var label = String(preferredLabel || '').trim();
+        if (label !== '') {
+            return label;
+        }
+
+        var numericPercent = normalizeSupervisorPercentValue(percent);
+        var rounded = Math.round(numericPercent * 100) / 100;
+        return (Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)) + '%';
+    }
+
+    function renderAnswerProgressCell(item) {
+        var answerCount = Math.max(0, Number(item && item.answer_count !== undefined ? item.answer_count : 0) || 0);
+        var questionCount = Math.max(0, Number(item && item.question_count !== undefined ? item.question_count : 0) || 0);
+        var answeredPercent = normalizeSupervisorPercentValue(
+            item && item.answered_percentage !== undefined ? item.answered_percentage : null,
+            item && item.answered_percentage_label !== undefined ? item.answered_percentage_label : null
+        );
+        var percentLabel = formatSupervisorPercentLabel(
+            answeredPercent,
+            item && item.answered_percentage_label !== undefined ? item.answered_percentage_label : ''
+        );
+        var countLabel = questionCount > 0
+            ? String(answerCount) + ' / ' + String(questionCount) + ' soal terjawab'
+            : String(answerCount) + ' soal terjawab';
+
+        return [
+            '<div class="cbt-supervisor-answer-progress">',
+            '<div class="cbt-supervisor-answer-progress-line">',
+            renderProgressBar(answeredPercent),
+            '<strong>' + escapeHtml(percentLabel) + '</strong>',
+            '</div>',
+            '<small>' + escapeHtml(countLabel) + '</small>',
+            '</div>'
+        ].join('');
+    }
+
+    function renderRowMeta(parts) {
+        var values = (Array.isArray(parts) ? parts : []).map(function (part) {
+            return String(part || '').trim();
+        }).filter(Boolean);
+
+        if (!values.length) {
+            return '';
+        }
+
+        return '<small class="cbt-supervisor-row-meta">' + values.map(function (part) {
+            return '<span>' + escapeHtml(part) + '</span>';
+        }).join('') + '</small>';
+    }
+
+    function renderStudentCell(name, fallback, metaParts) {
+        return [
+            '<div class="cbt-supervisor-student-cell">',
+            '<span class="cbt-supervisor-avatar">' + escapeHtml(getInitialsFromText(name, fallback || 'SW')) + '</span>',
+            '<span><strong>' + escapeHtml(String(name || '-')) + '</strong>' + renderRowMeta(metaParts) + '</span>',
+            '</div>'
+        ].join('');
+    }
+
+    function renderAttemptActions(item, options) {
+        options = options || {};
+        var source = item && typeof item === 'object' ? item : {};
+        var attemptId = Number(source.attempt_id) || 0;
+        if (attemptId <= 0) {
+            return '<span class="cbt-supervisor-row-empty">-</span>';
+        }
+
+        var studentName = String(source.student_name || source.student_username || source.student_login || 'siswa');
+        var resetBusy = Number(state.activeResetAttemptId) === attemptId;
+        var buttons = [
+            '<button class="cbt-supervisor-button is-small" type="button" data-action="open-attempt-detail" data-attempt-id="' + escapeHtml(String(attemptId)) + '">' + renderSupervisorIcon('eye') + '<span>Detail</span></button>'
+        ];
+
+        if (options.reset !== false) {
+            buttons.push(
+                '<button class="cbt-supervisor-button is-small" type="button" data-action="reset-login" data-attempt-id="' + escapeHtml(String(attemptId)) + '" data-student-name="' + escapeHtml(studentName) + '"' + (resetBusy ? ' disabled' : '') + '>' + renderSupervisorIcon('refresh') + '<span>' + escapeHtml(resetBusy ? 'Mereset...' : 'Reset') + '</span></button>'
+            );
+        }
+
+        return '<div class="cbt-supervisor-row-actions">' + buttons.join('') + '</div>';
+    }
+
+    function renderPanelSkeleton() {
+        return [
+            '<div class="cbt-supervisor-skeleton-list" aria-live="polite" aria-busy="true">',
+            '<span class="cbt-supervisor-skeleton-line is-wide"></span>',
+            '<span class="cbt-supervisor-skeleton-line"></span>',
+            '<span class="cbt-supervisor-skeleton-line is-short"></span>',
+            '<span class="cbt-supervisor-skeleton-line is-wide"></span>',
+            '</div>'
+        ].join('');
     }
 
     function renderLoginView() {
         var studentLink = String(config.studentFrontendUrl || '').trim();
+        var branding = getSupervisorBranding();
+        var heroText = branding.motto !== ''
+            ? branding.motto
+            : 'Masuk sebagai guru atau admin untuk memantau roster live, must watch, attempts, dan status submit.';
         var alternateLink = studentLink !== ''
             ? '<p class="cbt-supervisor-login-help">Peserta ujian gunakan <a href="' + escapeHtml(studentLink) + '">halaman ujian siswa</a>.</p>'
             : '';
@@ -493,39 +866,41 @@ export function bootstrapSupervisorApp() {
         return [
             '<div class="cbt-supervisor-login-shell">',
             '<header class="cbt-supervisor-topbar cbt-supervisor-topbar-login">',
-            '<div class="cbt-supervisor-brand">',
-            '<span class="cbt-supervisor-brand-mark">' + renderSupervisorIcon('monitor') + '</span>',
-            '<span><strong>ExamCommand</strong><small>Supervisor Frontend</small></span>',
-            '</div>',
-            '<div class="cbt-supervisor-topbar-status">' + renderLiveDot() + '<span>Light blue mode</span></div>',
+            renderSupervisorBrandIdentity(),
+            '<div class="cbt-supervisor-topbar-status">' + renderLiveDot() + '<span>Mode Pengawas</span></div>',
             '</header>',
             '<main class="cbt-supervisor-login-main">',
             '<section class="cbt-supervisor-login-copy">',
-            '<span class="cbt-supervisor-kicker">Panel Pengawas</span>',
-            '<h1>Monitoring ujian yang terang, cepat, dan rapi.</h1>',
-            '<p>Masuk sebagai guru atau admin untuk melihat roster live, must watch, monitoring attempts, dan status submit tanpa masuk ke wp-admin.</p>',
+            '<div class="cbt-supervisor-login-program"><span>Program Ujian</span><strong>' + escapeHtml(branding.programName) + '</strong></div>',
+            '<h1>' + escapeHtml(branding.schoolName) + '</h1>',
+            '<p>' + escapeHtml(heroText) + '</p>',
             '<div class="cbt-supervisor-login-points">',
-            '<span>' + renderSupervisorIcon('radio') + '<strong>Live roster</strong><small>Status koneksi peserta</small></span>',
-            '<span>' + renderSupervisorIcon('alert') + '<strong>Must watch</strong><small>Prioritas risiko tertinggi</small></span>',
-            '<span>' + renderSupervisorIcon('clipboard') + '<strong>Attempts</strong><small>Progress dan finalisasi</small></span>',
+            '<span>' + renderSupervisorIcon('key') + '<strong>TOKEN & GATE</strong><small>Token global dan antrean start</small></span>',
+            '<span>' + renderSupervisorIcon('calendar') + '<strong>DAFTAR HADIR</strong><small>Status peserta per exam</small></span>',
+            '<span>' + renderSupervisorIcon('alert') + '<strong>BUTUH TINDAKAN</strong><small>Prioritas respons cepat</small></span>',
+            '<span>' + renderSupervisorIcon('radio') + '<strong>LIVE ROSTER</strong><small>Status koneksi peserta</small></span>',
+            '<span>' + renderSupervisorIcon('alert') + '<strong>MUST WATCH</strong><small>Prioritas risiko tertinggi</small></span>',
+            '<span>' + renderSupervisorIcon('bell') + '<strong>SECURITY LOG</strong><small>Event keamanan real-time</small></span>',
+            '<span>' + renderSupervisorIcon('clipboard') + '<strong>ATTEMPTS</strong><small>Progress dan finalisasi</small></span>',
+            '<span>' + renderSupervisorIcon('activity') + '<strong>SUBMIT RECOVERY</strong><small>Watchlist submit bermasalah</small></span>',
             '</div>',
             '</section>',
             '<section class="cbt-supervisor-login-card">',
-            '<div class="cbt-supervisor-login-kicker">Login Pengawas</div>',
-            '<h2>Masuk ke dashboard</h2>',
-            '<p>Gunakan akun guru atau admin yang sudah terdaftar di WordPress.</p>',
+            '<div class="cbt-supervisor-login-kicker">' + escapeHtml(branding.programName) + '</div>',
+            '<h2>MASUK KE DASHBOARD</h2>',
+            '<p>' + escapeHtml(branding.schoolName) + '</p>',
             renderNoticeStack(),
             '<form class="cbt-supervisor-login-form" data-supervisor-login-form>',
             '<label class="cbt-supervisor-field">',
-            '<span>Identifier</span>',
+            '<span>IDENTIFIER</span>',
             '<input type="text" name="identifier" autocomplete="username" maxlength="191" placeholder="Username, email, atau NISN" required ' + (state.loginBusy ? 'disabled' : '') + ' />',
             '</label>',
             '<label class="cbt-supervisor-field">',
-            '<span>Password</span>',
+            '<span>PASSWORD</span>',
             '<input type="password" name="password" autocomplete="current-password" maxlength="1024" placeholder="Masukkan password" required ' + (state.loginBusy ? 'disabled' : '') + ' />',
             '</label>',
             '<div class="cbt-supervisor-login-actions">',
-            '<button class="cbt-supervisor-button is-primary" type="submit" ' + (state.loginBusy ? 'disabled' : '') + '>' + escapeHtml(state.loginBusy ? 'Memproses Login...' : 'Login Pengawas') + '</button>',
+            '<button class="cbt-supervisor-button is-primary" type="submit" ' + (state.loginBusy ? 'disabled' : '') + '>' + escapeHtml(state.loginBusy ? 'MEMPROSES LOGIN...' : 'LOGIN PENGAWAS') + '</button>',
             '</div>',
             '</form>',
             alternateLink,
@@ -570,13 +945,22 @@ export function bootstrapSupervisorApp() {
         return [
             '<section class="cbt-supervisor-summary-grid">',
             cards.map(function (card) {
-                var iconName = String(card.key || '') === 'live_roster'
-                    ? 'users'
-                    : String(card.key || '') === 'must_watch'
-                        ? 'alert'
-                        : String(card.key || '') === 'submit_watchlist'
-                            ? 'radio'
-                            : 'clipboard';
+                var key = String(card.key || '');
+                var iconName = key === 'action_required'
+                    ? 'alert'
+                    : key === 'security_backlog'
+                        ? 'activity'
+                        : key === 'security_dead_letter'
+                            ? 'bell'
+                            : key === 'system_mode'
+                                ? 'monitor'
+                                : key === 'live_roster'
+                                    ? 'users'
+                                    : key === 'must_watch'
+                                        ? 'alert'
+                                        : key === 'submit_watchlist'
+                                            ? 'radio'
+                                            : 'clipboard';
                 return [
                     '<article class="cbt-supervisor-summary-card">',
                     '<span class="cbt-supervisor-summary-icon">' + renderSupervisorIcon(iconName) + '</span>',
@@ -600,6 +984,134 @@ export function bootstrapSupervisorApp() {
         }).join('');
     }
 
+    function getOptionLabel(items, selectedValue, valueKey, labelKey) {
+        var selected = String(selectedValue || '');
+        var matched = (Array.isArray(items) ? items : []).find(function (item) {
+            var value = typeof item === 'object' && item !== null ? String(item[valueKey] || '') : String(item || '');
+            return value === selected;
+        });
+
+        if (!matched) {
+            return selected;
+        }
+
+        return typeof matched === 'object' && matched !== null
+            ? String(matched[labelKey] || matched[valueKey] || selected)
+            : String(matched || selected);
+    }
+
+    function getStatusFilterLabel(value) {
+        var labels = {
+            in_progress: 'Berjalan',
+            completed: 'Selesai',
+            not_started: 'Belum mulai',
+            info: 'Info',
+            warning: 'Warning',
+            critical: 'Critical'
+        };
+
+        return labels[String(value || '')] || String(value || '');
+    }
+
+    function renderExamFilterField(exams, emptyLabel) {
+        return [
+            '<label class="cbt-supervisor-field">',
+            '<span>Exam</span>',
+            '<select name="exam_id">',
+            '<option value="0">' + escapeHtml(emptyLabel || 'Semua exam') + '</option>',
+            exams.map(function (exam) {
+                var examId = Number(exam.id) || 0;
+                return '<option value="' + escapeHtml(String(examId)) + '"' + (examId === Number(state.filters.examId) ? ' selected' : '') + '>' + escapeHtml(String(exam.label || '-')) + '</option>';
+            }).join(''),
+            '</select>',
+            '</label>'
+        ].join('');
+    }
+
+    function getActiveFilterChips(mode, options, eventCatalog) {
+        var chips = [];
+        var exams = Array.isArray(options.exams) ? options.exams : [];
+        var kelasOptions = Array.isArray(options.kelas) ? options.kelas : [];
+        var ruangOptions = Array.isArray(options.ruang) ? options.ruang : [];
+        var examId = Number(state.filters.examId) || 0;
+
+        if (shouldSendExamFilter(mode) && examId > 0) {
+            chips.push({
+                label: 'Exam',
+                value: getOptionLabel(exams, String(examId), 'id', 'label')
+            });
+        }
+        if (shouldSendOperationalFilters(mode)) {
+            if (String(state.filters.kelas || '') !== '') {
+                chips.push({
+                    label: 'Kelas',
+                    value: getOptionLabel(kelasOptions, state.filters.kelas, 'value', 'label')
+                });
+            }
+            if (String(state.filters.ruang || '') !== '') {
+                chips.push({
+                    label: 'Ruang',
+                    value: getOptionLabel(ruangOptions, state.filters.ruang, 'value', 'label')
+                });
+            }
+            if (String(state.filters.studentKeyword || '') !== '') {
+                chips.push({
+                    label: 'Cari',
+                    value: String(state.filters.studentKeyword || '')
+                });
+            }
+        }
+        if (String(mode || '') === 'operational' && String(state.filters.status || '') !== '') {
+            chips.push({
+                label: 'Status',
+                value: getStatusFilterLabel(state.filters.status)
+            });
+        }
+        if (String(mode || '') === 'security') {
+            if (String(state.filters.securitySeverity || 'all') !== 'all') {
+                chips.push({
+                    label: 'Severity',
+                    value: getStatusFilterLabel(state.filters.securitySeverity)
+                });
+            }
+            if (String(state.filters.securityEventType || 'all') !== 'all') {
+                chips.push({
+                    label: 'Event',
+                    value: getOptionLabel(eventCatalog, state.filters.securityEventType, 'event_type', 'label')
+                });
+            }
+            if (String(state.filters.securityDeviceType || 'all') !== 'all') {
+                chips.push({
+                    label: 'Device',
+                    value: String(state.filters.securityDeviceType || '')
+                });
+            }
+        }
+        if (String(mode || '') === 'attendance' && String(state.filters.attendanceStatus || '') !== '') {
+            chips.push({
+                label: 'Hadir',
+                value: getStatusFilterLabel(state.filters.attendanceStatus)
+            });
+        }
+
+        return chips;
+    }
+
+    function renderActiveFilterChips(chips) {
+        if (!Array.isArray(chips) || !chips.length) {
+            return '';
+        }
+
+        return [
+            '<div class="cbt-supervisor-active-filters">',
+            '<span>Filter aktif</span>',
+            chips.map(function (chip) {
+                return '<span class="cbt-supervisor-filter-chip"><strong>' + escapeHtml(String(chip.label || '-')) + '</strong>' + escapeHtml(String(chip.value || '-')) + '</span>';
+            }).join(''),
+            '</div>'
+        ].join('');
+    }
+
     function renderFilterForm() {
         var options = state.dashboard && state.dashboard.filter_options ? state.dashboard.filter_options : {};
         var exams = Array.isArray(options.exams) ? options.exams : [];
@@ -607,45 +1119,13 @@ export function bootstrapSupervisorApp() {
         var ruangOptions = Array.isArray(options.ruang) ? options.ruang : [];
         var securityLog = state.dashboard && state.dashboard.security_log ? state.dashboard.security_log : {};
         var eventCatalog = Array.isArray(securityLog.event_catalog) ? securityLog.event_catalog : [];
+        var mode = getActiveFilterMode(state.activeTab);
         var fields = [];
+        var chips;
 
-        fields.push([
-            '<label class="cbt-supervisor-field">',
-            '<span>Exam</span>',
-            '<select name="exam_id">',
-            '<option value="0">' + escapeHtml(state.activeTab === 'attendance' || state.activeTab === 'token_gate' ? 'Pilih exam' : 'Semua exam') + '</option>',
-            exams.map(function (exam) {
-                var examId = Number(exam.id) || 0;
-                return '<option value="' + escapeHtml(String(examId)) + '"' + (examId === Number(state.filters.examId) ? ' selected' : '') + '>' + escapeHtml(String(exam.label || '-')) + '</option>';
-            }).join(''),
-            '</select>',
-            '</label>'
-        ].join(''));
-
-        if (state.activeTab !== 'token_gate') {
-            fields.push([
-                '<label class="cbt-supervisor-field">',
-                '<span>Kelas</span>',
-                '<select name="kelas">',
-                '<option value="">Semua kelas</option>',
-                renderSelectOptions(kelasOptions, state.filters.kelas, 'value', 'label'),
-                '</select>',
-                '</label>',
-                '<label class="cbt-supervisor-field">',
-                '<span>Ruang</span>',
-                '<select name="ruang">',
-                '<option value="">Semua ruang</option>',
-                renderSelectOptions(ruangOptions, state.filters.ruang, 'value', 'label'),
-                '</select>',
-                '</label>',
-                '<label class="cbt-supervisor-field cbt-supervisor-field-search">',
-                '<span>Cari siswa</span>',
-                '<input type="text" name="student_keyword" value="' + escapeHtml(String(state.filters.studentKeyword || '')) + '" placeholder="Nama, username, NISN, exam" />',
-                '</label>'
-            ].join(''));
-        }
-
-        if (state.activeTab === 'security_log') {
+        if (mode === 'token') {
+            fields.push(renderExamFilterField(exams, 'Pilih exam'));
+        } else if (mode === 'security') {
             fields.push([
                 '<label class="cbt-supervisor-field">',
                 '<span>Severity</span>',
@@ -675,52 +1155,82 @@ export function bootstrapSupervisorApp() {
                 '</select>',
                 '</label>'
             ].join(''));
-        } else if (state.activeTab === 'attendance') {
-            fields.push([
-                '<label class="cbt-supervisor-field">',
-                '<span>Status hadir</span>',
-                '<select name="attendance_status">',
-                '<option value="">Semua status</option>',
-                '<option value="not_started"' + (String(state.filters.attendanceStatus || '') === 'not_started' ? ' selected' : '') + '>Belum Mulai</option>',
-                '<option value="in_progress"' + (String(state.filters.attendanceStatus || '') === 'in_progress' ? ' selected' : '') + '>Berjalan</option>',
-                '<option value="completed"' + (String(state.filters.attendanceStatus || '') === 'completed' ? ' selected' : '') + '>Selesai</option>',
-                '</select>',
-                '</label>'
-            ].join(''));
-        } else if (state.activeTab !== 'token_gate') {
-            fields.push([
-                '<label class="cbt-supervisor-field">',
-                '<span>Status</span>',
-                '<select name="status">',
-                '<option value="">Semua status</option>',
-                '<option value="in_progress"' + (String(state.filters.status || '') === 'in_progress' ? ' selected' : '') + '>Berjalan</option>',
-                '<option value="completed"' + (String(state.filters.status || '') === 'completed' ? ' selected' : '') + '>Selesai</option>',
-                '</select>',
-                '</label>'
-            ].join(''));
+        } else {
+            fields.push(renderExamFilterField(exams, mode === 'attendance' ? 'Pilih exam' : 'Semua exam'));
+
+            if (shouldSendOperationalFilters(mode)) {
+                fields.push([
+                    '<label class="cbt-supervisor-field">',
+                    '<span>Kelas</span>',
+                    '<select name="kelas">',
+                    '<option value="">Semua kelas</option>',
+                    renderSelectOptions(kelasOptions, state.filters.kelas, 'value', 'label'),
+                    '</select>',
+                    '</label>',
+                    '<label class="cbt-supervisor-field">',
+                    '<span>Ruang</span>',
+                    '<select name="ruang">',
+                    '<option value="">Semua ruang</option>',
+                    renderSelectOptions(ruangOptions, state.filters.ruang, 'value', 'label'),
+                    '</select>',
+                    '</label>',
+                    '<label class="cbt-supervisor-field cbt-supervisor-field-search">',
+                    '<span>Cari siswa</span>',
+                    '<input type="text" name="student_keyword" value="' + escapeHtml(String(state.filters.studentKeyword || '')) + '" placeholder="Nama, username, NISN, exam" />',
+                    '</label>'
+                ].join(''));
+            }
+            if (mode === 'attendance') {
+                fields.push([
+                    '<label class="cbt-supervisor-field">',
+                    '<span>Status hadir</span>',
+                    '<select name="attendance_status">',
+                    '<option value="">Semua status</option>',
+                    '<option value="not_started"' + (String(state.filters.attendanceStatus || '') === 'not_started' ? ' selected' : '') + '>Belum Mulai</option>',
+                    '<option value="in_progress"' + (String(state.filters.attendanceStatus || '') === 'in_progress' ? ' selected' : '') + '>Berjalan</option>',
+                    '<option value="completed"' + (String(state.filters.attendanceStatus || '') === 'completed' ? ' selected' : '') + '>Selesai</option>',
+                    '</select>',
+                    '</label>'
+                ].join(''));
+            } else if (mode === 'operational') {
+                fields.push([
+                    '<label class="cbt-supervisor-field">',
+                    '<span>Status</span>',
+                    '<select name="status">',
+                    '<option value="">Semua status</option>',
+                    '<option value="in_progress"' + (String(state.filters.status || '') === 'in_progress' ? ' selected' : '') + '>Berjalan</option>',
+                    '<option value="completed"' + (String(state.filters.status || '') === 'completed' ? ' selected' : '') + '>Selesai</option>',
+                    '</select>',
+                    '</label>'
+                ].join(''));
+            }
         }
 
+        chips = getActiveFilterChips(mode, options, eventCatalog);
+
         return [
-            '<form class="cbt-supervisor-filter-bar" data-supervisor-filter-form>',
+            '<form class="cbt-supervisor-filter-bar is-' + escapeHtml(mode) + '" data-supervisor-filter-form>',
             fields.join(''),
             '<div class="cbt-supervisor-filter-actions">',
             '<button class="cbt-supervisor-button is-primary" type="submit"' + (state.dashboardBusy ? ' disabled' : '') + '>' + renderSupervisorIcon('filter') + '<span>Terapkan</span></button>',
-            '<button class="cbt-supervisor-button" type="button" data-action="clear-filters"' + (state.dashboardBusy ? ' disabled' : '') + '>Reset Filter</button>',
+            (chips.length ? '<button class="cbt-supervisor-button" type="button" data-action="clear-filters"' + (state.dashboardBusy ? ' disabled' : '') + '>Reset</button>' : ''),
             '</div>',
+            renderActiveFilterChips(chips),
             '</form>'
         ].join('');
     }
 
     function renderTabs() {
         var tabs = [
-            { id: 'overview', label: 'Ringkasan' },
-            { id: 'live_roster', label: 'Live Roster' },
-            { id: 'must_watch', label: 'Must Watch' },
-            { id: 'monitoring_attempts', label: 'Attempts' },
-            { id: 'security_log', label: 'Security Log' },
-            { id: 'token_gate', label: 'Token & Gate' },
-            { id: 'submit_recovery', label: 'Submit Recovery' },
-            { id: 'attendance', label: 'Daftar Hadir' }
+            { id: 'overview', label: 'RINGKASAN' },
+            { id: 'token_gate', label: 'TOKEN & GATE' },
+            { id: 'attendance', label: 'DAFTAR HADIR' },
+            { id: 'action_required', label: 'BUTUH TINDAKAN' },
+            { id: 'live_roster', label: 'LIVE ROSTER' },
+            { id: 'must_watch', label: 'MUST WATCH' },
+            { id: 'security_log', label: 'SECURITY LOG' },
+            { id: 'monitoring_attempts', label: 'ATTEMPTS' },
+            { id: 'submit_recovery', label: 'SUBMIT RECOVERY' }
         ];
 
         return [
@@ -730,6 +1240,53 @@ export function bootstrapSupervisorApp() {
                 return '<button class="cbt-supervisor-tab' + (isActive ? ' is-active' : '') + '" type="button" role="tab" aria-selected="' + (isActive ? 'true' : 'false') + '" data-action="switch-tab" data-tab="' + escapeHtml(tab.id) + '">' + escapeHtml(tab.label) + '</button>';
             }).join(''),
             '</nav>'
+        ].join('');
+    }
+
+    function renderActionRequiredPanel() {
+        var section = state.dashboard && state.dashboard.action_required ? state.dashboard.action_required : null;
+        if (!section) {
+            return '<div class="cbt-supervisor-empty-state">Butuh Tindakan belum dimuat.</div>';
+        }
+
+        var items = Array.isArray(section.items) ? section.items : [];
+        var counts = section.severity_counts && typeof section.severity_counts === 'object' ? section.severity_counts : {};
+        var countMarkup = [
+            '<div class="cbt-supervisor-action-counts">',
+            '<span class="cbt-supervisor-pill is-critical">Critical ' + escapeHtml(String(Math.max(0, Number(counts.critical) || 0))) + '</span>',
+            '<span class="cbt-supervisor-pill is-warning">Warning ' + escapeHtml(String(Math.max(0, Number(counts.warning) || 0))) + '</span>',
+            '<span class="cbt-supervisor-pill is-info">Info ' + escapeHtml(String(Math.max(0, Number(counts.info) || 0))) + '</span>',
+            '</div>'
+        ].join('');
+
+        if (!items.length) {
+            return countMarkup + '<div class="cbt-supervisor-empty-state">' + escapeHtml(String(section.note || 'Tidak ada tindakan prioritas pada filter aktif.')) + '</div>';
+        }
+
+        return [
+            countMarkup,
+            '<div class="cbt-supervisor-watch-list is-action-required">',
+            items.map(function (item) {
+                var severity = String(item.severity || 'info');
+                return [
+                    '<article class="cbt-supervisor-watch-row is-' + escapeHtml(severity) + '">',
+                    '<div class="cbt-supervisor-watch-main">',
+                    renderStudentCell(item.student_name, 'SW', [item.student_login, item.student_nisn, item.student_kelas, item.student_ruang]),
+                    '<div class="cbt-supervisor-watch-detail">',
+                    '<strong>' + escapeHtml(String(item.reason || 'Perlu dicek')) + '</strong>',
+                    renderRowMeta([item.detail, item.exam_title, 'Attempt #' + String(item.attempt_id || 0), item.last_seen_at ? 'Last seen ' + String(item.last_seen_at) : '']),
+                    '</div>',
+                    '</div>',
+                    '<div class="cbt-supervisor-watch-side">',
+                    '<span class="cbt-supervisor-pill is-' + escapeHtml(severity) + '">' + escapeHtml(String(item.severity_label || severity.toUpperCase())) + '</span>',
+                    '<span class="cbt-supervisor-pill is-' + escapeHtml(String(item.presence_status || 'unknown')) + '">' + escapeHtml(String(item.presence_label || '-')) + '</span>',
+                    renderAttemptActions(item, { reset: true }),
+                    '</div>',
+                    '</article>'
+                ].join('');
+            }).join(''),
+            '</div>',
+            renderPagination(section.pagination, 'action')
         ].join('');
     }
 
@@ -749,19 +1306,18 @@ export function bootstrapSupervisorApp() {
 
         return [
             '<div class="cbt-supervisor-table-wrap">',
-            '<table class="cbt-supervisor-table">',
+            '<table class="cbt-supervisor-table is-live-roster">',
             '<thead><tr><th>Siswa</th><th>Exam</th><th>Presence</th><th>Risk</th><th>Last Seen</th><th>Aksi</th></tr></thead>',
             '<tbody>',
             items.map(function (item) {
-                var resetBusy = Number(state.activeResetAttemptId) === Number(item.attempt_id);
                 return [
                     '<tr>',
-                    '<td><div class="cbt-supervisor-student-cell"><span class="cbt-supervisor-avatar">' + escapeHtml(getInitialsFromText(item.student_name, 'SW')) + '</span><span><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><small>' + escapeHtml([item.student_login, item.student_kelas, item.student_ruang].filter(Boolean).join(' · ')) + '</small></span></div></td>',
-                    '<td><strong>' + escapeHtml(String(item.exam_title || '-')) + '</strong><small>Attempt #' + escapeHtml(String(item.attempt_id || 0)) + '</small></td>',
-                    '<td><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.presence_status || 'unknown')) + '">' + escapeHtml(String(item.presence_label || '-')) + '</span><small>' + escapeHtml([item.connection_status, item.visibility_state, item.heartbeat_lost_active ? 'heartbeat lost' : ''].filter(Boolean).join(' · ')) + '</small></td>',
-                    '<td><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.risk_tone || 'normal')) + '">' + escapeHtml(String(item.risk_label || 'Normal')) + '</span><small>Skor ' + escapeHtml(String(item.risk_score_label || '0')) + '</small></td>',
-                    '<td><strong>' + escapeHtml(String(item.last_seen_at || '-')) + '</strong><small>Pending sync ' + escapeHtml(String(Number(item.pending_sync_count) || 0)) + '</small></td>',
-                    '<td><button class="cbt-supervisor-button is-small" type="button" data-action="reset-login" data-attempt-id="' + escapeHtml(String(item.attempt_id || 0)) + '"' + (resetBusy ? ' disabled' : '') + '>' + renderSupervisorIcon('refresh') + '<span>' + escapeHtml(resetBusy ? 'Mereset...' : 'Reset Login') + '</span></button></td>',
+                    '<td data-label="Siswa">' + renderStudentCell(item.student_name, 'SW', [item.student_login, item.student_kelas, item.student_ruang]) + '</td>',
+                    '<td data-label="Exam"><strong>' + escapeHtml(String(item.exam_title || '-')) + '</strong>' + renderRowMeta(['Attempt #' + String(item.attempt_id || 0)]) + '</td>',
+                    '<td data-label="Presence"><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.presence_status || 'unknown')) + '">' + escapeHtml(String(item.presence_label || '-')) + '</span>' + renderRowMeta([item.connection_status, item.visibility_state, item.heartbeat_lost_active ? 'heartbeat lost' : '']) + '</td>',
+                    '<td data-label="Risk"><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.risk_tone || 'normal')) + '">' + escapeHtml(String(item.risk_label || 'Normal')) + '</span>' + renderRowMeta(['Skor ' + String(item.risk_score_label || '0')]) + '</td>',
+                    '<td data-label="Last Seen"><strong>' + escapeHtml(String(item.last_seen_at || '-')) + '</strong>' + renderRowMeta(['Sync ' + String(Number(item.pending_sync_count) || 0)]) + '</td>',
+                    '<td data-label="Aksi">' + renderAttemptActions(item, { reset: true }) + '</td>',
                     '</tr>'
                 ].join('');
             }).join(''),
@@ -784,27 +1340,24 @@ export function bootstrapSupervisorApp() {
         }
 
         return [
-            '<div class="cbt-supervisor-watch-grid">',
+            '<div class="cbt-supervisor-watch-list">',
             items.map(function (item) {
-                var resetBusy = Number(state.activeResetAttemptId) === Number(item.attempt_id);
+                var indicators = Array.isArray(item.top_indicators) ? item.top_indicators : [];
                 return [
-                    '<article class="cbt-supervisor-watch-card">',
-                    '<div class="cbt-supervisor-watch-head">',
-                    '<div class="cbt-supervisor-student-cell"><span class="cbt-supervisor-avatar">' + escapeHtml(getInitialsFromText(item.student_name, 'SW')) + '</span><span><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><span>' + escapeHtml([item.student_login, item.student_kelas, item.student_ruang].filter(Boolean).join(' · ')) + '</span></span></div>',
-                    '<span class="cbt-supervisor-pill is-watch">' + escapeHtml(String(item.risk_label || 'Must Watch')) + '</span>',
-                    '</div>',
-                    '<div class="cbt-supervisor-watch-meta">',
-                    '<span>' + escapeHtml(String(item.exam_title || '-')) + '</span>',
-                    '<span>Skor ' + escapeHtml(String(item.risk_score_label || '0')) + '</span>',
-                    '<span>' + escapeHtml(String(item.presence_label || '-')) + '</span>',
-                    '</div>',
-                    '<p>' + escapeHtml(String(item.primary_event_label || 'Aktivitas diamati.')) + '</p>',
-                    '<small>' + escapeHtml(String(item.last_event_at || '-')) + '</small>',
-                    '<div class="cbt-supervisor-chip-row">' + (Array.isArray(item.top_indicators) ? item.top_indicators.map(function (label) {
+                    '<article class="cbt-supervisor-watch-row">',
+                    '<div class="cbt-supervisor-watch-main">',
+                    renderStudentCell(item.student_name, 'SW', [item.student_login, item.student_kelas, item.student_ruang]),
+                    '<div class="cbt-supervisor-watch-detail">',
+                    '<strong>' + escapeHtml(String(item.primary_event_label || 'Aktivitas diamati.')) + '</strong>',
+                    renderRowMeta([item.exam_title, 'Skor ' + String(item.risk_score_label || '0'), item.presence_label, item.last_event_at]),
+                    indicators.length ? '<div class="cbt-supervisor-chip-row">' + indicators.map(function (label) {
                         return '<span class="cbt-supervisor-chip">' + escapeHtml(String(label || '')) + '</span>';
-                    }).join('') : '') + '</div>',
-                    '<div class="cbt-supervisor-watch-actions">',
-                    '<button class="cbt-supervisor-button is-small" type="button" data-action="reset-login" data-attempt-id="' + escapeHtml(String(item.attempt_id || 0)) + '"' + (resetBusy ? ' disabled' : '') + '>' + renderSupervisorIcon('refresh') + '<span>' + escapeHtml(resetBusy ? 'Mereset...' : 'Reset Login') + '</span></button>',
+                    }).join('') + '</div>' : '',
+                    '</div>',
+                    '</div>',
+                    '<div class="cbt-supervisor-watch-side">',
+                    '<span class="cbt-supervisor-pill is-watch">' + escapeHtml(String(item.risk_label || 'Must Watch')) + '</span>',
+                    renderAttemptActions(item, { reset: true }),
                     '</div>',
                     '</article>'
                 ].join('');
@@ -824,21 +1377,19 @@ export function bootstrapSupervisorApp() {
         return items.length
             ? [
                 '<div class="cbt-supervisor-table-wrap">',
-                '<table class="cbt-supervisor-table">',
+                '<table class="cbt-supervisor-table is-attempts">',
                 '<thead><tr><th>Siswa</th><th>Exam</th><th>Status</th><th>Skor</th><th>Jawaban</th><th>Timeline</th><th>Aksi</th></tr></thead>',
                 '<tbody>',
                 items.map(function (item) {
-                    var resetBusy = Number(state.activeResetAttemptId) === Number(item.attempt_id);
-                    var answeredPercent = Number(String(item.answered_percentage_label || '0').replace('%', '')) || 0;
                     return [
                         '<tr>',
-                        '<td><div class="cbt-supervisor-student-cell"><span class="cbt-supervisor-avatar">' + escapeHtml(getInitialsFromText(item.student_name, 'SW')) + '</span><span><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><small>' + escapeHtml([item.student_username, item.student_nisn, item.student_kelas].filter(Boolean).join(' · ')) + '</small></span></div></td>',
-                        '<td><strong>' + escapeHtml(String(item.exam_title || '-')) + '</strong><small>Attempt #' + escapeHtml(String(item.attempt_id || 0)) + '</small></td>',
-                        '<td><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.status || 'completed')) + '">' + escapeHtml(String(item.status_label || '-')) + '</span><small>' + escapeHtml(String(item.presence_label || '-')) + '</small></td>',
-                        '<td><strong>' + escapeHtml(String(item.score_percentage_label || '0%')) + '</strong><small>' + escapeHtml('Benar ' + String(item.earned_points || 0) + ' · Salah ' + String(item.wrong_points || 0)) + '</small></td>',
-                        '<td><strong>' + escapeHtml(String(item.answer_count || 0)) + ' / ' + escapeHtml(String(item.question_count || 0)) + '</strong>' + renderProgressBar(answeredPercent) + '<small>' + escapeHtml(String(item.answered_percentage_label || '0%') + ' progress') + '</small></td>',
-                        '<td><strong>' + escapeHtml(String(item.started_at || '-')) + '</strong><small>' + escapeHtml(item.finalize_pending ? 'Waktu habis, finalisasi background aktif.' : String(item.remaining_label || '-')) + '</small></td>',
-                        '<td><button class="cbt-supervisor-button is-small" type="button" data-action="reset-login" data-attempt-id="' + escapeHtml(String(item.attempt_id || 0)) + '"' + (resetBusy ? ' disabled' : '') + '>' + renderSupervisorIcon('refresh') + '<span>' + escapeHtml(resetBusy ? 'Mereset...' : 'Reset Login') + '</span></button></td>',
+                        '<td data-label="Siswa">' + renderStudentCell(item.student_name, 'SW', [item.student_username, item.student_nisn, item.student_kelas]) + '</td>',
+                        '<td data-label="Exam"><strong>' + escapeHtml(String(item.exam_title || '-')) + '</strong>' + renderRowMeta(['Attempt #' + String(item.attempt_id || 0)]) + '</td>',
+                        '<td data-label="Status"><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.status || 'completed')) + '">' + escapeHtml(String(item.status_label || '-')) + '</span>' + renderRowMeta([item.presence_label]) + '</td>',
+                        '<td data-label="Skor"><strong>' + escapeHtml(String(item.score_percentage_label || '0%')) + '</strong>' + renderRowMeta(['Benar ' + String(item.earned_points || 0), 'Salah ' + String(item.wrong_points || 0)]) + '</td>',
+                        '<td data-label="Jawaban" class="cbt-supervisor-answer-cell">' + renderAnswerProgressCell(item) + '</td>',
+                        '<td data-label="Timeline"><strong>' + escapeHtml(String(item.started_at || '-')) + '</strong>' + renderRowMeta([item.finalize_pending ? 'Finalisasi background' : String(item.remaining_label || '-')]) + '</td>',
+                        '<td data-label="Aksi">' + renderAttemptActions(item, { reset: true }) + '</td>',
                         '</tr>'
                     ].join('');
                 }).join(''),
@@ -856,12 +1407,20 @@ export function bootstrapSupervisorApp() {
         var submitWatchlist = submitRecovery && submitRecovery.submit_watchlist ? submitRecovery.submit_watchlist : {};
         var watchlistItems = Array.isArray(submitWatchlist.items) ? submitWatchlist.items : [];
         var watchlistMarkup = watchlistItems.length
-            ? '<div class="cbt-supervisor-watchlist-list">' + watchlistItems.map(function (item) {
+            ? '<div class="cbt-supervisor-watch-list is-submit-watchlist">' + watchlistItems.map(function (item) {
                 return [
-                    '<article class="cbt-supervisor-watchlist-item">',
-                    '<div class="cbt-supervisor-student-cell"><span class="cbt-supervisor-avatar">' + escapeHtml(getInitialsFromText(item.student_name, 'SW')) + '</span><span><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><span>' + escapeHtml([item.student_username, item.student_nisn, item.student_kelas].filter(Boolean).join(' · ')) + '</span></span></div>',
-                    '<div><span class="cbt-supervisor-pill is-watchlist">' + escapeHtml(String(item.state_label || 'Unknown')) + '</span><small>' + escapeHtml(String(item.exam_title || '-')) + '</small></div>',
-                    '<p>' + escapeHtml(String(item.detail || 'Status submit masih dipantau.')) + '</p>',
+                    '<article class="cbt-supervisor-watch-row">',
+                    '<div class="cbt-supervisor-watch-main">',
+                    renderStudentCell(item.student_name, 'SW', [item.student_username, item.student_nisn, item.student_kelas]),
+                    '<div class="cbt-supervisor-watch-detail">',
+                    '<strong>' + escapeHtml(String(item.detail || 'Status submit masih dipantau.')) + '</strong>',
+                    renderRowMeta([item.exam_title]),
+                    '</div>',
+                    '</div>',
+                    '<div class="cbt-supervisor-watch-side">',
+                    '<span class="cbt-supervisor-pill is-watchlist">' + escapeHtml(String(item.state_label || 'Unknown')) + '</span>',
+                    renderAttemptActions(item, { reset: false }),
+                    '</div>',
                     '</article>'
                 ].join('');
             }).join('') + '</div>'
@@ -871,10 +1430,10 @@ export function bootstrapSupervisorApp() {
             '<section class="cbt-supervisor-submit-health">',
             '<div class="cbt-supervisor-section-head"><div><span class="cbt-supervisor-kicker">Submit Telemetry</span><h3>Submit Health</h3></div><p>' + escapeHtml(String(submitHealth.note || 'Telemetry submit belum tersedia.')) + '</p></div>',
             '<div class="cbt-supervisor-summary-grid">',
-            '<article class="cbt-supervisor-summary-card"><span>Finish Ack</span><strong>' + escapeHtml(String(submitHealth.finish_ack_total || 0)) + '</strong><small>15 menit terakhir</small></article>',
-            '<article class="cbt-supervisor-summary-card"><span>Result Ready</span><strong>' + escapeHtml(String(submitHealth.result_ready_total || 0)) + '</strong><small>Recovery hasil sukses</small></article>',
-            '<article class="cbt-supervisor-summary-card"><span>Recovery Failed</span><strong>' + escapeHtml(String(submitHealth.recovery_failed_total || 0)) + '</strong><small>Butuh perhatian operator</small></article>',
-            '<article class="cbt-supervisor-summary-card"><span>Ack → Result p95</span><strong>' + escapeHtml(String(submitHealth.ack_to_result_ready_p95_label || 'N/A')) + '</strong><small>Latency recovery hasil</small></article>',
+            '<article class="cbt-supervisor-summary-card is-compact-metric"><span>Finish Ack</span><strong>' + escapeHtml(String(submitHealth.finish_ack_total || 0)) + '</strong><small>15 menit terakhir</small></article>',
+            '<article class="cbt-supervisor-summary-card is-compact-metric"><span>Result Ready</span><strong>' + escapeHtml(String(submitHealth.result_ready_total || 0)) + '</strong><small>Recovery hasil sukses</small></article>',
+            '<article class="cbt-supervisor-summary-card is-compact-metric"><span>Recovery Failed</span><strong>' + escapeHtml(String(submitHealth.recovery_failed_total || 0)) + '</strong><small>Butuh perhatian operator</small></article>',
+            '<article class="cbt-supervisor-summary-card is-compact-metric"><span>Ack → Result p95</span><strong>' + escapeHtml(String(submitHealth.ack_to_result_ready_p95_label || 'N/A')) + '</strong><small>Latency recovery hasil</small></article>',
             '</div>',
             '<div class="cbt-supervisor-section-head"><div><span class="cbt-supervisor-kicker">Watchlist</span><h3>Submit Watchlist</h3></div><p>' + escapeHtml(String(submitWatchlist.note || 'Pantau unresolved submit yang masih menunggu recovery.')) + '</p></div>',
             watchlistMarkup,
@@ -895,18 +1454,19 @@ export function bootstrapSupervisorApp() {
 
         return [
             '<div class="cbt-supervisor-table-wrap">',
-            '<table class="cbt-supervisor-table">',
-            '<thead><tr><th>Waktu</th><th>Siswa</th><th>Exam</th><th>Event</th><th>Device</th><th>Pesan</th></tr></thead>',
+            '<table class="cbt-supervisor-table is-security">',
+            '<thead><tr><th>Waktu</th><th>Siswa</th><th>Exam</th><th>Event</th><th>Device</th><th>Pesan</th><th>Aksi</th></tr></thead>',
             '<tbody>',
             items.map(function (item) {
                 return [
                     '<tr>',
-                    '<td><strong>' + escapeHtml(String(item.occurred_at || item.created_at || '-')) + '</strong><small>Log #' + escapeHtml(String(item.id || 0)) + '</small></td>',
-                    '<td><div class="cbt-supervisor-student-cell"><span class="cbt-supervisor-avatar">' + escapeHtml(getInitialsFromText(item.student_name, 'SW')) + '</span><span><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><small>' + escapeHtml([item.student_login, item.student_kelas, item.student_ruang].filter(Boolean).join(' · ')) + '</small></span></div></td>',
-                    '<td><strong>' + escapeHtml(String(item.exam_title || '-')) + '</strong><small>Attempt #' + escapeHtml(String(item.attempt_id || 0)) + '</small></td>',
-                    '<td><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.severity || 'info')) + '">' + escapeHtml(String(item.severity || 'info')) + '</span><small>' + escapeHtml(String(item.event_label || item.event_type || '-')) + '</small></td>',
-                    '<td><strong>' + escapeHtml(String(item.device_summary || '-')) + '</strong><small>' + escapeHtml(String(item.device_type || 'unknown')) + '</small></td>',
-                    '<td><span class="cbt-supervisor-log-message">' + escapeHtml(String(item.message_display || '-')) + '</span></td>',
+                    '<td data-label="Waktu"><strong>' + escapeHtml(String(item.occurred_at || item.created_at || '-')) + '</strong>' + renderRowMeta(['Log #' + String(item.id || 0)]) + '</td>',
+                    '<td data-label="Siswa">' + renderStudentCell(item.student_name, 'SW', [item.student_login, item.student_kelas, item.student_ruang]) + '</td>',
+                    '<td data-label="Exam"><strong>' + escapeHtml(String(item.exam_title || '-')) + '</strong>' + renderRowMeta(['Attempt #' + String(item.attempt_id || 0)]) + '</td>',
+                    '<td data-label="Event"><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.severity || 'info')) + '">' + escapeHtml(String(item.severity || 'info')) + '</span>' + renderRowMeta([item.event_label || item.event_type || '-']) + '</td>',
+                    '<td data-label="Device"><strong>' + escapeHtml(String(item.device_summary || '-')) + '</strong>' + renderRowMeta([item.device_type || 'unknown']) + '</td>',
+                    '<td data-label="Pesan"><span class="cbt-supervisor-log-message">' + escapeHtml(String(item.message_display || '-')) + '</span></td>',
+                    '<td data-label="Aksi">' + renderAttemptActions(item, { reset: false }) + '</td>',
                     '</tr>'
                 ].join('');
             }).join(''),
@@ -985,18 +1545,18 @@ export function bootstrapSupervisorApp() {
         return [
             summaryMarkup,
             '<div class="cbt-supervisor-table-wrap">',
-            '<table class="cbt-supervisor-table">',
-            '<thead><tr><th>Siswa</th><th>Kelas</th><th>Ruang</th><th>Status</th><th>Attempt</th><th>Timeline</th></tr></thead>',
+            '<table class="cbt-supervisor-table is-attendance">',
+            '<thead><tr><th>Siswa</th><th>Lokasi</th><th>Status</th><th>Attempt</th><th>Timeline</th><th>Aksi</th></tr></thead>',
             '<tbody>',
             items.map(function (item) {
                 return [
                     '<tr>',
-                    '<td><div class="cbt-supervisor-student-cell"><span class="cbt-supervisor-avatar">' + escapeHtml(getInitialsFromText(item.student_name, 'SW')) + '</span><span><strong>' + escapeHtml(String(item.student_name || '-')) + '</strong><small>' + escapeHtml([item.student_username, item.student_nisn].filter(Boolean).join(' · ')) + '</small></span></div></td>',
-                    '<td><strong>' + escapeHtml(String(item.student_kelas || '-')) + '</strong></td>',
-                    '<td><strong>' + escapeHtml(String(item.student_ruang || '-')) + '</strong></td>',
-                    '<td><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.status || 'not_started')) + '">' + escapeHtml(String(item.status_label || '-')) + '</span></td>',
-                    '<td><strong>' + escapeHtml(item.attempt_id ? ('#' + String(item.attempt_id)) : '-') + '</strong></td>',
-                    '<td><strong>' + escapeHtml(String(item.started_at || '-')) + '</strong><small>' + escapeHtml(String(item.finished_at || 'Belum selesai')) + '</small></td>',
+                    '<td data-label="Siswa">' + renderStudentCell(item.student_name, 'SW', [item.student_username, item.student_nisn]) + '</td>',
+                    '<td data-label="Lokasi"><strong>' + escapeHtml(String(item.student_kelas || '-')) + '</strong>' + renderRowMeta(['Ruang ' + String(item.student_ruang || '-')]) + '</td>',
+                    '<td data-label="Status"><span class="cbt-supervisor-pill is-' + escapeHtml(String(item.status || 'not_started')) + '">' + escapeHtml(String(item.status_label || '-')) + '</span></td>',
+                    '<td data-label="Attempt"><strong>' + escapeHtml(item.attempt_id ? ('#' + String(item.attempt_id)) : '-') + '</strong></td>',
+                    '<td data-label="Timeline"><strong>' + escapeHtml(String(item.started_at || '-')) + '</strong>' + renderRowMeta([String(item.finished_at || 'Belum selesai')]) + '</td>',
+                    '<td data-label="Aksi">' + renderAttemptActions(item, { reset: false }) + '</td>',
                     '</tr>'
                 ].join('');
             }).join(''),
@@ -1024,6 +1584,9 @@ export function bootstrapSupervisorApp() {
     }
 
     function renderActivePanel() {
+        if (state.activeTab === 'action_required') {
+            return renderActionRequiredPanel();
+        }
         if (state.activeTab === 'must_watch') {
             return renderMustWatchPanel();
         }
@@ -1047,50 +1610,59 @@ export function bootstrapSupervisorApp() {
     }
 
     function getActiveOperationalTitle() {
+        if (state.activeTab === 'action_required') {
+            return {
+                title: 'Butuh Tindakan',
+                description: 'Kasus prioritas dari koneksi, risiko, submit, dan finalisasi.'
+            };
+        }
         if (state.activeTab === 'must_watch') {
             return {
                 title: 'Must Watch',
-                description: 'Prioritaskan siswa dengan risiko tertinggi dan reset login jika perlu.'
+                description: 'Prioritas siswa berisiko dalam list compact.'
             };
         }
         if (state.activeTab === 'monitoring_attempts') {
             return {
                 title: 'Attempts',
-                description: 'Pantau status, skor, progress jawaban, timeline, dan reset login.'
+                description: 'Status, skor, progres jawaban, dan timeline attempt.'
             };
         }
         if (state.activeTab === 'security_log') {
             return {
                 title: 'Security Log',
-                description: 'Baca log keamanan secara read-only dengan filter event, severity, device, kelas, dan ruang.'
+                description: 'Filter log berdasarkan severity, event, dan device.'
             };
         }
         if (state.activeTab === 'token_gate') {
             return {
                 title: 'Token & Gate',
-                description: 'Lihat token global, jadwal refresh, start gate, dan readiness auto-warm untuk exam terpilih.'
+                description: 'Token global, start gate, dan readiness auto-warm exam.'
             };
         }
         if (state.activeTab === 'submit_recovery') {
             return {
                 title: 'Submit Recovery',
-                description: 'Pisahkan telemetry submit dan watchlist recovery agar operasional lebih pendek.'
+                description: 'Telemetry submit dan watchlist recovery yang perlu diawasi.'
             };
         }
         if (state.activeTab === 'attendance') {
             return {
                 title: 'Daftar Hadir',
-                description: 'Lihat peserta target exam beserta status belum mulai, berjalan, atau selesai.'
+                description: 'Pilih exam, lalu scan status hadir peserta.'
             };
         }
         return {
             title: 'Live Roster',
-            description: 'Pantau presence, koneksi, risk score, dan last seen attempt aktif.'
+            description: 'Presence, koneksi, risk score, dan last seen attempt aktif.'
         };
     }
 
     function renderOperationalPanel() {
         var activeMeta = getActiveOperationalTitle();
+        var panelContent = isActiveTabLoading() && !isDashboardForActiveTab()
+            ? renderPanelSkeleton()
+            : renderActivePanel();
 
         return [
             '<section class="cbt-supervisor-panel">',
@@ -1101,7 +1673,7 @@ export function bootstrapSupervisorApp() {
             '</div>',
             '</div>',
             renderFilterForm(),
-            '<div class="cbt-supervisor-tab-panel">' + renderActivePanel() + '</div>',
+            '<div class="cbt-supervisor-tab-panel">' + panelContent + '</div>',
             '</section>'
         ].join('');
     }
@@ -1117,7 +1689,111 @@ export function bootstrapSupervisorApp() {
         return renderOperationalPanel();
     }
 
+    function renderDetailMetric(label, value, meta) {
+        return [
+            '<div class="cbt-supervisor-detail-metric">',
+            '<span>' + escapeHtml(String(label || '-')) + '</span>',
+            '<strong>' + escapeHtml(String(value || '-')) + '</strong>',
+            meta ? '<small>' + escapeHtml(String(meta || '')) + '</small>' : '',
+            '</div>'
+        ].join('');
+    }
+
+    function renderAttemptDetailDrawer() {
+        var drawer = state.detailDrawer || {};
+        if (!drawer.open) {
+            return '';
+        }
+
+        var data = drawer.data && typeof drawer.data === 'object' ? drawer.data : {};
+        var student = data.student && typeof data.student === 'object' ? data.student : {};
+        var attempt = data.attempt && typeof data.attempt === 'object' ? data.attempt : {};
+        var exam = data.exam && typeof data.exam === 'object' ? data.exam : {};
+        var presence = data.presence && typeof data.presence === 'object' ? data.presence : {};
+        var progress = data.answer_progress && typeof data.answer_progress === 'object' ? data.answer_progress : {};
+        var submitStatus = data.submit_status && typeof data.submit_status === 'object' ? data.submit_status : {};
+        var timeline = data.timeline && typeof data.timeline === 'object' ? data.timeline : {};
+        var events = Array.isArray(data.security_events) ? data.security_events : [];
+        var body;
+
+        if (drawer.busy && !data.ok) {
+            body = renderPanelSkeleton();
+        } else if (drawer.error) {
+            body = '<div class="cbt-supervisor-empty-state">' + escapeHtml(String(drawer.error || 'Detail attempt gagal dimuat.')) + '</div>';
+        } else if (!data.ok) {
+            body = '<div class="cbt-supervisor-empty-state">Detail attempt belum tersedia.</div>';
+        } else {
+            body = [
+                '<div class="cbt-supervisor-detail-grid">',
+                renderDetailMetric('Status', attempt.status_label || attempt.status || '-', 'Attempt #' + String(attempt.attempt_id || drawer.attemptId || 0)),
+                renderDetailMetric('Skor', attempt.score_percentage_label || '0%', 'Durasi ' + String(attempt.duration_minutes || 0) + ' menit'),
+                renderDetailMetric('Jawaban', String(progress.answer_count || 0) + ' / ' + String(progress.question_count || 0), String(progress.answered_percentage_label || '0%') + ' progress'),
+                renderDetailMetric('Presence', presence.presence_label || '-', presence.last_seen_at ? 'Last seen ' + String(presence.last_seen_at) : 'Roster live'),
+                '</div>',
+                '<section class="cbt-supervisor-detail-section">',
+                '<h3>Identitas</h3>',
+                renderRowMeta([
+                    student.username ? 'Username ' + String(student.username) : '',
+                    student.nisn ? 'NISN ' + String(student.nisn) : '',
+                    student.kelas,
+                    student.ruang,
+                    exam.title ? 'Exam ' + String(exam.title) : ''
+                ]),
+                '</section>',
+                '<section class="cbt-supervisor-detail-section">',
+                '<h3>Device & Submit</h3>',
+                renderRowMeta([
+                    presence.connection_status ? 'Koneksi ' + String(presence.connection_status) : '',
+                    presence.visibility_state ? 'Visibility ' + String(presence.visibility_state) : '',
+                    presence.heartbeat_lost_active ? 'Heartbeat lost aktif' : '',
+                    submitStatus.state_label ? 'Submit ' + String(submitStatus.state_label) : '',
+                    submitStatus.detail || ''
+                ]),
+                '</section>',
+                '<section class="cbt-supervisor-detail-section">',
+                '<h3>Timeline</h3>',
+                renderRowMeta([
+                    timeline.started_at ? 'Mulai ' + String(timeline.started_at) : '',
+                    timeline.finished_at ? 'Selesai ' + String(timeline.finished_at) : '',
+                    timeline.updated_at ? 'Update ' + String(timeline.updated_at) : '',
+                    timeline.remaining_label || ''
+                ]),
+                '</section>',
+                '<section class="cbt-supervisor-detail-section">',
+                '<h3>Security Terakhir</h3>',
+                events.length ? '<div class="cbt-supervisor-detail-events">' + events.map(function (eventItem) {
+                    return [
+                        '<div>',
+                        '<span class="cbt-supervisor-pill is-' + escapeHtml(String(eventItem.severity || 'info')) + '">' + escapeHtml(String(eventItem.severity || 'info')) + '</span>',
+                        '<strong>' + escapeHtml(String(eventItem.event_label || eventItem.event_type || '-')) + '</strong>',
+                        renderRowMeta([eventItem.message_display, eventItem.device_summary, eventItem.occurred_at || eventItem.created_at]),
+                        '</div>'
+                    ].join('');
+                }).join('') + '</div>' : '<div class="cbt-supervisor-empty-state is-compact">Belum ada security event terbaru untuk attempt ini.</div>',
+                '</section>'
+            ].join('');
+        }
+
+        return [
+            '<div class="cbt-supervisor-detail-backdrop" role="presentation">',
+            '<div class="cbt-supervisor-detail-scrim" data-action="close-attempt-detail"></div>',
+            '<aside class="cbt-supervisor-detail-drawer" role="dialog" aria-modal="true" aria-label="Detail siswa">',
+            '<header class="cbt-supervisor-detail-head">',
+            '<div>',
+            '<span class="cbt-supervisor-kicker">Detail Siswa</span>',
+            '<h2>' + escapeHtml(String(student.name || 'Attempt #' + String(drawer.attemptId || 0))) + '</h2>',
+            '<p>' + escapeHtml(String(exam.title || '-')) + '</p>',
+            '</div>',
+            '<button class="cbt-supervisor-icon-button" type="button" data-action="close-attempt-detail" aria-label="Tutup detail" title="Tutup detail">' + renderSupervisorIcon('x') + '</button>',
+            '</header>',
+            '<div class="cbt-supervisor-detail-body">' + body + '</div>',
+            '</aside>',
+            '</div>'
+        ].join('');
+    }
+
     function renderDashboardView() {
+        var branding = getSupervisorBranding();
         var userName = state.user ? String(state.user.display_name || state.user.username || 'Pengawas') : 'Pengawas';
         var roleLabel = state.dashboard && state.dashboard.scope
             ? String(state.dashboard.scope.role_label || state.user.role || '')
@@ -1125,14 +1801,13 @@ export function bootstrapSupervisorApp() {
         var scopeLabel = state.dashboard && state.dashboard.scope ? String(state.dashboard.scope.scope_label || '') : '';
         var snapshot = state.dashboard && state.dashboard.status_snapshot ? state.dashboard.status_snapshot : {};
         var mode = String(snapshot.mode || 'online');
+        var statusLabel = String(snapshot.status_label || 'Telemetry siap dipantau.');
+        var scopeHeading = (scopeLabel !== '' ? scopeLabel : 'Semua exam').toUpperCase();
 
         return [
             '<div class="cbt-supervisor-shell">',
             '<header class="cbt-supervisor-topbar">',
-            '<div class="cbt-supervisor-brand">',
-            '<span class="cbt-supervisor-brand-mark">' + renderSupervisorIcon('monitor') + '</span>',
-            '<span><strong>ExamCommand</strong><small>Supervisor Frontend</small></span>',
-            '</div>',
+            renderSupervisorBrandIdentity(),
             renderTabs(),
             '<div class="cbt-supervisor-topbar-actions">',
             '<span class="cbt-supervisor-topbar-status">' + renderLiveDot() + '<span>' + escapeHtml(mode.toUpperCase()) + '</span></span>',
@@ -1143,20 +1818,20 @@ export function bootstrapSupervisorApp() {
             '</header>',
             '<main class="cbt-supervisor-main">',
             renderNoticeStack(),
-            '<section class="cbt-supervisor-page-head">',
-            '<div>',
-            '<div class="cbt-supervisor-breadcrumb"><span>Dashboard</span><span>/</span><strong>' + escapeHtml(scopeLabel !== '' ? scopeLabel : 'Semua exam') + '</strong></div>',
-            '<h1>Dashboard Pengawas</h1>',
-            '<p>Pantau roster live, siswa berisiko, progress attempts, dan status submit dari satu layar operasional.</p>',
+            '<section class="cbt-supervisor-command-strip">',
+            '<div class="cbt-supervisor-command-title">',
+            '<div class="cbt-supervisor-breadcrumb"><span>DASHBOARD</span><span>/</span><strong>' + escapeHtml(scopeHeading) + '</strong></div>',
+            '<h1>DASHBOARD PENGAWAS</h1>',
+            branding.motto !== '' ? '<p>' + escapeHtml(branding.motto) + '</p>' : '',
             '</div>',
-            '<aside class="cbt-supervisor-page-health">',
-            '<span class="cbt-supervisor-kicker">Auto refresh</span>',
-            '<strong>' + escapeHtml(state.dashboardBusy ? 'Memuat data' : 'Setiap 15 detik') + '</strong>',
-            '<small>' + escapeHtml(String(snapshot.status_label || 'Telemetry siap dipantau.')) + '</small>',
-            '</aside>',
+            '<div class="cbt-supervisor-command-meta">',
+            '<span class="cbt-supervisor-mini-stat"><span>Refresh</span><strong>' + escapeHtml(state.dashboardBusy ? 'Memuat' : '15 detik') + '</strong></span>',
+            '<span class="cbt-supervisor-mini-stat"><span>Status</span><strong>' + escapeHtml(statusLabel) + '</strong></span>',
+            '</div>',
             '</section>',
             renderDashboardBody(),
             '</main>',
+            renderAttemptDetailDrawer(),
             '</div>'
         ].join('');
     }
@@ -1178,6 +1853,7 @@ export function bootstrapSupervisorApp() {
         state.filters.status = '';
         state.filters.rosterPage = 1;
         state.filters.attemptsPage = 1;
+        state.filters.actionPage = 1;
         state.filters.securityPage = 1;
         state.filters.securitySeverity = 'all';
         state.filters.securityEventType = 'all';
@@ -1233,12 +1909,23 @@ export function bootstrapSupervisorApp() {
             return;
         }
 
+        if (action === 'close-attempt-detail') {
+            closeAttemptDetail();
+            return;
+        }
+
+        if (action === 'open-attempt-detail') {
+            openAttemptDetail(Number(target.getAttribute('data-attempt-id')) || 0);
+            return;
+        }
+
         if (action === 'switch-tab') {
             var tab = String(target.getAttribute('data-tab') || 'live_roster');
             if (tab !== state.activeTab) {
                 state.activeTab = tab;
                 state.filters.rosterPage = 1;
                 state.filters.attemptsPage = 1;
+                state.filters.actionPage = 1;
                 state.filters.securityPage = 1;
                 state.filters.attendancePage = 1;
                 render();
@@ -1257,6 +1944,8 @@ export function bootstrapSupervisorApp() {
                 state.filters.rosterPage = Math.max(1, Number(state.filters.rosterPage) + direction);
             } else if (scope === 'attempts') {
                 state.filters.attemptsPage = Math.max(1, Number(state.filters.attemptsPage) + direction);
+            } else if (scope === 'action') {
+                state.filters.actionPage = Math.max(1, Number(state.filters.actionPage) + direction);
             } else if (scope === 'security') {
                 state.filters.securityPage = Math.max(1, Number(state.filters.securityPage) + direction);
             } else if (scope === 'attendance') {
@@ -1275,7 +1964,8 @@ export function bootstrapSupervisorApp() {
                 return;
             }
 
-            if (!window.confirm('Reset login siswa ini? Semua browser aktif user ini akan diminta login ulang.')) {
+            var studentName = String(target.getAttribute('data-student-name') || 'siswa ini');
+            if (!window.confirm('Reset login ' + studentName + ' (attempt #' + String(attemptId) + ')? Semua browser aktif user ini akan diminta login ulang.')) {
                 return;
             }
 

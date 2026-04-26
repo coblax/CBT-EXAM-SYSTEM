@@ -447,6 +447,26 @@
                 margin: 0;
                 color: #5b6574;
             }
+            .cbt-setup-security-user-agent-list {
+                display: grid;
+                gap: 8px;
+                margin-top: 14px;
+                padding-top: 14px;
+                border-top: 1px solid rgba(159, 181, 211, 0.4);
+            }
+            .cbt-setup-security-user-agent-list label {
+                font-weight: 600;
+                color: #111827;
+            }
+            .cbt-setup-security-user-agent-list textarea {
+                width: min(100%, 620px);
+                min-height: 104px;
+                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            }
+            .cbt-setup-security-user-agent-list .description {
+                margin: 0;
+                color: #5b6574;
+            }
             .cbt-setup-security-log-card {
                 grid-column: 1 / -1;
                 padding: 24px;
@@ -2322,6 +2342,31 @@
                                                 <span>Jika diaktifkan, aksi copy, cut, dan paste diblok selama peserta berada di halaman ujian. Cocok untuk meminimalkan pemindahan jawaban lewat clipboard.</span>
                                             </span>
                                         </label>
+                                    </div>
+                                    <div class="cbt-setup-security-option">
+                                        <label class="cbt-setup-security-checkbox" for="cbt-setup-security-restrict-user-agent">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-security-restrict-user-agent"
+                                                name="restrict_student_user_agent"
+                                                value="1"
+                                                <?php checked($security_restrict_student_user_agent); ?>
+                                            />
+                                            <span>
+                                                <strong>Batasi User-Agent Siswa</strong>
+                                                <span>Jika diaktifkan, halaman ujian siswa dan REST flow siswa hanya menerima request dengan User-Agent yang cocok dengan daftar allow-list. Pengawas dan admin tidak ikut dibatasi.</span>
+                                            </span>
+                                        </label>
+                                        <div class="cbt-setup-security-user-agent-list">
+                                            <label for="cbt-setup-security-allowed-user-agents">Allow-list User-Agent</label>
+                                            <textarea
+                                                id="cbt-setup-security-allowed-user-agents"
+                                                name="allowed_user_agents"
+                                                rows="5"
+                                                spellcheck="false"
+                                            ><?php echo esc_textarea((string) $security_allowed_user_agents_text); ?></textarea>
+                                            <p class="description">Satu pola per baris. Matching memakai contains tanpa regex dan tidak membedakan huruf besar/kecil. <code>CBXExamLockAndroid</code> selalu disertakan untuk native Android.</p>
+                                        </div>
                                     </div>
                                     <div class="cbt-setup-security-option">
                                         <label class="cbt-setup-security-checkbox" for="cbt-setup-security-block-browser-shortcuts">

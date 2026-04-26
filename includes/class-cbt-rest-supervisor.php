@@ -34,8 +34,34 @@ trait CBT_REST_Supervisor_Routes
                 'security_device_type' => $request->get_param('security_device_type'),
                 'attendance_page' => $request->get_param('attendance_page'),
                 'attendance_status' => $request->get_param('attendance_status'),
+                'action_page' => $request->get_param('action_page'),
             ])
         );
+    }
+
+    public static function supervisor_attempt_detail(WP_REST_Request $request)
+    {
+        $user_id = CBT_Auth::current_user_id($request);
+        $role = CBT_Auth::current_user_role($request);
+        if ($user_id <= 0 || !CBT_Auth::is_supervisor_role($role)) {
+            return new WP_Error('forbidden', 'Supervisor detail hanya untuk guru atau admin.', ['status' => 403]);
+        }
+
+        if (!class_exists('CBT_Supervisor_Dashboard_Service')) {
+            return new WP_Error('service_unavailable', 'Supervisor dashboard service tidak tersedia.', ['status' => 500]);
+        }
+
+        $attempt_id = absint($request->get_param('attempt_id'));
+        if ($attempt_id <= 0) {
+            return new WP_Error('invalid_payload', 'attempt_id wajib diisi.', ['status' => 400]);
+        }
+
+        $result = CBT_Supervisor_Dashboard_Service::get_attempt_detail($attempt_id, $user_id, $role);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+
+        return rest_ensure_response($result);
     }
 
     public static function supervisor_reset_login(WP_REST_Request $request)

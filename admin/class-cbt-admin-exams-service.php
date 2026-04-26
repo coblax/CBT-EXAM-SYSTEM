@@ -1967,6 +1967,7 @@ final class CBT_Admin_Exams_Service
             'canonical_fallback' => max(0, (int) ($window['canonical_success'] ?? 0)),
             'invalid_credentials' => max(0, (int) ($window['invalid_credentials'] ?? 0)),
             'session_already_active' => max(0, (int) ($window['session_already_active'] ?? 0)),
+            'session_takeover_stale' => max(0, (int) ($window['session_takeover_stale'] ?? 0)),
             'top_miss_reason' => sanitize_key((string) ($window['top_miss_reason'] ?? '')),
             'top_miss_reason_label' => (string) ($window['top_miss_reason_label'] ?? ''),
             'top_miss_reason_count' => max(0, (int) ($window['top_miss_reason_count'] ?? 0)),

@@ -229,6 +229,24 @@ class CBT_REST
                     'type' => 'string',
                     'sanitize_callback' => 'sanitize_key',
                 ],
+                'action_page' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+            ],
+        ]);
+
+        register_rest_route('cbt/v1', '/supervisor_attempt_detail', [
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => [self::class, 'supervisor_attempt_detail'],
+            'permission_callback' => [CBT_Auth::class, 'permission_supervisor_dashboard'],
+            'args' => [
+                'attempt_id' => [
+                    'required' => true,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
             ],
         ]);
 

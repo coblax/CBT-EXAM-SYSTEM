@@ -420,7 +420,7 @@
     "isDynamicEntry": true
   },
   "src/frontend/app/runtime.js": {
-    "file": "assets/runtime-C582j_PW.js",
+    "file": "assets/runtime-BVYAYZ1l.js",
     "name": "runtime",
     "src": "src/frontend/app/runtime.js",
     "isDynamicEntry": true,
@@ -438,7 +438,7 @@
     ]
   },
   "src/frontend/app/supervisor/runtime.js": {
-    "file": "assets/runtime-CczqbPF-.js",
+    "file": "assets/runtime-BxMeaJW3.js",
     "name": "runtime",
     "src": "src/frontend/app/supervisor/runtime.js",
     "isDynamicEntry": true,
@@ -448,7 +448,7 @@
     ]
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-CguSWAm4.js",
+    "file": "assets/frontend-core-VfhJBt4G.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
@@ -457,7 +457,7 @@
       "src/frontend/app/runtime.js"
     ],
     "css": [
-      "assets/frontend-DkTmBYYj.css"
+      "assets/frontend-D5KntEF3.css"
     ],
     "assets": [
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",

@@ -53,10 +53,11 @@ function createFixture(overrides = {}) {
             state.busy = false;
             state.token = '';
         },
-        loadExams: async function () {
+        loadExams: async function (options) {
             calls.loadExams += 1;
+            calls.loadExamsOptions = options || {};
             if (typeof overrides.loadExams === 'function') {
-                return overrides.loadExams();
+                return overrides.loadExams(options || {});
             }
             return null;
         },
@@ -438,6 +439,9 @@ describe('createBootstrapSessionManager', function () {
         expect(fixture.state.sessionRecoveryVisible).toBe(true);
         expect(fixture.state.sessionRecoveryCanRetry).toBe(true);
         expect(fixture.state.sessionRecoveryMode).toBe('exam_restore');
+        expect(fixture.calls.loadExamsOptions).toEqual({
+            suppressAuthExpiry: true
+        });
         expect(fixture.calls.renderSnapshots.every(function (snapshot) {
             return snapshot.stage !== 'login';
         })).toBe(true);

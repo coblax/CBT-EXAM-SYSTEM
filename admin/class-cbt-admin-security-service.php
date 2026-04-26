@@ -8,6 +8,10 @@ if (!class_exists('CBT_Live_Attempt_Roster_Index')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-live-attempt-roster-index.php';
 }
 
+if (!class_exists('CBT_Security_User_Agent_Guard')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-security-user-agent-guard.php';
+}
+
 final class CBT_Admin_Security_Service
 {
     private const SECURITY_OPTION_KEY = 'cbt_setup_security';
@@ -36,7 +40,9 @@ final class CBT_Admin_Security_Service
      *     security_redis_first_ingest:int,
      *     detect_idle_during_exam:int,
      *     detect_heartbeat_lost:int,
-     *     idle_threshold_minutes:int
+     *     idle_threshold_minutes:int,
+     *     restrict_student_user_agent:int,
+     *     allowed_user_agents:array<int,string>
      * }
      */
     public static function get_security_settings(): array
@@ -54,6 +60,8 @@ final class CBT_Admin_Security_Service
         $detect_idle_during_exam = !array_key_exists('detect_idle_during_exam', $raw) || !empty($raw['detect_idle_during_exam']);
         $detect_heartbeat_lost = !empty($raw['detect_heartbeat_lost']);
         $idle_threshold_minutes = max(1, absint($raw['idle_threshold_minutes'] ?? 5));
+        $restrict_student_user_agent = !empty($raw['restrict_student_user_agent']);
+        $allowed_user_agents = CBT_Security_User_Agent_Guard::normalize_allowed_user_agents($raw['allowed_user_agents'] ?? []);
 
         return [
             'force_fullscreen' => $force_fullscreen ? 1 : 0,
@@ -64,6 +72,8 @@ final class CBT_Admin_Security_Service
             'detect_idle_during_exam' => $detect_idle_during_exam ? 1 : 0,
             'detect_heartbeat_lost' => $detect_heartbeat_lost ? 1 : 0,
             'idle_threshold_minutes' => $idle_threshold_minutes,
+            'restrict_student_user_agent' => $restrict_student_user_agent ? 1 : 0,
+            'allowed_user_agents' => $allowed_user_agents,
         ];
     }
 
@@ -85,6 +95,9 @@ final class CBT_Admin_Security_Service
         $security_detect_idle_during_exam = !empty($security['detect_idle_during_exam']);
         $security_detect_heartbeat_lost = !empty($security['detect_heartbeat_lost']);
         $security_idle_threshold_minutes = max(1, (int) ($security['idle_threshold_minutes'] ?? 5));
+        $security_restrict_student_user_agent = !empty($security['restrict_student_user_agent']);
+        $security_allowed_user_agents = CBT_Security_User_Agent_Guard::normalize_allowed_user_agents($security['allowed_user_agents'] ?? []);
+        $security_allowed_user_agents_text = implode("\n", $security_allowed_user_agents);
         $security_log_event_definitions = CBT_Security_Log::event_definitions();
 
         $security_live_snapshot = self::build_security_observability_snapshot(false);
@@ -134,7 +147,10 @@ final class CBT_Admin_Security_Service
             'security_detect_heartbeat_lost',
             'security_force_fullscreen',
             'security_idle_threshold_minutes',
+            'security_allowed_user_agents',
+            'security_allowed_user_agents_text',
             'security_redis_first_ingest',
+            'security_restrict_student_user_agent',
             'security_log_event_definitions',
             'security_log_events_enabled',
             'security_log_status_snapshot',

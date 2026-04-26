@@ -613,6 +613,12 @@ function e2e_fixture_set_security_config(array $payload): array
         'idle_threshold_minutes' => array_key_exists('idle_threshold_minutes', $payload)
             ? max(1, (int) $payload['idle_threshold_minutes'])
             : max(1, (int) ($settings['idle_threshold_minutes'] ?? 5)),
+        'restrict_student_user_agent' => array_key_exists('restrict_student_user_agent', $payload)
+            ? (!empty($payload['restrict_student_user_agent']) ? 1 : 0)
+            : (int) ($settings['restrict_student_user_agent'] ?? 0),
+        'allowed_user_agents' => array_key_exists('allowed_user_agents', $payload)
+            ? CBT_Security_User_Agent_Guard::normalize_allowed_user_agents($payload['allowed_user_agents'])
+            : CBT_Security_User_Agent_Guard::normalize_allowed_user_agents($settings['allowed_user_agents'] ?? []),
     ];
 
     update_option(CBT_Admin_Security_Service::security_option_key(), $next, false);

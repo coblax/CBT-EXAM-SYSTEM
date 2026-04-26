@@ -8,6 +8,90 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 final class RestQuestionDeliverySnapshotTest extends TestCase
 {
     #[RunInSeparateProcess]
+    public function test_get_questions_student_without_attempt_is_rejected_before_question_payload_hydration(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->setRuntimeRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        $response = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 55,
+        ], [], [], '/cbt/v1/questions', 'GET'));
+
+        self::assertTrue(is_wp_error($response));
+        self::assertSame('attempt_required', $response->get_error_code());
+        $errorData = $response->get_error_data();
+        self::assertIsArray($errorData);
+        self::assertSame(400, (int) ($errorData['status'] ?? 0));
+        self::assertSame(1, $wpdb->examGetRowCalls);
+        self::assertSame(0, $wpdb->attemptGetRowCalls);
+        self::assertSame(0, $wpdb->questionHydrateCalls);
+        self::assertSame(0, $wpdb->optionHydrateCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_get_questions_student_completed_attempt_is_rejected_before_question_payload_hydration(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->setRuntimeRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+        $wpdb->attemptStatus = 'completed';
+
+        $response = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 55,
+            'attempt_id' => 77,
+        ], [], [], '/cbt/v1/questions', 'GET'));
+
+        self::assertTrue(is_wp_error($response));
+        self::assertSame('attempt_closed', $response->get_error_code());
+        $errorData = $response->get_error_data();
+        self::assertIsArray($errorData);
+        self::assertSame(400, (int) ($errorData['status'] ?? 0));
+        self::assertSame(1, $wpdb->examGetRowCalls);
+        self::assertSame(1, $wpdb->attemptGetRowCalls);
+        self::assertSame(0, $wpdb->questionHydrateCalls);
+        self::assertSame(0, $wpdb->optionHydrateCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_get_questions_teacher_without_attempt_can_preview_exam_questions(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->setRuntimeRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 5;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'teacher';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        $response = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 55,
+        ], [], [], '/cbt/v1/questions', 'GET'));
+
+        self::assertFalse(is_wp_error($response));
+        $payload = $response instanceof WP_REST_Response ? $response->get_data() : (array) $response;
+        self::assertCount(1, (array) ($payload['items'] ?? []));
+        self::assertSame('Jakarta', $payload['items'][0]['correct_text'] ?? null);
+        self::assertSame(1, $wpdb->examGetRowCalls);
+        self::assertSame(0, $wpdb->attemptGetRowCalls);
+        self::assertSame(1, $wpdb->questionHydrateCalls);
+        self::assertSame(1, $wpdb->optionHydrateCalls);
+    }
+
+    #[RunInSeparateProcess]
     public function test_get_questions_student_attempt_uses_redis_delivery_snapshot_without_rehydrating_question_payload_from_db(): void
     {
         $this->bootstrapRestDeliverySnapshotScaffold();
@@ -219,6 +303,7 @@ final class RestQuestionDeliverySnapshotFakeWpdb
     public int $questionHydrateCalls = 0;
     public int $optionHydrateCalls = 0;
     public int $answerQueryCalls = 0;
+    public string $attemptStatus = 'in_progress';
 
     /** @return array<string,mixed> */
     public function prepare(string $query, ...$args): array
@@ -265,7 +350,7 @@ final class RestQuestionDeliverySnapshotFakeWpdb
                 'id' => 77,
                 'exam_id' => 55,
                 'student_id' => 7,
-                'status' => 'in_progress',
+                'status' => $this->attemptStatus,
                 'question_order' => '[201]',
                 'option_order' => '',
                 'score' => 0,

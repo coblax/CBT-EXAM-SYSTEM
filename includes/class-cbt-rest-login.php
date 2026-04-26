@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Security_User_Agent_Guard')) {
+    require_once __DIR__ . '/class-cbt-security-user-agent-guard.php';
+}
+
 trait CBT_REST_Login_Routes
 {
     /**
@@ -158,9 +162,34 @@ trait CBT_REST_Login_Routes
         delete_transient($limit_key);
         delete_transient($block_key);
 
+        $user_agent_guard = self::guard_student_login_user_agent($request, $result);
+        if (is_wp_error($user_agent_guard)) {
+            return $user_agent_guard;
+        }
+
         self::mark_priority_window('login');
 
         return rest_ensure_response($result);
+    }
+
+    private static function guard_student_login_user_agent(WP_REST_Request $request, $login_result)
+    {
+        if (!is_array($login_result)) {
+            return true;
+        }
+
+        $role = sanitize_key((string) ($login_result['role'] ?? ''));
+        $user_agent_guard = CBT_Security_User_Agent_Guard::guard_student_request($request, $role);
+        if (!is_wp_error($user_agent_guard)) {
+            return true;
+        }
+
+        $user_id = absint($login_result['user_id'] ?? 0);
+        if ($user_id > 0 && method_exists('CBT_Auth', 'clear_login_session')) {
+            CBT_Auth::clear_login_session($user_id);
+        }
+
+        return $user_agent_guard;
     }
 
     public static function logout(WP_REST_Request $request)

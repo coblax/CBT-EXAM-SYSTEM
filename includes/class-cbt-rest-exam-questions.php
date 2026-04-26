@@ -67,6 +67,7 @@ trait CBT_REST_Exam_Questions_Routes
         $bootstrap_light = ((int) $request->get_param('bootstrap_light') === 1);
         $user_id = CBT_Auth::current_user_id($request);
         $role = CBT_Auth::current_user_role($request);
+        $is_student_request = self::is_student_role($role);
 
         if ($exam_id <= 0) {
             return new WP_Error('invalid_exam_id', 'exam_id is required', ['status' => 400]);
@@ -106,12 +107,38 @@ trait CBT_REST_Exam_Questions_Routes
                 return new WP_Error('not_found', 'Attempt not found', ['status' => 404]);
             }
 
-            if (($role === 'siswa' || $role === 'student') && (int) $attempt['student_id'] !== $user_id) {
+            if ($is_student_request && (int) $attempt['student_id'] !== $user_id) {
                 return new WP_Error('forbidden', 'You cannot access this attempt', ['status' => 403]);
             }
         }
 
-        if ($role === 'siswa' || $role === 'student') {
+        if ($is_student_request) {
+            if ($attempt_id <= 0) {
+                return new WP_Error(
+                    'attempt_required',
+                    'Attempt aktif wajib tersedia sebelum memuat soal ujian.',
+                    [
+                        'status' => 400,
+                        'opening_reason' => 'attempt_required',
+                        'suggestion' => 'Mulai ujian dari daftar exam agar token dan timer aktif.',
+                        'return_to_exam_list_suggestion' => 'Mulai ujian dari daftar exam agar token dan timer aktif.',
+                    ]
+                );
+            }
+
+            if (!is_array($attempt) || (string) ($attempt['status'] ?? '') !== 'in_progress') {
+                return new WP_Error(
+                    'attempt_closed',
+                    'Attempt sudah selesai atau tidak aktif.',
+                    [
+                        'status' => 400,
+                        'opening_reason' => 'attempt_closed',
+                        'suggestion' => 'Kembali ke daftar exam untuk memeriksa status attempt.',
+                        'return_to_exam_list_suggestion' => 'Kembali ke daftar exam untuk memeriksa status attempt.',
+                    ]
+                );
+            }
+
             $student_kelas = self::get_live_user_kelas($user_id);
             if (!self::exam_allows_student_class($exam, $student_kelas)) {
                 return new WP_Error(
@@ -168,7 +195,7 @@ trait CBT_REST_Exam_Questions_Routes
         }
 
         $use_student_delivery_snapshot = self::should_use_student_delivery_snapshot($role, $attempt);
-        $questions = $use_student_delivery_snapshot
+        $questions = ($use_student_delivery_snapshot || $is_student_request)
             ? self::get_student_exam_question_delivery_payload($exam_id)
             : self::get_cached_exam_question_payload($exam_id);
 

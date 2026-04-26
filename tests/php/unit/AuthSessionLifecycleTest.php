@@ -50,7 +50,64 @@ final class AuthSessionLifecycleTest extends TestCase
         $blocked = CBT_Auth::login('ayu', 'secret');
         self::assertTrue(is_wp_error($blocked));
         self::assertSame('session_already_active', $blocked->get_error_code());
+        self::assertArrayNotHasKey('retry_after', (array) $blocked->get_error_data());
         self::assertSame('active-session', $this->readRedisSessionKey(9));
+    }
+
+    public function test_login_blocks_warm_active_session_with_retry_after_until_takeover_window(): void
+    {
+        $now = time();
+        update_user_meta(9, 'cbt_active_login_session', 'active-session');
+        update_user_meta(9, 'cbt_active_login_session_touched_at', $now - 15);
+        update_user_meta(9, 'cbt_active_login_session_issued_at', $now - 20);
+
+        $blocked = CBT_Auth::login('ayu', 'secret');
+
+        self::assertTrue(is_wp_error($blocked));
+        self::assertSame('session_already_active', $blocked->get_error_code());
+        $errorData = (array) $blocked->get_error_data();
+        self::assertSame(409, (int) ($errorData['status'] ?? 0));
+        self::assertGreaterThan(0, (int) ($errorData['retry_after'] ?? 0));
+        self::assertLessThanOrEqual(10, (int) ($errorData['retry_after'] ?? 0));
+        self::assertSame((int) ($errorData['retry_after'] ?? 0) * 1000, (int) ($errorData['retry_after_ms'] ?? 0));
+        self::assertSame('active-session', $this->readRedisSessionKey(9));
+    }
+
+    public function test_login_takes_over_stale_active_session_and_revokes_old_token(): void
+    {
+        $now = time();
+        update_user_meta(9, 'cbt_active_login_session', 'active-session');
+        update_user_meta(9, 'cbt_active_login_session_touched_at', $now - 30);
+        update_user_meta(9, 'cbt_active_login_session_issued_at', $now - 60);
+        $oldToken = CBT_Auth::generate_token(9, 'student', 'active-session');
+
+        $allowed = CBT_Auth::login('ayu', 'secret');
+
+        self::assertIsArray($allowed);
+        self::assertNotSame('', (string) ($allowed['token'] ?? ''));
+        self::assertSame('siswa', $allowed['role']);
+
+        $newSessionKey = (string) get_user_meta(9, 'cbt_active_login_session', true);
+        self::assertNotSame('', $newSessionKey);
+        self::assertNotSame('active-session', $newSessionKey);
+        self::assertSame($newSessionKey, $this->readRedisSessionKey(9));
+
+        self::assertCount(1, CBT_Security_Log::$events);
+        self::assertSame('session_takeover_stale', CBT_Security_Log::$events[0]['event_type']);
+        self::assertSame(9, CBT_Security_Log::$events[0]['user_id']);
+        self::assertGreaterThanOrEqual(25, (int) (CBT_Security_Log::$events[0]['context']['previous_session_age_seconds'] ?? 0));
+
+        $summary = CBT_Login_Snapshot_Metrics_Service::get_window_summary(15);
+        self::assertSame(1, (int) ($summary['session_takeover_stale'] ?? 0));
+
+        $this->resetDecodedTokenCache();
+        $staleRequest = new WP_REST_Request([], [], [
+            'authorization' => 'Bearer ' . $oldToken,
+        ], '/cbt/v1/session', 'GET');
+        $verified = CBT_Auth::verify_request_token($staleRequest);
+
+        self::assertTrue(is_wp_error($verified));
+        self::assertSame('session_revoked', $verified->get_error_code());
     }
 
     public function test_login_allows_login_after_recent_session_expires(): void

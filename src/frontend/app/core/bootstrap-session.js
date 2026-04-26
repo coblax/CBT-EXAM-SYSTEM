@@ -463,7 +463,9 @@ export function createBootstrapSessionManager(deps) {
                     runId: recoveryRunId
                 }
             );
-            await loadExams();
+            await loadExams({
+                suppressAuthExpiry: true
+            });
             if (!isActiveRecoveryRun(recoveryRunId)) {
                 return;
             }
