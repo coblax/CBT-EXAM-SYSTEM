@@ -117,6 +117,11 @@ class CBT_Security_Log
                 'severity' => 'warning',
                 'message' => 'Peserta mencoba membuka dialog print atau mencetak halaman ujian saat attempt masih berlangsung.',
             ],
+            'screenshot_key_detected' => [
+                'label' => 'Tombol screenshot terdeteksi',
+                'severity' => 'warning',
+                'message' => 'Browser menangkap indikasi tombol atau shortcut screenshot saat ujian berlangsung.',
+            ],
             'context_menu_blocked' => [
                 'label' => 'Context menu diblok',
                 'severity' => 'warning',
@@ -276,6 +281,7 @@ class CBT_Security_Log
             'fullscreen_exit',
             'clipboard_blocked',
             'print_attempt',
+            'screenshot_key_detected',
             'context_menu_blocked',
             'devtools_shortcut_blocked',
             'view_source_blocked',
@@ -1916,6 +1922,7 @@ class CBT_Security_Log
             'idle_detected' => 2,
             'clipboard_blocked' => 2,
             'print_attempt' => 3,
+            'screenshot_key_detected' => 3,
             'context_menu_blocked' => 1,
             'devtools_shortcut_blocked' => 4,
             'view_source_blocked' => 4,
@@ -2144,6 +2151,45 @@ class CBT_Security_Log
             }
         }
 
+        if ($event_type === 'screenshot_key_detected') {
+            $key = sanitize_text_field((string) ($context['key'] ?? ''));
+            $code = sanitize_text_field((string) ($context['code'] ?? ''));
+            $platform_hint = sanitize_text_field((string) ($context['platform_hint'] ?? ''));
+            $modifiers = [];
+
+            if (!empty($context['ctrl_key'])) {
+                $modifiers[] = 'Ctrl';
+            }
+            if (!empty($context['meta_key'])) {
+                $modifiers[] = 'Meta';
+            }
+            if (!empty($context['shift_key'])) {
+                $modifiers[] = 'Shift';
+            }
+            if (!empty($context['alt_key'])) {
+                $modifiers[] = 'Alt';
+            }
+
+            if ($key !== '' && $code !== '') {
+                $parts[] = 'Key: ' . $key . ' (' . $code . ').';
+            } elseif ($key !== '') {
+                $parts[] = 'Key: ' . $key . '.';
+            } elseif ($code !== '') {
+                $parts[] = 'Code: ' . $code . '.';
+            }
+            if (!empty($modifiers)) {
+                $parts[] = 'Modifier: ' . implode('+', $modifiers) . '.';
+            }
+            if ($platform_hint !== '') {
+                $parts[] = 'Platform hint: ' . $platform_hint . '.';
+            }
+
+            $screenshot_blocked = array_key_exists('blocked', $context) ? ((int) ($context['blocked'] ?? 0) === 1) : null;
+            if ($screenshot_blocked !== null) {
+                $parts[] = 'Diblokir: ' . ($screenshot_blocked ? 'Ya' : 'Tidak') . '.';
+            }
+        }
+
         if ($event_type === 'heartbeat_lost') {
             $failure_count = max(0, absint($context['failure_count'] ?? 0));
             $last_error_code = trim((string) ($context['last_error_code'] ?? ''));
@@ -2219,6 +2265,9 @@ class CBT_Security_Log
             'paste' => 'Shortcut atau menu paste',
             'print_shortcut' => 'Shortcut print',
             'beforeprint' => 'Browser print lifecycle',
+            'printscreen_key' => 'Tombol PrintScreen',
+            'screenshot_key' => 'Shortcut screenshot',
+            'macos_screenshot_shortcut' => 'Shortcut screenshot macOS',
             'contextmenu' => 'Klik kanan / context menu',
             'devtools_toggle_shortcut' => 'Shortcut buka/tutup DevTools',
             'devtools_console_shortcut' => 'Shortcut Console DevTools',

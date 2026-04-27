@@ -55,6 +55,16 @@ function normalizeIntegerFlag(value, fallback) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function normalizeClampedNumber(value, fallback, min, max) {
+    var normalizedValue = typeof value === 'string' ? value.trim().replace(',', '.') : value;
+    var parsed = Number(normalizedValue);
+    if (!Number.isFinite(parsed)) {
+        parsed = fallback;
+    }
+
+    return Math.max(min, Math.min(max, parsed));
+}
+
 export function getFrontendConfig(win) {
     var raw = win && win.CBTExamFrontendConfig ? win.CBTExamFrontendConfig : {};
     if (!raw || typeof raw !== 'object') {
@@ -72,6 +82,9 @@ export function getFrontendConfig(win) {
         securityLogEvents: normalizeBooleanFlag(raw.securityLogEvents),
         securityDetectIdle: normalizeBooleanFlag(raw.securityDetectIdle !== undefined ? raw.securityDetectIdle : 1),
         securityDetectHeartbeatLost: normalizeBooleanFlag(raw.securityDetectHeartbeatLost),
+        securityDetectScreenshotKeys: normalizeBooleanFlag(raw.securityDetectScreenshotKeys),
+        securityShowExamWatermark: normalizeBooleanFlag(raw.securityShowExamWatermark),
+        securityExamWatermarkOpacity: normalizeClampedNumber(raw.securityExamWatermarkOpacity, 0.07, 0.03, 0.12),
         securityIdleThresholdMinutes: normalizeIntegerFlag(raw.securityIdleThresholdMinutes, 5),
         securityIdleThresholdSeconds: normalizeIntegerFlag(
             raw.securityIdleThresholdSeconds,
@@ -239,6 +252,7 @@ export function createInitialState(win) {
         pendingFinishAutoSubmit: false,
         finishReceipt: null,
         finishResultPending: false,
-        finishRecoveryLastError: ''
+        finishRecoveryLastError: '',
+        examWatermarkTick: 0
     };
 }

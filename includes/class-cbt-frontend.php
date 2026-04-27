@@ -19,6 +19,9 @@ class CBT_Frontend
     private const MINIMAL_TEMPLATE_RELATIVE = 'templates/frontend/minimal-template.php';
     private const SETUP_BRANDING_OPTION = 'cbt_setup_branding';
     private const SETUP_SECURITY_OPTION = 'cbt_setup_security';
+    private const EXAM_WATERMARK_OPACITY_DEFAULT = 0.07;
+    private const EXAM_WATERMARK_OPACITY_MIN = 0.03;
+    private const EXAM_WATERMARK_OPACITY_MAX = 0.12;
     private const FRONTEND_HANDLE = 'cbt-frontend-app';
     private const DEV_CLIENT_HANDLE = 'cbt-frontend-vite-client';
     private const VITE_ENTRY = 'src/frontend/main.js';
@@ -703,6 +706,9 @@ class CBT_Frontend
             'securityDetectHeartbeatLost' => $security['detect_heartbeat_lost'],
             'securityIdleThresholdMinutes' => $security['idle_threshold_minutes'],
             'securityIdleThresholdSeconds' => $security['idle_threshold_minutes'] * MINUTE_IN_SECONDS,
+            'securityDetectScreenshotKeys' => $security['detect_screenshot_keys'],
+            'securityShowExamWatermark' => $security['show_exam_watermark'],
+            'securityExamWatermarkOpacity' => $security['exam_watermark_opacity'],
             'homeUrl' => (string) home_url('/'),
             'frontendMode' => $frontend_mode,
             'studentFrontendUrl' => self::frontend_page_url('student'),
@@ -1081,7 +1087,10 @@ class CBT_Frontend
      *     log_security_events:int,
      *     detect_idle_during_exam:int,
      *     detect_heartbeat_lost:int,
-     *     idle_threshold_minutes:int
+     *     idle_threshold_minutes:int,
+     *     detect_screenshot_keys:int,
+     *     show_exam_watermark:int,
+     *     exam_watermark_opacity:float
      * }
      */
     private static function get_setup_security_config(): array
@@ -1099,6 +1108,25 @@ class CBT_Frontend
             'detect_idle_during_exam' => !array_key_exists('detect_idle_during_exam', $raw) || !empty($raw['detect_idle_during_exam']) ? 1 : 0,
             'detect_heartbeat_lost' => !empty($raw['detect_heartbeat_lost']) ? 1 : 0,
             'idle_threshold_minutes' => max(1, absint($raw['idle_threshold_minutes'] ?? 5)),
+            'detect_screenshot_keys' => !empty($raw['detect_screenshot_keys']) ? 1 : 0,
+            'show_exam_watermark' => !empty($raw['show_exam_watermark']) ? 1 : 0,
+            'exam_watermark_opacity' => self::normalize_exam_watermark_opacity($raw['exam_watermark_opacity'] ?? self::EXAM_WATERMARK_OPACITY_DEFAULT),
         ];
+    }
+
+    private static function normalize_exam_watermark_opacity($value): float
+    {
+        if (is_string($value)) {
+            $value = str_replace(',', '.', trim($value));
+        }
+
+        if (!is_numeric($value)) {
+            $opacity = self::EXAM_WATERMARK_OPACITY_DEFAULT;
+        } else {
+            $opacity = (float) $value;
+        }
+
+        $opacity = max(self::EXAM_WATERMARK_OPACITY_MIN, min(self::EXAM_WATERMARK_OPACITY_MAX, $opacity));
+        return round($opacity, 3);
     }
 }

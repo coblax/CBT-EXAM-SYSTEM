@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createExamStageRenderer } from '../../../src/frontend/app/stages/exam.js';
 
@@ -122,6 +124,12 @@ function createFixture(overrides = {}) {
         },
         isExamAnswerEditingLocked: function () {
             return false;
+        },
+        isExamWatermarkEnabled: function () {
+            return overrides.watermarkEnabled === true;
+        },
+        getExamWatermarkOpacity: function () {
+            return overrides.watermarkOpacity !== undefined ? overrides.watermarkOpacity : 0.07;
         },
         getExamFooterSyncMeta: function () {
             return {
@@ -275,6 +283,12 @@ function createAnsweredExamFixture(overrides = {}) {
         },
         isExamAnswerEditingLocked: function () {
             return false;
+        },
+        isExamWatermarkEnabled: function () {
+            return overrides.watermarkEnabled === true;
+        },
+        getExamWatermarkOpacity: function () {
+            return overrides.watermarkOpacity !== undefined ? overrides.watermarkOpacity : 0.07;
         },
         getExamFooterSyncMeta: function () {
             return {
@@ -591,6 +605,55 @@ describe('createExamStageRenderer', function () {
         expect(markup).toContain('data-action="finish"');
         expect(markup).toContain('data-action="collect"');
         expect(markup).toContain('Kumpulkan Jawaban');
+    });
+
+    it('renders low-opacity forensic watermark only when enabled with a user and attempt', function () {
+        var renderer = createAnsweredExamFixture({
+            watermarkEnabled: true,
+            watermarkOpacity: 0.09,
+            state: {
+                examWatermarkTick: Date.parse('2026-03-24T12:34:00+07:00'),
+                user: {
+                    user_id: 71,
+                    display_name: 'Coblax Student',
+                    username: 'coblax',
+                    kode_kelas: 'X-A',
+                    kode_ruang: 'R1'
+                }
+            }
+        });
+        var markup = renderer.renderExamStageShell();
+
+        expect(markup).toContain('class="cbt-exam-watermark"');
+        expect(markup).toContain('aria-hidden="true"');
+        expect(markup).toContain('--cbt-exam-watermark-opacity: 0.09');
+        expect(markup).toContain('Coblax Student');
+        expect(markup).toContain('User coblax');
+        expect(markup).toContain('Kelas X-A / Ruang R1');
+        expect(markup).toContain('Attempt #77');
+
+        var disabled = createAnsweredExamFixture({
+            watermarkEnabled: false,
+            state: {
+                user: {
+                    user_id: 71,
+                    display_name: 'Coblax Student'
+                }
+            }
+        }).renderExamStageShell();
+        var missingUser = createAnsweredExamFixture({
+            watermarkEnabled: true,
+            state: {
+                user: null
+            }
+        }).renderExamStageShell();
+
+        expect(disabled).not.toContain('cbt-exam-watermark');
+        expect(missingUser).not.toContain('cbt-exam-watermark');
+
+        var css = readFileSync(resolve(process.cwd(), 'src/frontend/styles/exam-stage-ui.css'), 'utf8');
+        expect(css).toContain('.cbt-exam-watermark');
+        expect(css).toContain('pointer-events: none;');
     });
 
     it('renders multiple choice skeleton content while the active payload is still loading', function () {

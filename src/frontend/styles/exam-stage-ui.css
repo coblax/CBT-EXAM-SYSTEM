@@ -10,6 +10,43 @@
     min-width: 0;
 }
 
+.cbt-exam-watermark {
+    position: fixed;
+    inset: 0;
+    z-index: 4;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: var(--cbt-exam-watermark-opacity, 0.07);
+    mix-blend-mode: multiply;
+}
+
+.cbt-exam-watermark__pattern {
+    position: absolute;
+    inset: -24vh -24vw;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(220px, 1fr));
+    gap: 74px 110px;
+    align-content: center;
+    transform: rotate(-24deg);
+}
+
+.cbt-exam-watermark__item {
+    min-width: 0;
+    color: #0f172a;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.45;
+    white-space: nowrap;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-watermark {
+    mix-blend-mode: normal;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-watermark__item {
+    color: #f8fafc;
+}
+
 .cbt-exam-fullscreen-guard {
     position: fixed;
     inset: 0;
@@ -114,6 +151,17 @@
     border-color: #f87171;
     color: #fff5f5;
     box-shadow: 0 14px 28px rgba(127, 29, 29, 0.34);
+}
+
+@media (max-width: 700px) {
+    .cbt-exam-watermark__pattern {
+        grid-template-columns: repeat(2, minmax(190px, 1fr));
+        gap: 68px 84px;
+    }
+
+    .cbt-exam-watermark__item {
+        font-size: 11px;
+    }
 }
 
 .cbt-calculator-toggle {

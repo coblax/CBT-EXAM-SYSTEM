@@ -10,6 +10,16 @@ export function createExamSecurityManager(deps) {
         : function () {
             return false;
         };
+    var isScreenshotKeyDetectionEnabled = typeof deps.isScreenshotKeyDetectionEnabled === 'function'
+        ? deps.isScreenshotKeyDetectionEnabled
+        : function () {
+            return false;
+        };
+    var isExamWatermarkEnabled = typeof deps.isExamWatermarkEnabled === 'function'
+        ? deps.isExamWatermarkEnabled
+        : function () {
+            return false;
+        };
     var isExamCopyPasteBlocked = deps.isExamCopyPasteBlocked;
     var isExamFullscreenRequired = deps.isExamFullscreenRequired;
     var isSecurityLoggingActiveForAttempt = deps.isSecurityLoggingActiveForAttempt;
@@ -22,6 +32,9 @@ export function createExamSecurityManager(deps) {
     var requestNativeFullscreen = deps.requestNativeFullscreen;
     var setNativeFullscreenActive = deps.setNativeFullscreenActive;
     var exitNativeFullscreen = deps.exitNativeFullscreen;
+    var requestRender = typeof deps.requestRender === 'function'
+        ? deps.requestRender
+        : function () {};
     var fullscreenExitLogSuppressedUntil = 0;
 
     function normalizeNativeFullscreenActive(value) {
@@ -93,8 +106,96 @@ export function createExamSecurityManager(deps) {
             && isBrowserInspectionShortcutBlockingEnabled();
     }
 
+    function isScreenshotKeyDetectionActive() {
+        return state.stage === 'exam'
+            && (Number(state.attemptId) || 0) > 0
+            && isSecurityLoggingActiveForAttempt()
+            && isScreenshotKeyDetectionEnabled();
+    }
+
+    function isExamWatermarkRefreshActive() {
+        return state.stage === 'exam'
+            && (Number(state.attemptId) || 0) > 0
+            && isExamWatermarkEnabled();
+    }
+
     function isExamAnswerEditingLocked() {
         return state.stage === 'exam' && (state.examLockedForPendingFinish || state.isFinishing);
+    }
+
+    function normalizeKeyboardValue(value) {
+        return String(value || '').trim().toLowerCase();
+    }
+
+    function resolveScreenshotKeySignal(event) {
+        var key = normalizeKeyboardValue(event && event.key);
+        var code = normalizeKeyboardValue(event && event.code);
+
+        if (
+            key === 'printscreen'
+            || key === 'prtsc'
+            || key === 'snapshot'
+            || code === 'printscreen'
+            || code === 'prtsc'
+            || code === 'snapshot'
+        ) {
+            return 'printscreen_key';
+        }
+
+        var isMacShortcutDigit = key === '3'
+            || key === '4'
+            || key === '5'
+            || code === 'digit3'
+            || code === 'digit4'
+            || code === 'digit5';
+
+        if (event && event.metaKey && event.shiftKey && isMacShortcutDigit) {
+            return 'macos_screenshot_shortcut';
+        }
+
+        return '';
+    }
+
+    function getPlatformHint() {
+        var navigatorRef = windowRef && windowRef.navigator ? windowRef.navigator : null;
+        if (!navigatorRef) {
+            return '';
+        }
+
+        if (navigatorRef.userAgentData && navigatorRef.userAgentData.platform) {
+            return String(navigatorRef.userAgentData.platform || '');
+        }
+
+        return String(navigatorRef.platform || '');
+    }
+
+    function handleScreenshotKeySignal(event) {
+        if (!isScreenshotKeyDetectionActive()) {
+            return false;
+        }
+
+        var source = resolveScreenshotKeySignal(event);
+        if (source === '') {
+            return false;
+        }
+
+        sendSecurityEventSilently('screenshot_key_detected', {
+            source: source,
+            key: String(event && event.key ? event.key : ''),
+            code: String(event && event.code ? event.code : ''),
+            platform_hint: getPlatformHint(),
+            alt_key: event && event.altKey ? 1 : 0,
+            ctrl_key: event && event.ctrlKey ? 1 : 0,
+            meta_key: event && event.metaKey ? 1 : 0,
+            shift_key: event && event.shiftKey ? 1 : 0,
+            blocked: 0
+        }, {
+            attemptId: Number(state.attemptId) || 0,
+            keepalive: true,
+            debounceMs: 1200
+        });
+
+        return true;
     }
 
     function handleBlockedClipboardAction(action, sourceEvent) {
@@ -411,6 +512,7 @@ export function createExamSecurityManager(deps) {
         documentRef.addEventListener('pointerdown', handleContextMenuGestureStart, true);
         documentRef.addEventListener('mousedown', handleContextMenuGestureStart, true);
         documentRef.addEventListener('contextmenu', handleContextMenuGuard, true);
+        documentRef.addEventListener('keydown', handleScreenshotKeySignal, true);
         windowRef.addEventListener('contextmenu', handleContextMenuGuard, true);
 
         windowRef.addEventListener('beforeprint', function (event) {
@@ -428,6 +530,19 @@ export function createExamSecurityManager(deps) {
                 handleBlockedClipboardAction(inputType.indexOf('deleteByCut') === 0 ? 'cut' : 'paste', event);
             }
         });
+
+        if (typeof windowRef.setInterval === 'function') {
+            windowRef.setInterval(function () {
+                if (!isExamWatermarkRefreshActive()) {
+                    return;
+                }
+
+                state.examWatermarkTick = Date.now();
+                requestRender('exam-watermark-tick', {
+                    attemptId: Number(state.attemptId) || 0
+                });
+            }, 60000);
+        }
     }
 
     return {
@@ -435,10 +550,12 @@ export function createExamSecurityManager(deps) {
         handleBlockedBrowserInspectionShortcutAction: handleBlockedBrowserInspectionShortcutAction,
         handleBlockedClipboardAction: handleBlockedClipboardAction,
         handleBlockedPrintAction: handleBlockedPrintAction,
+        handleScreenshotKeySignal: handleScreenshotKeySignal,
         isExamAnswerEditingLocked: isExamAnswerEditingLocked,
         isExamBrowserInspectionShortcutBlockingActive: isExamBrowserInspectionShortcutBlockingActive,
         isExamClipboardBlockingActive: isExamClipboardBlockingActive,
         isExamFullscreenBlockingActive: isExamFullscreenBlockingActive,
+        isScreenshotKeyDetectionActive: isScreenshotKeyDetectionActive,
         mountSecurityListeners: mountSecurityListeners,
         renderExamFullscreenPrompt: renderExamFullscreenPrompt,
         requestExamFullscreen: requestExamFullscreen

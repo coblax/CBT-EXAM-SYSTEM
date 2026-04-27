@@ -152,7 +152,17 @@
 }
 
 body.cbt-exam-page:not(.cbt-stage-login) .cbt-web-shell {
-    padding-top: 0;
+    padding: 0 clamp(6px, 1vw, 14px) clamp(8px, 1vw, 14px);
+}
+
+body.cbt-exam-page.cbt-stage-exam .cbt-container {
+    width: 100%;
+    margin-top: clamp(6px, 0.8vw, 10px);
+}
+
+body.cbt-exam-page.cbt-stage-exam .cbt-stage-panel,
+body.cbt-exam-page.cbt-stage-exam .cbt-exam-layout {
+    gap: 10px;
 }
 
 body.cbt-exam-page:not(.cbt-stage-login) .cbt-topbar {

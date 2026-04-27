@@ -2344,6 +2344,49 @@
                                         </label>
                                     </div>
                                     <div class="cbt-setup-security-option">
+                                        <label class="cbt-setup-security-checkbox" for="cbt-setup-security-detect-screenshot-keys">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-security-detect-screenshot-keys"
+                                                name="detect_screenshot_keys"
+                                                value="1"
+                                                <?php checked($security_detect_screenshot_keys); ?>
+                                            />
+                                            <span>
+                                                <strong>Deteksi Tombol Screenshot</strong>
+                                                <span>Catat sinyal keyboard seperti <code>PrintScreen</code> atau shortcut screenshot macOS yang berhasil tertangkap browser. Fitur ini tidak memblokir screenshot OS, hanya memberi indikator forensik di security log.</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div class="cbt-setup-security-option">
+                                        <label class="cbt-setup-security-checkbox" for="cbt-setup-security-show-exam-watermark">
+                                            <input
+                                                type="checkbox"
+                                                id="cbt-setup-security-show-exam-watermark"
+                                                name="show_exam_watermark"
+                                                value="1"
+                                                <?php checked($security_show_exam_watermark); ?>
+                                            />
+                                            <span>
+                                                <strong>Tampilkan Watermark Ujian</strong>
+                                                <span>Tambahkan watermark tipis berulang berisi identitas siswa, kelas, ruang, attempt, dan waktu lokal. Watermark adalah jejak forensik untuk pelacakan, bukan pemblokir screenshot.</span>
+                                            </span>
+                                        </label>
+                                        <div class="cbt-setup-security-threshold">
+                                            <label for="cbt-setup-security-exam-watermark-opacity">Opacity Watermark</label>
+                                            <input
+                                                type="number"
+                                                id="cbt-setup-security-exam-watermark-opacity"
+                                                name="exam_watermark_opacity"
+                                                min="0.03"
+                                                max="0.12"
+                                                step="0.01"
+                                                value="<?php echo esc_attr((string) $security_exam_watermark_opacity); ?>"
+                                            />
+                                            <p class="description">Rentang aman 0.03 sampai 0.12 agar watermark tetap terbaca di screenshot tetapi tidak mengganggu soal, tombol, atau input jawaban.</p>
+                                        </div>
+                                    </div>
+                                    <div class="cbt-setup-security-option">
                                         <label class="cbt-setup-security-checkbox" for="cbt-setup-security-restrict-user-agent">
                                             <input
                                                 type="checkbox"

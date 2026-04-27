@@ -295,6 +295,7 @@ final class RestNativeSecurityEventTest extends TestCase
             'devtools_shortcut_blocked',
             'view_source_blocked',
             'save_page_blocked',
+            'screenshot_key_detected',
             'heartbeat_lost',
         ];
 
@@ -406,6 +407,7 @@ final class RestNativeSecurityEventTest extends TestCase
             'devtools_shortcut_blocked',
             'view_source_blocked',
             'save_page_blocked',
+            'screenshot_key_detected',
             'heartbeat_lost',
         ];
 
@@ -474,6 +476,7 @@ class CBT_Security_Log
             'tab_hidden' => ['label' => 'Pindah tab / aplikasi', 'severity' => 'warning', 'message' => ''],
             'window_blur' => ['label' => 'Fokus window berpindah', 'severity' => 'warning', 'message' => ''],
             'print_attempt' => ['label' => 'Percobaan print', 'severity' => 'warning', 'message' => ''],
+            'screenshot_key_detected' => ['label' => 'Tombol screenshot terdeteksi', 'severity' => 'warning', 'message' => ''],
             'context_menu_blocked' => ['label' => 'Context menu diblok', 'severity' => 'warning', 'message' => ''],
             'devtools_shortcut_blocked' => ['label' => 'Shortcut DevTools diblok', 'severity' => 'warning', 'message' => ''],
             'view_source_blocked' => ['label' => 'View source diblok', 'severity' => 'warning', 'message' => ''],
@@ -491,6 +494,7 @@ class CBT_Security_Log
             'tab_hidden' => ['label' => 'Pindah tab / aplikasi', 'severity' => 'warning', 'message' => ''],
             'window_blur' => ['label' => 'Fokus window berpindah', 'severity' => 'warning', 'message' => ''],
             'print_attempt' => ['label' => 'Percobaan print', 'severity' => 'warning', 'message' => ''],
+            'screenshot_key_detected' => ['label' => 'Tombol screenshot terdeteksi', 'severity' => 'warning', 'message' => ''],
             'context_menu_blocked' => ['label' => 'Context menu diblok', 'severity' => 'warning', 'message' => ''],
             'devtools_shortcut_blocked' => ['label' => 'Shortcut DevTools diblok', 'severity' => 'warning', 'message' => ''],
             'view_source_blocked' => ['label' => 'View source diblok', 'severity' => 'warning', 'message' => ''],

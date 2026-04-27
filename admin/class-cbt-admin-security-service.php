@@ -15,6 +15,9 @@ if (!class_exists('CBT_Security_User_Agent_Guard')) {
 final class CBT_Admin_Security_Service
 {
     private const SECURITY_OPTION_KEY = 'cbt_setup_security';
+    private const EXAM_WATERMARK_OPACITY_DEFAULT = 0.07;
+    private const EXAM_WATERMARK_OPACITY_MIN = 0.03;
+    private const EXAM_WATERMARK_OPACITY_MAX = 0.12;
 
     public static function can_manage_exams(): bool
     {
@@ -41,6 +44,9 @@ final class CBT_Admin_Security_Service
      *     detect_idle_during_exam:int,
      *     detect_heartbeat_lost:int,
      *     idle_threshold_minutes:int,
+     *     detect_screenshot_keys:int,
+     *     show_exam_watermark:int,
+     *     exam_watermark_opacity:float,
      *     restrict_student_user_agent:int,
      *     allowed_user_agents:array<int,string>
      * }
@@ -60,6 +66,11 @@ final class CBT_Admin_Security_Service
         $detect_idle_during_exam = !array_key_exists('detect_idle_during_exam', $raw) || !empty($raw['detect_idle_during_exam']);
         $detect_heartbeat_lost = !empty($raw['detect_heartbeat_lost']);
         $idle_threshold_minutes = max(1, absint($raw['idle_threshold_minutes'] ?? 5));
+        $detect_screenshot_keys = !empty($raw['detect_screenshot_keys']);
+        $show_exam_watermark = !empty($raw['show_exam_watermark']);
+        $exam_watermark_opacity = self::normalize_exam_watermark_opacity(
+            $raw['exam_watermark_opacity'] ?? self::EXAM_WATERMARK_OPACITY_DEFAULT
+        );
         $restrict_student_user_agent = !empty($raw['restrict_student_user_agent']);
         $allowed_user_agents = CBT_Security_User_Agent_Guard::normalize_allowed_user_agents($raw['allowed_user_agents'] ?? []);
 
@@ -72,9 +83,39 @@ final class CBT_Admin_Security_Service
             'detect_idle_during_exam' => $detect_idle_during_exam ? 1 : 0,
             'detect_heartbeat_lost' => $detect_heartbeat_lost ? 1 : 0,
             'idle_threshold_minutes' => $idle_threshold_minutes,
+            'detect_screenshot_keys' => $detect_screenshot_keys ? 1 : 0,
+            'show_exam_watermark' => $show_exam_watermark ? 1 : 0,
+            'exam_watermark_opacity' => $exam_watermark_opacity,
             'restrict_student_user_agent' => $restrict_student_user_agent ? 1 : 0,
             'allowed_user_agents' => $allowed_user_agents,
         ];
+    }
+
+    public static function normalize_exam_watermark_opacity($value): float
+    {
+        if (is_string($value)) {
+            $value = str_replace(',', '.', trim($value));
+        }
+
+        if (!is_numeric($value)) {
+            $opacity = self::EXAM_WATERMARK_OPACITY_DEFAULT;
+        } else {
+            $opacity = (float) $value;
+        }
+
+        $opacity = max(self::EXAM_WATERMARK_OPACITY_MIN, min(self::EXAM_WATERMARK_OPACITY_MAX, $opacity));
+        return round($opacity, 3);
+    }
+
+    public static function flush_security_settings_cache(): void
+    {
+        if (!function_exists('wp_cache_delete')) {
+            return;
+        }
+
+        wp_cache_delete(self::SECURITY_OPTION_KEY, 'options');
+        wp_cache_delete('alloptions', 'options');
+        wp_cache_delete('notoptions', 'options');
     }
 
     /**
@@ -95,6 +136,9 @@ final class CBT_Admin_Security_Service
         $security_detect_idle_during_exam = !empty($security['detect_idle_during_exam']);
         $security_detect_heartbeat_lost = !empty($security['detect_heartbeat_lost']);
         $security_idle_threshold_minutes = max(1, (int) ($security['idle_threshold_minutes'] ?? 5));
+        $security_detect_screenshot_keys = !empty($security['detect_screenshot_keys']);
+        $security_show_exam_watermark = !empty($security['show_exam_watermark']);
+        $security_exam_watermark_opacity = self::normalize_exam_watermark_opacity($security['exam_watermark_opacity'] ?? self::EXAM_WATERMARK_OPACITY_DEFAULT);
         $security_restrict_student_user_agent = !empty($security['restrict_student_user_agent']);
         $security_allowed_user_agents = CBT_Security_User_Agent_Guard::normalize_allowed_user_agents($security['allowed_user_agents'] ?? []);
         $security_allowed_user_agents_text = implode("\n", $security_allowed_user_agents);
@@ -149,6 +193,9 @@ final class CBT_Admin_Security_Service
             'security_idle_threshold_minutes',
             'security_allowed_user_agents',
             'security_allowed_user_agents_text',
+            'security_detect_screenshot_keys',
+            'security_show_exam_watermark',
+            'security_exam_watermark_opacity',
             'security_redis_first_ingest',
             'security_restrict_student_user_agent',
             'security_log_event_definitions',

@@ -652,6 +652,7 @@ export function bootstrapFrontendApp() {
     var getCurrentUserPhoto = appMetaManager.getCurrentUserPhoto;
     var getCurrentUserRole = appMetaManager.getCurrentUserRole;
     var getExamFooterSyncMeta = appMetaManager.getExamFooterSyncMeta;
+    var getExamWatermarkOpacity = appMetaManager.getExamWatermarkOpacity;
     var getIdleDetectionThresholdSeconds = appMetaManager.getIdleDetectionThresholdSeconds;
     var getLoginHeroSchoolBranding = appMetaManager.getLoginHeroSchoolBranding;
     var getNavigatorConnectionStatus = appMetaManager.getNavigatorConnectionStatus;
@@ -662,10 +663,12 @@ export function bootstrapFrontendApp() {
     var isBrowserInspectionShortcutBlockingEnabled = appMetaManager.isBrowserInspectionShortcutBlockingEnabled;
     var isExamCopyPasteBlocked = appMetaManager.isExamCopyPasteBlocked;
     var isExamFullscreenRequired = appMetaManager.isExamFullscreenRequired;
+    var isExamWatermarkEnabled = appMetaManager.isExamWatermarkEnabled;
     var isHeartbeatLostDetectionEnabled = appMetaManager.isHeartbeatLostDetectionEnabled;
     var isIdleDetectionEnabled = appMetaManager.isIdleDetectionEnabled;
     var isSecurityLoggingActiveForAttempt = appMetaManager.isSecurityLoggingActiveForAttempt;
     var isSecurityLoggingEnabled = appMetaManager.isSecurityLoggingEnabled;
+    var isScreenshotKeyDetectionEnabled = appMetaManager.isScreenshotKeyDetectionEnabled;
     var renderAlert = appMetaManager.renderAlert;
     var renderExamRichHtml = appMetaManager.renderExamRichHtml;
     var safeRichHtml = appMetaManager.safeRichHtml;
@@ -692,7 +695,12 @@ export function bootstrapFrontendApp() {
         isBrowserInspectionShortcutBlockingEnabled: isBrowserInspectionShortcutBlockingEnabled,
         isExamCopyPasteBlocked: isExamCopyPasteBlocked,
         isExamFullscreenRequired: isExamFullscreenRequired,
+        isExamWatermarkEnabled: isExamWatermarkEnabled,
         isSecurityLoggingActiveForAttempt: isSecurityLoggingActiveForAttempt,
+        isScreenshotKeyDetectionEnabled: isScreenshotKeyDetectionEnabled,
+        requestRender: function () {
+            return render.apply(null, arguments);
+        },
         requestNativeFullscreen: function () {
             if (fullscreenStateManager && typeof fullscreenStateManager.requestNativeFullscreen === 'function') {
                 return fullscreenStateManager.requestNativeFullscreen.apply(fullscreenStateManager, arguments);
@@ -1633,6 +1641,7 @@ export function bootstrapFrontendApp() {
         formatQuestionType: formatQuestionType,
         formatScoreValue: formatScoreValue,
         getChangedQuestionCount: getChangedQuestionCount,
+        getExamWatermarkOpacity: getExamWatermarkOpacity,
         getQuestionRevisionMarkerCount: getQuestionRevisionMarkerCount,
         getEffectiveCalculatorPanelPosition: getEffectiveCalculatorPanelPosition,
         getEffectiveNavPanelPosition: getEffectiveNavPanelPosition,
@@ -1650,6 +1659,7 @@ export function bootstrapFrontendApp() {
         isCompactNavViewport: isCompactNavViewport,
         isCompactViewport: isCompactViewport,
         isExamAnswerEditingLocked: isExamAnswerEditingLocked,
+        isExamWatermarkEnabled: isExamWatermarkEnabled,
         isQuestionAnswered: isQuestionAnswered,
         isQuestionChanged: isQuestionChanged,
         isQuestionRevisionMarked: isQuestionRevisionMarked,

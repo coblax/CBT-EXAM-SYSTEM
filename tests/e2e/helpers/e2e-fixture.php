@@ -613,6 +613,15 @@ function e2e_fixture_set_security_config(array $payload): array
         'idle_threshold_minutes' => array_key_exists('idle_threshold_minutes', $payload)
             ? max(1, (int) $payload['idle_threshold_minutes'])
             : max(1, (int) ($settings['idle_threshold_minutes'] ?? 5)),
+        'detect_screenshot_keys' => array_key_exists('detect_screenshot_keys', $payload)
+            ? (!empty($payload['detect_screenshot_keys']) ? 1 : 0)
+            : (int) ($settings['detect_screenshot_keys'] ?? 0),
+        'show_exam_watermark' => array_key_exists('show_exam_watermark', $payload)
+            ? (!empty($payload['show_exam_watermark']) ? 1 : 0)
+            : (int) ($settings['show_exam_watermark'] ?? 0),
+        'exam_watermark_opacity' => array_key_exists('exam_watermark_opacity', $payload)
+            ? CBT_Admin_Security_Service::normalize_exam_watermark_opacity($payload['exam_watermark_opacity'])
+            : CBT_Admin_Security_Service::normalize_exam_watermark_opacity($settings['exam_watermark_opacity'] ?? 0.07),
         'restrict_student_user_agent' => array_key_exists('restrict_student_user_agent', $payload)
             ? (!empty($payload['restrict_student_user_agent']) ? 1 : 0)
             : (int) ($settings['restrict_student_user_agent'] ?? 0),

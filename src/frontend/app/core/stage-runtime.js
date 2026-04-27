@@ -6,6 +6,7 @@ export function createStageRuntimeManager(deps) {
     var formatQuestionType = deps.formatQuestionType;
     var formatScoreValue = deps.formatScoreValue;
     var getChangedQuestionCount = deps.getChangedQuestionCount;
+    var getExamWatermarkOpacity = deps.getExamWatermarkOpacity;
     var getQuestionRevisionMarkerCount = deps.getQuestionRevisionMarkerCount;
     var getEffectiveCalculatorPanelPosition = deps.getEffectiveCalculatorPanelPosition;
     var getEffectiveNavPanelPosition = deps.getEffectiveNavPanelPosition;
@@ -21,6 +22,7 @@ export function createStageRuntimeManager(deps) {
     var isCompactNavViewport = deps.isCompactNavViewport;
     var isCompactViewport = deps.isCompactViewport;
     var isExamAnswerEditingLocked = deps.isExamAnswerEditingLocked;
+    var isExamWatermarkEnabled = deps.isExamWatermarkEnabled;
     var isQuestionAnswered = deps.isQuestionAnswered;
     var isQuestionChanged = deps.isQuestionChanged;
     var isQuestionRevisionMarked = deps.isQuestionRevisionMarked;
@@ -179,6 +181,7 @@ export function createStageRuntimeManager(deps) {
             formatQuestionType: formatQuestionType,
             formatScoreValue: formatScoreValue,
             getChangedQuestionCount: getChangedQuestionCount,
+            getExamWatermarkOpacity: getExamWatermarkOpacity,
             getQuestionRevisionMarkerCount: typeof getQuestionRevisionMarkerCount === 'function'
                 ? getQuestionRevisionMarkerCount
                 : function () {
@@ -203,6 +206,7 @@ export function createStageRuntimeManager(deps) {
             getSelectedExam: getSelectedExam,
             isCompactNavViewport: isCompactNavViewport,
             isExamAnswerEditingLocked: isExamAnswerEditingLocked,
+            isExamWatermarkEnabled: isExamWatermarkEnabled,
             isQuestionAnswered: typeof isQuestionAnswered === 'function'
                 ? isQuestionAnswered
                 : function () {

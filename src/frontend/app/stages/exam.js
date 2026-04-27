@@ -78,6 +78,16 @@ export function createExamStageRenderer(deps) {
             return false;
         };
     var isExamAnswerEditingLocked = deps.isExamAnswerEditingLocked;
+    var isExamWatermarkEnabled = typeof deps.isExamWatermarkEnabled === 'function'
+        ? deps.isExamWatermarkEnabled
+        : function () {
+            return false;
+        };
+    var getExamWatermarkOpacity = typeof deps.getExamWatermarkOpacity === 'function'
+        ? deps.getExamWatermarkOpacity
+        : function () {
+            return 0.07;
+        };
     var getExamFooterSyncMeta = deps.getExamFooterSyncMeta;
     var reviewRenderer = createReviewRenderer(deps);
     var questionRecoveryInFlight = null;
@@ -533,6 +543,79 @@ export function createExamStageRenderer(deps) {
         }
 
         return parts.join('');
+    }
+
+    function normalizeExamWatermarkOpacity(value) {
+        var opacity = Number(value);
+        if (!Number.isFinite(opacity)) {
+            opacity = 0.07;
+        }
+
+        return Math.max(0.03, Math.min(0.12, opacity));
+    }
+
+    function formatExamWatermarkTime() {
+        var timestamp = Number(state.examWatermarkTick) || Date.now();
+        var date = new Date(timestamp);
+
+        if (Number.isNaN(date.getTime())) {
+            date = new Date();
+        }
+
+        try {
+            return date.toLocaleString('id-ID', {
+                day: '2-digit',
+                month: '2-digit',
+                year: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } catch (error) {
+            return date.toISOString().slice(0, 16).replace('T', ' ');
+        }
+    }
+
+    function renderExamWatermark() {
+        var attemptId = Number(state.attemptId) || 0;
+        var user = state.user && typeof state.user === 'object' ? state.user : null;
+
+        if (!isExamWatermarkEnabled() || state.stage !== 'exam' || attemptId <= 0 || !user) {
+            return '';
+        }
+
+        var name = String(user.display_name || user.username || '').trim();
+        var username = String(user.username || '').trim();
+        var userId = Number(user.user_id) || 0;
+        var classRoom = [
+            String(user.kode_kelas || '').trim() !== '' ? 'Kelas ' + String(user.kode_kelas || '').trim() : '',
+            String(user.kode_ruang || '').trim() !== '' ? 'Ruang ' + String(user.kode_ruang || '').trim() : ''
+        ].filter(function (part) {
+            return part !== '';
+        }).join(' / ');
+        var identity = username !== ''
+            ? 'User ' + username
+            : (userId > 0 ? 'User ID ' + String(userId) : '');
+        var watermarkText = [
+            name !== '' ? name : 'Siswa',
+            identity,
+            classRoom,
+            'Attempt #' + String(attemptId),
+            formatExamWatermarkTime()
+        ].filter(function (part) {
+            return String(part || '').trim() !== '';
+        }).join(' | ');
+        var opacity = normalizeExamWatermarkOpacity(getExamWatermarkOpacity());
+        var itemMarkup = new Array(24).fill('').map(function () {
+            return '<span class="cbt-exam-watermark__item">' + escapeHtml(watermarkText) + '</span>';
+        }).join('');
+
+        return [
+            '<div class="cbt-exam-watermark" aria-hidden="true" style="--cbt-exam-watermark-opacity: ' + escapeHtml(String(opacity)) + ';">',
+            '<div class="cbt-exam-watermark__pattern">',
+            itemMarkup,
+            '</div>',
+            '</div>'
+        ].join('');
     }
 
     function renderExamNavigationRegion(viewModel) {
@@ -1087,6 +1170,7 @@ export function createExamStageRenderer(deps) {
         var calculatorMarkup = renderCalculatorPanel();
         var stageShellClass = 'cbt-exam-stage-shell cbt-calc-pos-' + viewModel.calculatorPanelPosition + ((viewModel.calculatorEnabled && state.calculatorVisible) ? '' : ' is-calc-hidden');
         var fullscreenPromptMarkup = renderExamFullscreenPrompt();
+        var watermarkMarkup = renderExamWatermark();
         var stageContent;
 
         if (viewModel.calculatorPanelPosition === 'left') {
@@ -1099,7 +1183,7 @@ export function createExamStageRenderer(deps) {
             stageContent = examLayoutMarkup + calculatorMarkup;
         }
 
-        return '<div class="' + stageShellClass + '" data-cbt-exam-shell="1">' + fullscreenPromptMarkup + noticeRegionMarkup + stageContent + '</div>';
+        return '<div class="' + stageShellClass + '" data-cbt-exam-shell="1">' + watermarkMarkup + fullscreenPromptMarkup + noticeRegionMarkup + stageContent + '</div>';
     }
 
     return {

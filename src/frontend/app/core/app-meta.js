@@ -143,6 +143,23 @@ export function createAppMetaManager(deps) {
         return Number(config.securityBlockBrowserInspectionShortcuts || 0) === 1;
     }
 
+    function isScreenshotKeyDetectionEnabled() {
+        return Number(config.securityDetectScreenshotKeys || 0) === 1;
+    }
+
+    function isExamWatermarkEnabled() {
+        return Number(config.securityShowExamWatermark || 0) === 1;
+    }
+
+    function getExamWatermarkOpacity() {
+        var opacity = Number(config.securityExamWatermarkOpacity);
+        if (!Number.isFinite(opacity)) {
+            opacity = 0.07;
+        }
+
+        return Math.max(0.03, Math.min(0.12, opacity));
+    }
+
     function isSecurityLoggingEnabled() {
         return Number(config.securityLogEvents || 0) === 1;
     }
@@ -612,14 +629,17 @@ export function createAppMetaManager(deps) {
         getSelectedExam: getSelectedExam,
         getSyncStatusAlertMeta: getSyncStatusAlertMeta,
         getUserInitial: getUserInitial,
+        getExamWatermarkOpacity: getExamWatermarkOpacity,
         isConnectionOffline: isConnectionOffline,
         isBrowserInspectionShortcutBlockingEnabled: isBrowserInspectionShortcutBlockingEnabled,
         isExamCopyPasteBlocked: isExamCopyPasteBlocked,
         isExamFullscreenRequired: isExamFullscreenRequired,
+        isExamWatermarkEnabled: isExamWatermarkEnabled,
         isHeartbeatLostDetectionEnabled: isHeartbeatLostDetectionEnabled,
         isIdleDetectionEnabled: isIdleDetectionEnabled,
         isSecurityLoggingActiveForAttempt: isSecurityLoggingActiveForAttempt,
         isSecurityLoggingEnabled: isSecurityLoggingEnabled,
+        isScreenshotKeyDetectionEnabled: isScreenshotKeyDetectionEnabled,
         normalizePhotoUrl: normalizePhotoUrl,
         renderAlert: renderAlert,
         renderExamRichHtml: renderExamRichHtml,

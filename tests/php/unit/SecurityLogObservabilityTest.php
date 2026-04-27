@@ -585,6 +585,7 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertArrayHasKey('idle_detected', $definitions);
         self::assertArrayHasKey('page_refresh', $definitions);
         self::assertArrayHasKey('print_attempt', $definitions);
+        self::assertArrayHasKey('screenshot_key_detected', $definitions);
         self::assertArrayHasKey('context_menu_blocked', $definitions);
         self::assertArrayHasKey('fullscreen_exit_repeat', $definitions);
         self::assertSame('Idle saat ujian', $definitions['idle_detected']['label']);
@@ -592,6 +593,8 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertSame('Refresh halaman', $definitions['page_refresh']['label']);
         self::assertSame('info', $definitions['page_refresh']['severity']);
         self::assertSame('Percobaan print', $definitions['print_attempt']['label']);
+        self::assertSame('Tombol screenshot terdeteksi', $definitions['screenshot_key_detected']['label']);
+        self::assertSame('warning', $definitions['screenshot_key_detected']['severity']);
         self::assertSame('Context menu diblok', $definitions['context_menu_blocked']['label']);
         self::assertSame('Keluar fullscreen berulang', $definitions['fullscreen_exit_repeat']['label']);
         self::assertSame(
@@ -604,6 +607,7 @@ final class SecurityLogObservabilityTest extends TestCase
         $windowsCatalog = \CBT_Security_Log::windows_native_supported_event_definitions();
         self::assertArrayHasKey('page_refresh', $browserCatalog);
         self::assertArrayHasKey('print_attempt', $browserCatalog);
+        self::assertArrayHasKey('screenshot_key_detected', $browserCatalog);
         self::assertArrayHasKey('context_menu_blocked', $browserCatalog);
         self::assertArrayHasKey('devtools_shortcut_blocked', $browserCatalog);
         self::assertArrayHasKey('view_source_blocked', $browserCatalog);
@@ -632,6 +636,7 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertSame(3, $weights['tab_hidden']);
         self::assertSame(0.5, $weights['page_refresh']);
         self::assertSame(3, $weights['print_attempt']);
+        self::assertSame(3, $weights['screenshot_key_detected']);
         self::assertSame(1, $weights['context_menu_blocked']);
         self::assertSame(4, $weights['devtools_shortcut_blocked']);
         self::assertSame(4, $weights['view_source_blocked']);
@@ -649,6 +654,8 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertSame('Windows CEFSharp Shell', $sourceLabelMethod->invoke(null, 'windows_cefsharp_shell', 'tab_hidden'));
         self::assertSame('Resume setelah refresh', $sourceLabelMethod->invoke(null, 'reload_resume', 'page_refresh'));
         self::assertSame('Shortcut print', $sourceLabelMethod->invoke(null, 'print_shortcut', 'print_attempt'));
+        self::assertSame('Tombol PrintScreen', $sourceLabelMethod->invoke(null, 'printscreen_key', 'screenshot_key_detected'));
+        self::assertSame('Shortcut screenshot macOS', $sourceLabelMethod->invoke(null, 'macos_screenshot_shortcut', 'screenshot_key_detected'));
         self::assertSame('Klik kanan / context menu', $sourceLabelMethod->invoke(null, 'contextmenu', 'context_menu_blocked'));
         self::assertSame('Shortcut buka/tutup DevTools', $sourceLabelMethod->invoke(null, 'devtools_toggle_shortcut', 'devtools_shortcut_blocked'));
         self::assertSame('Shortcut View Source', $sourceLabelMethod->invoke(null, 'view_source_shortcut', 'view_source_blocked'));

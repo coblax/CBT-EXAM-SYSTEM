@@ -35,6 +35,9 @@ final class CBT_Admin_Setup_Service
      *     detect_idle_during_exam:int,
      *     detect_heartbeat_lost:int,
      *     idle_threshold_minutes:int,
+     *     detect_screenshot_keys:int,
+     *     show_exam_watermark:int,
+     *     exam_watermark_opacity:float,
      *     restrict_student_user_agent:int,
      *     allowed_user_agents:array<int,string>
      * }

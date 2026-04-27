@@ -24,20 +24,20 @@
     "file": "assets/frontend-shared-review-DK4Bt0vw.js",
     "name": "frontend-shared-review"
   },
-  "_frontend-stage-exam-DWCnD25l.js": {
-    "file": "assets/frontend-stage-exam-DWCnD25l.js",
+  "_frontend-stage-exam-7rwZWLxk.css": {
+    "file": "assets/frontend-stage-exam-7rwZWLxk.css",
+    "src": "_frontend-stage-exam-7rwZWLxk.css"
+  },
+  "_frontend-stage-exam-KkTTRwbb.js": {
+    "file": "assets/frontend-stage-exam-KkTTRwbb.js",
     "name": "frontend-stage-exam",
     "imports": [
       "_rolldown-runtime-WNZMJCWm.js",
       "_frontend-shared-review-DK4Bt0vw.js"
     ],
     "css": [
-      "assets/frontend-stage-exam-sBpfC1IW.css"
+      "assets/frontend-stage-exam-7rwZWLxk.css"
     ]
-  },
-  "_frontend-stage-exam-sBpfC1IW.css": {
-    "file": "assets/frontend-stage-exam-sBpfC1IW.css",
-    "src": "_frontend-stage-exam-sBpfC1IW.css"
   },
   "_frontend-stage-result-Bx44vpO-.js": {
     "file": "assets/frontend-stage-result-Bx44vpO-.js",
@@ -420,7 +420,7 @@
     "isDynamicEntry": true
   },
   "src/frontend/app/runtime.js": {
-    "file": "assets/runtime-BVYAYZ1l.js",
+    "file": "assets/runtime-CbQMY4yE.js",
     "name": "runtime",
     "src": "src/frontend/app/runtime.js",
     "isDynamicEntry": true,
@@ -431,14 +431,14 @@
     "dynamicImports": [
       "_frontend-exam-runtime-BUH3bu_8.js",
       "_math-render-z4EJh76n.js",
-      "_frontend-stage-exam-DWCnD25l.js",
+      "_frontend-stage-exam-KkTTRwbb.js",
       "_frontend-stage-result-Bx44vpO-.js",
       "_frontend-feature-calculator-CuFD8t3I.js",
       "src/frontend/app/core/debug-panel.js"
     ]
   },
   "src/frontend/app/supervisor/runtime.js": {
-    "file": "assets/runtime-BxMeaJW3.js",
+    "file": "assets/runtime-DFwuGnOO.js",
     "name": "runtime",
     "src": "src/frontend/app/supervisor/runtime.js",
     "isDynamicEntry": true,
@@ -448,7 +448,7 @@
     ]
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-VfhJBt4G.js",
+    "file": "assets/frontend-core-BcmzQvh1.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
@@ -457,7 +457,7 @@
       "src/frontend/app/runtime.js"
     ],
     "css": [
-      "assets/frontend-D5KntEF3.css"
+      "assets/frontend-WTVZNLgS.css"
     ],
     "assets": [
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",

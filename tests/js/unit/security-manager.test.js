@@ -29,6 +29,9 @@ function createManager(overrides = {}) {
     };
 
     var windowRef = createEmitter();
+    windowRef.navigator = overrides.navigator || {
+        platform: 'Win32'
+    };
     var calls = [];
     var state = Object.assign({
         stage: 'exam',
@@ -56,6 +59,9 @@ function createManager(overrides = {}) {
         },
         isExamFullscreenRequired: function () {
             return overrides.fullscreenRequired !== false;
+        },
+        isScreenshotKeyDetectionEnabled: function () {
+            return overrides.screenshotKeyDetection === true;
         },
         isSecurityLoggingActiveForAttempt: function () {
             return overrides.loggingActive !== false;
@@ -239,6 +245,100 @@ describe('createExamSecurityManager', function () {
                 keepalive: true,
                 debounceMs: 1500
             }
+        });
+    });
+
+    it('logs PrintScreen keydown as a screenshot signal without blocking input', function () {
+        var setup = createManager({
+            screenshotKeyDetection: true
+        });
+        var event = {
+            key: 'PrintScreen',
+            code: 'PrintScreen',
+            altKey: false,
+            ctrlKey: false,
+            metaKey: false,
+            shiftKey: false,
+            defaultPrevented: false,
+            propagationStopped: false,
+            preventDefault: function () {
+                this.defaultPrevented = true;
+            },
+            stopPropagation: function () {
+                this.propagationStopped = true;
+            }
+        };
+
+        setup.manager.mountSecurityListeners();
+        setup.documentRef.dispatchEvent('keydown', event);
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(event.propagationStopped).toBe(false);
+        expect(setup.calls).toHaveLength(1);
+        expect(setup.calls[0]).toMatchObject({
+            eventType: 'screenshot_key_detected',
+            context: {
+                source: 'printscreen_key',
+                key: 'PrintScreen',
+                code: 'PrintScreen',
+                platform_hint: 'Win32',
+                blocked: 0
+            },
+            options: {
+                attemptId: 77,
+                keepalive: true,
+                debounceMs: 1200
+            }
+        });
+    });
+
+    it('logs macOS screenshot shortcuts when the browser exposes the keydown event', function () {
+        var setup = createManager({
+            screenshotKeyDetection: true,
+            navigator: {
+                platform: 'MacIntel'
+            }
+        });
+
+        setup.manager.mountSecurityListeners();
+        setup.documentRef.dispatchEvent('keydown', {
+            key: '4',
+            code: 'Digit4',
+            metaKey: true,
+            shiftKey: true,
+            ctrlKey: false,
+            altKey: false
+        });
+
+        expect(setup.calls).toHaveLength(1);
+        expect(setup.calls[0]).toMatchObject({
+            eventType: 'screenshot_key_detected',
+            context: {
+                source: 'macos_screenshot_shortcut',
+                key: '4',
+                code: 'Digit4',
+                meta_key: 1,
+                shift_key: 1,
+                platform_hint: 'MacIntel',
+                blocked: 0
+            }
+        });
+    });
+
+    it('does not log screenshot keys outside exam, without logging, without attempt, or when disabled', function () {
+        [
+            createManager({ screenshotKeyDetection: false }),
+            createManager({ screenshotKeyDetection: true, loggingActive: false }),
+            createManager({ screenshotKeyDetection: true, state: { stage: 'confirm' } }),
+            createManager({ screenshotKeyDetection: true, state: { attemptId: 0 } })
+        ].forEach(function (setup) {
+            setup.manager.mountSecurityListeners();
+            setup.documentRef.dispatchEvent('keydown', {
+                key: 'PrintScreen',
+                code: 'PrintScreen'
+            });
+
+            expect(setup.calls).toHaveLength(0);
         });
     });
 
