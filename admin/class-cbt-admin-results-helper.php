@@ -826,6 +826,99 @@ final class CBT_Admin_Results_Helper
         return (string) ob_get_clean();
     }
 
+    public static function render_attempt_security_timeline_html(array $timeline): string
+    {
+        $summary = isset($timeline['summary']) && is_array($timeline['summary']) ? $timeline['summary'] : [];
+        $items = isset($timeline['items']) && is_array($timeline['items']) ? array_values($timeline['items']) : [];
+        $event_counts = isset($timeline['event_counts']) && is_array($timeline['event_counts']) ? array_values($timeline['event_counts']) : [];
+        $risk_tone = sanitize_html_class((string) ($summary['risk_tone'] ?? 'normal'));
+        if (!in_array($risk_tone, ['normal', 'watch', 'high-risk'], true)) {
+            $risk_tone = 'normal';
+        }
+        $risk_label = trim((string) ($summary['risk_label'] ?? 'Normal'));
+        $risk_score_label = trim((string) ($summary['risk_score_label'] ?? '0'));
+        $warning_count = max(0, (int) ($summary['warning_count'] ?? 0));
+        $critical_count = max(0, (int) ($summary['critical_count'] ?? 0));
+        $total_events = max(0, (int) ($summary['total_events'] ?? count($items)));
+
+        usort($event_counts, static function (array $left, array $right): int {
+            $count_compare = (int) ($right['count'] ?? 0) <=> (int) ($left['count'] ?? 0);
+            if ($count_compare !== 0) {
+                return $count_compare;
+            }
+            return strcasecmp((string) ($left['label'] ?? ''), (string) ($right['label'] ?? ''));
+        });
+
+        ob_start();
+        ?>
+        <section class="cbt-attempt-security-timeline-section">
+            <div class="cbt-attempt-security-timeline-head">
+                <div>
+                    <strong class="cbt-attempt-security-timeline-title"><?php echo esc_html('Security Timeline'); ?></strong>
+                    <span class="cbt-attempt-security-timeline-note"><?php echo esc_html('Event security tercatat sebagai indikasi forensik, bukan vonis otomatis.'); ?></span>
+                </div>
+                <div class="cbt-attempt-security-timeline-summary">
+                    <span class="cbt-attempt-security-chip is-<?php echo esc_attr($risk_tone); ?>"><?php echo esc_html($risk_label . ' · Skor ' . $risk_score_label); ?></span>
+                    <span class="cbt-attempt-security-chip"><?php echo esc_html(sprintf('%d event', $total_events)); ?></span>
+                    <span class="cbt-attempt-security-chip is-warning"><?php echo esc_html(sprintf('%d warning', $warning_count)); ?></span>
+                    <span class="cbt-attempt-security-chip is-critical"><?php echo esc_html(sprintf('%d critical', $critical_count)); ?></span>
+                </div>
+            </div>
+            <?php if (empty($items)): ?>
+                <div class="cbt-attempt-security-empty"><?php echo esc_html('Belum ada event security untuk attempt ini.'); ?></div>
+            <?php else: ?>
+                <?php if (!empty($event_counts)): ?>
+                    <div class="cbt-attempt-security-indicators" aria-label="<?php echo esc_attr('Indikator security terbanyak'); ?>">
+                        <?php foreach (array_slice($event_counts, 0, 6) as $event_count): ?>
+                            <span class="cbt-attempt-security-indicator">
+                                <?php echo esc_html((string) ($event_count['label'] ?? $event_count['event_type'] ?? 'Event')); ?>
+                                <strong><?php echo esc_html((string) max(0, (int) ($event_count['count'] ?? 0))); ?></strong>
+                            </span>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+                <div class="cbt-attempt-security-timeline-list">
+                    <?php foreach ($items as $item): ?>
+                        <?php
+                        $severity = sanitize_html_class((string) ($item['severity'] ?? 'info'));
+                        if (!in_array($severity, ['info', 'warning', 'critical'], true)) {
+                            $severity = 'info';
+                        }
+                        $count = max(1, (int) ($item['count'] ?? 1));
+                        $first_time = trim((string) ($item['first_occurred_at'] ?? $item['occurred_at'] ?? ''));
+                        $last_time = trim((string) ($item['last_occurred_at'] ?? $item['occurred_at'] ?? ''));
+                        $time_label = $first_time !== '' && $last_time !== '' && $first_time !== $last_time
+                            ? $first_time . ' - ' . $last_time
+                            : ($last_time !== '' ? $last_time : $first_time);
+                        ?>
+                        <article class="cbt-attempt-security-timeline-item is-<?php echo esc_attr($severity); ?>">
+                            <div class="cbt-attempt-security-timeline-marker" aria-hidden="true"></div>
+                            <div class="cbt-attempt-security-timeline-copy">
+                                <div class="cbt-attempt-security-timeline-row">
+                                    <strong><?php echo esc_html((string) ($item['event_label'] ?? $item['event_type'] ?? 'Event')); ?></strong>
+                                    <span class="cbt-attempt-security-chip is-<?php echo esc_attr($severity); ?>"><?php echo esc_html(strtoupper($severity)); ?></span>
+                                    <?php if ($count > 1): ?>
+                                        <span class="cbt-attempt-security-chip"><?php echo esc_html(sprintf('%dx', $count)); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <?php if ($time_label !== ''): ?>
+                                    <span class="cbt-attempt-security-time"><?php echo esc_html($time_label); ?></span>
+                                <?php endif; ?>
+                                <p><?php echo esc_html((string) ($item['message_display'] ?? 'Event security tercatat.')); ?></p>
+                                <?php if (!empty($item['device_summary'])): ?>
+                                    <small><?php echo esc_html((string) $item['device_summary']); ?></small>
+                                <?php endif; ?>
+                            </div>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </section>
+        <?php
+
+        return (string) ob_get_clean();
+    }
+
     /**
      * @param array<int,array<string,mixed>> $progress_items
      * @return array{question_count:int,answer_count:int,total_points:float,answered_points:float,earned_points:float}

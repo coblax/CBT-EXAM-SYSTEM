@@ -223,6 +223,7 @@ export function createExamRuntimeBundle(deps) {
         getQuestionAtIndex: questionWindowManager.getQuestionAtIndex,
         getQuestionById: questionWindowManager.getQuestionById,
         getQuestionCount: questionWindowManager.getQuestionCount,
+        getQuestionDisplayNumber: questionWindowManager.getQuestionDisplayNumber,
         getQuestionIdAtIndex: questionWindowManager.getQuestionIdAtIndex,
         getShortAnswerKeys: getShortAnswerKeys,
         getTrueFalseMatrixItems: getTrueFalseMatrixItems,

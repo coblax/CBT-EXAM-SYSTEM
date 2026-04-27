@@ -16,6 +16,11 @@ final class CBT_Admin_Exams_Actions
         CBT_Admin_Exams_Service::handle_delete_exam();
     }
 
+    public static function handle_print_exam_questions(): void
+    {
+        CBT_Admin_Exams_Service::handle_print_exam_questions();
+    }
+
     public static function handle_warm_exam_delivery_snapshot(): void
     {
         CBT_Admin_Exams_Service::handle_warm_exam_delivery_snapshot();

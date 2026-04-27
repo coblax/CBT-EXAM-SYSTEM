@@ -38,7 +38,10 @@ function createFixture(overrides = {}) {
         richZoomModalScalePercent: 125,
         fontScale: 100,
         remainingSeconds: 120,
+        connectionStatus: 'online',
         finishConfirmOpen: false,
+        lastSyncError: '',
+        pendingSyncCount: 0,
         isFinishing: false,
         userPhotoModalOpen: false,
         user: null
@@ -77,11 +80,14 @@ function createFixture(overrides = {}) {
         getCurrentUserPhoto: overrides.getCurrentUserPhoto || function () {
             return '';
         },
-        getExamProgressSummary: function () {
+        getExamProgressSummary: overrides.getExamProgressSummary || function () {
             return {
                 answeredQuestions: 0,
+                doubtfulQuestions: 0,
+                doubtfulQuestionItems: [],
                 totalQuestions: 0,
-                unansweredQuestions: 0
+                unansweredQuestions: 0,
+                unansweredQuestionItems: []
             };
         },
         getSelectedExam: function () {
@@ -277,6 +283,72 @@ describe('createAppShellManager rich zoom modal', function () {
         expect(html).toContain('Jawaban lokal tetap aman dan akan disinkronkan setelah sesi pulih.');
         expect(html).toContain('data-action="retry-session-recovery"');
         expect(html).toContain('Percobaan sambung ulang: 2');
+    });
+
+    it('renders a final review modal with safe sync status when all questions are ready', function () {
+        var manager = createFixture({
+            state: {
+                finishConfirmOpen: true
+            },
+            getExamProgressSummary: function () {
+                return {
+                    answeredQuestions: 3,
+                    doubtfulQuestions: 0,
+                    doubtfulQuestionItems: [],
+                    totalQuestions: 3,
+                    unansweredQuestions: 0,
+                    unansweredQuestionItems: []
+                };
+            }
+        });
+        var html = manager.renderFinishConfirmModal();
+
+        expect(html).toContain('REVIEW SEBELUM KUMPULKAN');
+        expect(html).toContain('Online / aman');
+        expect(html).toContain('Semua soal sudah terjawab, tidak ada tanda ragu-ragu, dan sinkronisasi aman.');
+        expect(html).toContain('Saya Yakin Kumpulkan');
+        expect(html).not.toContain('data-action="finish-review-unanswered"');
+        expect(html).not.toContain('data-action="finish-review-doubtful"');
+    });
+
+    it('renders unanswered, doubtful, and pending sync warnings without blocking final submit', function () {
+        var manager = createFixture({
+            state: {
+                connectionStatus: 'offline',
+                finishConfirmOpen: true,
+                lastSyncError: 'Timeout unit test',
+                pendingSyncCount: 2
+            },
+            getExamProgressSummary: function () {
+                return {
+                    answeredQuestions: 3,
+                    doubtfulQuestions: 1,
+                    doubtfulQuestionItems: [
+                        { index: 1, label: '2', questionId: 102 }
+                    ],
+                    totalQuestions: 5,
+                    unansweredQuestions: 2,
+                    unansweredQuestionItems: [
+                        { index: 3, label: '4', questionId: 104 },
+                        { index: 4, label: '5', questionId: 105 }
+                    ]
+                };
+            }
+        });
+        var html = manager.renderFinishConfirmModal();
+
+        expect(html).toContain('Belum Terjawab');
+        expect(html).toContain('Ragu-Ragu');
+        expect(html).toContain('Offline / lokal aman');
+        expect(html).toContain('2 jawaban menunggu koneksi.');
+        expect(html).toContain('Masih ada 2 soal belum dijawab.');
+        expect(html).toContain('Ada 1 soal ditandai ragu-ragu.');
+        expect(html).toContain('data-action="finish-review-unanswered"');
+        expect(html).toContain('data-action="finish-review-doubtful"');
+        expect(html).toContain('Cek Belum Dijawab');
+        expect(html).toContain('Cek Ragu-Ragu');
+        expect(html).toContain('Saya Yakin Kumpulkan');
+        expect(html).not.toContain('data-action="finish-confirm-submit" type="button" disabled');
     });
 
     it('renders early finish progress feedback before the final submit enters the finishing stage', function () {

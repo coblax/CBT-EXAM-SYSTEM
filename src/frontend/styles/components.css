@@ -337,7 +337,7 @@
 .cbt-finish-modal {
     position: relative;
     overflow: hidden;
-    width: min(580px, 100%);
+    width: min(660px, 100%);
     border-radius: 18px;
     border: 1px solid #c8daef;
     background:
@@ -388,7 +388,7 @@
     z-index: 1;
     margin-top: 18px;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
     gap: 10px;
 }
 
@@ -435,6 +435,15 @@
     color: #b42323;
 }
 
+.cbt-finish-stat.is-doubtful {
+    border-color: #f7d796;
+    background: #fff9ea;
+}
+
+.cbt-finish-stat.is-doubtful strong {
+    color: #9a6400;
+}
+
 .cbt-finish-modal-progress {
     position: relative;
     z-index: 1;
@@ -477,6 +486,8 @@
 }
 
 .cbt-finish-modal-warning {
+    display: grid;
+    gap: 4px;
     border: 1px solid #f5c2c2;
     background: #fff2f2;
     color: #a42828;
@@ -486,6 +497,119 @@
     border: 1px solid #b7edd8;
     background: #edfff7;
     color: #0f7a56;
+}
+
+.cbt-finish-sync-status {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 3px;
+    margin-top: 12px;
+    border: 1px solid #b7edd8;
+    border-radius: 14px;
+    background: #edfff7;
+    padding: 11px 14px;
+    color: #0f7a56;
+    line-height: 1.45;
+}
+
+.cbt-finish-sync-status.is-pending {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.cbt-finish-sync-status.is-offline {
+    border-color: #f7d796;
+    background: #fff9ea;
+    color: #9a6400;
+}
+
+.cbt-finish-sync-status span {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.cbt-finish-sync-status strong {
+    font-size: 14px;
+    font-weight: 900;
+}
+
+.cbt-finish-sync-status small {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.cbt-finish-review-list {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.cbt-finish-review-issue {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid #dbe7f5;
+    border-radius: 14px;
+    background: #f8fbff;
+    padding: 10px 12px;
+}
+
+.cbt-finish-review-issue-main {
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.cbt-finish-review-issue-main strong {
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.cbt-finish-review-issue-main > span {
+    color: #53667d;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.cbt-finish-review-number-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.cbt-finish-review-number,
+.cbt-finish-review-more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 22px;
+    min-width: 28px;
+    border-radius: 999px;
+    border: 1px solid #cfe0f4;
+    background: #fff;
+    color: #1d4ed8;
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.cbt-finish-review-more {
+    padding: 0 8px;
+    color: #53667d;
+}
+
+.cbt-finish-review-check {
+    min-height: 34px;
+    padding: 0 12px;
+    white-space: nowrap;
 }
 
 .cbt-finish-modal-actions {
@@ -498,6 +622,32 @@
 .cbt-finish-modal-actions .cbt-button {
     text-transform: uppercase;
     letter-spacing: 0.04em;
+}
+
+@media (max-width: 560px) {
+    .cbt-finish-modal-overlay {
+        padding: 12px;
+    }
+
+    .cbt-finish-modal {
+        max-height: calc(100vh - 24px);
+        overflow: auto;
+        padding: 18px 16px 16px;
+    }
+
+    .cbt-finish-stat-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cbt-finish-review-issue {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .cbt-finish-review-check,
+    .cbt-finish-modal-actions .cbt-button {
+        width: 100%;
+    }
 }
 
 .cbt-finish-live-card {

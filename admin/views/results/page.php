@@ -3,6 +3,10 @@
 if (!defined('ABSPATH')) {
     exit;
 }
+
+$attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_array($attempt_security_timeline_map)
+    ? $attempt_security_timeline_map
+    : [];
 ?>
         <div class="wrap cbt-results-page">
             <div class="cbt-results-shell">
@@ -1603,6 +1607,154 @@ if (!defined('ABSPATH')) {
                     background: #fff4e8;
                     color: #9a3412;
                 }
+                .cbt-attempt-security-timeline-section {
+                    display: grid;
+                    gap: 9px;
+                    padding: 12px;
+                    border: 1px solid #dbe7f3;
+                    border-radius: 14px;
+                    background: rgba(255, 255, 255, 0.82);
+                }
+                .cbt-attempt-security-timeline-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .cbt-attempt-security-timeline-title {
+                    display: block;
+                    margin-bottom: 3px;
+                    color: #12263d;
+                    font-size: 13px;
+                    font-weight: 800;
+                }
+                .cbt-attempt-security-timeline-note {
+                    display: block;
+                    color: #64748b;
+                    font-size: 11px;
+                    line-height: 1.45;
+                }
+                .cbt-attempt-security-timeline-summary,
+                .cbt-attempt-security-indicators {
+                    display: flex;
+                    align-items: center;
+                    justify-content: flex-end;
+                    gap: 6px;
+                    flex-wrap: wrap;
+                }
+                .cbt-attempt-security-indicators {
+                    justify-content: flex-start;
+                }
+                .cbt-attempt-security-chip,
+                .cbt-attempt-security-indicator {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 24px;
+                    padding: 0 8px;
+                    border-radius: 999px;
+                    background: #f1f5f9;
+                    color: #36506a;
+                    font-size: 10px;
+                    font-weight: 800;
+                    line-height: 1;
+                    white-space: nowrap;
+                }
+                .cbt-attempt-security-chip.is-watch,
+                .cbt-attempt-security-chip.is-warning {
+                    background: #fff7ed;
+                    color: #9a3412;
+                }
+                .cbt-attempt-security-chip.is-high-risk,
+                .cbt-attempt-security-chip.is-critical {
+                    background: #fff1f2;
+                    color: #b42323;
+                }
+                .cbt-attempt-security-chip.is-normal,
+                .cbt-attempt-security-chip.is-info {
+                    background: #edf7ff;
+                    color: #145ea8;
+                }
+                .cbt-attempt-security-indicator {
+                    gap: 6px;
+                    border: 1px solid #dbe7f3;
+                    background: #fff;
+                    color: #475569;
+                    font-weight: 700;
+                }
+                .cbt-attempt-security-indicator strong {
+                    color: #0f4c81;
+                    font-weight: 900;
+                }
+                .cbt-attempt-security-empty {
+                    padding: 10px 12px;
+                    border: 1px dashed #d7e2ee;
+                    border-radius: 12px;
+                    background: #f8fbff;
+                    color: #64748b;
+                    font-size: 12px;
+                    line-height: 1.5;
+                }
+                .cbt-attempt-security-timeline-list {
+                    display: grid;
+                    gap: 7px;
+                }
+                .cbt-attempt-security-timeline-item {
+                    display: grid;
+                    grid-template-columns: 12px minmax(0, 1fr);
+                    gap: 9px;
+                    padding: 10px;
+                    border: 1px solid #e1e8f0;
+                    border-radius: 12px;
+                    background: #fff;
+                }
+                .cbt-attempt-security-timeline-marker {
+                    width: 9px;
+                    height: 9px;
+                    margin-top: 6px;
+                    border-radius: 999px;
+                    background: #2d7dd2;
+                    box-shadow: 0 0 0 4px rgba(45, 125, 210, 0.1);
+                }
+                .cbt-attempt-security-timeline-item.is-warning .cbt-attempt-security-timeline-marker {
+                    background: #f59e0b;
+                    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.14);
+                }
+                .cbt-attempt-security-timeline-item.is-critical .cbt-attempt-security-timeline-marker {
+                    background: #dc2626;
+                    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+                }
+                .cbt-attempt-security-timeline-copy {
+                    display: grid;
+                    gap: 4px;
+                    min-width: 0;
+                }
+                .cbt-attempt-security-timeline-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    flex-wrap: wrap;
+                }
+                .cbt-attempt-security-timeline-row strong {
+                    color: #17283a;
+                    font-size: 12px;
+                    font-weight: 800;
+                }
+                .cbt-attempt-security-time {
+                    color: #526174;
+                    font-size: 10px;
+                    font-variant-numeric: tabular-nums;
+                }
+                .cbt-attempt-security-timeline-copy p {
+                    margin: 0;
+                    color: #405064;
+                    font-size: 11px;
+                    line-height: 1.45;
+                }
+                .cbt-attempt-security-timeline-copy small {
+                    color: #64748b;
+                    font-size: 10px;
+                }
                 .cbt-attempt-answer-detail-table-wrap {
                     overflow: auto;
                     max-height: min(46vh, 360px);
@@ -2635,10 +2787,27 @@ if (!defined('ABSPATH')) {
 	                            $attempt_status_pill_class .= ' is-completed';
 	                        }
 	                            $attempt_id = (int) ($attempt['id'] ?? 0);
+	                            $attempt_security_timeline = isset($attempt_security_timeline_map[$attempt_id]) && is_array($attempt_security_timeline_map[$attempt_id])
+	                                ? $attempt_security_timeline_map[$attempt_id]
+	                                : [];
+	                            $attempt_security_summary = isset($attempt_security_timeline['summary']) && is_array($attempt_security_timeline['summary'])
+	                                ? $attempt_security_timeline['summary']
+	                                : [];
+	                            $attempt_security_event_total = max(0, (int) ($attempt_security_summary['total_events'] ?? 0));
 	                            $attempt_answer_detail_row_id = 'cbt-attempt-answer-row-' . $attempt_id;
                                 $has_archived_history = !empty($archived_progress_items);
-                                $attempt_toggle_open_label = $has_archived_history ? 'Lihat Detail & History' : 'Lihat Detail Jawaban';
-                                $attempt_toggle_close_label = $has_archived_history ? 'Tutup Detail & History' : 'Tutup Detail Jawaban';
+                                $has_security_timeline = $attempt_security_event_total > 0;
+                                $has_attempt_detail = !empty($progress_items) || !empty($archived_progress_items) || $has_security_timeline;
+                                if ($has_archived_history) {
+                                    $attempt_toggle_open_label = 'Lihat Detail & History';
+                                    $attempt_toggle_close_label = 'Tutup Detail & History';
+                                } elseif ($has_security_timeline) {
+                                    $attempt_toggle_open_label = 'Lihat Detail & Security';
+                                    $attempt_toggle_close_label = 'Tutup Detail & Security';
+                                } else {
+                                    $attempt_toggle_open_label = 'Lihat Detail Jawaban';
+                                    $attempt_toggle_close_label = 'Tutup Detail Jawaban';
+                                }
 		                        ?>
 	                        <tr id="cbt-results-attempt-row-<?php echo (int) $attempt_id; ?>" class="cbt-results-attempt-row" data-cbt-attempt-row="<?php echo (int) $attempt_id; ?>">
 	                            <td class="cbt-results-id-cell">#<?php echo (int) $attempt_id; ?></td>
@@ -2703,7 +2872,7 @@ if (!defined('ABSPATH')) {
                                                     <?php echo esc_html(sprintf('%d history dihapus/nonaktif', count($archived_progress_items))); ?>
                                                 </span>
                                             <?php endif; ?>
-		                                    <?php if (!empty($progress_items) || !empty($archived_progress_items)): ?>
+		                                    <?php if ($has_attempt_detail): ?>
 		                                        <button
 	                                                type="button"
 	                                                class="cbt-attempt-answer-toggle"
@@ -2820,7 +2989,7 @@ if (!defined('ABSPATH')) {
 	                                </div>
 	                            </td>
 	                        </tr>
-                            <?php if (!empty($progress_items) || !empty($archived_progress_items)): ?>
+                            <?php if ($has_attempt_detail): ?>
                                 <tr
                                     id="<?php echo esc_attr($attempt_answer_detail_row_id); ?>"
                                     class="cbt-attempt-answer-detail-row"
@@ -2828,11 +2997,17 @@ if (!defined('ABSPATH')) {
                                     hidden
                                 >
                                     <td colspan="7">
-                                        <div class="cbt-attempt-answer-detail-card">
+	                                        <div class="cbt-attempt-answer-detail-card">
 	                                            <div class="cbt-attempt-answer-detail-card-head">
 	                                                <div>
-	                                                    <h4><?php echo esc_html('Detail Jawaban Attempt #' . $attempt_id); ?></h4>
-	                                                    <p>Tabel penuh untuk meninjau status, jenis soal, bobot poin, skor yang didapat, serta history soal yang sudah dihapus atau dinonaktifkan.</p>
+	                                                    <h4><?php echo esc_html('Detail Attempt #' . $attempt_id); ?></h4>
+	                                                    <p>
+                                                            <?php if (!empty($progress_items) || !empty($archived_progress_items)): ?>
+                                                                Tabel penuh untuk meninjau status jawaban, bobot poin, skor, history soal, dan timeline security attempt ini.
+                                                            <?php else: ?>
+                                                                Attempt ini belum punya detail jawaban yang bisa ditampilkan, tetapi memiliki event security yang tercatat.
+                                                            <?php endif; ?>
+                                                        </p>
 	                                                </div>
 	                                                <div class="cbt-attempt-answer-detail-metrics">
                                                     <span class="cbt-attempt-answer-detail-metric">
@@ -2846,8 +3021,22 @@ if (!defined('ABSPATH')) {
 	                                                            <?php echo esc_html(sprintf('%d soal dihapus/nonaktif', count($archived_progress_items))); ?>
 	                                                        </span>
 	                                                    <?php endif; ?>
+                                                    <?php if ($has_security_timeline): ?>
+                                                        <span class="cbt-attempt-answer-detail-metric">
+                                                            <?php echo esc_html(sprintf(
+                                                                'Security %s · %d event',
+                                                                (string) ($attempt_security_summary['risk_score_label'] ?? '0'),
+                                                                $attempt_security_event_total
+                                                            )); ?>
+                                                        </span>
+                                                    <?php endif; ?>
                                                 </div>
                                             </div>
+                                            <?php
+                                            echo CBT_Admin_Results_Helper::render_attempt_security_timeline_html(
+                                                $attempt_security_timeline
+                                            ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                                            ?>
                                             <?php
                                             echo CBT_Admin_Results_Helper::render_attempt_answer_progress_table_html(
                                                 $progress_items,

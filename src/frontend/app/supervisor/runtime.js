@@ -55,6 +55,98 @@ export function buildSupervisorDashboardCacheKey(query) {
     return JSON.stringify(normalized);
 }
 
+function renderSupervisorSecurityMeta(parts) {
+    var values = (Array.isArray(parts) ? parts : []).map(function (part) {
+        return String(part || '').trim();
+    }).filter(Boolean);
+
+    if (!values.length) {
+        return '';
+    }
+
+    return '<small class="cbt-supervisor-row-meta">' + values.map(function (part) {
+        return '<span>' + escapeHtml(part) + '</span>';
+    }).join('') + '</small>';
+}
+
+function normalizeSupervisorSecurityClass(value, fallbackValue, allowedValues) {
+    var normalized = String(value || fallbackValue || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    return allowedValues.indexOf(normalized) !== -1 ? normalized : String(fallbackValue || '');
+}
+
+export function renderSupervisorSecurityTimelineSection(securityTimeline, fallbackEvents) {
+    var timeline = securityTimeline && typeof securityTimeline === 'object' ? securityTimeline : {};
+    var summary = timeline.summary && typeof timeline.summary === 'object' ? timeline.summary : {};
+    var items = Array.isArray(timeline.items) ? timeline.items : [];
+    var fallbackItems = Array.isArray(fallbackEvents) ? fallbackEvents : [];
+    if (!items.length && fallbackItems.length) {
+        items = fallbackItems;
+    }
+    var topIndicators = Array.isArray(summary.top_indicators) ? summary.top_indicators : [];
+    var eventCounts = Array.isArray(timeline.event_counts)
+        ? timeline.event_counts
+        : (timeline.event_counts && typeof timeline.event_counts === 'object' ? Object.keys(timeline.event_counts).map(function (key) {
+            return timeline.event_counts[key];
+        }) : []);
+    var indicators = topIndicators.length ? topIndicators : eventCounts;
+    var totalEvents = Math.max(0, Number(summary.total_events !== undefined ? summary.total_events : items.length) || 0);
+    var warningCount = Math.max(0, Number(summary.warning_count) || 0);
+    var criticalCount = Math.max(0, Number(summary.critical_count) || 0);
+    var riskTone = normalizeSupervisorSecurityClass(summary.risk_tone, 'normal', ['normal', 'watch', 'high-risk']);
+    var riskLabel = String(summary.risk_label || 'Normal');
+    var riskScoreLabel = String(summary.risk_score_label || '0');
+
+    indicators = indicators.filter(function (indicator) {
+        return indicator && typeof indicator === 'object';
+    }).sort(function (left, right) {
+        var countCompare = (Number(right.count) || 0) - (Number(left.count) || 0);
+        if (countCompare !== 0) {
+            return countCompare;
+        }
+        return String(left.label || left.event_type || '').localeCompare(String(right.label || right.event_type || ''));
+    }).slice(0, 5);
+
+    return [
+        '<section class="cbt-supervisor-detail-section cbt-supervisor-security-timeline">',
+        '<div class="cbt-supervisor-security-timeline-head">',
+        '<div>',
+        '<h3>Security Timeline</h3>',
+        '<p>Event tercatat sebagai indikasi forensik, bukan vonis otomatis.</p>',
+        '</div>',
+        '<div class="cbt-supervisor-security-summary">',
+        '<span class="cbt-supervisor-security-chip is-' + escapeHtml(riskTone) + '">' + escapeHtml(riskLabel + ' · Skor ' + riskScoreLabel) + '</span>',
+        '<span class="cbt-supervisor-security-chip">' + escapeHtml(String(totalEvents) + ' event') + '</span>',
+        '<span class="cbt-supervisor-security-chip is-warning">' + escapeHtml(String(warningCount) + ' warning') + '</span>',
+        '<span class="cbt-supervisor-security-chip is-critical">' + escapeHtml(String(criticalCount) + ' critical') + '</span>',
+        '</div>',
+        '</div>',
+        indicators.length ? '<div class="cbt-supervisor-security-indicators">' + indicators.map(function (indicator) {
+            return '<span>' + escapeHtml(String(indicator.label || indicator.event_label || indicator.event_type || 'Event')) + '<strong>' + escapeHtml(String(Math.max(0, Number(indicator.count) || 0))) + '</strong></span>';
+        }).join('') + '</div>' : '',
+        items.length ? '<div class="cbt-supervisor-detail-events cbt-supervisor-security-timeline-list">' + items.map(function (eventItem) {
+            var severity = normalizeSupervisorSecurityClass(eventItem && eventItem.severity, 'info', ['info', 'warning', 'critical']);
+            var count = Math.max(1, Number(eventItem && eventItem.count) || 1);
+            var firstTime = String((eventItem && (eventItem.first_occurred_at || eventItem.occurred_at)) || '');
+            var lastTime = String((eventItem && (eventItem.last_occurred_at || eventItem.occurred_at || eventItem.created_at)) || '');
+            var timeLabel = firstTime && lastTime && firstTime !== lastTime ? firstTime + ' - ' + lastTime : (lastTime || firstTime);
+
+            return [
+                '<div class="cbt-supervisor-security-event is-' + escapeHtml(severity) + '">',
+                '<span class="cbt-supervisor-pill is-' + escapeHtml(severity) + '">' + escapeHtml(severity) + '</span>',
+                '<strong>' + escapeHtml(String((eventItem && (eventItem.event_label || eventItem.event_type)) || '-')) + '</strong>',
+                count > 1 ? '<span class="cbt-supervisor-security-count">x' + escapeHtml(String(count)) + '</span>' : '',
+                renderSupervisorSecurityMeta([
+                    eventItem && eventItem.message_display,
+                    eventItem && eventItem.device_summary,
+                    timeLabel
+                ]),
+                '</div>'
+            ].join('');
+        }).join('') + '</div>' : '<div class="cbt-supervisor-empty-state is-compact">Belum ada event security untuk attempt ini.</div>',
+        '</section>'
+    ].join('');
+}
+
 export function bootstrapSupervisorApp() {
     var root = document.getElementById('cbt-exam-app');
     if (!root) {
@@ -1713,6 +1805,7 @@ export function bootstrapSupervisorApp() {
         var progress = data.answer_progress && typeof data.answer_progress === 'object' ? data.answer_progress : {};
         var submitStatus = data.submit_status && typeof data.submit_status === 'object' ? data.submit_status : {};
         var timeline = data.timeline && typeof data.timeline === 'object' ? data.timeline : {};
+        var securityTimeline = data.security_timeline && typeof data.security_timeline === 'object' ? data.security_timeline : {};
         var events = Array.isArray(data.security_events) ? data.security_events : [];
         var body;
 
@@ -1759,18 +1852,7 @@ export function bootstrapSupervisorApp() {
                     timeline.remaining_label || ''
                 ]),
                 '</section>',
-                '<section class="cbt-supervisor-detail-section">',
-                '<h3>Security Terakhir</h3>',
-                events.length ? '<div class="cbt-supervisor-detail-events">' + events.map(function (eventItem) {
-                    return [
-                        '<div>',
-                        '<span class="cbt-supervisor-pill is-' + escapeHtml(String(eventItem.severity || 'info')) + '">' + escapeHtml(String(eventItem.severity || 'info')) + '</span>',
-                        '<strong>' + escapeHtml(String(eventItem.event_label || eventItem.event_type || '-')) + '</strong>',
-                        renderRowMeta([eventItem.message_display, eventItem.device_summary, eventItem.occurred_at || eventItem.created_at]),
-                        '</div>'
-                    ].join('');
-                }).join('') + '</div>' : '<div class="cbt-supervisor-empty-state is-compact">Belum ada security event terbaru untuk attempt ini.</div>',
-                '</section>'
+                renderSupervisorSecurityTimelineSection(securityTimeline, events)
             ].join('');
         }
 

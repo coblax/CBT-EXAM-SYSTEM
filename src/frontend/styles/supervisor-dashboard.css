@@ -1314,6 +1314,121 @@ body.cbt-exam-page-mode-supervisor #cbt-exam-app.cbt-web-shell {
     font-weight: 900;
 }
 
+.cbt-supervisor-security-timeline {
+    gap: 8px;
+}
+
+.cbt-supervisor-security-timeline-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.cbt-supervisor-security-timeline-head p {
+    margin: 4px 0 0;
+    color: var(--cbt-supervisor-muted);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.cbt-supervisor-security-summary,
+.cbt-supervisor-security-indicators {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.cbt-supervisor-security-indicators {
+    justify-content: flex-start;
+}
+
+.cbt-supervisor-security-chip,
+.cbt-supervisor-security-indicators span,
+.cbt-supervisor-security-count {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: #eef4fb;
+    color: #36506a;
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.cbt-supervisor-security-chip.is-watch,
+.cbt-supervisor-security-chip.is-warning {
+    background: #fff7ed;
+    color: #9a3412;
+}
+
+.cbt-supervisor-security-chip.is-high-risk,
+.cbt-supervisor-security-chip.is-critical {
+    background: #fff1f2;
+    color: #b42323;
+}
+
+.cbt-supervisor-security-chip.is-normal,
+.cbt-supervisor-security-chip.is-info {
+    background: #edf7ff;
+    color: #145ea8;
+}
+
+.cbt-supervisor-security-indicators span {
+    gap: 6px;
+    border: 1px solid var(--cbt-supervisor-border);
+    background: #ffffff;
+    color: var(--cbt-supervisor-muted);
+    font-weight: 800;
+}
+
+.cbt-supervisor-security-indicators strong {
+    color: var(--cbt-supervisor-primary);
+    font-weight: 950;
+}
+
+.cbt-supervisor-security-event {
+    position: relative;
+    padding-left: 28px;
+}
+
+.cbt-supervisor-security-event::before {
+    content: "";
+    position: absolute;
+    top: 17px;
+    left: 10px;
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: #2d7dd2;
+    box-shadow: 0 0 0 4px rgba(45, 125, 210, 0.1);
+}
+
+.cbt-supervisor-security-event.is-warning::before {
+    background: #f59e0b;
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.14);
+}
+
+.cbt-supervisor-security-event.is-critical::before {
+    background: #dc2626;
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+}
+
+.cbt-supervisor-security-count {
+    margin-top: 6px;
+    min-height: 20px;
+    background: #f8fafc;
+    color: var(--cbt-supervisor-muted);
+    font-size: 10px;
+}
+
 .cbt-supervisor-pagination {
     justify-content: flex-end;
     color: var(--cbt-supervisor-muted);

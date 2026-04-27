@@ -200,10 +200,42 @@
 .cbt-web-shell.cbt-theme-dark .cbt-side-stat.is-doubtful,
 .cbt-web-shell.cbt-theme-dark .cbt-nav-btn.is-doubtful:not(.is-current),
 .cbt-web-shell.cbt-theme-dark .cbt-button-warning,
-.cbt-web-shell.cbt-theme-dark .cbt-finish-modal-warning {
+.cbt-web-shell.cbt-theme-dark .cbt-finish-modal-warning,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-stat.is-doubtful,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-sync-status.is-offline {
     background: var(--cbt-dark-warning-soft);
     border-color: rgba(215, 186, 125, 0.38);
     color: #e5c07b;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-sync-status,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-modal-ok {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(52, 211, 153, 0.28);
+    color: #8ce9c8;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-sync-status.is-pending,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-issue {
+    background: rgba(96, 165, 250, 0.1);
+    border-color: rgba(96, 165, 250, 0.22);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-issue-main strong {
+    color: #f3f4f6;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-issue-main > span,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-sync-status small {
+    color: #b6c7dc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-number,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-more {
+    background: #111c2f;
+    border-color: #35506f;
+    color: #bfdbfe;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-finish-live-card {
@@ -828,7 +860,9 @@
 .cbt-web-shell.cbt-theme-light .cbt-side-stat.is-doubtful,
 .cbt-web-shell.cbt-theme-light .cbt-nav-btn.is-doubtful:not(.is-current),
 .cbt-web-shell.cbt-theme-light .cbt-button-warning,
-.cbt-web-shell.cbt-theme-light .cbt-finish-modal-warning {
+.cbt-web-shell.cbt-theme-light .cbt-finish-modal-warning,
+.cbt-web-shell.cbt-theme-light .cbt-finish-stat.is-doubtful,
+.cbt-web-shell.cbt-theme-light .cbt-finish-sync-status.is-offline {
     background: var(--cbt-light-warning-surface);
     border-color: var(--cbt-light-warning-border);
     color: var(--cbt-light-warning-text);

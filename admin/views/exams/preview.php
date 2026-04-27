@@ -12,6 +12,38 @@
                     <p class="description">Validasi cepat isi soal dan kunci jawaban sebelum exam dijalankan.</p>
                 </div>
                 <div class="cbt-admin-exam-preview-actions">
+                    <?php
+                    $print_question_modes = [
+                        [
+                            'mode' => CBT_Admin_Exams_Service::EXAM_QUESTION_PRINT_MODE_STUDENT,
+                            'label' => 'Print Soal Siswa',
+                            'class' => 'button button-primary',
+                        ],
+                        [
+                            'mode' => CBT_Admin_Exams_Service::EXAM_QUESTION_PRINT_MODE_TEACHER,
+                            'label' => 'Print Soal + Kunci',
+                            'class' => 'button',
+                        ],
+                    ];
+                    $print_questions_disabled = empty($questions);
+                    ?>
+                    <?php foreach ($print_question_modes as $print_question_mode): ?>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" target="_blank" class="cbt-admin-exam-preview-print-form">
+                            <?php wp_nonce_field('cbt_print_exam_questions'); ?>
+                            <input type="hidden" name="action" value="cbt_print_exam_questions" />
+                            <input type="hidden" name="exam_id" value="<?php echo esc_attr((string) $exam_id); ?>" />
+                            <input type="hidden" name="cbt_exam_question_print_mode" value="<?php echo esc_attr((string) ($print_question_mode['mode'] ?? '')); ?>" />
+                            <input type="hidden" name="cbt_exam_per_page" value="<?php echo esc_attr((string) ((int) ($exam_list_state['per_page'] ?? 20))); ?>" />
+                            <input type="hidden" name="cbt_exam_paged" value="<?php echo esc_attr((string) ((int) ($exam_list_state['paged'] ?? 1))); ?>" />
+                            <input type="hidden" name="cbt_exam_search" value="<?php echo esc_attr((string) ($exam_list_state['search'] ?? '')); ?>" />
+                            <input type="hidden" name="cbt_exam_status" value="<?php echo esc_attr((string) ($exam_list_state['status'] ?? '')); ?>" />
+                            <input type="hidden" name="cbt_exam_subject" value="<?php echo esc_attr((string) ((int) ($exam_list_state['subject_id'] ?? 0))); ?>" />
+                            <input type="hidden" name="cbt_exam_kelas" value="<?php echo esc_attr((string) ($exam_list_state['kelas'] ?? '')); ?>" />
+                            <button type="submit" class="<?php echo esc_attr((string) ($print_question_mode['class'] ?? 'button')); ?>" <?php echo $print_questions_disabled ? 'disabled="disabled"' : ''; ?>>
+                                <?php echo esc_html((string) ($print_question_mode['label'] ?? 'Print Soal')); ?>
+                            </button>
+                        </form>
+                    <?php endforeach; ?>
                     <a class="button" href="<?php echo esc_url($back_url); ?>">Kembali ke Daftar Exam</a>
                 </div>
             </div>
@@ -141,7 +173,13 @@
             }
             .cbt-admin-exam-preview-actions {
                 display: flex;
+                align-items: center;
+                flex-wrap: wrap;
                 gap: 8px;
+            }
+            .cbt-admin-exam-preview-print-form {
+                display: inline-flex;
+                margin: 0;
             }
             .cbt-admin-exam-preview-meta {
                 display: grid;

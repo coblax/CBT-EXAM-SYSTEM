@@ -812,6 +812,10 @@ final class CBT_Admin_Questions_Helper
     gap: 16px;
 }
 .cbt-admin-student-preview-head-main {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
     min-width: 0;
     flex: 1;
 }
@@ -833,7 +837,7 @@ final class CBT_Admin_Questions_Helper
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 0;
 }
 .cbt-admin-student-preview-chip {
     display: inline-flex;
@@ -870,8 +874,9 @@ final class CBT_Admin_Questions_Helper
 }
 .cbt-admin-student-preview-meta {
     display: grid;
+    flex-basis: 100%;
     gap: 4px;
-    margin-top: 12px;
+    margin-top: 4px;
     color: #5b6b7b;
     font-size: 13px;
     line-height: 1.55;
@@ -1121,6 +1126,8 @@ CSS;
             $eyebrow = trim((string) ($context['eyebrow'] ?? 'Soal'));
             $actions_html = trim((string) ($context['actions_html'] ?? ''));
             $note_text = trim((string) ($context['note_text'] ?? ''));
+            $answer_mode = sanitize_key((string) ($context['answer_mode'] ?? 'teacher'));
+            $show_answer_key = $answer_mode !== 'student' && ($context['show_answer_key'] ?? true) !== false;
             $meta_lines = [];
             foreach ((array) ($context['meta_lines'] ?? []) as $meta_line) {
                 if (!is_scalar($meta_line)) {
@@ -1203,9 +1210,9 @@ CSS;
                             <?php echo self::render_editor_html((string) ($question['question_text'] ?? '')); ?>
                         </div>
 
-                        <?php echo self::render_admin_student_preview_answer_section($question, $options, $question_detail); ?>
+                        <?php echo self::render_admin_student_preview_answer_section($question, $options, $question_detail, $show_answer_key); ?>
 
-                        <?php if (self::has_non_empty_html_content((string) ($question['explanation'] ?? ''))): ?>
+                        <?php if ($show_answer_key && self::has_non_empty_html_content((string) ($question['explanation'] ?? ''))): ?>
                             <section class="cbt-admin-student-preview-section cbt-admin-student-preview-section--explanation">
                                 <strong class="cbt-admin-student-preview-section-title">Pembahasan</strong>
                                 <div class="cbt-admin-student-preview-richtext">
@@ -1266,12 +1273,17 @@ CSS;
         private static function render_admin_student_preview_answer_section(
             array $question,
             array $options,
-            array $question_detail
+            array $question_detail,
+            bool $show_answer_key = true
         ): string {
             $question_type = (string) ($question['question_type'] ?? '');
 
             if (!empty($options)) {
-                return self::render_admin_student_preview_options($options);
+                return self::render_admin_student_preview_options($options, $show_answer_key);
+            }
+
+            if (!$show_answer_key && $question_type !== 'true_false_matrix') {
+                return '';
             }
 
             if ($question_type === 'short_answer') {
@@ -1314,14 +1326,16 @@ CSS;
                 ob_start();
                 ?>
                 <section class="cbt-admin-student-preview-section">
-                    <strong class="cbt-admin-student-preview-section-title">Pernyataan dan Kunci</strong>
+                    <strong class="cbt-admin-student-preview-section-title"><?php echo esc_html($show_answer_key ? 'Pernyataan dan Kunci' : 'Pernyataan'); ?></strong>
                     <div class="cbt-admin-student-preview-matrix">
                         <?php foreach ($matrix_rows as $matrix_row): ?>
                             <div class="cbt-admin-student-preview-matrix-row">
                                 <div class="cbt-admin-student-preview-richtext"><?php echo self::render_editor_html((string) ($matrix_row['text'] ?? '')); ?></div>
-                                <span class="cbt-admin-student-preview-matrix-answer">
-                                    <?php echo ((string) ($matrix_row['answer'] ?? 'true') === 'false') ? 'Kunci Salah' : 'Kunci Benar'; ?>
-                                </span>
+                                <?php if ($show_answer_key): ?>
+                                    <span class="cbt-admin-student-preview-matrix-answer">
+                                        <?php echo ((string) ($matrix_row['answer'] ?? 'true') === 'false') ? 'Kunci Salah' : 'Kunci Benar'; ?>
+                                    </span>
+                                <?php endif; ?>
                             </div>
                         <?php endforeach; ?>
                     </div>
@@ -1350,7 +1364,7 @@ CSS;
         /**
          * @param array<int,array<string,mixed>> $options
          */
-        private static function render_admin_student_preview_options(array $options): string
+        private static function render_admin_student_preview_options(array $options, bool $show_answer_key = true): string
         {
             ob_start();
             ?>
@@ -1359,7 +1373,7 @@ CSS;
                 <div class="cbt-admin-student-preview-options">
                     <?php foreach ($options as $index => $option): ?>
                         <?php
-                        $is_correct = (int) ($option['is_correct'] ?? 0) === 1;
+                        $is_correct = $show_answer_key && (int) ($option['is_correct'] ?? 0) === 1;
                         $option_key = strtoupper(trim((string) ($option['option_key'] ?? '')));
                         if ($option_key === '') {
                             $option_key = chr(65 + ($index % 26));

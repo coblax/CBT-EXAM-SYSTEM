@@ -23,6 +23,7 @@ function createFixture(overrides = {}) {
     var loadExams = overrides.loadExams || vi.fn(function () {
         return Promise.resolve();
     });
+    var handleFinish = overrides.handleFinish || vi.fn(function () {});
     var state = Object.assign({
         stage: 'confirm',
         examPickerMobileOpen: false,
@@ -66,7 +67,7 @@ function createFixture(overrides = {}) {
         handleBlockedPrintAction: function () {
             return false;
         },
-        handleFinish: function () {},
+        handleFinish: handleFinish,
         handleLogin: function () {},
         handleNavigationAction: function () {
             return false;
@@ -123,6 +124,7 @@ function createFixture(overrides = {}) {
         calls: calls,
         clearMessages: clearMessages,
         loadExams: loadExams,
+        handleFinish: handleFinish,
         manager: manager,
         retrySessionRecovery: retrySessionRecovery,
         root: root,
@@ -164,6 +166,27 @@ describe('createAppEventManager session recovery actions', function () {
         expect(handled).toBe(true);
         expect(event.preventDefault).toHaveBeenCalledTimes(1);
         expect(fixture.retrySessionRecovery).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps final submit routed through skipConfirmation from the review modal', function () {
+        var fixture = createFixture({
+            state: {
+                stage: 'exam',
+                finishConfirmOpen: true
+            }
+        });
+        fixture.root.innerHTML = '<button type="button" data-action="finish-confirm-submit">Saya Yakin Kumpulkan</button>';
+        var button = fixture.root.querySelector('[data-action="finish-confirm-submit"]');
+        var event = {
+            preventDefault: vi.fn(),
+            target: button
+        };
+
+        var handled = fixture.manager.handleRootClick(event);
+
+        expect(handled).toBe(true);
+        expect(fixture.handleFinish).toHaveBeenCalledTimes(1);
+        expect(fixture.handleFinish).toHaveBeenCalledWith(false, { skipConfirmation: true });
     });
 
     it('keeps the current screen and shows the nginx authorization hint when reload receives missing_token', async function () {

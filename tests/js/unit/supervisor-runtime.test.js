@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildSupervisorDashboardCacheKey,
-    normalizeSupervisorPercentValue
+    normalizeSupervisorPercentValue,
+    renderSupervisorSecurityTimelineSection
 } from '../../../src/frontend/app/supervisor/runtime.js';
 
 describe('normalizeSupervisorPercentValue', function () {
@@ -47,5 +48,61 @@ describe('buildSupervisorDashboardCacheKey', function () {
             tab: 'action_required',
             action_page: 2
         }));
+    });
+});
+
+describe('renderSupervisorSecurityTimelineSection', function () {
+    it('renders grouped timeline summary and severity tone', function () {
+        var html = renderSupervisorSecurityTimelineSection({
+            summary: {
+                total_events: 3,
+                warning_count: 1,
+                critical_count: 2,
+                risk_tone: 'high-risk',
+                risk_label: 'High Risk',
+                risk_score_label: '11',
+                top_indicators: [
+                    {
+                        event_type: 'tab_hidden',
+                        label: 'Pindah tab',
+                        count: 2
+                    }
+                ]
+            },
+            items: [
+                {
+                    event_type: 'tab_hidden',
+                    event_label: 'Pindah tab',
+                    severity: 'critical',
+                    message_display: 'Window ujian kehilangan fokus.',
+                    device_summary: 'Desktop • Windows',
+                    first_occurred_at: '2026-04-24 08:00:00',
+                    last_occurred_at: '2026-04-24 08:01:00',
+                    count: 2
+                }
+            ]
+        }, []);
+
+        expect(html).toContain('Security Timeline');
+        expect(html).toContain('High Risk');
+        expect(html).toContain('3 event');
+        expect(html).toContain('Pindah tab');
+        expect(html).toContain('x2');
+        expect(html).toContain('is-critical');
+    });
+
+    it('renders empty state when attempt has no security event', function () {
+        var html = renderSupervisorSecurityTimelineSection({
+            summary: {
+                total_events: 0,
+                risk_tone: 'normal',
+                risk_label: 'Normal',
+                risk_score_label: '0'
+            },
+            items: []
+        }, []);
+
+        expect(html).toContain('Belum ada event security untuk attempt ini.');
+        expect(html).toContain('Normal');
     });
 });

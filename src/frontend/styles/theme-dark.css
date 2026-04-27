@@ -28,6 +28,44 @@
     color: var(--cbt-text);
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-finish-modal-warning,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-stat.is-doubtful,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-sync-status.is-offline {
+    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(215, 186, 125, 0.38);
+    color: #e5c07b;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-sync-status,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-modal-ok {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(52, 211, 153, 0.28);
+    color: #8ce9c8;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-sync-status.is-pending,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-issue {
+    background: rgba(96, 165, 250, 0.1);
+    border-color: rgba(96, 165, 250, 0.22);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-issue-main strong {
+    color: #f3f4f6;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-issue-main > span,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-sync-status small {
+    color: #b6c7dc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-number,
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-more {
+    background: #111c2f;
+    border-color: #35506f;
+    color: #bfdbfe;
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-brand h2,
 .cbt-web-shell.cbt-theme-dark .cbt-option-label,
 .cbt-web-shell.cbt-theme-dark .cbt-question-stem,

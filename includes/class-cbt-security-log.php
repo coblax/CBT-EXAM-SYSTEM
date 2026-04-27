@@ -592,6 +592,124 @@ class CBT_Security_Log
             return [];
         }
 
+        return self::hydrate_security_log_rows($rows);
+    }
+
+    /**
+     * @param int[] $attempt_ids
+     * @param array{teacher_id?:int,limit?:int} $filters
+     * @return array<int,array<string,mixed>>
+     */
+    public static function get_attempt_timeline_map(array $attempt_ids, array $filters = []): array
+    {
+        self::maybe_prune_expired_logs();
+
+        $attempt_ids = array_values(array_unique(array_filter(array_map('absint', $attempt_ids))));
+        $timeline_map = [];
+        foreach ($attempt_ids as $attempt_id) {
+            $timeline_map[$attempt_id] = self::empty_attempt_timeline();
+        }
+        if (empty($attempt_ids)) {
+            return [];
+        }
+
+        global $wpdb;
+
+        $table = self::get_table_name($wpdb);
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $users_table = $wpdb->users;
+        $limit_per_attempt = max(1, min(100, absint($filters['limit'] ?? 100)));
+        $teacher_id = isset($filters['teacher_id']) ? absint($filters['teacher_id']) : 0;
+        $placeholders = implode(',', array_fill(0, count($attempt_ids), '%d'));
+        $where = ["l.attempt_id IN ({$placeholders})"];
+        $params = $attempt_ids;
+
+        if ($teacher_id > 0) {
+            $where[] = 'e.created_by = %d';
+            $params[] = $teacher_id;
+        }
+
+        $query = "SELECT l.id,
+                         l.attempt_id,
+                         l.exam_id,
+                         l.student_id,
+                         l.event_type,
+                         l.severity,
+                         l.message,
+                         l.context_json,
+                         l.occurred_at,
+                         l.created_at,
+                         u.display_name AS student_display_name,
+                         u.user_login AS student_login,
+                         e.title AS exam_title,
+                         e.created_by AS exam_created_by
+                  FROM {$table} l
+                  LEFT JOIN {$users_table} u ON u.ID = l.student_id
+                  LEFT JOIN {$exam_table} e ON e.id = l.exam_id
+                  WHERE " . implode(' AND ', $where) . '
+                  ORDER BY l.attempt_id ASC, l.occurred_at ASC, l.id ASC';
+
+        $rows = $wpdb->get_results($wpdb->prepare($query, $params), ARRAY_A);
+        if (!is_array($rows)) {
+            return $timeline_map;
+        }
+
+        $hydrated_rows = self::hydrate_security_log_rows($rows);
+        $rows_by_attempt = [];
+        foreach ($hydrated_rows as $row) {
+            $attempt_id = (int) ($row['attempt_id'] ?? 0);
+            if (!isset($timeline_map[$attempt_id])) {
+                continue;
+            }
+            if (
+                $teacher_id > 0
+                && isset($row['exam_created_by'])
+                && (int) ($row['exam_created_by'] ?? 0) > 0
+                && (int) ($row['exam_created_by'] ?? 0) !== $teacher_id
+            ) {
+                continue;
+            }
+            if (!isset($rows_by_attempt[$attempt_id])) {
+                $rows_by_attempt[$attempt_id] = [];
+            }
+            $rows_by_attempt[$attempt_id][] = $row;
+        }
+
+        foreach ($timeline_map as $attempt_id => $empty_timeline) {
+            $attempt_rows = (array) ($rows_by_attempt[$attempt_id] ?? []);
+            $raw_count = count($attempt_rows);
+            if ($raw_count > $limit_per_attempt) {
+                $attempt_rows = array_slice($attempt_rows, -$limit_per_attempt);
+            }
+            $timeline_map[$attempt_id] = self::build_attempt_timeline_from_rows($attempt_rows, $raw_count > $limit_per_attempt);
+        }
+
+        return $timeline_map;
+    }
+
+    /**
+     * @param array{teacher_id?:int,limit?:int} $filters
+     * @return array<string,mixed>
+     */
+    public static function get_attempt_timeline(int $attempt_id, array $filters = []): array
+    {
+        $attempt_id = absint($attempt_id);
+        if ($attempt_id <= 0) {
+            return self::empty_attempt_timeline();
+        }
+
+        $map = self::get_attempt_timeline_map([$attempt_id], $filters);
+        return isset($map[$attempt_id]) && is_array($map[$attempt_id])
+            ? $map[$attempt_id]
+            : self::empty_attempt_timeline();
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<int,array<string,mixed>>
+     */
+    private static function hydrate_security_log_rows(array $rows): array
+    {
         $rows = self::hydrate_student_security_profile_fields($rows);
         $definitions = self::event_definitions();
 
@@ -651,6 +769,160 @@ class CBT_Security_Log
 
             return $row;
         }, $rows);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<string,mixed>
+     */
+    private static function build_attempt_timeline_from_rows(array $rows, bool $truncated = false): array
+    {
+        if (empty($rows)) {
+            $empty = self::empty_attempt_timeline();
+            $empty['summary']['truncated'] = $truncated;
+            return $empty;
+        }
+
+        $event_counts = [];
+        $items = [];
+        $summary = [
+            'total_events' => 0,
+            'grouped_items' => 0,
+            'warning_count' => 0,
+            'critical_count' => 0,
+            'info_count' => 0,
+            'risk_score' => 0.0,
+            'risk_score_label' => '0',
+            'risk_tone' => 'normal',
+            'risk_label' => 'Normal',
+            'first_event_at' => '',
+            'last_event_at' => '',
+            'truncated' => $truncated,
+        ];
+
+        foreach ($rows as $row) {
+            $event_type = sanitize_key((string) ($row['event_type'] ?? ''));
+            if ($event_type === '') {
+                continue;
+            }
+
+            $severity = sanitize_key((string) ($row['severity'] ?? 'info'));
+            if (!in_array($severity, ['info', 'warning', 'critical'], true)) {
+                $severity = 'info';
+            }
+            $occurred_at = (string) ($row['occurred_at'] ?? $row['created_at'] ?? '');
+            $event_weight = self::get_event_risk_weight($event_type);
+            $event_label = (string) ($row['event_label'] ?? ucwords(str_replace('_', ' ', $event_type)));
+
+            $summary['total_events']++;
+            $summary['risk_score'] += $event_weight;
+            if ($severity === 'critical') {
+                $summary['critical_count']++;
+            } elseif ($severity === 'warning') {
+                $summary['warning_count']++;
+            } else {
+                $summary['info_count']++;
+            }
+            if ($summary['first_event_at'] === '') {
+                $summary['first_event_at'] = $occurred_at;
+            }
+            $summary['last_event_at'] = $occurred_at;
+
+            if (!isset($event_counts[$event_type])) {
+                $event_counts[$event_type] = [
+                    'event_type' => $event_type,
+                    'label' => $event_label,
+                    'severity' => $severity,
+                    'count' => 0,
+                    'risk_score' => 0.0,
+                    'last_occurred_at' => '',
+                ];
+            }
+            $event_counts[$event_type]['count']++;
+            $event_counts[$event_type]['risk_score'] += $event_weight;
+            $event_counts[$event_type]['last_occurred_at'] = $occurred_at;
+
+            $last_index = count($items) - 1;
+            if ($last_index >= 0 && (string) ($items[$last_index]['event_type'] ?? '') === $event_type) {
+                $items[$last_index]['count']++;
+                $items[$last_index]['last_occurred_at'] = $occurred_at;
+                $items[$last_index]['occurred_at'] = $occurred_at;
+                $items[$last_index]['total_risk_weight'] += $event_weight;
+                $items[$last_index]['message_display'] = (string) ($row['message_display'] ?? $items[$last_index]['message_display']);
+                $items[$last_index]['device_summary'] = (string) ($row['device_summary'] ?? $items[$last_index]['device_summary']);
+                continue;
+            }
+
+            $items[] = [
+                'id' => (int) ($row['id'] ?? 0),
+                'event_type' => $event_type,
+                'event_label' => $event_label,
+                'severity' => $severity,
+                'message_display' => (string) ($row['message_display'] ?? $row['message'] ?? ''),
+                'device_type' => (string) ($row['device_type'] ?? 'unknown'),
+                'device_summary' => (string) ($row['device_summary'] ?? $row['device_label'] ?? 'Unknown'),
+                'occurred_at' => $occurred_at,
+                'created_at' => (string) ($row['created_at'] ?? ''),
+                'first_occurred_at' => $occurred_at,
+                'last_occurred_at' => $occurred_at,
+                'count' => 1,
+                'risk_weight' => $event_weight,
+                'total_risk_weight' => $event_weight,
+            ];
+        }
+
+        $summary['grouped_items'] = count($items);
+        $summary['risk_score'] = max(0.0, (float) $summary['risk_score']);
+        $summary['risk_score_label'] = self::format_risk_score($summary['risk_score']);
+        if ($summary['risk_score'] >= self::MUST_WATCH_HIGH_RISK_THRESHOLD) {
+            $summary['risk_tone'] = 'high-risk';
+            $summary['risk_label'] = 'High Risk';
+        } elseif ($summary['risk_score'] >= self::MUST_WATCH_SCORE_THRESHOLD) {
+            $summary['risk_tone'] = 'watch';
+            $summary['risk_label'] = 'Must Watch';
+        }
+
+        $top_indicators = array_values($event_counts);
+        usort($top_indicators, static function (array $left, array $right): int {
+            $count_compare = (int) ($right['count'] ?? 0) <=> (int) ($left['count'] ?? 0);
+            if ($count_compare !== 0) {
+                return $count_compare;
+            }
+            return (float) ($right['risk_score'] ?? 0.0) <=> (float) ($left['risk_score'] ?? 0.0);
+        });
+        $summary['top_indicators'] = array_slice($top_indicators, 0, 5);
+
+        return [
+            'summary' => $summary,
+            'event_counts' => $event_counts,
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function empty_attempt_timeline(): array
+    {
+        return [
+            'summary' => [
+                'total_events' => 0,
+                'grouped_items' => 0,
+                'warning_count' => 0,
+                'critical_count' => 0,
+                'info_count' => 0,
+                'risk_score' => 0.0,
+                'risk_score_label' => '0',
+                'risk_tone' => 'normal',
+                'risk_label' => 'Normal',
+                'first_event_at' => '',
+                'last_event_at' => '',
+                'truncated' => false,
+                'top_indicators' => [],
+            ],
+            'event_counts' => [],
+            'items' => [],
+        ];
     }
 
     /**

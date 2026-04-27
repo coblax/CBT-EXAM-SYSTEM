@@ -122,6 +122,70 @@ final class QuestionsHelperPreviewRenderingTest extends TestCase
         self::assertStringContainsString('data:image/png;base64,def456', $richExplanationPreview);
     }
 
+    public function test_render_admin_student_preview_card_can_hide_answer_key_for_student_print_mode(): void
+    {
+        $preview = \CBT_Admin_Questions_Helper::render_admin_student_preview_card(
+            [
+                'question_type' => 'multiple_choice',
+                'question_text' => '<p>Pertanyaan uji</p>',
+                'points' => 1,
+                'explanation' => '<p>Pembahasan rahasia</p>',
+            ],
+            [
+                [
+                    'option_key' => 'A',
+                    'option_text' => '<p>Opsi benar</p>',
+                    'is_correct' => 1,
+                ],
+                [
+                    'option_key' => 'B',
+                    'option_text' => '<p>Opsi lain</p>',
+                    'is_correct' => 0,
+                ],
+            ],
+            [],
+            [
+                'answer_mode' => 'student',
+                'show_answer_key' => false,
+            ]
+        );
+
+        self::assertStringContainsString('Opsi benar', $preview);
+        self::assertStringNotContainsString(' is-correct', $preview);
+        self::assertStringNotContainsString('Kunci', $preview);
+        self::assertStringNotContainsString('Pembahasan', $preview);
+        self::assertStringNotContainsString('Pembahasan rahasia', $preview);
+    }
+
+    public function test_render_admin_student_preview_card_keeps_answer_key_for_teacher_print_mode(): void
+    {
+        $preview = \CBT_Admin_Questions_Helper::render_admin_student_preview_card(
+            [
+                'question_type' => 'multiple_choice',
+                'question_text' => '<p>Pertanyaan uji</p>',
+                'points' => 1,
+                'explanation' => '<p>Pembahasan guru</p>',
+            ],
+            [
+                [
+                    'option_key' => 'A',
+                    'option_text' => '<p>Opsi benar</p>',
+                    'is_correct' => 1,
+                ],
+            ],
+            [],
+            [
+                'answer_mode' => 'teacher',
+                'show_answer_key' => true,
+            ]
+        );
+
+        self::assertStringContainsString(' is-correct', $preview);
+        self::assertStringContainsString('Kunci', $preview);
+        self::assertStringContainsString('Pembahasan', $preview);
+        self::assertStringContainsString('Pembahasan guru', $preview);
+    }
+
     public function test_render_admin_student_preview_card_preserves_true_false_matrix_statement_lists(): void
     {
         $preview = \CBT_Admin_Questions_Helper::render_admin_student_preview_card([
@@ -144,6 +208,40 @@ final class QuestionsHelperPreviewRenderingTest extends TestCase
         self::assertStringContainsString('<ul><li>Butir 1</li><li>Butir 2</li></ul>', $preview);
         self::assertStringContainsString('Kunci Benar', $preview);
         self::assertStringContainsString('Kunci Salah', $preview);
+    }
+
+    public function test_render_admin_student_preview_card_hides_matrix_answers_for_student_print_mode(): void
+    {
+        $preview = \CBT_Admin_Questions_Helper::render_admin_student_preview_card(
+            [
+                'question_type' => 'true_false_matrix',
+                'question_text' => '<p>Cocokkan pernyataan berikut.</p>',
+                'correct_text' => wp_json_encode([
+                    'statements' => [
+                        [
+                            'text' => '<p>Pernyataan pertama</p>',
+                            'answer' => 'true',
+                        ],
+                        [
+                            'text' => '<p>Pernyataan kedua</p>',
+                            'answer' => 'false',
+                        ],
+                    ],
+                ]),
+            ],
+            [],
+            [],
+            [
+                'answer_mode' => 'student',
+                'show_answer_key' => false,
+            ]
+        );
+
+        self::assertStringContainsString('Pernyataan pertama', $preview);
+        self::assertStringContainsString('Pernyataan kedua', $preview);
+        self::assertStringNotContainsString('Kunci Benar', $preview);
+        self::assertStringNotContainsString('Kunci Salah', $preview);
+        self::assertStringNotContainsString('cbt-admin-student-preview-matrix-answer', $preview);
     }
 
     public function test_normalize_optional_rich_text_treats_images_as_content(): void

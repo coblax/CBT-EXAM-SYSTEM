@@ -973,6 +973,162 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertStringContainsString('Sumber deteksi: Windows CEFSharp Shell.', $logs[0]['message_display']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_attempt_timeline_groups_adjacent_events_and_respects_teacher_scope(): void
+    {
+        $this->bootstrapSecurityLogScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+
+        global $wpdb;
+        $wpdb = new SecurityLogFakeWpdb();
+        $wpdb->recentLogs = [
+            [
+                'id' => 21,
+                'attempt_id' => 301,
+                'exam_id' => 501,
+                'student_id' => 71,
+                'event_type' => 'fullscreen_exit',
+                'severity' => 'warning',
+                'message' => 'Peserta keluar dari mode fullscreen saat ujian berlangsung.',
+                'context_json' => wp_json_encode(['device_type' => 'desktop', 'device_platform' => 'windows']),
+                'occurred_at' => '2026-04-24 08:00:00',
+                'created_at' => '2026-04-24 08:00:00',
+                'student_display_name' => 'Indar Bismoko',
+                'student_login' => 'indar',
+                'student_kode_kelas' => 'XI TKJ 1',
+                'student_kode_ruang' => 'R-2',
+                'exam_title' => 'UTS',
+                'exam_created_by' => 9,
+            ],
+            [
+                'id' => 22,
+                'attempt_id' => 301,
+                'exam_id' => 501,
+                'student_id' => 71,
+                'event_type' => 'fullscreen_exit',
+                'severity' => 'warning',
+                'message' => 'Peserta keluar dari mode fullscreen saat ujian berlangsung.',
+                'context_json' => wp_json_encode(['device_type' => 'desktop', 'device_platform' => 'windows']),
+                'occurred_at' => '2026-04-24 08:01:00',
+                'created_at' => '2026-04-24 08:01:00',
+                'student_display_name' => 'Indar Bismoko',
+                'student_login' => 'indar',
+                'student_kode_kelas' => 'XI TKJ 1',
+                'student_kode_ruang' => 'R-2',
+                'exam_title' => 'UTS',
+                'exam_created_by' => 9,
+            ],
+            [
+                'id' => 23,
+                'attempt_id' => 301,
+                'exam_id' => 501,
+                'student_id' => 71,
+                'event_type' => 'print_attempt',
+                'severity' => 'warning',
+                'message' => 'Peserta mencoba membuka dialog print atau mencetak halaman ujian saat attempt masih berlangsung.',
+                'context_json' => wp_json_encode(['device_type' => 'desktop', 'device_platform' => 'windows', 'blocked' => 1]),
+                'occurred_at' => '2026-04-24 08:02:00',
+                'created_at' => '2026-04-24 08:02:00',
+                'student_display_name' => 'Indar Bismoko',
+                'student_login' => 'indar',
+                'student_kode_kelas' => 'XI TKJ 1',
+                'student_kode_ruang' => 'R-2',
+                'exam_title' => 'UTS',
+                'exam_created_by' => 9,
+            ],
+            [
+                'id' => 24,
+                'attempt_id' => 302,
+                'exam_id' => 502,
+                'student_id' => 72,
+                'event_type' => 'session_revoked',
+                'severity' => 'critical',
+                'message' => 'Sesi login attempt ini dicabut karena tidak lagi cocok dengan sesi aktif.',
+                'context_json' => wp_json_encode(['device_type' => 'mobile', 'device_platform' => 'android']),
+                'occurred_at' => '2026-04-24 08:03:00',
+                'created_at' => '2026-04-24 08:03:00',
+                'student_display_name' => 'Siswa Lain',
+                'student_login' => 'lain',
+                'student_kode_kelas' => 'XI TKJ 2',
+                'student_kode_ruang' => 'R-3',
+                'exam_title' => 'Exam Guru Lain',
+                'exam_created_by' => 42,
+            ],
+        ];
+
+        $timeline = \CBT_Security_Log::get_attempt_timeline(301, ['teacher_id' => 9]);
+
+        self::assertSame(3, $timeline['summary']['total_events'] ?? 0);
+        self::assertSame(2, $timeline['summary']['grouped_items'] ?? 0);
+        self::assertSame(3, $timeline['summary']['warning_count'] ?? 0);
+        self::assertSame('high-risk', $timeline['summary']['risk_tone'] ?? '');
+        self::assertSame(2, $timeline['event_counts']['fullscreen_exit']['count'] ?? 0);
+        self::assertSame('fullscreen_exit', $timeline['items'][0]['event_type'] ?? '');
+        self::assertSame(2, $timeline['items'][0]['count'] ?? 0);
+        self::assertSame('2026-04-24 08:00:00', $timeline['items'][0]['first_occurred_at'] ?? '');
+        self::assertSame('2026-04-24 08:01:00', $timeline['items'][0]['last_occurred_at'] ?? '');
+
+        $timelineMap = \CBT_Security_Log::get_attempt_timeline_map([301, 302], ['teacher_id' => 9]);
+        self::assertSame(3, $timelineMap[301]['summary']['total_events'] ?? 0);
+        self::assertSame(0, $timelineMap[302]['summary']['total_events'] ?? -1);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_admin_results_timeline_render_outputs_summary_items_and_empty_state(): void
+    {
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-results-helper.php';
+
+        $timeline = [
+            'summary' => [
+                'total_events' => 3,
+                'warning_count' => 3,
+                'critical_count' => 0,
+                'risk_score_label' => '11',
+                'risk_tone' => 'high-risk',
+                'risk_label' => 'High Risk',
+                'top_indicators' => [
+                    [
+                        'event_type' => 'fullscreen_exit',
+                        'label' => 'Keluar fullscreen',
+                        'severity' => 'warning',
+                        'count' => 2,
+                    ],
+                ],
+            ],
+            'event_counts' => [
+                'fullscreen_exit' => [
+                    'event_type' => 'fullscreen_exit',
+                    'label' => 'Keluar fullscreen',
+                    'severity' => 'warning',
+                    'count' => 2,
+                ],
+            ],
+            'items' => [
+                [
+                    'event_type' => 'fullscreen_exit',
+                    'event_label' => 'Keluar fullscreen',
+                    'severity' => 'warning',
+                    'message_display' => 'Peserta keluar fullscreen.',
+                    'device_summary' => 'Desktop • Windows',
+                    'first_occurred_at' => '2026-04-24 08:00:00',
+                    'last_occurred_at' => '2026-04-24 08:01:00',
+                    'count' => 2,
+                ],
+            ],
+        ];
+
+        $html = \CBT_Admin_Results_Helper::render_attempt_security_timeline_html($timeline);
+
+        self::assertStringContainsString('Security Timeline', $html);
+        self::assertStringContainsString('High Risk', $html);
+        self::assertStringContainsString('Keluar fullscreen', $html);
+        self::assertStringContainsString('2x', $html);
+        self::assertStringContainsString('Event security tercatat sebagai indikasi forensik', $html);
+
+        $emptyHtml = \CBT_Admin_Results_Helper::render_attempt_security_timeline_html([]);
+        self::assertStringContainsString('Belum ada event security untuk attempt ini.', $emptyHtml);
+    }
+
     private function bootstrapSecurityLogScaffold(): void
     {
     }

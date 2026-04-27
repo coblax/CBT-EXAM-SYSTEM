@@ -13,6 +13,12 @@ export function createExamNavigationManager(deps) {
     var getQuestionAtIndex = deps.getQuestionAtIndex;
     var getQuestionById = deps.getQuestionById;
     var getQuestionCount = deps.getQuestionCount;
+    var getQuestionDisplayNumber = typeof deps.getQuestionDisplayNumber === 'function'
+        ? deps.getQuestionDisplayNumber
+        : function (question, fallbackIndex) {
+            var questionNumber = Number(question && question.question_number !== undefined ? question.question_number : 0) || 0;
+            return questionNumber > 0 ? questionNumber : Math.max(1, Math.floor(Number(fallbackIndex) || 0) + 1);
+        };
     var getQuestionIdAtIndex = deps.getQuestionIdAtIndex;
     var getShortAnswerKeys = deps.getShortAnswerKeys;
     var getTrueFalseMatrixItems = deps.getTrueFalseMatrixItems;
@@ -192,6 +198,8 @@ export function createExamNavigationManager(deps) {
         var totalQuestions = getQuestionCount();
         var answeredQuestions = 0;
         var doubtfulQuestions = 0;
+        var unansweredQuestionItems = [];
+        var doubtfulQuestionItems = [];
 
         var summaryQuestionIds = Array.isArray(state.questionOrderIds) && state.questionOrderIds.length
             ? state.questionOrderIds
@@ -199,16 +207,26 @@ export function createExamNavigationManager(deps) {
                 ? state.questionManifest.map(function (question) { return Number(question && question.id) || 0; })
                 : state.questions.map(function (question) { return Number(question && question.id) || 0; }));
 
-        summaryQuestionIds.forEach(function (questionId) {
+        summaryQuestionIds.forEach(function (questionId, questionIndex) {
             var question = getQuestionById(questionId);
             if (!question) {
                 return;
             }
+            var questionDisplayNumber = getQuestionDisplayNumber(question, questionIndex);
+            var questionItem = {
+                questionId: Number(question.id) || Number(questionId) || 0,
+                index: questionIndex,
+                number: questionDisplayNumber,
+                label: String(questionDisplayNumber)
+            };
             if (isQuestionAnswered(question)) {
                 answeredQuestions += 1;
+            } else {
+                unansweredQuestionItems.push(questionItem);
             }
             if (isQuestionDoubtful(question)) {
                 doubtfulQuestions += 1;
+                doubtfulQuestionItems.push(questionItem);
             }
         });
 
@@ -220,6 +238,10 @@ export function createExamNavigationManager(deps) {
             answeredQuestions: answeredQuestions,
             unansweredQuestions: unansweredQuestions,
             doubtfulQuestions: doubtfulQuestions,
+            unansweredQuestionItems: unansweredQuestionItems,
+            doubtfulQuestionItems: doubtfulQuestionItems,
+            unansweredQuestionNumbers: unansweredQuestionItems.map(function (item) { return item.label; }),
+            doubtfulQuestionNumbers: doubtfulQuestionItems.map(function (item) { return item.label; }),
             answeredPercentage: answeredPercentage
         };
     }
@@ -557,6 +579,25 @@ export function createExamNavigationManager(deps) {
     }
 
     function handleAction(action, actionNode) {
+        if (action === 'finish-review-unanswered' || action === 'finish-review-doubtful') {
+            var reviewFilter = action === 'finish-review-doubtful'
+                ? navQuestionFilterDoubtful
+                : navQuestionFilterUnanswered;
+            var reviewEntries = getNavigationQuestionEntries(reviewFilter);
+            state.finishConfirmOpen = false;
+            state.finishConfirmSummary = null;
+            state.navQuestionFilter = reviewFilter;
+            clearMessages();
+            render('finish-review:focus-filter', {
+                filter: reviewFilter,
+                targetIndex: reviewEntries.length ? reviewEntries[0].index : -1
+            });
+            if (reviewEntries.length) {
+                goToQuestion(reviewEntries[0].index);
+            }
+            return true;
+        }
+
         if (action === 'prev') {
             goToQuestion(state.currentIndex - 1);
             return true;

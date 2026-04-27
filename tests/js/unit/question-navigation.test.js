@@ -126,6 +126,10 @@ function createFixture(overrides = {}) {
         getQuestionCount: function () {
             return questionOrderIds.length;
         },
+        getQuestionDisplayNumber: function (question, fallbackIndex) {
+            var questionNumber = Number(question && question.question_number !== undefined ? question.question_number : 0) || 0;
+            return questionNumber > 0 ? questionNumber : Math.max(1, Number(fallbackIndex) + 1);
+        },
         getQuestionIdAtIndex: function (index) {
             return Number(questionOrderIds[Math.max(0, Math.min(questionOrderIds.length - 1, Math.floor(Number(index) || 0)))]) || 0;
         },
@@ -315,6 +319,67 @@ describe('createExamNavigationManager', function () {
             return entry.questionId;
         })).toEqual([103]);
         expect(fixture.state.currentIndex).toBe(1);
+    });
+
+    it('includes unanswered and doubtful question numbers in the exam progress summary', function () {
+        var fixture = createFixture({
+            state: {
+                answers: {
+                    101: 12
+                },
+                answeredQuestionLookup: {
+                    101: true
+                },
+                doubtful: {
+                    102: true
+                }
+            }
+        });
+
+        var summary = fixture.navigationManager.getExamProgressSummary();
+
+        expect(summary.totalQuestions).toBe(3);
+        expect(summary.answeredQuestions).toBe(1);
+        expect(summary.unansweredQuestions).toBe(2);
+        expect(summary.doubtfulQuestions).toBe(1);
+        expect(summary.unansweredQuestionNumbers).toEqual(['2', '3']);
+        expect(summary.doubtfulQuestionNumbers).toEqual(['2']);
+        expect(summary.unansweredQuestionItems.map(function (item) {
+            return item.questionId;
+        })).toEqual([102, 103]);
+    });
+
+    it('closes the finish review modal and focuses the first unanswered or doubtful question', function () {
+        var fixture = createFixture({
+            state: {
+                answers: {
+                    101: 12
+                },
+                answeredQuestionLookup: {
+                    101: true
+                },
+                currentIndex: 0,
+                doubtful: {
+                    103: true
+                },
+                finishConfirmOpen: true,
+                finishConfirmSummary: { totalQuestions: 3 }
+            }
+        });
+        var button = document.createElement('button');
+
+        expect(fixture.navigationManager.handleAction('finish-review-unanswered', button)).toBe(true);
+        expect(fixture.state.finishConfirmOpen).toBe(false);
+        expect(fixture.state.finishConfirmSummary).toBeNull();
+        expect(fixture.state.navQuestionFilter).toBe('unanswered');
+        expect(fixture.state.currentIndex).toBe(1);
+
+        fixture.state.finishConfirmOpen = true;
+        fixture.state.finishConfirmSummary = { totalQuestions: 3 };
+        expect(fixture.navigationManager.handleAction('finish-review-doubtful', button)).toBe(true);
+        expect(fixture.state.finishConfirmOpen).toBe(false);
+        expect(fixture.state.navQuestionFilter).toBe('doubtful');
+        expect(fixture.state.currentIndex).toBe(2);
     });
 
     it('shows a navigation transition before flushing the previous answer when the target payload is already loaded', async function () {

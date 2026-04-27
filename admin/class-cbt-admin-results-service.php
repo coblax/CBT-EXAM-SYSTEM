@@ -24,6 +24,10 @@ if (!class_exists('CBT_Admin_Results_Helper')) {
     require_once __DIR__ . '/class-cbt-admin-results-helper.php';
 }
 
+if (!class_exists('CBT_Security_Log')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-security-log.php';
+}
+
 final class CBT_Admin_Results_Service
 {
     private const TEST_REDIRECT_SIGNAL = '__cbt_admin_results_redirect__';
@@ -242,6 +246,16 @@ final class CBT_Admin_Results_Service
             $answer_table,
             $option_table
         );
+        $attempt_security_timeline_map = $wpdb instanceof wpdb && class_exists('CBT_Security_Log') && method_exists('CBT_Security_Log', 'get_attempt_timeline_map')
+            ? CBT_Security_Log::get_attempt_timeline_map(
+                array_values(array_filter(array_map(static function ($attempt): int {
+                    return (int) (is_array($attempt) ? ($attempt['id'] ?? 0) : 0);
+                }, (array) $attempts))),
+                [
+                    'teacher_id' => $is_admin_scope ? 0 : $current_user_id,
+                ]
+            )
+            : [];
         $submit_flow_monitoring = self::build_submit_flow_monitoring_context([
             'is_admin_scope' => $is_admin_scope,
             'current_user_id' => $current_user_id,

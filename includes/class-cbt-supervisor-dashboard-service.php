@@ -117,6 +117,7 @@ final class CBT_Supervisor_Dashboard_Service
         $duration_minutes = max(1, (int) ($row['exam_duration_minutes'] ?? 0)) + max(0, (int) ($row['extra_time_minutes'] ?? 0));
         $presence = self::find_live_roster_item_for_attempt($scope, (int) ($row['attempt_id'] ?? 0));
         $submit_status = self::find_submit_status_for_attempt($scope, $row);
+        $security_timeline = self::load_attempt_security_timeline($scope, (int) ($row['attempt_id'] ?? 0));
 
         return [
             'ok' => true,
@@ -152,7 +153,8 @@ final class CBT_Supervisor_Dashboard_Service
                 'earned_points' => $earned_points,
                 'total_points' => $total_points,
             ],
-            'security_events' => self::load_attempt_security_events($scope, (int) ($row['attempt_id'] ?? 0)),
+            'security_timeline' => $security_timeline,
+            'security_events' => self::latest_security_events_from_timeline($security_timeline),
             'submit_status' => $submit_status,
             'timeline' => [
                 'started_at' => (string) ($row['started_at'] ?? ''),
@@ -1301,41 +1303,93 @@ final class CBT_Supervisor_Dashboard_Service
 
     /**
      * @param array<string,mixed> $scope
-     * @return array<int,array<string,mixed>>
+     * @return array<string,mixed>
      */
-    private static function load_attempt_security_events(array $scope, int $attempt_id): array
+    private static function load_attempt_security_timeline(array $scope, int $attempt_id): array
     {
-        if ($attempt_id <= 0 || !class_exists('CBT_Security_Log') || !method_exists('CBT_Security_Log', 'get_recent_logs')) {
-            return [];
+        if ($attempt_id <= 0 || !class_exists('CBT_Security_Log') || !method_exists('CBT_Security_Log', 'get_attempt_timeline')) {
+            return self::empty_security_timeline();
         }
 
-        $rows = CBT_Security_Log::get_recent_logs(20, [
+        $timeline = CBT_Security_Log::get_attempt_timeline($attempt_id, [
             'teacher_id' => max(0, (int) ($scope['teacher_scope_user_id'] ?? 0)),
         ]);
-        $items = [];
-        foreach ((array) $rows as $row) {
-            if (!is_array($row) || (int) ($row['attempt_id'] ?? 0) !== $attempt_id) {
+
+        return is_array($timeline) ? $timeline : self::empty_security_timeline();
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function empty_security_timeline(): array
+    {
+        return [
+            'summary' => [
+                'total_events' => 0,
+                'grouped_items' => 0,
+                'warning_count' => 0,
+                'critical_count' => 0,
+                'info_count' => 0,
+                'risk_score' => 0.0,
+                'risk_score_label' => self::format_risk_score(0.0),
+                'risk_tone' => 'normal',
+                'risk_label' => 'Normal',
+                'first_event_at' => '',
+                'last_event_at' => '',
+                'truncated' => false,
+                'top_indicators' => [],
+            ],
+            'event_counts' => [],
+            'items' => [],
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $timeline
+     * @return array<int,array<string,mixed>>
+     */
+    private static function latest_security_events_from_timeline(array $timeline): array
+    {
+        $items = isset($timeline['items']) && is_array($timeline['items'])
+            ? array_reverse(array_values($timeline['items']))
+            : [];
+        $events = [];
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
                 continue;
             }
 
-            $items[] = [
-                'id' => (int) ($row['id'] ?? 0),
-                'event_type' => (string) ($row['event_type'] ?? ''),
-                'event_label' => (string) ($row['event_label'] ?? ucwords(str_replace('_', ' ', (string) ($row['event_type'] ?? 'event')))),
-                'severity' => (string) ($row['severity'] ?? 'info'),
-                'message_display' => (string) ($row['message_display'] ?? $row['message'] ?? ''),
-                'device_type' => (string) ($row['device_type'] ?? 'unknown'),
-                'device_summary' => (string) ($row['device_summary'] ?? $row['device_label'] ?? 'Unknown'),
-                'occurred_at' => (string) ($row['occurred_at'] ?? ''),
-                'created_at' => (string) ($row['created_at'] ?? ''),
+            $events[] = [
+                'id' => (int) ($item['id'] ?? 0),
+                'event_type' => (string) ($item['event_type'] ?? ''),
+                'event_label' => (string) ($item['event_label'] ?? ucwords(str_replace('_', ' ', (string) ($item['event_type'] ?? 'event')))),
+                'severity' => (string) ($item['severity'] ?? 'info'),
+                'message_display' => (string) ($item['message_display'] ?? ''),
+                'device_type' => (string) ($item['device_type'] ?? 'unknown'),
+                'device_summary' => (string) ($item['device_summary'] ?? 'Unknown'),
+                'occurred_at' => (string) ($item['occurred_at'] ?? $item['last_occurred_at'] ?? ''),
+                'created_at' => (string) ($item['created_at'] ?? ''),
+                'count' => max(1, (int) ($item['count'] ?? 1)),
+                'first_occurred_at' => (string) ($item['first_occurred_at'] ?? ''),
+                'last_occurred_at' => (string) ($item['last_occurred_at'] ?? $item['occurred_at'] ?? ''),
             ];
 
-            if (count($items) >= 5) {
+            if (count($events) >= 5) {
                 break;
             }
         }
 
-        return $items;
+        return $events;
+    }
+
+    /**
+     * @param array<string,mixed> $scope
+     * @return array<int,array<string,mixed>>
+     */
+    private static function load_attempt_security_events(array $scope, int $attempt_id): array
+    {
+        return self::latest_security_events_from_timeline(self::load_attempt_security_timeline($scope, $attempt_id));
     }
 
     /**

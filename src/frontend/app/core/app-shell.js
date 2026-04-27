@@ -283,6 +283,77 @@ export function createAppShellManager(deps) {
         ].join('');
     }
 
+    function normalizeFinishReviewQuestionItems(summary, itemKey, numberKey) {
+        var rawItems = summary && Array.isArray(summary[itemKey]) ? summary[itemKey] : [];
+        if (!rawItems.length && summary && Array.isArray(summary[numberKey])) {
+            rawItems = summary[numberKey].map(function (label, index) {
+                return {
+                    index: index,
+                    label: label,
+                    number: label,
+                    questionId: 0
+                };
+            });
+        }
+
+        return rawItems.reduce(function (items, item, index) {
+            var label = '';
+            var questionIndex = index;
+            var questionId = 0;
+            if (item && typeof item === 'object') {
+                label = String(item.label || item.number || (Number(item.index) + 1) || '');
+                questionIndex = Math.max(0, Number(item.index) || index);
+                questionId = Number(item.questionId) || 0;
+            } else {
+                label = String(item || '');
+            }
+            if (label === '') {
+                return items;
+            }
+            items.push({
+                index: questionIndex,
+                label: label,
+                questionId: questionId
+            });
+            return items;
+        }, []);
+    }
+
+    function renderFinishReviewNumberPreview(items) {
+        var safeItems = Array.isArray(items) ? items : [];
+        var previewItems = safeItems.slice(0, 12);
+        var hiddenCount = Math.max(0, safeItems.length - previewItems.length);
+        if (!safeItems.length) {
+            return '';
+        }
+
+        return [
+            '<div class="cbt-finish-review-number-list" aria-label="Preview nomor soal">',
+            previewItems.map(function (item) {
+                return '<span class="cbt-finish-review-number">' + escapeHtml(item.label) + '</span>';
+            }).join(''),
+            hiddenCount > 0 ? '<span class="cbt-finish-review-more">+' + escapeHtml(hiddenCount) + ' lagi</span>' : '',
+            '</div>'
+        ].join('');
+    }
+
+    function renderFinishReviewIssue(title, count, items, action, actionLabel, disabled) {
+        if (count <= 0) {
+            return '';
+        }
+
+        return [
+            '<div class="cbt-finish-review-issue">',
+            '<div class="cbt-finish-review-issue-main">',
+            '<strong>' + escapeHtml(title) + '</strong>',
+            '<span>' + escapeHtml(count) + ' soal</span>',
+            renderFinishReviewNumberPreview(items),
+            '</div>',
+            '<button class="cbt-button cbt-button-secondary cbt-finish-review-check" data-action="' + escapeHtml(action) + '" type="button"' + (disabled ? ' disabled' : '') + '>' + escapeHtml(actionLabel) + '</button>',
+            '</div>'
+        ].join('');
+    }
+
     function renderFinishConfirmModal() {
         if ((!state.finishConfirmOpen && !state.isFinishing && !(Number(state.finishProgressStepIndex) > 0)) || state.stage !== 'exam') {
             return '';
@@ -292,9 +363,16 @@ export function createAppShellManager(deps) {
         var totalQuestions = Number(summary.totalQuestions) || 0;
         var answeredQuestions = Number(summary.answeredQuestions) || 0;
         var unansweredQuestions = Number(summary.unansweredQuestions) || 0;
+        var doubtfulQuestions = Number(summary.doubtfulQuestions) || 0;
+        var unansweredItems = normalizeFinishReviewQuestionItems(summary, 'unansweredQuestionItems', 'unansweredQuestionNumbers');
+        var doubtfulItems = normalizeFinishReviewQuestionItems(summary, 'doubtfulQuestionItems', 'doubtfulQuestionNumbers');
         var answeredPercentage = totalQuestions > 0 ? (answeredQuestions / totalQuestions) * 100 : 0;
         var progressWidth = Math.max(0, Math.min(100, answeredPercentage)).toFixed(2);
         var progressLabel = formatScoreValue(answeredPercentage);
+        var pendingSyncCount = Math.max(0, Number(state.pendingSyncCount) || 0);
+        var connectionStatus = String(state.connectionStatus || 'online').toLowerCase();
+        var isOffline = connectionStatus === 'offline';
+        var lastSyncError = String(state.lastSyncError || '').trim();
         var finishProgressPercent = Math.max(0, Math.min(100, Number(state.finishProgressPercent) || 0));
         var finishProgressWidth = finishProgressPercent.toFixed(2);
         var finishProgressLabel = formatScoreValue(finishProgressPercent);
@@ -305,16 +383,52 @@ export function createAppShellManager(deps) {
         var showFinishLiveProgress = state.isFinishing || finishProgressStepIndex > 0 || state.examLockedForPendingFinish;
         var finishTitle = showFinishLiveProgress
             ? 'PROSES'
-            : 'KONFIRMASI PENGUMPULAN UJIAN';
+            : 'REVIEW SEBELUM KUMPULKAN';
         var finishSubtitle = state.isFinishing
             ? 'Finalisasi sedang berjalan. Jangan tutup halaman ini sampai hasil muncul.'
             : (showFinishLiveProgress
                 ? 'Siap'
-                : 'Periksa jumlah jawaban sebelum ujian dikumpulkan.');
-        var finishSubmitLabel = showFinishLiveProgress ? 'Proses...' : 'Tetap Kumpulkan';
-        var warningMarkup = unansweredQuestions > 0
-            ? '<div class="cbt-finish-modal-warning">Masih ada <strong>' + escapeHtml(unansweredQuestions) + '</strong> soal belum terjawab.</div>'
-            : '<div class="cbt-finish-modal-ok">Semua soal sudah terjawab. Anda bisa lanjut kumpulkan ujian.</div>';
+                : 'Periksa ringkasan jawaban, tanda ragu-ragu, dan sinkronisasi sebelum final.');
+        var finishSubmitLabel = showFinishLiveProgress ? 'Proses...' : 'Saya Yakin Kumpulkan';
+        var syncTone = 'is-ok';
+        var syncTitle = 'Online / aman';
+        var syncDetail = 'Semua jawaban yang berubah sudah aman untuk finalisasi.';
+        if (isOffline) {
+            syncTone = 'is-offline';
+            syncTitle = 'Offline / lokal aman';
+            syncDetail = pendingSyncCount > 0
+                ? (String(pendingSyncCount) + ' jawaban menunggu koneksi. Sistem akan lanjut setelah online.')
+                : 'Koneksi sedang offline. Finalisasi akan menunggu koneksi kembali.';
+        } else if (pendingSyncCount > 0) {
+            syncTone = 'is-pending';
+            syncTitle = 'Menunggu sinkron';
+            syncDetail = String(pendingSyncCount) + ' jawaban masih menunggu dikirim ke server.';
+        }
+        if (lastSyncError !== '' && pendingSyncCount > 0) {
+            syncDetail += ' Catatan terakhir: ' + lastSyncError;
+        }
+        var reviewWarnings = [];
+        if (unansweredQuestions > 0) {
+            reviewWarnings.push('Masih ada ' + String(unansweredQuestions) + ' soal belum dijawab.');
+        }
+        if (doubtfulQuestions > 0) {
+            reviewWarnings.push('Ada ' + String(doubtfulQuestions) + ' soal ditandai ragu-ragu.');
+        }
+        if (pendingSyncCount > 0) {
+            reviewWarnings.push(String(pendingSyncCount) + ' jawaban masih menunggu sinkronisasi.');
+        }
+        if (isOffline) {
+            reviewWarnings.push('Perangkat sedang offline; finalisasi akan menunggu koneksi.');
+        }
+        var warningMarkup = reviewWarnings.length
+            ? '<div class="cbt-finish-modal-warning">' + reviewWarnings.map(function (warning) {
+                return '<span>' + escapeHtml(warning) + '</span>';
+            }).join('') + '</div>'
+            : '<div class="cbt-finish-modal-ok">Semua soal sudah terjawab, tidak ada tanda ragu-ragu, dan sinkronisasi aman.</div>';
+        var reviewIssueMarkup = [
+            renderFinishReviewIssue('Belum Dijawab', unansweredQuestions, unansweredItems, 'finish-review-unanswered', 'Cek Belum Dijawab', showFinishLiveProgress),
+            renderFinishReviewIssue('Ragu-Ragu', doubtfulQuestions, doubtfulItems, 'finish-review-doubtful', 'Cek Ragu-Ragu', showFinishLiveProgress)
+        ].join('');
         var finishLiveMarkup = showFinishLiveProgress
             ? [
                 '<div class="cbt-finish-live-card" aria-live="polite">',
@@ -343,12 +457,15 @@ export function createAppShellManager(deps) {
             '<div class="cbt-finish-stat"><span>Total Soal</span><strong>' + escapeHtml(totalQuestions) + '</strong></div>',
             '<div class="cbt-finish-stat is-answered"><span>Terjawab</span><strong>' + escapeHtml(answeredQuestions) + '</strong></div>',
             '<div class="cbt-finish-stat is-unanswered"><span>Belum Terjawab</span><strong>' + escapeHtml(unansweredQuestions) + '</strong></div>',
+            '<div class="cbt-finish-stat is-doubtful"><span>Ragu-Ragu</span><strong>' + escapeHtml(doubtfulQuestions) + '</strong></div>',
             '</div>',
             '<div class="cbt-finish-modal-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + escapeHtml(progressWidth) + '">',
             '<span class="cbt-finish-modal-progress-fill" style="width: ' + escapeHtml(progressWidth) + '%;"></span>',
             '</div>',
             '<p class="cbt-muted">Progress jawaban: ' + escapeHtml(progressLabel) + '%</p>',
+            '<div class="cbt-finish-sync-status ' + escapeHtml(syncTone) + '"><span>Status Sinkronisasi</span><strong>' + escapeHtml(syncTitle) + '</strong><small>' + escapeHtml(syncDetail) + '</small></div>',
             warningMarkup,
+            reviewIssueMarkup !== '' ? '<div class="cbt-finish-review-list">' + reviewIssueMarkup + '</div>' : '',
             finishLiveMarkup,
             '<div class="cbt-actions cbt-finish-modal-actions">',
             '<button class="cbt-button cbt-button-secondary" data-action="finish-confirm-cancel" type="button"' + (state.isFinishing || state.examLockedForPendingFinish ? ' disabled' : '') + '>Kembali Kerjakan</button>',

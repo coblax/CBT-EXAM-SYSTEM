@@ -92,6 +92,8 @@ final class CBT_Admin_Exams_Service
     private const EXAM_READINESS_PROBLEM_PER_PAGE = 10;
     private const EXAM_READINESS_EAGER_DIAGNOSTIC_LIMIT = 250;
     private const HERO_OPERATIONAL_STATS_TTL = 20;
+    public const EXAM_QUESTION_PRINT_MODE_STUDENT = 'student';
+    public const EXAM_QUESTION_PRINT_MODE_TEACHER = 'teacher';
     public const SNAPSHOT_TAB_PREFLIGHT = 'preflight';
     public const SNAPSHOT_TAB_QUESTION_MONITOR = 'question_monitor';
     public const SNAPSHOT_TAB_START_MONITOR = 'start_monitor';
@@ -2375,6 +2377,127 @@ final class CBT_Admin_Exams_Service
         $schedule_text = !empty($schedule_parts) ? implode(' | ', $schedule_parts) : '-';
 
         return get_defined_vars();
+    }
+
+    /**
+     * @param array<string,mixed> $source
+     * @return array<string,mixed>|WP_Error
+     */
+    public static function build_print_questions_context(array $source)
+    {
+        $exam_id = self::get_print_questions_exam_id($source);
+        $print_mode = self::normalize_print_questions_mode((string) ($source['cbt_exam_question_print_mode'] ?? ($source['print_mode'] ?? '')));
+        $exam_list_state = self::get_exam_list_state_from_request($source);
+        $redirect_args = self::add_exam_list_state_args(
+            [
+                'page' => 'cbt-exams',
+                'preview_exam_id' => $exam_id,
+            ],
+            $exam_list_state
+        );
+
+        if (!self::can_manage_exams()) {
+            return new WP_Error(
+                'exam_questions_print_forbidden',
+                'Unauthorized',
+                ['redirect_args' => $redirect_args]
+            );
+        }
+
+        if ($exam_id <= 0) {
+            return new WP_Error(
+                'exam_questions_print_invalid_exam',
+                'Exam tidak ditemukan atau tidak bisa diakses.',
+                ['redirect_args' => $redirect_args]
+            );
+        }
+
+        $preview_source = $source;
+        $preview_source['preview_exam_id'] = $exam_id;
+        $context = self::build_preview_context($preview_source);
+        $error_message = trim((string) ($context['error_message'] ?? ''));
+        if ($error_message !== '') {
+            return new WP_Error(
+                'exam_questions_print_not_found',
+                $error_message,
+                ['redirect_args' => $redirect_args]
+            );
+        }
+
+        if (empty($context['questions'])) {
+            return new WP_Error(
+                'exam_questions_print_empty',
+                'Exam ini belum memiliki soal untuk dicetak.',
+                ['redirect_args' => $redirect_args]
+            );
+        }
+
+        $show_answer_key = $print_mode === self::EXAM_QUESTION_PRINT_MODE_TEACHER;
+        $print_mode_label = $show_answer_key ? 'Lembar Guru + Kunci' : 'Lembar Siswa';
+        $print_back_url = add_query_arg($redirect_args, admin_url('admin.php'));
+        $printed_at = current_time('d M Y H:i');
+        $document_title = trim('Print Soal ' . (string) ($context['exam']['title'] ?? 'Exam'));
+
+        return $context + compact(
+            'document_title',
+            'print_back_url',
+            'print_mode',
+            'print_mode_label',
+            'printed_at',
+            'show_answer_key'
+        );
+    }
+
+    public static function handle_print_exam_questions(): void
+    {
+        if (!self::can_manage_exams()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_print_exam_questions');
+
+        $context = self::build_print_questions_context($_POST);
+        if (is_wp_error($context)) {
+            $error_data = $context->get_error_data();
+            $redirect_args = is_array($error_data) && isset($error_data['redirect_args']) && is_array($error_data['redirect_args'])
+                ? $error_data['redirect_args']
+                : ['page' => 'cbt-exams'];
+
+            wp_safe_redirect(add_query_arg($redirect_args + ['cbt_err' => $context->get_error_message()], admin_url('admin.php')));
+            exit;
+        }
+
+        nocache_headers();
+        header('Content-Type: text/html; charset=' . get_option('blog_charset'));
+
+        extract($context, EXTR_SKIP);
+        require CBT_EXAM_SYSTEM_PATH . 'admin/views/exams/print.php';
+        exit;
+    }
+
+    /**
+     * @param array<string,mixed> $source
+     */
+    private static function get_print_questions_exam_id(array $source): int
+    {
+        if (isset($source['exam_id'])) {
+            return absint(wp_unslash((string) $source['exam_id']));
+        }
+
+        if (isset($source['preview_exam_id'])) {
+            return absint(wp_unslash((string) $source['preview_exam_id']));
+        }
+
+        return 0;
+    }
+
+    private static function normalize_print_questions_mode(string $mode): string
+    {
+        $mode = sanitize_key($mode);
+
+        return $mode === self::EXAM_QUESTION_PRINT_MODE_TEACHER
+            ? self::EXAM_QUESTION_PRINT_MODE_TEACHER
+            : self::EXAM_QUESTION_PRINT_MODE_STUDENT;
     }
 
     public static function handle_save_exam(): void

@@ -141,7 +141,11 @@ final class SupervisorDashboardServiceTest extends TestCase
         self::assertSame('Indar Bismoko', $detail['student']['name'] ?? '');
         self::assertSame('UTS', $detail['exam']['title'] ?? '');
         self::assertSame(70, $detail['answer_progress']['question_count'] ?? 0);
+        self::assertSame(2, $detail['security_timeline']['summary']['total_events'] ?? 0);
+        self::assertSame('watch', $detail['security_timeline']['summary']['risk_tone'] ?? '');
         self::assertNotEmpty($detail['security_events'] ?? []);
+        self::assertSame('tab_hidden', $detail['security_events'][0]['event_type'] ?? '');
+        self::assertSame(2, $detail['security_events'][0]['count'] ?? 0);
 
         $blocked = \CBT_Supervisor_Dashboard_Service::get_attempt_detail(55, 42, 'teacher');
         self::assertInstanceOf(\WP_Error::class, $blocked);
@@ -386,6 +390,74 @@ class CBT_Security_Log
                 'device_type' => 'desktop',
                 'device_summary' => 'Desktop',
                 'occurred_at' => '2026-04-24 08:04:00',
+            ],
+        ];
+    }
+
+    public static function get_attempt_timeline(int $attempt_id, array $filters = []): array
+    {
+        if ($attempt_id !== 55 || (int) ($filters['teacher_id'] ?? 0) !== 41) {
+            return [
+                'summary' => [
+                    'total_events' => 0,
+                    'grouped_items' => 0,
+                    'warning_count' => 0,
+                    'critical_count' => 0,
+                    'info_count' => 0,
+                    'risk_score' => 0.0,
+                    'risk_score_label' => '0',
+                    'risk_tone' => 'normal',
+                    'risk_label' => 'Normal',
+                    'top_indicators' => [],
+                ],
+                'event_counts' => [],
+                'items' => [],
+            ];
+        }
+
+        return [
+            'summary' => [
+                'total_events' => 2,
+                'grouped_items' => 1,
+                'warning_count' => 0,
+                'critical_count' => 2,
+                'info_count' => 0,
+                'risk_score' => 6.0,
+                'risk_score_label' => '6.0',
+                'risk_tone' => 'watch',
+                'risk_label' => 'Must Watch',
+                'top_indicators' => [
+                    [
+                        'event_type' => 'tab_hidden',
+                        'label' => 'Tab Hidden',
+                        'severity' => 'critical',
+                        'count' => 2,
+                    ],
+                ],
+            ],
+            'event_counts' => [
+                'tab_hidden' => [
+                    'event_type' => 'tab_hidden',
+                    'label' => 'Tab Hidden',
+                    'severity' => 'critical',
+                    'count' => 2,
+                ],
+            ],
+            'items' => [
+                [
+                    'id' => 901,
+                    'event_type' => 'tab_hidden',
+                    'event_label' => 'Tab Hidden',
+                    'severity' => 'critical',
+                    'message_display' => 'Tab berpindah saat ujian.',
+                    'device_type' => 'mobile',
+                    'device_summary' => 'Mobile • Android',
+                    'occurred_at' => '2026-04-24 08:05:00',
+                    'created_at' => '2026-04-24 08:05:00',
+                    'first_occurred_at' => '2026-04-24 08:04:00',
+                    'last_occurred_at' => '2026-04-24 08:05:00',
+                    'count' => 2,
+                ],
             ],
         ];
     }
