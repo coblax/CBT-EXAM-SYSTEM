@@ -570,6 +570,16 @@ cloudflared tunnel create cbt-ujian
 
 Output akan menampilkan **Tunnel ID** (format UUID). Catat ID ini. File credential tunnel tersimpan di `~/.cloudflared/<TUNNEL_ID>.json`.
 
+Verifikasi tunnel sudah terdaftar dan file credential tersedia:
+
+```bash
+cloudflared tunnel list
+cloudflared tunnel info cbt-ujian
+test -f ~/.cloudflared/<TUNNEL_ID>.json && echo "Credential tunnel OK"
+```
+
+Pastikan output `cloudflared tunnel list` menampilkan nama `cbt-ujian`, lalu ganti `<TUNNEL_ID>` pada command `test -f` dengan UUID tunnel yang muncul dari perintah `create`.
+
 **Langkah 4 — Buat DNS record:**
 
 Perintah ini otomatis membuat CNAME record di Cloudflare yang mengarah ke tunnel Anda:
@@ -811,9 +821,11 @@ Plugin CBT memiliki **Test Hub** di dashboard admin (`CBT Test Hub`) yang bisa m
 Playwright membutuhkan library sistem untuk menjalankan browser. Di Ubuntu/Debian:
 
 ```bash
-sudo apt install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+sudo apt update
+
+sudo apt install -y libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libdrm2 \
   libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 \
-  libcairo2 libasound2 libxshmfence1
+  libcairo2 libasound2t64 libxshmfence1
 ```
 
 **Langkah 2 — Install Chromium via Playwright:**
@@ -1293,6 +1305,72 @@ long_query_time=1
 sudo systemctl restart mysql
 sudo systemctl status mysql --no-pager
 ```
+
+**Verifikasi MySQL/MariaDB:**
+
+```bash
+# Pastikan service hidup dan menerima koneksi lokal
+sudo mysqladmin ping
+
+# Pastikan database WordPress bisa diakses
+sudo mysql -e "SHOW DATABASES LIKE 'wordpress_cbt';"
+
+# Cek variabel tuning utama sudah aktif setelah restart
+sudo mysql -e "
+SHOW VARIABLES
+WHERE Variable_name IN (
+  'innodb_buffer_pool_size',
+  'innodb_buffer_pool_instances',
+  'innodb_log_file_size',
+  'innodb_log_buffer_size',
+  'innodb_flush_log_at_trx_commit',
+  'innodb_flush_method',
+  'innodb_io_capacity',
+  'innodb_io_capacity_max',
+  'innodb_read_io_threads',
+  'innodb_write_io_threads',
+  'max_connections',
+  'thread_cache_size',
+  'table_open_cache',
+  'table_definition_cache',
+  'tmp_table_size',
+  'max_heap_table_size',
+  'slow_query_log',
+  'slow_query_log_file',
+  'long_query_time'
+);
+"
+
+# Ringkasan cepat angka yang paling penting
+sudo mysql -e "
+SELECT
+  ROUND(@@global.innodb_buffer_pool_size / 1024 / 1024 / 1024, 2) AS buffer_pool_gb,
+  @@global.max_connections AS max_connections,
+  @@global.table_open_cache AS table_open_cache,
+  @@global.slow_query_log AS slow_query_log,
+  @@global.long_query_time AS long_query_time;
+"
+
+# Pastikan slow query log path bisa ditulis/dibaca
+sudo ls -ld /var/log/mysql
+sudo test -e /var/log/mysql/slow-query.log && sudo ls -lh /var/log/mysql/slow-query.log || echo "Slow log belum dibuat; normal jika belum ada query lambat."
+```
+
+Output yang diharapkan:
+- `sudo mysqladmin ping` menampilkan `mysqld is alive`
+- `innodb_buffer_pool_size` sekitar `6442450944` byte (`6G`)
+- `max_connections` bernilai `200`
+- `slow_query_log` bernilai `ON`
+- `long_query_time` bernilai `1.000000`
+
+Panduan ini memakai service `mysql`, jadi command utama yang dipakai tetap:
+
+```bash
+sudo systemctl restart mysql
+sudo systemctl status mysql --no-pager
+```
+
+> **Catatan:** Pada sebagian distro yang benar-benar memakai MariaDB, nama service bisa `mariadb`. Gunakan `mariadb` hanya jika `systemctl status mysql` tidak ditemukan.
 
 ### 18.3 Tuning Redis
 
