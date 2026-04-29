@@ -45,6 +45,38 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_submit_answers_batch_internal_lets_buffer_entries_ensure_runtime_state_once(): void
+    {
+        $this->bootstrapRestScaffold();
+        $this->setSubmissionContextRedisUnavailable();
+        $runtimeRedis = $this->setRuntimeRedisAvailable();
+
+        global $wpdb;
+        $wpdb = new RestQuestionSubmissionContextFakeWpdb();
+
+        $method = new ReflectionMethod('CBT_REST', 'submit_answers_batch_internal');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(
+            null,
+            77,
+            [
+                ['question_id' => 201, 'answer' => 9002],
+            ],
+            7,
+            'siswa'
+        );
+
+        self::assertIsArray($result);
+        self::assertSame(1, $result['runtime_used']);
+        self::assertSame(1, $result['buffered']);
+        self::assertSame(0, $result['flushed']);
+        self::assertSame(1, $result['pending_count']);
+        self::assertSame(1, $runtimeRedis->setExCountFor($this->runtimeKey('attempt:77:meta')));
+        self::assertNotFalse($runtimeRedis->hGet($this->runtimeKey('attempt:77:answers'), '201'));
+    }
+
+    #[RunInSeparateProcess]
     public function test_build_attempt_review_items_uses_batched_submission_context_without_detail_queries_for_auto_graded_types(): void
     {
         $this->bootstrapRestScaffold();
@@ -157,6 +189,122 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
         $errorProperty = $reflection->getProperty('last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, 'disabled in test');
+    }
+
+    private function setRuntimeRedisAvailable(): RestQuestionSubmissionRuntimeRedisClient
+    {
+        $reflection = new ReflectionClass(CBT_Runtime::class);
+
+        $redisProperty = $reflection->getProperty('redis');
+        $redisProperty->setAccessible(true);
+        $redis = new RestQuestionSubmissionRuntimeRedisClient();
+        $redisProperty->setValue(null, $redis);
+
+        $attemptedProperty = $reflection->getProperty('redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+
+        $cachedPrefixProperty = $reflection->getProperty('cached_prefix');
+        $cachedPrefixProperty->setAccessible(true);
+        $cachedPrefixProperty->setValue(null, null);
+
+        return $redis;
+    }
+
+    private function runtimeKey(string $suffix): string
+    {
+        $reflection = new ReflectionClass(CBT_Runtime::class);
+        $method = $reflection->getMethod('prefixed_key');
+        $method->setAccessible(true);
+
+        return (string) $method->invoke(null, $suffix);
+    }
+}
+
+final class RestQuestionSubmissionRuntimeRedisClient extends CBT_Test_Redis_Client
+{
+    /** @var array<int,string> */
+    public array $setExKeys = [];
+
+    public function setEx($key, $ttl, $value)
+    {
+        $this->setExKeys[] = (string) $key;
+        return parent::setEx($key, $ttl, $value);
+    }
+
+    public function exists($key, ...$other_keys): int
+    {
+        $keys = array_merge([(string) $key], array_map('strval', $other_keys));
+        foreach ($keys as $safeKey) {
+            if (
+                array_key_exists($safeKey, $GLOBALS['cbt_test_redis_storage'] ?? [])
+                || array_key_exists($safeKey, $GLOBALS['cbt_test_redis_hashes'] ?? [])
+                || array_key_exists($safeKey, $GLOBALS['cbt_test_redis_zsets'] ?? [])
+            ) {
+                return 1;
+            }
+        }
+
+        return 0;
+    }
+
+    public function hLen($key): int
+    {
+        $items = $GLOBALS['cbt_test_redis_hashes'][(string) $key] ?? [];
+        return is_array($items) ? count($items) : 0;
+    }
+
+    public function hMGet($key, $fields): array
+    {
+        $key = (string) $key;
+        $items = [];
+        foreach ((array) $fields as $field) {
+            $items[(string) $field] = $GLOBALS['cbt_test_redis_hashes'][$key][(string) $field] ?? false;
+        }
+
+        return $items;
+    }
+
+    public function zCard($key): int
+    {
+        $items = $GLOBALS['cbt_test_redis_zsets'][(string) $key] ?? [];
+        return is_array($items) ? count($items) : 0;
+    }
+
+    public function zRange($key, $start, $end, $scores = false)
+    {
+        $items = $GLOBALS['cbt_test_redis_zsets'][(string) $key] ?? [];
+        if (!is_array($items) || empty($items)) {
+            return [];
+        }
+
+        asort($items, SORT_NUMERIC);
+        $members = array_keys($items);
+        $slice = ((int) $end < 0)
+            ? array_slice($members, (int) $start)
+            : array_slice($members, (int) $start, ((int) $end - (int) $start) + 1);
+
+        if (!$scores) {
+            return array_values($slice);
+        }
+
+        $scored = [];
+        foreach ($slice as $member) {
+            $scored[(string) $member] = (float) $items[(string) $member];
+        }
+
+        return $scored;
+    }
+
+    public function setExCountFor(string $key): int
+    {
+        return count(array_filter($this->setExKeys, static function (string $candidate) use ($key): bool {
+            return $candidate === $key;
+        }));
     }
 }
 

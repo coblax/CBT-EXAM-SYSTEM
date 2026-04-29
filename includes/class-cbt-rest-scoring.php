@@ -20,7 +20,7 @@ trait CBT_REST_Scoring_Helpers
             return new WP_Error('invalid_payload', 'attempt_id and answers are required', ['status' => 400]);
         }
 
-        $attempt = self::get_attempt_for_submission($attempt_id, $user_id);
+        $attempt = self::get_attempt_for_submission($attempt_id, $user_id, false);
         if (is_wp_error($attempt)) {
             return $attempt;
         }
@@ -77,7 +77,6 @@ trait CBT_REST_Scoring_Helpers
         $pending_count = 0;
 
         if (CBT_Runtime::is_ready()) {
-            self::ensure_runtime_attempt_state($attempt, $duration_minutes);
             $buffer_result = CBT_Runtime::buffer_entries($attempt, $duration_minutes, $prepared_entries);
             $runtime_used = !empty($buffer_result['runtime_used']);
             $buffered = (int) ($buffer_result['buffered'] ?? 0);
@@ -113,7 +112,7 @@ trait CBT_REST_Scoring_Helpers
     /**
      * @return array<string,mixed>|WP_Error
      */
-    private static function get_attempt_for_submission(int $attempt_id, int $user_id)
+    private static function get_attempt_for_submission(int $attempt_id, int $user_id, bool $ensure_runtime_state = true)
     {
         global $wpdb;
 
@@ -149,7 +148,7 @@ trait CBT_REST_Scoring_Helpers
             $attempt,
             self::get_exam_duration_minutes((int) ($attempt['exam_id'] ?? 0))
         );
-        if ($duration_minutes > 0) {
+        if ($ensure_runtime_state && $duration_minutes > 0) {
             self::ensure_runtime_attempt_state($attempt, $duration_minutes);
         }
 

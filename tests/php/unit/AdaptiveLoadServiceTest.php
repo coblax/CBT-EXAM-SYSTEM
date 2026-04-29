@@ -14,6 +14,8 @@ require_once dirname(__DIR__, 3) . '/includes/class-cbt-adaptive-load-service.ph
 
 final class AdaptiveLoadServiceTest extends TestCase
 {
+    private AdaptiveLoadRuntimeRedisClient $runtimeRedis;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -22,11 +24,13 @@ final class AdaptiveLoadServiceTest extends TestCase
         $GLOBALS['cbt_test_current_time_mysql'] = '2026-03-24 12:00:00';
         delete_option('cbt_adaptive_load_state');
         delete_option('cbt_snapshot_auto_heal_queue_state');
+        CBT_Cache::delete('adaptive_load_signals:v1', []);
 
         $this->useFakeStartAttemptGateRedis();
         $this->useFakeLoginMetricsRedis();
         $this->useFakeStartAttemptMetricsRedis();
         $this->useFakeEntryFlowMetricsRedis();
+        $this->useFakeRuntimeRedis();
         $GLOBALS['wpdb'] = new AdaptiveLoadServiceFakeWpdb();
     }
 
@@ -134,6 +138,98 @@ final class AdaptiveLoadServiceTest extends TestCase
         $state = CBT_Adaptive_Load_Service::tick();
 
         self::assertSame('normal', $state['effective_level']);
+    }
+
+    public function test_tick_uses_runtime_active_user_count_without_timestampadd_query(): void
+    {
+        $this->seedRuntimeActiveAttempts(450);
+        $wpdb = $GLOBALS['wpdb'];
+
+        $state = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame('busy', $state['effective_level']);
+        self::assertSame(450, (int) ($state['signals']['active_attempt_count'] ?? 0));
+        self::assertStringContainsString('Attempt aktif tinggi', implode(' ', (array) $state['reasons']));
+        self::assertSame(0, $wpdb->timestampAddQueryCount);
+    }
+
+    public function test_tick_runtime_active_count_uses_default_window(): void
+    {
+        $key = $this->runtimeKey('active_attempts');
+        $this->runtimeRedis->zAdd($key, time(), '1');
+        $this->runtimeRedis->zAdd($key, time() - 7201, '2');
+        $wpdb = $GLOBALS['wpdb'];
+
+        $state = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame(1, (int) ($state['signals']['active_attempt_count'] ?? 0));
+        self::assertSame(0, $wpdb->timestampAddQueryCount);
+    }
+
+    public function test_tick_falls_back_to_db_active_attempt_count_when_runtime_unavailable(): void
+    {
+        $this->markRuntimeUnavailable();
+        $wpdb = $GLOBALS['wpdb'];
+        $wpdb->activeAttemptCount = 450;
+
+        $state = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame('busy', $state['effective_level']);
+        self::assertSame(450, (int) ($state['signals']['active_attempt_count'] ?? 0));
+        self::assertSame(1, $wpdb->timestampAddQueryCount);
+    }
+
+    public function test_active_runtime_window_is_clamped(): void
+    {
+        $reflection = new ReflectionClass(CBT_Adaptive_Load_Service::class);
+        $method = $reflection->getMethod('normalize_active_runtime_window_seconds');
+        $method->setAccessible(true);
+
+        self::assertSame(300, $method->invoke(null, 10));
+        self::assertSame(7200, $method->invoke(null, 7200));
+        self::assertSame(172800, $method->invoke(null, 999999));
+    }
+
+    public function test_tick_reuses_cached_signals_within_cache_ttl(): void
+    {
+        $this->seedRuntimeActiveAttempts(450);
+        $wpdb = $GLOBALS['wpdb'];
+
+        $firstState = CBT_Adaptive_Load_Service::tick();
+        $secondState = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame('busy', $firstState['effective_level']);
+        self::assertSame(450, (int) ($secondState['signals']['active_attempt_count'] ?? 0));
+        self::assertSame(1, $wpdb->examIdsQueryCount);
+        self::assertSame(0, $wpdb->timestampAddQueryCount);
+    }
+
+    public function test_tick_refreshes_cached_signals_after_cache_ttl(): void
+    {
+        $this->seedRuntimeActiveAttempts(10);
+        $wpdb = $GLOBALS['wpdb'];
+
+        $firstState = CBT_Adaptive_Load_Service::tick();
+
+        $this->setCurrentTime(1774353631, '2026-03-24 12:00:31');
+        $this->seedRuntimeActiveAttempts(450);
+        $secondState = CBT_Adaptive_Load_Service::tick();
+
+        self::assertSame(10, (int) ($firstState['signals']['active_attempt_count'] ?? 0));
+        self::assertSame(450, (int) ($secondState['signals']['active_attempt_count'] ?? 0));
+        self::assertSame(2, $wpdb->examIdsQueryCount);
+        self::assertSame(0, $wpdb->timestampAddQueryCount);
+    }
+
+    public function test_signals_cache_ttl_is_clamped(): void
+    {
+        $reflection = new ReflectionClass(CBT_Adaptive_Load_Service::class);
+        $method = $reflection->getMethod('normalize_signals_cache_ttl');
+        $method->setAccessible(true);
+
+        self::assertSame(5, $method->invoke(null, 1));
+        self::assertSame(30, $method->invoke(null, 30));
+        self::assertSame(120, $method->invoke(null, 999));
     }
 
     public function test_tick_holds_level_before_deescalating_even_after_three_clean_ticks(): void
@@ -297,6 +393,63 @@ final class AdaptiveLoadServiceTest extends TestCase
         $errorProperty->setValue(null, '');
     }
 
+    private function useFakeRuntimeRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Runtime::class);
+
+        $redisProperty = $reflection->getProperty('redis');
+        $redisProperty->setAccessible(true);
+        $this->runtimeRedis = new AdaptiveLoadRuntimeRedisClient();
+        $redisProperty->setValue(null, $this->runtimeRedis);
+
+        $attemptedProperty = $reflection->getProperty('redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+
+        $cachedPrefixProperty = $reflection->getProperty('cached_prefix');
+        $cachedPrefixProperty->setAccessible(true);
+        $cachedPrefixProperty->setValue(null, null);
+    }
+
+    private function markRuntimeUnavailable(): void
+    {
+        $reflection = new ReflectionClass(CBT_Runtime::class);
+
+        $redisProperty = $reflection->getProperty('redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, false);
+
+        $attemptedProperty = $reflection->getProperty('redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, 'Runtime test unavailable.');
+    }
+
+    private function seedRuntimeActiveAttempts(int $count): void
+    {
+        $key = $this->runtimeKey('active_attempts');
+        $score = time();
+        for ($attemptId = 1; $attemptId <= $count; $attemptId++) {
+            $this->runtimeRedis->zAdd($key, $score, (string) $attemptId);
+        }
+    }
+
+    private function runtimeKey(string $suffix): string
+    {
+        $reflection = new ReflectionClass(CBT_Runtime::class);
+        $method = $reflection->getMethod('prefixed_key');
+        $method->setAccessible(true);
+
+        return (string) $method->invoke(null, $suffix);
+    }
+
     private function setCurrentTime(int $timestamp, string $mysql): void
     {
         $GLOBALS['cbt_test_current_time_timestamp'] = $timestamp;
@@ -327,9 +480,42 @@ final class AdaptiveLoadServiceTest extends TestCase
     }
 }
 
+final class AdaptiveLoadRuntimeRedisClient extends CBT_Test_Redis_Client
+{
+    public function zCard($key): int
+    {
+        $items = $GLOBALS['cbt_test_redis_zsets'][(string) $key] ?? [];
+        return is_array($items) ? count($items) : 0;
+    }
+
+    public function zCount($key, $start, $end): int
+    {
+        $items = $GLOBALS['cbt_test_redis_zsets'][(string) $key] ?? [];
+        if (!is_array($items) || empty($items)) {
+            return 0;
+        }
+
+        $min = is_numeric($start) ? (float) $start : 0.0;
+        $count = 0;
+        foreach ($items as $score) {
+            if ((float) $score >= $min) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+}
+
 final class AdaptiveLoadServiceFakeWpdb
 {
     public string $prefix = 'wp_';
+
+    public int $activeAttemptCount = 0;
+
+    public int $examIdsQueryCount = 0;
+
+    public int $timestampAddQueryCount = 0;
 
     public function prepare(string $query, ...$args): string
     {
@@ -352,6 +538,7 @@ final class AdaptiveLoadServiceFakeWpdb
         $query = (string) $prepared;
 
         if (strpos($query, 'SELECT id FROM wp_cbt_exams WHERE title NOT LIKE') !== false) {
+            $this->examIdsQueryCount++;
             return ['77', '54'];
         }
 
@@ -369,7 +556,8 @@ final class AdaptiveLoadServiceFakeWpdb
             strpos($query, 'FROM wp_cbt_attempts a') !== false
             && strpos($query, 'TIMESTAMPADD(MINUTE') !== false
         ) {
-            return 0;
+            $this->timestampAddQueryCount++;
+            return $this->activeAttemptCount;
         }
 
         return 0;

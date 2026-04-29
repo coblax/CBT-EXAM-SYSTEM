@@ -26,12 +26,13 @@ class CBT_Runtime
     private const DEFAULT_DATABASE = 2;
     private const DEFAULT_PREFIX = 'cbt_runtime:';
     private const DEFAULT_TIMEOUT = 1.5;
-    private const FLUSH_DELAY_SECONDS = 5;
-    private const FLUSH_THRESHOLD = 10;
+    private const FLUSH_DELAY_SECONDS = 10;
+    private const FLUSH_THRESHOLD = 30;
     private const FLUSH_BATCH_LIMIT = 200;
     private const FLUSH_DUE_CRON_LIMIT = 100;
     private const FLUSH_LOCK_TTL = 20;
     private const FINISH_LOCK_TTL = 45;
+    private const META_TOUCH_DEBOUNCE_SECONDS = 30;
     private const MAX_ATTEMPT_TTL = 172800;
     private const ATTEMPT_TTL_EXTENSION = 7200;
 
@@ -252,7 +253,7 @@ class CBT_Runtime
 
         $state_found = true;
         $duration_minutes = max(1, (int) ($meta['duration_minutes'] ?? 60));
-        self::update_meta_touch($redis, $attempt_id, $duration_minutes, $meta, (int) ($meta['last_flushed_at'] ?? 0));
+        self::update_meta_touch($redis, $attempt_id, $duration_minutes, $meta, 0, $meta);
 
         return [
             'attempt_id' => $attempt_id,
@@ -299,36 +300,21 @@ class CBT_Runtime
         $ttl = self::attempt_ttl($duration_minutes);
         $answers_key = self::attempt_answers_key($attempt_id);
         $dirty_key = self::attempt_dirty_key($attempt_id);
-        $buffered = 0;
-
-        foreach (self::dedupe_entries_by_question($entries) as $entry) {
-            $question_id = (int) ($entry['question_id'] ?? 0);
-            if ($question_id <= 0) {
-                continue;
-            }
-
-            if (!empty($entry['clear'])) {
-                $redis->hDel($answers_key, (string) $question_id);
-            } else {
-                $redis->hSet(
-                    $answers_key,
-                    (string) $question_id,
-                    self::encode_json_string(self::normalize_stored_entry($entry))
-                );
-            }
-
-            $redis->zAdd($dirty_key, time(), (string) $question_id);
-            $buffered++;
-        }
+        $flush_delay_seconds = self::runtime_flush_delay_seconds();
+        $buffered = self::write_buffer_entries(
+            $redis,
+            $attempt_id,
+            $answers_key,
+            $dirty_key,
+            $ttl,
+            self::dedupe_entries_by_question($entries),
+            $flush_delay_seconds
+        );
 
         $pending_count = (int) $redis->zCard($dirty_key);
-        self::update_meta_touch($redis, $attempt_id, $duration_minutes, $attempt, 0);
-        $redis->expire($answers_key, $ttl);
-        $redis->expire($dirty_key, $ttl);
-        self::schedule_attempt_flush($redis, $attempt_id, self::FLUSH_DELAY_SECONDS);
 
         $flushed = 0;
-        if ($pending_count >= self::FLUSH_THRESHOLD || self::oldest_dirty_age($redis, $attempt_id) >= self::FLUSH_DELAY_SECONDS) {
+        if ($pending_count >= self::runtime_flush_threshold() || self::oldest_dirty_age($redis, $attempt_id) >= $flush_delay_seconds) {
             $flush_result = self::flush_attempt($attempt_id);
             $flushed = (int) ($flush_result['flushed'] ?? 0);
             $pending_count = (int) ($flush_result['pending_count'] ?? $pending_count);
@@ -342,6 +328,113 @@ class CBT_Runtime
             'flushed' => $flushed,
             'pending_count' => $pending_count,
         ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $entries
+     */
+    private static function write_buffer_entries(Redis $redis, int $attempt_id, string $answers_key, string $dirty_key, int $ttl, array $entries, int $flush_delay_seconds): int
+    {
+        $prepared_entries = [];
+        foreach ($entries as $entry) {
+            $question_id = (int) ($entry['question_id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+
+            $prepared_entries[] = [
+                'question_id' => (string) $question_id,
+                'clear' => !empty($entry['clear']),
+                'payload' => !empty($entry['clear'])
+                    ? ''
+                    : self::encode_json_string(self::normalize_stored_entry($entry)),
+            ];
+        }
+
+        $now = time();
+        if (!self::write_buffer_entries_pipeline($redis, $attempt_id, $answers_key, $dirty_key, $ttl, $prepared_entries, $now, $flush_delay_seconds)) {
+            self::write_buffer_entries_direct($redis, $attempt_id, $answers_key, $dirty_key, $ttl, $prepared_entries, $now, $flush_delay_seconds);
+        }
+
+        return count($prepared_entries);
+    }
+
+    /**
+     * @param array<int,array{question_id:string,clear:bool,payload:string}> $entries
+     */
+    private static function write_buffer_entries_pipeline(Redis $redis, int $attempt_id, string $answers_key, string $dirty_key, int $ttl, array $entries, int $now, int $flush_delay_seconds): bool
+    {
+        if (!method_exists($redis, 'pipeline')) {
+            return false;
+        }
+
+        try {
+            $pipeline = $redis->pipeline();
+            if (
+                !is_object($pipeline)
+                || !method_exists($pipeline, 'hSet')
+                || !method_exists($pipeline, 'hDel')
+                || !method_exists($pipeline, 'zAdd')
+                || !method_exists($pipeline, 'expire')
+                || !method_exists($pipeline, 'exec')
+            ) {
+                return false;
+            }
+
+            $operation_count = 0;
+            foreach ($entries as $entry) {
+                $question_id = (string) ($entry['question_id'] ?? '');
+                if ($question_id === '') {
+                    continue;
+                }
+
+                if (!empty($entry['clear'])) {
+                    $pipeline->hDel($answers_key, $question_id);
+                } else {
+                    $pipeline->hSet($answers_key, $question_id, (string) ($entry['payload'] ?? ''));
+                }
+                $operation_count++;
+
+                $pipeline->zAdd($dirty_key, $now, $question_id);
+                $operation_count++;
+            }
+
+            $pipeline->expire($answers_key, $ttl);
+            $pipeline->expire($dirty_key, $ttl);
+            $pipeline->zAdd(self::flush_due_key(), $now + $flush_delay_seconds, (string) $attempt_id);
+            $operation_count += 3;
+
+            $results = $pipeline->exec();
+
+            return is_array($results) && count($results) === $operation_count;
+        } catch (Throwable $throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @param array<int,array{question_id:string,clear:bool,payload:string}> $entries
+     */
+    private static function write_buffer_entries_direct(Redis $redis, int $attempt_id, string $answers_key, string $dirty_key, int $ttl, array $entries, int $now, int $flush_delay_seconds): void
+    {
+        foreach ($entries as $entry) {
+            $question_id = (string) ($entry['question_id'] ?? '');
+            if ($question_id === '') {
+                continue;
+            }
+
+            if (!empty($entry['clear'])) {
+                $redis->hDel($answers_key, $question_id);
+            } else {
+                $redis->hSet($answers_key, $question_id, (string) ($entry['payload'] ?? ''));
+            }
+
+            $redis->zAdd($dirty_key, $now, $question_id);
+        }
+
+        $redis->expire($answers_key, $ttl);
+        $redis->expire($dirty_key, $ttl);
+        $redis->zAdd(self::flush_due_key(), $now + $flush_delay_seconds, (string) $attempt_id);
     }
 
     /**
@@ -605,7 +698,7 @@ class CBT_Runtime
 
             $pending_count = (int) $redis->zCard(self::attempt_dirty_key($attempt_id));
             if ($pending_count > 0) {
-                self::schedule_attempt_flush($redis, $attempt_id, self::FLUSH_DELAY_SECONDS);
+                self::schedule_attempt_flush($redis, $attempt_id, self::runtime_flush_delay_seconds());
             } else {
                 $redis->zRem(self::flush_due_key(), (string) $attempt_id);
             }
@@ -620,7 +713,7 @@ class CBT_Runtime
                 'started_at' => is_array($meta) ? (string) ($meta['started_at'] ?? '') : '',
                 'extra_time_minutes' => is_array($meta) ? (int) ($meta['extra_time_minutes'] ?? 0) : 0,
             ];
-            self::update_meta_touch($redis, $attempt_id, $duration_minutes, $attempt_meta, time());
+            self::update_meta_touch($redis, $attempt_id, $duration_minutes, $attempt_meta, time(), is_array($meta) ? $meta : [], true);
             CBT_Cache::invalidate_attempt($attempt_id);
 
             return [
@@ -689,6 +782,20 @@ class CBT_Runtime
         );
     }
 
+    private static function runtime_flush_threshold(): int
+    {
+        return self::normalize_runtime_flush_threshold(
+            apply_filters('cbt_runtime_flush_threshold', self::FLUSH_THRESHOLD)
+        );
+    }
+
+    private static function runtime_flush_delay_seconds(): int
+    {
+        return self::normalize_runtime_flush_delay_seconds(
+            apply_filters('cbt_runtime_flush_delay_seconds', self::FLUSH_DELAY_SECONDS)
+        );
+    }
+
     /**
      * @param mixed $limit
      */
@@ -696,6 +803,24 @@ class CBT_Runtime
     {
         $limit = (int) $limit;
         return max(1, min(1000, $limit));
+    }
+
+    /**
+     * @param mixed $threshold
+     */
+    private static function normalize_runtime_flush_threshold($threshold): int
+    {
+        $threshold = (int) $threshold;
+        return max(1, min(200, $threshold));
+    }
+
+    /**
+     * @param mixed $delay_seconds
+     */
+    private static function normalize_runtime_flush_delay_seconds($delay_seconds): int
+    {
+        $delay_seconds = (int) $delay_seconds;
+        return max(1, min(60, $delay_seconds));
     }
 
     /**
@@ -947,7 +1072,7 @@ class CBT_Runtime
                 self::encode_json_string(self::normalize_stored_entry($entry))
             );
             $redis->zAdd(self::attempt_dirty_key($attempt_id), $now_unix, (string) $question_id);
-            self::schedule_attempt_flush($redis, $attempt_id, self::FLUSH_DELAY_SECONDS);
+            self::schedule_attempt_flush($redis, $attempt_id, self::runtime_flush_delay_seconds());
 
             $meta = self::decode_json_string((string) $redis->get(self::attempt_meta_key($attempt_id)));
             $duration_minutes = is_array($meta) ? (int) ($meta['duration_minutes'] ?? 0) : 0;
@@ -958,7 +1083,7 @@ class CBT_Runtime
                 'status' => is_array($meta) ? (string) ($meta['status'] ?? 'in_progress') : 'in_progress',
                 'started_at' => is_array($meta) ? (string) ($meta['started_at'] ?? '') : '',
             ];
-            self::update_meta_touch($redis, $attempt_id, $duration_minutes, $attempt_meta, 0);
+            self::update_meta_touch($redis, $attempt_id, $duration_minutes, $attempt_meta, 0, is_array($meta) ? $meta : []);
             CBT_Cache::invalidate_attempt($attempt_id);
             $updated_count++;
         }
@@ -1220,28 +1345,53 @@ class CBT_Runtime
     /**
      * @param array<string,mixed> $attempt
      */
-    private static function update_meta_touch(Redis $redis, int $attempt_id, int $duration_minutes, array $attempt, int $last_flushed_at): void
+    private static function update_meta_touch(
+        Redis $redis,
+        int $attempt_id,
+        int $duration_minutes,
+        array $attempt,
+        int $last_flushed_at,
+        ?array $existing_meta = null,
+        bool $force = false
+    ): void
     {
         $meta_key = self::attempt_meta_key($attempt_id);
-        $meta = self::decode_json_string((string) $redis->get($meta_key));
-        $ttl = self::attempt_ttl($duration_minutes > 0 ? $duration_minutes : (is_array($meta) ? (int) ($meta['duration_minutes'] ?? 0) : 0));
+        $meta = is_array($existing_meta)
+            ? $existing_meta
+            : self::decode_json_string((string) $redis->get($meta_key));
+        if (!is_array($meta)) {
+            $meta = [];
+        }
+
+        $now = time();
+        $resolved_duration = max(1, $duration_minutes > 0 ? $duration_minutes : (int) ($meta['duration_minutes'] ?? 60));
+        $ttl = self::attempt_ttl($resolved_duration);
 
         $payload = [
             'attempt_id' => $attempt_id,
-            'exam_id' => (int) ($attempt['exam_id'] ?? (is_array($meta) ? (int) ($meta['exam_id'] ?? 0) : 0)),
-            'student_id' => (int) ($attempt['student_id'] ?? (is_array($meta) ? (int) ($meta['student_id'] ?? 0) : 0)),
-            'status' => (string) ($attempt['status'] ?? (is_array($meta) ? (string) ($meta['status'] ?? 'in_progress') : 'in_progress')),
-            'started_at' => (string) ($attempt['started_at'] ?? (is_array($meta) ? (string) ($meta['started_at'] ?? '') : '')),
-            'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? (is_array($meta) ? (int) ($meta['extra_time_minutes'] ?? 0) : 0))),
-            'duration_minutes' => max(1, $duration_minutes > 0 ? $duration_minutes : (is_array($meta) ? (int) ($meta['duration_minutes'] ?? 60) : 60)),
-            'last_touch_at' => time(),
+            'exam_id' => (int) ($attempt['exam_id'] ?? (int) ($meta['exam_id'] ?? 0)),
+            'student_id' => (int) ($attempt['student_id'] ?? (int) ($meta['student_id'] ?? 0)),
+            'status' => (string) ($attempt['status'] ?? (string) ($meta['status'] ?? 'in_progress')),
+            'started_at' => (string) ($attempt['started_at'] ?? (string) ($meta['started_at'] ?? '')),
+            'extra_time_minutes' => max(0, (int) ($attempt['extra_time_minutes'] ?? (int) ($meta['extra_time_minutes'] ?? 0))),
+            'duration_minutes' => $resolved_duration,
+            'last_touch_at' => $now,
             'last_flushed_at' => $last_flushed_at > 0
                 ? $last_flushed_at
-                : (is_array($meta) ? (int) ($meta['last_flushed_at'] ?? 0) : 0),
+                : (int) ($meta['last_flushed_at'] ?? 0),
         ];
 
+        $force = $force || $last_flushed_at > 0;
+        if (
+            !$force
+            && !self::meta_touch_has_material_changes($meta, $payload)
+            && ($now - max(0, (int) ($meta['last_touch_at'] ?? 0))) < self::META_TOUCH_DEBOUNCE_SECONDS
+        ) {
+            return;
+        }
+
         $redis->setEx($meta_key, $ttl, self::encode_json_string($payload));
-        $redis->zAdd(self::active_attempts_key(), time(), (string) $attempt_id);
+        $redis->zAdd(self::active_attempts_key(), $now, (string) $attempt_id);
         $redis->expire(self::attempt_answers_key($attempt_id), $ttl);
         if ((int) $redis->exists(self::attempt_question_order_key($attempt_id)) > 0) {
             $redis->expire(self::attempt_question_order_key($attempt_id), $ttl);
@@ -1250,6 +1400,21 @@ class CBT_Runtime
             $redis->expire(self::attempt_option_order_key($attempt_id), $ttl);
         }
         $redis->expire(self::attempt_dirty_key($attempt_id), $ttl);
+    }
+
+    /**
+     * @param array<string,mixed> $meta
+     * @param array<string,mixed> $payload
+     */
+    private static function meta_touch_has_material_changes(array $meta, array $payload): bool
+    {
+        return (int) ($meta['exam_id'] ?? 0) !== (int) ($payload['exam_id'] ?? 0)
+            || (int) ($meta['student_id'] ?? 0) !== (int) ($payload['student_id'] ?? 0)
+            || (string) ($meta['status'] ?? 'in_progress') !== (string) ($payload['status'] ?? 'in_progress')
+            || (string) ($meta['started_at'] ?? '') !== (string) ($payload['started_at'] ?? '')
+            || (int) ($meta['extra_time_minutes'] ?? 0) !== (int) ($payload['extra_time_minutes'] ?? 0)
+            || (int) ($meta['duration_minutes'] ?? 60) !== (int) ($payload['duration_minutes'] ?? 60)
+            || (int) ($meta['last_flushed_at'] ?? 0) !== (int) ($payload['last_flushed_at'] ?? 0);
     }
 
     /**

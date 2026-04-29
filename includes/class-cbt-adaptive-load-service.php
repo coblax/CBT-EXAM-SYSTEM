@@ -8,6 +8,10 @@ if (!class_exists('CBT_Cache')) {
     require_once __DIR__ . '/class-cbt-cache.php';
 }
 
+if (!class_exists('CBT_Runtime')) {
+    require_once __DIR__ . '/class-cbt-runtime.php';
+}
+
 if (!class_exists('CBT_Start_Attempt_Gate_Service')) {
     require_once __DIR__ . '/class-cbt-start-attempt-gate-service.php';
 }
@@ -39,6 +43,9 @@ final class CBT_Adaptive_Load_Service
     private const OVERRIDE_TTL_SECONDS = 900;
     private const HOLD_SECONDS = 300;
     private const CLEAN_TICKS_TO_DEESCALATE = 3;
+    private const ACTIVE_RUNTIME_WINDOW_SECONDS = 7200;
+    private const SIGNALS_CACHE_KEY = 'adaptive_load_signals:v1';
+    private const SIGNALS_CACHE_TTL_SECONDS = 30;
 
     /**
      * @var array<string,int>
@@ -388,36 +395,46 @@ final class CBT_Adaptive_Load_Service
      */
     private static function collect_signals(): array
     {
+        $ttl = self::adaptive_signals_cache_ttl();
+        $cached = CBT_Cache::get(self::SIGNALS_CACHE_KEY, [], $found);
+
+        if ($found && is_array($cached)) {
+            $captured_at = max(0, (int) ($cached['captured_at'] ?? 0));
+            $signals = $cached['signals'] ?? null;
+            $age = max(0, (int) current_time('timestamp') - $captured_at);
+
+            if ($captured_at > 0 && $age < $ttl && is_array($signals)) {
+                return $signals;
+            }
+        }
+
+        $signals = self::do_collect_signals();
+        CBT_Cache::set(self::SIGNALS_CACHE_KEY, [
+            'captured_at' => (int) current_time('timestamp'),
+            'signals' => $signals,
+        ], $ttl, []);
+
+        return $signals;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function do_collect_signals(): array
+    {
         global $wpdb;
 
         $exam_ids = [];
         if (isset($wpdb) && is_object($wpdb)) {
             $exam_table = $wpdb->prefix . 'cbt_exams';
-            $attempt_table = $wpdb->prefix . 'cbt_attempts';
             $exam_ids = array_values(array_filter(array_map('intval', (array) $wpdb->get_col(
                 $wpdb->prepare(
                     "SELECT id FROM {$exam_table} WHERE title NOT LIKE %s ORDER BY id DESC",
                     'Bank Soal - %'
                 )
             ))));
-            $active_attempt_count = (int) $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT COUNT(*)
-                      FROM {$attempt_table} a
-                 INNER JOIN {$exam_table} e ON e.id = a.exam_id
-                      WHERE a.status = 'in_progress'
-                        AND e.status = 'published'
-                        AND (e.starts_at IS NULL OR e.starts_at <= %s)
-                        AND (e.ends_at IS NULL OR e.ends_at >= %s)
-                        AND TIMESTAMPADD(MINUTE, (e.duration_minutes + a.extra_time_minutes + 10), a.started_at) >= %s",
-                    current_time('mysql'),
-                    current_time('mysql'),
-                    current_time('mysql')
-                )
-            );
-        } else {
-            $active_attempt_count = 0;
         }
+        $active_attempt_count = self::collect_active_attempt_count();
 
         $gate = class_exists('CBT_Start_Attempt_Gate_Service')
             ? CBT_Start_Attempt_Gate_Service::get_global_diagnostics($exam_ids)
@@ -460,6 +477,89 @@ final class CBT_Adaptive_Load_Service
             'start_to_first_question_count' => max(0, (int) ($entryFlowMetrics['start_to_first_question_count'] ?? 0)),
             'resume_to_first_question_count' => max(0, (int) ($entryFlowMetrics['resume_to_first_question_count'] ?? 0)),
         ];
+    }
+
+    private static function adaptive_signals_cache_ttl(): int
+    {
+        return self::normalize_signals_cache_ttl(
+            function_exists('apply_filters')
+                ? apply_filters('cbt_adaptive_load_signals_cache_ttl', self::SIGNALS_CACHE_TTL_SECONDS)
+                : self::SIGNALS_CACHE_TTL_SECONDS
+        );
+    }
+
+    /**
+     * @param mixed $ttl
+     */
+    private static function normalize_signals_cache_ttl($ttl): int
+    {
+        $ttl = (int) $ttl;
+        return max(5, min(120, $ttl));
+    }
+
+    private static function collect_active_attempt_count(): int
+    {
+        if (
+            class_exists('CBT_Runtime')
+            && method_exists('CBT_Runtime', 'get_admin_overview')
+            && method_exists('CBT_Runtime', 'get_active_user_count')
+        ) {
+            try {
+                $overview = CBT_Runtime::get_admin_overview();
+                if (!empty($overview['ready'])) {
+                    return max(0, (int) CBT_Runtime::get_active_user_count(self::adaptive_active_runtime_window_seconds()));
+                }
+            } catch (Throwable $throwable) {
+                // Fall back to the legacy DB signal below.
+            }
+        }
+
+        return self::collect_active_attempt_count_from_db();
+    }
+
+    private static function collect_active_attempt_count_from_db(): int
+    {
+        global $wpdb;
+
+        if (!isset($wpdb) || !is_object($wpdb)) {
+            return 0;
+        }
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        return max(0, (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*)
+                  FROM {$attempt_table} a
+             INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                  WHERE a.status = 'in_progress'
+                    AND e.status = 'published'
+                    AND (e.starts_at IS NULL OR e.starts_at <= %s)
+                    AND (e.ends_at IS NULL OR e.ends_at >= %s)
+                    AND TIMESTAMPADD(MINUTE, (e.duration_minutes + a.extra_time_minutes + 10), a.started_at) >= %s",
+                current_time('mysql'),
+                current_time('mysql'),
+                current_time('mysql')
+            )
+        ));
+    }
+
+    private static function adaptive_active_runtime_window_seconds(): int
+    {
+        return self::normalize_active_runtime_window_seconds(
+            function_exists('apply_filters')
+                ? apply_filters('cbt_adaptive_load_active_runtime_window', self::ACTIVE_RUNTIME_WINDOW_SECONDS)
+                : self::ACTIVE_RUNTIME_WINDOW_SECONDS
+        );
+    }
+
+    /**
+     * @param mixed $window_seconds
+     */
+    private static function normalize_active_runtime_window_seconds($window_seconds): int
+    {
+        $window_seconds = (int) $window_seconds;
+        return max(300, min(172800, $window_seconds));
     }
 
     /**
