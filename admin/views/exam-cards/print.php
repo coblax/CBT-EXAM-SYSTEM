@@ -28,29 +28,36 @@
                     line-height: 1.35;
                 }
                 .no-print {
-                    padding: 10px 12px;
+                    padding: 12px 14px;
                     border-bottom: 1px solid #dbe5f2;
-                    background: #f8fbff;
+                    background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
                     display: flex;
                     align-items: center;
                     gap: 8px;
                     flex-wrap: wrap;
                 }
                 .no-print .button {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 36px;
                     border: 1px solid #1d4ed8;
-                    background: #2563eb;
+                    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
                     color: #fff;
-                    padding: 6px 10px;
-                    border-radius: 6px;
+                    padding: 0 14px;
+                    border-radius: 12px;
                     text-decoration: none;
                     cursor: pointer;
                     font-size: 12px;
-                    line-height: 1;
+                    font-weight: 700;
+                    line-height: 1.15;
+                    box-shadow: 0 8px 16px rgba(37, 99, 235, 0.22);
                 }
                 .no-print .button-secondary {
                     border-color: #cbd5e1;
                     background: #fff;
                     color: #0f172a;
+                    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
                 }
                 .cards-wrap {
                     padding: 8px;

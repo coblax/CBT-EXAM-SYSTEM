@@ -270,6 +270,10 @@ trait CBT_REST_Shared_Helpers
 
     private static function normalize_kelas_code(string $value): string
     {
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            return CBT_Exam_Audience_Service::normalize_kelas_code($value);
+        }
+
         return strtoupper(sanitize_text_field(trim($value)));
     }
 
@@ -278,6 +282,10 @@ trait CBT_REST_Shared_Helpers
      */
     private static function parse_exam_target_kelas(string $raw): array
     {
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            return CBT_Exam_Audience_Service::parse_target_kelas($raw);
+        }
+
         $raw = str_replace(["\r\n", "\r", "\n", ';', '|'], ',', $raw);
         $parts = array_map('trim', explode(',', $raw));
         $items = [];
@@ -309,5 +317,33 @@ trait CBT_REST_Shared_Helpers
         }
 
         return in_array($student_kelas, $target_kelas, true);
+    }
+
+    /**
+     * @param array<string,mixed> $exam
+     * @param array<string,mixed> $profile
+     * @return array{allowed:bool,reason:string,details:array<string,mixed>}
+     */
+    private static function evaluate_student_exam_audience(array $exam, int $user_id, array $profile = []): array
+    {
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            return CBT_Exam_Audience_Service::evaluate_exam_for_student($exam, $user_id, $profile);
+        }
+
+        $target_kelas = self::parse_exam_target_kelas((string) ($exam['target_kelas'] ?? ''));
+        $student_kelas = self::normalize_kelas_code((string) ($profile['kode_kelas'] ?? ''));
+        if (!empty($target_kelas) && ($student_kelas === '' || !in_array($student_kelas, $target_kelas, true))) {
+            return [
+                'allowed' => false,
+                'reason' => 'class_mismatch',
+                'details' => [],
+            ];
+        }
+
+        return [
+            'allowed' => true,
+            'reason' => 'ok',
+            'details' => [],
+        ];
     }
 }

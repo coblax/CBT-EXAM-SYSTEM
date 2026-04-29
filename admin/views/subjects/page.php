@@ -863,7 +863,17 @@
                             </thead>
                             <tbody>
                             <?php if (!$subjects): ?>
-                                <tr><td colspan="6"><?php echo esc_html($subject_filter_id > 0 ? 'No subjects found for this filter.' : 'No subjects found.'); ?></td></tr>
+                                <?php
+                                echo CBT_Admin_UI_Helper::render_table_empty_state(6, [
+                                    'title' => $subject_filter_id > 0 ? 'Tidak ada subject sesuai filter' : 'Belum ada subject',
+                                    'message' => $subject_filter_id > 0
+                                        ? 'Subject yang dipilih tidak ditemukan pada filter aktif. Reset filter untuk melihat semua subject.'
+                                        : 'Tambahkan subject/mapel sebagai dasar bank soal, exam, dan mapel pilihan siswa.',
+                                    'action_label' => $subject_filter_id > 0 ? 'Reset Filter' : 'Tambah Subject',
+                                    'action_url' => $subject_filter_id > 0 ? $subject_reset_filter_url : admin_url('admin.php?page=cbt-subjects'),
+                                    'action_class' => $subject_filter_id > 0 ? 'button button-secondary cbt-admin-btn--secondary' : 'button button-primary',
+                                ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                                ?>
                             <?php else: ?>
                                 <?php foreach ($subjects as $subject): ?>
                                     <tr>
@@ -873,9 +883,9 @@
                                         <td><?php echo esc_html((string) ($subject['code'] ?? '')); ?></td>
                                         <td><?php echo esc_html((string) ($subject['description'] ?? '')); ?></td>
                                         <td>
-                                            <div class="cbt-subject-row-actions">
-                                                <a class="cbt-subject-row-action cbt-subject-row-action--edit" href="<?php echo esc_url(add_query_arg(array_merge($subject_list_query_args, ['edit' => (int) $subject['id'], 'cbt_subject_paged' => $subject_current_page]), admin_url('admin.php'))); ?>">Edit</a>
-                                                <a class="cbt-subject-row-action cbt-subject-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg(array_merge([
+                                            <div class="cbt-admin-row-actions cbt-subject-row-actions">
+                                                <a class="cbt-admin-action cbt-admin-action--edit cbt-subject-row-action cbt-subject-row-action--edit" href="<?php echo esc_url(add_query_arg(array_merge($subject_list_query_args, ['edit' => (int) $subject['id'], 'cbt_subject_paged' => $subject_current_page]), admin_url('admin.php'))); ?>">Edit</a>
+                                                <a class="cbt-admin-action cbt-admin-action--delete cbt-subject-row-action cbt-subject-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg(array_merge([
                                                     'action' => 'cbt_delete_subject',
                                                     'id' => (int) $subject['id'],
                                                     'cbt_subject_paged' => $subject_current_page,

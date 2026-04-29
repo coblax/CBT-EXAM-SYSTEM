@@ -1,4 +1,4 @@
-name,email,nisn,username,password,role,kode_kelas,kode_ruang,agama,jenis_kelamin,foto_file
-Budi Santoso,,1000000001,budi.santoso,Password123,siswa,X-IPA-1,LAB-1,Islam,Laki-laki,1000000001.jpg
-Siti Aminah,siti@student.sch.id,1000000002,siti.aminah,Password123,siswa,X-IPA-1,LAB-1,Islam,Perempuan,1000000002.jpg
-Pak Andi,andi@school.sch.id,,andi.guru,Password123,guru,,,,Laki-laki,
+name,email,nisn,username,password,role,kode_kelas,kode_ruang,agama,jenis_kelamin,foto_file,mapel_pilihan_1,mapel_pilihan_2,mapel_pilihan_3
+Budi Santoso,,1000000001,budi.santoso,Password123,siswa,X-IPA-1,LAB-1,Islam,Laki-laki,1000000001.jpg,,,
+Siti Aminah,siti@student.sch.id,1000000002,siti.aminah,Password123,siswa,X-IPA-1,LAB-1,Islam,Perempuan,1000000002.jpg,,,
+Pak Andi,andi@school.sch.id,,andi.guru,Password123,guru,,,,Laki-laki,,,,

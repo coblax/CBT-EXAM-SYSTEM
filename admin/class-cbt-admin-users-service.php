@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Exam_Audience_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-exam-audience-service.php';
+}
+
 final class CBT_Admin_Users_Service
 {
     private const USER_META_PLAIN_PASSWORD = 'cbt_plain_password';
@@ -39,6 +43,8 @@ final class CBT_Admin_Users_Service
         $notice = isset($query['cbt_msg']) ? sanitize_text_field(wp_unslash((string) $query['cbt_msg'])) : '';
         $error = isset($query['cbt_err']) ? sanitize_text_field(wp_unslash((string) $query['cbt_err'])) : '';
         $import_token = isset($query['cbt_import_token']) ? sanitize_key((string) wp_unslash((string) $query['cbt_import_token'])) : '';
+        $import_preview_token = isset($query['cbt_import_preview_token']) ? sanitize_key((string) wp_unslash((string) $query['cbt_import_preview_token'])) : '';
+        $subject_choice_preview_token = isset($query['cbt_subject_choice_preview_token']) ? sanitize_key((string) wp_unslash((string) $query['cbt_subject_choice_preview_token'])) : '';
         $search = isset($query['cbt_user_q']) ? sanitize_text_field(wp_unslash((string) $query['cbt_user_q'])) : '';
         $filter_role = isset($query['cbt_user_role']) ? sanitize_text_field(wp_unslash((string) $query['cbt_user_role'])) : '';
         $filter_kelas = isset($query['cbt_user_kelas']) ? sanitize_text_field(wp_unslash((string) $query['cbt_user_kelas'])) : '';
@@ -50,6 +56,7 @@ final class CBT_Admin_Users_Service
             : 20;
         $current_page = isset($query['cbt_user_paged']) ? max(1, absint(wp_unslash((string) $query['cbt_user_paged']))) : 1;
         $editing_user_id = isset($query['edit_user']) ? absint(wp_unslash((string) $query['edit_user'])) : 0;
+        $diagnostic_user_id = isset($query['diagnose_user']) ? absint(wp_unslash((string) $query['diagnose_user'])) : 0;
         $editing_user = null;
         if ($editing_user_id > 0) {
             $editing_user = get_user_by('id', $editing_user_id);
@@ -61,10 +68,18 @@ final class CBT_Admin_Users_Service
         $ruang_options = self::get_distinct_user_meta_values('kode_ruang');
         $agama_options = self::get_supported_agama_options();
         $jenis_kelamin_options = self::get_supported_jenis_kelamin_options();
+        $subject_options = class_exists('CBT_Exam_Audience_Service')
+            ? CBT_Exam_Audience_Service::get_subject_options()
+            : [];
         $per_page_options = [20, 50, 100, 150, 200];
         $import_batch_size = self::get_user_import_batch_size();
         $users_page_data = self::get_cbt_users_paginated($search, $filter_role, $filter_kelas, $filter_ruang, $filter_agama, $filter_jenis_kelamin, $per_page, $current_page);
         $users = $users_page_data['items'];
+        $subject_choice_labels_by_user = class_exists('CBT_Exam_Audience_Service')
+            ? CBT_Exam_Audience_Service::get_student_subject_choice_label_map(array_map(static function ($user): int {
+                return $user instanceof WP_User ? (int) $user->ID : 0;
+            }, (array) $users))
+            : [];
         $current_page = $users_page_data['page'];
         $total_pages = $users_page_data['total_pages'];
         $total_users = $users_page_data['total'];
@@ -77,6 +92,14 @@ final class CBT_Admin_Users_Service
         $import_progress_percent = 0.0;
         $import_is_running = false;
         $import_continue_url = '';
+        $import_preview_state = null;
+        $import_preview = [];
+        $import_preview_run_url = '';
+        $import_preview_clear_url = admin_url('admin.php?page=cbt-user-import');
+        $subject_choice_preview_state = null;
+        $subject_choice_preview = [];
+        $subject_choice_preview_run_url = '';
+        $subject_choice_preview_clear_url = admin_url('admin.php?page=cbt-user-import');
         if ($import_token !== '') {
             $import_state = self::get_user_import_state_for_current_user($import_token);
             if (is_array($import_state)) {
@@ -103,18 +126,45 @@ final class CBT_Admin_Users_Service
                 $error = 'Sesi import tidak ditemukan atau sudah berakhir. Silakan upload ulang file.';
             }
         }
+        if ($import_preview_token !== '') {
+            $import_preview_state = self::get_user_import_state_for_current_user($import_preview_token);
+            if (is_array($import_preview_state) && (($import_preview_state['preview_type'] ?? '') === 'users')) {
+                $import_preview = isset($import_preview_state['preview']) && is_array($import_preview_state['preview'])
+                    ? $import_preview_state['preview']
+                    : [];
+                $import_preview_run_url = admin_url('admin-post.php');
+            } elseif ($notice === '' && $error === '') {
+                $error = 'Preview import user tidak ditemukan atau sudah berakhir. Silakan upload ulang file.';
+                $import_preview_state = null;
+            }
+        }
+        if ($subject_choice_preview_token !== '') {
+            $subject_choice_preview_state = self::get_subject_choice_import_state_for_current_user($subject_choice_preview_token);
+            if (is_array($subject_choice_preview_state) && (($subject_choice_preview_state['preview_type'] ?? '') === 'subject_choices')) {
+                $subject_choice_preview = isset($subject_choice_preview_state['preview']) && is_array($subject_choice_preview_state['preview'])
+                    ? $subject_choice_preview_state['preview']
+                    : [];
+                $subject_choice_preview_run_url = admin_url('admin-post.php');
+            } elseif ($notice === '' && $error === '') {
+                $error = 'Preview import mapel pilihan tidak ditemukan atau sudah berakhir. Silakan upload ulang file.';
+                $subject_choice_preview_state = null;
+            }
+        }
         $is_editing_user = $editing_user instanceof WP_User;
         $default_user_tab = 'list';
         if ($total_users === 0) {
             $default_user_tab = 'form';
         }
-        if (is_array($import_state)) {
+        if (is_array($import_state) || is_array($import_preview_state) || is_array($subject_choice_preview_state)) {
             $default_user_tab = 'import';
         }
         if ($is_editing_user) {
             $default_user_tab = 'form';
         }
-        $user_tab_is_forced = $is_editing_user || is_array($import_state);
+        if ($diagnostic_user_id > 0) {
+            $default_user_tab = 'list';
+        }
+        $user_tab_is_forced = $is_editing_user || is_array($import_state) || is_array($import_preview_state) || is_array($subject_choice_preview_state) || $diagnostic_user_id > 0;
         $user_reset_url = admin_url('admin.php?page=cbt-user-import');
         $user_clear_edit_args = [
             'page' => 'cbt-user-import',
@@ -140,6 +190,11 @@ final class CBT_Admin_Users_Service
             $user_clear_edit_args['cbt_user_jenis_kelamin'] = $filter_jenis_kelamin;
         }
         $user_clear_edit_url = add_query_arg($user_clear_edit_args, admin_url('admin.php'));
+        $diagnostic_data = [];
+        $diagnostic_clear_url = $user_clear_edit_url;
+        if ($diagnostic_user_id > 0 && class_exists('CBT_Exam_Audience_Service')) {
+            $diagnostic_data = CBT_Exam_Audience_Service::diagnose_student_exams($diagnostic_user_id);
+        }
         $pagination_args = [
             'page' => 'cbt-user-import',
             'cbt_user_per_page' => $per_page,
@@ -183,6 +238,7 @@ final class CBT_Admin_Users_Service
         $editing_agama_form = '';
         $editing_jenis_kelamin_form = '';
         $editing_foto = '';
+        $editing_subject_choice_ids = [];
         if ($is_editing_user) {
             $editing_role_raw = isset($editing_user->roles[0]) ? (string) $editing_user->roles[0] : '';
             $editing_role = self::role_for_form($editing_role_raw);
@@ -196,6 +252,9 @@ final class CBT_Admin_Users_Service
             $editing_foto = class_exists('CBT_Student_Profile_Cache')
                 ? CBT_Student_Profile_Cache::normalize_photo_url((string) get_user_meta((int) $editing_user->ID, 'foto', true))
                 : esc_url_raw((string) get_user_meta((int) $editing_user->ID, 'foto', true));
+            $editing_subject_choice_ids = class_exists('CBT_Exam_Audience_Service')
+                ? CBT_Exam_Audience_Service::get_student_subject_choice_ids((int) $editing_user->ID)
+                : [];
         }
         $is_admin_scope = self::is_admin_scope();
 
@@ -203,6 +262,9 @@ final class CBT_Admin_Users_Service
             'agama_options',
             'current_page',
             'default_user_tab',
+            'diagnostic_clear_url',
+            'diagnostic_data',
+            'diagnostic_user_id',
             'editing_agama_form',
             'editing_foto',
             'editing_jenis_kelamin_form',
@@ -210,6 +272,7 @@ final class CBT_Admin_Users_Service
             'editing_nisn',
             'editing_role',
             'editing_ruang',
+            'editing_subject_choice_ids',
             'editing_user',
             'editing_user_id',
             'error',
@@ -224,6 +287,11 @@ final class CBT_Admin_Users_Service
             'import_failed',
             'import_is_running',
             'import_offset',
+            'import_preview',
+            'import_preview_clear_url',
+            'import_preview_run_url',
+            'import_preview_state',
+            'import_preview_token',
             'import_progress_percent',
             'import_state',
             'import_token',
@@ -239,6 +307,13 @@ final class CBT_Admin_Users_Service
             'per_page_options',
             'ruang_options',
             'search',
+            'subject_choice_preview',
+            'subject_choice_preview_clear_url',
+            'subject_choice_preview_run_url',
+            'subject_choice_preview_state',
+            'subject_choice_preview_token',
+            'subject_choice_labels_by_user',
+            'subject_options',
             'total_pages',
             'total_users',
             'user_clear_edit_url',
@@ -267,6 +342,10 @@ final class CBT_Admin_Users_Service
         $agama = isset($_POST['agama']) ? self::normalize_supported_agama((string) wp_unslash($_POST['agama'])) : '';
         $raw_jenis_kelamin = isset($_POST['jenis_kelamin']) ? (string) wp_unslash($_POST['jenis_kelamin']) : '';
         $jenis_kelamin = self::normalize_supported_jenis_kelamin($raw_jenis_kelamin);
+        $subject_choice_ids = self::read_subject_choice_ids_from_post();
+        if (is_wp_error($subject_choice_ids)) {
+            self::redirect_user_import_with_error($subject_choice_ids->get_error_message());
+        }
         if ($name === '' || $username === '' || !is_email($email)) {
             self::redirect_user_import_with_error('Nama, username, dan email valid wajib diisi.');
         }
@@ -334,6 +413,16 @@ final class CBT_Admin_Users_Service
             update_user_meta((int) $user_id, 'foto', $foto);
         }
         update_user_meta((int) $user_id, self::USER_META_PLAIN_PASSWORD, $password);
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            if (self::is_student_role($role)) {
+                $choice_result = CBT_Exam_Audience_Service::set_student_subject_choices((int) $user_id, (array) $subject_choice_ids);
+                if (is_wp_error($choice_result)) {
+                    self::redirect_user_import_with_error($choice_result->get_error_message());
+                }
+            } else {
+                CBT_Exam_Audience_Service::clear_student_subject_choices((int) $user_id);
+            }
+        }
 
         $msg = 'User berhasil dibuat.';
         if ($generated_password) {
@@ -364,6 +453,10 @@ final class CBT_Admin_Users_Service
         $agama = isset($_POST['agama']) ? self::normalize_supported_agama((string) wp_unslash($_POST['agama'])) : '';
         $raw_jenis_kelamin = isset($_POST['jenis_kelamin']) ? (string) wp_unslash($_POST['jenis_kelamin']) : '';
         $jenis_kelamin = self::normalize_supported_jenis_kelamin($raw_jenis_kelamin);
+        $subject_choice_ids = self::read_subject_choice_ids_from_post();
+        if (is_wp_error($subject_choice_ids)) {
+            self::redirect_user_import_with_error($subject_choice_ids->get_error_message());
+        }
         $hapus_foto = isset($_POST['hapus_foto']) && sanitize_text_field(wp_unslash($_POST['hapus_foto'])) === '1';
 
         if ($user_id <= 0) {
@@ -473,9 +566,48 @@ final class CBT_Admin_Users_Service
                 update_user_meta($user_id, 'foto', self::get_default_student_photo_url($jenis_kelamin));
             }
         }
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            if (self::is_student_role($role)) {
+                $choice_result = CBT_Exam_Audience_Service::set_student_subject_choices($user_id, (array) $subject_choice_ids);
+                if (is_wp_error($choice_result)) {
+                    self::redirect_user_import_with_error($choice_result->get_error_message());
+                }
+            } else {
+                CBT_Exam_Audience_Service::clear_student_subject_choices($user_id);
+            }
+        }
 
         wp_safe_redirect(admin_url('admin.php?page=cbt-user-import&cbt_msg=' . rawurlencode('User berhasil diupdate.')));
         exit;
+    }
+
+    /**
+     * @return int[]|WP_Error
+     */
+    private static function read_subject_choice_ids_from_post()
+    {
+        $raw = isset($_POST['subject_choices']) && is_array($_POST['subject_choices'])
+            ? wp_unslash($_POST['subject_choices'])
+            : [];
+        $ids = [];
+        $seen = [];
+        foreach ((array) $raw as $value) {
+            $id = absint($value);
+            if ($id <= 0) {
+                continue;
+            }
+            if (isset($seen[$id])) {
+                return new WP_Error('duplicate_subject_choice', 'Mapel pilihan tidak boleh duplikat.');
+            }
+            $seen[$id] = true;
+            $ids[] = $id;
+        }
+
+        if (count($ids) > 3) {
+            return new WP_Error('too_many_subject_choices', 'Mapel pilihan maksimal 3.');
+        }
+
+        return $ids;
     }
 
     public static function handle_delete_user_manual(): void
@@ -534,6 +666,9 @@ final class CBT_Admin_Users_Service
         }
 
         require_once ABSPATH . 'wp-admin/includes/user.php';
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            CBT_Exam_Audience_Service::clear_student_subject_choices($user_id);
+        }
         $deleted = wp_delete_user($user_id);
         if (!$deleted) {
             self::redirect_user_import_with_error('Gagal menghapus user.');
@@ -612,6 +747,9 @@ final class CBT_Admin_Users_Service
 
         $deleted_count = 0;
         foreach ($target_user_ids as $user_id) {
+            if (class_exists('CBT_Exam_Audience_Service')) {
+                CBT_Exam_Audience_Service::clear_student_subject_choices((int) $user_id);
+            }
             $deleted = wp_delete_user((int) $user_id);
             if ($deleted) {
                 $deleted_count++;
@@ -625,6 +763,140 @@ final class CBT_Admin_Users_Service
         }
 
         wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+        exit;
+    }
+
+    public static function handle_preview_import_users(): void
+    {
+        if (!self::can_manage_users()) {
+            wp_die('Unauthorized');
+        }
+
+        self::prepare_runtime_for_bulk_user_import();
+        check_admin_referer('cbt_preview_import_users');
+
+        if (!isset($_FILES['user_file']) || !is_array($_FILES['user_file'])) {
+            self::redirect_user_import_with_error('File tidak ditemukan.');
+        }
+
+        $file = $_FILES['user_file'];
+        $tmp_path = $file['tmp_name'] ?? '';
+        $original_name = $file['name'] ?? '';
+        $error_code = isset($file['error']) ? (int) $file['error'] : UPLOAD_ERR_NO_FILE;
+        if ($error_code !== UPLOAD_ERR_OK || !$tmp_path) {
+            self::redirect_user_import_with_error('Upload file gagal.');
+        }
+
+        $extension = strtolower((string) pathinfo((string) $original_name, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['csv', 'xlsx'], true)) {
+            self::redirect_user_import_with_error('Format file harus CSV atau XLSX.');
+        }
+
+        $parsed = ($extension === 'xlsx')
+            ? self::parse_user_xlsx($tmp_path)
+            : self::parse_user_csv($tmp_path);
+        if (is_wp_error($parsed)) {
+            self::redirect_user_import_with_error($parsed->get_error_message());
+        }
+        if (!is_array($parsed) || empty($parsed)) {
+            self::redirect_user_import_with_error('Tidak ada data user yang bisa diproses.');
+        }
+
+        $photo_references = self::collect_user_import_photo_references($parsed);
+        $token = strtolower((string) wp_generate_password(24, false, false));
+        $photo_package = self::prepare_user_import_photo_package_for_preview($token, $photo_references, $_FILES['user_photo_zip'] ?? null);
+        $photo_package_error = null;
+        if (is_wp_error($photo_package)) {
+            $photo_package_error = $photo_package;
+            $photo_package = [];
+        }
+
+        $preview = self::build_user_import_preview($parsed, $photo_references, (array) $photo_package);
+        $preview['token'] = $token;
+        if ($photo_package_error instanceof WP_Error) {
+            $errors = isset($preview['errors']) && is_array($preview['errors']) ? $preview['errors'] : [];
+            array_unshift($errors, 'ZIP Foto: ' . $photo_package_error->get_error_message());
+            $preview['errors'] = array_slice(array_values(array_unique(array_map('strval', $errors))), 0, 12);
+        }
+
+        $state = [
+            'total' => count($parsed),
+            'offset' => 0,
+            'created' => 0,
+            'updated' => 0,
+            'failed' => 0,
+            'user_id' => get_current_user_id(),
+            'started_at' => time(),
+            'preview_type' => 'users',
+            'preview_ready' => true,
+            'preview' => $preview,
+            'preview_failed_rows' => isset($preview['failed_rows']) && is_array($preview['failed_rows'])
+                ? array_values(array_map('intval', $preview['failed_rows']))
+                : [],
+        ];
+        if (is_array($photo_package) && !empty($photo_package)) {
+            $state['photo_package'] = $photo_package;
+        }
+
+        $state_key = self::get_user_import_state_key($token);
+        $rows_key = self::get_user_import_rows_key($token);
+        $rows_saved = set_transient($rows_key, array_values($parsed), 12 * HOUR_IN_SECONDS);
+        $state_saved = set_transient($state_key, $state, 12 * HOUR_IN_SECONDS);
+        if (!$rows_saved || !$state_saved) {
+            if (is_array($photo_package) && !empty($photo_package)) {
+                self::cleanup_user_import_photo_workspace_from_package($photo_package);
+            }
+            self::clear_user_import_transients($token);
+            self::redirect_user_import_with_error('Gagal menyiapkan preview import. Coba gunakan file CSV atau kurangi ukuran file.');
+        }
+
+        wp_safe_redirect(add_query_arg([
+            'page' => 'cbt-user-import',
+            'cbt_import_preview_token' => $token,
+        ], admin_url('admin.php')));
+        exit;
+    }
+
+    public static function handle_run_previewed_import_users(): void
+    {
+        if (!self::can_manage_users()) {
+            wp_die('Unauthorized');
+        }
+
+        self::prepare_runtime_for_bulk_user_import();
+        check_admin_referer('cbt_run_previewed_import_users');
+
+        $token = isset($_POST['cbt_import_preview_token'])
+            ? sanitize_key((string) wp_unslash((string) $_POST['cbt_import_preview_token']))
+            : '';
+        $state = self::get_user_import_state_for_current_user($token);
+        if (!is_array($state) || (($state['preview_type'] ?? '') !== 'users')) {
+            self::redirect_user_import_with_error('Sesi preview import user tidak ditemukan atau sudah berakhir.');
+        }
+
+        $preview = isset($state['preview']) && is_array($state['preview']) ? $state['preview'] : [];
+        if (empty($preview['can_continue'])) {
+            self::redirect_user_import_with_error('Preview import belum memiliki baris valid untuk dilanjutkan.');
+        }
+
+        $rows = get_transient(self::get_user_import_rows_key($token));
+        if (!is_array($rows) || empty($rows)) {
+            self::clear_user_import_transients($token);
+            self::redirect_user_import_with_error('Data preview import tidak ditemukan. Silakan upload ulang file.');
+        }
+
+        $state['offset'] = 0;
+        $state['created'] = 0;
+        $state['updated'] = 0;
+        $state['failed'] = 0;
+        $state['started_at'] = time();
+        $state['preview_ready'] = false;
+        set_transient(self::get_user_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+
+        wp_safe_redirect(add_query_arg([
+            'action' => 'cbt_import_users',
+            'cbt_import_token' => $token,
+        ], admin_url('admin-post.php')));
         exit;
     }
 
@@ -747,16 +1019,33 @@ final class CBT_Admin_Users_Service
 
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('users');
         $sheet->fromArray(
             [
-                ['name', 'email', 'nisn', 'username', 'password', 'role', 'kode_kelas', 'kode_ruang', 'agama', 'jenis_kelamin', 'foto_file'],
-                ['Budi Santoso', '', '1000000001', 'budi.santoso', 'Password123', 'siswa', 'X-IPA-1', 'LAB-1', 'Islam', 'Laki-laki', '1000000001.jpg'],
-                ['Siti Aminah', 'siti@student.sch.id', '1000000002', 'siti.aminah', 'Password123', 'siswa', 'X-IPA-1', 'LAB-1', 'Islam', 'Perempuan', '1000000002.jpg'],
-                ['Pak Andi', 'andi@school.sch.id', '', 'andi.guru', 'Password123', 'guru', '', '', '', 'Laki-laki', ''],
+                ['name', 'email', 'nisn', 'username', 'password', 'role', 'kode_kelas', 'kode_ruang', 'agama', 'jenis_kelamin', 'foto_file', 'mapel_pilihan_1', 'mapel_pilihan_2', 'mapel_pilihan_3'],
+                ['Budi Santoso', '', '1000000001', 'budi.santoso', 'Password123', 'siswa', 'X-IPA-1', 'LAB-1', 'Islam', 'Laki-laki', '1000000001.jpg', '', '', ''],
+                ['Siti Aminah', 'siti@student.sch.id', '1000000002', 'siti.aminah', 'Password123', 'siswa', 'X-IPA-1', 'LAB-1', 'Islam', 'Perempuan', '1000000002.jpg', '', '', ''],
+                ['Pak Andi', 'andi@school.sch.id', '', 'andi.guru', 'Password123', 'guru', '', '', '', 'Laki-laki', '', '', '', ''],
             ],
             null,
             'A1'
         );
+        self::format_user_template_sheet($sheet);
+
+        $subject_choice_sheet = $spreadsheet->createSheet();
+        $subject_choice_sheet->setTitle('mapel_pilihan');
+        $subject_choice_sheet->fromArray(
+            [
+                ['nisn', 'username', 'mapel_pilihan_1', 'mapel_pilihan_2', 'mapel_pilihan_3'],
+                ['1000000001', 'budi.santoso', 'INF', 'PKWU', 'SENBUD'],
+                ['1000000002', 'siti.aminah', 'BIO', '', ''],
+            ],
+            null,
+            'A1'
+        );
+        self::format_student_subject_choices_template_sheet($subject_choice_sheet);
+        self::append_subject_reference_sheet($spreadsheet);
+        $spreadsheet->setActiveSheetIndex(0);
 
         nocache_headers();
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -766,6 +1055,593 @@ final class CBT_Admin_Users_Service
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
         $writer->save('php://output');
         exit;
+    }
+
+    public static function handle_import_student_subject_choices(): void
+    {
+        if (!self::can_manage_users()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_import_student_subject_choices');
+
+        if (!class_exists('CBT_Exam_Audience_Service')) {
+            self::redirect_user_import_with_error('Service mapel pilihan belum tersedia.');
+        }
+        if (!isset($_FILES['subject_choice_file']) || !is_array($_FILES['subject_choice_file'])) {
+            self::redirect_user_import_with_error('File import mapel pilihan tidak ditemukan.');
+        }
+
+        $file = $_FILES['subject_choice_file'];
+        $tmp_path = $file['tmp_name'] ?? '';
+        $original_name = $file['name'] ?? '';
+        $error_code = isset($file['error']) ? (int) $file['error'] : UPLOAD_ERR_NO_FILE;
+        if ($error_code !== UPLOAD_ERR_OK || !$tmp_path) {
+            self::redirect_user_import_with_error('Upload file mapel pilihan gagal.');
+        }
+
+        $extension = strtolower((string) pathinfo((string) $original_name, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['csv', 'xlsx'], true)) {
+            self::redirect_user_import_with_error('Format file mapel pilihan harus CSV atau XLSX.');
+        }
+
+        $rows = ($extension === 'xlsx')
+            ? self::parse_student_subject_choices_xlsx($tmp_path)
+            : self::parse_student_subject_choices_csv($tmp_path);
+        if (is_wp_error($rows)) {
+            self::redirect_user_import_with_error($rows->get_error_message());
+        }
+
+        $summary = self::run_student_subject_choices_import_rows((array) $rows);
+        $message = self::format_student_subject_choices_import_message($summary);
+        $failed = isset($summary['failed']) ? (int) $summary['failed'] : 0;
+
+        $redirect_args = ['page' => 'cbt-user-import'];
+        $redirect_args[$failed > 0 ? 'cbt_err' : 'cbt_msg'] = $message;
+        wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+        exit;
+    }
+
+    public static function handle_preview_import_student_subject_choices(): void
+    {
+        if (!self::can_manage_users()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_preview_import_student_subject_choices');
+
+        if (!class_exists('CBT_Exam_Audience_Service')) {
+            self::redirect_user_import_with_error('Service mapel pilihan belum tersedia.');
+        }
+        if (!isset($_FILES['subject_choice_file']) || !is_array($_FILES['subject_choice_file'])) {
+            self::redirect_user_import_with_error('File import mapel pilihan tidak ditemukan.');
+        }
+
+        $file = $_FILES['subject_choice_file'];
+        $tmp_path = $file['tmp_name'] ?? '';
+        $original_name = $file['name'] ?? '';
+        $error_code = isset($file['error']) ? (int) $file['error'] : UPLOAD_ERR_NO_FILE;
+        if ($error_code !== UPLOAD_ERR_OK || !$tmp_path) {
+            self::redirect_user_import_with_error('Upload file mapel pilihan gagal.');
+        }
+
+        $extension = strtolower((string) pathinfo((string) $original_name, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['csv', 'xlsx'], true)) {
+            self::redirect_user_import_with_error('Format file mapel pilihan harus CSV atau XLSX.');
+        }
+
+        $rows = ($extension === 'xlsx')
+            ? self::parse_student_subject_choices_xlsx($tmp_path)
+            : self::parse_student_subject_choices_csv($tmp_path);
+        if (is_wp_error($rows)) {
+            self::redirect_user_import_with_error($rows->get_error_message());
+        }
+        if (!is_array($rows) || empty($rows)) {
+            self::redirect_user_import_with_error('Tidak ada data mapel pilihan yang bisa diproses.');
+        }
+
+        $token = strtolower((string) wp_generate_password(24, false, false));
+        $preview = self::build_student_subject_choices_import_preview((array) $rows);
+        $preview['token'] = $token;
+        $state = [
+            'total' => count((array) $rows),
+            'user_id' => get_current_user_id(),
+            'started_at' => time(),
+            'preview_type' => 'subject_choices',
+            'preview_ready' => true,
+            'preview' => $preview,
+        ];
+
+        $rows_saved = set_transient(self::get_subject_choice_import_rows_key($token), array_values((array) $rows), 12 * HOUR_IN_SECONDS);
+        $state_saved = set_transient(self::get_subject_choice_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+        if (!$rows_saved || !$state_saved) {
+            self::clear_subject_choice_import_transients($token);
+            self::redirect_user_import_with_error('Gagal menyiapkan preview import mapel pilihan. Coba gunakan file CSV atau kurangi ukuran file.');
+        }
+
+        wp_safe_redirect(add_query_arg([
+            'page' => 'cbt-user-import',
+            'cbt_subject_choice_preview_token' => $token,
+        ], admin_url('admin.php')));
+        exit;
+    }
+
+    public static function handle_run_previewed_student_subject_choices(): void
+    {
+        if (!self::can_manage_users()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_run_previewed_student_subject_choices');
+
+        $token = isset($_POST['cbt_subject_choice_preview_token'])
+            ? sanitize_key((string) wp_unslash((string) $_POST['cbt_subject_choice_preview_token']))
+            : '';
+        $state = self::get_subject_choice_import_state_for_current_user($token);
+        if (!is_array($state) || (($state['preview_type'] ?? '') !== 'subject_choices')) {
+            self::redirect_user_import_with_error('Sesi preview import mapel pilihan tidak ditemukan atau sudah berakhir.');
+        }
+
+        $preview = isset($state['preview']) && is_array($state['preview']) ? $state['preview'] : [];
+        if (empty($preview['can_continue'])) {
+            self::redirect_user_import_with_error('Preview mapel pilihan belum memiliki baris valid untuk dilanjutkan.');
+        }
+
+        $rows = get_transient(self::get_subject_choice_import_rows_key($token));
+        if (!is_array($rows) || empty($rows)) {
+            self::clear_subject_choice_import_transients($token);
+            self::redirect_user_import_with_error('Data preview mapel pilihan tidak ditemukan. Silakan upload ulang file.');
+        }
+
+        $summary = self::run_student_subject_choices_import_rows(array_values($rows));
+        self::clear_subject_choice_import_transients($token);
+        $message = self::format_student_subject_choices_import_message($summary);
+        $failed = isset($summary['failed']) ? (int) $summary['failed'] : 0;
+
+        $redirect_args = ['page' => 'cbt-user-import'];
+        $redirect_args[$failed > 0 ? 'cbt_err' : 'cbt_msg'] = $message;
+        wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+        exit;
+    }
+
+    public static function handle_download_student_subject_choices_template(): void
+    {
+        if (!self::can_manage_users()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_download_student_subject_choices_template');
+
+        nocache_headers();
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="cbt-mapel-pilihan-template.csv"');
+        $out = fopen('php://output', 'wb');
+        if ($out !== false) {
+            fputcsv($out, ['nisn', 'username', 'mapel_pilihan_1', 'mapel_pilihan_2', 'mapel_pilihan_3']);
+            fputcsv($out, ['1000000001', 'budi.santoso', 'INF', 'PKWU', 'SENBUD']);
+            fclose($out);
+        }
+        exit;
+    }
+
+    public static function handle_download_student_subject_choices_template_xlsx(): void
+    {
+        if (!self::can_manage_users()) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_download_student_subject_choices_template_xlsx');
+
+        if (!class_exists('\\PhpOffice\\PhpSpreadsheet\\Spreadsheet') || !class_exists('\\PhpOffice\\PhpSpreadsheet\\Writer\\Xlsx')) {
+            wp_die('Library XLSX belum terpasang. Jalankan composer install pada plugin CBT.');
+        }
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('mapel_pilihan');
+        $sheet->fromArray(
+            [
+                ['nisn', 'username', 'mapel_pilihan_1', 'mapel_pilihan_2', 'mapel_pilihan_3'],
+                ['1000000001', 'budi.santoso', 'INF', 'PKWU', 'SENBUD'],
+            ],
+            null,
+            'A1'
+        );
+        self::format_student_subject_choices_template_sheet($sheet);
+        self::append_subject_reference_sheet($spreadsheet);
+        $spreadsheet->setActiveSheetIndex(0);
+
+        nocache_headers();
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="cbt-mapel-pilihan-template.xlsx"');
+        header('Cache-Control: max-age=0');
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save('php://output');
+        exit;
+    }
+
+    private static function format_user_template_sheet($sheet): void
+    {
+        if (!is_object($sheet)) {
+            return;
+        }
+
+        if (method_exists($sheet, 'getStyle')) {
+            $sheet->getStyle('C:C')->getNumberFormat()->setFormatCode('@');
+            $sheet->getStyle('A1:N1')->getFont()->setBold(true);
+        }
+        if (method_exists($sheet, 'getColumnDimension')) {
+            foreach (range('A', 'N') as $column) {
+                $sheet->getColumnDimension($column)->setAutoSize(true);
+            }
+        }
+    }
+
+    private static function format_student_subject_choices_template_sheet($sheet): void
+    {
+        if (!is_object($sheet)) {
+            return;
+        }
+
+        if (method_exists($sheet, 'getStyle')) {
+            $sheet->getStyle('A:A')->getNumberFormat()->setFormatCode('@');
+            $sheet->getStyle('A1:E1')->getFont()->setBold(true);
+        }
+        if (method_exists($sheet, 'getColumnDimension')) {
+            foreach (range('A', 'E') as $column) {
+                $sheet->getColumnDimension($column)->setAutoSize(true);
+            }
+        }
+    }
+
+    private static function append_subject_reference_sheet($spreadsheet): void
+    {
+        if (!is_object($spreadsheet) || !method_exists($spreadsheet, 'createSheet')) {
+            return;
+        }
+
+        $rows = [['subject_id', 'subject_code', 'subject_name']];
+        $subjects = class_exists('CBT_Exam_Audience_Service')
+            ? CBT_Exam_Audience_Service::get_subject_options()
+            : [];
+        foreach ((array) $subjects as $subject) {
+            $rows[] = [
+                (int) ($subject['id'] ?? 0),
+                (string) ($subject['code'] ?? ''),
+                (string) ($subject['name'] ?? ''),
+            ];
+        }
+        if (count($rows) === 1) {
+            $rows[] = ['', '', 'Belum ada data CBT Subjects'];
+        }
+
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('referensi_mapel');
+        $sheet->fromArray($rows, null, 'A1');
+    }
+
+    /**
+     * @return array<int,array<string,string>>|WP_Error
+     */
+    private static function parse_student_subject_choices_csv(string $tmp_path)
+    {
+        $handle = fopen($tmp_path, 'rb');
+        if ($handle === false) {
+            return new WP_Error('csv_open_failed', 'Gagal membuka file CSV mapel pilihan.');
+        }
+
+        $first_line = fgets($handle);
+        if ($first_line === false) {
+            fclose($handle);
+            return new WP_Error('csv_empty', 'File CSV mapel pilihan kosong.');
+        }
+
+        $delimiter = (substr_count($first_line, ';') > substr_count($first_line, ',')) ? ';' : ',';
+        rewind($handle);
+        $header = fgetcsv($handle, 0, $delimiter);
+        if ($header === false) {
+            fclose($handle);
+            return new WP_Error('csv_empty', 'File CSV mapel pilihan kosong.');
+        }
+
+        $header = self::normalize_student_subject_choices_header($header);
+        $header_check = self::validate_student_subject_choices_header($header);
+        if (is_wp_error($header_check)) {
+            fclose($handle);
+            return $header_check;
+        }
+
+        $rows = [];
+        while (($data = fgetcsv($handle, 0, $delimiter)) !== false) {
+            if (!is_array($data) || count(array_filter($data, static fn($v) => trim((string) $v) !== '')) === 0) {
+                continue;
+            }
+
+            $row = [];
+            foreach ($header as $idx => $col) {
+                $row[$col] = isset($data[$idx]) ? trim((string) $data[$idx]) : '';
+            }
+            $rows[] = $row;
+        }
+        fclose($handle);
+
+        return !empty($rows) ? $rows : new WP_Error('csv_no_data', 'Tidak ada data mapel pilihan di CSV.');
+    }
+
+    /**
+     * @return array<int,array<string,string>>|WP_Error
+     */
+    private static function parse_student_subject_choices_xlsx(string $tmp_path)
+    {
+        if (!class_exists('\\PhpOffice\\PhpSpreadsheet\\IOFactory')) {
+            return new WP_Error('xlsx_library_missing', 'Library XLSX belum terpasang. Jalankan composer install pada plugin CBT.');
+        }
+
+        try {
+            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($tmp_path);
+            if (method_exists($reader, 'setReadDataOnly')) {
+                $reader->setReadDataOnly(true);
+            }
+            $spreadsheet = $reader->load($tmp_path);
+            $raw_rows = self::get_student_subject_choices_rows_from_spreadsheet($spreadsheet);
+        } catch (Throwable $throwable) {
+            return new WP_Error('xlsx_read_failed', 'Gagal membaca file XLSX mapel pilihan.');
+        }
+
+        if (is_wp_error($raw_rows)) {
+            return $raw_rows;
+        }
+        if (!is_array($raw_rows) || empty($raw_rows)) {
+            return new WP_Error('xlsx_empty', 'File XLSX mapel pilihan kosong.');
+        }
+
+        $header = array_shift($raw_rows);
+        if (!is_array($header)) {
+            return new WP_Error('xlsx_header_invalid', 'Header XLSX mapel pilihan tidak valid.');
+        }
+
+        $header = self::normalize_student_subject_choices_header($header);
+        $header_check = self::validate_student_subject_choices_header($header);
+        if (is_wp_error($header_check)) {
+            return $header_check;
+        }
+
+        $rows = [];
+        foreach ($raw_rows as $data) {
+            if (!is_array($data) || count(array_filter($data, static fn($v) => trim((string) $v) !== '')) === 0) {
+                continue;
+            }
+            $row = [];
+            foreach ($header as $idx => $col) {
+                $row[$col] = isset($data[$idx]) ? trim((string) $data[$idx]) : '';
+            }
+            $rows[] = $row;
+        }
+
+        return !empty($rows) ? $rows : new WP_Error('xlsx_no_data', 'Tidak ada data mapel pilihan di XLSX.');
+    }
+
+    /**
+     * @return array<int,array<int,mixed>>|WP_Error
+     */
+    private static function get_student_subject_choices_rows_from_spreadsheet($spreadsheet)
+    {
+        $sheets = method_exists($spreadsheet, 'getAllSheets')
+            ? $spreadsheet->getAllSheets()
+            : [$spreadsheet->getActiveSheet()];
+        $fallback_error = null;
+
+        foreach ((array) $sheets as $sheet) {
+            if (!is_object($sheet) || !method_exists($sheet, 'toArray')) {
+                continue;
+            }
+
+            $raw_rows = $sheet->toArray('', false, false, false);
+            if (!is_array($raw_rows) || empty($raw_rows)) {
+                continue;
+            }
+
+            $header = $raw_rows[0] ?? null;
+            if (!is_array($header)) {
+                continue;
+            }
+
+            $normalized_header = self::normalize_student_subject_choices_header($header);
+            $header_check = self::validate_student_subject_choices_header($normalized_header);
+            if (is_wp_error($header_check)) {
+                $fallback_error = $fallback_error ?: $header_check;
+                continue;
+            }
+
+            return $raw_rows;
+        }
+
+        return $fallback_error ?: new WP_Error('xlsx_header_invalid', 'Header XLSX mapel pilihan tidak valid.');
+    }
+
+    /**
+     * @param array<int,mixed> $header
+     * @return array<int,string>
+     */
+    private static function normalize_student_subject_choices_header(array $header): array
+    {
+        $normalized = [];
+        foreach ($header as $col) {
+            $key = strtolower(trim((string) $col));
+            $key = preg_replace('/[^a-z0-9_]+/', '_', $key);
+            $key = trim($key ?? '', '_');
+            if ($key === 'nis' || $key === 'nis_n') {
+                $key = 'nisn';
+            } elseif ($key === 'user' || $key === 'login') {
+                $key = 'username';
+            } elseif (preg_match('/^mapel_pilihan([123])$/', $key, $match)) {
+                $key = 'mapel_pilihan_' . $match[1];
+            }
+            $normalized[] = $key;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<int,string> $header
+     * @return true|WP_Error
+     */
+    private static function validate_student_subject_choices_header(array $header)
+    {
+        foreach (['nisn', 'username', 'mapel_pilihan_1', 'mapel_pilihan_2', 'mapel_pilihan_3'] as $required) {
+            if (!in_array($required, $header, true)) {
+                return new WP_Error('missing_subject_choice_header', 'Kolom wajib: nisn, username, mapel_pilihan_1, mapel_pilihan_2, mapel_pilihan_3.');
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @return string|WP_Error
+     */
+    private static function replace_student_subject_choices_from_import_row(array $row)
+    {
+        $nisn = self::normalize_user_nisn((string) ($row['nisn'] ?? ''));
+        $username = sanitize_user((string) ($row['username'] ?? ''), true);
+        $user_id = $nisn !== '' ? self::find_user_id_by_nisn($nisn) : 0;
+        if ($user_id <= 0 && $username !== '') {
+            $user = get_user_by('login', $username);
+            $user_id = $user instanceof WP_User ? (int) $user->ID : 0;
+        }
+        if ($user_id <= 0) {
+            return new WP_Error('student_not_found', 'Siswa tidak ditemukan dari NISN/username.');
+        }
+
+        $user = get_user_by('id', $user_id);
+        if (!($user instanceof WP_User)) {
+            return new WP_Error('student_not_found', 'User siswa tidak ditemukan.');
+        }
+
+        $is_student = false;
+        foreach ((array) $user->roles as $role) {
+            if (self::is_student_role((string) $role)) {
+                $is_student = true;
+                break;
+            }
+        }
+        if (!$is_student) {
+            return new WP_Error('not_student', 'User bukan role siswa.');
+        }
+
+        $subject_ids = self::resolve_subject_choice_ids_from_import_row($row);
+        if (is_wp_error($subject_ids)) {
+            return $subject_ids;
+        }
+
+        $result = CBT_Exam_Audience_Service::set_student_subject_choices($user_id, $subject_ids);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+
+        return empty($subject_ids) ? 'cleared' : 'updated';
+    }
+
+    /**
+     * @return string|WP_Error
+     */
+    private static function preview_student_subject_choices_import_row(array $row)
+    {
+        $nisn = self::normalize_user_nisn((string) ($row['nisn'] ?? ''));
+        $username = sanitize_user((string) ($row['username'] ?? ''), true);
+        $user_id = $nisn !== '' ? self::find_user_id_by_nisn($nisn) : 0;
+        if ($user_id <= 0 && $username !== '') {
+            $user = get_user_by('login', $username);
+            $user_id = $user instanceof WP_User ? (int) $user->ID : 0;
+        }
+        if ($user_id <= 0) {
+            return new WP_Error('student_not_found', 'Siswa tidak ditemukan dari NISN/username.');
+        }
+
+        $user = get_user_by('id', $user_id);
+        if (!($user instanceof WP_User)) {
+            return new WP_Error('student_not_found', 'User siswa tidak ditemukan.');
+        }
+
+        $is_student = false;
+        foreach ((array) $user->roles as $role) {
+            if (self::is_student_role((string) $role)) {
+                $is_student = true;
+                break;
+            }
+        }
+        if (!$is_student) {
+            return new WP_Error('not_student', 'User bukan role siswa.');
+        }
+
+        $subject_ids = self::resolve_subject_choice_ids_from_import_row($row);
+        if (is_wp_error($subject_ids)) {
+            return $subject_ids;
+        }
+
+        return empty($subject_ids) ? 'cleared' : 'updated';
+    }
+
+    /**
+     * @param array<int,array<string,string>> $rows
+     * @return array{total:int,updated:int,cleared:int,failed:int,errors:array<int,string>}
+     */
+    private static function run_student_subject_choices_import_rows(array $rows): array
+    {
+        $total = 0;
+        $updated = 0;
+        $cleared = 0;
+        $failed = 0;
+        $errors = [];
+
+        foreach ($rows as $index => $row) {
+            $total++;
+            $result = self::replace_student_subject_choices_from_import_row(is_array($row) ? $row : []);
+            if (is_wp_error($result)) {
+                $failed++;
+                if (count($errors) < 5) {
+                    $errors[] = sprintf('Baris %d: %s', $index + 2, $result->get_error_message());
+                }
+                continue;
+            }
+
+            if ($result === 'cleared') {
+                $cleared++;
+            } else {
+                $updated++;
+            }
+        }
+
+        return [
+            'total' => $total,
+            'updated' => $updated,
+            'cleared' => $cleared,
+            'failed' => $failed,
+            'errors' => $errors,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $summary
+     */
+    private static function format_student_subject_choices_import_message(array $summary): string
+    {
+        $message = sprintf(
+            'Import mapel pilihan selesai. Total %d, update %d, kosongkan %d, gagal %d.',
+            (int) ($summary['total'] ?? 0),
+            (int) ($summary['updated'] ?? 0),
+            (int) ($summary['cleared'] ?? 0),
+            (int) ($summary['failed'] ?? 0)
+        );
+
+        $errors = isset($summary['errors']) && is_array($summary['errors']) ? $summary['errors'] : [];
+        if (!empty($errors)) {
+            $message .= ' Contoh error: ' . implode(' | ', array_map('strval', $errors));
+        }
+
+        return $message;
     }
 
     /**
@@ -918,6 +1794,8 @@ final class CBT_Admin_Users_Service
                 $key = 'jenis_kelamin';
             } elseif ($key === 'photo_file') {
                 $key = 'foto_file';
+            } elseif (preg_match('/^mapel_pilihan([123])$/', $key, $match)) {
+                $key = 'mapel_pilihan_' . $match[1];
             }
             $normalized[] = $key;
         }
@@ -994,6 +1872,18 @@ final class CBT_Admin_Users_Service
             $role = 'siswa_cbt';
         }
 
+        $subject_choice_ids = null;
+        if (self::row_has_subject_choice_values($row)) {
+            if (!self::is_student_role($role)) {
+                return 'failed';
+            }
+            $subject_choice_result = self::resolve_subject_choice_ids_from_import_row($row);
+            if (is_wp_error($subject_choice_result)) {
+                return 'failed';
+            }
+            $subject_choice_ids = $subject_choice_result;
+        }
+
         $user_id = self::resolve_user_import_existing_id($email, $username, $nisn, $import_lookup);
         $nisn_user_id = $nisn !== '' ? self::find_user_id_by_nisn($nisn) : 0;
         if ($nisn_user_id > 0 && $user_id > 0 && $nisn_user_id !== $user_id) {
@@ -1059,6 +1949,12 @@ final class CBT_Admin_Users_Service
             }
 
             self::register_user_import_lookup($import_lookup, $user_id, $email, $username, $nisn, $name !== '' ? $name : $username);
+            if (is_array($subject_choice_ids)) {
+                $choice_result = CBT_Exam_Audience_Service::set_student_subject_choices($user_id, $subject_choice_ids);
+                if (is_wp_error($choice_result)) {
+                    return 'failed';
+                }
+            }
             return 'updated';
         }
 
@@ -1101,8 +1997,54 @@ final class CBT_Admin_Users_Service
         update_user_meta((int) $user_id, self::USER_META_PLAIN_PASSWORD, $password);
 
         self::register_user_import_lookup($import_lookup, (int) $user_id, $email, $username, $nisn, $name !== '' ? $name : $username);
+        if (is_array($subject_choice_ids)) {
+            $choice_result = CBT_Exam_Audience_Service::set_student_subject_choices((int) $user_id, $subject_choice_ids);
+            if (is_wp_error($choice_result)) {
+                return 'failed';
+            }
+        }
 
         return 'created';
+    }
+
+    /**
+     * @return int[]|WP_Error
+     */
+    private static function resolve_subject_choice_ids_from_import_row(array $row)
+    {
+        if (!class_exists('CBT_Exam_Audience_Service')) {
+            return new WP_Error('subject_choice_service_missing', 'Service mapel pilihan belum tersedia.');
+        }
+
+        $subject_ids = [];
+        foreach (['mapel_pilihan_1', 'mapel_pilihan_2', 'mapel_pilihan_3'] as $column) {
+            $value = trim((string) ($row[$column] ?? ''));
+            if ($value === '') {
+                continue;
+            }
+
+            $subject_id = CBT_Exam_Audience_Service::resolve_subject_identifier($value);
+            if ($subject_id <= 0) {
+                return new WP_Error('subject_not_found', 'Mapel tidak ditemukan: ' . $value);
+            }
+            if (in_array($subject_id, $subject_ids, true)) {
+                return new WP_Error('duplicate_subject_choice', 'Mapel pilihan tidak boleh duplikat.');
+            }
+            $subject_ids[] = $subject_id;
+        }
+
+        return $subject_ids;
+    }
+
+    private static function row_has_subject_choice_values(array $row): bool
+    {
+        foreach (['mapel_pilihan_1', 'mapel_pilihan_2', 'mapel_pilihan_3'] as $column) {
+            if (trim((string) ($row[$column] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1139,7 +2081,14 @@ final class CBT_Admin_Users_Service
             }
         }
 
-        if (!empty($emails) || !empty($logins)) {
+        global $wpdb;
+        if (
+            (!empty($emails) || !empty($logins))
+            && class_exists('wpdb', false)
+            && $wpdb instanceof wpdb
+            && method_exists($wpdb, 'prepare')
+            && method_exists($wpdb, 'get_results')
+        ) {
             $email_placeholders = !empty($emails)
                 ? implode(',', array_fill(0, count($emails), '%s'))
                 : '';
@@ -1159,9 +2108,9 @@ final class CBT_Admin_Users_Service
             }
 
             if (!empty($query_parts)) {
-                global $wpdb;
+                $users_table = isset($wpdb->users) ? (string) $wpdb->users : $wpdb->prefix . 'users';
                 $query_sql = "SELECT ID, user_email, user_login, display_name
-                              FROM {$wpdb->users}
+                              FROM {$users_table}
                               WHERE " . implode(' OR ', $query_parts);
                 $prepared_sql = $wpdb->prepare($query_sql, $query_params);
                 $rows = $wpdb->get_results($prepared_sql, ARRAY_A);
@@ -1558,6 +2507,217 @@ final class CBT_Admin_Users_Service
 
     /**
      * @param array<int,array<string,string>> $rows
+     * @param array<string,array{name:string,rows:array<int,int>}> $photo_references
+     * @param array<string,mixed> $photo_package
+     * @return array<string,mixed>
+     */
+    public static function build_user_import_preview(array $rows, array $photo_references = [], array $photo_package = []): array
+    {
+        $rows = array_values($rows);
+        $total = count($rows);
+        $created = 0;
+        $updated = 0;
+        $failed = 0;
+        $subject_choice_rows = 0;
+        $photo_required = 0;
+        $photo_missing = 0;
+        $errors = [];
+        $failed_rows = [];
+        $seen_emails = [];
+        $seen_usernames = [];
+        $seen_nisns = [];
+        $manifest = isset($photo_package['manifest']) && is_array($photo_package['manifest'])
+            ? $photo_package['manifest']
+            : [];
+
+        $import_lookup = self::build_user_import_lookup($rows, 0, $total);
+
+        foreach ($rows as $index => $row) {
+            $row = is_array($row) ? $row : [];
+            $row_number = $index + 2;
+            $row_errors = [];
+
+            $name = sanitize_text_field((string) ($row['name'] ?? ''));
+            $email = sanitize_email((string) ($row['email'] ?? ''));
+            $nisn = self::normalize_user_nisn((string) ($row['nisn'] ?? ''));
+            $username = sanitize_user((string) ($row['username'] ?? ''), true);
+            $role_raw = strtolower(trim((string) ($row['role'] ?? 'siswa')));
+            $role = self::map_import_role($role_raw);
+            $raw_jenis_kelamin = (string) ($row['jenis_kelamin'] ?? '');
+            $jenis_kelamin = self::normalize_supported_jenis_kelamin($raw_jenis_kelamin);
+            $foto_file = self::normalize_user_import_photo_reference((string) ($row['foto_file'] ?? ''));
+
+            if ($name === '' && $username === '') {
+                $row_errors[] = 'nama atau username wajib diisi.';
+            }
+            if ($username === '') {
+                $row_errors[] = 'username wajib diisi.';
+            } else {
+                $username_key = strtolower($username);
+                if (isset($seen_usernames[$username_key])) {
+                    $row_errors[] = sprintf('username `%s` duplikat dengan baris %d.', $username, (int) $seen_usernames[$username_key]);
+                } else {
+                    $seen_usernames[$username_key] = $row_number;
+                }
+            }
+
+            if (is_email($email)) {
+                $email_key = strtolower($email);
+                if (isset($seen_emails[$email_key])) {
+                    $row_errors[] = sprintf('email `%s` duplikat dengan baris %d.', $email, (int) $seen_emails[$email_key]);
+                } else {
+                    $seen_emails[$email_key] = $row_number;
+                }
+            }
+
+            if (self::is_student_role($role) && $nisn === '') {
+                $row_errors[] = 'NISN wajib diisi untuk user siswa.';
+            }
+            if ($nisn !== '') {
+                if (isset($seen_nisns[$nisn])) {
+                    $row_errors[] = sprintf('NISN `%s` duplikat dengan baris %d.', $nisn, (int) $seen_nisns[$nisn]);
+                } else {
+                    $seen_nisns[$nisn] = $row_number;
+                }
+            }
+
+            if ($username !== '' && !is_email($email) && $nisn === '') {
+                $row_errors[] = 'email valid wajib diisi jika NISN kosong.';
+            }
+
+            $jenis_kelamin_validation_error = self::validate_user_jenis_kelamin_for_role($raw_jenis_kelamin, $role_raw, $jenis_kelamin);
+            if ($jenis_kelamin_validation_error !== '') {
+                $row_errors[] = $jenis_kelamin_validation_error;
+            }
+
+            if (self::row_has_subject_choice_values($row)) {
+                $subject_choice_rows++;
+                if (!self::is_student_role($role)) {
+                    $row_errors[] = 'mapel pilihan hanya berlaku untuk user siswa.';
+                } else {
+                    $subject_choice_result = self::resolve_subject_choice_ids_from_import_row($row);
+                    if (is_wp_error($subject_choice_result)) {
+                        $row_errors[] = $subject_choice_result->get_error_message();
+                    }
+                }
+            }
+
+            if ($foto_file !== '') {
+                $photo_required++;
+                $manifest_key = self::normalize_user_import_photo_manifest_key($foto_file);
+                if ($manifest_key === '' || !isset($manifest[$manifest_key])) {
+                    $photo_missing++;
+                    $row_errors[] = sprintf('file foto `%s` tidak ditemukan di ZIP Foto.', $foto_file);
+                }
+            }
+
+            $email_for_lookup = $email;
+            if (!is_email($email_for_lookup) && $nisn !== '') {
+                $email_for_lookup = sanitize_email($nisn . '@student.sch.id');
+            }
+            if (!is_email($email_for_lookup)) {
+                $email_for_lookup = '';
+            }
+
+            $existing_user_id = 0;
+            $nisn_user_id = 0;
+            if (empty($row_errors)) {
+                $existing_user_id = self::resolve_user_import_existing_id($email_for_lookup, $username, $nisn, $import_lookup);
+                $nisn_user_id = $nisn !== '' ? self::find_user_id_by_nisn($nisn) : 0;
+                if ($nisn_user_id > 0 && $existing_user_id > 0 && $nisn_user_id !== $existing_user_id) {
+                    $row_errors[] = sprintf('NISN `%s` sudah terhubung ke user lain.', $nisn);
+                }
+                if ($existing_user_id <= 0 && $nisn_user_id > 0) {
+                    $existing_user_id = $nisn_user_id;
+                }
+            }
+
+            if (!empty($row_errors)) {
+                $failed++;
+                $failed_rows[] = $index;
+                foreach ($row_errors as $message) {
+                    if (count($errors) >= 12) {
+                        break;
+                    }
+                    $errors[] = sprintf('Baris %d: %s', $row_number, $message);
+                }
+                continue;
+            }
+
+            if ($existing_user_id > 0) {
+                $updated++;
+            } else {
+                $created++;
+            }
+        }
+
+        $valid_rows = max(0, $total - $failed);
+
+        return [
+            'token' => '',
+            'total' => $total,
+            'created' => $created,
+            'updated' => $updated,
+            'failed' => $failed,
+            'valid' => $valid_rows,
+            'subject_choice_rows' => $subject_choice_rows,
+            'photo_required' => $photo_required,
+            'photo_missing' => $photo_missing,
+            'errors' => array_values($errors),
+            'failed_rows' => array_values(array_unique($failed_rows)),
+            'can_continue' => $valid_rows > 0,
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,string>> $rows
+     * @return array<string,mixed>
+     */
+    public static function build_student_subject_choices_import_preview(array $rows): array
+    {
+        $rows = array_values($rows);
+        $total = count($rows);
+        $updated = 0;
+        $cleared = 0;
+        $failed = 0;
+        $errors = [];
+        $failed_rows = [];
+
+        foreach ($rows as $index => $row) {
+            $result = self::preview_student_subject_choices_import_row(is_array($row) ? $row : []);
+            if (is_wp_error($result)) {
+                $failed++;
+                $failed_rows[] = $index;
+                if (count($errors) < 12) {
+                    $errors[] = sprintf('Baris %d: %s', $index + 2, $result->get_error_message());
+                }
+                continue;
+            }
+
+            if ($result === 'cleared') {
+                $cleared++;
+            } else {
+                $updated++;
+            }
+        }
+
+        $valid_rows = max(0, $total - $failed);
+
+        return [
+            'token' => '',
+            'total' => $total,
+            'updated' => $updated,
+            'cleared' => $cleared,
+            'failed' => $failed,
+            'valid' => $valid_rows,
+            'errors' => array_values($errors),
+            'failed_rows' => array_values(array_unique($failed_rows)),
+            'can_continue' => $valid_rows > 0,
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,string>> $rows
      * @return array<string,array{name:string,rows:array<int,int>}>
      */
     private static function collect_user_import_photo_references(array $rows): array
@@ -1586,6 +2746,42 @@ final class CBT_Admin_Users_Service
         }
 
         return $references;
+    }
+
+    private static function prepare_user_import_photo_package_for_preview(string $token, array $references, $uploaded_photo_zip)
+    {
+        if (empty($references)) {
+            return [];
+        }
+
+        if (!is_array($uploaded_photo_zip)) {
+            return new WP_Error(
+                'import_photo_zip_missing',
+                'Kolom `foto_file` terisi, tetapi file ZIP Foto belum diupload. Upload ZIP yang berisi foto sesuai nama file pada kolom `foto_file`.'
+            );
+        }
+
+        $error_code = isset($uploaded_photo_zip['error']) ? (int) $uploaded_photo_zip['error'] : UPLOAD_ERR_NO_FILE;
+        $tmp_path = isset($uploaded_photo_zip['tmp_name']) ? (string) $uploaded_photo_zip['tmp_name'] : '';
+        if ($error_code === UPLOAD_ERR_NO_FILE || $tmp_path === '') {
+            return new WP_Error(
+                'import_photo_zip_missing',
+                'Kolom `foto_file` terisi, tetapi file ZIP Foto belum diupload. Upload ZIP yang berisi foto sesuai nama file pada kolom `foto_file`.'
+            );
+        }
+
+        if ($error_code !== UPLOAD_ERR_OK) {
+            return new WP_Error('import_photo_zip_upload_failed', 'Upload ZIP Foto gagal.');
+        }
+
+        if (!class_exists('ZipArchive')) {
+            return new WP_Error(
+                'import_photo_zip_unavailable',
+                'ZIP Foto belum bisa diproses karena ekstensi PHP Zip/ZipArchive tidak tersedia di server.'
+            );
+        }
+
+        return self::build_user_import_photo_package_from_zip($token, $uploaded_photo_zip);
     }
 
     private static function prepare_user_import_photo_package(string $token, array $references, $uploaded_photo_zip)
@@ -2649,6 +3845,16 @@ final class CBT_Admin_Users_Service
         return 'cbt_user_import_rows_' . $token;
     }
 
+    private static function get_subject_choice_import_state_key(string $token): string
+    {
+        return 'cbt_subject_choice_import_' . $token;
+    }
+
+    private static function get_subject_choice_import_rows_key(string $token): string
+    {
+        return 'cbt_subject_choice_import_rows_' . $token;
+    }
+
     private static function clear_user_import_transients(string $token): void
     {
         $state = get_transient(self::get_user_import_state_key($token));
@@ -2660,6 +3866,12 @@ final class CBT_Admin_Users_Service
         delete_transient(self::get_user_import_rows_key($token));
     }
 
+    private static function clear_subject_choice_import_transients(string $token): void
+    {
+        delete_transient(self::get_subject_choice_import_state_key($token));
+        delete_transient(self::get_subject_choice_import_rows_key($token));
+    }
+
     private static function get_user_import_state_for_current_user(string $token): ?array
     {
         if ($token === '') {
@@ -2667,6 +3879,25 @@ final class CBT_Admin_Users_Service
         }
 
         $state = get_transient(self::get_user_import_state_key($token));
+        if (!is_array($state)) {
+            return null;
+        }
+
+        $state_user_id = isset($state['user_id']) ? (int) $state['user_id'] : 0;
+        if ($state_user_id <= 0 || $state_user_id !== get_current_user_id()) {
+            return null;
+        }
+
+        return $state;
+    }
+
+    private static function get_subject_choice_import_state_for_current_user(string $token): ?array
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        $state = get_transient(self::get_subject_choice_import_state_key($token));
         if (!is_array($state)) {
             return null;
         }
@@ -2693,6 +3924,9 @@ final class CBT_Admin_Users_Service
             self::clear_user_import_transients($token);
             self::redirect_user_import_with_error('Sesi import tidak valid untuk user saat ini.');
         }
+        if (!empty($state['preview_ready'])) {
+            self::redirect_user_import_with_error('Preview import belum dijalankan. Klik Lanjut Import dari hasil preview terlebih dahulu.');
+        }
 
         $rows = get_transient($rows_key);
         if (!is_array($rows) || empty($rows)) {
@@ -2718,6 +3952,12 @@ final class CBT_Admin_Users_Service
         $photo_package = isset($state['photo_package']) && is_array($state['photo_package'])
             ? $state['photo_package']
             : [];
+        $preview_failed_rows = [];
+        if (isset($state['preview_failed_rows']) && is_array($state['preview_failed_rows'])) {
+            foreach ($state['preview_failed_rows'] as $failed_index) {
+                $preview_failed_rows[(int) $failed_index] = true;
+            }
+        }
 
         if ($total <= 0 || empty($rows)) {
             self::clear_user_import_transients($token);
@@ -2745,10 +3985,14 @@ final class CBT_Admin_Users_Service
         for ($index = $offset; $index < $target_end; $index++) {
             $row = isset($rows[$index]) && is_array($rows[$index]) ? $rows[$index] : [];
 
-            try {
-                $result = self::upsert_user_from_row($row, $import_lookup, $photo_package);
-            } catch (Throwable $exception) {
+            if (isset($preview_failed_rows[$index])) {
                 $result = 'failed';
+            } else {
+                try {
+                    $result = self::upsert_user_from_row($row, $import_lookup, $photo_package);
+                } catch (Throwable $exception) {
+                    $result = 'failed';
+                }
             }
 
             if ($result === 'created') {

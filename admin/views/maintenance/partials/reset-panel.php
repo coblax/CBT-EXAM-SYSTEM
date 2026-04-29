@@ -94,7 +94,7 @@ if (!defined('ABSPATH')) {
 
         <div class="cbt-maintenance-actions">
             <p class="cbt-maintenance-actions-copy">Pastikan Anda sudah memahami dampaknya sebelum menjalankan reset penuh database CBT, termasuk penghapusan seluruh Bank Soal yang ada.</p>
-            <button type="submit" class="button button-primary button-large">Reset Database CBT</button>
+            <button type="submit" class="button button-primary button-large cbt-admin-btn--danger">Reset Database CBT</button>
         </div>
     </form>
 </section>

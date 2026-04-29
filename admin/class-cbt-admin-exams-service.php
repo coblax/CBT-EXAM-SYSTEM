@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Exam_Audience_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-exam-audience-service.php';
+}
+
 if (!class_exists('CBT_Exam_Availability_Cache')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-exam-availability-cache.php';
 }
@@ -87,6 +91,7 @@ if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
 final class CBT_Admin_Exams_Service
 {
     private const TEST_REDIRECT_SIGNAL = '__cbt_admin_exams_redirect__';
+    private const TEST_AJAX_SIGNAL = '__cbt_admin_exams_ajax__';
     private const SNAPSHOT_PREVIEW_PER_PAGE = 7;
     private const STUDENT_SNAPSHOT_PER_PAGE = 25;
     private const EXAM_READINESS_PROBLEM_PER_PAGE = 10;
@@ -1109,6 +1114,32 @@ final class CBT_Admin_Exams_Service
             }
         }
         sort($kelas_options, SORT_NATURAL | SORT_FLAG_CASE);
+        $agama_options = class_exists('CBT_Exam_Audience_Service')
+            ? array_values(CBT_Exam_Audience_Service::get_supported_agama_options())
+            : [];
+        $jenis_kelamin_options = class_exists('CBT_Exam_Audience_Service')
+            ? array_values(CBT_Exam_Audience_Service::get_supported_gender_options())
+            : [];
+        $editing_target_agama_values = [];
+        $editing_target_jenis_kelamin_values = [];
+        $editing_restrict_to_subject_choice = 0;
+        if ($editing_exam) {
+            $editing_target_agama_values = class_exists('CBT_Exam_Audience_Service')
+                ? CBT_Exam_Audience_Service::get_exam_target_agama($editing_exam)
+                : [];
+            $editing_target_jenis_kelamin_values = class_exists('CBT_Exam_Audience_Service')
+                ? CBT_Exam_Audience_Service::get_exam_target_gender($editing_exam)
+                : [];
+            $editing_restrict_to_subject_choice = (int) ($editing_exam['restrict_to_subject_choice'] ?? 0);
+        }
+        $exam_audience_preview = ($editing_exam && class_exists('CBT_Exam_Audience_Service'))
+            ? CBT_Exam_Audience_Service::build_exam_audience_preview($editing_exam, 24)
+            : [
+                'summary' => ['total_candidates' => 0, 'matched' => 0, 'excluded' => 0],
+                'reason_counts' => [],
+                'matched' => [],
+                'excluded' => [],
+            ];
         $selected_subject_label = 'Belum dipilih';
         foreach ((array) $subjects as $subject) {
             $subject_id = (int) ($subject['id'] ?? 0);
@@ -3169,9 +3200,9 @@ final class CBT_Admin_Exams_Service
             ]);
         }
 
-        $result = CBT_Exam_Preflight_Service::start_for_exam($exam_row);
+        $result = CBT_Exam_Preflight_Service::enqueue_for_exam($exam_row);
         self::redirect_exam_snapshot_page($exam_list_state, [
-            !empty($result['success']) ? 'cbt_msg' : 'cbt_err' => (string) ($result['message'] ?? 'Gagal menjalankan one-click pra ujian.'),
+            !empty($result['success']) ? 'cbt_msg' : 'cbt_err' => (string) ($result['message'] ?? 'Gagal mengantrekan one-click pra ujian.'),
         ]);
     }
 
@@ -3219,44 +3250,17 @@ final class CBT_Admin_Exams_Service
             $ordered_rows[] = $row_map[$selected_exam_id];
         }
 
-        $counts = [
-            'active' => 0,
-            'queued' => 0,
-            'completed' => 0,
-            'completed_with_warnings' => 0,
-            'failed' => 0,
-            'other' => 0,
-        ];
-
-        foreach ($ordered_rows as $exam_row) {
-            $result = CBT_Exam_Preflight_Service::start_for_exam($exam_row);
-            $state = isset($result['state']) && is_array($result['state']) ? $result['state'] : [];
-            $status = sanitize_key((string) ($state['status'] ?? ''));
-
-            if (!$result['success']) {
-                $status = 'failed';
-            }
-
-            if (!isset($counts[$status])) {
-                $status = 'other';
-            }
-
-            $counts[$status]++;
-        }
-
+        $result = CBT_Exam_Preflight_Service::enqueue_many_for_exams($ordered_rows);
+        $counts = isset($result['counts']) && is_array($result['counts']) ? $result['counts'] : [];
         $processed_total = count($ordered_rows);
-        $message = sprintf(
-            'Bulk one-click memproses %1$d exam: aktif %2$d, antre %3$d, selesai %4$d, selesai dengan catatan %5$d, gagal %6$d.',
-            $processed_total,
-            $counts['active'],
-            $counts['queued'],
-            $counts['completed'],
-            $counts['completed_with_warnings'],
-            $counts['failed']
-        );
+        $failed_total = max(0, (int) ($counts['failed'] ?? 0));
+        $message = (string) ($result['message'] ?? sprintf(
+            'Bulk one-click masuk antrean %d exam.',
+            $processed_total
+        ));
 
         self::redirect_exam_snapshot_page($exam_list_state, [
-            ($counts['failed'] >= $processed_total) ? 'cbt_err' : 'cbt_msg' => $message,
+            ($failed_total >= $processed_total) ? 'cbt_err' : 'cbt_msg' => $message,
         ]);
     }
 
@@ -4322,6 +4326,456 @@ final class CBT_Admin_Exams_Service
         }
 
         wp_send_json_success($response);
+    }
+
+    public static function handle_preflight_operation_ajax(): void
+    {
+        if (!self::can_manage_exam_snapshots()) {
+            self::dispatch_preflight_operation_ajax(false, ['message' => 'Unauthorized'], 403);
+        }
+
+        if (function_exists('check_ajax_referer')) {
+            check_ajax_referer('cbt_exam_preflight_operation', 'nonce');
+        } else {
+            check_admin_referer('cbt_exam_preflight_operation', 'nonce');
+        }
+
+        $operation = isset($_POST['operation']) ? sanitize_key((string) wp_unslash($_POST['operation'])) : '';
+        $exam_ids = self::get_preflight_operation_exam_ids_from_request($_POST);
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+
+        switch ($operation) {
+            case 'start_single_preflight':
+                $exam_id = isset($_POST['exam_id']) ? absint(wp_unslash((string) $_POST['exam_id'])) : (int) ($exam_ids[0] ?? 0);
+                $exam_row = self::get_snapshot_exam_row_by_id($exam_id, $is_admin_scope, $current_user_id);
+                if (!is_array($exam_row)) {
+                    self::dispatch_preflight_operation_ajax(false, [
+                        'message' => 'Exam snapshot tidak ditemukan atau tidak tersedia.',
+                    ], 404);
+                }
+
+                $result = CBT_Exam_Preflight_Service::enqueue_for_exam($exam_row);
+                $payload = self::build_preflight_operation_payload($operation, [$exam_id], (string) ($result['message'] ?? ''), 'tick_preflight');
+                self::dispatch_preflight_operation_ajax(!empty($result['success']), $payload, !empty($result['success']) ? 200 : 400);
+                return;
+
+            case 'start_bulk_preflight':
+                if (count($exam_ids) < 2) {
+                    self::dispatch_preflight_operation_ajax(false, [
+                        'message' => 'Bulk One-Click membutuhkan minimal 2 exam yang dipilih.',
+                    ], 400);
+                }
+                if (count($exam_ids) > 10) {
+                    self::dispatch_preflight_operation_ajax(false, [
+                        'message' => 'Bulk One-Click dibatasi maksimal 10 exam per run.',
+                    ], 400);
+                }
+
+                $ordered_rows = self::get_ordered_preflight_operation_exam_rows($exam_ids, $is_admin_scope, $current_user_id);
+                if (count($ordered_rows) !== count($exam_ids)) {
+                    self::dispatch_preflight_operation_ajax(false, [
+                        'message' => 'Ada exam pada bulk selection yang tidak ditemukan atau tidak tersedia.',
+                    ], 404);
+                }
+
+                $result = CBT_Exam_Preflight_Service::enqueue_many_for_exams($ordered_rows);
+                $payload = self::build_preflight_operation_payload($operation, $exam_ids, (string) ($result['message'] ?? ''), 'tick_preflight');
+                self::dispatch_preflight_operation_ajax(!empty($result['success']), $payload, !empty($result['success']) ? 200 : 400);
+                return;
+
+            case 'tick_preflight':
+                CBT_Exam_Preflight_Service::tick();
+                self::dispatch_preflight_operation_ajax(true, self::build_preflight_operation_payload($operation, $exam_ids, '', 'tick_preflight'));
+                return;
+
+            case 'status_preflight':
+                self::dispatch_preflight_operation_ajax(true, self::build_preflight_operation_payload($operation, $exam_ids, '', 'tick_preflight'));
+                return;
+
+            case 'start_rebuild_cohort':
+                if (!class_exists('CBT_Student_Cohort_Index_Service')) {
+                    self::dispatch_preflight_operation_ajax(false, [
+                        'message' => 'Student Cohort Index belum tersedia di environment ini.',
+                    ], 400);
+                }
+
+                $result = CBT_Student_Cohort_Index_Service::start_rebuild('admin_ajax');
+                $state = isset($result['state']) && is_array($result['state']) ? $result['state'] : CBT_Student_Cohort_Index_Service::get_rebuild_state();
+                $payload = self::build_cohort_operation_payload('start_rebuild_cohort', $state, (string) ($result['message'] ?? ''), 'status_rebuild_cohort');
+                self::dispatch_preflight_operation_ajax(!empty($result['success']), $payload, !empty($result['success']) ? 200 : 400);
+                return;
+
+            case 'status_rebuild_cohort':
+                if (!class_exists('CBT_Student_Cohort_Index_Service')) {
+                    self::dispatch_preflight_operation_ajax(false, [
+                        'message' => 'Student Cohort Index belum tersedia di environment ini.',
+                    ], 400);
+                }
+                $state = CBT_Student_Cohort_Index_Service::get_rebuild_state();
+                if (!empty($state['active'])) {
+                    $state = CBT_Student_Cohort_Index_Service::tick();
+                }
+                self::dispatch_preflight_operation_ajax(true, self::build_cohort_operation_payload($operation, $state, '', 'status_rebuild_cohort'));
+                return;
+
+            case 'start_redis_reset':
+                if (!class_exists('CBT_Plugin_Redis_Reset_Service')) {
+                    self::dispatch_preflight_operation_ajax(false, [
+                        'message' => 'Helper reset Redis CBT belum tersedia di environment ini.',
+                    ], 400);
+                }
+                $result = CBT_Plugin_Redis_Reset_Service::start_reset_job('admin_ajax');
+                $state = isset($result['state']) && is_array($result['state']) ? $result['state'] : [];
+                if (!empty($result['success'])) {
+                    $tick = CBT_Plugin_Redis_Reset_Service::tick_reset_job((string) ($state['token'] ?? ''));
+                    $state = isset($tick['state']) && is_array($tick['state']) ? $tick['state'] : $state;
+                }
+                $payload = self::build_redis_reset_operation_payload('start_redis_reset', $state, (string) ($result['message'] ?? ''), 'tick_redis_reset');
+                self::dispatch_preflight_operation_ajax(!empty($result['success']), $payload, !empty($result['success']) ? 200 : 400);
+                return;
+
+            case 'tick_redis_reset':
+                $token = isset($_POST['token']) ? sanitize_key((string) wp_unslash($_POST['token'])) : '';
+                $result = class_exists('CBT_Plugin_Redis_Reset_Service')
+                    ? CBT_Plugin_Redis_Reset_Service::tick_reset_job($token)
+                    : ['success' => false, 'message' => 'Helper reset Redis CBT belum tersedia di environment ini.', 'state' => []];
+                $state = isset($result['state']) && is_array($result['state']) ? $result['state'] : [];
+                $payload = self::build_redis_reset_operation_payload($operation, $state, (string) ($result['message'] ?? ''), 'tick_redis_reset');
+                self::dispatch_preflight_operation_ajax(!empty($result['success']), $payload, !empty($result['success']) ? 200 : 400);
+                return;
+
+            default:
+                self::dispatch_preflight_operation_ajax(false, [
+                    'message' => 'Operasi preflight tidak dikenal.',
+                ], 400);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $request
+     * @return int[]
+     */
+    private static function get_preflight_operation_exam_ids_from_request(array $request): array
+    {
+        $ids = [];
+        foreach (['exam_ids', 'cbt_exam_snapshot_exam_ids'] as $key) {
+            if (isset($request[$key]) && is_array($request[$key])) {
+                $ids = array_merge($ids, array_map('absint', (array) wp_unslash($request[$key])));
+            }
+        }
+
+        if (empty($ids) && isset($request['exam_id'])) {
+            $ids[] = absint(wp_unslash((string) $request['exam_id']));
+        }
+        if (empty($ids) && isset($request['cbt_exam_snapshot_exam_id'])) {
+            $ids[] = absint(wp_unslash((string) $request['cbt_exam_snapshot_exam_id']));
+        }
+
+        return array_values(array_unique(array_filter($ids)));
+    }
+
+    /**
+     * @param int[] $exam_ids
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_ordered_preflight_operation_exam_rows(array $exam_ids, bool $is_admin_scope, int $current_user_id): array
+    {
+        $exam_ids = array_values(array_filter(array_map('absint', $exam_ids)));
+        if (empty($exam_ids)) {
+            return [];
+        }
+
+        $rows = self::get_filtered_exam_snapshot_exams($is_admin_scope, $current_user_id, $exam_ids);
+        $row_map = [];
+        foreach ($rows as $row) {
+            $exam_id = (int) ($row['id'] ?? 0);
+            if ($exam_id > 0) {
+                $row_map[$exam_id] = $row;
+            }
+        }
+
+        $ordered = [];
+        foreach ($exam_ids as $exam_id) {
+            if (isset($row_map[$exam_id])) {
+                $ordered[] = $row_map[$exam_id];
+            }
+        }
+
+        return $ordered;
+    }
+
+    /**
+     * @param int[] $exam_ids
+     * @return array<string,mixed>
+     */
+    private static function build_preflight_operation_payload(string $operation, array $exam_ids, string $message = '', string $next_operation = 'tick_preflight'): array
+    {
+        $operation = sanitize_key($operation);
+        $exam_ids = array_values(array_filter(array_map('absint', $exam_ids)));
+        $rows = self::get_ordered_preflight_operation_exam_rows($exam_ids, self::is_admin_scope(), get_current_user_id());
+        $jobs = CBT_Exam_Preflight_Service::get_jobs_state();
+        $runner = CBT_Exam_Preflight_Service::get_global_runner_state();
+        $row_payloads = [];
+        $status_counts = [
+            'active' => 0,
+            'queued' => 0,
+            'completed' => 0,
+            'completed_with_warnings' => 0,
+            'failed' => 0,
+            'stopped' => 0,
+            'inactive' => 0,
+        ];
+        $progress_values = [];
+        $latest_message = '';
+
+        foreach ($rows as $exam_row) {
+            $compact_row = self::build_bulk_preflight_row($exam_row);
+            $exam_id = (int) ($compact_row['exam_id'] ?? 0);
+            $state = ($exam_id > 0 && isset($jobs[$exam_id]) && is_array($jobs[$exam_id]))
+                ? $jobs[$exam_id]
+                : [];
+            $status = sanitize_key((string) ($state['status'] ?? ($compact_row['preflight_status'] ?? 'inactive')));
+            if (!isset($status_counts[$status])) {
+                $status_counts[$status] = 0;
+            }
+            $status_counts[$status]++;
+            $progress_percent = self::calculate_preflight_state_progress($state, $compact_row);
+            $progress_values[] = $progress_percent;
+            $row_message = trim((string) ($state['last_message'] ?? ($compact_row['last_message'] ?? '')));
+            if ($row_message !== '') {
+                $latest_message = $row_message;
+            }
+
+            $row_payloads[] = [
+                'exam_id' => $exam_id,
+                'title' => (string) ($compact_row['title'] ?? ('Exam #' . $exam_id)),
+                'status' => $status,
+                'status_label' => (string) ($compact_row['preflight_status_label'] ?? strtoupper($status)),
+                'queue_position' => max(0, (int) ($compact_row['queue_position'] ?? 0)),
+                'progress_percent' => $progress_percent,
+                'message' => $row_message,
+            ];
+        }
+
+        $nonterminal_total = max(0, (int) ($status_counts['active'] ?? 0)) + max(0, (int) ($status_counts['queued'] ?? 0));
+        $failed_total = max(0, (int) ($status_counts['failed'] ?? 0));
+        $selected_total = count($exam_ids);
+        $complete = $selected_total > 0 && $nonterminal_total <= 0;
+        $overall_status = $nonterminal_total > 0
+            ? 'active'
+            : ($failed_total >= $selected_total && $selected_total > 0 ? 'failed' : ($complete ? 'completed' : 'inactive'));
+        $progress_percent = !empty($progress_values)
+            ? round(array_sum($progress_values) / max(1, count($progress_values)), 2)
+            : ($complete ? 100.0 : 0.0);
+        if ($complete) {
+            $progress_percent = 100.0;
+        }
+
+        $payload_message = trim($message) !== '' ? trim($message) : ($latest_message !== '' ? $latest_message : 'Progress preflight diperbarui.');
+
+        return [
+            'operation' => $operation,
+            'next_operation' => $next_operation,
+            'token' => self::build_preflight_operation_token($exam_ids),
+            'status' => $overall_status,
+            'status_label' => self::format_preflight_operation_status_label($overall_status),
+            'complete' => $complete,
+            'progress_percent' => $progress_percent,
+            'message' => $payload_message,
+            'detail' => sprintf(
+                'Aktif %d · Antre %d · Selesai %d · Catatan %d · Gagal %d',
+                max(0, (int) ($status_counts['active'] ?? 0)),
+                max(0, (int) ($status_counts['queued'] ?? 0)),
+                max(0, (int) ($status_counts['completed'] ?? 0)),
+                max(0, (int) ($status_counts['completed_with_warnings'] ?? 0)),
+                $failed_total
+            ),
+            'totals' => [
+                'selected' => $selected_total,
+                'active' => max(0, (int) ($status_counts['active'] ?? 0)),
+                'queued' => max(0, (int) ($status_counts['queued'] ?? 0)),
+                'completed' => max(0, (int) ($status_counts['completed'] ?? 0)),
+                'completed_with_warnings' => max(0, (int) ($status_counts['completed_with_warnings'] ?? 0)),
+                'failed' => $failed_total,
+                'runner_exam_id' => max(0, (int) ($runner['active_exam_id'] ?? 0)),
+            ],
+            'rows' => $row_payloads,
+            'redirect_url' => self::build_preflight_operation_redirect_url($exam_ids),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @param array<string,mixed> $fallback_row
+     */
+    private static function calculate_preflight_state_progress(array $state, array $fallback_row = []): float
+    {
+        $status = sanitize_key((string) ($state['status'] ?? ($fallback_row['preflight_status'] ?? 'inactive')));
+        if (in_array($status, ['completed', 'completed_with_warnings', 'failed', 'stopped'], true)) {
+            return 100.0;
+        }
+
+        $target_count = max(0, (int) ($state['target_student_count'] ?? ($fallback_row['target_student_count'] ?? 0)));
+        $units = [];
+        $units[] = !empty($state['question_snapshot_ready']) || (string) ($fallback_row['stage_question_label'] ?? '') === 'READY' ? 1.0 : 0.0;
+        $units[] = !empty($state['start_snapshot_ready']) || (string) ($fallback_row['stage_start_snapshot_label'] ?? '') === 'READY' ? 1.0 : 0.0;
+        $submission_stage = sanitize_key((string) ($state['stage_submission_context'] ?? 'pending'));
+        $units[] = in_array($submission_stage, ['ready', 'warning'], true) ? 1.0 : 0.0;
+        $units[] = self::calculate_preflight_count_unit(
+            max(0, (int) ($state['profiles_ready_count'] ?? ($state['profile_success_count'] ?? 0))),
+            max(0, (int) ($state['profiles_failure_count'] ?? ($state['profile_failure_count'] ?? 0))),
+            max(0, (int) ($state['profiles_pending_count'] ?? 0)),
+            $target_count
+        );
+        $units[] = self::calculate_preflight_count_unit(
+            max(0, (int) ($state['login_ready_count'] ?? ($state['login_snapshot_success_count'] ?? 0))),
+            max(0, (int) ($state['login_failure_count'] ?? ($state['login_snapshot_failure_count'] ?? 0))),
+            max(0, (int) ($state['login_pending_count'] ?? 0)),
+            $target_count
+        );
+        $units[] = self::calculate_preflight_count_unit(
+            max(0, (int) ($state['availability_ready_count'] ?? 0)),
+            max(0, (int) ($state['availability_failure_count'] ?? 0)),
+            max(0, (int) ($state['availability_pending_count'] ?? 0)),
+            $target_count
+        );
+
+        return round((array_sum($units) / max(1, count($units))) * 100, 2);
+    }
+
+    private static function calculate_preflight_count_unit(int $ready_count, int $failure_count, int $pending_count, int $target_count): float
+    {
+        if ($target_count <= 0) {
+            return $pending_count <= 0 && ($ready_count > 0 || $failure_count > 0) ? 1.0 : 0.0;
+        }
+
+        return min(1.0, max(0.0, ($ready_count + $failure_count) / max(1, $target_count)));
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private static function build_cohort_operation_payload(string $operation, array $state, string $message = '', string $next_operation = 'status_rebuild_cohort'): array
+    {
+        $total = max(0, (int) ($state['total_users'] ?? 0));
+        $processed = max(0, (int) ($state['processed_total'] ?? 0));
+        $active = !empty($state['active']);
+        $status = sanitize_key((string) ($state['status'] ?? ($active ? 'active' : 'inactive')));
+        $complete = !$active && in_array($status, ['completed', 'failed'], true);
+        $percent = $total > 0 ? min(100, max(0, ($processed / $total) * 100)) : ($complete ? 100 : 0);
+        $payload_message = trim($message) !== '' ? trim($message) : (string) ($state['last_message'] ?? 'Progress Student Cohort Index diperbarui.');
+
+        return [
+            'operation' => sanitize_key($operation),
+            'next_operation' => $next_operation,
+            'token' => 'student_cohort_index',
+            'status' => $status,
+            'status_label' => self::format_preflight_operation_status_label($active ? 'active' : ($complete ? 'completed' : 'inactive')),
+            'complete' => $complete,
+            'progress_percent' => round($percent, 2),
+            'message' => $payload_message,
+            'detail' => sprintf('%d dari %d user diproses.', $processed, $total),
+            'totals' => [
+                'processed' => $processed,
+                'total' => $total,
+                'last_batch_processed' => max(0, (int) ($state['last_batch_processed'] ?? 0)),
+            ],
+            'rows' => [],
+            'redirect_url' => self::build_preflight_operation_redirect_url([]),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private static function build_redis_reset_operation_payload(string $operation, array $state, string $message = '', string $next_operation = 'tick_redis_reset'): array
+    {
+        $response = class_exists('CBT_Plugin_Redis_Reset_Service')
+            ? CBT_Plugin_Redis_Reset_Service::build_reset_job_response($state)
+            : [];
+        $payload_message = trim($message) !== '' ? trim($message) : (string) ($response['message'] ?? 'Progress reset Redis CBT diperbarui.');
+
+        return [
+            'operation' => sanitize_key($operation),
+            'next_operation' => $next_operation,
+            'token' => (string) ($response['token'] ?? ''),
+            'status' => (string) ($response['status'] ?? 'inactive'),
+            'status_label' => (string) ($response['status_label'] ?? 'Siaga'),
+            'complete' => !empty($response['complete']),
+            'progress_percent' => (float) ($response['progress_percent'] ?? 0),
+            'message' => $payload_message,
+            'detail' => (string) ($response['detail'] ?? ''),
+            'totals' => (array) ($response['totals'] ?? []),
+            'rows' => [],
+            'redirect_url' => self::build_preflight_operation_redirect_url([]),
+        ];
+    }
+
+    /**
+     * @param int[] $exam_ids
+     */
+    private static function build_preflight_operation_token(array $exam_ids): string
+    {
+        $exam_ids = array_values(array_filter(array_map('absint', $exam_ids)));
+        return 'preflight_' . substr(md5(implode(',', $exam_ids) . '|' . get_current_user_id()), 0, 16);
+    }
+
+    /**
+     * @param int[] $exam_ids
+     */
+    private static function build_preflight_operation_redirect_url(array $exam_ids): string
+    {
+        $args = [
+            'page' => 'cbt-exams',
+            'cbt_exam_panel' => 'snapshot',
+            'cbt_exam_snapshot_tab' => self::SNAPSHOT_TAB_PREFLIGHT,
+        ];
+        $exam_ids = array_values(array_filter(array_map('absint', $exam_ids)));
+        if (count($exam_ids) === 1) {
+            $args['cbt_exam_snapshot_exam_id'] = (int) $exam_ids[0];
+        } elseif (count($exam_ids) > 1) {
+            $args['cbt_exam_snapshot_exam_ids'] = $exam_ids;
+            $args['cbt_exam_snapshot_exam_id'] = (int) $exam_ids[0];
+        }
+
+        return add_query_arg($args, admin_url('admin.php'));
+    }
+
+    private static function format_preflight_operation_status_label(string $status): string
+    {
+        switch (sanitize_key($status)) {
+            case 'active':
+            case 'queued':
+                return 'Berjalan';
+            case 'completed':
+            case 'completed_with_warnings':
+                return 'Selesai';
+            case 'failed':
+                return 'Gagal';
+            default:
+                return 'Siaga';
+        }
+    }
+
+    private static function dispatch_preflight_operation_ajax(bool $success, array $payload, int $status_code = 200): void
+    {
+        if (defined('PHPUNIT_COMPOSER_INSTALL')) {
+            $GLOBALS['cbt_test_last_ajax_response'] = [
+                'success' => $success,
+                'status_code' => $status_code,
+                'payload' => $payload,
+            ];
+            throw new RuntimeException(self::TEST_AJAX_SIGNAL);
+        }
+
+        if ($success) {
+            wp_send_json_success($payload, $status_code);
+        }
+
+        wp_send_json_error($payload, $status_code);
     }
 
     /**
@@ -6119,6 +6573,33 @@ final class CBT_Admin_Exams_Service
      */
     private static function get_snapshot_target_students_for_exam(array $exam_row): array
     {
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            $target_user_ids = CBT_Exam_Audience_Service::get_target_student_ids_for_exam($exam_row);
+            if (empty($target_user_ids)) {
+                return [];
+            }
+
+            $students = [];
+            foreach ($target_user_ids as $user_id) {
+                $user = get_user_by('id', (int) $user_id);
+                if (!$user instanceof WP_User) {
+                    continue;
+                }
+                $students[] = [
+                    'user_id' => (int) $user_id,
+                    'display_name' => trim((string) ($user->display_name ?: $user->user_login)),
+                    'user_login' => (string) $user->user_login,
+                    'user_email' => (string) $user->user_email,
+                    'kode_kelas' => CBT_Exam_Audience_Service::normalize_kelas_code((string) get_user_meta((int) $user_id, 'kode_kelas', true)),
+                    'kode_ruang' => CBT_Exam_Audience_Service::normalize_kelas_code((string) get_user_meta((int) $user_id, 'kode_ruang', true)),
+                    'agama' => CBT_Exam_Audience_Service::normalize_agama((string) get_user_meta((int) $user_id, 'agama', true)),
+                    'jenis_kelamin' => CBT_Exam_Audience_Service::normalize_gender((string) get_user_meta((int) $user_id, 'jenis_kelamin', true)),
+                ];
+            }
+
+            return $students;
+        }
+
         $target_kelas = self::split_target_kelas_csv((string) ($exam_row['target_kelas'] ?? ''));
         if (empty($target_kelas)) {
             return [];
@@ -6173,6 +6654,10 @@ final class CBT_Admin_Exams_Service
 
     private static function get_snapshot_target_student_count_for_exam(array $exam_row): int
     {
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            return count(CBT_Exam_Audience_Service::get_target_student_ids_for_exam($exam_row));
+        }
+
         $target_kelas = self::split_target_kelas_csv((string) ($exam_row['target_kelas'] ?? ''));
         if (empty($target_kelas)) {
             return 0;
@@ -7998,6 +8483,13 @@ final class CBT_Admin_Exams_Service
         $ends_at = isset($request['ends_at']) ? self::from_datetime_local((string) wp_unslash((string) $request['ends_at'])) : null;
         $target_kelas_raw = isset($request['target_kelas']) ? wp_unslash($request['target_kelas']) : '';
         $target_kelas = self::normalize_target_kelas_csv($target_kelas_raw);
+        $target_agama = class_exists('CBT_Exam_Audience_Service')
+            ? CBT_Exam_Audience_Service::normalize_target_csv($request['target_agama'] ?? [], 'agama')
+            : '';
+        $target_jenis_kelamin = class_exists('CBT_Exam_Audience_Service')
+            ? CBT_Exam_Audience_Service::normalize_target_csv($request['target_jenis_kelamin'] ?? [], 'gender')
+            : '';
+        $restrict_to_subject_choice = isset($request['restrict_to_subject_choice']) ? 1 : 0;
         $raw_source_question_ids = isset($request['source_question_ids']) && is_array($request['source_question_ids'])
             ? wp_unslash($request['source_question_ids'])
             : [];
@@ -8034,6 +8526,9 @@ final class CBT_Admin_Exams_Service
             'starts_at' => $starts_at,
             'ends_at' => $ends_at,
             'target_kelas' => $target_kelas,
+            'target_agama' => $target_agama,
+            'target_jenis_kelamin' => $target_jenis_kelamin,
+            'restrict_to_subject_choice' => $restrict_to_subject_choice,
             'source_question_ids' => $source_question_ids,
         ];
     }
@@ -8074,6 +8569,9 @@ final class CBT_Admin_Exams_Service
             'starts_at' => $payload['starts_at'] ?? null,
             'ends_at' => $payload['ends_at'] ?? null,
             'target_kelas' => (string) ($payload['target_kelas'] ?? ''),
+            'target_agama' => (string) ($payload['target_agama'] ?? ''),
+            'target_jenis_kelamin' => (string) ($payload['target_jenis_kelamin'] ?? ''),
+            'restrict_to_subject_choice' => (int) ($payload['restrict_to_subject_choice'] ?? 0),
             'updated_at' => current_time('mysql'),
         ];
 
@@ -8113,7 +8611,7 @@ final class CBT_Admin_Exams_Service
                 $table,
                 $data,
                 ['id' => $id],
-                ['%d', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s'],
+                ['%d', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s'],
                 ['%d']
             );
             if ($updated === false) {
@@ -8134,7 +8632,7 @@ final class CBT_Admin_Exams_Service
             $inserted = $wpdb->insert(
                 $table,
                 $data,
-                ['%d', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s']
+                ['%d', '%s', '%s', '%d', '%f', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%d', '%s']
             );
             if (!$inserted) {
                 return new WP_Error('insert_failed', 'Gagal membuat exam.');

@@ -10,7 +10,7 @@ class CBT_Activator
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
     private const OPTION_SUPERVISOR_FRONTEND_PAGE_ID = 'cbt_exam_system_supervisor_page_id';
     private const OPTION_FRONTEND_PAGE_SYNC_PENDING = 'cbt_exam_system_frontend_page_sync_pending';
-    private const DB_VERSION = '1.6.14';
+    private const DB_VERSION = '1.6.15';
 
     public static function activate(): void
     {
@@ -90,6 +90,9 @@ class CBT_Activator
             description LONGTEXT NULL,
             exam_token VARCHAR(40) NULL,
             target_kelas TEXT NULL,
+            target_agama TEXT NULL,
+            target_jenis_kelamin TEXT NULL,
+            restrict_to_subject_choice TINYINT(1) NOT NULL DEFAULT 0,
             duration_minutes INT UNSIGNED NOT NULL DEFAULT 60,
             kkm_percentage DECIMAL(5,2) NOT NULL DEFAULT 75.00,
             total_questions INT UNSIGNED NOT NULL DEFAULT 0,
@@ -107,7 +110,8 @@ class CBT_Activator
             KEY idx_status (status),
             KEY idx_status_window (status, starts_at, ends_at),
             KEY idx_created_by (created_by),
-            KEY idx_subject_id (subject_id)
+            KEY idx_subject_id (subject_id),
+            KEY idx_subject_choice_restrict (restrict_to_subject_choice, subject_id)
         ) $charset;";
 
         $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_questions (
@@ -225,6 +229,9 @@ class CBT_Activator
 
         $tables[] = CBT_Security_Log::get_create_table_sql($wpdb);
         $tables[] = CBT_Incident_Report::get_create_table_sql($wpdb);
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            $tables[] = CBT_Exam_Audience_Service::get_create_table_sql($wpdb);
+        }
         if (class_exists('CBT_Student_Cohort_Index_Service')) {
             $tables[] = CBT_Student_Cohort_Index_Service::get_create_table_sql($wpdb);
         }
@@ -241,6 +248,7 @@ class CBT_Activator
         self::ensure_exam_kkm_schema($wpdb);
         self::ensure_exam_student_result_visibility_schema($wpdb);
         self::ensure_exam_calculator_schema($wpdb);
+        self::ensure_exam_audience_schema($wpdb);
         self::ensure_security_log_ingest_schema($wpdb);
         self::ensure_question_rich_text_storage_schema($wpdb);
         self::migrate_question_type_details($wpdb);
@@ -279,7 +287,9 @@ class CBT_Activator
             "ALTER TABLE {$prefix}cbt_attempts ADD CONSTRAINT fk_cbt_attempts_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE",
             "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_attempt FOREIGN KEY (attempt_id) REFERENCES {$prefix}cbt_attempts(id) ON DELETE CASCADE",
             "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_exam_incidents ADD CONSTRAINT fk_cbt_incidents_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE"
+            "ALTER TABLE {$prefix}cbt_exam_incidents ADD CONSTRAINT fk_cbt_incidents_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE",
+            "ALTER TABLE {$prefix}cbt_student_subject_choices ADD CONSTRAINT fk_cbt_student_subject_choices_user FOREIGN KEY (user_id) REFERENCES {$wpdb->users}(ID) ON DELETE CASCADE",
+            "ALTER TABLE {$prefix}cbt_student_subject_choices ADD CONSTRAINT fk_cbt_student_subject_choices_subject FOREIGN KEY (subject_id) REFERENCES {$prefix}cbt_subjects(id) ON DELETE CASCADE"
         ];
 
         foreach ($constraints as $sql) {
@@ -447,6 +457,46 @@ class CBT_Activator
         if (!in_array('enable_calculator', $columns, true)) {
             $wpdb->query(
                 "ALTER TABLE {$exam_table} ADD COLUMN enable_calculator TINYINT(1) NOT NULL DEFAULT 1 AFTER show_student_result"
+            );
+        }
+    }
+
+    private static function ensure_exam_audience_schema(wpdb $wpdb): void
+    {
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$exam_table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (!in_array('target_agama', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$exam_table} ADD COLUMN target_agama TEXT NULL AFTER target_kelas"
+            );
+        }
+        if (!in_array('target_jenis_kelamin', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$exam_table} ADD COLUMN target_jenis_kelamin TEXT NULL AFTER target_agama"
+            );
+        }
+        if (!in_array('restrict_to_subject_choice', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$exam_table} ADD COLUMN restrict_to_subject_choice TINYINT(1) NOT NULL DEFAULT 0 AFTER target_jenis_kelamin"
+            );
+        }
+
+        $index_rows = $wpdb->get_results("SHOW INDEX FROM {$exam_table}", ARRAY_A);
+        $index_names = [];
+        foreach ((array) $index_rows as $index_row) {
+            $index_name = (string) ($index_row['Key_name'] ?? '');
+            if ($index_name !== '') {
+                $index_names[$index_name] = true;
+            }
+        }
+
+        if (!isset($index_names['idx_subject_choice_restrict'])) {
+            $wpdb->query(
+                "ALTER TABLE {$exam_table} ADD KEY idx_subject_choice_restrict (restrict_to_subject_choice, subject_id)"
             );
         }
     }

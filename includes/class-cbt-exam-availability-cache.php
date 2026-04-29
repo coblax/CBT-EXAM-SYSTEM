@@ -1281,12 +1281,13 @@ class CBT_Exam_Availability_Cache
     private static function refresh_dynamic_payload(array $snapshot): array
     {
         $current_user = is_array($snapshot['current_user'] ?? null) ? $snapshot['current_user'] : null;
-        $student_kelas = self::normalize_kelas_code((string) ($current_user['kode_kelas'] ?? ''));
+        $user_id = max(0, (int) ($current_user['user_id'] ?? 0));
         $server_now = (string) current_time('mysql');
         $server_timezone = wp_timezone_string();
         $snapshot['items'] = self::refresh_and_filter_student_snapshot_items(
             (array) ($snapshot['items'] ?? []),
-            $student_kelas,
+            $user_id,
+            is_array($current_user) ? $current_user : [],
             $server_now,
             $server_timezone
         );
@@ -1300,7 +1301,8 @@ class CBT_Exam_Availability_Cache
      */
     private static function refresh_and_filter_student_snapshot_items(
         array $items,
-        string $student_kelas,
+        int $user_id,
+        array $profile_snapshot,
         string $server_now,
         string $server_timezone
     ): array {
@@ -1312,7 +1314,7 @@ class CBT_Exam_Availability_Cache
                 continue;
             }
 
-            $item = self::refresh_student_snapshot_item($item, $student_kelas, $server_now, $server_timezone);
+            $item = self::refresh_student_snapshot_item($item, $user_id, $profile_snapshot, $server_now, $server_timezone);
             $visibility = self::classify_student_snapshot_item($item, $server_now_ts);
             if (empty($visibility['visible'])) {
                 continue;
@@ -1353,7 +1355,8 @@ class CBT_Exam_Availability_Cache
      */
     private static function refresh_student_snapshot_item(
         array $item,
-        string $student_kelas,
+        int $user_id,
+        array $profile_snapshot,
         string $server_now,
         string $server_timezone
     ): array {
@@ -1364,7 +1367,13 @@ class CBT_Exam_Availability_Cache
             (empty($item['starts_at']) || (string) $item['starts_at'] <= $server_now) &&
             (empty($item['ends_at']) || (string) $item['ends_at'] >= $server_now)
         );
-        $class_allowed = self::exam_allows_student_class($item, $student_kelas);
+        $audience = class_exists('CBT_Exam_Audience_Service')
+            ? CBT_Exam_Audience_Service::evaluate_exam_for_student($item, $user_id, $profile_snapshot)
+            : [
+                'allowed' => self::exam_allows_student_class($item, (string) ($profile_snapshot['kode_kelas'] ?? '')),
+                'reason' => 'ok',
+            ];
+        $class_allowed = !empty($audience['allowed']);
         $schedule_reason = 'in_range';
         if ($start_ts > 0 && $server_now_ts > 0 && $start_ts > $server_now_ts) {
             $schedule_reason = 'not_started';
@@ -1374,13 +1383,14 @@ class CBT_Exam_Availability_Cache
 
         $availability_reason = 'ok';
         if (!$class_allowed) {
-            $availability_reason = 'class_mismatch';
+            $availability_reason = sanitize_key((string) ($audience['reason'] ?? 'audience_mismatch'));
         } elseif (!$within_schedule) {
             $availability_reason = $schedule_reason;
         }
 
         $item['is_within_schedule'] = $within_schedule ? 1 : 0;
         $item['is_class_allowed'] = $class_allowed ? 1 : 0;
+        $item['is_audience_allowed'] = $class_allowed ? 1 : 0;
         $item['is_available_now'] = ($within_schedule && $class_allowed) ? 1 : 0;
         $item['availability_reason'] = $availability_reason;
         $item['server_now'] = $server_now;

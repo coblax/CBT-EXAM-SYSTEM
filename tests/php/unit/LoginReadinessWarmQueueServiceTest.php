@@ -266,12 +266,30 @@ final class LoginReadinessWarmQueueFakeWpdb extends wpdb
     {
         $query = (string) $prepared;
 
-        if (strpos($query, 'SELECT id, title, status, target_kelas FROM wp_cbt_exams WHERE id = 77') !== false) {
-            return ['id' => 77, 'title' => 'Ujian Matematika', 'status' => 'published', 'target_kelas' => 'XI-A'];
+        if (strpos($query, 'FROM wp_cbt_exams WHERE id = 77') !== false) {
+            return [
+                'id' => 77,
+                'subject_id' => 0,
+                'title' => 'Ujian Matematika',
+                'status' => 'published',
+                'target_kelas' => 'XI-A',
+                'target_agama' => '',
+                'target_jenis_kelamin' => '',
+                'restrict_to_subject_choice' => 0,
+            ];
         }
 
-        if (strpos($query, 'SELECT id, title, status, target_kelas FROM wp_cbt_exams WHERE id = 54') !== false) {
-            return ['id' => 54, 'title' => 'Ujian Biologi', 'status' => 'published', 'target_kelas' => 'XI-B'];
+        if (strpos($query, 'FROM wp_cbt_exams WHERE id = 54') !== false) {
+            return [
+                'id' => 54,
+                'subject_id' => 0,
+                'title' => 'Ujian Biologi',
+                'status' => 'published',
+                'target_kelas' => 'XI-B',
+                'target_agama' => '',
+                'target_jenis_kelamin' => '',
+                'restrict_to_subject_choice' => 0,
+            ];
         }
 
         return null;

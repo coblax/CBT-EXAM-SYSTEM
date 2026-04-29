@@ -116,6 +116,11 @@ final class CBT_Admin_Exams_Actions
         CBT_Admin_Exams_Service::handle_hard_reset_cbt_redis();
     }
 
+    public static function handle_preflight_operation_ajax(): void
+    {
+        CBT_Admin_Exams_Service::handle_preflight_operation_ajax();
+    }
+
     public static function handle_set_adaptive_load_override(): void
     {
         CBT_Admin_Exams_Service::handle_set_adaptive_load_override();

@@ -526,7 +526,7 @@
                         <p class="cbt-token-actions-copy">Simpan untuk memperbarui pengaturan saat ini, atau generate ulang untuk membuat token baru seketika.</p>
                         <div class="cbt-token-actions-buttons">
                             <button type="submit" class="button button-primary button-large" name="token_mode" value="save">Simpan Pengaturan Token</button>
-                            <button type="submit" class="button button-secondary button-large" name="token_mode" value="regenerate">Generate Ulang Sekarang</button>
+                            <button type="submit" class="button button-secondary button-large cbt-admin-btn--warning" name="token_mode" value="regenerate">Generate Ulang Sekarang</button>
                         </div>
                     </div>
                 </form>

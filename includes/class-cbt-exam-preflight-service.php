@@ -221,6 +221,128 @@ final class CBT_Exam_Preflight_Service
     }
 
     /**
+     * @param array<string,mixed> $exam_row
+     * @return array<string,mixed>
+     */
+    public static function enqueue_for_exam(array $exam_row): array
+    {
+        if (!CBT_Cache::acquire_lock(self::LOCK_KEY, self::LOCK_TTL, [
+            'source' => 'enqueue',
+            'exam_id' => (int) ($exam_row['id'] ?? 0),
+        ])) {
+            return [
+                'success' => false,
+                'message' => 'One-click pra ujian sedang diproses proses lain. Coba lagi beberapa saat lagi.',
+                'state' => self::get_state(),
+            ];
+        }
+
+        try {
+            $jobs = self::get_jobs_state();
+            $runner = self::get_global_runner_state();
+            $result = self::enqueue_exam_unlocked($exam_row, $jobs, $runner);
+
+            self::save_jobs_state($jobs);
+            self::save_global_runner_state($runner);
+            self::sync_legacy_state((array) ($result['state'] ?? []), $runner);
+
+            if (self::has_pending_work($jobs, $runner)) {
+                self::ensure_tick_event();
+            } else {
+                self::clear_tick_event();
+            }
+
+            return $result;
+        } finally {
+            CBT_Cache::release_lock(self::LOCK_KEY);
+        }
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $exam_rows
+     * @return array<string,mixed>
+     */
+    public static function enqueue_many_for_exams(array $exam_rows): array
+    {
+        if (!CBT_Cache::acquire_lock(self::LOCK_KEY, self::LOCK_TTL, [
+            'source' => 'enqueue_many',
+        ])) {
+            return [
+                'success' => false,
+                'message' => 'One-click pra ujian sedang diproses proses lain. Coba lagi beberapa saat lagi.',
+                'results' => [],
+                'counts' => [
+                    'active' => 0,
+                    'queued' => 0,
+                    'completed' => 0,
+                    'completed_with_warnings' => 0,
+                    'failed' => 0,
+                    'other' => 0,
+                ],
+            ];
+        }
+
+        try {
+            $jobs = self::get_jobs_state();
+            $runner = self::get_global_runner_state();
+            $results = [];
+            $counts = [
+                'active' => 0,
+                'queued' => 0,
+                'completed' => 0,
+                'completed_with_warnings' => 0,
+                'failed' => 0,
+                'other' => 0,
+            ];
+
+            foreach ($exam_rows as $exam_row) {
+                if (!is_array($exam_row)) {
+                    continue;
+                }
+
+                $result = self::enqueue_exam_unlocked($exam_row, $jobs, $runner);
+                $results[] = $result;
+                $state = isset($result['state']) && is_array($result['state']) ? $result['state'] : [];
+                $status = sanitize_key((string) ($state['status'] ?? ''));
+                if (empty($result['success'])) {
+                    $status = 'failed';
+                }
+                if (!isset($counts[$status])) {
+                    $status = 'other';
+                }
+                $counts[$status]++;
+            }
+
+            self::save_jobs_state($jobs);
+            self::save_global_runner_state($runner);
+            self::save_state(self::resolve_legacy_state($jobs, $runner));
+
+            if (self::has_pending_work($jobs, $runner)) {
+                self::ensure_tick_event();
+            } else {
+                self::clear_tick_event();
+            }
+
+            return [
+                'success' => !empty($results) && $counts['failed'] < count($results),
+                'message' => sprintf(
+                    'Bulk one-click masuk antrean %1$d exam: aktif %2$d, antre %3$d, selesai %4$d, selesai dengan catatan %5$d, gagal %6$d.',
+                    count($results),
+                    $counts['active'],
+                    $counts['queued'],
+                    $counts['completed'],
+                    $counts['completed_with_warnings'],
+                    $counts['failed']
+                ),
+                'results' => $results,
+                'counts' => $counts,
+            ];
+        } finally {
+            CBT_Cache::release_lock(self::LOCK_KEY);
+        }
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public static function tick(): array
@@ -1241,6 +1363,62 @@ final class CBT_Exam_Preflight_Service
     }
 
     /**
+     * @param array<string,mixed> $job
+     * @return array<string,mixed>
+     */
+    private static function run_next_local_stage(array $job): array
+    {
+        $job = self::build_state($job);
+        $exam_row = self::build_exam_row_from_state($job);
+        $job['active'] = true;
+        $job['status'] = self::STATUS_ACTIVE;
+        $job['active_global_layer'] = 'local';
+        $job['last_tick_at'] = current_time('mysql');
+
+        if (empty($job['question_snapshot_ready'])) {
+            $job['stage_question'] = self::STATUS_ACTIVE;
+            $job['last_message'] = 'Menyiapkan Snapshot Soal untuk one-click pra ujian.';
+            $job = self::ensure_question_snapshot_ready($job, $exam_row);
+            if (!empty($job['question_snapshot_ready']) && sanitize_key((string) ($job['stage_start_snapshot'] ?? 'pending')) === 'pending') {
+                $job['last_message'] = 'Snapshot Soal siap. Start Snapshot menunggu tick berikutnya.';
+            }
+
+            return self::build_state($job);
+        }
+
+        if (empty($job['start_snapshot_ready'])) {
+            $job['stage_start_snapshot'] = self::STATUS_ACTIVE;
+            $job['last_message'] = 'Menyiapkan Start Snapshot untuk one-click pra ujian.';
+            $job = self::ensure_start_snapshot_ready($job, $exam_row);
+            if (!empty($job['start_snapshot_ready']) && sanitize_key((string) ($job['stage_submission_context'] ?? 'pending')) === 'pending') {
+                $job['last_message'] = 'Start Snapshot siap. Submission Context menunggu tick berikutnya.';
+            }
+
+            return self::build_state($job);
+        }
+
+        if (sanitize_key((string) ($job['stage_submission_context'] ?? 'pending')) === 'pending') {
+            $job['stage_submission_context'] = self::STATUS_ACTIVE;
+            $job['last_message'] = 'Menyiapkan Submission Context untuk one-click pra ujian.';
+            $job = self::ensure_submission_context_ready($job, $exam_row);
+            $job = self::refresh_job_global_diff($job);
+            $job['last_tick_at'] = current_time('mysql');
+            if (!self::job_has_pending_global_work($job)) {
+                return self::finalize_completed_job($job);
+            }
+
+            $job = self::apply_global_stage_statuses($job, 'pending');
+            if (trim((string) ($job['last_message'] ?? '')) === '') {
+                $job['last_message'] = 'Snapshot exam-local siap. Mode global paralel menunggu tick berikutnya.';
+            }
+
+            return self::build_state($job);
+        }
+
+        return self::build_state($job);
+    }
+
+    /**
      * @param array<string,mixed> $state
      * @return array<string,mixed>
      */
@@ -1666,6 +1844,82 @@ final class CBT_Exam_Preflight_Service
     }
 
     /**
+     * @param array<string,mixed>            $exam_row
+     * @param array<int,array<string,mixed>> $jobs
+     * @param array<string,mixed>            $runner
+     * @return array<string,mixed>
+     */
+    private static function enqueue_exam_unlocked(array $exam_row, array &$jobs, array &$runner): array
+    {
+        $exam_id = (int) ($exam_row['id'] ?? 0);
+        $runner = self::build_global_runner_state($runner);
+        $existing_job = ($exam_id > 0 && isset($jobs[$exam_id]) && is_array($jobs[$exam_id]))
+            ? self::build_state($jobs[$exam_id])
+            : null;
+
+        if (is_array($existing_job) && in_array((string) ($existing_job['status'] ?? ''), [self::STATUS_ACTIVE, self::STATUS_QUEUED], true)) {
+            return [
+                'success' => true,
+                'message' => (string) ($existing_job['last_message'] ?? 'One-click pra ujian exam ini sudah aktif atau sedang antre.'),
+                'state' => $existing_job,
+            ];
+        }
+
+        $eligibility = self::evaluate_exam_eligibility($exam_row);
+        if (empty($eligibility['can_start'])) {
+            $failed_state = self::build_failure_state($exam_row, (string) ($eligibility['message'] ?? 'Exam belum memenuhi syarat one-click pra ujian.'), $eligibility);
+            if ($exam_id > 0) {
+                $jobs[$exam_id] = $failed_state;
+            }
+
+            return [
+                'success' => false,
+                'message' => (string) ($failed_state['last_message'] ?? 'Exam belum memenuhi syarat one-click pra ujian.'),
+                'state' => $failed_state,
+            ];
+        }
+
+        if ($exam_id > 0 && !isset($jobs[$exam_id]) && self::count_nonterminal_jobs($jobs) >= self::MAX_NONTERMINAL_EXAMS) {
+            return [
+                'success' => false,
+                'message' => 'Antrean smart one-click penuh. Selesaikan atau bersihkan sebagian job dulu.',
+                'state' => self::build_failure_state($exam_row, 'Antrean smart one-click penuh. Selesaikan atau bersihkan sebagian job dulu.', $eligibility),
+            ];
+        }
+
+        $job = self::initialize_job_state($exam_row, $eligibility);
+        $job['last_message'] = 'One-click pra ujian masuk antrean. Snapshot Soal akan diproses pada tick berikutnya.';
+
+        $active_runner_exam_id = (int) ($runner['active_exam_id'] ?? 0);
+        if ($active_runner_exam_id > 0 && $active_runner_exam_id !== $exam_id) {
+            $job = self::mark_job_queued($job, $runner);
+            $runner = self::enqueue_runner_exam($runner, $exam_id);
+            $job['queue_position'] = self::queue_position_for_exam($exam_id, $runner);
+            $job['queue_total'] = count((array) ($runner['queue_exam_ids'] ?? []));
+        } else {
+            $runner['active_exam_id'] = $exam_id;
+            $runner['active_exam_title'] = (string) ($job['exam_title'] ?? self::resolve_exam_title($exam_row));
+            $runner['session_id'] = (string) ($job['session_id'] ?? self::generate_session_id($exam_id));
+            $runner['active_layer'] = 'local';
+            $runner['last_tick_at'] = current_time('mysql');
+            $job['status'] = self::STATUS_ACTIVE;
+            $job['active'] = true;
+            $job['queue_position'] = 0;
+            $job['queue_total'] = count((array) ($runner['queue_exam_ids'] ?? []));
+            $job['active_global_layer'] = 'local';
+            $job['last_message'] = 'One-click pra ujian aktif. Menunggu tick untuk menyiapkan Snapshot Soal.';
+        }
+
+        $jobs[$exam_id] = self::build_state($job);
+
+        return [
+            'success' => true,
+            'message' => (string) ($job['last_message'] ?? 'One-click pra ujian masuk antrean.'),
+            'state' => self::build_state($job),
+        ];
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $jobs
      * @param array<string,mixed> $runner
      * @return array<string,mixed>
@@ -2022,20 +2276,37 @@ final class CBT_Exam_Preflight_Service
 
     /**
      * @param array<string,mixed> $job
+     */
+    private static function job_has_pending_local_work(array $job): bool
+    {
+        $job = self::build_state($job);
+
+        return empty($job['question_snapshot_ready'])
+            || empty($job['start_snapshot_ready'])
+            || sanitize_key((string) ($job['stage_submission_context'] ?? 'pending')) === 'pending';
+    }
+
+    /**
+     * @param array<string,mixed> $job
      * @param array<string,mixed> $runner
      * @return array<string,mixed>
      */
     private static function mark_job_queued(array $job, array $runner): array
     {
         $job = self::build_state($job);
+        $has_pending_local_work = self::job_has_pending_local_work($job);
         $job['active'] = false;
         $job['status'] = self::STATUS_QUEUED;
         $job['queue_position'] = count((array) ($runner['queue_exam_ids'] ?? [])) + 1;
         $job['queue_total'] = count((array) ($runner['queue_exam_ids'] ?? [])) + 1;
         $job['active_global_layer'] = '';
         $job['last_tick_at'] = current_time('mysql');
-        $job = self::apply_global_stage_statuses($job, 'queued');
-        $job['last_message'] = 'Snapshot exam-local sudah siap. Mode global paralel menunggu giliran setelah exam aktif selesai.';
+        if ($has_pending_local_work) {
+            $job['last_message'] = 'One-click pra ujian menunggu giliran. Snapshot exam-local akan diproses setelah exam aktif selesai.';
+        } else {
+            $job = self::apply_global_stage_statuses($job, 'queued');
+            $job['last_message'] = 'Snapshot exam-local sudah siap. Mode global paralel menunggu giliran setelah exam aktif selesai.';
+        }
 
         return self::build_state($job);
     }
@@ -2188,8 +2459,11 @@ final class CBT_Exam_Preflight_Service
                     continue;
                 }
 
-                $job = self::refresh_job_global_diff($jobs[$next_exam_id]);
-                if (!self::job_has_pending_global_work($job)) {
+                $job = self::build_state($jobs[$next_exam_id]);
+                if (!self::job_has_pending_local_work($job)) {
+                    $job = self::refresh_job_global_diff($job);
+                }
+                if (!self::job_has_pending_local_work($job) && !self::job_has_pending_global_work($job)) {
                     $jobs[$next_exam_id] = self::finalize_completed_job($job);
                     continue;
                 }
@@ -2197,6 +2471,7 @@ final class CBT_Exam_Preflight_Service
                 $runner['active_exam_id'] = $next_exam_id;
                 $runner['active_exam_title'] = (string) ($job['exam_title'] ?? ('Exam #' . $next_exam_id));
                 $runner['session_id'] = (string) ($job['session_id'] ?? self::generate_session_id($next_exam_id));
+                $runner['active_layer'] = self::job_has_pending_local_work($job) ? 'local' : (string) ($runner['active_layer'] ?? '');
                 $runner['last_tick_at'] = current_time('mysql');
                 $job['active'] = true;
                 $job['status'] = self::STATUS_ACTIVE;
@@ -2212,6 +2487,30 @@ final class CBT_Exam_Preflight_Service
             }
 
             $job = self::build_state($jobs[$active_exam_id]);
+            if (self::job_has_pending_local_work($job)) {
+                $runner['active_layer'] = 'local';
+                $runner['last_tick_at'] = current_time('mysql');
+                $job = self::run_next_local_stage($job);
+                $jobs[$active_exam_id] = self::build_state($job);
+
+                if ((string) ($job['status'] ?? '') === self::STATUS_FAILED) {
+                    $runner = self::release_runner_owner($runner, $active_exam_id);
+                    continue;
+                }
+
+                if (self::job_has_pending_local_work($job)) {
+                    return [$jobs, self::build_global_runner_state($runner)];
+                }
+
+                if (!self::job_has_pending_global_work($job)) {
+                    $jobs[$active_exam_id] = self::finalize_completed_job($job);
+                    $runner = self::release_runner_owner($runner, $active_exam_id);
+                    continue;
+                }
+
+                return [$jobs, self::build_global_runner_state($runner)];
+            }
+
             if (!self::job_has_pending_global_work($job)) {
                 $jobs[$active_exam_id] = self::finalize_completed_job($job);
                 $runner = self::release_runner_owner($runner, $active_exam_id);

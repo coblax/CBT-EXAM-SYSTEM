@@ -1,0 +1,467 @@
+body.toplevel_page_cbt-exams,
+body[class*="_page_cbt-"] {
+    --cbt-admin-btn-radius: 12px;
+    --cbt-admin-btn-border: #bfdbfe;
+    --cbt-admin-btn-bg: #ffffff;
+    --cbt-admin-btn-fg: #0f4fa8;
+    --cbt-admin-btn-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+    --cbt-admin-btn-shadow-hover: 0 10px 20px rgba(15, 23, 42, 0.1);
+}
+
+.cbt-admin-btn,
+body.toplevel_page_cbt-exams .wrap .button,
+body.toplevel_page_cbt-exams .wrap .page-title-action,
+body[class*="_page_cbt-"] .wrap .button,
+body[class*="_page_cbt-"] .wrap .page-title-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 15px;
+    border: 1px solid var(--cbt-admin-btn-border);
+    border-radius: var(--cbt-admin-btn-radius);
+    background: var(--cbt-admin-btn-bg);
+    color: var(--cbt-admin-btn-fg);
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.15;
+    text-decoration: none;
+    text-shadow: none;
+    box-shadow: var(--cbt-admin-btn-shadow);
+    cursor: pointer;
+    transition:
+        transform 0.16s ease,
+        box-shadow 0.16s ease,
+        border-color 0.16s ease,
+        background 0.16s ease,
+        color 0.16s ease;
+    vertical-align: middle;
+    white-space: normal;
+}
+
+.cbt-admin-btn:hover,
+.cbt-admin-btn:focus,
+body.toplevel_page_cbt-exams .wrap .button:hover,
+body.toplevel_page_cbt-exams .wrap .button:focus,
+body.toplevel_page_cbt-exams .wrap .page-title-action:hover,
+body.toplevel_page_cbt-exams .wrap .page-title-action:focus,
+body[class*="_page_cbt-"] .wrap .button:hover,
+body[class*="_page_cbt-"] .wrap .button:focus,
+body[class*="_page_cbt-"] .wrap .page-title-action:hover,
+body[class*="_page_cbt-"] .wrap .page-title-action:focus {
+    border-color: #60a5fa;
+    background: #eff6ff;
+    color: #0f4fa8;
+    box-shadow: var(--cbt-admin-btn-shadow-hover);
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.cbt-admin-btn:focus-visible,
+body.toplevel_page_cbt-exams .wrap .button:focus-visible,
+body.toplevel_page_cbt-exams .wrap .page-title-action:focus-visible,
+body[class*="_page_cbt-"] .wrap .button:focus-visible,
+body[class*="_page_cbt-"] .wrap .page-title-action:focus-visible {
+    outline: 3px solid rgba(37, 99, 235, 0.22);
+    outline-offset: 2px;
+}
+
+body.toplevel_page_cbt-exams .wrap .button.screen-reader-text,
+body[class*="_page_cbt-"] .wrap .button.screen-reader-text {
+    display: block;
+    min-height: 1px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+}
+
+.cbt-admin-btn:disabled,
+.cbt-admin-btn.disabled,
+body.toplevel_page_cbt-exams .wrap .button:disabled,
+body.toplevel_page_cbt-exams .wrap .button.disabled,
+body[class*="_page_cbt-"] .wrap .button:disabled,
+body[class*="_page_cbt-"] .wrap .button.disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.cbt-admin-btn--primary,
+body.toplevel_page_cbt-exams .wrap .button-primary,
+body[class*="_page_cbt-"] .wrap .button-primary {
+    --cbt-admin-btn-border: #1d4ed8;
+    --cbt-admin-btn-bg: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    --cbt-admin-btn-fg: #ffffff;
+    --cbt-admin-btn-shadow: 0 10px 20px rgba(37, 99, 235, 0.24);
+    --cbt-admin-btn-shadow-hover: 0 14px 26px rgba(37, 99, 235, 0.3);
+}
+
+.cbt-admin-btn--primary:hover,
+.cbt-admin-btn--primary:focus,
+body.toplevel_page_cbt-exams .wrap .button-primary:hover,
+body.toplevel_page_cbt-exams .wrap .button-primary:focus,
+body[class*="_page_cbt-"] .wrap .button-primary:hover,
+body[class*="_page_cbt-"] .wrap .button-primary:focus {
+    border-color: #1e40af;
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+    color: #ffffff;
+}
+
+.cbt-admin-btn--secondary,
+body.toplevel_page_cbt-exams .wrap .button-secondary,
+body[class*="_page_cbt-"] .wrap .button-secondary {
+    --cbt-admin-btn-border: #cbd5e1;
+    --cbt-admin-btn-bg: #ffffff;
+    --cbt-admin-btn-fg: #334155;
+    --cbt-admin-btn-shadow: 0 6px 14px rgba(15, 23, 42, 0.05);
+    --cbt-admin-btn-shadow-hover: 0 10px 20px rgba(15, 23, 42, 0.09);
+}
+
+.cbt-admin-btn--ghost,
+body.toplevel_page_cbt-exams .wrap .button.cbt-admin-btn--ghost,
+body[class*="_page_cbt-"] .wrap .button.cbt-admin-btn--ghost {
+    --cbt-admin-btn-border: #dbe6f1;
+    --cbt-admin-btn-bg: #f8fafc;
+    --cbt-admin-btn-fg: #475569;
+    --cbt-admin-btn-shadow: none;
+    --cbt-admin-btn-shadow-hover: 0 8px 16px rgba(15, 23, 42, 0.06);
+}
+
+.cbt-admin-btn--success,
+body.toplevel_page_cbt-exams .wrap .button.cbt-admin-btn--success,
+body[class*="_page_cbt-"] .wrap .button.cbt-admin-btn--success {
+    --cbt-admin-btn-border: #22c55e;
+    --cbt-admin-btn-bg: #ecfdf5;
+    --cbt-admin-btn-fg: #047857;
+}
+
+.cbt-admin-btn--success:hover,
+.cbt-admin-btn--success:focus,
+body.toplevel_page_cbt-exams .wrap .button.cbt-admin-btn--success:hover,
+body.toplevel_page_cbt-exams .wrap .button.cbt-admin-btn--success:focus,
+body[class*="_page_cbt-"] .wrap .button.cbt-admin-btn--success:hover,
+body[class*="_page_cbt-"] .wrap .button.cbt-admin-btn--success:focus {
+    border-color: #16a34a;
+    background: #dcfce7;
+    color: #065f46;
+}
+
+.cbt-admin-btn--warning,
+body.toplevel_page_cbt-exams .wrap .button.cbt-admin-btn--warning,
+body[class*="_page_cbt-"] .wrap .button.cbt-admin-btn--warning {
+    --cbt-admin-btn-border: #f59e0b;
+    --cbt-admin-btn-bg: #fffbeb;
+    --cbt-admin-btn-fg: #92400e;
+}
+
+.cbt-admin-btn--warning:hover,
+.cbt-admin-btn--warning:focus,
+body.toplevel_page_cbt-exams .wrap .button.cbt-admin-btn--warning:hover,
+body.toplevel_page_cbt-exams .wrap .button.cbt-admin-btn--warning:focus,
+body[class*="_page_cbt-"] .wrap .button.cbt-admin-btn--warning:hover,
+body[class*="_page_cbt-"] .wrap .button.cbt-admin-btn--warning:focus {
+    border-color: #d97706;
+    background: #fef3c7;
+    color: #78350f;
+}
+
+.cbt-admin-btn--danger,
+body.toplevel_page_cbt-exams .wrap .button.cbt-admin-btn--danger,
+body[class*="_page_cbt-"] .wrap .button.cbt-admin-btn--danger,
+body.toplevel_page_cbt-exams .wrap .button.cbt-security-log-delete-button,
+body[class*="_page_cbt-"] .wrap .button.cbt-security-log-delete-button,
+body.toplevel_page_cbt-exams .wrap .button.cbt-test-hub-danger-button,
+body[class*="_page_cbt-"] .wrap .button.cbt-test-hub-danger-button,
+body.toplevel_page_cbt-exams .wrap .button.cbt-users-bulk-button--selected,
+body[class*="_page_cbt-"] .wrap .button.cbt-users-bulk-button--selected,
+body.toplevel_page_cbt-exams .wrap .button.cbt-users-bulk-button--all,
+body[class*="_page_cbt-"] .wrap .button.cbt-users-bulk-button--all,
+body.toplevel_page_cbt-exams .wrap .button.cbt-results-op-button--reset,
+body[class*="_page_cbt-"] .wrap .button.cbt-results-op-button--reset,
+body.toplevel_page_cbt-exams .wrap .button.is-delete,
+body[class*="_page_cbt-"] .wrap .button.is-delete,
+body.toplevel_page_cbt-exams .wrap .submitdelete,
+body[class*="_page_cbt-"] .wrap .submitdelete {
+    --cbt-admin-btn-border: #fecaca;
+    --cbt-admin-btn-bg: #fff1f2;
+    --cbt-admin-btn-fg: #b91c1c;
+}
+
+.cbt-admin-btn--danger:hover,
+.cbt-admin-btn--danger:focus,
+body.toplevel_page_cbt-exams .wrap .button.cbt-admin-btn--danger:hover,
+body.toplevel_page_cbt-exams .wrap .button.cbt-admin-btn--danger:focus,
+body[class*="_page_cbt-"] .wrap .button.cbt-admin-btn--danger:hover,
+body[class*="_page_cbt-"] .wrap .button.cbt-admin-btn--danger:focus,
+body.toplevel_page_cbt-exams .wrap .button.cbt-security-log-delete-button:hover,
+body.toplevel_page_cbt-exams .wrap .button.cbt-security-log-delete-button:focus,
+body[class*="_page_cbt-"] .wrap .button.cbt-security-log-delete-button:hover,
+body[class*="_page_cbt-"] .wrap .button.cbt-security-log-delete-button:focus,
+body.toplevel_page_cbt-exams .wrap .button.cbt-test-hub-danger-button:hover,
+body.toplevel_page_cbt-exams .wrap .button.cbt-test-hub-danger-button:focus,
+body[class*="_page_cbt-"] .wrap .button.cbt-test-hub-danger-button:hover,
+body[class*="_page_cbt-"] .wrap .button.cbt-test-hub-danger-button:focus,
+body.toplevel_page_cbt-exams .wrap .button.cbt-users-bulk-button--selected:hover,
+body.toplevel_page_cbt-exams .wrap .button.cbt-users-bulk-button--selected:focus,
+body[class*="_page_cbt-"] .wrap .button.cbt-users-bulk-button--selected:hover,
+body[class*="_page_cbt-"] .wrap .button.cbt-users-bulk-button--selected:focus,
+body.toplevel_page_cbt-exams .wrap .button.cbt-users-bulk-button--all:hover,
+body.toplevel_page_cbt-exams .wrap .button.cbt-users-bulk-button--all:focus,
+body[class*="_page_cbt-"] .wrap .button.cbt-users-bulk-button--all:hover,
+body[class*="_page_cbt-"] .wrap .button.cbt-users-bulk-button--all:focus,
+body.toplevel_page_cbt-exams .wrap .button.cbt-results-op-button--reset:hover,
+body.toplevel_page_cbt-exams .wrap .button.cbt-results-op-button--reset:focus,
+body[class*="_page_cbt-"] .wrap .button.cbt-results-op-button--reset:hover,
+body[class*="_page_cbt-"] .wrap .button.cbt-results-op-button--reset:focus,
+body.toplevel_page_cbt-exams .wrap .button.is-delete:hover,
+body.toplevel_page_cbt-exams .wrap .button.is-delete:focus,
+body[class*="_page_cbt-"] .wrap .button.is-delete:hover,
+body[class*="_page_cbt-"] .wrap .button.is-delete:focus,
+body.toplevel_page_cbt-exams .wrap .submitdelete:hover,
+body.toplevel_page_cbt-exams .wrap .submitdelete:focus,
+body[class*="_page_cbt-"] .wrap .submitdelete:hover,
+body[class*="_page_cbt-"] .wrap .submitdelete:focus {
+    border-color: #fca5a5;
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.cbt-admin-btn--small,
+body.toplevel_page_cbt-exams .wrap .button-small,
+body[class*="_page_cbt-"] .wrap .button-small {
+    min-height: 30px;
+    padding: 0 10px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.cbt-admin-btn--icon {
+    width: 38px;
+    min-width: 38px;
+    padding: 0;
+}
+
+body.toplevel_page_cbt-exams .wrap .button .dashicons,
+body[class*="_page_cbt-"] .wrap .button .dashicons,
+.cbt-admin-btn .dashicons {
+    width: 16px;
+    height: 16px;
+    font-size: 16px;
+    line-height: 16px;
+}
+
+body.toplevel_page_cbt-exams .wrap .tablenav .button,
+body[class*="_page_cbt-"] .wrap .tablenav .button,
+body.toplevel_page_cbt-exams .wrap .pagination-links .button,
+body[class*="_page_cbt-"] .wrap .pagination-links .button {
+    min-height: 32px;
+    padding: 0 11px;
+    border-radius: 10px;
+    box-shadow: none;
+}
+
+body.toplevel_page_cbt-exams .wrap .button-group,
+body[class*="_page_cbt-"] .wrap .button-group,
+body.toplevel_page_cbt-exams .wrap .actions,
+body[class*="_page_cbt-"] .wrap .actions {
+    gap: 8px;
+}
+
+.cbt-admin-row-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    width: min(132px, 100%);
+    max-width: 132px;
+}
+
+.cbt-admin-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid #d8e4f2;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    text-align: center;
+    text-decoration: none;
+    white-space: nowrap;
+    box-shadow: none;
+    transition:
+        background 0.16s ease,
+        border-color 0.16s ease,
+        color 0.16s ease,
+        transform 0.16s ease;
+}
+
+.cbt-admin-action:hover,
+.cbt-admin-action:focus {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #0f4fa8;
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.cbt-admin-action--primary,
+.cbt-admin-action--view {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.cbt-admin-action--secondary,
+.cbt-admin-action--edit {
+    border-color: #d8e4f2;
+    background: #ffffff;
+    color: #334155;
+}
+
+.cbt-admin-action--success {
+    border-color: #bbf7d0;
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.cbt-admin-action--warning {
+    border-color: #fde68a;
+    background: #fffbeb;
+    color: #92400e;
+}
+
+.cbt-admin-action--danger,
+.cbt-admin-action--delete {
+    border-color: #fecaca;
+    background: #fff1f2;
+    color: #b91c1c;
+}
+
+.cbt-admin-action--danger:hover,
+.cbt-admin-action--danger:focus,
+.cbt-admin-action--delete:hover,
+.cbt-admin-action--delete:focus {
+    border-color: #fca5a5;
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.cbt-admin-drawer-row > td {
+    padding: 12px 18px 18px !important;
+    border-top: 0 !important;
+    background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%) !important;
+}
+
+.cbt-admin-drawer-panel {
+    margin: 8px 0 2px;
+    border: 1px solid #d6e6fb;
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.07);
+}
+
+.cbt-admin-empty-row > td {
+    padding: 18px !important;
+    background: #fbfdff !important;
+}
+
+.cbt-admin-empty-state {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    width: min(100%, 720px);
+    margin: 0;
+    padding: 14px 16px;
+    border: 1px solid #dbe6f1;
+    border-radius: 14px;
+    background: #ffffff;
+    color: #334155;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.cbt-admin-empty-state__mark {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background:
+        radial-gradient(circle at center, #2563eb 0 4px, transparent 5px),
+        #eff6ff;
+}
+
+.cbt-admin-empty-state__body {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+}
+
+.cbt-admin-empty-state h3 {
+    margin: 0;
+    color: #0f172a;
+    font-size: 14px;
+    font-weight: 900;
+    line-height: 1.3;
+}
+
+.cbt-admin-empty-state p {
+    margin: 0;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+.cbt-admin-empty-state__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 6px;
+}
+
+.cbt-admin-empty-state--warning .cbt-admin-empty-state__mark {
+    border-color: #fde68a;
+    background:
+        radial-gradient(circle at center, #d97706 0 4px, transparent 5px),
+        #fffbeb;
+}
+
+.cbt-admin-empty-state--danger .cbt-admin-empty-state__mark {
+    border-color: #fecaca;
+    background:
+        radial-gradient(circle at center, #dc2626 0 4px, transparent 5px),
+        #fff1f2;
+}
+
+@media (max-width: 782px) {
+    .cbt-admin-btn,
+    body.toplevel_page_cbt-exams .wrap .button,
+    body.toplevel_page_cbt-exams .wrap .page-title-action,
+    body[class*="_page_cbt-"] .wrap .button,
+    body[class*="_page_cbt-"] .wrap .page-title-action {
+        min-height: 40px;
+        padding-inline: 13px;
+    }
+
+    .cbt-admin-row-actions {
+        width: 100%;
+        max-width: none;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .cbt-admin-empty-state {
+        align-items: stretch;
+    }
+}

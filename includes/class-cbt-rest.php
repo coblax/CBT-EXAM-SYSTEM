@@ -8,6 +8,10 @@ if (!class_exists('CBT_Student_Profile_Cache')) {
     require_once __DIR__ . '/class-cbt-student-profile-cache.php';
 }
 
+if (!class_exists('CBT_Exam_Audience_Service')) {
+    require_once __DIR__ . '/class-cbt-exam-audience-service.php';
+}
+
 if (!class_exists('CBT_Exam_Availability_Cache')) {
     require_once __DIR__ . '/class-cbt-exam-availability-cache.php';
 }

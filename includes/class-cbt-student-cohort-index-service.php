@@ -8,6 +8,10 @@ if (!class_exists('CBT_Cache')) {
     require_once __DIR__ . '/class-cbt-cache.php';
 }
 
+if (!class_exists('CBT_Exam_Audience_Service')) {
+    require_once __DIR__ . '/class-cbt-exam-audience-service.php';
+}
+
 final class CBT_Student_Cohort_Index_Service
 {
     public const CRON_HOOK = 'cbt_student_cohort_index_rebuild_tick';
@@ -20,7 +24,7 @@ final class CBT_Student_Cohort_Index_Service
     private const LOCK_KEY = 'student_cohort_index_rebuild';
     private const LOCK_TTL = 45;
     private const DEFAULT_REBUILD_BATCH_SIZE = 500;
-    private const IMPORTANT_META_KEYS = ['kode_kelas', 'kode_ruang', 'nisn', 'agama'];
+    private const IMPORTANT_META_KEYS = ['kode_kelas', 'kode_ruang', 'nisn', 'agama', 'jenis_kelamin'];
     private const STUDENT_ROLES = ['student', 'siswa', 'siswa_cbt', 'subscriber'];
 
     private static ?bool $table_available = null;
@@ -125,12 +129,15 @@ final class CBT_Student_Cohort_Index_Service
             kode_kelas VARCHAR(64) NOT NULL DEFAULT '',
             kode_ruang VARCHAR(64) NOT NULL DEFAULT '',
             agama VARCHAR(64) NOT NULL DEFAULT '',
+            jenis_kelamin VARCHAR(64) NOT NULL DEFAULT '',
             updated_at DATETIME NULL,
             indexed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (user_id),
             KEY idx_student_kelas_user (is_student, kode_kelas, user_id),
             KEY idx_student_kelas_ruang_user (is_student, kode_kelas, kode_ruang, user_id),
             KEY idx_student_ruang_user (is_student, kode_ruang, user_id),
+            KEY idx_student_agama_user (is_student, agama, user_id),
+            KEY idx_student_gender_user (is_student, jenis_kelamin, user_id),
             KEY idx_nisn (nisn),
             KEY idx_user_login (user_login)
         ) {$charset};";
@@ -358,7 +365,8 @@ final class CBT_Student_Cohort_Index_Service
             'nisn' => self::normalize_meta_value((string) get_user_meta($user_id, 'nisn', true), false),
             'kode_kelas' => self::normalize_meta_value((string) get_user_meta($user_id, 'kode_kelas', true), true),
             'kode_ruang' => self::normalize_meta_value((string) get_user_meta($user_id, 'kode_ruang', true), true),
-            'agama' => self::normalize_meta_value((string) get_user_meta($user_id, 'agama', true), false),
+            'agama' => self::normalize_agama_value((string) get_user_meta($user_id, 'agama', true)),
+            'jenis_kelamin' => self::normalize_gender_value((string) get_user_meta($user_id, 'jenis_kelamin', true)),
             'updated_at' => $now,
             'indexed_at' => $now,
         ];
@@ -367,7 +375,7 @@ final class CBT_Student_Cohort_Index_Service
             $result = $wpdb->replace(
                 self::get_table_name($wpdb),
                 $data,
-                ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
+                ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
             );
             self::$health_summary_cache = null;
             return $result !== false;
@@ -425,7 +433,7 @@ final class CBT_Student_Cohort_Index_Service
         $offset = max(0, (int) ($filters['offset'] ?? 0));
         $params = $where['params'];
         $table = self::get_table_name($wpdb);
-        $sql = "SELECT user_id, is_student, user_login, display_name, user_email, nisn, kode_kelas, kode_ruang, agama, updated_at, indexed_at
+        $sql = "SELECT user_id, is_student, user_login, display_name, user_email, nisn, kode_kelas, kode_ruang, agama, jenis_kelamin, updated_at, indexed_at
                 FROM {$table}
                 WHERE {$where['sql']}
                 ORDER BY display_name ASC, user_id ASC";
@@ -510,17 +518,20 @@ final class CBT_Student_Cohort_Index_Service
      */
     public static function resolve_target_student_ids_for_exam(array $exam_row): array
     {
-        $target_kelas = self::parse_target_kelas((string) ($exam_row['target_kelas'] ?? ''));
-        if (empty($target_kelas) || !self::is_ready()) {
-            return [];
+        if (class_exists('CBT_Exam_Audience_Service') && method_exists('CBT_Exam_Audience_Service', 'get_target_student_ids_for_exam')) {
+            $user_ids = CBT_Exam_Audience_Service::get_target_student_ids_for_exam($exam_row);
+        } else {
+            $target_kelas = self::parse_target_kelas((string) ($exam_row['target_kelas'] ?? ''));
+            if (empty($target_kelas) || !self::is_ready()) {
+                return [];
+            }
+
+            $result = self::query_students([
+                'kelas_values' => $target_kelas,
+                'limit' => 0,
+            ]);
+            $user_ids = array_values(array_filter(array_map('absint', (array) ($result['user_ids'] ?? []))));
         }
-
-        $result = self::query_students([
-            'kelas_values' => $target_kelas,
-            'limit' => 0,
-        ]);
-
-        $user_ids = array_values(array_filter(array_map('absint', (array) ($result['user_ids'] ?? []))));
         sort($user_ids, SORT_NUMERIC);
 
         return $user_ids;
@@ -528,16 +539,7 @@ final class CBT_Student_Cohort_Index_Service
 
     public static function count_target_students_for_exam(array $exam_row): int
     {
-        $target_kelas = self::parse_target_kelas((string) ($exam_row['target_kelas'] ?? ''));
-        if (empty($target_kelas) || !self::is_ready()) {
-            return 0;
-        }
-
-        $result = self::count_students([
-            'kelas_values' => $target_kelas,
-        ]);
-
-        return empty($result['fallback_required']) ? max(0, (int) ($result['total'] ?? 0)) : 0;
+        return count(self::resolve_target_student_ids_for_exam($exam_row));
     }
 
     /**
@@ -934,6 +936,38 @@ final class CBT_Student_Cohort_Index_Service
             $params[] = $ruang;
         }
 
+        $agama_values = [];
+        if (isset($filters['agama_values']) && is_array($filters['agama_values'])) {
+            $agama_values = array_values(array_filter(array_map([self::class, 'normalize_agama_value'], $filters['agama_values'])));
+        }
+        $agama = self::normalize_agama_value((string) ($filters['agama'] ?? ''));
+        if ($agama !== '') {
+            $agama_values[] = $agama;
+        }
+        $agama_values = array_values(array_unique($agama_values));
+        if (!empty($agama_values)) {
+            $where[] = 'agama IN (' . implode(',', array_fill(0, count($agama_values), '%s')) . ')';
+            foreach ($agama_values as $value) {
+                $params[] = $value;
+            }
+        }
+
+        $gender_values = [];
+        if (isset($filters['jenis_kelamin_values']) && is_array($filters['jenis_kelamin_values'])) {
+            $gender_values = array_values(array_filter(array_map([self::class, 'normalize_gender_value'], $filters['jenis_kelamin_values'])));
+        }
+        $gender = self::normalize_gender_value((string) ($filters['jenis_kelamin'] ?? ''));
+        if ($gender !== '') {
+            $gender_values[] = $gender;
+        }
+        $gender_values = array_values(array_unique($gender_values));
+        if (!empty($gender_values)) {
+            $where[] = 'jenis_kelamin IN (' . implode(',', array_fill(0, count($gender_values), '%s')) . ')';
+            foreach ($gender_values as $value) {
+                $params[] = $value;
+            }
+        }
+
         $search = trim(sanitize_text_field((string) ($filters['search'] ?? '')));
         if ($search !== '') {
             $like = '%' . self::esc_like($wpdb, strtolower($search)) . '%';
@@ -968,7 +1002,8 @@ final class CBT_Student_Cohort_Index_Service
             'nisn' => self::normalize_meta_value((string) ($row['nisn'] ?? ''), false),
             'kode_kelas' => self::normalize_filter_value((string) ($row['kode_kelas'] ?? '')),
             'kode_ruang' => self::normalize_filter_value((string) ($row['kode_ruang'] ?? '')),
-            'agama' => self::normalize_meta_value((string) ($row['agama'] ?? ''), false),
+            'agama' => self::normalize_agama_value((string) ($row['agama'] ?? '')),
+            'jenis_kelamin' => self::normalize_gender_value((string) ($row['jenis_kelamin'] ?? '')),
             'updated_at' => sanitize_text_field((string) ($row['updated_at'] ?? '')),
             'indexed_at' => sanitize_text_field((string) ($row['indexed_at'] ?? '')),
         ];
@@ -999,6 +1034,24 @@ final class CBT_Student_Cohort_Index_Service
     private static function normalize_filter_value(string $value): string
     {
         return self::normalize_meta_value($value, true);
+    }
+
+    private static function normalize_agama_value(string $value): string
+    {
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            return CBT_Exam_Audience_Service::normalize_agama($value);
+        }
+
+        return self::normalize_meta_value($value, false);
+    }
+
+    private static function normalize_gender_value(string $value): string
+    {
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            return CBT_Exam_Audience_Service::normalize_gender($value);
+        }
+
+        return self::normalize_meta_value($value, false);
     }
 
     /**

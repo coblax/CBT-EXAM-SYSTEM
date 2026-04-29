@@ -494,9 +494,24 @@ final class CBT_Login_Readiness_Warm_Queue_Service
         if ($ruang !== '') {
             $query_filters['ruang'] = $ruang;
         }
+        if (class_exists('CBT_Exam_Audience_Service') && !empty($exam_row)) {
+            $target_agama = CBT_Exam_Audience_Service::get_exam_target_agama($exam_row);
+            $target_gender = CBT_Exam_Audience_Service::get_exam_target_gender($exam_row);
+            if (!empty($target_agama)) {
+                $query_filters['agama_values'] = $target_agama;
+            }
+            if (!empty($target_gender)) {
+                $query_filters['jenis_kelamin_values'] = $target_gender;
+            }
+        }
 
         $result = CBT_Student_Cohort_Index_Service::query_students($query_filters);
-        return array_values(array_filter(array_map('absint', (array) ($result['user_ids'] ?? []))));
+        $user_ids = array_values(array_filter(array_map('absint', (array) ($result['user_ids'] ?? []))));
+        if (class_exists('CBT_Exam_Audience_Service') && !empty($exam_row) && (int) ($exam_row['restrict_to_subject_choice'] ?? 0) === 1) {
+            $user_ids = CBT_Exam_Audience_Service::filter_user_ids_by_subject_choice($user_ids, (int) ($exam_row['subject_id'] ?? 0));
+        }
+
+        return $user_ids;
     }
 
     /**
@@ -536,6 +551,17 @@ final class CBT_Login_Readiness_Warm_Queue_Service
             }
             if ($ruang !== '' && $kode_ruang !== $ruang) {
                 continue;
+            }
+            if (class_exists('CBT_Exam_Audience_Service') && !empty($exam_row)) {
+                $audience = CBT_Exam_Audience_Service::evaluate_exam_for_student($exam_row, $user_id, [
+                    'kode_kelas' => $kode_kelas,
+                    'kode_ruang' => $kode_ruang,
+                    'agama' => (string) get_user_meta($user_id, 'agama', true),
+                    'jenis_kelamin' => (string) get_user_meta($user_id, 'jenis_kelamin', true),
+                ]);
+                if (empty($audience['allowed'])) {
+                    continue;
+                }
             }
 
             $target_user_ids[$user_id] = $user_id;
@@ -619,7 +645,7 @@ final class CBT_Login_Readiness_Warm_Queue_Service
         $exam_table = $wpdb->prefix . 'cbt_exams';
         try {
             $prepared = $wpdb->prepare(
-                "SELECT id, title, status, target_kelas FROM {$exam_table} WHERE id = %d LIMIT 1",
+                "SELECT id, subject_id, title, status, target_kelas, target_agama, target_jenis_kelamin, restrict_to_subject_choice FROM {$exam_table} WHERE id = %d LIMIT 1",
                 $exam_id
             );
             if (method_exists($wpdb, 'get_row')) {

@@ -1260,6 +1260,10 @@ final class CBT_Exam_Availability_Auto_Warm_Service
      */
     private static function resolve_target_student_ids(array $exam_row, bool $allow_expensive_fallback = true): array
     {
+        if (class_exists('CBT_Exam_Audience_Service')) {
+            return CBT_Exam_Audience_Service::get_target_student_ids_for_exam($exam_row);
+        }
+
         $target_kelas = self::resolve_target_kelas_values($exam_row);
         if (empty($target_kelas)) {
             return [];

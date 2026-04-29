@@ -264,6 +264,97 @@
                                         <p class="description">Pilih minimal satu kelas peserta sebelum lanjut ke pilih soal.</p>
                                     </td>
                                 </tr>
+                                <tr class="cbt-exam-detail-row cbt-exam-detail-row--stacked">
+                                    <th>Target Peserta</th>
+                                    <td>
+                                        <div class="cbt-exam-audience-panel">
+                                            <div class="cbt-exam-audience-grid">
+                                                <label class="cbt-exam-audience-field" for="cbt-exam-target-agama">
+                                                    <span>Agama</span>
+                                                    <select id="cbt-exam-target-agama" name="target_agama[]">
+                                                        <option value="">Semua agama</option>
+                                                        <?php foreach ((array) $agama_options as $agama_option): ?>
+                                                            <option
+                                                                value="<?php echo esc_attr($agama_option); ?>"
+                                                                <?php selected($agama_option, (string) (((array) $editing_target_agama_values)[0] ?? '')); ?>
+                                                            >
+                                                                <?php echo esc_html($agama_option); ?>
+                                                            </option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                </label>
+                                                <label class="cbt-exam-audience-field" for="cbt-exam-target-jenis-kelamin">
+                                                    <span>Jenis Kelamin</span>
+                                                    <select id="cbt-exam-target-jenis-kelamin" name="target_jenis_kelamin[]">
+                                                        <option value="">Semua jenis kelamin</option>
+                                                        <?php foreach ((array) $jenis_kelamin_options as $jenis_kelamin_option): ?>
+                                                            <option
+                                                                value="<?php echo esc_attr($jenis_kelamin_option); ?>"
+                                                                <?php selected($jenis_kelamin_option, (string) (((array) $editing_target_jenis_kelamin_values)[0] ?? '')); ?>
+                                                            >
+                                                                <?php echo esc_html($jenis_kelamin_option); ?>
+                                                            </option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                </label>
+                                            </div>
+                                            <label class="cbt-exam-inline-toggle cbt-exam-audience-toggle">
+                                                <input type="checkbox" id="cbt-exam-restrict-subject-choice" name="restrict_to_subject_choice" value="1" <?php checked((int) $editing_restrict_to_subject_choice, 1); ?> />
+                                                <span>
+                                                    <strong>Hanya siswa yang memilih mapel exam ini</strong>
+                                                    <small>Aktifkan untuk mapel pilihan. Exam muncul jika mapel exam ada pada Mapel Pilihan 1-3 siswa.</small>
+                                                </span>
+                                            </label>
+                                            <p class="description">Dropdown kosong berarti tidak membatasi peserta berdasarkan atribut tersebut.</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <?php if ($editing_exam && !empty($exam_audience_preview)): ?>
+                                    <?php
+                                    $audience_summary = isset($exam_audience_preview['summary']) && is_array($exam_audience_preview['summary'])
+                                        ? $exam_audience_preview['summary']
+                                        : [];
+                                    $audience_reasons = isset($exam_audience_preview['reason_counts']) && is_array($exam_audience_preview['reason_counts'])
+                                        ? $exam_audience_preview['reason_counts']
+                                        : [];
+                                    ?>
+                                    <tr class="cbt-exam-detail-row cbt-exam-detail-row--stacked">
+                                        <th>Preview Peserta</th>
+                                        <td>
+                                            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+                                                <span class="cbt-exam-summary-pill">Cocok: <?php echo esc_html((string) ((int) ($audience_summary['matched'] ?? 0))); ?></span>
+                                                <span class="cbt-exam-summary-pill">Terfilter: <?php echo esc_html((string) ((int) ($audience_summary['excluded'] ?? 0))); ?></span>
+                                                <span class="cbt-exam-summary-pill">Kandidat kelas: <?php echo esc_html((string) ((int) ($audience_summary['total_candidates'] ?? 0))); ?></span>
+                                            </div>
+                                            <?php if ((int) ($audience_summary['matched'] ?? 0) === 0): ?>
+                                                <div style="margin:0 0 8px; padding:10px 12px; border:1px solid #f59e0b; border-radius:10px; background:#fffbeb; color:#92400e; font-weight:700;">
+                                                    Tidak ada peserta yang cocok dengan target exam saat ini. Periksa filter kelas, agama, jenis kelamin, atau Mapel Pilihan.
+                                                </div>
+                                            <?php endif; ?>
+                                            <?php if (!empty($audience_reasons)): ?>
+                                                <p class="description">
+                                                    Alasan utama:
+                                                    <?php
+                                                    $reason_labels = [
+                                                        'ok' => 'cocok',
+                                                        'class_mismatch' => 'kelas tidak cocok',
+                                                        'agama_mismatch' => 'agama tidak cocok',
+                                                        'gender_mismatch' => 'jenis kelamin tidak cocok',
+                                                        'subject_choice_mismatch' => 'mapel pilihan tidak cocok',
+                                                    ];
+                                                    $reason_texts = [];
+                                                    foreach ($audience_reasons as $reason => $count) {
+                                                        $label = $reason_labels[(string) $reason] ?? (string) $reason;
+                                                        $reason_texts[] = $label . ' ' . (int) $count;
+                                                    }
+                                                    echo esc_html(implode(' | ', $reason_texts));
+                                                    ?>
+                                                </p>
+                                            <?php endif; ?>
+                                            <p class="description">Preview mengikuti data tersimpan terakhir. Simpan exam untuk menghitung ulang setelah mengubah filter.</p>
+                                        </td>
+                                    </tr>
+                                <?php endif; ?>
                                 <tr class="cbt-exam-detail-row cbt-exam-detail-row--toggle">
                                     <th><label for="cbt-exam-randomize">Acak Soal</label></th>
                                     <td>
@@ -427,9 +518,15 @@
                                                     </thead>
                                                     <tbody>
                                                     <?php if (empty($source_questions)): ?>
-                                                        <tr>
-                                                            <td colspan="5">Belum ada soal tersedia. Isi dulu di menu CBT Questions atau ubah filter katalog.</td>
-                                                        </tr>
+                                                        <?php
+                                                        echo CBT_Admin_UI_Helper::render_table_empty_state(5, [
+                                                            'title' => 'Belum ada soal tersedia',
+                                                            'message' => 'Isi dulu di menu CBT Questions atau ubah filter katalog soal.',
+                                                            'action_label' => 'Buka CBT Questions',
+                                                            'action_url' => admin_url('admin.php?page=cbt-question-bank'),
+                                                            'action_class' => 'button button-primary',
+                                                        ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                                                        ?>
                                                     <?php else: ?>
                                                         <?php foreach ($source_questions as $source_question): ?>
                                                             <?php
@@ -802,7 +899,17 @@
                     </thead>
                     <?php if (empty($exams)): ?>
                         <tbody>
-                        <tr><td colspan="9"><?php echo !empty($exam_active_filters) ? 'Tidak ada exam yang cocok dengan filter saat ini.' : 'Belum ada exam yang tampil.'; ?></td></tr>
+                        <?php
+                        echo CBT_Admin_UI_Helper::render_table_empty_state(9, [
+                            'title' => !empty($exam_active_filters) ? 'Tidak ada exam sesuai filter' : 'Belum ada exam',
+                            'message' => !empty($exam_active_filters)
+                                ? 'Tidak ada exam yang cocok dengan filter saat ini. Reset filter untuk melihat semua exam.'
+                                : 'Buat exam baru, pilih mapel, lalu tambahkan soal agar muncul di daftar ini.',
+                            'action_label' => !empty($exam_active_filters) ? 'Reset Filter' : 'Buat Exam',
+                            'action_url' => !empty($exam_active_filters) ? $exam_list_reset_url : admin_url('admin.php?page=cbt-exams'),
+                            'action_class' => !empty($exam_active_filters) ? 'button button-secondary cbt-admin-btn--secondary' : 'button button-primary',
+                        ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                        ?>
                         </tbody>
                     <?php else: ?>
                         <?php foreach ($exams as $index => $exam): ?>
@@ -875,29 +982,29 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <div class="cbt-exam-row-actions">
+                                    <div class="cbt-admin-row-actions cbt-exam-row-actions">
                                         <a
-                                            class="cbt-exam-row-action cbt-exam-row-action--preview"
+                                            class="cbt-admin-action cbt-admin-action--view cbt-exam-row-action cbt-exam-row-action--preview"
                                             href="<?php echo esc_url(add_query_arg(array_merge($exam_list_state_args, ['preview_exam_id' => (int) $exam['id']]), admin_url('admin.php'))); ?>"
                                             target="_blank"
                                             rel="noopener noreferrer"
                                         >Lihat Soal</a>
                                         <a
-                                            class="cbt-exam-row-action cbt-exam-row-action--results"
+                                            class="cbt-admin-action cbt-admin-action--primary cbt-exam-row-action cbt-exam-row-action--results"
                                             href="<?php echo esc_url(add_query_arg(['page' => 'cbt-results', 'cbt_exam_id' => (int) $exam['id']], admin_url('admin.php'))); ?>"
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             title="Buka Results di tab baru"
                                         >Results</a>
-                                        <a class="cbt-exam-row-action cbt-exam-row-action--edit" href="<?php echo esc_url(add_query_arg(CBT_Admin_Exams_Service::add_exam_list_state_args(['page' => 'cbt-exams', 'edit' => (int) $exam['id']], $exam_list_state), admin_url('admin.php'))); ?>">Edit</a>
-                                        <a class="cbt-exam-row-action cbt-exam-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg(CBT_Admin_Exams_Service::add_exam_list_state_args(['action' => 'cbt_delete_exam', 'id' => (int) $exam['id'], 'cbt_exam_panel' => 'list'], $exam_list_state), admin_url('admin-post.php')), 'cbt_delete_exam_' . (int) $exam['id'])); ?>" onclick="return confirm('Delete this exam?');">Delete</a>
+                                        <a class="cbt-admin-action cbt-admin-action--edit cbt-exam-row-action cbt-exam-row-action--edit" href="<?php echo esc_url(add_query_arg(CBT_Admin_Exams_Service::add_exam_list_state_args(['page' => 'cbt-exams', 'edit' => (int) $exam['id']], $exam_list_state), admin_url('admin.php'))); ?>">Edit</a>
+                                        <a class="cbt-admin-action cbt-admin-action--delete cbt-exam-row-action cbt-exam-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg(CBT_Admin_Exams_Service::add_exam_list_state_args(['action' => 'cbt_delete_exam', 'id' => (int) $exam['id'], 'cbt_exam_panel' => 'list'], $exam_list_state), admin_url('admin-post.php')), 'cbt_delete_exam_' . (int) $exam['id'])); ?>" onclick="return confirm('Delete this exam?');">Delete</a>
                                     </div>
                                 </td>
                             </tr>
-                            <tr class="cbt-exam-class-row">
+                            <tr class="cbt-admin-drawer-row cbt-exam-class-row">
                                 <td colspan="2"></td>
                                 <td colspan="7">
-                                    <div class="cbt-exam-list-classes-wrap">
+                                    <div class="cbt-admin-drawer-panel cbt-exam-list-classes-wrap">
                                         <?php if (empty($kelas_list)): ?>
                                             <span class="cbt-exam-list-class-badge is-all">Semua Kelas</span>
                                         <?php else: ?>
@@ -1560,6 +1667,14 @@
                     background: #f8fbff;
                     color: #475569;
                 }
+                .cbt-exam-snapshot-empty-state.cbt-admin-empty-state {
+                    display: flex;
+                    padding: 14px 16px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 14px;
+                    background: #ffffff;
+                    color: #334155;
+                }
                 .cbt-exam-snapshot-actions-bar {
                     display: flex;
                     align-items: center;
@@ -2190,6 +2305,76 @@
                     gap: 10px;
                     flex-wrap: wrap;
                 }
+                .cbt-exam-preflight-live-progress {
+                    display: grid;
+                    gap: 8px;
+                    padding: 12px;
+                    border: 1px solid #bfdbfe;
+                    border-radius: 8px;
+                    background: #eff6ff;
+                    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+                }
+                .cbt-exam-preflight-live-progress[hidden] {
+                    display: none;
+                }
+                .cbt-exam-preflight-live-progress-head {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                }
+                .cbt-exam-preflight-live-progress-head strong {
+                    display: block;
+                    color: #0f172a;
+                    font-size: 13px;
+                }
+                .cbt-exam-preflight-live-progress-head p {
+                    margin: 2px 0 0;
+                    color: #334155;
+                    font-size: 12px;
+                    line-height: 1.45;
+                }
+                .cbt-exam-preflight-live-progress-head span {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 24px;
+                    padding: 2px 8px;
+                    border: 1px solid #93c5fd;
+                    border-radius: 999px;
+                    background: #dbeafe;
+                    color: #1d4ed8;
+                    font-size: 11px;
+                    font-weight: 800;
+                    text-transform: uppercase;
+                }
+                .cbt-exam-preflight-live-progress-track {
+                    position: relative;
+                    width: 100%;
+                    height: 10px;
+                    overflow: hidden;
+                    border: 1px solid #bfdbfe;
+                    border-radius: 999px;
+                    background: #dbeafe;
+                }
+                .cbt-exam-preflight-live-progress-track span {
+                    display: block;
+                    width: 0;
+                    height: 100%;
+                    border-radius: inherit;
+                    background: linear-gradient(90deg, #2563eb 0%, #38bdf8 100%);
+                    transition: width 240ms ease;
+                }
+                .cbt-exam-preflight-live-progress-meta {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                    color: #334155;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
                 .cbt-exam-readiness-panel {
                     display: grid;
                     gap: 12px;
@@ -2789,6 +2974,64 @@
                 }
                 .cbt-exam-inline-toggle input[type="checkbox"] {
                     margin: 0;
+                }
+                .cbt-exam-audience-panel {
+                    display: grid;
+                    gap: 12px;
+                    max-width: 760px;
+                    padding: 14px;
+                    border: 1px solid #c7d8ea;
+                    border-radius: 14px;
+                    background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+                    box-sizing: border-box;
+                }
+                .cbt-exam-audience-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 12px;
+                }
+                .cbt-exam-audience-field {
+                    display: grid;
+                    gap: 6px;
+                    min-width: 0;
+                    margin: 0;
+                }
+                .cbt-exam-audience-field span {
+                    color: #334155;
+                    font-size: 12px;
+                    font-weight: 700;
+                    letter-spacing: .02em;
+                    text-transform: uppercase;
+                }
+                .cbt-exam-audience-field select {
+                    width: 100%;
+                    max-width: none;
+                    min-height: 40px;
+                    margin: 0;
+                    border-color: #bfd0e4;
+                    border-radius: 10px;
+                    color: #0f172a;
+                    background-color: #ffffff;
+                }
+                .cbt-exam-audience-toggle {
+                    min-height: 58px;
+                    padding: 10px 14px;
+                    background: #ffffff;
+                }
+                .cbt-exam-audience-toggle span {
+                    display: grid;
+                    gap: 3px;
+                    min-width: 0;
+                }
+                .cbt-exam-audience-toggle strong {
+                    color: #0f172a;
+                    font-size: 13px;
+                    line-height: 1.35;
+                }
+                .cbt-exam-audience-toggle small {
+                    color: #64748b;
+                    font-size: 12px;
+                    line-height: 1.45;
                 }
                 #cbt-exam-details-panel .form-table tr.cbt-exam-detail-row--textarea {
                     align-items: flex-start;
@@ -3976,6 +4219,16 @@
                     font-size: 12px;
                     line-height: 1.6;
                 }
+                .cbt-exam-snapshot-picker-empty.cbt-admin-empty-state {
+                    display: flex;
+                    width: auto;
+                    margin: 8px 0 2px;
+                    padding: 12px;
+                    border: 1px solid #dbe6f1;
+                    border-radius: 14px;
+                    background: #ffffff;
+                    color: #334155;
+                }
                 .cbt-exam-list-toolbar-actions {
                     display: flex;
                     align-items: center;
@@ -4212,25 +4465,27 @@
                     color: #0f172a;
                 }
                 .cbt-exam-row-actions {
-                    display: grid;
-                    grid-template-columns: repeat(2, minmax(84px, 1fr));
-                    gap: 8px;
-                    min-width: 196px;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: stretch;
+                    gap: 6px;
+                    min-width: 0;
+                    max-width: 128px;
                 }
                 .cbt-exam-row-action {
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
-                    min-height: 34px;
-                    padding: 0 12px;
+                    min-height: 28px;
+                    padding: 0 10px;
                     border: 1px solid #d9e2ec;
-                    border-radius: 12px;
+                    border-radius: 999px;
                     background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
                     color: #0f4fa8;
                     text-decoration: none;
-                    font-size: 13px;
-                    font-weight: 600;
-                    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+                    font-size: 11px;
+                    font-weight: 800;
+                    box-shadow: none;
                     transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease, color 120ms ease;
                 }
                 .cbt-exam-row-action:hover,
@@ -4447,10 +4702,13 @@
                         justify-content: flex-start;
                     }
                     .cbt-exam-row-actions {
-                        grid-template-columns: 1fr;
+                        max-width: none;
                         min-width: 0;
                     }
                     .cbt-exam-list-toolbar-grid {
+                        grid-template-columns: 1fr;
+                    }
+                    .cbt-exam-audience-grid {
                         grid-template-columns: 1fr;
                     }
                     #cbt-exam-snapshot-filter-form .cbt-exam-list-toolbar-grid {
@@ -4727,6 +4985,7 @@
                     ? String(builderContextFingerprintInput.value || '')
                     : '';
                 const ajaxNonceInput = document.getElementById('cbt-exam-builder-ajax-nonce');
+                const preflightOperationNonceInput = document.getElementById('cbt-exam-preflight-operation-nonce');
                 const questionModeInput = document.getElementById('cbt-exam-builder-question-mode');
                 const builderNavButtons = Array.from(document.querySelectorAll('.cbt-exam-builder-nav-btn'));
                 const submitExamButtons = Array.from(document.querySelectorAll('.cbt-exam-submit-btn'));
@@ -4774,6 +5033,8 @@
                 let snapshotAutoRefreshTimer = null;
                 let snapshotCleanProgressTimer = null;
                 let bulkProgressTimer = null;
+                let preflightOperationTimer = null;
+                let preflightOperationState = null;
                 let isPageNavigating = false;
                 let questionFilterTimer = 0;
                 let questionCatalogRequestSeq = 0;
@@ -4806,6 +5067,13 @@
                     }
                 }
 
+                function clearPreflightOperationTimer() {
+                    if (preflightOperationTimer) {
+                        window.clearTimeout(preflightOperationTimer);
+                        preflightOperationTimer = null;
+                    }
+                }
+
                 function isSnapshotFilterInteractionActive() {
                     if (!examSnapshotFilterForm) {
                         return false;
@@ -4820,7 +5088,7 @@
                 }
 
                 function isPreflightSnapshotAutoRefreshActive() {
-                    if (!snapshotPanel || snapshotAutoRefreshSeconds <= 0 || isPageNavigating) {
+                    if (!snapshotPanel || snapshotAutoRefreshSeconds <= 0 || isPageNavigating || preflightOperationState) {
                         return false;
                     }
 
@@ -4860,6 +5128,273 @@
                     }
 
                     clearSnapshotAutoRefreshTimer();
+                }
+
+                function getPreflightOperationNonce() {
+                    return preflightOperationNonceInput ? String(preflightOperationNonceInput.value || '') : '';
+                }
+
+                function getPreflightProgressPanel(form) {
+                    if (form instanceof HTMLFormElement) {
+                        const container = form.closest('.cbt-exam-preflight-panel, .cbt-exam-snapshot-section');
+                        const scopedPanel = container ? container.querySelector('[data-cbt-preflight-progress-panel]') : null;
+                        if (scopedPanel) {
+                            return scopedPanel;
+                        }
+                    }
+
+                    return document.querySelector('[data-cbt-preflight-progress-panel]');
+                }
+
+                function setPreflightButtonsDisabled(isDisabled) {
+                    document.querySelectorAll('[data-cbt-preflight-operation-form] button[type="submit"]').forEach((button) => {
+                        if (!(button instanceof HTMLButtonElement)) {
+                            return;
+                        }
+                        if (isDisabled) {
+                            button.setAttribute('data-cbt-preflight-was-disabled', button.disabled ? '1' : '0');
+                            button.disabled = true;
+                            return;
+                        }
+
+                        if (button.getAttribute('data-cbt-preflight-was-disabled') === '0') {
+                            button.disabled = false;
+                        }
+                        button.removeAttribute('data-cbt-preflight-was-disabled');
+                    });
+                }
+
+                function updatePreflightProgressPanel(panel, payload, title) {
+                    if (!panel) {
+                        return;
+                    }
+
+                    const percent = Math.max(0, Math.min(100, Number(payload && payload.progress_percent) || 0));
+                    const titleEl = panel.querySelector('[data-cbt-preflight-progress-title]');
+                    const messageEl = panel.querySelector('[data-cbt-preflight-progress-message]');
+                    const statusEl = panel.querySelector('[data-cbt-preflight-progress-status]');
+                    const fillEl = panel.querySelector('[data-cbt-preflight-progress-fill]');
+                    const percentEl = panel.querySelector('[data-cbt-preflight-progress-percent]');
+                    const detailEl = panel.querySelector('[data-cbt-preflight-progress-detail]');
+                    const trackEl = panel.querySelector('.cbt-exam-preflight-live-progress-track');
+
+                    panel.hidden = false;
+                    panel.setAttribute('aria-busy', payload && payload.complete ? 'false' : 'true');
+                    if (titleEl && title) {
+                        titleEl.textContent = title;
+                    }
+                    if (messageEl) {
+                        messageEl.textContent = String((payload && payload.message) || 'Progress operasi diperbarui.');
+                    }
+                    if (statusEl) {
+                        statusEl.textContent = String((payload && payload.status_label) || 'Berjalan');
+                    }
+                    if (fillEl) {
+                        fillEl.style.width = percent.toFixed(1) + '%';
+                    }
+                    if (percentEl) {
+                        percentEl.textContent = percent.toFixed(1) + '%';
+                    }
+                    if (detailEl) {
+                        detailEl.textContent = String((payload && payload.detail) || '');
+                    }
+                    if (trackEl) {
+                        trackEl.setAttribute('aria-valuenow', percent.toFixed(1));
+                    }
+                }
+
+                function buildPreflightRequestBody(state, nextOperation) {
+                    const body = new FormData();
+                    body.set('action', 'cbt_exam_preflight_operation');
+                    body.set('operation', nextOperation || state.nextOperation || state.operation || '');
+                    body.set('nonce', getPreflightOperationNonce());
+                    if (state.token) {
+                        body.set('token', state.token);
+                    }
+                    if (Array.isArray(state.examIds)) {
+                        state.examIds.forEach((examId) => {
+                            body.append('exam_ids[]', String(examId));
+                        });
+                        if (state.examIds.length === 1) {
+                            body.set('exam_id', String(state.examIds[0]));
+                        }
+                    }
+                    return body;
+                }
+
+                function collectPreflightExamIds(formData) {
+                    const ids = [];
+                    ['exam_ids[]', 'exam_ids', 'cbt_exam_snapshot_exam_ids[]', 'cbt_exam_snapshot_exam_ids'].forEach((key) => {
+                        formData.getAll(key).forEach((value) => {
+                            const parsed = Number.parseInt(String(value || ''), 10);
+                            if (Number.isInteger(parsed) && parsed > 0 && !ids.includes(parsed)) {
+                                ids.push(parsed);
+                            }
+                        });
+                    });
+                    const examId = Number.parseInt(String(formData.get('exam_id') || formData.get('cbt_exam_snapshot_exam_id') || ''), 10);
+                    if (Number.isInteger(examId) && examId > 0 && !ids.includes(examId)) {
+                        ids.push(examId);
+                    }
+                    return ids;
+                }
+
+                async function sendPreflightOperation(body) {
+                    if (typeof window.fetch !== 'function' || typeof window.ajaxurl === 'undefined') {
+                        throw new Error('ajax_unavailable');
+                    }
+
+                    const response = await window.fetch(window.ajaxurl, {
+                        method: 'POST',
+                        body,
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    });
+
+                    let result = null;
+                    try {
+                        result = await response.json();
+                    } catch (error) {
+                        result = null;
+                    }
+
+                    if (!response.ok || !result || !result.data) {
+                        const message = result && result.data && result.data.message
+                            ? String(result.data.message)
+                            : 'Respons progress tidak valid.';
+                        throw new Error(message);
+                    }
+
+                    return result.data;
+                }
+
+                function schedulePreflightOperationPoll(delay = 850) {
+                    clearPreflightOperationTimer();
+                    if (!preflightOperationState) {
+                        setPreflightButtonsDisabled(false);
+                        handleSnapshotAutoRefreshState();
+                        return;
+                    }
+
+                    preflightOperationTimer = window.setTimeout(runPreflightOperationPoll, Math.max(350, Number(delay) || 850));
+                }
+
+                async function runPreflightOperationPoll() {
+                    if (!preflightOperationState) {
+                        return;
+                    }
+
+                    try {
+                        const body = buildPreflightRequestBody(preflightOperationState, preflightOperationState.nextOperation);
+                        const payload = await sendPreflightOperation(body);
+                        preflightOperationState.token = String(payload.token || preflightOperationState.token || '');
+                        preflightOperationState.nextOperation = String(payload.next_operation || preflightOperationState.nextOperation || '');
+                        preflightOperationState.retryCount = 0;
+                        updatePreflightProgressPanel(preflightOperationState.panel, payload, preflightOperationState.title);
+
+                        if (payload.complete) {
+                            const redirectUrl = String(payload.redirect_url || '');
+                            preflightOperationState = null;
+                            setPreflightButtonsDisabled(false);
+                            clearPreflightOperationTimer();
+                            if (redirectUrl !== '') {
+                                window.setTimeout(() => {
+                                    window.location.assign(redirectUrl);
+                                }, 650);
+                            }
+                            return;
+                        }
+
+                        schedulePreflightOperationPoll(850);
+                    } catch (error) {
+                        preflightOperationState.retryCount = (preflightOperationState.retryCount || 0) + 1;
+                        updatePreflightProgressPanel(preflightOperationState.panel, {
+                            status_label: 'Tersendat',
+                            message: preflightOperationState.retryCount <= 3
+                                ? 'Koneksi admin tersendat. Mencoba ulang...'
+                                : 'Polling progress terhenti. Reload halaman ini untuk melihat status terbaru.',
+                            detail: error && error.message ? String(error.message) : 'Gagal mengambil progress.',
+                            progress_percent: 0,
+                        }, preflightOperationState.title);
+
+                        if (preflightOperationState.retryCount <= 3) {
+                            schedulePreflightOperationPoll(1500);
+                            return;
+                        }
+
+                        preflightOperationState = null;
+                        setPreflightButtonsDisabled(false);
+                        handleSnapshotAutoRefreshState();
+                    }
+                }
+
+                async function handlePreflightOperationSubmit(form, event) {
+                    if (!(form instanceof HTMLFormElement)) {
+                        return;
+                    }
+                    if (event.defaultPrevented) {
+                        return;
+                    }
+                    const operation = String(form.getAttribute('data-cbt-preflight-operation-form') || '').trim();
+                    const nonce = getPreflightOperationNonce();
+                    if (operation === '' || nonce === '' || typeof window.ajaxurl === 'undefined' || typeof window.fetch !== 'function') {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    clearSnapshotAutoRefreshTimer();
+                    clearPreflightOperationTimer();
+
+                    const panel = getPreflightProgressPanel(form);
+                    const title = String(form.getAttribute('data-cbt-preflight-progress-title') || 'Progress operasi');
+                    const formData = new FormData(form);
+                    formData.set('action', 'cbt_exam_preflight_operation');
+                    formData.set('operation', operation);
+                    formData.set('nonce', nonce);
+                    preflightOperationState = {
+                        operation,
+                        nextOperation: operation,
+                        token: '',
+                        examIds: collectPreflightExamIds(formData),
+                        panel,
+                        title,
+                        retryCount: 0,
+                    };
+                    setPreflightButtonsDisabled(true);
+                    updatePreflightProgressPanel(panel, {
+                        status_label: 'Memulai',
+                        message: 'Mengirim operasi ke server...',
+                        detail: 'Progress akan diperbarui otomatis.',
+                        progress_percent: 0,
+                    }, title);
+
+                    try {
+                        const payload = await sendPreflightOperation(formData);
+                        preflightOperationState.token = String(payload.token || '');
+                        preflightOperationState.nextOperation = String(payload.next_operation || (
+                            operation === 'start_rebuild_cohort' ? 'status_rebuild_cohort'
+                                : (operation === 'start_redis_reset' ? 'tick_redis_reset' : 'tick_preflight')
+                        ));
+                        updatePreflightProgressPanel(panel, payload, title);
+                        if (payload.complete) {
+                            preflightOperationState = null;
+                            setPreflightButtonsDisabled(false);
+                            return;
+                        }
+                        schedulePreflightOperationPoll(700);
+                    } catch (error) {
+                        updatePreflightProgressPanel(panel, {
+                            status_label: 'Gagal',
+                            message: error && error.message ? String(error.message) : 'Operasi gagal dimulai.',
+                            detail: 'Form fallback akan dipakai bila AJAX tidak tersedia.',
+                            progress_percent: 0,
+                        }, title);
+                        preflightOperationState = null;
+                        setPreflightButtonsDisabled(false);
+                    }
                 }
 
                 function getQuestionCatalogPanel() {
@@ -5174,20 +5709,36 @@
                     updateExamSnapshotPickerSummary();
                 }
 
-                document.addEventListener('submit', (event) => {
-                    if (!(event.target instanceof HTMLFormElement)) {
-                        return;
-                    }
+	                document.addEventListener('submit', (event) => {
+	                    if (!(event.target instanceof HTMLFormElement)) {
+	                        return;
+	                    }
 
-                    isPageNavigating = true;
-                    clearSnapshotAutoRefreshTimer();
-                }, true);
+	                    if (event.target.matches('[data-cbt-preflight-operation-form]')) {
+	                        return;
+	                    }
+
+	                    isPageNavigating = true;
+	                    clearSnapshotAutoRefreshTimer();
+	                }, true);
+
+	                document.addEventListener('submit', (event) => {
+	                    if (!(event.target instanceof HTMLFormElement)) {
+	                        return;
+	                    }
+	                    if (!event.target.matches('[data-cbt-preflight-operation-form]')) {
+	                        return;
+	                    }
+
+	                    handlePreflightOperationSubmit(event.target, event);
+	                });
 
                 window.addEventListener('beforeunload', () => {
-                    isPageNavigating = true;
-                    clearSnapshotAutoRefreshTimer();
-                    clearSnapshotCleanProgressTimer();
-                });
+	                    isPageNavigating = true;
+	                    clearSnapshotAutoRefreshTimer();
+	                    clearSnapshotCleanProgressTimer();
+	                    clearPreflightOperationTimer();
+	                });
 
                 document.addEventListener('visibilitychange', () => {
                     handleSnapshotAutoRefreshState();

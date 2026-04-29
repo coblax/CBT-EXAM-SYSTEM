@@ -557,6 +557,54 @@ export function createExamNavigationManager(deps) {
         resetQuestionPrefetchIdleTimer();
     }
 
+    function focusFinishReviewIssue(action) {
+        var reviewFilter = action === 'finish-review-doubtful'
+            ? navQuestionFilterDoubtful
+            : navQuestionFilterUnanswered;
+        var reviewEntries = getNavigationQuestionEntries(reviewFilter);
+        var targetIndex = reviewEntries.length ? clampQuestionIndex(reviewEntries[0].index) : -1;
+        state.finishConfirmOpen = false;
+        state.finishConfirmSummary = null;
+        state.navQuestionFilter = reviewFilter;
+        clearMessages();
+
+        if (targetIndex < 0) {
+            render('finish-review:empty-filter', {
+                filter: reviewFilter,
+                targetIndex: -1
+            }, {
+                immediate: true
+            });
+            return;
+        }
+
+        var targetQuestionId = getQuestionIdAtIndex(targetIndex);
+        if (targetIndex === state.currentIndex && isQuestionPayloadLoaded(targetQuestionId)) {
+            state.navigationRefreshing = false;
+            state.questionRegionRefreshing = false;
+            setActiveQuestionWindowForIndex(targetIndex, questionWindowSize);
+            persistCurrentAttemptUiStateLocally();
+            scheduleAttemptUiStateSync(attemptUiStateNavigationSyncDelayMs);
+            render('finish-review:focus-current', {
+                filter: reviewFilter,
+                targetIndex: targetIndex
+            }, {
+                immediate: true
+            });
+            prefetchNextQuestionBatch();
+            resetQuestionPrefetchIdleTimer();
+            return;
+        }
+
+        render('finish-review:focus-filter', {
+            filter: reviewFilter,
+            targetIndex: targetIndex
+        }, {
+            immediate: true
+        });
+        goToQuestion(targetIndex);
+    }
+
     function shouldIgnoreArrowQuestionNavigation() {
         var activeElement = documentRef.activeElement;
         if (!(activeElement instanceof HTMLElement)) {
@@ -580,21 +628,7 @@ export function createExamNavigationManager(deps) {
 
     function handleAction(action, actionNode) {
         if (action === 'finish-review-unanswered' || action === 'finish-review-doubtful') {
-            var reviewFilter = action === 'finish-review-doubtful'
-                ? navQuestionFilterDoubtful
-                : navQuestionFilterUnanswered;
-            var reviewEntries = getNavigationQuestionEntries(reviewFilter);
-            state.finishConfirmOpen = false;
-            state.finishConfirmSummary = null;
-            state.navQuestionFilter = reviewFilter;
-            clearMessages();
-            render('finish-review:focus-filter', {
-                filter: reviewFilter,
-                targetIndex: reviewEntries.length ? reviewEntries[0].index : -1
-            });
-            if (reviewEntries.length) {
-                goToQuestion(reviewEntries[0].index);
-            }
+            focusFinishReviewIssue(action);
             return true;
         }
 

@@ -45,7 +45,7 @@ if ($selected_job_id === '') {
             <?php wp_nonce_field('cbt_clear_load_test_jobs'); ?>
             <input type="hidden" name="action" value="cbt_clear_load_test_jobs" />
             <input type="hidden" name="cbt_maintenance_tab" value="load" />
-            <button type="submit" class="button button-secondary">Hapus Semua Histori</button>
+            <button type="submit" class="button button-secondary cbt-admin-btn--danger">Hapus Semua Histori</button>
         </form>
     </div>
 </div>
@@ -254,7 +254,7 @@ if ($selected_job_id === '') {
                         <input type="hidden" name="action" value="cbt_cancel_load_test" />
                         <input type="hidden" name="cbt_maintenance_tab" value="load" />
                         <input type="hidden" name="job_id" value="<?php echo esc_attr((string) ($job['id'] ?? '')); ?>" />
-                        <button type="submit" class="button button-secondary">Cancel Job</button>
+                        <button type="submit" class="button button-secondary cbt-admin-btn--warning">Cancel Job</button>
                     </form>
                 <?php endif; ?>
 
@@ -284,7 +284,7 @@ if ($selected_job_id === '') {
                         <input type="hidden" name="action" value="cbt_delete_load_test_job" />
                         <input type="hidden" name="cbt_maintenance_tab" value="load" />
                         <input type="hidden" name="job_id" value="<?php echo esc_attr((string) ($job['id'] ?? '')); ?>" />
-                        <button type="submit" class="button button-secondary">Hapus Hasil</button>
+                        <button type="submit" class="button button-secondary cbt-admin-btn--danger">Hapus Hasil</button>
                     </form>
                 <?php endif; ?>
             </div>

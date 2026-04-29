@@ -106,7 +106,16 @@ final class CBT_Admin_Exams_Page
                         </summary>
                         <div class="cbt-exam-snapshot-picker-menu">
                             <?php if (empty($exam_snapshot_exam_options)): ?>
-                                <div class="cbt-exam-snapshot-picker-empty">Belum ada exam yang tersedia untuk dipilih.</div>
+                                <?php
+                                echo CBT_Admin_UI_Helper::render_empty_state([
+                                    'title' => 'Belum ada exam tersedia',
+                                    'message' => 'Buat atau publish exam terlebih dahulu agar bisa dipilih untuk snapshot/preflight.',
+                                    'action_label' => 'Buat Exam',
+                                    'action_url' => admin_url('admin.php?page=cbt-exams'),
+                                    'action_class' => 'button button-primary',
+                                    'class' => 'cbt-exam-snapshot-picker-empty',
+                                ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                                ?>
                             <?php else: ?>
                                 <?php foreach ($exam_snapshot_exam_options as $exam_snapshot_exam_option): ?>
                                     <?php
@@ -337,7 +346,7 @@ final class CBT_Admin_Exams_Page
                         <?php self::render_snapshot_preview_page_hidden_fields($exam_snapshot_preview_pages); ?>
                         <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                         <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                        <button type="submit" class="button" <?php echo empty($student_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Bersihkan Semua Snapshot Exam</button>
+                        <button type="submit" class="button cbt-admin-btn--warning" <?php echo empty($student_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Bersihkan Semua Snapshot Exam</button>
                     </form>
                 <?php elseif ($is_profile_mode): ?>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-bulk-form">
@@ -360,7 +369,7 @@ final class CBT_Admin_Exams_Page
                         <?php self::render_snapshot_preview_page_hidden_fields($exam_snapshot_preview_pages); ?>
                         <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                         <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                        <button type="submit" class="button" <?php echo empty($student_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Bersihkan Semua Profil</button>
+                        <button type="submit" class="button cbt-admin-btn--warning" <?php echo empty($student_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Bersihkan Semua Profil</button>
                     </form>
                 <?php else: ?>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-bulk-form">
@@ -383,7 +392,7 @@ final class CBT_Admin_Exams_Page
                         <?php self::render_snapshot_preview_page_hidden_fields($exam_snapshot_preview_pages); ?>
                         <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                         <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                        <button type="submit" class="button" <?php echo empty($student_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Bersihkan Semua Login Snapshot</button>
+                        <button type="submit" class="button cbt-admin-btn--warning" <?php echo empty($student_snapshot_rows) ? 'disabled="disabled"' : ''; ?>>Bersihkan Semua Login Snapshot</button>
                     </form>
                 <?php endif; ?>
             </div>
@@ -533,6 +542,28 @@ final class CBT_Admin_Exams_Page
             <?php if ($meta !== ''): ?>
                 <span class="cbt-exam-preflight-stage-meta"><?php echo esc_html($meta); ?></span>
             <?php endif; ?>
+        </div>
+        <?php
+    }
+
+    private static function render_preflight_operation_progress_panel(string $label = 'Progress operasi'): void
+    {
+        ?>
+        <div class="cbt-exam-preflight-live-progress" data-cbt-preflight-progress-panel hidden aria-live="polite" aria-busy="false">
+            <div class="cbt-exam-preflight-live-progress-head">
+                <div>
+                    <strong data-cbt-preflight-progress-title><?php echo esc_html($label); ?></strong>
+                    <p data-cbt-preflight-progress-message>Menunggu operasi.</p>
+                </div>
+                <span data-cbt-preflight-progress-status>Siaga</span>
+            </div>
+            <div class="cbt-exam-preflight-live-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <span data-cbt-preflight-progress-fill style="width:0%"></span>
+            </div>
+            <div class="cbt-exam-preflight-live-progress-meta">
+                <span data-cbt-preflight-progress-percent>0%</span>
+                <span data-cbt-preflight-progress-detail>Belum ada progress aktif.</span>
+            </div>
         </div>
         <?php
     }
@@ -731,7 +762,7 @@ final class CBT_Admin_Exams_Page
                     <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                     <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                     <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                    <button type="submit" class="button" <?php echo $queue_active ? '' : 'disabled="disabled"'; ?>>Hentikan Queue</button>
+                    <button type="submit" class="button cbt-admin-btn--warning" <?php echo $queue_active ? '' : 'disabled="disabled"'; ?>>Hentikan Queue</button>
                 </form>
             </div>
 
@@ -813,6 +844,8 @@ final class CBT_Admin_Exams_Page
                 action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
                 class="cbt-exam-snapshot-row-form"
                 data-cbt-bulk-preflight-form="1"
+                data-cbt-preflight-operation-form="start_bulk_preflight"
+                data-cbt-preflight-progress-title="Bulk One-Click Pra Ujian"
                 data-cbt-bulk-selected-total="<?php echo esc_attr((string) $selected_total); ?>"
                 data-cbt-bulk-queued-total="<?php echo esc_attr((string) $queued_total); ?>"
                 data-cbt-bulk-completed-total="<?php echo esc_attr((string) $completed_count); ?>"
@@ -836,9 +869,9 @@ final class CBT_Admin_Exams_Page
                 <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                 <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                 <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                <button type="submit" class="button" <?php echo $can_clean_bulk ? '' : 'disabled="disabled"'; ?>>Bersihkan Bulk Snapshot</button>
+                <button type="submit" class="button cbt-admin-btn--warning" <?php echo $can_clean_bulk ? '' : 'disabled="disabled"'; ?>>Bersihkan Bulk Snapshot</button>
             </form>
-            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form" onsubmit="return confirm('Tindakan ini akan membersihkan semua key Redis CBT lintas exam, termasuk snapshot soal, start, submission context, availability, profile, login, runtime, dan gate queue. Jawaban, nilai, dan attempt di database tetap aman. Pastikan tidak ada siswa yang sedang aktif mengerjakan ujian. Lanjutkan?');">
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form" data-cbt-preflight-operation-form="start_redis_reset" data-cbt-preflight-progress-title="Bersihkan Redis CBT" onsubmit="return confirm('Tindakan ini akan membersihkan semua key Redis CBT lintas exam, termasuk snapshot soal, start, submission context, availability, profile, login, runtime, dan gate queue. Jawaban, nilai, dan attempt di database tetap aman. Pastikan tidak ada siswa yang sedang aktif mengerjakan ujian. Lanjutkan?');">
                 <?php wp_nonce_field('cbt_hard_reset_cbt_redis'); ?>
                 <input type="hidden" name="action" value="cbt_hard_reset_cbt_redis" />
                 <?php self::render_snapshot_tab_hidden_field(CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT); ?>
@@ -847,13 +880,20 @@ final class CBT_Admin_Exams_Page
                 <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                 <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                 <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                <button type="submit" class="button button-secondary">Bersihkan Semua Redis CBT</button>
+                <button type="submit" class="button button-secondary cbt-admin-btn--danger">Bersihkan Semua Redis CBT</button>
             </form>
         </div>
+        <?php self::render_preflight_operation_progress_panel('Progress Bulk One-Click'); ?>
         <p class="cbt-exam-snapshot-note"><?php echo esc_html('Mode bulk dibatasi maksimal ' . $limit_max_exams . ' exam per run. Jika Anda perlu blocker, warning, dan kontrol detail, fokuskan satu exam dari daftar di bawah. Gunakan Bersihkan Semua Redis CBT saat Anda butuh reset runtime harian antar beberapa exam.'); ?></p>
 
         <?php if (empty($rows)): ?>
-            <div class="cbt-exam-snapshot-empty-state">Belum ada exam terpilih untuk Bulk One-Click.</div>
+            <?php
+            echo CBT_Admin_UI_Helper::render_empty_state([
+                'title' => 'Belum ada exam terpilih',
+                'message' => 'Pilih satu atau beberapa exam pada dropdown di atas untuk menjalankan Bulk One-Click.',
+                'class' => 'cbt-exam-snapshot-empty-state',
+            ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+            ?>
         <?php else: ?>
             <div class="cbt-exam-snapshot-monitor-list">
                 <?php foreach ($rows as $row): ?>
@@ -1118,6 +1158,9 @@ final class CBT_Admin_Exams_Page
         ];
         ?>
         <div class="cbt-exam-snapshot-shell">
+            <?php if ($exam_snapshot_tab === CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT): ?>
+                <input type="hidden" id="cbt-exam-preflight-operation-nonce" value="<?php echo esc_attr(wp_create_nonce('cbt_exam_preflight_operation')); ?>" />
+            <?php endif; ?>
             <div class="cbt-exam-snapshot-subtabs" role="tablist" aria-label="Subtab snapshot">
                 <?php foreach ($snapshot_tabs as $snapshot_tab_key => $snapshot_tab_meta): ?>
                     <a
@@ -1292,9 +1335,15 @@ final class CBT_Admin_Exams_Page
                             'Bulk warm akan menyinkronkan snapshot exam dan start snapshot untuk exam yang sedang dipilih.'
                         ); ?>
                         <?php if (empty($exam_snapshot_rows)): ?>
-                            <div class="cbt-exam-snapshot-empty-state">
-                                <?php echo esc_html($has_selected_exam_snapshot ? 'Belum ada exam yang bisa diperiksa snapshot soal-nya.' : 'Pilih satu atau beberapa exam pada dropdown di atas untuk memantau snapshot soal.'); ?>
-                            </div>
+                            <?php
+                            echo CBT_Admin_UI_Helper::render_empty_state([
+                                'title' => $has_selected_exam_snapshot ? 'Belum ada snapshot soal' : 'Pilih exam untuk snapshot soal',
+                                'message' => $has_selected_exam_snapshot
+                                    ? 'Belum ada exam yang bisa diperiksa snapshot soal-nya.'
+                                    : 'Pilih satu atau beberapa exam pada dropdown di atas untuk memantau snapshot soal.',
+                                'class' => 'cbt-exam-snapshot-empty-state',
+                            ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                            ?>
                         <?php else: ?>
                             <div class="cbt-exam-snapshot-monitor-list">
                                 <?php foreach ($exam_snapshot_rows as $row): ?>
@@ -1324,9 +1373,15 @@ final class CBT_Admin_Exams_Page
                             'Aksi warm dan clear di tab ini tetap menyinkronkan snapshot soal dan start snapshot secara bersamaan.'
                         ); ?>
                         <?php if (empty($exam_snapshot_rows)): ?>
-                            <div class="cbt-exam-snapshot-empty-state">
-                                <?php echo esc_html($has_selected_exam_snapshot ? 'Belum ada exam yang bisa diperiksa start snapshot-nya.' : 'Pilih satu atau beberapa exam pada dropdown di atas untuk memantau start snapshot.'); ?>
-                            </div>
+                            <?php
+                            echo CBT_Admin_UI_Helper::render_empty_state([
+                                'title' => $has_selected_exam_snapshot ? 'Belum ada start snapshot' : 'Pilih exam untuk start snapshot',
+                                'message' => $has_selected_exam_snapshot
+                                    ? 'Belum ada exam yang bisa diperiksa start snapshot-nya.'
+                                    : 'Pilih satu atau beberapa exam pada dropdown di atas untuk memantau start snapshot.',
+                                'class' => 'cbt-exam-snapshot-empty-state',
+                            ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                            ?>
                         <?php else: ?>
                             <div class="cbt-exam-snapshot-monitor-list">
                                 <?php foreach ($exam_snapshot_rows as $row): ?>
@@ -1356,9 +1411,15 @@ final class CBT_Admin_Exams_Page
                             'Bulk action di tab ini menyiapkan atau membersihkan submission context untuk semua soal aktif milik exam yang sedang dipilih.'
                         ); ?>
                         <?php if (empty($exam_snapshot_rows)): ?>
-                            <div class="cbt-exam-snapshot-empty-state">
-                                <?php echo esc_html($has_selected_exam_snapshot ? 'Belum ada exam yang bisa diperiksa submission context-nya.' : 'Pilih satu atau beberapa exam pada dropdown di atas untuk memantau submission context.'); ?>
-                            </div>
+                            <?php
+                            echo CBT_Admin_UI_Helper::render_empty_state([
+                                'title' => $has_selected_exam_snapshot ? 'Belum ada submission context' : 'Pilih exam untuk submission context',
+                                'message' => $has_selected_exam_snapshot
+                                    ? 'Belum ada exam yang bisa diperiksa submission context-nya.'
+                                    : 'Pilih satu atau beberapa exam pada dropdown di atas untuk memantau submission context.',
+                                'class' => 'cbt-exam-snapshot-empty-state',
+                            ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                            ?>
                         <?php else: ?>
                             <div class="cbt-exam-snapshot-monitor-list">
                                 <?php foreach ($exam_snapshot_rows as $row): ?>
@@ -1382,9 +1443,15 @@ final class CBT_Admin_Exams_Page
                             </div>
                         </div>
                         <?php if (empty($exam_snapshot_rows)): ?>
-                            <div class="cbt-exam-snapshot-empty-state">
-                                <?php echo esc_html($has_selected_exam_snapshot ? 'Belum ada exam yang bisa dipantau session runtime-nya.' : 'Pilih satu exam pada dropdown di atas untuk memantau session runtime.'); ?>
-                            </div>
+                            <?php
+                            echo CBT_Admin_UI_Helper::render_empty_state([
+                                'title' => $has_selected_exam_snapshot ? 'Belum ada session runtime' : 'Pilih exam untuk session runtime',
+                                'message' => $has_selected_exam_snapshot
+                                    ? 'Belum ada exam yang bisa dipantau session runtime-nya.'
+                                    : 'Pilih satu exam pada dropdown di atas untuk memantau session runtime.',
+                                'class' => 'cbt-exam-snapshot-empty-state',
+                            ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                            ?>
                         <?php else: ?>
                             <div class="cbt-exam-snapshot-monitor-list">
                                 <?php foreach ($exam_snapshot_rows as $row): ?>
@@ -1443,9 +1510,16 @@ final class CBT_Admin_Exams_Page
                                 </thead>
                                 <tbody>
                                     <?php if (empty($student_snapshot_rows)): ?>
-                                        <tr>
-                                            <td colspan="3"><?php echo !empty($student_snapshot_active_filters) ? 'Tidak ada siswa yang cocok dengan filter saat ini.' : 'Belum ada siswa yang bisa dipantau snapshot exam-nya.'; ?></td>
-                                        </tr>
+                                        <?php
+                                        echo CBT_Admin_UI_Helper::render_table_empty_state(3, [
+                                            'title' => !empty($student_snapshot_active_filters) ? 'Tidak ada siswa sesuai filter' : 'Belum ada siswa snapshot exam',
+                                            'message' => !empty($student_snapshot_active_filters)
+                                                ? 'Tidak ada siswa yang cocok dengan filter snapshot saat ini.'
+                                                : 'Siswa yang bisa dipantau snapshot exam-nya akan tampil setelah data peserta tersedia.',
+                                            'action_label' => !empty($student_snapshot_active_filters) ? 'Reset Filter' : '',
+                                            'action_url' => !empty($student_snapshot_active_filters) ? admin_url('admin.php?page=cbt-exams&cbt_exam_panel=snapshot') : '',
+                                        ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                                        ?>
                                     <?php else: ?>
                                         <?php foreach ($student_snapshot_rows as $student_snapshot_row): ?>
                                             <?php self::render_student_snapshot_row($student_snapshot_row, $exam_list_state, $exam_snapshot_filter_state, $exam_snapshot_preview_pages, $student_snapshot_filter_state, $exam_readiness_page, CBT_Admin_Exams_Service::SNAPSHOT_TAB_EXAM_MONITOR); ?>
@@ -1492,9 +1566,16 @@ final class CBT_Admin_Exams_Page
                                 </thead>
                                 <tbody>
                                     <?php if (empty($student_snapshot_rows)): ?>
-                                        <tr>
-                                            <td colspan="3"><?php echo !empty($student_snapshot_active_filters) ? 'Tidak ada siswa yang cocok dengan filter saat ini.' : 'Belum ada siswa yang bisa dipantau snapshot profilnya.'; ?></td>
-                                        </tr>
+                                        <?php
+                                        echo CBT_Admin_UI_Helper::render_table_empty_state(3, [
+                                            'title' => !empty($student_snapshot_active_filters) ? 'Tidak ada siswa sesuai filter' : 'Belum ada siswa snapshot profil',
+                                            'message' => !empty($student_snapshot_active_filters)
+                                                ? 'Tidak ada siswa yang cocok dengan filter snapshot saat ini.'
+                                                : 'Siswa yang bisa dipantau snapshot profilnya akan tampil setelah data peserta tersedia.',
+                                            'action_label' => !empty($student_snapshot_active_filters) ? 'Reset Filter' : '',
+                                            'action_url' => !empty($student_snapshot_active_filters) ? admin_url('admin.php?page=cbt-exams&cbt_exam_panel=snapshot') : '',
+                                        ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                                        ?>
                                     <?php else: ?>
                                         <?php foreach ($student_snapshot_rows as $student_snapshot_row): ?>
                                             <?php self::render_student_snapshot_row($student_snapshot_row, $exam_list_state, $exam_snapshot_filter_state, $exam_snapshot_preview_pages, $student_snapshot_filter_state, $exam_readiness_page, CBT_Admin_Exams_Service::SNAPSHOT_TAB_PROFILE_MONITOR); ?>
@@ -1542,9 +1623,16 @@ final class CBT_Admin_Exams_Page
                                 </thead>
                                 <tbody>
                                     <?php if (empty($student_snapshot_rows)): ?>
-                                        <tr>
-                                            <td colspan="3"><?php echo !empty($student_snapshot_active_filters) ? 'Tidak ada siswa yang cocok dengan filter saat ini.' : 'Belum ada siswa yang bisa dipantau login snapshot-nya.'; ?></td>
-                                        </tr>
+                                        <?php
+                                        echo CBT_Admin_UI_Helper::render_table_empty_state(3, [
+                                            'title' => !empty($student_snapshot_active_filters) ? 'Tidak ada siswa sesuai filter' : 'Belum ada siswa snapshot login',
+                                            'message' => !empty($student_snapshot_active_filters)
+                                                ? 'Tidak ada siswa yang cocok dengan filter snapshot saat ini.'
+                                                : 'Siswa yang bisa dipantau login snapshot-nya akan tampil setelah data peserta tersedia.',
+                                            'action_label' => !empty($student_snapshot_active_filters) ? 'Reset Filter' : '',
+                                            'action_url' => !empty($student_snapshot_active_filters) ? admin_url('admin.php?page=cbt-exams&cbt_exam_panel=snapshot') : '',
+                                        ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                                        ?>
                                     <?php else: ?>
                                         <?php foreach ($student_snapshot_rows as $student_snapshot_row): ?>
                                             <?php self::render_student_snapshot_row($student_snapshot_row, $exam_list_state, $exam_snapshot_filter_state, $exam_snapshot_preview_pages, $student_snapshot_filter_state, $exam_readiness_page, CBT_Admin_Exams_Service::SNAPSHOT_TAB_LOGIN_MONITOR); ?>
@@ -1580,9 +1668,15 @@ final class CBT_Admin_Exams_Page
                         <?php if (!empty($bulk_preflight['selected_exam_total']) && (int) $bulk_preflight['selected_exam_total'] > 1): ?>
                             <?php self::render_bulk_preflight_panel($bulk_preflight, $exam_list_state, $exam_snapshot_filter_state, $exam_snapshot_preview_pages, $student_snapshot_filter_state, $exam_readiness_page); ?>
                         <?php elseif (empty($exam_snapshot_rows)): ?>
-                            <div class="cbt-exam-snapshot-empty-state">
-                                <?php echo esc_html($has_selected_exam_snapshot ? 'Belum ada exam yang bisa diperiksa kesiapan pra-ujiannya.' : 'Pilih satu atau beberapa exam pada dropdown di atas untuk menjalankan One-Click Pra Ujian.'); ?>
-                            </div>
+                            <?php
+                            echo CBT_Admin_UI_Helper::render_empty_state([
+                                'title' => $has_selected_exam_snapshot ? 'Belum ada preflight' : 'Pilih exam untuk One-Click',
+                                'message' => $has_selected_exam_snapshot
+                                    ? 'Belum ada exam yang bisa diperiksa kesiapan pra-ujiannya.'
+                                    : 'Pilih satu atau beberapa exam pada dropdown di atas untuk menjalankan One-Click Pra Ujian.',
+                                'class' => 'cbt-exam-snapshot-empty-state',
+                            ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                            ?>
                         <?php else: ?>
                             <div class="cbt-exam-snapshot-monitor-list">
                                 <?php foreach ($exam_snapshot_rows as $row): ?>
@@ -2141,12 +2235,16 @@ final class CBT_Admin_Exams_Page
                     $preview_pages,
                     $readiness_problem_page
                 ); ?>
-                <?php self::render_session_runtime_active_filters($student_snapshot_active_filters, $session_runtime_attempt_total); ?>
-                <?php if (empty($session_runtime_rows)): ?>
-                    <div class="cbt-exam-snapshot-empty-state">
-                        <?php echo esc_html($session_runtime_empty_message); ?>
-                    </div>
-                <?php else: ?>
+              <?php self::render_session_runtime_active_filters($student_snapshot_active_filters, $session_runtime_attempt_total); ?>
+              <?php if (empty($session_runtime_rows)): ?>
+                  <?php
+                  echo CBT_Admin_UI_Helper::render_empty_state([
+                      'title' => 'Belum ada session runtime',
+                      'message' => $session_runtime_empty_message,
+                      'class' => 'cbt-exam-snapshot-empty-state',
+                  ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                  ?>
+              <?php else: ?>
                     <div class="cbt-exam-list-table-wrap">
                         <table class="widefat striped cbt-exam-runtime-monitor-table">
                             <thead>
@@ -2304,7 +2402,7 @@ final class CBT_Admin_Exams_Page
                         <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                         <?php self::render_exam_readiness_page_hidden_field($readiness_problem_page); ?>
                         <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                        <button type="submit" class="button">Bersihkan Snapshot Exam</button>
+                        <button type="submit" class="button cbt-admin-btn--warning">Bersihkan Snapshot Exam</button>
                     </form>
                 </div>
                 <details class="cbt-exam-snapshot-preview-dropdown" data-cbt-exam-snapshot-preview-dropdown="<?php echo esc_attr((string) $exam_id); ?>" <?php echo $preview_is_expanded ? 'open="open"' : ''; ?>>
@@ -2426,7 +2524,7 @@ final class CBT_Admin_Exams_Page
                         <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                         <?php self::render_exam_readiness_page_hidden_field($readiness_problem_page); ?>
                         <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                        <button type="submit" class="button">Bersihkan Snapshot Exam + Start</button>
+                        <button type="submit" class="button cbt-admin-btn--warning">Bersihkan Snapshot Exam + Start</button>
                     </form>
                 </div>
             <?php elseif ($mode === CBT_Admin_Exams_Service::SNAPSHOT_TAB_SUBMISSION_CONTEXT_MONITOR): ?>
@@ -2530,7 +2628,7 @@ final class CBT_Admin_Exams_Page
                         <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                         <?php self::render_exam_readiness_page_hidden_field($readiness_problem_page); ?>
                         <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                        <button type="submit" class="button">Bersihkan Submission Context</button>
+                        <button type="submit" class="button cbt-admin-btn--warning">Bersihkan Submission Context</button>
                     </form>
                 </div>
             <?php else: ?>
@@ -2699,7 +2797,7 @@ final class CBT_Admin_Exams_Page
                     </details>
 
                     <div class="cbt-exam-preflight-actions">
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form" data-cbt-preflight-operation-form="start_single_preflight" data-cbt-preflight-progress-title="One-Click Pra Ujian">
                             <?php wp_nonce_field('cbt_start_exam_preflight'); ?>
                             <input type="hidden" name="action" value="cbt_start_exam_preflight" />
                             <input type="hidden" name="exam_id" value="<?php echo esc_attr((string) $exam_id); ?>" />
@@ -2721,9 +2819,9 @@ final class CBT_Admin_Exams_Page
                             <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                             <?php self::render_exam_readiness_page_hidden_field($readiness_problem_page); ?>
                             <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                            <button type="submit" class="button">Bersihkan Semua Snapshot</button>
+                            <button type="submit" class="button cbt-admin-btn--warning">Bersihkan Semua Snapshot</button>
                         </form>
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form" onsubmit="return confirm('Rebuild Student Cohort Index berjalan bertahap di background dan aman untuk cohort besar. Lanjutkan?');">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form" data-cbt-preflight-operation-form="start_rebuild_cohort" data-cbt-preflight-progress-title="Rebuild Student Cohort Index" onsubmit="return confirm('Rebuild Student Cohort Index berjalan bertahap di background dan aman untuk cohort besar. Lanjutkan?');">
                             <?php wp_nonce_field('cbt_rebuild_student_cohort_index'); ?>
                             <input type="hidden" name="action" value="cbt_rebuild_student_cohort_index" />
                             <?php self::render_snapshot_tab_hidden_field(CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT); ?>
@@ -2732,9 +2830,9 @@ final class CBT_Admin_Exams_Page
                             <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                             <?php self::render_exam_readiness_page_hidden_field($readiness_problem_page); ?>
                             <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                            <button type="submit" class="button button-secondary" <?php echo $student_cohort_rebuild_active ? 'disabled="disabled"' : ''; ?>>Rebuild Student Cohort Index</button>
+                            <button type="submit" class="button button-secondary cbt-admin-btn--warning" <?php echo $student_cohort_rebuild_active ? 'disabled="disabled"' : ''; ?>>Rebuild Student Cohort Index</button>
                         </form>
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form" onsubmit="return confirm('Tindakan ini akan membersihkan semua key Redis CBT untuk seluruh exam: snapshot soal, start, submission context, profile, login, availability, session runtime, gate queue, dan state one-click/auto-warm. Jawaban dan nilai di database tidak dihapus, tetapi siswa aktif bisa terdampak. Gunakan hanya saat tidak ada ujian yang sedang berjalan. Lanjutkan?');">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-exam-snapshot-row-form" data-cbt-preflight-operation-form="start_redis_reset" data-cbt-preflight-progress-title="Bersihkan Redis CBT" onsubmit="return confirm('Tindakan ini akan membersihkan semua key Redis CBT untuk seluruh exam: snapshot soal, start, submission context, profile, login, availability, session runtime, gate queue, dan state one-click/auto-warm. Jawaban dan nilai di database tidak dihapus, tetapi siswa aktif bisa terdampak. Gunakan hanya saat tidak ada ujian yang sedang berjalan. Lanjutkan?');">
                             <?php wp_nonce_field('cbt_hard_reset_cbt_redis'); ?>
                             <input type="hidden" name="action" value="cbt_hard_reset_cbt_redis" />
                             <?php self::render_snapshot_tab_hidden_field(CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT); ?>
@@ -2743,9 +2841,10 @@ final class CBT_Admin_Exams_Page
                             <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                             <?php self::render_exam_readiness_page_hidden_field($readiness_problem_page); ?>
                             <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                            <button type="submit" class="button button-secondary">Bersihkan Semua Redis CBT</button>
+                            <button type="submit" class="button button-secondary cbt-admin-btn--danger">Bersihkan Semua Redis CBT</button>
                         </form>
                     </div>
+                    <?php self::render_preflight_operation_progress_panel('Progress One-Click Pra Ujian'); ?>
                     <p class="cbt-exam-snapshot-note">Gunakan <strong>Bersihkan Semua Redis CBT</strong> saat Anda butuh reset runtime harian antar beberapa exam. Tombol ini bersifat global untuk plugin CBT, bukan hanya exam yang sedang dipilih.</p>
 
                     <?php if ($readiness_problem_total > 0): ?>
@@ -2858,7 +2957,7 @@ final class CBT_Admin_Exams_Page
                             <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                             <?php self::render_exam_readiness_page_hidden_field($readiness_problem_page); ?>
                             <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                            <button type="submit" class="button" <?php echo $auto_warm_can_stop ? '' : 'disabled="disabled"'; ?>>Hentikan Auto-Warm Availability</button>
+                            <button type="submit" class="button cbt-admin-btn--warning" <?php echo $auto_warm_can_stop ? '' : 'disabled="disabled"'; ?>>Hentikan Auto-Warm Availability</button>
                         </form>
                     </div>
                 </div>
@@ -3057,7 +3156,7 @@ final class CBT_Admin_Exams_Page
                             <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                             <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                             <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                            <button type="submit" class="button">Bersihkan Profil</button>
+                            <button type="submit" class="button cbt-admin-btn--warning">Bersihkan Profil</button>
                         </form>
                     </div>
                 </td>
@@ -3159,7 +3258,7 @@ final class CBT_Admin_Exams_Page
                             <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                             <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                             <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                            <button type="submit" class="button">Bersihkan Login Snapshot</button>
+                            <button type="submit" class="button cbt-admin-btn--warning">Bersihkan Login Snapshot</button>
                         </form>
                     </div>
                 </td>
@@ -3268,7 +3367,7 @@ final class CBT_Admin_Exams_Page
                             <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                             <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                             <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
-                            <button type="submit" class="button">Bersihkan Snapshot Exam</button>
+                            <button type="submit" class="button cbt-admin-btn--warning">Bersihkan Snapshot Exam</button>
                         </form>
                     </div>
                 </td>

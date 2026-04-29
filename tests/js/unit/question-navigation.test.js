@@ -382,6 +382,41 @@ describe('createExamNavigationManager', function () {
         expect(fixture.state.currentIndex).toBe(2);
     });
 
+    it('restores the exam view when the first finish review target is already active', function () {
+        var fixture = createFixture({
+            state: {
+                answers: {},
+                answeredQuestionLookup: {},
+                currentIndex: 0,
+                finishConfirmOpen: true,
+                finishConfirmSummary: { totalQuestions: 3 }
+            }
+        });
+        var button = document.createElement('button');
+
+        expect(fixture.navigationManager.handleAction('finish-review-unanswered', button)).toBe(true);
+
+        expect(fixture.state.finishConfirmOpen).toBe(false);
+        expect(fixture.state.finishConfirmSummary).toBeNull();
+        expect(fixture.state.navQuestionFilter).toBe('unanswered');
+        expect(fixture.state.currentIndex).toBe(0);
+        expect(fixture.state.navigationRefreshing).toBe(false);
+        expect(fixture.state.questionRegionRefreshing).toBe(false);
+        expect(fixture.calls.render.some(function (call) {
+            return call.reason === 'finish-review:focus-current';
+        })).toBe(true);
+        expect(fixture.calls.renderExamPartial.some(function (call) {
+            return call.reason === 'finish-review:focus-current';
+        })).toBe(false);
+        expect(fixture.calls.setActiveQuestionWindowForIndex).toEqual([
+            {
+                index: 0,
+                size: 2
+            }
+        ]);
+        expect(fixture.calls.scheduleAttemptUiStateSync).toEqual([150]);
+    });
+
     it('shows a navigation transition before flushing the previous answer when the target payload is already loaded', async function () {
         var fixture = createFixture();
 

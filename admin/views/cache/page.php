@@ -405,7 +405,7 @@
                         <?php wp_nonce_field('cbt_cache_action'); ?>
                         <input type="hidden" name="action" value="cbt_cache_action" />
                         <input type="hidden" name="operation" value="rollback_redis" />
-                        <button type="submit" class="button button-secondary" onclick="return confirm('Batalkan integrasi Redis CBT dari WordPress?');">Batalkan Redis Sekali Klik</button>
+                        <button type="submit" class="button button-secondary cbt-admin-btn--danger" onclick="return confirm('Batalkan integrasi Redis CBT dari WordPress?');">Batalkan Redis Sekali Klik</button>
                     </form>
                 </div>
             <?php endif; ?>
@@ -656,7 +656,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     <p style="margin:0 0 8px;">Naikkan versi semua namespace cache CBT tanpa menyentuh cache plugin/site lain.</p>
                     <p style="margin:0 0 8px;"><strong>Kapan dipakai:</strong> setelah perubahan besar pada exam, bank soal, token, atau saat sulit menentukan cache mana yang stale.</p>
                     <p style="margin:0 0 12px;"><strong>Dampak:</strong> paling luas. Request berikutnya akan membangun ulang hampir semua cache CBT.</p>
-                    <button type="submit" class="button button-primary">Invalidate Semua Namespace CBT</button>
+                    <button type="submit" class="button button-primary cbt-admin-btn--warning">Invalidate Semua Namespace CBT</button>
                 </form>
 
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
@@ -703,7 +703,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     <p style="margin:0 0 8px;"><strong>Dampak:</strong> memanaskan context submit/scoring objektif untuk semua soal aktif milik exam yang dipilih.</p>
                     <p style="margin:0 0 6px;"><label for="cbt-cache-submission-context-exam-id">Exam ID</label></p>
                     <input type="number" min="1" id="cbt-cache-submission-context-exam-id" name="exam_id" class="small-text" placeholder="contoh: 12" required />
-                    <p><button type="submit" class="button button-primary">Warm Submission Context</button></p>
+                    <p><button type="submit" class="button button-primary cbt-admin-btn--success">Warm Submission Context</button></p>
                 </form>
 
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
@@ -715,7 +715,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     <p style="margin:0 0 8px;"><strong>Dampak:</strong> menghapus pointer dan payload submission context untuk semua soal aktif di exam yang dipilih.</p>
                     <p style="margin:0 0 6px;"><label for="cbt-cache-submission-context-clear-exam-id">Exam ID</label></p>
                     <input type="number" min="1" id="cbt-cache-submission-context-clear-exam-id" name="exam_id" class="small-text" placeholder="contoh: 12" required />
-                    <p><button type="submit" class="button button-secondary">Clear Submission Context</button></p>
+                    <p><button type="submit" class="button button-secondary cbt-admin-btn--warning">Clear Submission Context</button></p>
                 </form>
 
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
@@ -727,7 +727,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     <p style="margin:0 0 8px;"><strong>Dampak:</strong> menulis snapshot login global per siswa, termasuk hash password snapshot dan payload profil yang dipakai response login.</p>
                     <p style="margin:0 0 6px;"><label for="cbt-cache-login-exam-id">Exam ID</label></p>
                     <input type="number" min="1" id="cbt-cache-login-exam-id" name="exam_id" class="small-text" placeholder="contoh: 12" required />
-                    <p><button type="submit" class="button button-primary">Warm Login Snapshot</button></p>
+                    <p><button type="submit" class="button button-primary cbt-admin-btn--success">Warm Login Snapshot</button></p>
                 </form>
 
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
@@ -786,7 +786,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     <p style="margin:0 0 8px;">Hapus semua preferences dan attempt UI state CBT yang tersimpan di namespace plugin.</p>
                     <p style="margin:0 0 8px;"><strong>Kapan dipakai:</strong> setelah ubah UI/frontend CBT dan Anda ingin semua browser membangun state tampilan baru dari nol.</p>
                     <p style="margin:0 0 12px;"><strong>Dampak:</strong> preference tampilan, posisi navigasi, atau state UI akan di-reset. Ini tidak menghapus hasil ujian di database.</p>
-                    <p><button type="submit" class="button button-secondary">Clear Semua UI State CBT</button></p>
+                    <p><button type="submit" class="button button-secondary cbt-admin-btn--warning">Clear Semua UI State CBT</button></p>
                 </form>
 
 		                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-cache-tool-card">
@@ -798,7 +798,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 	                    <p style="margin:0 0 8px;"><strong>Dampak:</strong> hanya state UI untuk satu attempt. Ini lebih aman daripada membersihkan semua UI state.</p>
 	                    <p style="margin:0 0 6px;"><label for="cbt-cache-clear-attempt-id">Attempt ID</label></p>
 	                    <input type="number" min="1" id="cbt-cache-clear-attempt-id" name="attempt_id" class="small-text" placeholder="contoh: 381" required />
-	                    <p><button type="submit" class="button button-secondary">Clear UI State by Attempt</button></p>
+	                    <p><button type="submit" class="button button-secondary cbt-admin-btn--warning">Clear UI State by Attempt</button></p>
 	                </form>
 	            </div>
 	
@@ -823,7 +823,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                             <?php wp_nonce_field('cbt_cache_action'); ?>
                             <input type="hidden" name="action" value="cbt_cache_action" />
                             <input type="hidden" name="operation" value="prune_old_namespaces" />
-                            <button type="submit" class="button button-secondary">Prune Namespace Lama</button>
+                            <button type="submit" class="button button-secondary cbt-admin-btn--warning">Prune Namespace Lama</button>
                         </form>
                     </div>
                 </div>
@@ -899,9 +899,18 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                     <th>Last Invalidated</th>
                 </tr>
                 </thead>
-                <tbody>
+	                <tbody>
 	                <?php if (empty($visible_namespaces)): ?>
-	                    <tr><td colspan="3"><?php echo $namespace_filter !== '' ? esc_html('Tidak ada namespace yang cocok dengan filter saat ini.') : esc_html('Belum ada metadata namespace.'); ?></td></tr>
+	                    <?php
+                        echo CBT_Admin_UI_Helper::render_table_empty_state(3, [
+                            'title' => $namespace_filter !== '' ? 'Tidak ada namespace sesuai filter' : 'Belum ada metadata namespace',
+                            'message' => $namespace_filter !== ''
+                                ? 'Tidak ada namespace cache yang cocok dengan filter saat ini.'
+                                : 'Metadata namespace akan muncul setelah cache CBT mulai dipakai atau di-invalidate.',
+                            'action_label' => $namespace_filter !== '' ? 'Reset Filter' : '',
+                            'action_url' => $namespace_filter !== '' ? admin_url('admin.php?page=cbt-cache') : '',
+                        ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                        ?>
 	                <?php else: ?>
 	                    <?php foreach ($visible_namespaces as $namespace): ?>
 	                        <tr>
@@ -963,7 +972,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                                 <?php wp_nonce_field('cbt_cache_action'); ?>
                                 <input type="hidden" name="action" value="cbt_cache_action" />
                                 <input type="hidden" name="operation" value="release_stale_locks" />
-                                <button type="submit" class="button button-secondary">Release Semua Stale Lock</button>
+                                <button type="submit" class="button button-secondary cbt-admin-btn--warning">Release Semua Stale Lock</button>
                             </form>
                         <?php endif; ?>
                     </div>
@@ -999,15 +1008,17 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
 	                </thead>
 	                <tbody>
 	                <?php if (empty($visible_locks)): ?>
-                        <tr>
-                            <td colspan="5">
-                                <?php if (!$show_stale_locks && $stale_lock_total > 0): ?>
-                                    Tidak ada lock aktif di registry. <strong><?php echo esc_html((string) $stale_lock_total); ?></strong> stale lock sedang disembunyikan.
-                                <?php else: ?>
-                                    Tidak ada lock CBT aktif di registry.
-                                <?php endif; ?>
-                            </td>
-                        </tr>
+                        <?php
+                        echo CBT_Admin_UI_Helper::render_table_empty_state(5, [
+                            'title' => (!$show_stale_locks && $stale_lock_total > 0) ? 'Tidak ada lock aktif' : 'Belum ada lock CBT aktif',
+                            'message' => (!$show_stale_locks && $stale_lock_total > 0)
+                                ? sprintf('%d stale lock sedang disembunyikan. Aktifkan opsi tampilkan stale lock jika perlu diperiksa.', $stale_lock_total)
+                                : 'Registry lock kosong. Ini normal saat tidak ada proses CBT yang sedang memakai lock.',
+                            'action_label' => (!$show_stale_locks && $stale_lock_total > 0) ? 'Tampilkan Stale Lock' : '',
+                            'action_url' => (!$show_stale_locks && $stale_lock_total > 0) ? admin_url('admin.php?page=cbt-cache&cbt_lock_show_stale=1') : '',
+                            'tone' => (!$show_stale_locks && $stale_lock_total > 0) ? 'warning' : 'neutral',
+                        ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                        ?>
 	                <?php else: ?>
 	                    <?php foreach ($visible_locks as $lock): ?>
 	                        <tr>
@@ -1021,7 +1032,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                                     <input type="hidden" name="action" value="cbt_cache_action" />
                                     <input type="hidden" name="operation" value="release_lock" />
                                     <input type="hidden" name="lock_key" value="<?php echo esc_attr((string) ($lock['lock_key'] ?? '')); ?>" />
-                                    <button type="submit" class="button button-small">Release</button>
+                                        <button type="submit" class="button button-small cbt-admin-btn--warning">Release</button>
                                 </form>
                             </td>
                         </tr>
@@ -1075,7 +1086,12 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                 </thead>
                 <tbody>
                 <?php if (empty($ui_states)): ?>
-                    <tr><td colspan="6">Belum ada UI state tersimpan.</td></tr>
+                    <?php
+                    echo CBT_Admin_UI_Helper::render_table_empty_state(6, [
+                        'title' => 'Belum ada UI state tersimpan',
+                        'message' => 'Preference UI dan state attempt akan muncul setelah siswa atau admin memakai fitur yang menyimpan state.',
+                    ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                    ?>
                 <?php else: ?>
                     <?php foreach ($ui_states as $ui_state): ?>
                         <?php
@@ -1098,7 +1114,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                                         <input type="hidden" name="action" value="cbt_cache_action" />
                                         <input type="hidden" name="operation" value="clear_ui_preferences" />
                                         <input type="hidden" name="user_id" value="<?php echo esc_attr((string) $entry_user_id); ?>" />
-                                        <button type="submit" class="button button-small">Clear</button>
+                                    <button type="submit" class="button button-small cbt-admin-btn--warning">Clear</button>
                                     </form>
                                 <?php elseif ($entry_type === 'attempt_state' && $entry_attempt_id > 0): ?>
                                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -1106,7 +1122,7 @@ sudo systemctl restart nginx || sudo systemctl restart apache2'
                                         <input type="hidden" name="action" value="cbt_cache_action" />
                                         <input type="hidden" name="operation" value="clear_attempt_ui_state" />
                                         <input type="hidden" name="attempt_id" value="<?php echo esc_attr((string) $entry_attempt_id); ?>" />
-                                        <button type="submit" class="button button-small">Clear</button>
+                                    <button type="submit" class="button button-small cbt-admin-btn--warning">Clear</button>
                                     </form>
                                 <?php else: ?>
                                     -

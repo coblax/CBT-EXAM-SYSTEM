@@ -1252,23 +1252,24 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-questions-row-actions {
                         display: flex;
-                        align-items: center;
-                        gap: 8px;
-                        flex-wrap: wrap;
+                        flex-direction: column;
+                        align-items: stretch;
+                        gap: 6px;
+                        max-width: 128px;
                     }
                     .cbt-questions-row-action {
                         display: inline-flex;
                         align-items: center;
                         justify-content: center;
-                        min-height: 34px;
-                        padding: 0 12px;
+                        min-height: 28px;
+                        padding: 0 10px;
                         border: 1px solid #d9e2ec;
-                        border-radius: 12px;
+                        border-radius: 999px;
                         background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
                         text-decoration: none;
-                        font-size: 13px;
-                        font-weight: 600;
-                        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+                        font-size: 11px;
+                        font-weight: 800;
+                        box-shadow: none;
                         transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease, color 120ms ease;
                     }
                     .cbt-questions-row-action:hover,
@@ -1984,7 +1985,7 @@ if (!defined('ABSPATH')) {
                                         TUTUP REPORT INI
                                     </a>
                                     <a
-                                        class="button button-secondary"
+                                        class="button button-secondary cbt-admin-btn--danger"
                                         href="<?php echo esc_url($question_import_batch_delete_all_url); ?>"
                                         onclick="return confirm('Hapus semua soal hasil import batch ini?');"
                                     >
@@ -2122,7 +2123,7 @@ if (!defined('ABSPATH')) {
                                 </a>
                                 <?php if (!empty($question_import_batch_created_question_ids)): ?>
                                     <a
-                                        class="button button-secondary"
+                                        class="button button-secondary cbt-admin-btn--danger"
                                         href="<?php echo esc_url($question_import_batch_delete_all_url); ?>"
                                         onclick="return confirm('Hapus semua soal hasil import batch ini?');"
                                     >
@@ -2250,7 +2251,7 @@ if (!defined('ABSPATH')) {
                 <?php if (!empty($questions)): ?>
                 <p class="cbt-questions-list-actions" style="margin: 0 0 8px;">
                     <button type="button" class="button button-secondary" id="cbt-view-selected-questions">Lihat Selected</button>
-                    <button type="submit" class="button button-secondary">Delete Selected</button>
+                    <button type="submit" class="button button-secondary cbt-admin-btn--danger">Delete Selected</button>
                 </p>
                 <?php endif; ?>
                 <div class="cbt-questions-table-wrap">
@@ -2269,7 +2270,18 @@ if (!defined('ABSPATH')) {
                     </thead>
                     <tbody>
                     <?php if (!$questions): ?>
-                        <tr><td colspan="8"><?php echo esc_html($question_import_batch_active ? 'Batch hasil import ini sudah kosong atau belum memiliki soal sukses.' : 'No questions found.'); ?></td></tr>
+                        <?php
+                        $question_has_filters = $list_filter_type !== '' || $list_filter_source_kind !== '' || $list_filter_subject_id > 0 || $question_import_batch_active;
+                        echo CBT_Admin_UI_Helper::render_table_empty_state(8, [
+                            'title' => $question_import_batch_active ? 'Belum ada soal sukses dari batch ini' : ($question_has_filters ? 'Tidak ada soal sesuai filter' : 'Belum ada soal'),
+                            'message' => $question_import_batch_active
+                                ? 'Batch import ini kosong atau semua baris soal gagal. Cek hasil import atau upload ulang.'
+                                : ($question_has_filters ? 'Tidak ada soal yang cocok dengan filter saat ini. Reset filter untuk melihat semua soal.' : 'Tambah soal manual atau import bank soal agar bisa dipakai di exam.'),
+                            'action_label' => $question_has_filters ? 'Reset Filter' : 'Tambah Soal',
+                            'action_url' => $question_has_filters ? $question_reset_url : admin_url('admin.php?page=' . rawurlencode($current_page_slug)),
+                            'action_class' => $question_has_filters ? 'button button-secondary cbt-admin-btn--secondary' : 'button button-primary',
+                        ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                        ?>
                     <?php else: ?>
                         <?php foreach ($questions as $question): ?>
                             <?php
@@ -2360,19 +2372,19 @@ if (!defined('ABSPATH')) {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <div class="cbt-questions-row-actions">
-                                        <a class="cbt-questions-row-action cbt-questions-row-action--view" data-cbt-questions-inline-view="1" href="<?php echo esc_url($question_is_view_open ? $question_hide_view_url : $question_view_url); ?>"><?php echo esc_html($question_is_view_open ? 'Hide' : 'Lihat'); ?></a>
+                                    <div class="cbt-admin-row-actions cbt-questions-row-actions">
+                                        <a class="cbt-admin-action cbt-admin-action--view cbt-questions-row-action cbt-questions-row-action--view" data-cbt-questions-inline-view="1" href="<?php echo esc_url($question_is_view_open ? $question_hide_view_url : $question_view_url); ?>"><?php echo esc_html($question_is_view_open ? 'Hide' : 'Lihat'); ?></a>
                                         <?php if (!$question_import_batch_active): ?>
-                                        <a class="cbt-questions-row-action cbt-questions-row-action--edit" href="<?php echo esc_url($question_edit_url); ?>"><?php echo esc_html($question_edit_label); ?></a>
+                                        <a class="cbt-admin-action cbt-admin-action--edit cbt-questions-row-action cbt-questions-row-action--edit" href="<?php echo esc_url($question_edit_url); ?>"><?php echo esc_html($question_edit_label); ?></a>
                                         <?php endif; ?>
-                                        <a class="cbt-questions-row-action cbt-questions-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg($question_delete_args, admin_url('admin-post.php')), 'cbt_delete_question_' . (int) $question['id'])); ?>" onclick="return confirm('Delete this question?');">Delete</a>
+                                        <a class="cbt-admin-action cbt-admin-action--delete cbt-questions-row-action cbt-questions-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg($question_delete_args, admin_url('admin-post.php')), 'cbt_delete_question_' . (int) $question['id'])); ?>" onclick="return confirm('Delete this question?');">Delete</a>
                                     </div>
                                 </td>
                             </tr>
                             <?php if ($question_is_reference_open): ?>
-                                <tr class="cbt-question-reference-row">
+                                <tr class="cbt-admin-drawer-row cbt-question-reference-row">
                                     <td colspan="8">
-                                        <div class="cbt-question-reference-panel">
+                                        <div class="cbt-admin-drawer-panel cbt-question-reference-panel">
                                             <div class="cbt-question-reference-panel-head">
                                                 <div>
                                                     <strong>Referenced By</strong>
@@ -2451,9 +2463,9 @@ if (!defined('ABSPATH')) {
                                     ]
                                 );
                                 ?>
-                                <tr class="cbt-question-inline-preview-row" id="cbt-question-preview-<?php echo (int) $view_question['id']; ?>">
+                                <tr class="cbt-admin-drawer-row cbt-question-inline-preview-row" id="cbt-question-preview-<?php echo (int) $view_question['id']; ?>">
                                     <td colspan="8">
-                                        <div class="cbt-question-inline-preview">
+                                        <div class="cbt-admin-drawer-panel cbt-question-inline-preview">
                                             <div class="cbt-question-inline-preview-head">
                                                 <div>
                                                     <span class="cbt-question-inline-preview-kicker">Preview Soal</span>

@@ -78,7 +78,7 @@ trait CBT_REST_Exam_Questions_Routes
 
         $exam = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, duration_minutes, randomize_questions, randomize_options, status, starts_at, ends_at, target_kelas
+                "SELECT id, subject_id, duration_minutes, randomize_questions, randomize_options, status, starts_at, ends_at, target_kelas, target_agama, target_jenis_kelamin, restrict_to_subject_choice
                  FROM {$exam_table}
                  WHERE id = %d",
                 $exam_id
@@ -139,14 +139,14 @@ trait CBT_REST_Exam_Questions_Routes
                 );
             }
 
-            $student_kelas = self::get_live_user_kelas($user_id);
-            if (!self::exam_allows_student_class($exam, $student_kelas)) {
+            $audience = self::evaluate_student_exam_audience($exam, $user_id, self::get_live_user_profile($user_id));
+            if (empty($audience['allowed'])) {
                 return new WP_Error(
                     'forbidden',
-                    'Exam tidak tersedia untuk kelas akun Anda.',
+                    'Exam tidak tersedia untuk akun Anda.',
                     [
                         'status' => 403,
-                        'opening_reason' => 'forbidden',
+                        'opening_reason' => sanitize_key((string) ($audience['reason'] ?? 'forbidden')),
                         'suggestion' => 'Kembali ke daftar exam untuk memilih exam lain yang sesuai.',
                     ]
                 );

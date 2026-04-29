@@ -81,6 +81,7 @@ class CBT_Admin
         add_action('wp_ajax_cbt_clear_exam_builder_selection', [CBT_Admin_Exams_Actions::class, 'handle_clear_exam_builder_selection']);
         add_action('wp_ajax_cbt_start_exam_save_progress', [CBT_Admin_Exams_Actions::class, 'handle_start_exam_save_progress']);
         add_action('wp_ajax_cbt_continue_exam_save_progress', [CBT_Admin_Exams_Actions::class, 'handle_continue_exam_save_progress']);
+        add_action('wp_ajax_cbt_exam_preflight_operation', [CBT_Admin_Exams_Actions::class, 'handle_preflight_operation_ajax']);
         add_action('admin_post_cbt_cache_action', [CBT_Admin_Cache_Actions::class, 'handle_cache_action']);
         add_action('admin_post_cbt_check_update_now', [CBT_Admin_Update_Actions::class, 'handle_check_update_now']);
         add_action('admin_post_cbt_install_update_now', [CBT_Admin_Update_Actions::class, 'handle_install_update_now']);
@@ -124,12 +125,19 @@ class CBT_Admin
         add_action('admin_post_cbt_print_exam_cards', [CBT_Admin_Exam_Cards_Actions::class, 'handle_print_exam_cards']);
 
         add_action('admin_post_cbt_import_users', [CBT_Admin_Users_Actions::class, 'handle_import_users']);
+        add_action('admin_post_cbt_preview_import_users', [CBT_Admin_Users_Actions::class, 'handle_preview_import_users']);
+        add_action('admin_post_cbt_run_previewed_import_users', [CBT_Admin_Users_Actions::class, 'handle_run_previewed_import_users']);
         add_action('admin_post_cbt_create_user_manual', [CBT_Admin_Users_Actions::class, 'handle_create_user_manual']);
         add_action('admin_post_cbt_update_user_manual', [CBT_Admin_Users_Actions::class, 'handle_update_user_manual']);
         add_action('admin_post_cbt_delete_user_manual', [CBT_Admin_Users_Actions::class, 'handle_delete_user_manual']);
         add_action('admin_post_cbt_bulk_delete_users', [CBT_Admin_Users_Actions::class, 'handle_bulk_delete_users']);
         add_action('admin_post_cbt_download_user_template', [CBT_Admin_Users_Actions::class, 'handle_download_user_template']);
         add_action('admin_post_cbt_download_user_template_xlsx', [CBT_Admin_Users_Actions::class, 'handle_download_user_template_xlsx']);
+        add_action('admin_post_cbt_import_student_subject_choices', [CBT_Admin_Users_Actions::class, 'handle_import_student_subject_choices']);
+        add_action('admin_post_cbt_preview_import_student_subject_choices', [CBT_Admin_Users_Actions::class, 'handle_preview_import_student_subject_choices']);
+        add_action('admin_post_cbt_run_previewed_student_subject_choices', [CBT_Admin_Users_Actions::class, 'handle_run_previewed_student_subject_choices']);
+        add_action('admin_post_cbt_download_student_subject_choices_template', [CBT_Admin_Users_Actions::class, 'handle_download_student_subject_choices_template']);
+        add_action('admin_post_cbt_download_student_subject_choices_template_xlsx', [CBT_Admin_Users_Actions::class, 'handle_download_student_subject_choices_template_xlsx']);
     }
 
     public static function render_exams_page(): void

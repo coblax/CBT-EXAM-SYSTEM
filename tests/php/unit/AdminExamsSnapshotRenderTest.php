@@ -24,6 +24,12 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Monitor Snapshot Profile', $html);
         self::assertStringContainsString('Monitor Snapshot Login', $html);
         self::assertStringContainsString('Jalankan One-Click Pra Ujian', $html);
+        self::assertStringContainsString('id="cbt-exam-preflight-operation-nonce"', $html);
+        self::assertStringContainsString('data-cbt-preflight-operation-form="start_single_preflight"', $html);
+        self::assertStringContainsString('data-cbt-preflight-operation-form="start_rebuild_cohort"', $html);
+        self::assertStringContainsString('data-cbt-preflight-operation-form="start_redis_reset"', $html);
+        self::assertStringContainsString('data-cbt-preflight-progress-panel', $html);
+        self::assertStringContainsString('Progress One-Click Pra Ujian', $html);
         self::assertStringContainsString('Bersihkan Semua Snapshot', $html);
         self::assertStringContainsString('Bersihkan Semua Redis CBT', $html);
         self::assertStringContainsString('Adaptive Load', $html);
@@ -797,6 +803,9 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Bulk One-Click Pra Ujian', $html);
         self::assertStringContainsString('Jalankan Bulk One-Click', $html);
         self::assertStringContainsString('data-cbt-bulk-preflight-form="1"', $html);
+        self::assertStringContainsString('data-cbt-preflight-operation-form="start_bulk_preflight"', $html);
+        self::assertStringContainsString('data-cbt-preflight-progress-panel', $html);
+        self::assertStringContainsString('Progress Bulk One-Click', $html);
         self::assertStringContainsString('Bersihkan Bulk Snapshot', $html);
         self::assertStringContainsString('name="action" value="cbt_clean_bulk_exam_snapshots"', $html);
         self::assertStringContainsString('dijalankan berurutan', $html);

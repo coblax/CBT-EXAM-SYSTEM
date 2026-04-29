@@ -1102,6 +1102,14 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             background: #f8fafc;
             color: #475569;
         }
+        .cbt-analytics-empty.cbt-admin-empty-state {
+            display: flex;
+            padding: 14px 16px;
+            border: 1px solid #dbe6f1;
+            border-radius: 14px;
+            background: #ffffff;
+            color: #334155;
+        }
         .cbt-analytics-toolbar {
             display: flex;
             flex-wrap: wrap;
@@ -1346,16 +1354,40 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                         </div>
                     <?php endif; ?>
                 <?php else: ?>
-                    <div class="cbt-analytics-empty">Belum ada exam yang bisa ditampilkan pada scope filter saat ini.</div>
+                    <?php
+                    echo CBT_Admin_UI_Helper::render_empty_state([
+                        'title' => 'Belum ada exam pada scope ini',
+                        'message' => 'Belum ada exam yang bisa ditampilkan pada scope filter saat ini. Reset filter atau buat exam baru.',
+                        'action_label' => 'Reset Filter',
+                        'action_url' => $analytics_reset_url,
+                        'action_class' => 'button button-secondary cbt-admin-btn--secondary',
+                        'class' => 'cbt-analytics-empty',
+                    ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                    ?>
                 <?php endif; ?>
             </section>
         </section>
 
         <section class="cbt-analytics-tab-panel<?php echo $current_tab === 'exam' ? ' is-active' : ''; ?>" data-analytics-panel="exam">
             <?php if (!$has_selected_exam): ?>
-                <div class="cbt-analytics-empty">Pilih satu exam terlebih dahulu untuk melihat analitik detail per exam.</div>
+                <?php
+                echo CBT_Admin_UI_Helper::render_empty_state([
+                    'title' => 'Pilih exam terlebih dahulu',
+                    'message' => 'Pilih satu exam untuk melihat analitik detail, distribusi nilai, dan kualitas butir.',
+                    'action_label' => 'Buka Overview',
+                    'action_url' => add_query_arg(['page' => 'cbt-analytics', 'cbt_analytics_tab' => 'overview'], admin_url('admin.php')),
+                    'action_class' => 'button button-secondary cbt-admin-btn--secondary',
+                    'class' => 'cbt-analytics-empty',
+                ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                ?>
             <?php elseif (empty($has_run_analytics)): ?>
-                <div class="cbt-analytics-empty">Pilih exam yang diinginkan lalu tekan tombol <strong>Analytic</strong> untuk memulai analytics detail.</div>
+                <?php
+                echo CBT_Admin_UI_Helper::render_empty_state([
+                    'title' => 'Analytics belum dijalankan',
+                    'message' => 'Pilih exam yang diinginkan lalu tekan tombol Analytic untuk memulai analytics detail.',
+                    'class' => 'cbt-analytics-empty',
+                ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                ?>
             <?php else: ?>
                 <section class="cbt-analytics-panel">
                     <div class="cbt-analytics-panel-header">
@@ -1571,7 +1603,13 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                                 <?php endforeach; ?>
                             </div>
                         <?php else: ?>
-                            <div class="cbt-analytics-empty">Belum ada distribusi nilai karena belum ada completed attempt.</div>
+                            <?php
+                            echo CBT_Admin_UI_Helper::render_empty_state([
+                                'title' => 'Belum ada distribusi nilai',
+                                'message' => 'Distribusi nilai akan muncul setelah ada completed attempt pada exam terpilih.',
+                                'class' => 'cbt-analytics-empty',
+                            ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                            ?>
                         <?php endif; ?>
                     </section>
 
@@ -1625,7 +1663,13 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                             </table>
                         </div>
                     <?php else: ?>
-                        <div class="cbt-analytics-empty">Belum ada data kelas untuk exam terpilih.</div>
+                        <?php
+                        echo CBT_Admin_UI_Helper::render_empty_state([
+                            'title' => 'Belum ada data kelas',
+                            'message' => 'Ringkasan per kelas akan muncul setelah ada completed attempt dengan data kelas peserta.',
+                            'class' => 'cbt-analytics-empty',
+                        ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                        ?>
                     <?php endif; ?>
                 </section>
             <?php endif; ?>
@@ -1667,9 +1711,24 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                     </article>
                 </div>
                 <?php if (!$has_selected_exam): ?>
-                    <div class="cbt-analytics-empty">Pilih satu exam terlebih dahulu agar analisis butir soal bisa ditampilkan.</div>
+                    <?php
+                    echo CBT_Admin_UI_Helper::render_empty_state([
+                        'title' => 'Pilih exam terlebih dahulu',
+                        'message' => 'Pilih satu exam agar analisis butir soal bisa ditampilkan.',
+                        'action_label' => 'Buka Overview',
+                        'action_url' => add_query_arg(['page' => 'cbt-analytics', 'cbt_analytics_tab' => 'overview'], admin_url('admin.php')),
+                        'action_class' => 'button button-secondary cbt-admin-btn--secondary',
+                        'class' => 'cbt-analytics-empty',
+                    ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                    ?>
                 <?php elseif (empty($has_run_analytics)): ?>
-                    <div class="cbt-analytics-empty">Tekan tombol <strong>Analytic</strong> untuk menghitung item analysis pada exam terpilih.</div>
+                    <?php
+                    echo CBT_Admin_UI_Helper::render_empty_state([
+                        'title' => 'Item analysis belum dihitung',
+                        'message' => 'Tekan tombol Analytic untuk menghitung item analysis pada exam terpilih.',
+                        'class' => 'cbt-analytics-empty',
+                    ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                    ?>
                 <?php else: ?>
                     <div id="cbt-analytics-items-app"></div>
                 <?php endif; ?>
@@ -1691,9 +1750,24 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                     <?php endif; ?>
                 </div>
                 <?php if (!$has_selected_exam): ?>
-                    <div class="cbt-analytics-empty">Pilih satu exam terlebih dahulu agar drilldown siswa bisa ditampilkan.</div>
+                    <?php
+                    echo CBT_Admin_UI_Helper::render_empty_state([
+                        'title' => 'Pilih exam terlebih dahulu',
+                        'message' => 'Pilih satu exam agar drilldown siswa bisa ditampilkan.',
+                        'action_label' => 'Buka Overview',
+                        'action_url' => add_query_arg(['page' => 'cbt-analytics', 'cbt_analytics_tab' => 'overview'], admin_url('admin.php')),
+                        'action_class' => 'button button-secondary cbt-admin-btn--secondary',
+                        'class' => 'cbt-analytics-empty',
+                    ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                    ?>
                 <?php elseif (empty($has_run_analytics)): ?>
-                    <div class="cbt-analytics-empty">Tekan tombol <strong>Analytic</strong> untuk menampilkan drilldown siswa pada exam terpilih.</div>
+                    <?php
+                    echo CBT_Admin_UI_Helper::render_empty_state([
+                        'title' => 'Drilldown belum dihitung',
+                        'message' => 'Tekan tombol Analytic untuk menampilkan drilldown siswa pada exam terpilih.',
+                        'class' => 'cbt-analytics-empty',
+                    ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                    ?>
                 <?php else: ?>
                     <div id="cbt-analytics-students-app"></div>
                 <?php endif; ?>
@@ -1918,7 +1992,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                     }
 
                     if (!visibleRows.length) {
-                        tbody.innerHTML = '<tr><td colspan="' + config.columnCount + '" class="cbt-analytics-muted">Tidak ada data yang cocok dengan filter/search saat ini.</td></tr>';
+                        tbody.innerHTML = '<tr class="cbt-admin-empty-row"><td colspan="' + config.columnCount + '"><div class="cbt-admin-empty-state cbt-admin-empty-state--neutral"><div class="cbt-admin-empty-state__mark" aria-hidden="true"></div><div class="cbt-admin-empty-state__body"><h3>Tidak ada data sesuai filter</h3><p>Tidak ada data yang cocok dengan filter atau pencarian saat ini.</p></div></div></td></tr>';
                         return;
                     }
 
@@ -1980,8 +2054,8 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                         '<div class="cbt-analytics-pagination">' +
                             '<span class="cbt-analytics-pagination-meta">' + escapeHtml(ctx.meta) + '</span>' +
                             '<div style="display:flex; gap:8px;">' +
-                                '<button type="button" class="button" data-role="prev">Previous</button>' +
-                                '<button type="button" class="button" data-role="next">Next</button>' +
+                                '<button type="button" class="button cbt-admin-btn--ghost" data-role="prev">Previous</button>' +
+                                '<button type="button" class="button cbt-admin-btn--ghost" data-role="next">Next</button>' +
                             '</div>' +
                         '</div>';
                 },
@@ -2001,7 +2075,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                             '<td>' + createBadge(row.discrimination_label || '-', row.discrimination_tone || '') + '<br><span class="cbt-analytics-muted">' + escapeHtml(row.discrimination_display || 'Insufficient Data') + '</span></td>' +
                             '<td>' + escapeHtml(row.average_awarded_score_display || '0.00') + '</td>' +
                             '<td>' + buildInsightCell(row) + '</td>' +
-                            '<td><button type="button" class="button button-small" data-action="toggle-detail" data-row-id="' + escapeHtml(row.question_id || '') + '">' + (isExpanded ? 'Hide' : 'View') + '</button></td>' +
+                            '<td><button type="button" class="button button-small cbt-admin-btn--ghost" data-action="toggle-detail" data-row-id="' + escapeHtml(row.question_id || '') + '">' + (isExpanded ? 'Hide' : 'View') + '</button></td>' +
                         '</tr>';
                 },
                 renderDetailRow: function (row, columnCount) {
@@ -2242,8 +2316,8 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                         '<div class="cbt-analytics-pagination">' +
                             '<span class="cbt-analytics-pagination-meta">' + escapeHtml(ctx.meta) + '</span>' +
                             '<div style="display:flex; gap:8px;">' +
-                                '<button type="button" class="button" data-role="prev">Previous</button>' +
-                                '<button type="button" class="button" data-role="next">Next</button>' +
+                                '<button type="button" class="button cbt-admin-btn--ghost" data-role="prev">Previous</button>' +
+                                '<button type="button" class="button cbt-admin-btn--ghost" data-role="next">Next</button>' +
                             '</div>' +
                         '</div>';
                 },
@@ -2260,7 +2334,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                             '<td>' + escapeHtml(row.answered_summary || '-') + '</td>' +
                             '<td>' + escapeHtml(row.duration_label || '-') + '</td>' +
                             '<td>' + escapeHtml(row.finished_at_label || '-') + '</td>' +
-                            '<td><button type="button" class="button button-small" data-action="toggle-detail" data-row-id="' + escapeHtml(row.attempt_id || '') + '">' + (isExpanded ? 'Hide' : 'View') + '</button></td>' +
+                            '<td><button type="button" class="button button-small cbt-admin-btn--ghost" data-action="toggle-detail" data-row-id="' + escapeHtml(row.attempt_id || '') + '">' + (isExpanded ? 'Hide' : 'View') + '</button></td>' +
                         '</tr>';
                 },
                 renderDetailRow: function (row, columnCount) {

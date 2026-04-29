@@ -44,7 +44,7 @@ trait CBT_REST_Session_Routes
                     $exam_table = $wpdb->prefix . 'cbt_exams';
                     $exam = $wpdb->get_row(
                         $wpdb->prepare(
-                            "SELECT id, duration_minutes, randomize_questions, randomize_options, show_student_result, enable_calculator, status, starts_at, ends_at, target_kelas
+                            "SELECT id, subject_id, duration_minutes, randomize_questions, randomize_options, show_student_result, enable_calculator, status, starts_at, ends_at, target_kelas, target_agama, target_jenis_kelamin, restrict_to_subject_choice
                              FROM {$exam_table}
                              WHERE id = %d",
                             $exam_id

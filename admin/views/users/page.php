@@ -182,6 +182,15 @@
                 gap: 8px;
                 flex-wrap: wrap;
             }
+            .cbt-users-actions {
+                margin: 14px 0 22px;
+            }
+            .cbt-users-actions .button {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                line-height: 1.2;
+            }
             .cbt-users-form-actions {
                 margin-top: 18px;
             }
@@ -375,6 +384,17 @@
                 margin: 0 0 0 18px;
                 list-style: disc;
             }
+            .cbt-users-code-block {
+                display: block;
+                max-width: 100%;
+                margin-top: 6px;
+                padding: 8px 10px;
+                overflow-x: auto;
+                white-space: nowrap;
+                border-radius: 8px;
+                box-sizing: border-box;
+                line-height: 1.45;
+            }
             .cbt-users-panel .button {
                 border-radius: 12px;
                 min-height: 44px;
@@ -421,6 +441,334 @@
             .cbt-users-import-progress-meta {
                 font-size: 12px;
                 color: #1f2937;
+            }
+            .cbt-users-import-preview {
+                display: grid;
+                gap: 14px;
+                margin: 14px 0 20px;
+                padding: 16px;
+                border: 1px solid #bfdbfe;
+                border-radius: 16px;
+                background: #f8fbff;
+            }
+            .cbt-users-import-preview h3 {
+                margin: 0;
+                font-size: 15px;
+                font-weight: 800;
+                color: #0f172a;
+            }
+            .cbt-users-import-preview-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+                gap: 8px;
+            }
+            .cbt-users-import-preview-stat {
+                display: grid;
+                gap: 4px;
+                padding: 10px 12px;
+                border: 1px solid #dbe7f5;
+                border-radius: 12px;
+                background: #ffffff;
+            }
+            .cbt-users-import-preview-stat span {
+                color: #64748b;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+            }
+            .cbt-users-import-preview-stat strong {
+                color: #0f172a;
+                font-size: 20px;
+                line-height: 1.1;
+            }
+            .cbt-users-import-preview-errors {
+                margin: 0;
+                padding: 10px 12px 10px 28px;
+                border: 1px solid #fecaca;
+                border-radius: 12px;
+                background: #fff7f7;
+                color: #7f1d1d;
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .cbt-users-diagnostic {
+                display: grid;
+                gap: 14px;
+                margin: 16px 0 18px;
+                padding: 18px;
+                border: 1px solid #bfd7f1;
+                border-radius: 18px;
+                background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+            }
+            .cbt-users-diagnostic-head {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 12px;
+                flex-wrap: wrap;
+            }
+            .cbt-users-diagnostic-head h3 {
+                margin: 0 0 6px;
+                color: #0f172a;
+                font-size: 16px;
+                font-weight: 800;
+            }
+            .cbt-users-diagnostic-head p {
+                margin: 0;
+                color: #64748b;
+                font-size: 13px;
+                line-height: 1.5;
+            }
+            .cbt-users-diagnostic-summary {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .cbt-users-diagnostic-pill {
+                display: inline-flex;
+                align-items: center;
+                min-height: 28px;
+                padding: 0 10px;
+                border: 1px solid #dbe6f1;
+                border-radius: 999px;
+                background: #ffffff;
+                color: #334155;
+                font-size: 12px;
+                font-weight: 700;
+            }
+            .cbt-users-diagnostic-table-wrap {
+                overflow-x: auto;
+            }
+            .cbt-users-diagnostic-table {
+                margin: 0;
+                min-width: 860px;
+            }
+            .cbt-users-diagnostic-list {
+                display: grid;
+                gap: 10px;
+            }
+            .cbt-users-diagnostic-item {
+                display: grid;
+                gap: 10px;
+                padding: 12px 14px;
+                border: 1px solid #dbe7f5;
+                border-radius: 14px;
+                background: #ffffff;
+                box-shadow: 0 4px 10px rgba(15, 23, 42, 0.03);
+            }
+            .cbt-users-diagnostic-item-head {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 12px;
+            }
+            .cbt-users-diagnostic-item-title {
+                min-width: 0;
+            }
+            .cbt-users-diagnostic-item-title strong {
+                display: block;
+                color: #0f172a;
+                font-size: 13px;
+                line-height: 1.35;
+            }
+            .cbt-users-diagnostic-item-title span {
+                color: #64748b;
+                font-size: 12px;
+            }
+            .cbt-users-diagnostic-item-meta {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+                gap: 8px;
+            }
+            .cbt-users-diagnostic-field {
+                display: grid;
+                gap: 3px;
+                min-width: 0;
+            }
+            .cbt-users-diagnostic-field span {
+                color: #64748b;
+                font-size: 10px;
+                font-weight: 800;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+            }
+            .cbt-users-diagnostic-field strong {
+                color: #334155;
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1.45;
+                word-break: normal;
+                overflow-wrap: anywhere;
+            }
+            .cbt-users-diagnostic-tone {
+                display: inline-flex;
+                align-items: center;
+                min-height: 24px;
+                padding: 0 8px;
+                border-radius: 999px;
+                font-size: 11px;
+                font-weight: 800;
+                text-transform: uppercase;
+                white-space: nowrap;
+            }
+            .cbt-users-diagnostic-tone--success {
+                background: #dcfce7;
+                color: #166534;
+            }
+            .cbt-users-diagnostic-tone--warning {
+                background: #fef3c7;
+                color: #92400e;
+            }
+            .cbt-users-diagnostic-tone--danger {
+                background: #fee2e2;
+                color: #991b1b;
+            }
+            .cbt-users-diagnostic-tone--neutral {
+                background: #e2e8f0;
+                color: #334155;
+            }
+            .cbt-users-main-table tr.is-diagnosed > td {
+                background: #f8fbff !important;
+                border-top: 1px solid #bfdbfe;
+                border-bottom: 1px solid #dbeafe;
+            }
+            .cbt-users-diagnostic-row > td {
+                padding: 14px 12px 18px !important;
+                border-top: 8px solid #edf2f7;
+                background: #f8fafc !important;
+                box-shadow: inset 0 1px 0 #dbeafe;
+                white-space: normal !important;
+                word-break: normal;
+            }
+            .cbt-users-diagnostic-row .cbt-users-diagnostic {
+                margin: 0;
+                border-top: 1px solid #bfd7f1;
+                border-radius: 18px;
+                box-shadow:
+                    0 14px 28px rgba(15, 23, 42, 0.06),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+                white-space: normal;
+            }
+            .cbt-users-main-table {
+                min-width: 900px;
+            }
+            .cbt-users-main-table th:nth-child(1),
+            .cbt-users-main-table td:nth-child(1),
+            .cbt-users-main-table th:nth-child(2),
+            .cbt-users-main-table td:nth-child(2),
+            .cbt-users-main-table th:nth-child(5),
+            .cbt-users-main-table td:nth-child(5),
+            .cbt-users-main-table th:nth-child(7),
+            .cbt-users-main-table td:nth-child(7),
+            .cbt-users-main-table th:nth-child(8),
+            .cbt-users-main-table td:nth-child(8) {
+                white-space: nowrap;
+                word-break: normal;
+            }
+            .cbt-users-main-table th:nth-child(3),
+            .cbt-users-main-table td:nth-child(3) {
+                min-width: 190px;
+                word-break: normal;
+                overflow-wrap: anywhere;
+            }
+            .cbt-users-main-table th:nth-child(5),
+            .cbt-users-main-table td:nth-child(5) {
+                min-width: 150px;
+                word-break: normal;
+            }
+            .cbt-users-main-table th:nth-child(6),
+            .cbt-users-main-table td:nth-child(6) {
+                min-width: 120px;
+            }
+            .cbt-users-main-table th:nth-child(7),
+            .cbt-users-main-table td:nth-child(7) {
+                min-width: 150px;
+            }
+            .cbt-users-main-table th:nth-child(8),
+            .cbt-users-main-table td:nth-child(8) {
+                min-width: 132px;
+            }
+            .cbt-users-user-stack,
+            .cbt-users-account-stack,
+            .cbt-users-profile-stack {
+                display: grid;
+                gap: 3px;
+                min-width: 0;
+            }
+            .cbt-users-user-stack strong,
+            .cbt-users-account-stack strong,
+            .cbt-users-profile-stack strong {
+                color: #0f172a;
+                font-size: 13px;
+                line-height: 1.35;
+            }
+            .cbt-users-user-stack span,
+            .cbt-users-account-stack span,
+            .cbt-users-profile-stack span {
+                color: #64748b;
+                font-size: 12px;
+                line-height: 1.35;
+            }
+            .cbt-users-profile-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr);
+                row-gap: 4px;
+                align-items: start;
+                max-width: 100%;
+            }
+            .cbt-users-profile-field {
+                display: inline-grid;
+                grid-template-columns: 42px minmax(0, 1fr);
+                align-items: baseline;
+                column-gap: 8px;
+                min-width: 0;
+                color: #64748b;
+                font-size: 12px;
+                line-height: 1.25;
+                white-space: nowrap;
+            }
+            .cbt-users-profile-label {
+                display: inline-flex;
+                justify-content: space-between;
+                color: #0f172a;
+                font-weight: 700;
+            }
+            .cbt-users-profile-label::after {
+                content: ":";
+                color: #64748b;
+                font-weight: 700;
+            }
+            .cbt-users-profile-value {
+                color: #64748b;
+                font-weight: 800;
+            }
+            .cbt-users-register-stack {
+                display: grid;
+                justify-items: center;
+                gap: 6px;
+                min-width: 86px;
+            }
+            .cbt-users-register-stack span {
+                color: #475569;
+                font-size: 11px;
+                line-height: 1.35;
+                text-align: center;
+                white-space: normal;
+            }
+            .cbt-users-photo-placeholder {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 46px;
+                height: 46px;
+                border-radius: 12px;
+                border: 1px dashed #cbd5e1;
+                background: #f8fafc;
+                color: #94a3b8;
+                font-size: 12px;
+                font-weight: 800;
             }
             .cbt-users-list-toolbar {
                 display: flex;
@@ -476,10 +824,10 @@
                 border: 1px solid #dbe1ea;
             }
             .cbt-users-table-photo {
-                width: 38px;
-                height: 38px;
+                width: 46px;
+                height: 46px;
                 object-fit: cover;
-                border-radius: 8px;
+                border-radius: 12px;
                 border: 1px solid #e2e8f0;
             }
             .cbt-users-table-wrap {
@@ -511,35 +859,91 @@
                 background: #f8fafc;
             }
             .cbt-users-row-actions {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                flex-wrap: wrap;
+                display: grid;
+                gap: 6px;
+                min-width: 124px;
             }
             .cbt-users-row-action {
                 display: inline-flex;
                 align-items: center;
+                justify-content: center;
                 gap: 6px;
-                color: #1d4ed8;
-                font-weight: 600;
+                min-height: 30px;
+                padding: 0 10px;
+                border: 1px solid #d8e5f5;
+                border-radius: 999px;
+                background: #ffffff;
+                color: #0f4fa8;
+                font-size: 12px;
+                font-weight: 800;
+                line-height: 1;
                 text-decoration: none;
+                white-space: nowrap;
+                box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+                transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+            }
+            .cbt-users-row-action::before {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 16px;
+                height: 16px;
+                border-radius: 999px;
+                font-family: dashicons;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 1;
             }
             .cbt-users-row-action:hover,
             .cbt-users-row-action:focus {
-                text-decoration: underline;
+                text-decoration: none;
+                transform: translateY(-1px);
+                box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+                outline: none;
             }
             .cbt-users-row-action--edit {
+                border-color: #bfdbfe;
+                background: #eff6ff;
                 color: #0f4fa8;
+            }
+            .cbt-users-row-action--edit::before {
+                content: "\f464";
+                color: #1d4ed8;
             }
             .cbt-users-row-action--edit:hover,
             .cbt-users-row-action--edit:focus {
+                border-color: #60a5fa;
+                background: #dbeafe;
                 color: #0f4fa8;
             }
+            .cbt-users-row-action--diagnose {
+                border-color: #c7d2fe;
+                background: #eef2ff;
+                color: #3730a3;
+            }
+            .cbt-users-row-action--diagnose::before {
+                content: "\f348";
+                color: #4f46e5;
+            }
+            .cbt-users-row-action--diagnose:hover,
+            .cbt-users-row-action--diagnose:focus {
+                border-color: #818cf8;
+                background: #e0e7ff;
+                color: #312e81;
+            }
             .cbt-users-row-action--delete {
+                border-color: #fecaca;
+                background: #fff1f2;
                 color: #b91c1c;
+            }
+            .cbt-users-row-action--delete::before {
+                content: "\f182";
+                color: #dc2626;
             }
             .cbt-users-row-action--delete:hover,
             .cbt-users-row-action--delete:focus {
+                border-color: #fca5a5;
+                background: #fee2e2;
                 color: #991b1b;
             }
             .cbt-users-pagination-wrap {
@@ -745,6 +1149,26 @@
                                     </td>
                                 </tr>
                                 <tr>
+                                    <th>Mapel Pilihan</th>
+                                    <td>
+                                        <?php for ($choice_index = 1; $choice_index <= 3; $choice_index++): ?>
+                                            <?php $selected_choice_id = (int) ($editing_subject_choice_ids[$choice_index - 1] ?? 0); ?>
+                                            <label for="cbt-edit-user-subject-choice-<?php echo (int) $choice_index; ?>" style="display:block; margin:0 0 8px;">
+                                                Mapel Pilihan <?php echo (int) $choice_index; ?>
+                                                <select id="cbt-edit-user-subject-choice-<?php echo (int) $choice_index; ?>" name="subject_choices[]" class="regular-text">
+                                                    <option value="">- Kosong -</option>
+                                                    <?php foreach ((array) $subject_options as $subject_option): ?>
+                                                        <option value="<?php echo (int) $subject_option['id']; ?>" <?php selected($selected_choice_id, (int) $subject_option['id']); ?>>
+                                                            <?php echo esc_html((string) ($subject_option['label'] ?? '')); ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </label>
+                                        <?php endfor; ?>
+                                        <p class="description">Khusus siswa. Maksimal 3 mapel dan tidak boleh duplikat.</p>
+                                    </td>
+                                </tr>
+                                <tr>
                                     <th><label for="cbt-edit-user-foto-file">Foto</label></th>
                                     <td>
                                         <?php if ($editing_foto !== ''): ?>
@@ -847,6 +1271,25 @@
                                     </td>
                                 </tr>
                                 <tr>
+                                    <th>Mapel Pilihan</th>
+                                    <td>
+                                        <?php for ($choice_index = 1; $choice_index <= 3; $choice_index++): ?>
+                                            <label for="cbt-user-subject-choice-<?php echo (int) $choice_index; ?>" style="display:block; margin:0 0 8px;">
+                                                Mapel Pilihan <?php echo (int) $choice_index; ?>
+                                                <select id="cbt-user-subject-choice-<?php echo (int) $choice_index; ?>" name="subject_choices[]" class="regular-text">
+                                                    <option value="">- Kosong -</option>
+                                                    <?php foreach ((array) $subject_options as $subject_option): ?>
+                                                        <option value="<?php echo (int) $subject_option['id']; ?>">
+                                                            <?php echo esc_html((string) ($subject_option['label'] ?? '')); ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </label>
+                                        <?php endfor; ?>
+                                        <p class="description">Khusus siswa. Maksimal 3 mapel dan tidak boleh duplikat.</p>
+                                    </td>
+                                </tr>
+                                <tr>
                                     <th><label for="cbt-user-foto-file">Foto</label></th>
                                     <td>
                                         <input type="file" id="cbt-user-foto-file" name="foto_file" accept="image/*" />
@@ -900,6 +1343,40 @@
                         </div>
                     <?php endif; ?>
 
+                    <?php if (is_array($import_preview_state) && !empty($import_preview)): ?>
+                        <div class="cbt-users-import-preview">
+                            <h3>Preview Import Users</h3>
+                            <div class="cbt-users-import-preview-grid">
+                                <div class="cbt-users-import-preview-stat"><span>Total Baris</span><strong><?php echo esc_html((string) ($import_preview['total'] ?? 0)); ?></strong></div>
+                                <div class="cbt-users-import-preview-stat"><span>Calon Create</span><strong><?php echo esc_html((string) ($import_preview['created'] ?? 0)); ?></strong></div>
+                                <div class="cbt-users-import-preview-stat"><span>Calon Update</span><strong><?php echo esc_html((string) ($import_preview['updated'] ?? 0)); ?></strong></div>
+                                <div class="cbt-users-import-preview-stat"><span>Gagal</span><strong><?php echo esc_html((string) ($import_preview['failed'] ?? 0)); ?></strong></div>
+                                <div class="cbt-users-import-preview-stat"><span>Baris Mapel</span><strong><?php echo esc_html((string) ($import_preview['subject_choice_rows'] ?? 0)); ?></strong></div>
+                                <div class="cbt-users-import-preview-stat"><span>Foto Perlu ZIP</span><strong><?php echo esc_html((string) ($import_preview['photo_required'] ?? 0)); ?></strong></div>
+                                <div class="cbt-users-import-preview-stat"><span>Foto Hilang</span><strong><?php echo esc_html((string) ($import_preview['photo_missing'] ?? 0)); ?></strong></div>
+                            </div>
+                            <?php $import_preview_errors = isset($import_preview['errors']) && is_array($import_preview['errors']) ? $import_preview['errors'] : []; ?>
+                            <?php if (!empty($import_preview_errors)): ?>
+                                <ul class="cbt-users-import-preview-errors">
+                                    <?php foreach ($import_preview_errors as $preview_error): ?>
+                                        <li><?php echo esc_html((string) $preview_error); ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            <?php endif; ?>
+                            <div class="cbt-users-form-actions">
+                                <?php if (!empty($import_preview['can_continue'])): ?>
+                                    <form method="post" action="<?php echo esc_url($import_preview_run_url); ?>" style="margin:0;">
+                                        <?php wp_nonce_field('cbt_run_previewed_import_users'); ?>
+                                        <input type="hidden" name="action" value="cbt_run_previewed_import_users" />
+                                        <input type="hidden" name="cbt_import_preview_token" value="<?php echo esc_attr($import_preview_token); ?>" />
+                                        <?php echo get_submit_button('Lanjut Import', 'primary', 'submit', false); ?>
+                                    </form>
+                                <?php endif; ?>
+                                <a class="button button-secondary" href="<?php echo esc_url($import_preview_clear_url); ?>">Upload Ulang</a>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
                     <div class="cbt-users-actions">
                         <a class="button button-secondary" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_user_template'), 'cbt_download_user_template')); ?>">
                             Download Template CSV
@@ -910,8 +1387,8 @@
                     </div>
 
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-users-tab-submit="import">
-                        <?php wp_nonce_field('cbt_import_users'); ?>
-                        <input type="hidden" name="action" value="cbt_import_users" />
+                        <?php wp_nonce_field('cbt_preview_import_users'); ?>
+                        <input type="hidden" name="action" value="cbt_preview_import_users" />
 
                         <div class="cbt-users-import-grid">
                             <div class="cbt-users-import-card">
@@ -919,7 +1396,13 @@
                                 <input required type="file" id="cbt-user-file" name="user_file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
                                 <div class="description">
                                     <ul>
-                                        <li>Header template terbaru: <code>name,email,nisn,username,password,role,kode_kelas,kode_ruang,agama,jenis_kelamin,foto_file</code>.</li>
+                                        <li>
+                                            Header template terbaru:
+                                            <code class="cbt-users-code-block">name,email,nisn,username,password,role,kode_kelas,kode_ruang,agama,jenis_kelamin,foto_file,mapel_pilihan_1,mapel_pilihan_2,mapel_pilihan_3</code>
+                                        </li>
+                                        <li>Jika <code>mapel_pilihan_1</code> sampai <code>mapel_pilihan_3</code> diisi pada baris siswa, Import Users langsung ikut menyimpan mapel pilihan siswa tersebut.</li>
+                                        <li>Jika ketiga kolom mapel kosong, Import Users tidak mengubah mapel pilihan lama. Gunakan bagian <strong>Import Mapel Pilihan</strong> di bawah untuk mode replace atau mengosongkan pilihan secara massal.</li>
+                                        <li>Template XLSX juga berisi sheet <code>mapel_pilihan</code> dan <code>referensi_mapel</code>. Sheet <code>referensi_mapel</code> membantu operator melihat kode/nama mapel yang valid dari CBT Subjects.</li>
                                         <li>Role yang didukung: <code>admin</code>, <code>guru</code>, <code>siswa</code> dan juga kompatibel dengan <code>teacher</code>, <code>student</code>.</li>
                                         <li><code>username</code> dan <code>email</code> tidak boleh duplikat antarbaris dalam file import yang sama.</li>
                                         <li>Untuk baris <code>siswa</code>, <code>nisn</code> wajib diisi dan tidak boleh duplikat dengan siswa lain maupun antarbaris file import.</li>
@@ -952,7 +1435,82 @@
                         </div>
 
                         <div class="cbt-users-form-actions">
-                            <?php echo get_submit_button('Import Users', 'primary', 'submit', false); ?>
+                            <?php echo get_submit_button('Preview Import', 'primary', 'submit', false); ?>
+                        </div>
+                    </form>
+
+                    <hr style="margin:28px 0;" />
+
+                    <div class="cbt-users-panel-header" style="margin-bottom:14px;">
+                        <div>
+                            <h2>Import Mapel Pilihan</h2>
+                            <p>Upload file terpisah untuk mengganti Mapel Pilihan 1-3 siswa. Identifikasi memakai NISN, lalu fallback ke username.</p>
+                        </div>
+                        <span class="cbt-users-chip">Replace</span>
+                    </div>
+
+                    <div class="cbt-users-actions">
+                        <a class="button button-secondary" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_student_subject_choices_template'), 'cbt_download_student_subject_choices_template')); ?>">
+                            Template Mapel CSV
+                        </a>
+                        <a class="button button-secondary" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_student_subject_choices_template_xlsx'), 'cbt_download_student_subject_choices_template_xlsx')); ?>">
+                            Template Mapel XLSX
+                        </a>
+                    </div>
+
+                    <?php if (is_array($subject_choice_preview_state) && !empty($subject_choice_preview)): ?>
+                        <div class="cbt-users-import-preview">
+                            <h3>Preview Import Mapel Pilihan</h3>
+                            <div class="cbt-users-import-preview-grid">
+                                <div class="cbt-users-import-preview-stat"><span>Total Baris</span><strong><?php echo esc_html((string) ($subject_choice_preview['total'] ?? 0)); ?></strong></div>
+                                <div class="cbt-users-import-preview-stat"><span>Update</span><strong><?php echo esc_html((string) ($subject_choice_preview['updated'] ?? 0)); ?></strong></div>
+                                <div class="cbt-users-import-preview-stat"><span>Kosongkan</span><strong><?php echo esc_html((string) ($subject_choice_preview['cleared'] ?? 0)); ?></strong></div>
+                                <div class="cbt-users-import-preview-stat"><span>Gagal</span><strong><?php echo esc_html((string) ($subject_choice_preview['failed'] ?? 0)); ?></strong></div>
+                            </div>
+                            <?php $subject_choice_preview_errors = isset($subject_choice_preview['errors']) && is_array($subject_choice_preview['errors']) ? $subject_choice_preview['errors'] : []; ?>
+                            <?php if (!empty($subject_choice_preview_errors)): ?>
+                                <ul class="cbt-users-import-preview-errors">
+                                    <?php foreach ($subject_choice_preview_errors as $preview_error): ?>
+                                        <li><?php echo esc_html((string) $preview_error); ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            <?php endif; ?>
+                            <div class="cbt-users-form-actions">
+                                <?php if (!empty($subject_choice_preview['can_continue'])): ?>
+                                    <form method="post" action="<?php echo esc_url($subject_choice_preview_run_url); ?>" style="margin:0;">
+                                        <?php wp_nonce_field('cbt_run_previewed_student_subject_choices'); ?>
+                                        <input type="hidden" name="action" value="cbt_run_previewed_student_subject_choices" />
+                                        <input type="hidden" name="cbt_subject_choice_preview_token" value="<?php echo esc_attr($subject_choice_preview_token); ?>" />
+                                        <?php echo get_submit_button('Lanjut Import Mapel', 'primary', 'submit', false); ?>
+                                    </form>
+                                <?php endif; ?>
+                                <a class="button button-secondary" href="<?php echo esc_url($subject_choice_preview_clear_url); ?>">Upload Ulang</a>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-users-tab-submit="import" style="margin-top:14px;">
+                        <?php wp_nonce_field('cbt_preview_import_student_subject_choices'); ?>
+                        <input type="hidden" name="action" value="cbt_preview_import_student_subject_choices" />
+                        <div class="cbt-users-import-card">
+                            <label class="cbt-users-import-card-label" for="cbt-subject-choice-file">File Mapel Pilihan</label>
+                            <input required type="file" id="cbt-subject-choice-file" name="subject_choice_file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                            <div class="description">
+                                <ul>
+                                    <li>Header: <code>nisn,username,mapel_pilihan_1,mapel_pilihan_2,mapel_pilihan_3</code>.</li>
+                                    <li>Bisa memakai file dari <strong>Download Template XLSX</strong> utama; sistem akan membaca sheet <code>mapel_pilihan</code>. Lihat sheet <code>referensi_mapel</code> untuk kode/nama mapel yang valid.</li>
+                                    <li>Identifikasi siswa memakai <code>nisn</code> sebagai prioritas. Jika <code>nisn</code> kosong atau tidak ditemukan, sistem mencoba <code>username</code>.</li>
+                                    <li>Mapel dicocokkan ke CBT Subjects dari <code>id</code> jika angka, lalu <code>code</code>, lalu <code>name</code>. Pencocokan kode/nama tidak membedakan huruf besar-kecil.</li>
+                                    <li>Nilai mapel harus sudah ada di menu <strong>CBT Subjects</strong>. Import tidak membuat mapel baru otomatis.</li>
+                                    <li>Maksimal 3 mapel per siswa dan tidak boleh duplikat dalam satu baris.</li>
+                                    <li>Mode import selalu <code>replace</code>; tiga kolom mapel kosong akan mengosongkan pilihan siswa.</li>
+                                    <li>Jika satu baris berisi mapel tidak dikenal, mapel duplikat, user tidak ditemukan, atau user bukan siswa, hanya baris itu yang gagal. Baris lain tetap diproses.</li>
+                                    <li>Jika baris gagal, pilihan mapel lama siswa pada baris tersebut tidak ditimpa sebagian.</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="cbt-users-form-actions">
+                            <?php echo get_submit_button('Preview Mapel Pilihan', 'primary', 'submit', false); ?>
                         </div>
                     </form>
                 </section>
@@ -1020,6 +1578,16 @@
                         </form>
                     </div>
 
+                    <?php
+                    $diagnostic_is_open = !empty($diagnostic_data) && is_array($diagnostic_data);
+                    $diagnostic_student = $diagnostic_is_open && isset($diagnostic_data['student']) && is_array($diagnostic_data['student']) ? $diagnostic_data['student'] : [];
+                    $diagnostic_profile = isset($diagnostic_student['profile']) && is_array($diagnostic_student['profile']) ? $diagnostic_student['profile'] : [];
+                    $diagnostic_summary = $diagnostic_is_open && isset($diagnostic_data['summary']) && is_array($diagnostic_data['summary']) ? $diagnostic_data['summary'] : [];
+                    $diagnostic_items = $diagnostic_is_open && isset($diagnostic_data['items']) && is_array($diagnostic_data['items']) ? $diagnostic_data['items'] : [];
+                    $diagnostic_name = trim((string) ($diagnostic_student['name'] ?? ''));
+                    $diagnostic_username = trim((string) ($diagnostic_student['username'] ?? ''));
+                    ?>
+
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-users-tab-submit="list">
                         <?php wp_nonce_field('cbt_bulk_delete_users'); ?>
                         <input type="hidden" name="action" value="cbt_bulk_delete_users" />
@@ -1037,37 +1605,46 @@
                         </div>
 
                         <div class="cbt-users-table-wrap">
-                        <table class="widefat striped">
+                        <table class="widefat striped cbt-users-main-table">
                             <thead>
                             <tr>
                                 <th style="width:32px;"><input type="checkbox" id="cbt-user-select-all" /></th>
                                 <th>ID</th>
-                                <th>Username</th>
-                                <th>Nama</th>
-                                <th>NISN</th>
-                                <th>Email</th>
-                                <th>Role</th>
-                                <th>Kelas</th>
-                                <th>Ruang</th>
-                                <th>Agama</th>
-                                <th>L/P</th>
-                                <th>Foto</th>
-                                <th>Tgl Daftar</th>
+                                <th>Identitas</th>
+                                <th>Akun</th>
+                                <th>Profil</th>
+                                <th>Mapel Pilihan</th>
+                                <th>Daftar</th>
                                 <th>Aksi</th>
                             </tr>
                             </thead>
                             <tbody>
                             <?php if (empty($users)): ?>
-                                <tr><td colspan="14">Tidak ada user.</td></tr>
+                                <?php
+                                $user_has_filters = $search !== '' || $filter_role !== '' || $filter_kelas !== '' || $filter_ruang !== '' || $filter_agama !== '' || $filter_jenis_kelamin !== '';
+                                echo CBT_Admin_UI_Helper::render_table_empty_state(8, [
+                                    'title' => $user_has_filters ? 'Tidak ada user sesuai filter' : 'Belum ada user',
+                                    'message' => $user_has_filters
+                                        ? 'Tidak ada user yang cocok dengan filter saat ini. Reset filter untuk melihat semua user.'
+                                        : 'Import user dari XLSX/CSV atau tambah user manual untuk mulai menyiapkan peserta.',
+                                    'action_label' => $user_has_filters ? 'Reset Filter' : 'Import Users',
+                                    'action_url' => $user_has_filters ? $user_reset_url : admin_url('admin.php?page=cbt-user-import'),
+                                    'action_class' => $user_has_filters ? 'button button-secondary cbt-admin-btn--secondary' : 'button button-primary',
+                                ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                                ?>
                             <?php else: ?>
                                 <?php foreach ($users as $user): ?>
                                     <?php
                                     $role = isset($user->roles[0]) ? (string) $user->roles[0] : '';
+                                    $is_student_role = in_array($role, ['student', 'siswa', 'siswa_cbt', 'subscriber'], true);
                                     $nisn = (string) get_user_meta((int) $user->ID, 'nisn', true);
                                     $kelas = (string) get_user_meta((int) $user->ID, 'kode_kelas', true);
                                     $ruang = (string) get_user_meta((int) $user->ID, 'kode_ruang', true);
                                     $agama = (string) get_user_meta((int) $user->ID, 'agama', true);
                                     $jenis_kelamin = CBT_Admin_Users_Service::normalize_supported_jenis_kelamin((string) get_user_meta((int) $user->ID, 'jenis_kelamin', true));
+                                    $subject_choice_labels = isset($subject_choice_labels_by_user[(int) $user->ID]) && is_array($subject_choice_labels_by_user[(int) $user->ID])
+                                        ? $subject_choice_labels_by_user[(int) $user->ID]
+                                        : [];
                                     $foto = class_exists('CBT_Student_Profile_Cache')
                                         ? CBT_Student_Profile_Cache::normalize_photo_url((string) get_user_meta((int) $user->ID, 'foto', true))
                                         : esc_url_raw((string) get_user_meta((int) $user->ID, 'foto', true));
@@ -1102,43 +1679,165 @@
                                         ),
                                         'cbt_delete_user_manual_' . (int) $user->ID
                                     );
+                                    $diagnose_url = add_query_arg(
+                                        [
+                                            'page' => 'cbt-user-import',
+                                            'diagnose_user' => (int) $user->ID,
+                                            'cbt_user_q' => $search,
+                                            'cbt_user_role' => $filter_role,
+                                            'cbt_user_kelas' => $filter_kelas,
+                                            'cbt_user_ruang' => $filter_ruang,
+                                            'cbt_user_agama' => $filter_agama,
+                                            'cbt_user_jenis_kelamin' => $filter_jenis_kelamin,
+                                            'cbt_user_per_page' => $per_page,
+                                            'cbt_user_paged' => $current_page,
+                                        ],
+                                        admin_url('admin.php')
+                                    );
                                     $is_current_user = ((int) $user->ID === get_current_user_id());
+                                    $is_diagnosed_user = $diagnostic_is_open && ((int) $user->ID === (int) $diagnostic_user_id);
                                     ?>
-                                    <tr>
+                                    <tr class="<?php echo $is_diagnosed_user ? 'is-diagnosed' : ''; ?>">
                                         <td>
                                             <?php if (!$is_current_user): ?>
                                                 <input type="checkbox" class="cbt-user-row-check" name="user_ids[]" value="<?php echo (int) $user->ID; ?>" />
                                             <?php endif; ?>
                                         </td>
                                         <td><?php echo (int) $user->ID; ?></td>
-                                        <td><?php echo esc_html((string) $user->user_login); ?></td>
-                                        <td><?php echo esc_html((string) $user->display_name); ?></td>
-                                        <td><?php echo esc_html($nisn !== '' ? $nisn : '-'); ?></td>
-                                        <td><?php echo esc_html((string) $user->user_email); ?></td>
-                                        <td><?php echo esc_html(CBT_Admin_Users_Service::humanize_role($role)); ?></td>
-                                        <td><?php echo esc_html($kelas); ?></td>
-                                        <td><?php echo esc_html($ruang); ?></td>
-                                        <td><?php echo esc_html($agama !== '' ? $agama : '-'); ?></td>
-                                        <td><?php echo esc_html($jenis_kelamin !== '' ? $jenis_kelamin : '-'); ?></td>
                                         <td>
-                                            <?php if ($foto !== ''): ?>
-                                                <a href="<?php echo esc_url($foto); ?>" target="_blank" rel="noopener noreferrer">
-                                                    <img src="<?php echo esc_url($foto); ?>" alt="<?php echo esc_attr((string) $user->display_name); ?>" class="cbt-users-table-photo" />
-                                                </a>
+                                            <div class="cbt-users-user-stack">
+                                                <strong><?php echo esc_html((string) $user->display_name); ?></strong>
+                                                <span><?php echo esc_html((string) $user->user_login); ?></span>
+                                                <span>NISN: <?php echo esc_html($nisn !== '' ? $nisn : '-'); ?></span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="cbt-users-account-stack">
+                                                <strong><?php echo esc_html(CBT_Admin_Users_Service::humanize_role($role)); ?></strong>
+                                                <span><?php echo esc_html((string) $user->user_email); ?></span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="cbt-users-profile-stack">
+                                                <div class="cbt-users-profile-grid">
+                                                    <span class="cbt-users-profile-field"><span class="cbt-users-profile-label">Kelas</span><span class="cbt-users-profile-value"><?php echo esc_html($kelas !== '' ? $kelas : '-'); ?></span></span>
+                                                    <span class="cbt-users-profile-field"><span class="cbt-users-profile-label">Ruang</span><span class="cbt-users-profile-value"><?php echo esc_html($ruang !== '' ? $ruang : '-'); ?></span></span>
+                                                    <span class="cbt-users-profile-field"><span class="cbt-users-profile-label">Agama</span><span class="cbt-users-profile-value"><?php echo esc_html($agama !== '' ? $agama : '-'); ?></span></span>
+                                                    <span class="cbt-users-profile-field"><span class="cbt-users-profile-label">L/P</span><span class="cbt-users-profile-value"><?php echo esc_html($jenis_kelamin !== '' ? $jenis_kelamin : '-'); ?></span></span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <?php if (!empty($subject_choice_labels)): ?>
+                                                <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                                                    <?php foreach ($subject_choice_labels as $subject_choice_label): ?>
+                                                        <span class="cbt-users-chip" style="min-height:22px; padding:0 8px; font-size:10px;"><?php echo esc_html((string) $subject_choice_label); ?></span>
+                                                    <?php endforeach; ?>
+                                                </div>
                                             <?php else: ?>
                                                 -
                                             <?php endif; ?>
                                         </td>
-                                        <td><?php echo esc_html(mysql2date('Y-m-d H:i', (string) $user->user_registered)); ?></td>
                                         <td>
-                                            <div class="cbt-users-row-actions">
-                                                <a class="cbt-users-row-action cbt-users-row-action--edit" href="<?php echo esc_url($edit_url); ?>">Edit</a>
+                                            <div class="cbt-users-register-stack">
+                                                <?php if ($foto !== ''): ?>
+                                                    <a href="<?php echo esc_url($foto); ?>" target="_blank" rel="noopener noreferrer">
+                                                        <img src="<?php echo esc_url($foto); ?>" alt="<?php echo esc_attr((string) $user->display_name); ?>" class="cbt-users-table-photo" />
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="cbt-users-photo-placeholder">-</span>
+                                                <?php endif; ?>
+                                                <span><?php echo esc_html(mysql2date('Y-m-d H:i', (string) $user->user_registered)); ?></span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="cbt-admin-row-actions cbt-users-row-actions">
+                                                <a class="cbt-admin-action cbt-admin-action--edit cbt-users-row-action cbt-users-row-action--edit" href="<?php echo esc_url($edit_url); ?>">Edit</a>
+                                                <?php if ($is_student_role): ?>
+                                                    <a class="cbt-admin-action cbt-admin-action--view cbt-users-row-action cbt-users-row-action--diagnose cbt-users-diagnose-link" href="<?php echo esc_url($diagnose_url); ?>" data-cbt-users-tab-link="list" aria-expanded="<?php echo $is_diagnosed_user ? 'true' : 'false'; ?>">Diagnosa</a>
+                                                <?php endif; ?>
                                                 <?php if (!$is_current_user): ?>
-                                                    <a class="cbt-users-row-action cbt-users-row-action--delete" href="<?php echo esc_url($delete_url); ?>" onclick="return confirm('Hapus user ini?');">Delete</a>
+                                                    <a class="cbt-admin-action cbt-admin-action--delete cbt-users-row-action cbt-users-row-action--delete" href="<?php echo esc_url($delete_url); ?>" onclick="return confirm('Hapus user ini?');">Delete</a>
                                                 <?php endif; ?>
                                             </div>
                                         </td>
                                     </tr>
+                                    <?php if ($is_diagnosed_user): ?>
+                                        <tr class="cbt-admin-drawer-row cbt-users-diagnostic-row">
+                                            <td colspan="8">
+                                                <div class="cbt-admin-drawer-panel cbt-users-diagnostic">
+                                                    <div class="cbt-users-diagnostic-head">
+                                                        <div>
+                                                            <h3>Diagnosa Exam Siswa</h3>
+                                                            <p>
+                                                                <?php echo esc_html($diagnostic_name !== '' ? $diagnostic_name : ('User #' . (int) ($diagnostic_student['user_id'] ?? 0))); ?>
+                                                                <?php if ($diagnostic_username !== ''): ?>
+                                                                    (<?php echo esc_html($diagnostic_username); ?>)
+                                                                <?php endif; ?>
+                                                                &middot; Kelas <?php echo esc_html((string) ($diagnostic_profile['kode_kelas'] ?? '-')); ?>
+                                                                &middot; Agama <?php echo esc_html((string) ($diagnostic_profile['agama'] ?? '-')); ?>
+                                                                &middot; <?php echo esc_html((string) ($diagnostic_profile['jenis_kelamin'] ?? '-')); ?>
+                                                            </p>
+                                                        </div>
+                                                        <a href="<?php echo esc_url($diagnostic_clear_url); ?>" class="button button-secondary cbt-users-diagnostic-close" data-cbt-users-tab-link="list">Tutup Diagnosa</a>
+                                                    </div>
+                                                    <div class="cbt-users-diagnostic-summary">
+                                                        <span class="cbt-users-diagnostic-pill">Total exam: <?php echo (int) ($diagnostic_summary['total'] ?? 0); ?></span>
+                                                        <span class="cbt-users-diagnostic-pill">Bisa dikerjakan: <?php echo (int) ($diagnostic_summary['can_start'] ?? 0); ?></span>
+                                                        <span class="cbt-users-diagnostic-pill">Terblokir/info: <?php echo (int) ($diagnostic_summary['blocked'] ?? 0); ?></span>
+                                                        <span class="cbt-users-diagnostic-pill">Sedang berjalan: <?php echo (int) ($diagnostic_summary['in_progress'] ?? 0); ?></span>
+                                                        <span class="cbt-users-diagnostic-pill">Selesai: <?php echo (int) ($diagnostic_summary['completed'] ?? 0); ?></span>
+                                                    </div>
+                                                    <p style="margin:0; color:#475569; font-weight:600;"><?php echo esc_html((string) ($diagnostic_data['message'] ?? '')); ?></p>
+                                                    <?php if (!empty($diagnostic_items)): ?>
+                                                        <div class="cbt-users-diagnostic-list">
+                                                            <?php foreach ($diagnostic_items as $diagnostic_item): ?>
+                                                                <?php
+                                                                $tone = sanitize_key((string) ($diagnostic_item['tone'] ?? 'neutral'));
+                                                                if (!in_array($tone, ['success', 'warning', 'danger', 'neutral'], true)) {
+                                                                    $tone = 'neutral';
+                                                                }
+                                                                ?>
+                                                                <div class="cbt-users-diagnostic-item">
+                                                                    <div class="cbt-users-diagnostic-item-head">
+                                                                        <div class="cbt-users-diagnostic-item-title">
+                                                                            <strong><?php echo esc_html((string) ($diagnostic_item['title'] ?? '')); ?></strong>
+                                                                            <span>Exam #<?php echo (int) ($diagnostic_item['exam_id'] ?? 0); ?></span>
+                                                                        </div>
+                                                                        <span class="cbt-users-diagnostic-tone cbt-users-diagnostic-tone--<?php echo esc_attr($tone); ?>">
+                                                                            <?php echo !empty($diagnostic_item['can_start_now']) ? 'Bisa' : 'Tidak'; ?>
+                                                                        </span>
+                                                                    </div>
+                                                                    <div class="cbt-users-diagnostic-item-meta">
+                                                                        <div class="cbt-users-diagnostic-field">
+                                                                            <span>Mapel</span>
+                                                                            <strong><?php echo esc_html((string) ($diagnostic_item['subject_label'] ?? '-')); ?></strong>
+                                                                        </div>
+                                                                        <div class="cbt-users-diagnostic-field">
+                                                                            <span>Status</span>
+                                                                            <strong><?php echo esc_html((string) ($diagnostic_item['status'] ?? '-')); ?></strong>
+                                                                        </div>
+                                                                        <div class="cbt-users-diagnostic-field">
+                                                                            <span>Jadwal</span>
+                                                                            <strong><?php echo esc_html((string) ($diagnostic_item['schedule_label'] ?? '-')); ?></strong>
+                                                                        </div>
+                                                                        <div class="cbt-users-diagnostic-field">
+                                                                            <span>Attempt</span>
+                                                                            <strong><?php echo esc_html((string) ($diagnostic_item['attempt_label'] ?? '-')); ?></strong>
+                                                                        </div>
+                                                                        <div class="cbt-users-diagnostic-field">
+                                                                            <span>Alasan</span>
+                                                                            <strong><?php echo esc_html((string) ($diagnostic_item['message'] ?? '')); ?></strong>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            <?php endforeach; ?>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endif; ?>
                                 <?php endforeach; ?>
                             <?php endif; ?>
                             </tbody>
@@ -1462,6 +2161,7 @@
                     const userFilterPerPage = panel.querySelector('#cbt-users-filter-per-page');
                     const userFilterReset = panel.querySelector('.cbt-users-filter-reset');
                     const paginationLinks = Array.from(panel.querySelectorAll('.cbt-users-pagination-links a'));
+                    const diagnosticLinks = Array.from(panel.querySelectorAll('.cbt-users-diagnose-link, .cbt-users-diagnostic-close'));
 
                     if (userFilterForm && userFilterForm.dataset.cbtAsyncBound !== '1') {
                         userFilterForm.dataset.cbtAsyncBound = '1';
@@ -1523,6 +2223,25 @@
 
                     if (supportsPartialListRefresh) {
                         paginationLinks.forEach((link) => {
+                            if (!link || link.dataset.cbtAsyncBound === '1') {
+                                return;
+                            }
+
+                            link.dataset.cbtAsyncBound = '1';
+                            link.addEventListener('click', function (event) {
+                                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                                    return;
+                                }
+
+                                event.preventDefault();
+                                window.clearTimeout(userFilterTimer);
+                                refreshUsersListPanel(new URL(link.getAttribute('href') || window.location.href, window.location.href));
+                            });
+                        });
+                    }
+
+                    if (supportsPartialListRefresh) {
+                        diagnosticLinks.forEach((link) => {
                             if (!link || link.dataset.cbtAsyncBound === '1') {
                                 return;
                             }

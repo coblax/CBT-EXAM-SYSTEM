@@ -442,7 +442,7 @@ k6 version</code></pre>
                     <div class="cbt-maintenance-actions cbt-maintenance-actions--load-primary" style="margin-top:18px;">
                         <p class="cbt-maintenance-actions-copy">Gunakan <code>Refresh Status</code> untuk memuat ulang daftar job, atau biarkan panel melakukan polling otomatis selama masih ada job aktif.</p>
                         <div class="cbt-maintenance-load-job-actions">
-                            <button type="submit" class="button button-primary button-large" <?php disabled(empty($eligible_exams)); ?>>Start Load Test</button>
+                            <button type="submit" class="button button-primary button-large cbt-admin-btn--warning" <?php disabled(empty($eligible_exams)); ?>>Start Load Test</button>
                             <button type="button" class="button button-secondary button-large" data-load-refresh-jobs>Refresh Status</button>
                         </div>
                     </div>

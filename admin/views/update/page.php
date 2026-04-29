@@ -254,14 +254,14 @@
                     <form method="post" action="<?php echo esc_url($check_action_url); ?>" style="margin:0;">
                         <input type="hidden" name="action" value="cbt_check_update_now" />
                         <?php wp_nonce_field('cbt_check_update_now'); ?>
-                        <button type="submit" class="button button-primary">CEK UPDATE SEKARANG</button>
+                        <button type="submit" class="button button-primary">Cek Update Sekarang</button>
                     </form>
                     <form method="post" action="<?php echo esc_url($install_action_url); ?>" style="margin:0;">
                         <input type="hidden" name="action" value="cbt_install_update_now" />
                         <?php wp_nonce_field('cbt_install_update_now'); ?>
-                        <button type="submit" class="button" <?php echo $can_install ? '' : 'disabled'; ?>>INSTALL UPDATE</button>
+                        <button type="submit" class="button cbt-admin-btn--warning" <?php echo $can_install ? '' : 'disabled'; ?>>Install Update</button>
                     </form>
-                    <a class="button" href="<?php echo esc_url($release_url); ?>" target="_blank" rel="noopener noreferrer">LIHAT RELEASE GITHUB</a>
+                    <a class="button cbt-admin-btn--secondary" href="<?php echo esc_url($release_url); ?>" target="_blank" rel="noopener noreferrer">Lihat Release GitHub</a>
                 </div>
             </div>
             <div class="cbt-update-overview">

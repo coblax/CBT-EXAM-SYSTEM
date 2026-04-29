@@ -2088,7 +2088,7 @@ if ($is_stable_mode) {
                             '<div class="cbt-dev-diag-inline-detail-wrap">',
                             '<div class="cbt-dev-actions" style="margin-bottom:8px;">',
                             '<span class="cbt-dev-diag-inline-detail-title" style="margin:0;">Storage Detail</span>',
-                            '<button type="button" class="button button-small" data-storage-copy="' + String(index) + '">Copy Value</button>',
+                            '<button type="button" class="button button-small cbt-admin-btn--ghost" data-storage-copy="' + String(index) + '">Copy Value</button>',
                             '</div>',
                             '<pre class="cbt-dev-diag-inline-detail">' + escapeHtml(typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value, null, 2)) + '</pre>',
                             '</div>',
@@ -2102,7 +2102,7 @@ if ($is_stable_mode) {
                         '<td><code>' + escapeHtml(entry.key || '-') + '</code></td>',
                         '<td>' + escapeHtml(entry.preview || '-') + '</td>',
                         '<td>' + escapeHtml(entry.meta || '-') + '</td>',
-                        '<td><button type="button" class="button button-small" data-storage-view="' + String(index) + '">' + (activeStorageDetailIndex === index ? 'Hide' : 'View') + '</button></td>',
+                        '<td><button type="button" class="button button-small cbt-admin-btn--ghost" data-storage-view="' + String(index) + '">' + (activeStorageDetailIndex === index ? 'Hide' : 'View') + '</button></td>',
                         '</tr>',
                         detailMarkup
                     ].join('');
@@ -2418,7 +2418,7 @@ if ($is_stable_mode) {
                         '<td><span class="cbt-dev-diag-badge ' + (ok ? 'is-ok' : (status > 0 ? 'is-error' : 'is-muted')) + '">' + escapeHtml(String(status || (ok ? 200 : 0))) + '</span></td>',
                         '<td>' + escapeHtml(String(Number(entry.durationMs) || 0)) + ' ms</td>',
                         '<td>' + escapeHtml(summary) + '</td>',
-                        '<td><button type="button" class="button button-small" data-diagnostics-view="' + String(index) + '">' + (activeRequestDetailIndex === index ? 'Hide' : 'View') + '</button></td>',
+                        '<td><button type="button" class="button button-small cbt-admin-btn--ghost" data-diagnostics-view="' + String(index) + '">' + (activeRequestDetailIndex === index ? 'Hide' : 'View') + '</button></td>',
                         '</tr>',
                         detailMarkup
                     ].join('');
@@ -2530,7 +2530,7 @@ if ($is_stable_mode) {
                         '<td>' + escapeHtml(String(meta.attemptId || 0)) + '</td>',
                         '<td>' + escapeHtml(String(meta.selectedExamId || 0)) + '</td>',
                         '<td>' + escapeHtml(entry.summary || '-') + '</td>',
-                        '<td><button type="button" class="button button-small" data-timeline-view="' + String(index) + '">' + (activeTimelineDetailIndex === index ? 'Hide' : 'View') + '</button></td>',
+                        '<td><button type="button" class="button button-small cbt-admin-btn--ghost" data-timeline-view="' + String(index) + '">' + (activeTimelineDetailIndex === index ? 'Hide' : 'View') + '</button></td>',
                         '</tr>',
                         detailMarkup
                     ].join('');
@@ -2640,7 +2640,7 @@ if ($is_stable_mode) {
                         '<td>' + escapeHtml(String(meta.attemptId || 0)) + '</td>',
                         '<td>' + escapeHtml(String(meta.selectedExamId || 0)) + '</td>',
                         '<td>' + escapeHtml(entry.summary || '-') + '</td>',
-                        '<td><button type="button" class="button button-small" data-action-trail-view="' + String(index) + '">' + (activeActionTrailDetailIndex === index ? 'Hide' : 'View') + '</button></td>',
+                        '<td><button type="button" class="button button-small cbt-admin-btn--ghost" data-action-trail-view="' + String(index) + '">' + (activeActionTrailDetailIndex === index ? 'Hide' : 'View') + '</button></td>',
                         '</tr>',
                         detailMarkup
                     ].join('');

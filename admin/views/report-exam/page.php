@@ -1139,9 +1139,15 @@
                                                 </thead>
                                                 <tbody>
                                                     <?php if (empty($incident_rows)): ?>
-                                                        <tr>
-                                                            <td colspan="7" class="report-empty">Belum ada incident yang dicatat untuk exam dan filter ini.</td>
-                                                        </tr>
+                                                        <?php
+                                                        echo CBT_Admin_UI_Helper::render_table_empty_state(7, [
+                                                            'title' => 'Belum ada incident',
+                                                            'message' => 'Belum ada incident yang dicatat untuk exam dan filter ini. Catatan baru akan tampil setelah disimpan dari form di atas.',
+                                                            'action_label' => 'Reset Filter',
+                                                            'action_url' => admin_url('admin.php?page=cbt-report-exam&cbt_report_tab=incident-report'),
+                                                            'action_class' => 'button button-secondary cbt-admin-btn--secondary',
+                                                        ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                                                        ?>
                                                     <?php else: ?>
                                                         <?php foreach ($incident_rows as $incident_row): ?>
                                                             <?php

@@ -1472,7 +1472,7 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                     display: none !important;
                 }
                 .cbt-results-table-shell .widefat tbody tr.cbt-attempt-answer-detail-row td {
-                    padding: 0;
+                    padding: 12px 14px 16px;
                     background: #f8fbff;
                     border-top: 0;
                 }
@@ -2716,7 +2716,18 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                 </thead>
                 <tbody id="cbt-attempts-tbody">
                 <?php if (!$attempts): ?>
-                    <tr><td colspan="7" class="cbt-results-empty-cell">No attempts found.</td></tr>
+                    <?php
+                    $results_has_filters = $selected_exam_id > 0 || $selected_status !== '' || $selected_kelas !== '' || $student_keyword !== '';
+                    echo CBT_Admin_UI_Helper::render_table_empty_state(7, [
+                        'title' => $results_has_filters ? 'Tidak ada hasil sesuai filter' : 'Belum ada hasil',
+                        'message' => $results_has_filters
+                            ? 'Tidak ada attempt yang cocok dengan filter saat ini. Reset filter atau pilih exam lain.'
+                            : 'Attempt siswa akan muncul setelah peserta mulai atau menyelesaikan ujian.',
+                        'action_label' => $results_has_filters ? 'Reset Filter' : 'Buka Exams',
+                        'action_url' => $results_has_filters ? admin_url('admin.php?page=cbt-results') : admin_url('admin.php?page=cbt-exams&cbt_exam_panel=list'),
+                        'action_class' => $results_has_filters ? 'button button-secondary cbt-admin-btn--secondary' : 'button button-primary',
+                    ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                    ?>
                 <?php else: ?>
                     <?php foreach ($attempts as $attempt): ?>
                         <?php
@@ -2875,7 +2886,7 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
 		                                    <?php if ($has_attempt_detail): ?>
 		                                        <button
 	                                                type="button"
-	                                                class="cbt-attempt-answer-toggle"
+	                                        class="cbt-admin-action cbt-admin-action--view cbt-attempt-answer-toggle"
 	                                                data-cbt-attempt-answer-toggle="<?php echo (int) $attempt_id; ?>"
 	                                                data-open-label="<?php echo esc_attr($attempt_toggle_open_label); ?>"
 	                                                data-close-label="<?php echo esc_attr($attempt_toggle_close_label); ?>"
@@ -2925,7 +2936,7 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                             }
                             ?>
                             <td>
-                                <div class="cbt-attempt-action-stack">
+                                <div class="cbt-admin-row-actions cbt-attempt-action-stack">
                                     <div
                                         class="cbt-attempt-time-meta"
                                         title="<?php echo esc_attr($attempt_duration_title); ?>"
@@ -2942,7 +2953,7 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                                             <input type="hidden" name="cbt_result_kelas" value="<?php echo esc_attr($selected_kelas); ?>" />
                                             <input type="hidden" name="cbt_student_q" value="<?php echo esc_attr($student_keyword); ?>" />
                                             <input type="hidden" name="cbt_results_paged" value="<?php echo (int) $current_page; ?>" />
-                                            <button class="button button-small" type="submit" title="Reset login siswa">Reset Login</button>
+                                                <button class="button button-small cbt-admin-btn--warning cbt-admin-action cbt-admin-action--warning" type="submit" title="Reset login siswa">Reset Login</button>
                                         </form>
                                         <?php if ((string) ($attempt['status'] ?? '') === 'in_progress'): ?>
                                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-attempt-extend-form" data-cbt-attempt-partial-submit="attempts" onsubmit="return confirm('Tambahkan waktu untuk attempt ini? Timer siswa di frontend akan ikut diperbarui.');">
@@ -2969,7 +2980,7 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                                                     />
                                                     <span class="cbt-attempt-extend-suffix">m</span>
                                                 </span>
-                                                <button class="button button-secondary button-small" type="submit" title="Tambah waktu attempt">Tambah</button>
+                                                <button class="button button-secondary button-small cbt-admin-btn--success cbt-admin-action cbt-admin-action--success" type="submit" title="Tambah waktu attempt">Tambah</button>
                                             </form>
                                         <?php endif; ?>
                                         <?php if ((string) ($attempt['status'] ?? '') === 'completed'): ?>
@@ -2982,7 +2993,7 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                                                 <input type="hidden" name="cbt_result_kelas" value="<?php echo esc_attr($selected_kelas); ?>" />
                                                 <input type="hidden" name="cbt_student_q" value="<?php echo esc_attr($student_keyword); ?>" />
                                                 <input type="hidden" name="cbt_results_paged" value="<?php echo (int) $current_page; ?>" />
-                                                <button class="button button-secondary button-small" type="submit">Reset Ujian</button>
+                                                <button class="button button-secondary button-small cbt-admin-btn--danger cbt-admin-action cbt-admin-action--danger" type="submit">Reset Ujian</button>
                                             </form>
                                         <?php endif; ?>
 	                                    </div>
@@ -2992,12 +3003,12 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                             <?php if ($has_attempt_detail): ?>
                                 <tr
                                     id="<?php echo esc_attr($attempt_answer_detail_row_id); ?>"
-                                    class="cbt-attempt-answer-detail-row"
+                                    class="cbt-admin-drawer-row cbt-attempt-answer-detail-row"
                                     data-cbt-attempt-answer-row="<?php echo (int) $attempt_id; ?>"
                                     hidden
                                 >
                                     <td colspan="7">
-	                                        <div class="cbt-attempt-answer-detail-card">
+	                                        <div class="cbt-admin-drawer-panel cbt-attempt-answer-detail-card">
 	                                            <div class="cbt-attempt-answer-detail-card-head">
 	                                                <div>
 	                                                    <h4><?php echo esc_html('Detail Attempt #' . $attempt_id); ?></h4>
@@ -4200,7 +4211,12 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                 </thead>
                 <tbody>
                 <?php if (!$essay_rows): ?>
-                    <tr><td colspan="9" class="cbt-results-empty-cell">No essay answers found.</td></tr>
+                    <?php
+                    echo CBT_Admin_UI_Helper::render_table_empty_state(9, [
+                        'title' => 'Belum ada jawaban essay',
+                        'message' => 'Jawaban essay akan muncul setelah siswa mengirim jawaban pada exam yang memiliki soal essay.',
+                    ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                    ?>
                 <?php else: ?>
                     <?php foreach ($essay_rows as $row): ?>
                         <tr>

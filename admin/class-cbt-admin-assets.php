@@ -8,11 +8,22 @@ final class CBT_Admin_Assets
 {
     private const VITE_BUILD_DIR = 'public/build/';
     private const VITE_MANIFEST_RELATIVE = 'public/build/manifest.json';
+    private const ADMIN_UI_CSS_RELATIVE = 'admin/assets/cbt-admin-ui.css';
+    private const ADMIN_UI_HANDLE = 'cbt-admin-ui';
     private const MATH_ENTRY = 'src/admin/math-main.js';
     private const MATH_HANDLE = 'cbt-admin-math';
 
     public static function enqueue_admin_assets(): void
     {
+        if (self::is_cbt_admin_page()) {
+            wp_enqueue_style(
+                self::ADMIN_UI_HANDLE,
+                CBT_EXAM_SYSTEM_URL . self::ADMIN_UI_CSS_RELATIVE,
+                [],
+                self::build_plain_asset_version(self::ADMIN_UI_CSS_RELATIVE)
+            );
+        }
+
         if (!self::should_enqueue_math_assets()) {
             return;
         }
@@ -61,11 +72,7 @@ final class CBT_Admin_Assets
 
     private static function should_enqueue_math_assets(): bool
     {
-        if (!is_admin()) {
-            return false;
-        }
-
-        $page = isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : '';
+        $page = self::get_current_admin_page_slug();
         if ($page === '') {
             return false;
         }
@@ -79,6 +86,21 @@ final class CBT_Admin_Assets
             'cbt-questions-sa',
             'cbt-questions-essay',
         ], true);
+    }
+
+    private static function is_cbt_admin_page(): bool
+    {
+        $page = self::get_current_admin_page_slug();
+        return $page !== '' && str_starts_with($page, 'cbt-');
+    }
+
+    private static function get_current_admin_page_slug(): string
+    {
+        if (!is_admin()) {
+            return '';
+        }
+
+        return isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : '';
     }
 
     /**
@@ -215,6 +237,17 @@ final class CBT_Admin_Assets
     private static function build_asset_version(string $relative_path): string
     {
         $absolute_path = CBT_EXAM_SYSTEM_PATH . self::VITE_BUILD_DIR . ltrim($relative_path, '/');
+        if (!file_exists($absolute_path)) {
+            return CBT_EXAM_SYSTEM_VERSION;
+        }
+
+        $mtime = filemtime($absolute_path);
+        return $mtime ? (string) $mtime : CBT_EXAM_SYSTEM_VERSION;
+    }
+
+    private static function build_plain_asset_version(string $relative_path): string
+    {
+        $absolute_path = CBT_EXAM_SYSTEM_PATH . ltrim($relative_path, '/');
         if (!file_exists($absolute_path)) {
             return CBT_EXAM_SYSTEM_VERSION;
         }

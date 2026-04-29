@@ -73,7 +73,6 @@ trait CBT_REST_Exam_Availability_Helpers
 
         foreach ($user_ids as $user_id) {
             $profile_snapshot = self::get_live_user_profile($user_id);
-            $student_kelas = self::normalize_kelas_code((string) ($profile_snapshot['kode_kelas'] ?? ''));
             $latest_attempt_by_exam = isset($latest_attempts_by_user[$user_id]) && is_array($latest_attempts_by_user[$user_id])
                 ? $latest_attempts_by_user[$user_id]
                 : [];
@@ -81,7 +80,8 @@ trait CBT_REST_Exam_Availability_Helpers
             $payloads[$user_id] = [
                 'items' => self::build_student_exam_availability_items(
                     $exam_rows,
-                    $student_kelas,
+                    $user_id,
+                    $profile_snapshot,
                     $student_now,
                     $server_timezone,
                     $latest_attempt_by_exam
@@ -134,6 +134,9 @@ trait CBT_REST_Exam_Availability_Helpers
                     e.starts_at,
                     e.ends_at,
                     e.target_kelas,
+                    e.target_agama,
+                    e.target_jenis_kelamin,
+                    e.restrict_to_subject_choice,
                     e.created_by,
                     e.created_at,
                     e.updated_at,
@@ -170,6 +173,7 @@ trait CBT_REST_Exam_Availability_Helpers
                 'kode_kelas' => (string) ($profile_snapshot['kode_kelas'] ?? ''),
                 'kode_ruang' => (string) ($profile_snapshot['kode_ruang'] ?? ''),
                 'agama' => (string) ($profile_snapshot['agama'] ?? ''),
+                'jenis_kelamin' => (string) ($profile_snapshot['jenis_kelamin'] ?? ''),
                 'foto' => (string) ($profile_snapshot['foto'] ?? ''),
             ];
         }
@@ -258,6 +262,9 @@ trait CBT_REST_Exam_Availability_Helpers
                             e.starts_at,
                             e.ends_at,
                             e.target_kelas,
+                            e.target_agama,
+                            e.target_jenis_kelamin,
+                            e.restrict_to_subject_choice,
                             e.created_by,
                             e.created_at,
                             e.updated_at,
@@ -345,12 +352,13 @@ trait CBT_REST_Exam_Availability_Helpers
      */
     private static function build_student_exam_availability_items(
         array $exam_rows,
-        string $student_kelas,
+        int $user_id,
+        array $profile_snapshot,
         string $student_now,
         string $server_timezone,
         array $latest_attempt_by_exam
     ): array {
-        $items = array_map(static function ($row) use ($student_kelas, $student_now, $server_timezone, $latest_attempt_by_exam): array {
+        $items = array_map(static function ($row) use ($user_id, $profile_snapshot, $student_now, $server_timezone, $latest_attempt_by_exam): array {
             $item = (array) $row;
             $now_ts = strtotime($student_now);
             $start_ts = !empty($item['starts_at']) ? strtotime((string) $item['starts_at']) : false;
@@ -360,7 +368,8 @@ trait CBT_REST_Exam_Availability_Helpers
                 (empty($item['starts_at']) || (string) $item['starts_at'] <= $student_now) &&
                 (empty($item['ends_at']) || (string) $item['ends_at'] >= $student_now)
             );
-            $class_allowed = self::exam_allows_student_class($item, $student_kelas);
+            $audience = self::evaluate_student_exam_audience($item, $user_id, $profile_snapshot);
+            $class_allowed = !empty($audience['allowed']);
 
             $schedule_reason = 'in_range';
             if ($start_ts !== false && $now_ts !== false && $start_ts > $now_ts) {
@@ -371,13 +380,14 @@ trait CBT_REST_Exam_Availability_Helpers
 
             $availability_reason = 'ok';
             if (!$class_allowed) {
-                $availability_reason = 'class_mismatch';
+                $availability_reason = sanitize_key((string) ($audience['reason'] ?? 'audience_mismatch'));
             } elseif (!$within_schedule) {
                 $availability_reason = $schedule_reason;
             }
 
             $item['is_within_schedule'] = $within_schedule ? 1 : 0;
             $item['is_class_allowed'] = $class_allowed ? 1 : 0;
+            $item['is_audience_allowed'] = $class_allowed ? 1 : 0;
             $item['is_available_now'] = ($within_schedule && $class_allowed) ? 1 : 0;
             $item['availability_reason'] = $availability_reason;
             $item['server_now'] = $student_now;
@@ -618,6 +628,7 @@ trait CBT_REST_Exam_Availability_Helpers
             'kode_kelas' => (string) ($profile_snapshot['kode_kelas'] ?? ''),
             'kode_ruang' => (string) ($profile_snapshot['kode_ruang'] ?? ''),
             'agama' => (string) ($profile_snapshot['agama'] ?? ''),
+            'jenis_kelamin' => (string) ($profile_snapshot['jenis_kelamin'] ?? ''),
             'foto' => (string) ($profile_snapshot['foto'] ?? ''),
         ];
     }

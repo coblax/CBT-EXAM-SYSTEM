@@ -109,7 +109,7 @@ trait CBT_REST_Start_Attempt_Routes
 
         $exam = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, title, created_by, status, starts_at, ends_at, duration_minutes, randomize_questions, randomize_options, show_student_result, enable_calculator, target_kelas
+                "SELECT id, subject_id, title, created_by, status, starts_at, ends_at, duration_minutes, randomize_questions, randomize_options, show_student_result, enable_calculator, target_kelas, target_agama, target_jenis_kelamin, restrict_to_subject_choice
                  FROM {$exam_table}
                  WHERE id = %d",
                 $exam_id
@@ -121,15 +121,16 @@ trait CBT_REST_Start_Attempt_Routes
             return $finalize_start_attempt_response(new WP_Error('not_found', 'Exam not found', ['status' => 404]), 'terminal_error');
         }
 
-        $student_kelas = self::get_live_user_kelas($user_id);
-        if (!self::exam_allows_student_class($exam, $student_kelas)) {
-            self::write_start_attempt_opening_state($exam_id, $user_id, 'terminal_error', 'forbidden');
+        $audience = self::evaluate_student_exam_audience($exam, $user_id, self::get_live_user_profile($user_id));
+        if (empty($audience['allowed'])) {
+            $opening_reason = sanitize_key((string) ($audience['reason'] ?? 'forbidden'));
+            self::write_start_attempt_opening_state($exam_id, $user_id, 'terminal_error', $opening_reason);
             return $finalize_start_attempt_response(new WP_Error(
                 'forbidden',
-                'Exam tidak tersedia untuk kelas akun Anda.',
+                'Exam tidak tersedia untuk akun Anda.',
                 [
                     'status' => 403,
-                    'opening_reason' => 'forbidden',
+                    'opening_reason' => $opening_reason,
                     'suggestion' => 'Kembali ke daftar exam untuk memilih exam lain yang sesuai.',
                     'return_to_exam_list_suggestion' => 'Kembali ke daftar exam untuk memilih exam lain yang sesuai.',
                 ]
@@ -852,7 +853,7 @@ trait CBT_REST_Start_Attempt_Routes
 
         $exam = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, title, created_by, status, starts_at, ends_at, duration_minutes, randomize_questions, randomize_options, show_student_result, enable_calculator, target_kelas
+                "SELECT id, subject_id, title, created_by, status, starts_at, ends_at, duration_minutes, randomize_questions, randomize_options, show_student_result, enable_calculator, target_kelas, target_agama, target_jenis_kelamin, restrict_to_subject_choice
                  FROM {$exam_table}
                  WHERE id = %d",
                 $exam_id
@@ -868,15 +869,16 @@ trait CBT_REST_Start_Attempt_Routes
             );
         }
 
-        $student_kelas = self::get_live_user_kelas($user_id);
-        if (!self::exam_allows_student_class($exam, $student_kelas)) {
-            self::write_start_attempt_opening_state($exam_id, $user_id, 'terminal_error', 'forbidden');
+        $audience = self::evaluate_student_exam_audience($exam, $user_id, self::get_live_user_profile($user_id));
+        if (empty($audience['allowed'])) {
+            $opening_reason = sanitize_key((string) ($audience['reason'] ?? 'forbidden'));
+            self::write_start_attempt_opening_state($exam_id, $user_id, 'terminal_error', $opening_reason);
             return self::build_start_attempt_terminal_status_response(
                 'forbidden',
-                'Exam tidak tersedia untuk kelas akun Anda.',
+                'Exam tidak tersedia untuk akun Anda.',
                 403,
                 [
-                    'opening_reason' => 'forbidden',
+                    'opening_reason' => $opening_reason,
                     'suggestion' => 'Kembali ke daftar exam untuk memilih exam lain yang sesuai.',
                     'return_to_exam_list_suggestion' => 'Kembali ke daftar exam untuk memilih exam lain yang sesuai.',
                 ]

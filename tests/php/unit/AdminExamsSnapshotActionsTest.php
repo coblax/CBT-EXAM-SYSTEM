@@ -481,16 +481,16 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         $state = CBT_Exam_Preflight_Service::get_state();
         self::assertSame(77, $state['exam_id']);
-        self::assertSame('completed', $state['status']);
-        self::assertTrue($state['question_snapshot_ready']);
-        self::assertTrue($state['start_snapshot_ready']);
-        self::assertTrue($state['submission_context_ready']);
-        self::assertTrue($state['auto_warm_started']);
-        self::assertSame('ready', $state['stage_submission_context']);
-        self::assertSame(1, $state['profile_success_count']);
-        self::assertSame(1, $state['login_snapshot_success_count']);
-        self::assertSame('ready', $state['stage_login_snapshot']);
-        self::assertNotSame('', $this->storedLoginSnapshotPayloadFor(71));
+        self::assertSame('active', $state['status']);
+        self::assertFalse($state['question_snapshot_ready']);
+        self::assertFalse($state['start_snapshot_ready']);
+        self::assertFalse($state['submission_context_ready']);
+        self::assertFalse($state['auto_warm_started']);
+        self::assertSame('pending', $state['stage_submission_context']);
+        self::assertSame(0, $state['profile_success_count']);
+        self::assertSame(0, $state['login_snapshot_success_count']);
+        self::assertSame('pending', $state['stage_login_snapshot']);
+        self::assertSame('', $this->storedLoginSnapshotPayloadFor(71));
         self::assertStringContainsString('cbt_exam_panel=snapshot', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
@@ -499,7 +499,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertStringContainsString('cbt_student_snapshot_kelas=XI-A', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_ruang=R1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_student_snapshot_paged=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
-        self::assertStringContainsString('cbt_msg=One-click+pra+ujian+selesai.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=One-click+pra+ujian+aktif.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
@@ -548,7 +548,7 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertStringContainsString('cbt_exam_snapshot_exam_ids%5B1%5D=54', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_page_77=3', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
-        self::assertStringContainsString('cbt_msg=Bulk+one-click+memproses+2+exam%3A+aktif+1%2C+antre+1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Bulk+one-click+masuk+antrean+2+exam%3A+aktif+1%2C+antre+1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
@@ -593,9 +593,146 @@ final class AdminExamsSnapshotActionsTest extends TestCase
 
         $jobs = CBT_Exam_Preflight_Service::get_jobs_state();
         self::assertSame('failed', $jobs[88]['status']);
-        self::assertSame('completed', $jobs[54]['status']);
-        self::assertStringContainsString('cbt_msg=Bulk+one-click+memproses+2+exam', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertSame('active', $jobs[54]['status']);
+        self::assertStringContainsString('cbt_msg=Bulk+one-click+masuk+antrean+2+exam', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('gagal+1', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_preflight_operation_ajax_rejects_unauthorized_user(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = false;
+
+        $_POST = [
+            'operation' => 'status_preflight',
+            'nonce' => wp_create_nonce('cbt_exam_preflight_operation'),
+        ];
+
+        $response = $this->invokePreflightOperationAjaxExpectResponse();
+
+        self::assertFalse($response['success']);
+        self::assertSame(403, $response['status_code']);
+        self::assertSame('Unauthorized', $response['payload']['message']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_preflight_operation_ajax_starts_bulk_without_warming_all_exam_snapshots(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAvailabilityRedis();
+        $this->useFakeProfileRedis();
+        $this->useFakeLoginSnapshotRedis();
+        $this->useFakeSubmissionContextRedis();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        $_POST = [
+            'operation' => 'start_bulk_preflight',
+            'nonce' => wp_create_nonce('cbt_exam_preflight_operation'),
+            'cbt_exam_snapshot_exam_ids' => ['77', '54'],
+            'cbt_exam_snapshot_exam_id' => '77',
+        ];
+
+        $response = $this->invokePreflightOperationAjaxExpectResponse();
+
+        self::assertTrue($response['success']);
+        self::assertSame(200, $response['status_code']);
+        self::assertSame('start_bulk_preflight', $response['payload']['operation']);
+        self::assertSame('tick_preflight', $response['payload']['next_operation']);
+        self::assertSame(2, $response['payload']['totals']['selected']);
+        self::assertSame(1, $response['payload']['totals']['active']);
+        self::assertSame(1, $response['payload']['totals']['queued']);
+        self::assertCount(2, $response['payload']['rows']);
+        self::assertSame([], CBT_REST::$warmedExamIds);
+        self::assertSame([], CBT_REST::$warmedStartExamIds);
+        self::assertSame([], CBT_REST::$warmedSubmissionContextExamIds);
+
+        $jobs = CBT_Exam_Preflight_Service::get_jobs_state();
+        self::assertSame('active', $jobs[77]['status']);
+        self::assertSame('queued', $jobs[54]['status']);
+        self::assertFalse($jobs[77]['question_snapshot_ready']);
+        self::assertFalse($jobs[54]['question_snapshot_ready']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_preflight_operation_ajax_tick_advances_active_preflight_stage(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        $this->useFakeDeliveryRedis();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAvailabilityRedis();
+        $this->useFakeProfileRedis();
+        $this->useFakeLoginSnapshotRedis();
+        $this->useFakeSubmissionContextRedis();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
+
+        $_POST = [
+            'operation' => 'start_single_preflight',
+            'nonce' => wp_create_nonce('cbt_exam_preflight_operation'),
+            'exam_id' => '77',
+        ];
+        $start_response = $this->invokePreflightOperationAjaxExpectResponse();
+        self::assertTrue($start_response['success']);
+
+        $_POST = [
+            'operation' => 'tick_preflight',
+            'nonce' => wp_create_nonce('cbt_exam_preflight_operation'),
+            'exam_ids' => ['77'],
+        ];
+        $tick_response = $this->invokePreflightOperationAjaxExpectResponse();
+
+        $jobs = CBT_Exam_Preflight_Service::get_jobs_state();
+        self::assertTrue($tick_response['success']);
+        self::assertSame('tick_preflight', $tick_response['payload']['operation']);
+        self::assertSame([77], CBT_REST::$warmedExamIds);
+        self::assertTrue($jobs[77]['question_snapshot_ready']);
+        self::assertFalse($jobs[77]['start_snapshot_ready']);
+        self::assertGreaterThan(0, $tick_response['payload']['progress_percent']);
+        self::assertFalse($tick_response['payload']['complete']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_preflight_operation_ajax_resets_redis_in_chunks(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+
+        for ($index = 0; $index < 503; $index++) {
+            $GLOBALS['cbt_test_redis_storage']['cbt_ajax_reset_test:' . $index] = '{"ok":true}';
+        }
+        $GLOBALS['cbt_test_redis_zsets']['cbt_start_attempt_gate:queue:exam:77'] = ['ticket-1' => 100.0];
+        $GLOBALS['cbt_test_redis_storage']['other_cache_marker_should_stay'] = 'keep';
+        update_option('cbt_exam_preflight_jobs', [77 => ['active' => true]]);
+
+        $_POST = [
+            'operation' => 'start_redis_reset',
+            'nonce' => wp_create_nonce('cbt_exam_preflight_operation'),
+        ];
+        $start_response = $this->invokePreflightOperationAjaxExpectResponse();
+
+        self::assertTrue($start_response['success']);
+        self::assertSame('start_redis_reset', $start_response['payload']['operation']);
+        self::assertSame('tick_redis_reset', $start_response['payload']['next_operation']);
+        self::assertFalse($start_response['payload']['complete']);
+        self::assertSame(500, $start_response['payload']['totals']['deleted_keys']);
+        self::assertSame(504, $start_response['payload']['totals']['total_keys']);
+
+        $_POST = [
+            'operation' => 'tick_redis_reset',
+            'nonce' => wp_create_nonce('cbt_exam_preflight_operation'),
+            'token' => (string) $start_response['payload']['token'],
+        ];
+        $tick_response = $this->invokePreflightOperationAjaxExpectResponse();
+
+        self::assertTrue($tick_response['success']);
+        self::assertTrue($tick_response['payload']['complete']);
+        self::assertSame(100.0, $tick_response['payload']['progress_percent']);
+        self::assertSame(504, $tick_response['payload']['totals']['deleted_keys']);
+        self::assertArrayHasKey('other_cache_marker_should_stay', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+        self::assertSame(false, get_option('cbt_exam_preflight_jobs', false));
     }
 
     #[RunInSeparateProcess]
@@ -1818,6 +1955,25 @@ PHP);
         } catch (RuntimeException $runtimeException) {
             self::assertSame('__cbt_admin_exams_redirect__', $runtimeException->getMessage());
         }
+    }
+
+    /**
+     * @return array{success:bool,status_code:int,payload:array<string,mixed>}
+     */
+    private function invokePreflightOperationAjaxExpectResponse(): array
+    {
+        try {
+            CBT_Admin_Exams_Service::handle_preflight_operation_ajax();
+            self::fail('Expected AJAX signal was not thrown.');
+        } catch (RuntimeException $runtimeException) {
+            self::assertSame('__cbt_admin_exams_ajax__', $runtimeException->getMessage());
+        }
+
+        $response = $GLOBALS['cbt_test_last_ajax_response'] ?? null;
+        self::assertIsArray($response);
+
+        /** @var array{success:bool,status_code:int,payload:array<string,mixed>} $response */
+        return $response;
     }
 
     /**

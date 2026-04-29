@@ -229,11 +229,11 @@ final class CBT_Admin_Security_Page
                     <p data-security-log-monitor-helper><?php echo esc_html($helper_text); ?></p>
                 </div>
                 <div class="cbt-setup-security-log-monitor-actions">
-                    <button type="button" class="button" data-security-log-monitor-action="refresh_monitor">Refresh Monitor</button>
-                    <button type="button" class="button" data-security-log-monitor-action="micro_drain"<?php echo $can_run_actions ? '' : ' disabled'; ?>>Run Micro-Drain</button>
-                    <button type="button" class="button button-primary" data-security-log-monitor-action="flush_now"<?php echo $can_run_actions ? '' : ' disabled'; ?>>Force Flush Now</button>
-                    <button type="button" class="button" data-security-log-monitor-action="clear_live_state">Clear Live Roster</button>
-                    <button type="button" class="button" data-security-log-monitor-action="copy_diagnostics">Copy Diagnostics</button>
+                    <button type="button" class="button cbt-admin-btn--secondary" data-security-log-monitor-action="refresh_monitor">Refresh Monitor</button>
+                    <button type="button" class="button cbt-admin-btn--success" data-security-log-monitor-action="micro_drain"<?php echo $can_run_actions ? '' : ' disabled'; ?>>Run Micro-Drain</button>
+                    <button type="button" class="button button-primary cbt-admin-btn--warning" data-security-log-monitor-action="flush_now"<?php echo $can_run_actions ? '' : ' disabled'; ?>>Force Flush Now</button>
+                    <button type="button" class="button cbt-admin-btn--danger" data-security-log-monitor-action="clear_live_state">Clear Live Roster</button>
+                    <button type="button" class="button cbt-admin-btn--ghost" data-security-log-monitor-action="copy_diagnostics">Copy Diagnostics</button>
                 </div>
             </div>
             <div class="cbt-setup-security-log-monitor-grid">
@@ -659,7 +659,7 @@ final class CBT_Admin_Security_Page
                                     <input type="hidden" name="attempt_id" value="<?php echo (int) $attempt_id; ?>" />
                                     <input type="hidden" name="return_page" value="cbt-security" />
                                     <input type="hidden" name="return_hash" value="security-log" />
-                                    <button class="button button-small" type="submit">Reset Login</button>
+                                    <button class="button button-small cbt-admin-btn--warning" type="submit">Reset Login</button>
                                 </form>
 
                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Paksa attempt ini selesai sekarang? Attempt tidak bisa dilanjutkan lagi oleh siswa.');">
@@ -668,7 +668,7 @@ final class CBT_Admin_Security_Page
                                     <input type="hidden" name="attempt_id" value="<?php echo (int) $attempt_id; ?>" />
                                     <input type="hidden" name="return_page" value="cbt-security" />
                                     <input type="hidden" name="return_hash" value="security-log" />
-                                    <button class="button button-primary button-small" type="submit">Force Complete</button>
+                                    <button class="button button-primary button-small cbt-admin-btn--danger" type="submit">Force Complete</button>
                                 </form>
                             </div>
                         </article>

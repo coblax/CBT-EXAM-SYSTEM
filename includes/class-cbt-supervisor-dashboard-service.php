@@ -1169,7 +1169,7 @@ final class CBT_Supervisor_Dashboard_Service
         }
 
         $sql = $wpdb->prepare(
-            "SELECT id, title, status, target_kelas, duration_minutes, starts_at, ends_at, created_by
+            "SELECT id, subject_id, title, status, target_kelas, target_agama, target_jenis_kelamin, restrict_to_subject_choice, duration_minutes, starts_at, ends_at, created_by
              FROM {$exam_table}
              {$where}
              LIMIT 1",
@@ -1509,7 +1509,23 @@ final class CBT_Supervisor_Dashboard_Service
             $params
         );
 
-        return array_values(array_filter((array) $wpdb->get_results($sql, ARRAY_A), 'is_array'));
+        $rows = array_values(array_filter((array) $wpdb->get_results($sql, ARRAY_A), 'is_array'));
+        if (!class_exists('CBT_Exam_Audience_Service')) {
+            return $rows;
+        }
+
+        return array_values(array_filter($rows, static function (array $row) use ($exam_row): bool {
+            $user_id = absint($row['student_id'] ?? 0);
+            if ($user_id <= 0) {
+                return false;
+            }
+
+            $audience = CBT_Exam_Audience_Service::evaluate_exam_for_student($exam_row, $user_id, [
+                'kode_kelas' => (string) ($row['student_kelas'] ?? ''),
+                'kode_ruang' => (string) ($row['student_ruang'] ?? ''),
+            ]);
+            return !empty($audience['allowed']);
+        }));
     }
 
     /**

@@ -643,13 +643,17 @@ final class SupervisorDashboardServiceFakeWpdb extends \wpdb
         $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
         $args = is_array($prepared) ? (array) ($prepared['args'] ?? []) : [];
 
-        if (strpos($query, 'SELECT id, title, status, target_kelas') !== false) {
+        if (strpos($query, 'SELECT id, subject_id, title, status, target_kelas') !== false) {
             return [
                 [
                     'id' => 8,
+                    'subject_id' => 0,
                     'title' => 'UTS',
                     'status' => 'published',
                     'target_kelas' => 'XI TKJ 1',
+                    'target_agama' => '',
+                    'target_jenis_kelamin' => '',
+                    'restrict_to_subject_choice' => 0,
                     'duration_minutes' => 90,
                     'starts_at' => '2026-04-24 08:00:00',
                     'ends_at' => '2026-04-24 09:30:00',
