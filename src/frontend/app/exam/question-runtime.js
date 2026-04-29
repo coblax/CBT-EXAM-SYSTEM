@@ -673,6 +673,7 @@ export function createQuestionRuntimeManager(deps) {
         state.answers = normalizedSnapshot.answers;
         state.existingAnswerRawByQuestionId = normalizedSnapshot.existingAnswerRawByQuestionId;
         state.loadedQuestionWindowOffsets = normalizedSnapshot.loadedQuestionWindowOffsets;
+        state.questionResponseEtags = normalizedSnapshot.questionResponseEtags || {};
         restoreQuestionAutoSaveState(normalizedSnapshot);
         if (normalizedSnapshot.questionRevision) {
             setQuestionRevision(normalizedSnapshot.questionRevision, expectedExamId || normalizedSnapshot.examId || 0);
@@ -711,6 +712,7 @@ export function createQuestionRuntimeManager(deps) {
         state.questionRevisionMarkerLookup = {};
         state.acknowledgedRevisionQuestionIds = {};
         state.loadedQuestionWindowOffsets = {};
+        state.questionResponseEtags = {};
         state.windowOffset = 0;
         state.windowLimit = 0;
         state.totalQuestions = 0;
@@ -883,6 +885,110 @@ export function createQuestionRuntimeManager(deps) {
         return questionId > 0 && !!normalizedSnapshot.questionPayloadById[questionId];
     }
 
+    function normalizeQuestionResponseEtag(etag) {
+        var normalized = String(etag || '').trim();
+        return normalized !== '' ? normalized : '';
+    }
+
+    function ensureQuestionResponseEtagMap() {
+        if (!state.questionResponseEtags || typeof state.questionResponseEtags !== 'object') {
+            state.questionResponseEtags = {};
+        }
+        return state.questionResponseEtags;
+    }
+
+    function buildQuestionResponseEtagKey(query) {
+        var safeQuery = query && typeof query === 'object' ? query : {};
+        return [
+            'v1',
+            Number(safeQuery.exam_id) || 0,
+            Number(safeQuery.attempt_id) || 0,
+            Math.max(0, Number(safeQuery.offset) || 0),
+            Math.max(0, Number(safeQuery.limit) || 0),
+            Number(safeQuery.include_existing) ? 1 : 0,
+            Number(safeQuery.include_answer_manifest) ? 1 : 0,
+            Number(safeQuery.bootstrap_light) ? 1 : 0
+        ].join(':');
+    }
+
+    function getQuestionResponseEtag(key) {
+        var etags = ensureQuestionResponseEtagMap();
+        return normalizeQuestionResponseEtag(etags[String(key || '')] || '');
+    }
+
+    function setQuestionResponseEtag(key, etag) {
+        var normalizedKey = String(key || '').trim();
+        var normalizedEtag = normalizeQuestionResponseEtag(etag);
+        if (normalizedKey === '' || normalizedEtag === '') {
+            return;
+        }
+        ensureQuestionResponseEtagMap()[normalizedKey] = normalizedEtag;
+    }
+
+    function getResponseMetaEtag(payload) {
+        return normalizeQuestionResponseEtag(
+            payload && payload.__responseMeta && payload.__responseMeta.etag
+        );
+    }
+
+    function cloneCachedQuestionForResponse(question, includeExisting) {
+        if (!question || typeof question !== 'object') {
+            return null;
+        }
+
+        var cloned = Object.assign({}, question);
+        if (!includeExisting && Object.prototype.hasOwnProperty.call(cloned, 'existing_answer')) {
+            delete cloned.existing_answer;
+        }
+        return cloned;
+    }
+
+    function buildCachedQuestionWindowResponse(questionQuery) {
+        var query = questionQuery && typeof questionQuery === 'object' ? questionQuery : {};
+        var offset = Math.max(0, Number(query.offset) || 0);
+        var limit = Math.max(1, Number(query.limit) || questionWindowSize);
+        var orderIds = Array.isArray(state.questionOrderIds) ? state.questionOrderIds.slice() : [];
+        if (!orderIds.length || offset >= orderIds.length) {
+            return null;
+        }
+
+        var includeExisting = Number(query.include_existing) ? 1 : 0;
+        var includeAnswerManifest = Number(query.include_answer_manifest) ? 1 : 0;
+        var windowIds = orderIds.slice(offset, offset + limit);
+        var items = [];
+        for (var index = 0; index < windowIds.length; index++) {
+            var questionId = Number(windowIds[index]) || 0;
+            var question = getQuestionPayloadById(questionId);
+            if (questionId <= 0 || !question) {
+                return null;
+            }
+            items.push(cloneCachedQuestionForResponse(question, includeExisting));
+        }
+
+        var answeredQuestionIds = Object.keys(state.answeredQuestionLookup || {}).reduce(function (accumulator, key) {
+            var questionId = Number(key) || 0;
+            if (questionId > 0 && state.answeredQuestionLookup[key]) {
+                accumulator.push(questionId);
+            }
+            return accumulator;
+        }, []);
+
+        return {
+            items: items,
+            offset: offset,
+            limit: limit,
+            total_questions: Math.max(Number(state.totalQuestions) || 0, orderIds.length),
+            has_next: (offset + items.length) < Math.max(Number(state.totalQuestions) || 0, orderIds.length),
+            question_order_ids: orderIds,
+            question_manifest: Array.isArray(state.questionManifest) ? state.questionManifest.slice() : [],
+            answered_question_ids: answeredQuestionIds,
+            existing_answers_map: includeAnswerManifest ? Object.assign({}, state.existingAnswerRawByQuestionId || {}) : {},
+            archived_review_items: includeAnswerManifest && Array.isArray(state.archivedReviewItems) ? state.archivedReviewItems.slice() : [],
+            question_revision: deps.serializeQuestionRevision(state.questionRevision, Number(query.exam_id) || Number(state.selectedExamId) || 0),
+            question_order_signature: String(state.questionOrderSignature || '').trim()
+        };
+    }
+
     function mergeAttemptUiStateDoubtfulIds(primarySnapshot, secondarySnapshot) {
         var mergedLookup = {};
         var mergedIds = [];
@@ -985,9 +1091,28 @@ export function createQuestionRuntimeManager(deps) {
             questionQuery.bootstrap_light = 1;
         }
 
-        var questionPayload = await apiRequest('questions', {
+        var etagKey = buildQuestionResponseEtagKey(questionQuery);
+        var requestEtag = getQuestionResponseEtag(etagKey);
+        var apiOptions = {
             query: questionQuery
-        });
+        };
+        if (requestEtag !== '') {
+            apiOptions.allowNotModified = true;
+            apiOptions.headers = {
+                'If-None-Match': requestEtag
+            };
+        }
+
+        var questionPayload = await apiRequest('questions', apiOptions);
+        if (questionPayload && questionPayload.__notModified) {
+            questionPayload = buildCachedQuestionWindowResponse(questionQuery);
+            if (!questionPayload) {
+                questionPayload = await apiRequest('questions', {
+                    query: questionQuery
+                });
+            }
+        }
+        setQuestionResponseEtag(etagKey, getResponseMetaEtag(questionPayload));
         var responseRevision = normalizeQuestionRevision(
             questionPayload && questionPayload.question_revision,
             examId

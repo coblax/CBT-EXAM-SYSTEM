@@ -618,6 +618,21 @@ export function createQuestionCacheStorage(deps) {
         }, {});
     }
 
+    function normalizeStoredStringMap(rawMap) {
+        if (!rawMap || typeof rawMap !== 'object') {
+            return {};
+        }
+
+        return Object.keys(rawMap).reduce(function (accumulator, key) {
+            var normalizedKey = String(key || '').trim();
+            var value = rawMap[key];
+            if (normalizedKey !== '' && typeof value === 'string' && value.trim() !== '') {
+                accumulator[normalizedKey] = value.trim();
+            }
+            return accumulator;
+        }, {});
+    }
+
     function normalizeStoredPendingAnswerBatchMap(rawMap) {
         if (!rawMap || typeof rawMap !== 'object') {
             return {};
@@ -956,6 +971,7 @@ export function createQuestionCacheStorage(deps) {
             answers: normalizedBaseSnapshot ? normalizedBaseSnapshot.answers : (baseSnapshot && baseSnapshot.answers),
             existing_answer_raw_by_question_id: normalizedBaseSnapshot ? normalizedBaseSnapshot.existingAnswerRawByQuestionId : (baseSnapshot && baseSnapshot.existing_answer_raw_by_question_id),
             loaded_question_window_offsets: normalizedBaseSnapshot ? normalizedBaseSnapshot.loadedQuestionWindowOffsets : (baseSnapshot && baseSnapshot.loaded_question_window_offsets),
+            question_response_etags: normalizedBaseSnapshot ? normalizedBaseSnapshot.questionResponseEtags : (baseSnapshot && baseSnapshot.question_response_etags),
             auto_save_congested_until: normalizedBaseSnapshot ? normalizedBaseSnapshot.autoSaveCongestedUntil : (baseSnapshot && baseSnapshot.auto_save_congested_until),
             last_submitted_payload_by_question: normalizedBaseSnapshot ? normalizedBaseSnapshot.lastSubmittedPayloadByQuestion : (baseSnapshot && baseSnapshot.last_submitted_payload_by_question),
             pending_answer_batch_by_question: normalizedBaseSnapshot ? normalizedBaseSnapshot.pendingAnswerBatchByQuestion : (baseSnapshot && baseSnapshot.pending_answer_batch_by_question),
@@ -1077,6 +1093,7 @@ export function createQuestionCacheStorage(deps) {
             answers: answers,
             existingAnswerRawByQuestionId: existingAnswerRawByQuestionId,
             loadedQuestionWindowOffsets: normalizeStoredBooleanLookup(snapshot.loaded_question_window_offsets),
+            questionResponseEtags: normalizeStoredStringMap(snapshot.question_response_etags),
             autoSaveCongestedUntil: autoSaveState.autoSaveCongestedUntil,
             lastSubmittedPayloadByQuestion: autoSaveState.lastSubmittedPayloadByQuestion,
             pendingAnswerBatchByQuestion: autoSaveState.pendingAnswerBatchByQuestion,
@@ -1236,6 +1253,7 @@ export function createQuestionCacheStorage(deps) {
                 }
                 return accumulator;
             }, {}),
+            question_response_etags: normalizeStoredStringMap(state.questionResponseEtags),
             auto_save_congested_until: autoSaveState.auto_save_congested_until,
             last_submitted_payload_by_question: autoSaveState.last_submitted_payload_by_question,
             pending_answer_batch_by_question: autoSaveState.pending_answer_batch_by_question,
@@ -1271,6 +1289,7 @@ export function createQuestionCacheStorage(deps) {
             answers: normalizedSnapshot.answers,
             existing_answer_raw_by_question_id: normalizedSnapshot.existingAnswerRawByQuestionId,
             loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
+            question_response_etags: normalizedSnapshot.questionResponseEtags,
             auto_save_congested_until: normalizedSnapshot.autoSaveCongestedUntil,
             last_submitted_payload_by_question: normalizedSnapshot.lastSubmittedPayloadByQuestion,
             pending_answer_batch_by_question: normalizedSnapshot.pendingAnswerBatchByQuestion,
@@ -1319,6 +1338,7 @@ export function createQuestionCacheStorage(deps) {
             answers: normalizedSnapshot.answers,
             existing_answer_raw_by_question_id: normalizedSnapshot.existingAnswerRawByQuestionId,
             loaded_question_window_offsets: normalizedSnapshot.loadedQuestionWindowOffsets,
+            question_response_etags: normalizedSnapshot.questionResponseEtags,
             auto_save_congested_until: normalizedSnapshot.autoSaveCongestedUntil,
             last_submitted_payload_by_question: normalizedSnapshot.lastSubmittedPayloadByQuestion,
             pending_answer_batch_by_question: normalizedSnapshot.pendingAnswerBatchByQuestion,
@@ -1351,6 +1371,7 @@ export function createQuestionCacheStorage(deps) {
             answers: metaSnapshot && metaSnapshot.answers,
             existing_answer_raw_by_question_id: metaSnapshot && metaSnapshot.existing_answer_raw_by_question_id,
             loaded_question_window_offsets: metaSnapshot && metaSnapshot.loaded_question_window_offsets,
+            question_response_etags: metaSnapshot && metaSnapshot.question_response_etags,
             auto_save_congested_until: metaSnapshot && metaSnapshot.auto_save_congested_until,
             last_submitted_payload_by_question: metaSnapshot && metaSnapshot.last_submitted_payload_by_question,
             pending_answer_batch_by_question: metaSnapshot && metaSnapshot.pending_answer_batch_by_question,
@@ -1509,6 +1530,11 @@ export function createQuestionCacheStorage(deps) {
             loaded_question_window_offsets: mergeStoredBooleanLookups(
                 normalizedPrimary.loadedQuestionWindowOffsets,
                 normalizedSecondary.loadedQuestionWindowOffsets
+            ),
+            question_response_etags: Object.assign(
+                {},
+                normalizeStoredStringMap(normalizedPrimary.questionResponseEtags),
+                normalizeStoredStringMap(normalizedSecondary.questionResponseEtags)
             ),
             finish_receipt: serializeStoredFinishReceipt(
                 choosePreferredStoredFinishReceipt(

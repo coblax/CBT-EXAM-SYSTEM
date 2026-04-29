@@ -108,6 +108,7 @@ export function createApiClient(deps) {
         var keepalive = !!options.keepalive;
         var signal = options.signal && typeof options.signal === 'object' ? options.signal : null;
         var suppressAuthExpiry = options.suppressAuthExpiry === true;
+        var allowNotModified = options.allowNotModified === true;
         var authToken = options.token !== undefined ? String(options.token || '') : String(state.token || '');
         var requestUrl = buildUrl(path, query);
         var startedAt = Date.now();
@@ -123,6 +124,15 @@ export function createApiClient(deps) {
 
         if (useAuth && authToken) {
             headers.Authorization = 'Bearer ' + authToken;
+        }
+        if (options.headers && typeof options.headers === 'object') {
+            Object.keys(options.headers).forEach(function (key) {
+                var value = options.headers[key];
+                if (value === null || value === undefined || value === '') {
+                    return;
+                }
+                headers[key] = String(value);
+            });
         }
 
         if (diagnosticsManager && diagnosticsManager.enabled) {
@@ -242,6 +252,47 @@ export function createApiClient(deps) {
             throw networkError;
         }
 
+        var responseMeta = {
+            etag: response && response.headers && typeof response.headers.get === 'function'
+                ? String(response.headers.get('etag') || '')
+                : '',
+            status: Number(response.status) || 0
+        };
+
+        if (Number(response.status) === 304 && allowNotModified) {
+            var notModifiedPayload = {};
+            Object.defineProperty(notModifiedPayload, '__notModified', {
+                enumerable: false,
+                value: true
+            });
+            Object.defineProperty(notModifiedPayload, '__responseMeta', {
+                enumerable: false,
+                value: responseMeta
+            });
+            if (!isAnswerSubmitPath(path)) {
+                schedulePendingAnswerRetry('api-success:' + String(path || ''), {
+                    immediate: true,
+                    resetBackoff: true,
+                    persist: false
+                });
+            }
+            if (diagnosticsManager && diagnosticsManager.enabled) {
+                diagnosticsManager.recordApiRequest({
+                    durationMs: Date.now() - startedAt,
+                    endpoint: String(path || ''),
+                    error: null,
+                    method: method,
+                    ok: true,
+                    query: query,
+                    response: null,
+                    status: 304,
+                    url: requestUrl,
+                    body: body
+                });
+            }
+            return notModifiedPayload;
+        }
+
         var payload = {};
         try {
             payload = await response.json();
@@ -315,6 +366,17 @@ export function createApiClient(deps) {
                 url: requestUrl,
                 body: body
             });
+        }
+
+        if (payload && typeof payload === 'object') {
+            try {
+                Object.defineProperty(payload, '__responseMeta', {
+                    enumerable: false,
+                    value: responseMeta
+                });
+            } catch (error) {
+                // Ignore metadata attachment failures for non-extensible payloads.
+            }
         }
 
         return payload;

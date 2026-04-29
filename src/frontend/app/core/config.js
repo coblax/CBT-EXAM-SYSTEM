@@ -192,6 +192,7 @@ export function createInitialState(win) {
         totalQuestions: 0,
         questionOrderSignature: '',
         questionRevision: null,
+        questionResponseEtags: {},
         questionRevisionRefreshing: false,
         questionRegionRefreshing: false,
         navigationRefreshing: false,

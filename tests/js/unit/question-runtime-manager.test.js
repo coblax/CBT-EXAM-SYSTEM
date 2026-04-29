@@ -89,6 +89,29 @@ function buildQuestionResponse(cacheHelpers, items, revision, overrides = {}) {
     }, overrides || {});
 }
 
+function withResponseMeta(payload, meta) {
+    Object.defineProperty(payload, '__responseMeta', {
+        enumerable: false,
+        value: meta || {}
+    });
+    return payload;
+}
+
+function buildNotModifiedResponse(meta = {}) {
+    var payload = {};
+    Object.defineProperty(payload, '__notModified', {
+        enumerable: false,
+        value: true
+    });
+    Object.defineProperty(payload, '__responseMeta', {
+        enumerable: false,
+        value: Object.assign({
+            status: 304
+        }, meta || {})
+    });
+    return payload;
+}
+
 function createFixture(overrides = {}) {
     var calls = {
         apiRequest: [],
@@ -137,6 +160,7 @@ function createFixture(overrides = {}) {
         },
         questionRegionRefreshing: false,
         questionRevision: null,
+        questionResponseEtags: {},
         questionRevisionMarkerLookup: {},
         questionRevisionNotice: null,
         questionRevisionRefreshing: false,
@@ -471,6 +495,130 @@ describe('createQuestionRuntimeManager', function () {
         ]);
         expect(fixture.calls.markQuestionWindowLoaded).toEqual([0]);
         expect(fixture.calls.updateQuestionPrefetchIndicator).toBe(1);
+    });
+
+    it('stores question response ETag from a 200 question window response', async function () {
+        var fixture = createFixture({
+            deps: {
+                apiRequest: async function () {
+                    return withResponseMeta(
+                        buildQuestionResponse(
+                            fixture.cacheHelpers,
+                            [
+                                createQuestion(101, {
+                                    options: [{ id: 11, option_key: 'A', option_text: 'Alpha', is_correct: 1 }],
+                                    question_number: 1,
+                                    question_text: 'Fresh'
+                                })
+                            ],
+                            createRevision(1, 9),
+                            {
+                                limit: 2,
+                                total_questions: 1
+                            }
+                        ),
+                        {
+                            etag: '"questions-etag-a"',
+                            status: 200
+                        }
+                    );
+                }
+            }
+        });
+
+        await fixture.manager.loadQuestionWindow(0, {
+            limit: 2
+        });
+
+        expect(fixture.state.questionResponseEtags['v1:9:55:0:2:1:0:0']).toBe('"questions-etag-a"');
+    });
+
+    it('sends If-None-Match and reuses local cached question payload on 304', async function () {
+        var fixture = createFixture({
+            state: {
+                questionResponseEtags: {
+                    'v1:9:55:0:2:1:0:0': '"questions-etag-a"'
+                }
+            },
+            deps: {
+                apiRequest: async function () {
+                    return buildNotModifiedResponse({
+                        etag: '"questions-etag-a"'
+                    });
+                }
+            }
+        });
+
+        var payload = await fixture.manager.loadQuestionWindow(0, {
+            limit: 2
+        });
+
+        expect(fixture.calls.apiRequest).toHaveLength(1);
+        expect(fixture.calls.apiRequest[0].options).toMatchObject({
+            allowNotModified: true,
+            headers: {
+                'If-None-Match': '"questions-etag-a"'
+            }
+        });
+        expect(payload.items[0].question_text).toBe('Old');
+        expect(fixture.state.questions[0].question_text).toBe('Old');
+        expect(fixture.calls.markQuestionWindowLoaded).toEqual([0]);
+    });
+
+    it('retries question window without If-None-Match when 304 has no local cached payload', async function () {
+        var fixture = createFixture({
+            state: {
+                questionOrderIds: [101],
+                questionPayloadById: {},
+                questionResponseEtags: {
+                    'v1:9:55:0:2:1:0:0': '"stale-etag"'
+                },
+                questions: []
+            },
+            deps: {
+                apiRequest: async function () {
+                    if (fixture.calls.apiRequest.length === 1) {
+                        return buildNotModifiedResponse({
+                            etag: '"stale-etag"'
+                        });
+                    }
+
+                    return withResponseMeta(
+                        buildQuestionResponse(
+                            fixture.cacheHelpers,
+                            [
+                                createQuestion(101, {
+                                    options: [{ id: 11, option_key: 'A', option_text: 'Alpha', is_correct: 1 }],
+                                    question_number: 1,
+                                    question_text: 'Retried full payload'
+                                })
+                            ],
+                            createRevision(1, 9),
+                            {
+                                limit: 2,
+                                total_questions: 1
+                            }
+                        ),
+                        {
+                            etag: '"fresh-etag"',
+                            status: 200
+                        }
+                    );
+                }
+            }
+        });
+
+        var payload = await fixture.manager.loadQuestionWindow(0, {
+            limit: 2
+        });
+
+        expect(fixture.calls.apiRequest).toHaveLength(2);
+        expect(fixture.calls.apiRequest[0].options.headers).toEqual({
+            'If-None-Match': '"stale-etag"'
+        });
+        expect(fixture.calls.apiRequest[1].options.headers).toBeUndefined();
+        expect(payload.items[0].question_text).toBe('Retried full payload');
+        expect(fixture.state.questionResponseEtags['v1:9:55:0:2:1:0:0']).toBe('"fresh-etag"');
     });
 
     it('blocks unsafe persisted question runtime state on order signature conflict while keeping safe answer restore', function () {

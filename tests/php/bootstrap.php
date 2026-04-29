@@ -318,6 +318,104 @@ if (!class_exists('WP_REST_Request')) {
     }
 }
 
+if (!class_exists('WP_REST_Response')) {
+    class WP_REST_Response implements ArrayAccess
+    {
+        /** @var mixed */
+        private $data;
+
+        private int $status;
+
+        /** @var array<string,string> */
+        private array $headers = [];
+
+        /**
+         * @param mixed $data
+         */
+        public function __construct($data = null, int $status = 200, array $headers = [])
+        {
+            $this->data = $data;
+            $this->status = $status;
+            foreach ($headers as $key => $value) {
+                $this->headers[(string) $key] = (string) $value;
+            }
+        }
+
+        /**
+         * @return mixed
+         */
+        public function get_data()
+        {
+            return $this->data;
+        }
+
+        /**
+         * @param mixed $data
+         */
+        public function set_data($data): void
+        {
+            $this->data = $data;
+        }
+
+        public function get_status(): int
+        {
+            return $this->status;
+        }
+
+        public function set_status(int $status): void
+        {
+            $this->status = $status;
+        }
+
+        public function header(string $key, string $value, bool $replace = true): void
+        {
+            if (!$replace && isset($this->headers[$key])) {
+                $this->headers[$key] .= ', ' . $value;
+                return;
+            }
+
+            $this->headers[$key] = $value;
+        }
+
+        /**
+         * @return array<string,string>
+         */
+        public function get_headers(): array
+        {
+            return $this->headers;
+        }
+
+        public function offsetExists($offset): bool
+        {
+            return is_array($this->data) && array_key_exists($offset, $this->data);
+        }
+
+        public function offsetGet($offset)
+        {
+            return is_array($this->data) ? ($this->data[$offset] ?? null) : null;
+        }
+
+        public function offsetSet($offset, $value): void
+        {
+            if (!is_array($this->data)) {
+                $this->data = [];
+            }
+            if ($offset === null) {
+                $this->data[] = $value;
+                return;
+            }
+            $this->data[$offset] = $value;
+        }
+
+        public function offsetUnset($offset): void
+        {
+            if (is_array($this->data)) {
+                unset($this->data[$offset]);
+            }
+        }
+    }
+}
+
 if (!function_exists('rest_ensure_response')) {
     function rest_ensure_response($response)
     {

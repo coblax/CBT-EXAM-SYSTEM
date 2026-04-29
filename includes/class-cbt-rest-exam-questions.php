@@ -190,7 +190,19 @@ trait CBT_REST_Exam_Questions_Routes
                 $question_revision
             );
             if ($bootstrap_response !== null) {
-                return $bootstrap_response;
+                return self::prepare_questions_conditional_response(
+                    $request,
+                    $bootstrap_response,
+                    [
+                        'exam_id' => $exam_id,
+                        'attempt_id' => $attempt_id,
+                        'offset' => $offset,
+                        'limit' => $limit,
+                        'include_existing' => $include_existing ? 1 : 0,
+                        'include_answer_manifest' => $include_answer_manifest ? 1 : 0,
+                        'bootstrap_light' => 1,
+                    ]
+                );
             }
         }
 
@@ -337,7 +349,7 @@ trait CBT_REST_Exam_Questions_Routes
                 }
             }
 
-            return rest_ensure_response([
+            return self::prepare_questions_conditional_response($request, [
                 'items' => $window_questions ?: [],
                 'offset' => $offset,
                 'limit' => $limit,
@@ -350,6 +362,14 @@ trait CBT_REST_Exam_Questions_Routes
                 'archived_review_items' => $archived_review_items,
                 'question_revision' => $question_revision,
                 'question_order_signature' => $question_order_signature,
+            ], [
+                'exam_id' => $exam_id,
+                'attempt_id' => $attempt_id,
+                'offset' => $offset,
+                'limit' => $limit,
+                'include_existing' => $include_existing ? 1 : 0,
+                'include_answer_manifest' => $include_answer_manifest ? 1 : 0,
+                'bootstrap_light' => 0,
             ]);
         }
 
@@ -387,6 +407,172 @@ trait CBT_REST_Exam_Questions_Routes
         $response['question_revision'] = $question_revision;
         $response['question_order_signature'] = $question_order_signature;
 
-        return rest_ensure_response($response);
+        return self::prepare_questions_conditional_response($request, $response, [
+            'exam_id' => $exam_id,
+            'attempt_id' => $attempt_id,
+            'offset' => 0,
+            'limit' => 0,
+            'include_existing' => $include_existing ? 1 : 0,
+            'include_answer_manifest' => $include_answer_manifest ? 1 : 0,
+            'bootstrap_light' => 0,
+        ]);
+    }
+
+    /**
+     * @param array<string,mixed>|WP_REST_Response $payload
+     * @param array<string,mixed> $context
+     * @return WP_REST_Response|array<string,mixed>
+     */
+    private static function prepare_questions_conditional_response(WP_REST_Request $request, $payload, array $context)
+    {
+        $response = rest_ensure_response($payload);
+        $response_payload = $response instanceof WP_REST_Response
+            ? $response->get_data()
+            : $response;
+
+        if (!is_array($response_payload)) {
+            return $response;
+        }
+
+        $etag = self::build_questions_response_etag($response_payload, $context);
+        if ($etag === '') {
+            return $response;
+        }
+
+        if (self::request_if_none_match_matches($request, $etag)) {
+            $not_modified = new WP_REST_Response(null, 304);
+            self::add_questions_cache_headers($not_modified, $etag);
+            return $not_modified;
+        }
+
+        if (!$response instanceof WP_REST_Response) {
+            $response = new WP_REST_Response($response_payload, 200);
+        }
+
+        self::add_questions_cache_headers($response, $etag);
+        return $response;
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     * @param array<string,mixed> $context
+     */
+    private static function build_questions_response_etag(array $payload, array $context): string
+    {
+        $revision = is_array($payload['question_revision'] ?? null) ? $payload['question_revision'] : [];
+        $revision_signature = is_scalar($revision['signature'] ?? null) ? (string) $revision['signature'] : '';
+        if ($revision_signature === '') {
+            return '';
+        }
+
+        $seed = [
+            'revision_signature' => $revision_signature,
+            'question_order_signature' => is_scalar($payload['question_order_signature'] ?? null)
+                ? (string) $payload['question_order_signature']
+                : '',
+            'exam_id' => absint($context['exam_id'] ?? 0),
+            'attempt_id' => absint($context['attempt_id'] ?? 0),
+            'offset' => absint($payload['offset'] ?? $context['offset'] ?? 0),
+            'limit' => absint($payload['limit'] ?? $context['limit'] ?? 0),
+            'bootstrap_light' => !empty($context['bootstrap_light']) ? 1 : 0,
+            'include_existing' => !empty($context['include_existing']) ? 1 : 0,
+            'include_answer_manifest' => !empty($context['include_answer_manifest']) ? 1 : 0,
+            'items_signature' => self::questions_payload_fragment_signature($payload['items'] ?? []),
+            'answered_signature' => self::questions_payload_fragment_signature($payload['answered_question_ids'] ?? []),
+            'existing_signature' => self::questions_payload_fragment_signature($payload['existing_answers_map'] ?? []),
+            'archived_signature' => self::questions_payload_fragment_signature($payload['archived_review_items'] ?? []),
+        ];
+
+        $encoded = wp_json_encode($seed);
+        if (!is_string($encoded) || $encoded === '') {
+            return '';
+        }
+
+        return '"' . hash('sha256', $encoded) . '"';
+    }
+
+    /**
+     * @param mixed $fragment
+     */
+    private static function questions_payload_fragment_signature($fragment): string
+    {
+        $normalized = self::normalize_questions_payload_fragment($fragment);
+        $encoded = wp_json_encode($normalized);
+        if (!is_string($encoded) || $encoded === '') {
+            return '';
+        }
+
+        return hash('sha256', $encoded);
+    }
+
+    /**
+     * @param mixed $fragment
+     * @return mixed
+     */
+    private static function normalize_questions_payload_fragment($fragment)
+    {
+        if (!is_array($fragment)) {
+            return $fragment;
+        }
+
+        $normalized = [];
+        foreach ($fragment as $key => $value) {
+            $normalized[$key] = self::normalize_questions_payload_fragment($value);
+        }
+
+        if (!self::is_questions_payload_list($normalized)) {
+            ksort($normalized, SORT_STRING);
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<mixed> $value
+     */
+    private static function is_questions_payload_list(array $value): bool
+    {
+        $expected = 0;
+        foreach (array_keys($value) as $key) {
+            if ($key !== $expected) {
+                return false;
+            }
+            $expected++;
+        }
+
+        return true;
+    }
+
+    private static function request_if_none_match_matches(WP_REST_Request $request, string $etag): bool
+    {
+        $header = trim((string) $request->get_header('if-none-match'));
+        if ($header === '' && isset($_SERVER['HTTP_IF_NONE_MATCH'])) {
+            $header = trim((string) wp_unslash($_SERVER['HTTP_IF_NONE_MATCH']));
+        }
+        if ($header === '') {
+            return false;
+        }
+
+        foreach (explode(',', $header) as $candidate) {
+            $candidate = trim((string) $candidate);
+            if ($candidate === '*') {
+                return true;
+            }
+            if (stripos($candidate, 'W/') === 0) {
+                $candidate = trim(substr($candidate, 2));
+            }
+            if ($candidate === $etag) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function add_questions_cache_headers(WP_REST_Response $response, string $etag): void
+    {
+        $response->header('ETag', $etag);
+        $response->header('Cache-Control', 'private, no-cache, must-revalidate');
+        $response->header('Vary', 'Authorization, Cookie');
     }
 }

@@ -131,6 +131,151 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_get_questions_response_includes_etag_and_private_cache_headers(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->useDeliveryFakeRedis();
+        $this->useAttemptContractFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+
+        $response = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 55,
+            'attempt_id' => 77,
+            'offset' => 0,
+            'limit' => 1,
+        ], [], [], '/cbt/v1/questions', 'GET'));
+
+        self::assertInstanceOf(WP_REST_Response::class, $response);
+        self::assertSame(200, $response->get_status());
+        $headers = $response->get_headers();
+        self::assertMatchesRegularExpression('/^"[a-f0-9]{64}"$/', (string) ($headers['ETag'] ?? ''));
+        self::assertSame('private, no-cache, must-revalidate', $headers['Cache-Control'] ?? null);
+        self::assertSame('Authorization, Cookie', $headers['Vary'] ?? null);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_get_questions_matching_if_none_match_returns_304_without_body(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->useDeliveryFakeRedis();
+        $this->useAttemptContractFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+
+        $first = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 55,
+            'attempt_id' => 77,
+            'offset' => 0,
+            'limit' => 1,
+        ], [], [], '/cbt/v1/questions', 'GET'));
+        self::assertInstanceOf(WP_REST_Response::class, $first);
+        $etag = (string) (($first->get_headers())['ETag'] ?? '');
+        self::assertNotSame('', $etag);
+
+        $second = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 55,
+            'attempt_id' => 77,
+            'offset' => 0,
+            'limit' => 1,
+        ], [], [
+            'If-None-Match' => 'W/' . $etag . ', "unused"',
+        ], '/cbt/v1/questions', 'GET'));
+
+        self::assertInstanceOf(WP_REST_Response::class, $second);
+        self::assertSame(304, $second->get_status());
+        self::assertNull($second->get_data());
+        self::assertSame($etag, ($second->get_headers())['ETag'] ?? null);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_get_questions_etag_changes_when_existing_answers_change(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->useDeliveryFakeRedis();
+        $this->useAttemptContractFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+
+        $first = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 55,
+            'attempt_id' => 77,
+            'offset' => 0,
+            'limit' => 1,
+        ], [], [], '/cbt/v1/questions', 'GET'));
+        self::assertInstanceOf(WP_REST_Response::class, $first);
+        $firstEtag = (string) (($first->get_headers())['ETag'] ?? '');
+        self::assertNotSame('', $firstEtag);
+
+        $wpdb->selectedOptionIds = '[9001]';
+
+        $second = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 55,
+            'attempt_id' => 77,
+            'offset' => 0,
+            'limit' => 1,
+        ], [], [], '/cbt/v1/questions', 'GET'));
+        self::assertInstanceOf(WP_REST_Response::class, $second);
+        $secondEtag = (string) (($second->get_headers())['ETag'] ?? '');
+
+        self::assertNotSame('', $secondEtag);
+        self::assertNotSame($firstEtag, $secondEtag);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_get_questions_unauthorized_request_does_not_return_304(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->useDeliveryFakeRedis();
+        $this->useAttemptContractFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+        $wpdb->attemptStatus = 'completed';
+
+        $response = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 55,
+            'attempt_id' => 77,
+            'offset' => 0,
+            'limit' => 1,
+        ], [], [
+            'If-None-Match' => '*',
+        ], '/cbt/v1/questions', 'GET'));
+
+        self::assertTrue(is_wp_error($response));
+        self::assertSame('attempt_closed', $response->get_error_code());
+    }
+
+    #[RunInSeparateProcess]
     public function test_get_questions_bootstrap_light_student_attempt_sanitizes_question_payload(): void
     {
         $this->bootstrapRestDeliverySnapshotScaffold();
@@ -304,6 +449,7 @@ final class RestQuestionDeliverySnapshotFakeWpdb
     public int $optionHydrateCalls = 0;
     public int $answerQueryCalls = 0;
     public string $attemptStatus = 'in_progress';
+    public string $selectedOptionIds = '[9002]';
 
     /** @return array<string,mixed> */
     public function prepare(string $query, ...$args): array
@@ -402,7 +548,7 @@ final class RestQuestionDeliverySnapshotFakeWpdb
             return [
                 [
                     'question_id' => 201,
-                    'selected_option_ids' => '[9002]',
+                    'selected_option_ids' => $this->selectedOptionIds,
                     'answer_text' => '',
                     'answered_at' => '2026-04-03 05:35:00',
                     'updated_at' => '2026-04-03 05:35:00',

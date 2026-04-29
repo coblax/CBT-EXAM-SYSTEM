@@ -12,6 +12,9 @@ function createFixture(responsePayload, status = 401, overrides = {}) {
     var state = Object.assign({
         token: 'login-token'
     }, overrides.state || {});
+    var responseHeaders = overrides.headers && typeof overrides.headers === 'object'
+        ? overrides.headers
+        : {};
 
     var client = createApiClient({
         config: {
@@ -28,6 +31,12 @@ function createFixture(responsePayload, status = 401, overrides = {}) {
                 url
             });
             return {
+                headers: {
+                    get: function (name) {
+                        var normalizedName = String(name || '').toLowerCase();
+                        return responseHeaders[normalizedName] || responseHeaders[String(name || '')] || '';
+                    }
+                },
                 ok: status >= 200 && status < 300,
                 status,
                 json: async function () {
@@ -70,6 +79,56 @@ function createFixture(responsePayload, status = 401, overrides = {}) {
 }
 
 describe('createApiClient auth expiry handling', function () {
+    it('passes custom request headers and exposes response metadata on successful payloads', async function () {
+        var fixture = createFixture({
+            items: []
+        }, 200, {
+            headers: {
+                etag: '"question-etag"'
+            }
+        });
+
+        var payload = await fixture.client.api('questions', {
+            headers: {
+                'If-None-Match': '"cached-etag"'
+            },
+            query: {
+                attempt_id: 55,
+                exam_id: 9
+            }
+        });
+
+        expect(fixture.calls.fetch[0].options.headers['If-None-Match']).toBe('"cached-etag"');
+        expect(payload.__responseMeta).toEqual({
+            etag: '"question-etag"',
+            status: 200
+        });
+        expect(Object.keys(payload)).toEqual(['items']);
+    });
+
+    it('returns a non-enumerable not-modified marker for allowed 304 responses', async function () {
+        var fixture = createFixture(null, 304, {
+            headers: {
+                etag: '"question-etag"'
+            }
+        });
+
+        var payload = await fixture.client.api('questions', {
+            allowNotModified: true,
+            headers: {
+                'If-None-Match': '"question-etag"'
+            }
+        });
+
+        expect(payload.__notModified).toBe(true);
+        expect(payload.__responseMeta).toEqual({
+            etag: '"question-etag"',
+            status: 304
+        });
+        expect(Object.keys(payload)).toEqual([]);
+        expect(fixture.calls.schedulePendingAnswerRetry).toHaveLength(1);
+    });
+
     it('does not clear the login session for exam-token errors', async function () {
         var fixture = createFixture({
             code: 'token_required',
