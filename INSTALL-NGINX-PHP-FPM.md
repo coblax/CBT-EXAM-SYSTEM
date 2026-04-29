@@ -111,10 +111,10 @@ systemctl list-unit-files 'php*-fpm.service' --no-legend
 ls /run/php/php*-fpm.sock
 
 # Cek ekstensi PHP yang dibutuhkan plugin dan fitur export/media
-php -m | grep -Ei 'redis|zip|xml|mbstring|gd|intl|imagick'
+php -m | grep -Ei 'redis|zip|xml|mbstring|gd|intl|imagick|Zend OPcache'
 ```
 
-Jika `redis` belum muncul di daftar ekstensi, restart PHP-FPM:
+Jika `redis` atau `Zend OPcache` belum muncul di daftar ekstensi, restart PHP-FPM:
 
 ```bash
 # Sesuaikan versi, misalnya php8.3-fpm
@@ -488,24 +488,38 @@ if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROT
 
 /* === Redis Object Cache (diaktifkan di Langkah 9) === */
 define('WP_CACHE', true);
-define('WP_REDIS_HOST', '127.0.0.1');
-define('WP_REDIS_PORT', 6379);
+
+// Opsi A — Unix socket, direkomendasikan untuk single server.
+define('WP_REDIS_HOST', '/var/run/redis/redis.sock'); // Unix socket, direkomendasikan untuk single server
+define('WP_REDIS_PORT', 0);                           // Port tidak dipakai saat host berupa socket
 define('WP_REDIS_DATABASE', 1);
 define('WP_REDIS_PREFIX', 'cbt_exam_system:');
 
 /* === CBT Runtime Buffer (Redis DB terpisah untuk data ujian realtime) === */
 define('CBT_RUNTIME_BUFFER_ENABLED', true);
 define('CBT_RUNTIME_BUFFER_FALLBACK_TO_DB', true);
-define('CBT_RUNTIME_REDIS_HOST', '127.0.0.1');
-define('CBT_RUNTIME_REDIS_PORT', 6379);
+define('CBT_RUNTIME_REDIS_HOST', '/var/run/redis/redis.sock');
+define('CBT_RUNTIME_REDIS_PORT', 0);
 define('CBT_RUNTIME_REDIS_DATABASE', 2);
 define('CBT_RUNTIME_REDIS_DB', 2);       // Alias kompatibilitas
 define('CBT_RUNTIME_REDIS_PREFIX', 'cbt_runtime:');
 
 /* === CBT Auth & Gate Redis (default sama dengan Runtime, bisa dipisah jika perlu) === */
-define('CBT_REDIS_HOST', '127.0.0.1');
-define('CBT_REDIS_PORT', 6379);
+define('CBT_REDIS_HOST', '/var/run/redis/redis.sock');
+define('CBT_REDIS_PORT', 0);
 define('CBT_REDIS_DATABASE', 2);
+
+/*
+ * Opsi B — TCP localhost, pakai ini jika Unix socket belum dipakai
+ * atau Redis berada di host/port TCP.
+ *
+ * define('WP_REDIS_HOST', '127.0.0.1');
+ * define('WP_REDIS_PORT', 6379);
+ * define('CBT_RUNTIME_REDIS_HOST', '127.0.0.1');
+ * define('CBT_RUNTIME_REDIS_PORT', 6379);
+ * define('CBT_REDIS_HOST', '127.0.0.1');
+ * define('CBT_REDIS_PORT', 6379);
+ */
 
 /* === CBT JWT Secret (wajib untuk produksi) === */
 // Jika tidak didefinisikan, plugin fallback ke wp_salt('auth').
@@ -524,6 +538,7 @@ define('CBT_REDIS_PASSWORD', 'ganti_password_redis');
 ```
 
 > **Catatan:** Konfigurasi Redis di atas sudah ditulis sekarang supaya tidak perlu mengedit `wp-config.php` dua kali. Redis sendiri diaktifkan di **Langkah 9**.
+> Jika Redis berada di server berbeda, ganti host Redis kembali ke IP/hostname Redis dan pakai port `6379`. Unix socket hanya berlaku jika PHP-FPM dan Redis berada di server yang sama.
 
 ---
 
@@ -670,7 +685,63 @@ redis-cli ping
 
 Output yang diharapkan: `PONG`
 
-### 9.2 Install plugin Redis Object Cache
+Jika ingin memakai Redis lewat TCP localhost seperti konfigurasi bawaan, pastikan command berikut juga berhasil:
+
+```bash
+redis-cli -h 127.0.0.1 -p 6379 PING
+```
+
+Untuk TCP localhost, gunakan konfigurasi Redis di `wp-config.php` Opsi B:
+
+```php
+define('WP_REDIS_HOST', '127.0.0.1');
+define('WP_REDIS_PORT', 6379);
+define('CBT_RUNTIME_REDIS_HOST', '127.0.0.1');
+define('CBT_RUNTIME_REDIS_PORT', 6379);
+define('CBT_REDIS_HOST', '127.0.0.1');
+define('CBT_REDIS_PORT', 6379);
+```
+
+### 9.2 Opsi Rekomendasi: Redis Unix Socket
+
+Karena panduan ini memakai mode **single server** (PHP-FPM dan Redis di mesin yang sama), gunakan Redis Unix socket agar PHP tidak melewati network stack TCP `127.0.0.1` untuk setiap operasi Redis.
+
+Edit konfigurasi Redis:
+
+```bash
+sudo nano /etc/redis/redis.conf
+```
+
+Pastikan baris berikut aktif:
+
+```conf
+unixsocket /var/run/redis/redis.sock
+unixsocketperm 770
+```
+
+Berikan akses socket ke PHP-FPM (`www-data`) dan restart service:
+
+```bash
+sudo usermod -aG redis www-data
+sudo systemctl restart redis-server
+
+# Sesuaikan versi PHP-FPM jika bukan php8.3-fpm
+sudo systemctl restart php8.3-fpm
+```
+
+Verifikasi socket tersedia dan bisa diakses PHP-FPM user:
+
+```bash
+ls -la /var/run/redis/redis.sock
+redis-cli -s /var/run/redis/redis.sock PING
+sudo -u www-data redis-cli -s /var/run/redis/redis.sock PING
+```
+
+Output `redis-cli` harus `PONG`. Jika command `sudo -u www-data ...` menghasilkan `Permission denied`, cek kembali `unixsocketperm`, group `redis`, lalu restart PHP-FPM.
+
+> **Catatan:** Plugin CBT otomatis memakai mode Unix socket jika host Redis di `wp-config.php` dimulai dengan `/`, misalnya `/var/run/redis/redis.sock`. Jangan tulis `unix:///var/run/redis/redis.sock` untuk konstanta CBT. Jika verifikasi socket gagal, kembali dulu ke TCP localhost Opsi B agar Redis tetap jalan.
+
+### 9.3 Install plugin Redis Object Cache
 
 **Via WP-CLI (direkomendasikan):**
 
@@ -687,7 +758,7 @@ sudo -u www-data wp redis enable
 3. Aktifkan plugin.
 4. Klik `Enable Object Cache`.
 
-### 9.3 Verifikasi
+### 9.4 Verifikasi
 
 ```bash
 cd /var/www/wordpress
@@ -1177,6 +1248,8 @@ Sebelum menerapkan tuning, pastikan semua item berikut sudah terpenuhi:
 - [ ] Jam server sinkron via NTP
 - [ ] Backup database dan `wp-content/uploads` tersedia
 - [ ] Redis object cache aktif dan CBT Cache readiness `ready`
+- [ ] Redis Unix socket bisa diakses oleh `www-data` jika Redis satu server dengan PHP-FPM
+- [ ] OPcache tersedia (`php -m` menampilkan `Zend OPcache`)
 - [ ] `public/build/manifest.json` tersedia
 - [ ] Cron OS berjalan tiap menit
 - [ ] Tidak ada page cache untuk `/wp-json/cbt/v1/*` dan `/cbt-ujian/*`
@@ -1238,14 +1311,20 @@ date.timezone = Asia/Jakarta
 
 opcache.enable=1
 opcache.enable_cli=0
-opcache.memory_consumption=192
+opcache.memory_consumption=256
 opcache.interned_strings_buffer=16
 opcache.max_accelerated_files=30000
-opcache.validate_timestamps=1
-opcache.revalidate_freq=2
+opcache.validate_timestamps=0
+opcache.revalidate_freq=0
 realpath_cache_size=4096K
 realpath_cache_ttl=600
 ```
+
+**Catatan OPcache production:**
+- `opcache.validate_timestamps=0` membuat PHP-FPM tidak mengecek perubahan file PHP di setiap request. Ini bagus untuk throughput produksi.
+- Setelah update WordPress/plugin/theme, wajib reload/restart PHP-FPM agar kode baru terbaca.
+- Untuk server development/staging yang sering edit file langsung di server, gunakan `opcache.validate_timestamps=1` dan `opcache.revalidate_freq=2`.
+- JIT tidak diaktifkan sebagai default karena workload WordPress/CBT banyak I/O ke MySQL/Redis; uji terpisah jika ingin membandingkan.
 
 Buat file slowlog:
 
@@ -1260,6 +1339,18 @@ Restart PHP-FPM:
 ```bash
 sudo systemctl restart php8.3-fpm
 ```
+
+**Verifikasi OPcache aktif di PHP-FPM:**
+
+```bash
+php-fpm8.3 -i | grep -Ei 'opcache.enable|opcache.memory_consumption|opcache.max_accelerated_files|opcache.validate_timestamps'
+```
+
+Output yang diharapkan:
+- `opcache.enable => On`
+- `opcache.memory_consumption => 256`
+- `opcache.max_accelerated_files => 30000`
+- `opcache.validate_timestamps => Off`
 
 ### 18.2 Tuning MySQL/MariaDB
 
@@ -1382,6 +1473,8 @@ sudo nano /etc/redis/redis.conf
 supervised systemd
 bind 127.0.0.1 ::1
 protected-mode yes
+unixsocket /var/run/redis/redis.sock
+unixsocketperm 770
 timeout 0
 tcp-keepalive 300
 maxmemory 1536mb
@@ -1396,11 +1489,14 @@ save 60 10000
 **Catatan:**
 - `noeviction` — key runtime ujian tidak akan dibuang diam-diam saat memori penuh
 - `appendonly yes` + `appendfsync everysec` — perlindungan jika Redis restart saat ujian
+- `unixsocket` + `unixsocketperm 770` — jalur cepat lokal untuk PHP-FPM, sesuai konfigurasi Redis di `wp-config.php`
 - Jika mendekati `maxmemory`, naikkan ke `2gb` jika RAM server longgar
 
 ```bash
 sudo systemctl restart redis-server
 redis-cli ping
+redis-cli -s /var/run/redis/redis.sock PING
+sudo -u www-data redis-cli -s /var/run/redis/redis.sock PING
 redis-cli info memory | grep -E 'used_memory_human|maxmemory_human|maxmemory_policy'
 ```
 
@@ -1504,10 +1600,12 @@ sudo -u www-data env HOME=/tmp composer install --no-dev --optimize-autoloader
 ### Redis masih fallback
 
 - `redis-cli ping` harus menghasilkan `PONG`.
+- Jika memakai Unix socket, `redis-cli -s /var/run/redis/redis.sock PING` dan `sudo -u www-data redis-cli -s /var/run/redis/redis.sock PING` harus menghasilkan `PONG`.
 - `php -m | grep -i redis` harus menampilkan `redis`.
 - File `wp-content/object-cache.php` harus ada.
 - `wp_using_ext_object_cache()` harus bernilai `true`.
 - Buka `CBT Cache` di dashboard dan ikuti next step yang muncul.
+- Jika status CBT masih menampilkan `127.0.0.1:6379`, cek kembali konstanta Redis di `wp-config.php`; untuk Unix socket nilai host harus `/var/run/redis/redis.sock`.
 
 ### phpMyAdmin 404 atau file PHP terunduh
 
