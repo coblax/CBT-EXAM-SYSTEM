@@ -146,19 +146,6 @@ add_action('init', static function () {
     CBT_Activator::maybe_sync_frontend_pages();
 }, 20);
 
-add_action('wp_head', static function () {
-    if (is_admin()) {
-        return;
-    }
-
-    $capture_flag = isset($_GET['figma_capture']) ? sanitize_text_field(wp_unslash($_GET['figma_capture'])) : '';
-    if ($capture_flag !== '1') {
-        return;
-    }
-
-    echo '<script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>' . "\n";
-}, 1);
-
 /**
  * Prioritas endpoint ujian:
  * - login / start_attempt(token) / get_questions diprioritaskan saat jam ujian.

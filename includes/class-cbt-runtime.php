@@ -29,6 +29,7 @@ class CBT_Runtime
     private const FLUSH_DELAY_SECONDS = 5;
     private const FLUSH_THRESHOLD = 10;
     private const FLUSH_BATCH_LIMIT = 200;
+    private const FLUSH_DUE_CRON_LIMIT = 100;
     private const FLUSH_LOCK_TTL = 20;
     private const FINISH_LOCK_TTL = 45;
     private const MAX_ATTEMPT_TTL = 172800;
@@ -42,6 +43,9 @@ class CBT_Runtime
 
     /** @var string */
     private static $last_connection_error = '';
+
+    /** @var string|null */
+    private static $cached_prefix = null;
 
     public static function init(): void
     {
@@ -79,7 +83,7 @@ class CBT_Runtime
 
     public static function handle_cron_flush(): void
     {
-        self::flush_due_attempts();
+        self::flush_due_attempts(self::runtime_flush_due_cron_limit());
         self::prune_stale_active_attempts();
     }
 
@@ -329,7 +333,6 @@ class CBT_Runtime
             $flushed = (int) ($flush_result['flushed'] ?? 0);
             $pending_count = (int) ($flush_result['pending_count'] ?? $pending_count);
         } else {
-            self::flush_due_attempts(1);
             $pending_count = (int) $redis->zCard($dirty_key);
         }
 
@@ -677,6 +680,22 @@ class CBT_Runtime
             'attempts_flushed' => $attempts_flushed,
             'answers_flushed' => $answers_flushed,
         ];
+    }
+
+    private static function runtime_flush_due_cron_limit(): int
+    {
+        return self::normalize_runtime_flush_due_cron_limit(
+            apply_filters('cbt_runtime_flush_due_cron_limit', self::FLUSH_DUE_CRON_LIMIT)
+        );
+    }
+
+    /**
+     * @param mixed $limit
+     */
+    private static function normalize_runtime_flush_due_cron_limit($limit): int
+    {
+        $limit = (int) $limit;
+        return max(1, min(1000, $limit));
     }
 
     /**
@@ -1190,8 +1209,12 @@ class CBT_Runtime
 
     private static function prefixed_key(string $suffix): string
     {
-        $settings = self::runtime_settings();
-        return (string) ($settings['prefix'] ?? self::DEFAULT_PREFIX) . ltrim($suffix, ':');
+        if (self::$cached_prefix === null) {
+            $settings = self::runtime_settings();
+            self::$cached_prefix = (string) ($settings['prefix'] ?? self::DEFAULT_PREFIX);
+        }
+
+        return self::$cached_prefix . ltrim($suffix, ':');
     }
 
     /**
