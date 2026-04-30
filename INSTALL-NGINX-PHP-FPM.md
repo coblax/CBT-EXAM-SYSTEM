@@ -706,20 +706,43 @@ define('CBT_REDIS_PORT', 6379);
 
 Karena panduan ini memakai mode **single server** (PHP-FPM dan Redis di mesin yang sama), gunakan Redis Unix socket agar PHP tidak melewati network stack TCP `127.0.0.1` untuk setiap operasi Redis.
 
-Edit konfigurasi Redis:
+**Langkah 1 — Pastikan direktori `/var/run/redis/` ada dan dimiliki Redis:**
+
+```bash
+ls -la /var/run/ | grep redis
+```
+
+Output yang diharapkan:
+```
+drwxr-xr-x  2 redis redis  ... redis/
+```
+
+Jika direktori tidak ada atau owner-nya bukan `redis`, jalankan:
+
+```bash
+sudo mkdir -p /var/run/redis
+sudo chown redis:redis /var/run/redis
+sudo chmod 755 /var/run/redis
+```
+
+**Langkah 2 — Aktifkan Unix socket di konfigurasi Redis:**
 
 ```bash
 sudo nano /etc/redis/redis.conf
 ```
 
-Pastikan baris berikut aktif:
+Di dalam file, baris socket biasanya **sudah ada tapi dikomentari** dengan `#`. Cari dengan `Ctrl+W` lalu ketik `unixsocket`. Hapus tanda `#` di depan kedua baris berikut sehingga menjadi aktif:
 
 ```conf
 unixsocket /var/run/redis/redis.sock
 unixsocketperm 770
 ```
 
-Berikan akses socket ke PHP-FPM (`www-data`) dan restart service:
+> Jika kedua baris tidak ditemukan sama sekali, tambahkan di bagian bawah file sebelum baris terakhir.
+
+Simpan file: `Ctrl+X` → `Y` → `Enter`.
+
+**Langkah 3 — Berikan akses socket ke PHP-FPM dan restart service:**
 
 ```bash
 sudo usermod -aG redis www-data
@@ -729,17 +752,46 @@ sudo systemctl restart redis-server
 sudo systemctl restart php8.3-fpm
 ```
 
-Verifikasi socket tersedia dan bisa diakses PHP-FPM user:
+**Langkah 4 — Verifikasi socket muncul:**
 
 ```bash
-ls -la /var/run/redis/redis.sock
+ls -la /var/run/redis/
+```
+
+Output yang diharapkan (harus ada file `redis.sock`):
+```
+-rw-r--r--  1 redis redis  ... redis-server.pid
+srwxrwx---  1 redis redis  ... redis.sock
+```
+
+Jika hanya ada `redis-server.pid` dan **tidak ada `redis.sock`**, berarti konfigurasi belum terbaca. Cek dengan:
+
+```bash
+# Harus ada output — jika kosong berarti baris masih ter-comment, ulangi Langkah 2
+sudo grep -n "^unixsocket" /etc/redis/redis.conf
+```
+
+**Langkah 5 — Verifikasi koneksi dapat diakses:**
+
+```bash
 redis-cli -s /var/run/redis/redis.sock PING
 sudo -u www-data redis-cli -s /var/run/redis/redis.sock PING
 ```
 
-Output `redis-cli` harus `PONG`. Jika command `sudo -u www-data ...` menghasilkan `Permission denied`, cek kembali `unixsocketperm`, group `redis`, lalu restart PHP-FPM.
+Kedua perintah harus menghasilkan `PONG`.
 
-> **Catatan:** Plugin CBT otomatis memakai mode Unix socket jika host Redis di `wp-config.php` dimulai dengan `/`, misalnya `/var/run/redis/redis.sock`. Jangan tulis `unix:///var/run/redis/redis.sock` untuk konstanta CBT. Jika verifikasi socket gagal, kembali dulu ke TCP localhost Opsi B agar Redis tetap jalan.
+Jika perintah `sudo -u www-data ...` menghasilkan `Permission denied`:
+
+```bash
+# Cek apakah www-data sudah masuk group redis
+groups www-data
+
+# Jika redis tidak muncul di output, tambahkan ulang lalu restart PHP-FPM:
+sudo usermod -aG redis www-data
+sudo systemctl restart php8.3-fpm
+```
+
+> **Catatan:** Plugin CBT otomatis memakai mode Unix socket jika host Redis di `wp-config.php` dimulai dengan `/`, misalnya `/var/run/redis/redis.sock`. Jangan tulis `unix:///var/run/redis/redis.sock` untuk konstanta CBT. Pastikan nilai `CBT_RUNTIME_REDIS_HOST` dan `WP_REDIS_HOST` di `wp-config.php` adalah `/var/run/redis/redis.sock` (dimulai dengan `/`, bukan IP). Jika verifikasi socket masih gagal setelah semua langkah di atas, kembali dulu ke TCP localhost Opsi B agar Redis tetap jalan.
 
 ### 9.3 Install plugin Redis Object Cache
 
