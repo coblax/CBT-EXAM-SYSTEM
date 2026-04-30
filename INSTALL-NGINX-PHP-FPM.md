@@ -784,15 +784,31 @@ sudo grep -n "^unixsocketperm" /etc/redis/redis.conf
 ```
 Setelah diperbaiki, restart Redis: `sudo systemctl restart redis-server`
 
-**Langkah 5 — Verifikasi koneksi PHP-FPM dapat mengakses socket:**
+**Langkah 5 — Verifikasi koneksi socket:**
 
 ```bash
+# Test 1: sebagai user biasa (coblax, admin, dll)
+redis-cli -s /var/run/redis/redis.sock PING
+# Expected: Permission denied  ← NORMAL ✅
+
+# Test 2: sebagai root
+sudo redis-cli -s /var/run/redis/redis.sock PING
+# Expected: PONG  ✅
+
+# Test 3: sebagai www-data (PHP-FPM) — INI YANG PALING PENTING
 sudo -u www-data redis-cli -s /var/run/redis/redis.sock PING
+# Expected: PONG  ✅
 ```
 
-Harus menghasilkan `PONG`. Perintah inilah yang paling penting — karena PHP-FPM berjalan sebagai `www-data`.
+Penjelasan hasil masing-masing:
 
-> **Catatan tentang `Permission denied` untuk user biasa:** Jika Anda menjalankan `redis-cli -s /var/run/redis/redis.sock PING` **tanpa** `sudo -u www-data` dan hasilnya `Permission denied`, itu adalah **perilaku yang benar dan aman** ✅. Socket dengan permission `770` hanya bisa diakses oleh owner `redis` dan anggota group `redis`. User admin biasa (misal `coblax`) tidak perlu diizinkan — yang penting hanya `www-data` yang bisa konek.
+| Perintah | Hasil Normal | Keterangan |
+|----------|-------------|------------|
+| `redis-cli ...` (user biasa) | `Permission denied` | ✅ Benar — user biasa bukan anggota group `redis` |
+| `sudo redis-cli ...` (root) | `PONG` | ✅ Benar — root selalu bisa akses |
+| `sudo -u www-data redis-cli ...` | `PONG` | ✅ **Wajib berhasil** — PHP-FPM berjalan sebagai `www-data` |
+
+**Verifikasi dianggap berhasil jika `sudo -u www-data ... PING` menghasilkan `PONG`**, meski user biasa menghasilkan `Permission denied`. Itu adalah desain keamanan yang benar.
 
 Jika perintah `sudo -u www-data ...` menghasilkan `Permission denied`:
 
