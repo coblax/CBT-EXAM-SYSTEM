@@ -449,6 +449,23 @@ PHP);
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-adaptive-load-service.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-expired-attempt-finalize-service.php';
 
+        if (class_exists('CBT_Runtime')) {
+            $runtimeReflection = new ReflectionClass(CBT_Runtime::class);
+            foreach ([
+                'redis' => false,
+                'redis_connection_attempted' => true,
+                'last_connection_error' => 'Runtime lock disabled for cache lock test.',
+            ] as $propertyName => $value) {
+                if (!$runtimeReflection->hasProperty($propertyName)) {
+                    continue;
+                }
+
+                $property = $runtimeReflection->getProperty($propertyName);
+                $property->setAccessible(true);
+                $property->setValue(null, $value);
+            }
+        }
+
         CBT_REST::$finalizedAttemptIds = [];
         $GLOBALS['wpdb'] = new AdminResultsExpiredAutoFinalizeAdaptiveFakeWpdb([
             601 => [
@@ -469,6 +486,8 @@ PHP);
         self::assertSame(0, $result['completed_count']);
         self::assertSame(0, $result['failed_count']);
         self::assertSame([], CBT_REST::$finalizedAttemptIds);
+        self::assertStringContainsString('a.deadline_at IS NOT NULL', $GLOBALS['wpdb']->lastDeadlineQuery);
+        self::assertStringContainsString('ORDER BY a.deadline_at ASC, a.id ASC', $GLOBALS['wpdb']->lastDeadlineQuery);
     }
 }
 
@@ -613,6 +632,8 @@ final class AdminResultsExpiredAutoFinalizeBatchFakeWpdb
 
 final class AdminResultsExpiredAutoFinalizeAdaptiveFakeWpdb extends AdminResultsExpiredAutoFinalizeReloadFakeWpdb
 {
+    public string $lastDeadlineQuery = '';
+
     /**
      * @param array<int,array<string,mixed>> $rows
      */
@@ -624,7 +645,10 @@ final class AdminResultsExpiredAutoFinalizeAdaptiveFakeWpdb extends AdminResults
     public function get_col(string $query): array
     {
         if (strpos($query, 'SELECT a.id') !== false) {
-            return array_map('strval', array_keys($this->adaptiveRows));
+            if (strpos($query, 'a.deadline_at IS NOT NULL') !== false) {
+                $this->lastDeadlineQuery = $query;
+                return array_map('strval', array_keys($this->adaptiveRows));
+            }
         }
 
         return [];

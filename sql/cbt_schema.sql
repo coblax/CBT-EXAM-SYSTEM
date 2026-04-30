@@ -132,6 +132,7 @@ CREATE TABLE wp_cbt_attempts (
   finished_at DATETIME NULL,
   duration_seconds INT UNSIGNED NOT NULL DEFAULT 0,
   extra_time_minutes INT UNSIGNED NOT NULL DEFAULT 0,
+  deadline_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -140,6 +141,8 @@ CREATE TABLE wp_cbt_attempts (
   KEY idx_exam_status (exam_id, status),
   KEY idx_student_status (student_id, status),
   KEY idx_student_id_id (student_id, id),
+  KEY idx_status_started_id (status, started_at, id),
+  KEY idx_status_deadline_id (status, deadline_at, id),
   KEY idx_status (status),
   CONSTRAINT fk_cbt_attempts_exam FOREIGN KEY (exam_id) REFERENCES wp_cbt_exams(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;

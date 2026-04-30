@@ -10,7 +10,7 @@ class CBT_Activator
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
     private const OPTION_SUPERVISOR_FRONTEND_PAGE_ID = 'cbt_exam_system_supervisor_page_id';
     private const OPTION_FRONTEND_PAGE_SYNC_PENDING = 'cbt_exam_system_frontend_page_sync_pending';
-    private const DB_VERSION = '1.6.15';
+    private const DB_VERSION = '1.6.16';
 
     public static function activate(): void
     {
@@ -197,6 +197,7 @@ class CBT_Activator
             finished_at DATETIME NULL,
             duration_seconds INT UNSIGNED NOT NULL DEFAULT 0,
             extra_time_minutes INT UNSIGNED NOT NULL DEFAULT 0,
+            deadline_at DATETIME NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -206,6 +207,7 @@ class CBT_Activator
             KEY idx_student_status (student_id, status),
             KEY idx_student_id_id (student_id, id),
             KEY idx_status_started_id (status, started_at, id),
+            KEY idx_status_deadline_id (status, deadline_at, id),
             KEY idx_status (status)
         ) $charset;";
 
@@ -398,6 +400,14 @@ class CBT_Activator
             $wpdb->query(
                 "ALTER TABLE {$attempt_table} ADD COLUMN extra_time_minutes INT UNSIGNED NOT NULL DEFAULT 0 AFTER duration_seconds"
             );
+            $columns[] = 'extra_time_minutes';
+        }
+
+        if (!in_array('deadline_at', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$attempt_table} ADD COLUMN deadline_at DATETIME NULL AFTER extra_time_minutes"
+            );
+            $columns[] = 'deadline_at';
         }
 
         $index_rows = $wpdb->get_results("SHOW INDEX FROM {$attempt_table}", ARRAY_A);
@@ -412,6 +422,27 @@ class CBT_Activator
         if (!isset($index_names['idx_status_started_id'])) {
             $wpdb->query(
                 "ALTER TABLE {$attempt_table} ADD KEY idx_status_started_id (status, started_at, id)"
+            );
+        }
+
+        if (!isset($index_names['idx_status_deadline_id'])) {
+            $wpdb->query(
+                "ALTER TABLE {$attempt_table} ADD KEY idx_status_deadline_id (status, deadline_at, id)"
+            );
+        }
+
+        if (in_array('deadline_at', $columns, true)) {
+            $exam_table = $wpdb->prefix . 'cbt_exams';
+            $wpdb->query(
+                "UPDATE {$attempt_table} a
+                 INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                    SET a.deadline_at = TIMESTAMPADD(
+                        MINUTE,
+                        GREATEST(1, COALESCE(e.duration_minutes, 0)) + GREATEST(0, COALESCE(a.extra_time_minutes, 0)),
+                        a.started_at
+                    )
+                  WHERE a.deadline_at IS NULL
+                    AND a.started_at IS NOT NULL"
             );
         }
     }

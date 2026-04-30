@@ -332,27 +332,7 @@ final class CBT_Adaptive_Load_Service
         $exam_table = $wpdb->prefix . 'cbt_exams';
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
         $now_mysql = current_time('mysql');
-        $attempt_ids = array_values(array_filter(array_map('intval', (array) $wpdb->get_col(
-            $wpdb->prepare(
-                "SELECT a.id
-                   FROM {$attempt_table} a
-             INNER JOIN {$exam_table} e ON e.id = a.exam_id
-                  WHERE a.status = 'in_progress'
-                    AND e.title NOT LIKE %s
-                    AND (
-                        (e.starts_at IS NOT NULL AND e.starts_at > %s)
-                        OR (e.ends_at IS NOT NULL AND e.ends_at < %s)
-                        OR TIMESTAMPADD(MINUTE, (e.duration_minutes + a.extra_time_minutes), a.started_at) < %s
-                    )
-               ORDER BY a.started_at ASC, a.id ASC
-                  LIMIT %d",
-                'Bank Soal - %',
-                $now_mysql,
-                $now_mysql,
-                $now_mysql,
-                $limit
-            )
-        ))));
+        $attempt_ids = self::collect_expired_attempt_ids_for_finalize($attempt_table, $exam_table, $now_mysql, $limit);
 
         $completed_attempt_ids = [];
         $failed_count = 0;
@@ -388,6 +368,132 @@ final class CBT_Adaptive_Load_Service
             'failed_count' => $failed_count,
             'completed_attempt_ids' => $completed_attempt_ids,
         ];
+    }
+
+    /**
+     * @return int[]
+     */
+    private static function collect_expired_attempt_ids_for_finalize(
+        string $attempt_table,
+        string $exam_table,
+        string $now_mysql,
+        int $limit
+    ): array {
+        global $wpdb;
+
+        $limit = max(1, min(1000, absint($limit)));
+        $ids = self::collect_deadline_expired_attempt_ids($attempt_table, $exam_table, $now_mysql, $limit);
+        $remaining = $limit - count($ids);
+        if ($remaining > 0) {
+            $ids = array_merge(
+                $ids,
+                self::collect_window_closed_attempt_ids($attempt_table, $exam_table, $now_mysql, $remaining, $ids)
+            );
+        }
+
+        $remaining = $limit - count($ids);
+        if ($remaining > 0) {
+            $ids = array_merge(
+                $ids,
+                self::collect_legacy_null_deadline_expired_attempt_ids($attempt_table, $exam_table, $now_mysql, $remaining, $ids)
+            );
+        }
+
+        return array_values(array_slice(array_unique(array_filter(array_map('intval', $ids))), 0, $limit));
+    }
+
+    /**
+     * @return int[]
+     */
+    private static function collect_deadline_expired_attempt_ids(string $attempt_table, string $exam_table, string $now_mysql, int $limit): array
+    {
+        global $wpdb;
+
+        return array_values(array_filter(array_map('intval', (array) $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT a.id
+                   FROM {$attempt_table} a
+             INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                  WHERE a.status = 'in_progress'
+                    AND a.deadline_at IS NOT NULL
+                    AND a.deadline_at < %s
+                    AND e.title NOT LIKE %s
+               ORDER BY a.deadline_at ASC, a.id ASC
+                  LIMIT %d",
+                $now_mysql,
+                'Bank Soal - %',
+                $limit
+            )
+        ))));
+    }
+
+    /**
+     * @param int[] $exclude_ids
+     * @return int[]
+     */
+    private static function collect_window_closed_attempt_ids(string $attempt_table, string $exam_table, string $now_mysql, int $limit, array $exclude_ids): array
+    {
+        global $wpdb;
+
+        $exclude_ids = array_values(array_filter(array_map('absint', $exclude_ids)));
+        $exclude_sql = '';
+        $params = ['Bank Soal - %', $now_mysql, $now_mysql, $now_mysql];
+        if (!empty($exclude_ids)) {
+            $exclude_sql = ' AND a.id NOT IN (' . implode(',', array_fill(0, count($exclude_ids), '%d')) . ')';
+            $params = array_merge($params, $exclude_ids);
+        }
+        $params[] = $limit;
+
+        return array_values(array_filter(array_map('intval', (array) $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT a.id
+                   FROM {$attempt_table} a
+             INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                  WHERE a.status = 'in_progress'
+                    AND e.title NOT LIKE %s
+                    AND ((e.starts_at IS NOT NULL AND e.starts_at > %s)
+                         OR (e.ends_at IS NOT NULL AND e.ends_at < %s))
+                    AND (a.deadline_at IS NULL OR a.deadline_at >= %s)
+                    {$exclude_sql}
+               ORDER BY a.started_at ASC, a.id ASC
+                  LIMIT %d",
+                ...$params
+            )
+        ))));
+    }
+
+    /**
+     * @param int[] $exclude_ids
+     * @return int[]
+     */
+    private static function collect_legacy_null_deadline_expired_attempt_ids(string $attempt_table, string $exam_table, string $now_mysql, int $limit, array $exclude_ids): array
+    {
+        global $wpdb;
+
+        $exclude_ids = array_values(array_filter(array_map('absint', $exclude_ids)));
+        $exclude_sql = '';
+        $params = ['Bank Soal - %', $now_mysql];
+        if (!empty($exclude_ids)) {
+            $exclude_sql = ' AND a.id NOT IN (' . implode(',', array_fill(0, count($exclude_ids), '%d')) . ')';
+            $params = array_merge($params, $exclude_ids);
+        }
+        $params[] = $limit;
+
+        return array_values(array_filter(array_map('intval', (array) $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT a.id
+                   FROM {$attempt_table} a
+             INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                  WHERE a.status = 'in_progress'
+                    AND a.deadline_at IS NULL
+                    AND e.title NOT LIKE %s
+                    AND TIMESTAMPADD(MINUTE, GREATEST(1, COALESCE(e.duration_minutes, 0)) + GREATEST(0, COALESCE(a.extra_time_minutes, 0)), a.started_at) < %s
+                    {$exclude_sql}
+               ORDER BY a.started_at ASC, a.id ASC
+                  LIMIT %d",
+                ...$params
+            )
+        ))));
     }
 
     /**
@@ -527,7 +633,9 @@ final class CBT_Adaptive_Load_Service
 
         $exam_table = $wpdb->prefix . 'cbt_exams';
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
-        return max(0, (int) $wpdb->get_var(
+        $now_mysql = current_time('mysql');
+        $cutoff_mysql = self::shift_mysql_datetime($now_mysql, -10);
+        $indexed_count = max(0, (int) $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT COUNT(*)
                   FROM {$attempt_table} a
@@ -536,12 +644,31 @@ final class CBT_Adaptive_Load_Service
                     AND e.status = 'published'
                     AND (e.starts_at IS NULL OR e.starts_at <= %s)
                     AND (e.ends_at IS NULL OR e.ends_at >= %s)
-                    AND TIMESTAMPADD(MINUTE, (e.duration_minutes + a.extra_time_minutes + 10), a.started_at) >= %s",
-                current_time('mysql'),
-                current_time('mysql'),
-                current_time('mysql')
+                    AND a.deadline_at IS NOT NULL
+                    AND a.deadline_at >= %s",
+                $now_mysql,
+                $now_mysql,
+                $cutoff_mysql
             )
         ));
+        $legacy_count = max(0, (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*)
+                  FROM {$attempt_table} a
+             INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                  WHERE a.status = 'in_progress'
+                    AND e.status = 'published'
+                    AND (e.starts_at IS NULL OR e.starts_at <= %s)
+                    AND (e.ends_at IS NULL OR e.ends_at >= %s)
+                    AND a.deadline_at IS NULL
+                    AND TIMESTAMPADD(MINUTE, GREATEST(1, COALESCE(e.duration_minutes, 0)) + GREATEST(0, COALESCE(a.extra_time_minutes, 0)) + 10, a.started_at) >= %s",
+                $now_mysql,
+                $now_mysql,
+                $now_mysql
+            )
+        ));
+
+        return $indexed_count + $legacy_count;
     }
 
     private static function adaptive_active_runtime_window_seconds(): int
@@ -840,6 +967,16 @@ final class CBT_Adaptive_Load_Service
 
         $timestamp = strtotime($value);
         return $timestamp !== false ? (int) $timestamp : 0;
+    }
+
+    private static function shift_mysql_datetime(string $value, int $minutes): string
+    {
+        $timestamp = self::mysql_to_timestamp($value);
+        if ($timestamp <= 0) {
+            return $value;
+        }
+
+        return wp_date('Y-m-d H:i:s', $timestamp + ($minutes * MINUTE_IN_SECONDS), wp_timezone());
     }
 
     private static function timestamp_to_mysql(int $timestamp): string

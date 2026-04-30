@@ -172,6 +172,7 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertSame('ready', $response['opening_state']);
         self::assertSame(3, $wpdb->latestAttemptQueryCount);
         self::assertSame(1, $wpdb->insertCalls);
+        self::assertSame('2026-03-24 13:30:00', $wpdb->lastInsertData['deadline_at'] ?? '');
         self::assertSame(123, CBT_Active_Attempt_Index::get_active_attempt_id(7, 15));
         self::assertFalse(CBT_Runtime::has_attempt_state(123));
         self::assertArrayNotHasKey('cbt_attempt_session:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));

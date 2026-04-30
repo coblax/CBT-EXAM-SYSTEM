@@ -7,6 +7,18 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 final class ActivatorDeactivatorLifecycleTest extends TestCase
 {
+    public function test_schema_declares_attempt_deadline_column_and_index(): void
+    {
+        $schema = (string) file_get_contents(dirname(__DIR__, 3) . '/sql/cbt_schema.sql');
+        $activator = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/class-cbt-activator.php');
+
+        self::assertStringContainsString('deadline_at DATETIME NULL', $schema);
+        self::assertStringContainsString('KEY idx_status_deadline_id (status, deadline_at, id)', $schema);
+        self::assertStringContainsString('ADD COLUMN deadline_at DATETIME NULL AFTER extra_time_minutes', $activator);
+        self::assertStringContainsString('ADD KEY idx_status_deadline_id (status, deadline_at, id)', $activator);
+        self::assertStringContainsString('SET a.deadline_at = TIMESTAMPADD(', $activator);
+    }
+
     #[RunInSeparateProcess]
     public function test_deactivator_stops_student_cohort_index_worker_without_deleting_data(): void
     {

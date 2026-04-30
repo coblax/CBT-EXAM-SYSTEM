@@ -171,6 +171,7 @@ PHP);
 
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-submit-flow-metrics-service.php';
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-ui-helper.php';
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-results-helper.php';
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-results-service.php';
     }

@@ -445,24 +445,36 @@ final class CBT_Expired_Attempt_Finalize_Service
 
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
         $exam_table = $wpdb->prefix . 'cbt_exams';
-        $where_clauses = [
-            "a.status = 'in_progress'",
-            'e.title NOT LIKE %s',
-            'TIMESTAMPADD(MINUTE, GREATEST(1, COALESCE(e.duration_minutes, 0)) + GREATEST(0, COALESCE(a.extra_time_minutes, 0)), a.started_at) < %s',
-        ];
-        $where_params = ['Bank Soal - %', current_time('mysql')];
-        if ($created_by_user_id > 0) {
-            $where_clauses[] = 'e.created_by = %d';
-            $where_params[] = $created_by_user_id;
-        }
+        $now_mysql = current_time('mysql');
+        $where_clauses = self::build_expired_attempt_scope_clauses($created_by_user_id);
+        $where_params = self::build_expired_attempt_scope_params($created_by_user_id, $now_mysql);
 
         $sql = "SELECT a.id
                 FROM {$attempt_table} a
                 INNER JOIN {$exam_table} e ON e.id = a.exam_id
-                WHERE " . implode(' AND ', $where_clauses) . '
+                WHERE " . implode(' AND ', array_merge($where_clauses, [
+                    'a.deadline_at IS NOT NULL',
+                    'a.deadline_at < %s',
+                ])) . '
+                ORDER BY a.deadline_at ASC, a.id ASC
                 LIMIT 1';
         $prepared_sql = $wpdb->prepare($sql, $where_params);
         $attempt_id = $wpdb->get_var($prepared_sql);
+        if (absint($attempt_id) > 0) {
+            return true;
+        }
+
+        $legacy_where_params = self::build_expired_attempt_scope_params($created_by_user_id, $now_mysql);
+        $legacy_sql = "SELECT a.id
+                FROM {$attempt_table} a
+                INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                WHERE " . implode(' AND ', array_merge($where_clauses, [
+                    'a.deadline_at IS NULL',
+                    'TIMESTAMPADD(MINUTE, GREATEST(1, COALESCE(e.duration_minutes, 0)) + GREATEST(0, COALESCE(a.extra_time_minutes, 0)), a.started_at) < %s',
+                ])) . '
+                ORDER BY a.started_at ASC, a.id ASC
+                LIMIT 1';
+        $attempt_id = $wpdb->get_var($wpdb->prepare($legacy_sql, $legacy_where_params));
 
         return absint($attempt_id) > 0;
     }
@@ -477,28 +489,25 @@ final class CBT_Expired_Attempt_Finalize_Service
         $limit = $limit === null ? self::AUTO_COMPLETE_BATCH_SIZE : max(1, min(1000, absint($limit)));
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
         $exam_table = $wpdb->prefix . 'cbt_exams';
-        $where_clauses = [
-            "a.status = 'in_progress'",
-            'e.title NOT LIKE %s',
-            'TIMESTAMPADD(MINUTE, GREATEST(1, COALESCE(e.duration_minutes, 0)) + GREATEST(0, COALESCE(a.extra_time_minutes, 0)), a.started_at) < %s',
-        ];
-        $where_params = ['Bank Soal - %', current_time('mysql')];
-        if ($created_by_user_id > 0) {
-            $where_clauses[] = 'e.created_by = %d';
-            $where_params[] = $created_by_user_id;
-        }
+        $now_mysql = current_time('mysql');
+        $where_clauses = self::build_expired_attempt_scope_clauses($created_by_user_id);
+        $where_params = self::build_expired_attempt_scope_params($created_by_user_id, $now_mysql);
 
         $sql = "SELECT a.id,
                        a.exam_id,
                        a.student_id,
                        a.status,
                        a.started_at,
+                       a.deadline_at,
                        a.extra_time_minutes,
                        e.duration_minutes AS exam_duration_minutes
                 FROM {$attempt_table} a
                 INNER JOIN {$exam_table} e ON e.id = a.exam_id
-                WHERE " . implode(' AND ', $where_clauses) . '
-                ORDER BY a.started_at ASC, a.id ASC
+                WHERE " . implode(' AND ', array_merge($where_clauses, [
+                    'a.deadline_at IS NOT NULL',
+                    'a.deadline_at < %s',
+                ])) . '
+                ORDER BY a.deadline_at ASC, a.id ASC
                 LIMIT %d';
         $prepared_sql = $wpdb->prepare(
             $sql,
@@ -506,7 +515,68 @@ final class CBT_Expired_Attempt_Finalize_Service
         );
 
         $rows = $wpdb->get_results($prepared_sql, ARRAY_A);
-        return is_array($rows) ? $rows : [];
+        $rows = is_array($rows) ? $rows : [];
+        $remaining = $limit - count($rows);
+        if ($remaining <= 0) {
+            return $rows;
+        }
+
+        $legacy_where_params = self::build_expired_attempt_scope_params($created_by_user_id, $now_mysql);
+        $legacy_sql = "SELECT a.id,
+                       a.exam_id,
+                       a.student_id,
+                       a.status,
+                       a.started_at,
+                       a.deadline_at,
+                       a.extra_time_minutes,
+                       e.duration_minutes AS exam_duration_minutes
+                FROM {$attempt_table} a
+                INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                WHERE " . implode(' AND ', array_merge($where_clauses, [
+                    'a.deadline_at IS NULL',
+                    'TIMESTAMPADD(MINUTE, GREATEST(1, COALESCE(e.duration_minutes, 0)) + GREATEST(0, COALESCE(a.extra_time_minutes, 0)), a.started_at) < %s',
+                ])) . '
+                ORDER BY a.started_at ASC, a.id ASC
+                LIMIT %d';
+        $legacy_rows = $wpdb->get_results(
+            $wpdb->prepare($legacy_sql, array_merge($legacy_where_params, [$remaining])),
+            ARRAY_A
+        );
+        if (is_array($legacy_rows) && !empty($legacy_rows)) {
+            $rows = array_merge($rows, $legacy_rows);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function build_expired_attempt_scope_clauses(int $created_by_user_id): array
+    {
+        $where_clauses = [
+            "a.status = 'in_progress'",
+            'e.title NOT LIKE %s',
+        ];
+        if ($created_by_user_id > 0) {
+            $where_clauses[] = 'e.created_by = %d';
+        }
+
+        return $where_clauses;
+    }
+
+    /**
+     * @return array<int,mixed>
+     */
+    private static function build_expired_attempt_scope_params(int $created_by_user_id, string $now_mysql): array
+    {
+        $where_params = ['Bank Soal - %'];
+        if ($created_by_user_id > 0) {
+            $where_params[] = $created_by_user_id;
+        }
+        $where_params[] = $now_mysql;
+
+        return $where_params;
     }
 
     public static function get_default_poll_after_ms(): int
@@ -676,6 +746,7 @@ final class CBT_Expired_Attempt_Finalize_Service
                         a.student_id,
                         a.status,
                         a.started_at,
+                        a.deadline_at,
                         a.extra_time_minutes,
                         e.duration_minutes AS exam_duration_minutes
                    FROM {$attempt_table} a

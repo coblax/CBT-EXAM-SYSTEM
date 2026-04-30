@@ -2687,15 +2687,21 @@ final class CBT_Admin_Results_Service
         $current_extra_minutes = max(0, (int) ($attempt['extra_time_minutes'] ?? 0));
         $updated_extra_minutes = $current_extra_minutes + $extra_minutes;
         $updated_at = current_time('mysql');
+        $deadline_at = self::build_attempt_deadline_at(
+            (string) ($attempt['started_at'] ?? ''),
+            max(1, (int) ($attempt['duration_minutes'] ?? 0)),
+            $updated_extra_minutes
+        );
 
         $updated = $wpdb->update(
             $attempt_table,
             [
                 'extra_time_minutes' => $updated_extra_minutes,
+                'deadline_at' => $deadline_at !== '' ? $deadline_at : null,
                 'updated_at' => $updated_at,
             ],
             ['id' => $attempt_id],
-            ['%d', '%s'],
+            ['%d', '%s', '%s'],
             ['%d']
         );
 
@@ -3048,4 +3054,28 @@ final class CBT_Admin_Results_Service
         self::start_results_bulk_job('force_complete', $return_context);
     }
 
+    private static function build_attempt_deadline_at(string $started_at, int $duration_minutes, int $extra_time_minutes = 0): string
+    {
+        $started_at = trim($started_at);
+        if ($started_at === '') {
+            return '';
+        }
+
+        $duration_minutes = max(1, $duration_minutes) + max(0, $extra_time_minutes);
+        $timezone = wp_timezone();
+        foreach (['Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d\\TH:i:s', 'Y-m-d\\TH:i'] as $format) {
+            $parsed = DateTimeImmutable::createFromFormat($format, $started_at, $timezone);
+            if ($parsed instanceof DateTimeImmutable) {
+                return $parsed->modify('+' . $duration_minutes . ' minutes')->format('Y-m-d H:i:s');
+            }
+        }
+
+        try {
+            return (new DateTimeImmutable($started_at, $timezone))
+                ->modify('+' . $duration_minutes . ' minutes')
+                ->format('Y-m-d H:i:s');
+        } catch (Throwable $throwable) {
+            return '';
+        }
+    }
 }

@@ -665,6 +665,7 @@ trait CBT_REST_Start_Attempt_Routes
                 $question_order = '[]';
             }
 
+            $attempt_deadline_at = self::build_attempt_deadline_at($now, (int) ($exam['duration_minutes'] ?? 0), 0);
             $attempt_insert_started_at = microtime(true);
             $inserted = $wpdb->insert(
                 $attempt_table,
@@ -675,10 +676,11 @@ trait CBT_REST_Start_Attempt_Routes
                     'question_order' => $question_order,
                     'option_order' => $option_order,
                     'started_at' => $now,
+                    'deadline_at' => $attempt_deadline_at,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ],
-                ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s']
+                ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
             );
             self::record_start_attempt_phase('start_attempt_attempt_insert', $exam_id, $user_id, [
                 'duration_ms' => self::measure_elapsed_ms($attempt_insert_started_at),
@@ -709,6 +711,7 @@ trait CBT_REST_Start_Attempt_Routes
                 'student_id' => $user_id,
                 'status' => 'in_progress',
                 'started_at' => $now,
+                'deadline_at' => $attempt_deadline_at,
                 'question_order' => $question_order,
                 'option_order' => $option_order,
                 'extra_time_minutes' => 0,
@@ -2309,6 +2312,31 @@ trait CBT_REST_Start_Attempt_Routes
         }
 
         CBT_Active_Attempt_Index::set_active_attempt($attempt);
+    }
+
+    private static function build_attempt_deadline_at(string $started_at, int $duration_minutes, int $extra_time_minutes = 0): string
+    {
+        $started_at = trim($started_at);
+        if ($started_at === '') {
+            return '';
+        }
+
+        $duration_minutes = max(1, $duration_minutes) + max(0, $extra_time_minutes);
+        $timezone = wp_timezone();
+        foreach (['Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d\\TH:i:s', 'Y-m-d\\TH:i'] as $format) {
+            $parsed = DateTimeImmutable::createFromFormat($format, $started_at, $timezone);
+            if ($parsed instanceof DateTimeImmutable) {
+                return $parsed->modify('+' . $duration_minutes . ' minutes')->format('Y-m-d H:i:s');
+            }
+        }
+
+        try {
+            return (new DateTimeImmutable($started_at, $timezone))
+                ->modify('+' . $duration_minutes . ' minutes')
+                ->format('Y-m-d H:i:s');
+        } catch (Throwable $throwable) {
+            return '';
+        }
     }
 
     /**
