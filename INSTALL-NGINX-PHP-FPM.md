@@ -178,6 +178,33 @@ EXIT;
 
 > **Catatan:** Jika database berada di server berbeda, ganti `localhost` dengan host yang sesuai dan pastikan firewall mengizinkan koneksi dari server WordPress.
 
+### 4.1 Reset / Hapus Database (Jika Perlu Instalasi Ulang)
+
+> [!CAUTION]
+> Langkah ini **menghapus seluruh data** secara permanen. Lakukan backup terlebih dahulu jika ada data yang ingin disimpan.
+
+phpMyAdmin menonaktifkan `DROP DATABASE` secara default sebagai fitur keamanan. Gunakan terminal untuk mereset database:
+
+**Backup dulu (jika perlu):**
+```bash
+mysqldump -u wp_cbt -p wordpress_cbt --single-transaction > ~/backup_wordpress_cbt_$(date +%Y%m%d_%H%M%S).sql
+```
+
+**Drop dan buat ulang database:**
+```bash
+sudo mysql
+```
+
+```sql
+DROP DATABASE IF EXISTS wordpress_cbt;
+CREATE DATABASE wordpress_cbt CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
+GRANT ALL PRIVILEGES ON wordpress_cbt.* TO 'wp_cbt'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+Setelah database bersih, ulangi instalasi WordPress dari Langkah 7.
+
 ---
 
 ## 5. Konfigurasi Nginx
