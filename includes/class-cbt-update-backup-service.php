@@ -245,7 +245,7 @@ final class CBT_Update_Backup_Service
 
             $path = wp_normalize_path($file_info->getPathname());
             $relative = ltrim(substr($path, strlen($source_dir)), '/');
-            if ($relative === '' || str_starts_with($relative, '.git/')) {
+            if ($relative === '' || $relative === '.git' || str_starts_with($relative, '.git/')) {
                 continue;
             }
 

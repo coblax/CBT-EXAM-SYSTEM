@@ -200,6 +200,7 @@ final class CBT_Update_Release_Helper
         $tested_up_to = isset($manifest['tested_up_to']) ? (string) $manifest['tested_up_to'] : '';
         $download_url = isset($manifest['download_url']) ? (string) $manifest['download_url'] : '';
         $sha256 = isset($manifest['sha256']) ? (string) $manifest['sha256'] : '';
+        $package_url_ok = $download_url !== '' && self::is_official_package_download_url($download_url);
 
         $php_ok = $requires_php !== '' && self::is_php_compatible($requires_php);
         $items[] = [
@@ -221,14 +222,16 @@ final class CBT_Update_Release_Helper
                 : ($requires_wp === '' ? 'Manifest belum mencantumkan requires_wp.' : 'Instalasi belum memenuhi minimal WordPress ' . $requires_wp . '.'),
         ];
 
-        $package_meta_ok = ($download_url !== '' && $sha256 !== '');
+        $package_meta_ok = ($download_url !== '' && $sha256 !== '' && $package_url_ok);
         $items[] = [
             'key' => 'package_metadata',
             'label' => 'Metadata package',
             'status' => $package_meta_ok ? 'ok' : 'blocked',
             'message' => $package_meta_ok
-                ? 'URL package dan checksum tersedia.'
-                : 'Manifest release harus menyediakan download_url dan sha256.',
+                ? 'URL package resmi dan checksum tersedia.'
+                : ($download_url !== '' && !$package_url_ok
+                    ? 'download_url manifest wajib berasal dari GitHub Release resmi repo coblax/CBT-EXAM-SYSTEM.'
+                    : 'Manifest release harus menyediakan download_url dan sha256.'),
         ];
 
         $filesystem_ok = self::is_filesystem_ready_for_upgrade();
@@ -259,8 +262,8 @@ final class CBT_Update_Release_Helper
             'label' => 'Validasi package',
             'status' => $package_meta_ok ? 'ok' : 'blocked',
             'message' => $package_meta_ok
-                ? 'Checksum dan struktur zip akan diverifikasi saat INSTALL UPDATE agar cek update tidak perlu mengunduh package penuh.'
-                : 'Manifest release harus menyediakan download_url dan sha256 sebelum validasi package bisa dijalankan.',
+                ? 'Checksum, versi bootstrap, dan struktur zip akan diverifikasi saat INSTALL UPDATE.'
+                : 'Manifest release harus menyediakan package resmi dan sha256 sebelum validasi package bisa dijalankan.',
         ];
 
         $overall_status = 'ok';
@@ -332,7 +335,11 @@ final class CBT_Update_Release_Helper
             return new WP_Error('download_failed', 'Gagal mengunduh package update: ' . $package_path->get_error_message());
         }
 
-        $validation = self::validate_downloaded_package($package_path, (string) ($manifest['sha256'] ?? ''));
+        $validation = self::validate_downloaded_package(
+            $package_path,
+            (string) ($manifest['sha256'] ?? ''),
+            (string) ($manifest['version'] ?? '')
+        );
         if (is_wp_error($validation)) {
             @unlink($package_path);
             return $validation;
@@ -382,7 +389,7 @@ final class CBT_Update_Release_Helper
         }
 
         try {
-            return self::validate_downloaded_package($package_path, $sha256);
+            return self::validate_downloaded_package($package_path, $sha256, (string) ($manifest['version'] ?? ''));
         } finally {
             @unlink($package_path);
         }
@@ -391,7 +398,7 @@ final class CBT_Update_Release_Helper
     /**
      * @return true|\WP_Error
      */
-    public static function validate_downloaded_package(string $package_path, string $expected_sha256)
+    public static function validate_downloaded_package(string $package_path, string $expected_sha256, string $expected_version = '')
     {
         if ($package_path === '' || !file_exists($package_path)) {
             return new WP_Error('missing_package_file', 'File package update tidak ditemukan.');
@@ -406,13 +413,13 @@ final class CBT_Update_Release_Helper
             return new WP_Error('checksum_mismatch', 'Checksum package update tidak cocok dengan manifest release.');
         }
 
-        return self::validate_zip_package_structure($package_path);
+        return self::validate_zip_package_structure($package_path, $expected_version);
     }
 
     /**
      * @return true|\WP_Error
      */
-    public static function validate_zip_package_structure(string $package_path)
+    public static function validate_zip_package_structure(string $package_path, string $expected_version = '')
     {
         if (!class_exists('ZipArchive')) {
             return new WP_Error('zip_extension_missing', 'Ekstensi ZipArchive wajib aktif untuk memvalidasi package update.');
@@ -424,10 +431,19 @@ final class CBT_Update_Release_Helper
         }
 
         $has_bootstrap = false;
+        $bootstrap_content = '';
         for ($index = 0; $index < $zip->numFiles; $index++) {
-            $entry_name = (string) $zip->getNameIndex($index);
-            $entry_name = ltrim(str_replace('\\', '/', $entry_name), '/');
+            $raw_entry_name = str_replace('\\', '/', (string) $zip->getNameIndex($index));
+            if (self::zip_entry_is_unsafe($raw_entry_name)) {
+                $zip->close();
+                return new WP_Error('invalid_package_path', 'Package update memuat path zip yang tidak aman.');
+            }
+
+            $entry_name = ltrim($raw_entry_name, '/');
             if ($entry_name === '') {
+                continue;
+            }
+            if ($entry_name === rtrim(self::PLUGIN_ROOT_DIRECTORY, '/')) {
                 continue;
             }
 
@@ -438,6 +454,8 @@ final class CBT_Update_Release_Helper
 
             if ($entry_name === self::PLUGIN_BOOTSTRAP_PATH) {
                 $has_bootstrap = true;
+                $content = $zip->getFromName($entry_name);
+                $bootstrap_content = is_string($content) ? $content : '';
             }
         }
 
@@ -447,7 +465,34 @@ final class CBT_Update_Release_Helper
             return new WP_Error('missing_plugin_bootstrap', 'Package update tidak memuat file bootstrap plugin cbt-exam-system.php.');
         }
 
+        $expected_version = trim($expected_version);
+        if ($expected_version !== '') {
+            $package_version = self::extract_plugin_version_from_bootstrap($bootstrap_content);
+            if ($package_version === '') {
+                return new WP_Error('missing_package_version', 'File bootstrap package tidak memuat header Version.');
+            }
+            if ($package_version !== $expected_version) {
+                return new WP_Error('package_version_mismatch', 'Versi bootstrap package tidak cocok dengan manifest release.');
+            }
+        }
+
         return true;
+    }
+
+    public static function is_official_package_download_url(string $url): bool
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts)) {
+            return false;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        $path = (string) ($parts['path'] ?? '');
+
+        return $scheme === 'https'
+            && $host === 'github.com'
+            && preg_match('#^/' . preg_quote(self::REPOSITORY_OWNER, '#') . '/' . preg_quote(self::REPOSITORY_NAME, '#') . '/releases/download/[^/]+/' . preg_quote(self::PACKAGE_ASSET_NAME, '#') . '$#i', $path) === 1;
     }
 
     public static function current_wp_version(): string
@@ -573,6 +618,38 @@ final class CBT_Update_Release_Helper
         }
 
         return version_compare(self::current_wp_version(), $requires_wp, '>=');
+    }
+
+    private static function zip_entry_is_unsafe(string $entry_name): bool
+    {
+        if ($entry_name === '' || str_contains($entry_name, "\0")) {
+            return true;
+        }
+        if (str_starts_with($entry_name, '/') || preg_match('/^[A-Za-z]:/', $entry_name) === 1) {
+            return true;
+        }
+
+        $segments = explode('/', $entry_name);
+        foreach ($segments as $segment) {
+            if ($segment === '..') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function extract_plugin_version_from_bootstrap(string $content): string
+    {
+        if ($content === '') {
+            return '';
+        }
+
+        if (preg_match('/^[ \t\/*#@]*Version:\s*([^\r\n]+)/mi', $content, $matches) !== 1) {
+            return '';
+        }
+
+        return sanitize_text_field(trim((string) ($matches[1] ?? '')));
     }
 
     private static function normalize_url(string $url): string

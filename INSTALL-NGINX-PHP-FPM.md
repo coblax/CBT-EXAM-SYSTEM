@@ -784,24 +784,28 @@ sudo grep -n "^unixsocketperm" /etc/redis/redis.conf
 ```
 Setelah diperbaiki, restart Redis: `sudo systemctl restart redis-server`
 
-**Langkah 5 — Verifikasi koneksi dapat diakses:**
+**Langkah 5 — Verifikasi koneksi PHP-FPM dapat mengakses socket:**
 
 ```bash
-redis-cli -s /var/run/redis/redis.sock PING
 sudo -u www-data redis-cli -s /var/run/redis/redis.sock PING
 ```
 
-Kedua perintah harus menghasilkan `PONG`.
+Harus menghasilkan `PONG`. Perintah inilah yang paling penting — karena PHP-FPM berjalan sebagai `www-data`.
+
+> **Catatan tentang `Permission denied` untuk user biasa:** Jika Anda menjalankan `redis-cli -s /var/run/redis/redis.sock PING` **tanpa** `sudo -u www-data` dan hasilnya `Permission denied`, itu adalah **perilaku yang benar dan aman** ✅. Socket dengan permission `770` hanya bisa diakses oleh owner `redis` dan anggota group `redis`. User admin biasa (misal `coblax`) tidak perlu diizinkan — yang penting hanya `www-data` yang bisa konek.
 
 Jika perintah `sudo -u www-data ...` menghasilkan `Permission denied`:
 
 ```bash
-# Cek apakah www-data sudah masuk group redis
+# Cek apakah www-data sudah masuk group redis (output harus mengandung "redis"):
 groups www-data
 
-# Jika redis tidak muncul di output, tambahkan ulang lalu restart PHP-FPM:
+# Jika redis tidak muncul, tambahkan ulang lalu restart PHP-FPM:
 sudo usermod -aG redis www-data
 sudo systemctl restart php8.3-fpm
+
+# Ulangi verifikasi:
+sudo -u www-data redis-cli -s /var/run/redis/redis.sock PING
 ```
 
 > **Catatan:** Plugin CBT otomatis memakai mode Unix socket jika host Redis di `wp-config.php` dimulai dengan `/`, misalnya `/var/run/redis/redis.sock`. Jangan tulis `unix:///var/run/redis/redis.sock` untuk konstanta CBT. Pastikan nilai `CBT_RUNTIME_REDIS_HOST` dan `WP_REDIS_HOST` di `wp-config.php` adalah `/var/run/redis/redis.sock` (dimulai dengan `/`, bukan IP). Jika verifikasi socket masih gagal setelah semua langkah di atas, kembali dulu ke TCP localhost Opsi B agar Redis tetap jalan.

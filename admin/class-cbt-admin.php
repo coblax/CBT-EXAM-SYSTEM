@@ -85,6 +85,7 @@ class CBT_Admin
         add_action('admin_post_cbt_cache_action', [CBT_Admin_Cache_Actions::class, 'handle_cache_action']);
         add_action('admin_post_cbt_check_update_now', [CBT_Admin_Update_Actions::class, 'handle_check_update_now']);
         add_action('admin_post_cbt_install_update_now', [CBT_Admin_Update_Actions::class, 'handle_install_update_now']);
+        add_action('wp_ajax_cbt_update_operation', [CBT_Admin_Update_Actions::class, 'handle_update_operation_ajax']);
         add_action('admin_post_cbt_reset_database', [CBT_Admin_Maintenance_Actions::class, 'handle_reset_database']);
         add_action('admin_post_cbt_generate_test_dataset', [CBT_Admin_Maintenance_Actions::class, 'handle_generate_test_dataset']);
         add_action('admin_post_cbt_run_unit_test_suite', [CBT_Admin_Test_Hub_Actions::class, 'handle_run_unit_test_suite']);

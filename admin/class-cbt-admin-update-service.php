@@ -4,8 +4,14 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Update_Job_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-update-job-service.php';
+}
+
 final class CBT_Admin_Update_Service
 {
+    private const TEST_AJAX_SIGNAL = 'cbt_update_ajax_response';
+
     public static function can_manage_updates(): bool
     {
         return current_user_can('manage_options');
@@ -38,6 +44,8 @@ final class CBT_Admin_Update_Service
         $status_meta = self::status_meta($status);
         $preflight_meta = self::preflight_meta((string) ($preflight['status'] ?? 'blocked'));
         $release_message = is_array($release_state) ? (string) ($release_state['error_message'] ?? '') : '';
+        $selected_job_token = isset($query['cbt_update_token']) ? sanitize_key((string) wp_unslash((string) $query['cbt_update_token'])) : '';
+        $selected_job = $selected_job_token !== '' ? CBT_Update_Job_Service::get_job($selected_job_token) : CBT_Update_Job_Service::get_active_job();
 
         return [
             'notice' => $notice,
@@ -57,6 +65,11 @@ final class CBT_Admin_Update_Service
             'check_action_url' => admin_url('admin-post.php'),
             'install_action_url' => admin_url('admin-post.php'),
             'page_url' => self::page_url(),
+            'update_operation_nonce' => wp_create_nonce('cbt_update_operation'),
+            'update_operation_ajax_action' => 'cbt_update_operation',
+            'selected_update_job' => is_array($selected_job) ? CBT_Update_Job_Service::response_for_job($selected_job, 'status') : null,
+            'update_history' => CBT_Update_Job_Service::get_history(),
+            'update_backups' => CBT_Update_Backup_Service::get_backups(),
             'repo_label' => CBT_Update_Release_Helper::repository_slug(),
             'repo_url' => CBT_Update_Release_Helper::repository_url(),
             'release_url' => isset($release['html_url']) && is_string($release['html_url']) && $release['html_url'] !== ''
@@ -77,18 +90,10 @@ final class CBT_Admin_Update_Service
 
         check_admin_referer('cbt_check_update_now');
 
-        $state = CBT_Update_Release_Helper::get_release_state(true);
+        $job = CBT_Update_Job_Service::start_check('admin_post');
         $redirect_args = ['page' => 'cbt-update'];
-
-        $state_status = (string) ($state['status'] ?? 'check_failed');
-
-        if ($state_status === 'check_failed') {
-            $redirect_args['cbt_err'] = isset($state['error_message']) ? (string) $state['error_message'] : 'Cek update gagal dijalankan.';
-        } elseif ($state_status === 'no_release') {
-            $redirect_args['cbt_msg'] = isset($state['error_message']) ? (string) $state['error_message'] : 'Belum ada GitHub Release resmi pada repo sumber updater.';
-        } else {
-            $redirect_args['cbt_msg'] = 'Status update CBT berhasil diperbarui.';
-        }
+        $redirect_args['cbt_update_token'] = (string) ($job['token'] ?? '');
+        $redirect_args['cbt_msg'] = 'Job cek update dibuat. Progress akan berjalan dari panel CBT Update.';
 
         wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
         exit;
@@ -102,78 +107,94 @@ final class CBT_Admin_Update_Service
 
         check_admin_referer('cbt_install_update_now');
 
-        $state = CBT_Update_Release_Helper::get_release_state(true);
-        $prepared = CBT_Update_Release_Helper::prepare_install_context($state);
-        if (is_wp_error($prepared)) {
+        $job = CBT_Update_Job_Service::start_install('admin_post');
+        if (is_wp_error($job)) {
             wp_safe_redirect(add_query_arg([
                 'page' => 'cbt-update',
-                'cbt_err' => $prepared->get_error_message(),
+                'cbt_err' => $job->get_error_message(),
             ], admin_url('admin.php')));
             exit;
         }
-
-        $package_path = isset($prepared['package_path']) ? (string) $prepared['package_path'] : '';
-        $update_response = isset($prepared['update_response']) && is_object($prepared['update_response'])
-            ? $prepared['update_response']
-            : (object) [];
-        $previous_updates = get_site_transient('update_plugins');
-        $result = false;
-
-        try {
-            self::load_upgrader_dependencies();
-
-            $next_updates = is_object($previous_updates) ? clone $previous_updates : (object) [];
-            if (!isset($next_updates->response) || !is_array($next_updates->response)) {
-                $next_updates->response = [];
-            }
-            $next_updates->response[CBT_Update_Release_Helper::plugin_basename()] = $update_response;
-            set_site_transient('update_plugins', $next_updates);
-
-            $skin = class_exists('Automatic_Upgrader_Skin')
-                ? new Automatic_Upgrader_Skin()
-                : null;
-            $upgrader = $skin instanceof WP_Upgrader_Skin
-                ? new Plugin_Upgrader($skin)
-                : new Plugin_Upgrader();
-
-            $result = $upgrader->upgrade(CBT_Update_Release_Helper::plugin_basename());
-        } catch (Throwable $exception) {
-            $result = new WP_Error('install_failed', $exception->getMessage());
-        } finally {
-            if (is_object($previous_updates)) {
-                set_site_transient('update_plugins', $previous_updates);
-            } else {
-                delete_site_transient('update_plugins');
-            }
-
-            if ($package_path !== '' && file_exists($package_path)) {
-                @unlink($package_path);
-            }
-        }
-
-        if (is_wp_error($result)) {
-            wp_safe_redirect(add_query_arg([
-                'page' => 'cbt-update',
-                'cbt_err' => 'Install update gagal: ' . $result->get_error_message(),
-            ], admin_url('admin.php')));
-            exit;
-        }
-
-        if ($result === false) {
-            wp_safe_redirect(add_query_arg([
-                'page' => 'cbt-update',
-                'cbt_err' => 'WordPress upgrader tidak menyelesaikan update plugin.',
-            ], admin_url('admin.php')));
-            exit;
-        }
-
-        CBT_Update_Release_Helper::clear_cached_release_state();
 
         wp_safe_redirect(add_query_arg([
             'page' => 'cbt-update',
-            'cbt_msg' => 'Update plugin CBT berhasil diinstall. Reload halaman admin setelah plugin aktif kembali.',
+            'cbt_update_token' => (string) ($job['token'] ?? ''),
+            'cbt_msg' => 'Job install update dibuat. Progress akan berjalan dari panel CBT Update.',
         ], admin_url('admin.php')));
         exit;
+    }
+
+    public static function handle_update_operation_ajax(): void
+    {
+        if (!self::can_manage_updates()) {
+            self::dispatch_update_operation_ajax(false, ['message' => 'Unauthorized'], 403);
+        }
+
+        if (function_exists('check_ajax_referer')) {
+            check_ajax_referer('cbt_update_operation', 'nonce');
+        } else {
+            check_admin_referer('cbt_update_operation', 'nonce');
+        }
+
+        $operation = isset($_POST['operation']) ? sanitize_key((string) wp_unslash($_POST['operation'])) : '';
+        $token = isset($_POST['token']) ? sanitize_key((string) wp_unslash($_POST['token'])) : '';
+
+        switch ($operation) {
+            case 'start_check':
+                $job = CBT_Update_Job_Service::start_check('ajax');
+                self::dispatch_update_operation_ajax(true, CBT_Update_Job_Service::response_for_job($job, $operation));
+                return;
+
+            case 'start_install':
+                $job = CBT_Update_Job_Service::start_install('ajax');
+                if (is_wp_error($job)) {
+                    self::dispatch_update_operation_ajax(false, ['message' => $job->get_error_message()], 400);
+                }
+                self::dispatch_update_operation_ajax(true, CBT_Update_Job_Service::response_for_job($job, $operation));
+                return;
+
+            case 'start_rollback':
+                $backup_id = isset($_POST['backup_id']) ? sanitize_key((string) wp_unslash($_POST['backup_id'])) : '';
+                $job = CBT_Update_Job_Service::start_rollback($backup_id, 'ajax');
+                if (is_wp_error($job)) {
+                    self::dispatch_update_operation_ajax(false, ['message' => $job->get_error_message()], 400);
+                }
+                self::dispatch_update_operation_ajax(true, CBT_Update_Job_Service::response_for_job($job, $operation));
+                return;
+
+            case 'tick':
+                $job = CBT_Update_Job_Service::tick($token);
+                self::dispatch_update_operation_ajax(true, CBT_Update_Job_Service::response_for_job($job, $operation));
+                return;
+
+            case 'status':
+                $job = CBT_Update_Job_Service::get_job($token);
+                if (!is_array($job)) {
+                    self::dispatch_update_operation_ajax(false, ['message' => 'Job update tidak ditemukan.'], 404);
+                }
+                self::dispatch_update_operation_ajax(true, CBT_Update_Job_Service::response_for_job($job, $operation));
+                return;
+
+            case 'clear_finished_job':
+                $cleared = CBT_Update_Job_Service::clear_finished_job($token);
+                self::dispatch_update_operation_ajax($cleared, [
+                    'operation' => $operation,
+                    'token' => $token,
+                    'status' => $cleared ? 'completed' : 'failed',
+                    'complete' => true,
+                    'progress_percent' => 100,
+                    'status_label' => $cleared ? 'Cleared' : 'Failed',
+                    'message' => $cleared ? 'Job update selesai dibersihkan.' : 'Job update belum selesai atau tidak ditemukan.',
+                    'detail' => [],
+                    'history' => CBT_Update_Job_Service::get_history(),
+                    'backups' => CBT_Update_Backup_Service::get_backups(),
+                    'redirect_url' => self::page_url(),
+                ], $cleared ? 200 : 400);
+                return;
+
+            default:
+                self::dispatch_update_operation_ajax(false, ['message' => 'Operasi update tidak dikenal.'], 400);
+        }
     }
 
     public static function page_url(array $args = []): string
@@ -250,13 +271,22 @@ final class CBT_Admin_Update_Service
         }
     }
 
-    private static function load_upgrader_dependencies(): void
+    private static function dispatch_update_operation_ajax(bool $success, array $payload, int $status_code = 200): void
     {
-        require_once ABSPATH . 'wp-admin/includes/file.php';
-        require_once ABSPATH . 'wp-admin/includes/misc.php';
-        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-        require_once ABSPATH . 'wp-admin/includes/class-automatic-upgrader-skin.php';
-        require_once ABSPATH . 'wp-admin/includes/class-plugin-upgrader.php';
+        if (defined('PHPUNIT_COMPOSER_INSTALL')) {
+            $GLOBALS['cbt_test_last_ajax_response'] = [
+                'success' => $success,
+                'status_code' => $status_code,
+                'payload' => $payload,
+            ];
+            throw new RuntimeException(self::TEST_AJAX_SIGNAL);
+        }
+
+        if ($success) {
+            wp_send_json_success($payload, $status_code);
+        }
+
+        wp_send_json_error($payload, $status_code);
     }
 
     private static function format_datetime(int $timestamp): string

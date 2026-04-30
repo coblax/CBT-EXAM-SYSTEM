@@ -364,6 +364,9 @@ final class CBT_Update_Job_Service
     {
         $manifest = is_array($job['manifest'] ?? null) ? $job['manifest'] : [];
         $download_url = (string) ($manifest['download_url'] ?? '');
+        if (!function_exists('download_url')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
         $package_path = download_url($download_url);
         if (is_wp_error($package_path)) {
             return self::fail_job($job, 'download', 'Gagal mengunduh package update: ' . $package_path->get_error_message());
