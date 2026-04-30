@@ -725,18 +725,20 @@ sudo chown redis:redis /var/run/redis
 sudo chmod 755 /var/run/redis
 ```
 
-**Langkah 2 — Aktifkan Unix socket di konfigurasi Redis:**
+**Langkah 2 — Set path socket dan permission di konfigurasi Redis:**
 
 ```bash
 sudo nano /etc/redis/redis.conf
 ```
 
-Di dalam file, baris socket biasanya **sudah ada tapi dikomentari** dengan `#`. Cari dengan `Ctrl+W` lalu ketik `unixsocket`. Hapus tanda `#` di depan kedua baris berikut sehingga menjadi aktif:
+Di dalam file, cari baris `unixsocket` dengan `Ctrl+W` lalu ketik `unixsocket`. Baris ini biasanya sudah ada tapi **dikomentari dengan `#`**. Hapus `#` dan **pastikan nilainya persis seperti di bawah** — termasuk nama file `redis.sock` (bukan `redis-server.sock`):
 
 ```conf
 unixsocket /var/run/redis/redis.sock
 unixsocketperm 770
 ```
+
+> **Penting:** Di Ubuntu/Debian, Redis secara default menggunakan nama socket `redis-server.sock` dan permission `700`. Kedua baris di atas **wajib diset secara eksplisit** agar socket bernama `redis.sock` dengan permission `770` sehingga PHP-FPM (via group `redis`) bisa mengaksesnya.
 
 > Jika kedua baris tidak ditemukan sama sekali, tambahkan di bagian bawah file sebelum baris terakhir.
 
@@ -752,24 +754,35 @@ sudo systemctl restart redis-server
 sudo systemctl restart php8.3-fpm
 ```
 
-**Langkah 4 — Verifikasi socket muncul:**
+**Langkah 4 — Verifikasi socket muncul dengan nama dan permission yang benar:**
 
 ```bash
 ls -la /var/run/redis/
 ```
 
-Output yang diharapkan (harus ada file `redis.sock`):
+Output yang diharapkan — nama `redis.sock`, permission `srwxrwx---`:
 ```
--rw-r--r--  1 redis redis  ... redis-server.pid
+-rw-rw----  1 redis redis  ... redis-server.pid
 srwxrwx---  1 redis redis  ... redis.sock
 ```
 
-Jika hanya ada `redis-server.pid` dan **tidak ada `redis.sock`**, berarti konfigurasi belum terbaca. Cek dengan:
+Jika output berbeda, diagnosis sesuai kasusnya:
 
+**Kasus A — Socket ada tapi namanya `redis-server.sock` (bukan `redis.sock`):**
+Baris `unixsocket` di `redis.conf` belum terbaca. Cek:
 ```bash
-# Harus ada output — jika kosong berarti baris masih ter-comment, ulangi Langkah 2
-sudo grep -n "^unixsocket" /etc/redis/redis.conf
+# Harus ada output — jika kosong, baris masih ter-comment, ulangi Langkah 2
+sudo grep -n "^unixsocket " /etc/redis/redis.conf
 ```
+Setelah diperbaiki, restart Redis: `sudo systemctl restart redis-server`
+
+**Kasus B — Socket ada tapi permission-nya `srwx------` (700), bukan `srwxrwx---` (770):**
+Baris `unixsocketperm 770` di `redis.conf` belum terbaca. Cek:
+```bash
+# Harus ada output "unixsocketperm 770" — jika kosong atau nilainya berbeda, ulangi Langkah 2
+sudo grep -n "^unixsocketperm" /etc/redis/redis.conf
+```
+Setelah diperbaiki, restart Redis: `sudo systemctl restart redis-server`
 
 **Langkah 5 — Verifikasi koneksi dapat diakses:**
 
