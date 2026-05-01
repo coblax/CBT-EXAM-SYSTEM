@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..');
 const pluginFile = join(repoRoot, 'cbt-exam-system.php');
+const packageFile = join(repoRoot, 'package.json');
+const packageLockFile = join(repoRoot, 'package-lock.json');
 
 function printUsage() {
   console.log(`Usage:
@@ -188,6 +190,17 @@ function readPluginVersion() {
   };
 }
 
+function readPackageVersion() {
+  if (!existsSync(packageFile)) {
+    return '';
+  }
+
+  const contents = readFileSync(packageFile, 'utf8');
+  const pkg = JSON.parse(contents);
+
+  return typeof pkg.version === 'string' ? pkg.version.trim() : '';
+}
+
 function writePluginVersion(contents, version) {
   let replacements = 0;
   const nextContents = contents
@@ -208,6 +221,29 @@ function writePluginVersion(contents, version) {
   }
 
   writeFileSync(pluginFile, nextContents, 'utf8');
+}
+
+function writePackageVersion(version) {
+  if (!existsSync(packageFile)) {
+    return [];
+  }
+
+  const updatedFiles = ['package.json'];
+  const pkg = JSON.parse(readFileSync(packageFile, 'utf8'));
+  pkg.version = version;
+  writeFileSync(packageFile, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
+
+  if (existsSync(packageLockFile)) {
+    const lock = JSON.parse(readFileSync(packageLockFile, 'utf8'));
+    lock.version = version;
+    if (lock.packages && lock.packages['']) {
+      lock.packages[''].version = version;
+    }
+    writeFileSync(packageLockFile, `${JSON.stringify(lock, null, 2)}\n`, 'utf8');
+    updatedFiles.push('package-lock.json');
+  }
+
+  return updatedFiles;
 }
 
 function assertCleanWorktree() {
@@ -288,6 +324,11 @@ function runRelease(version, options) {
 
   const tagName = `v${version}`;
   const plugin = readPluginVersion();
+  const packageVersion = readPackageVersion();
+
+  if (packageVersion !== '' && packageVersion !== plugin.version) {
+    fail(`package.json version (${packageVersion}) does not match plugin version (${plugin.version}).`);
+  }
 
   if (compareVersions(version, plugin.version) <= 0) {
     fail(`New version ${version} must be greater than current version ${plugin.version}.`);
@@ -309,6 +350,12 @@ function runRelease(version, options) {
   if (options.dryRun) {
     printStep('Dry run enabled. No files, commits, tags, or pushes will be created.');
     printStep(`Would update ${pluginFile}`);
+    if (existsSync(packageFile)) {
+      printStep(`Would update ${packageFile}`);
+    }
+    if (existsSync(packageLockFile)) {
+      printStep(`Would update ${packageLockFile}`);
+    }
     printStep(`Would commit: chore(release): ${tagName}`);
     printStep(`Would create annotated tag ${tagName}`);
     printStep(`Would push ${options.branch} and ${tagName} to ${options.remote}`);
@@ -316,7 +363,8 @@ function runRelease(version, options) {
   }
 
   writePluginVersion(plugin.contents, version);
-  git(['add', 'cbt-exam-system.php']);
+  const packageFiles = writePackageVersion(version);
+  git(['add', 'cbt-exam-system.php', ...packageFiles]);
   git(['commit', '-m', `chore(release): ${tagName}`], { stdio: 'inherit' });
 
   const tempDir = mkdtempSync(join(tmpdir(), 'cbt-release-'));
