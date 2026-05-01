@@ -88,6 +88,8 @@ if ($is_stable_mode) {
     <?php endif; ?>
 
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
     /* Modern Design System Tokens */
     :root {
         --cbt-primary: #3b82f6;
@@ -123,12 +125,18 @@ if ($is_stable_mode) {
     }
 
     .cbt-developer-page {
-        max-width: 1280px;
-        margin: 20px auto;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        color: var(--cbt-text-main);
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    }
+            max-width: 1280px;
+            margin: 20px auto;
+            padding: 24px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--cbt-text-main);
+            background: radial-gradient(circle at top left, #e0e7ff 0%, #f8fafc 40%, #f0fdf4 100%);
+            border-radius: var(--cbt-radius-lg);
+            box-sizing: border-box;
+        }
+        .cbt-developer-page * {
+            box-sizing: border-box;
+        }
     
     .cbt-developer-page * { box-sizing: border-box; }
 
@@ -338,15 +346,55 @@ if ($is_stable_mode) {
     .cbt-dev-inline-form .cbt-dev-field { margin: 0; }
 
     @media (max-width: 1100px) {
-        .cbt-dev-hero { flex-direction: column; }
+        .cbt-dev-hero { flex-direction: column; 
+            color: var(--cbt-text-main);
+            padding: 28px;
+            border-radius: var(--cbt-radius-lg);
+            background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-lg), var(--cbt-shadow-glow);
+            position: relative;
+            overflow: hidden;
+        }
         .cbt-dev-live-panel { min-width: 0; max-width: none; }
         .cbt-dev-grid, .cbt-dev-diag-grid, .cbt-dev-scenario-grid { grid-template-columns: 1fr; }
         .cbt-dev-diag-span-2 { grid-column: auto; }
     }
     @media (max-width: 782px) {
-        .cbt-dev-hero, .cbt-dev-card { padding: 20px; }
+        .cbt-dev-hero, .cbt-dev-card { padding: 20px; 
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;
+        }
         .cbt-dev-hero-copy h1 { font-size: 28px; }
     }
+
+        
+        .cbt-developer-shell::before {
+            content: ''; position: absolute; top: -150px; left: -100px; width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(255,255,255,0) 70%);
+            z-index: -1; border-radius: 50%; pointer-events: none; filter: blur(60px);
+        }
+        .cbt-developer-shell::after {
+            content: ''; position: absolute; bottom: -100px; right: -50px; width: 500px; height: 500px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, rgba(255,255,255,0) 70%);
+            z-index: -1; border-radius: 50%; pointer-events: none; filter: blur(60px);
+        }
+        .cbt-developer-shell {
+            position: relative;
+            z-index: 1;
+            isolation: isolate;
+            display: grid;
+            gap: 20px;
+        }
 </style>
 
     <div class="cbt-dev-shell">

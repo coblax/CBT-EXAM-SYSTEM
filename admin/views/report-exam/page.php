@@ -1,24 +1,97 @@
         <style>
-            .cbt-report-admin-page {
-                max-width: 1120px;
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    /* Modern Design System Tokens */
+    :root {
+        --cbt-primary: #3b82f6;
+        --cbt-primary-hover: #2563eb;
+        --cbt-primary-light: #eff6ff;
+        --cbt-secondary: #0ea5e9;
+        --cbt-accent: #8b5cf6;
+        
+        --cbt-bg-base: #f8fafc;
+        --cbt-bg-card: rgba(255, 255, 255, 0.7);
+        --cbt-bg-card-hover: rgba(255, 255, 255, 0.9);
+        
+        --cbt-text-main: #0f172a;
+        --cbt-text-muted: #64748b;
+        --cbt-text-inverse: #ffffff;
+        
+        --cbt-border: rgba(226, 232, 240, 0.8);
+        --cbt-border-light: rgba(255, 255, 255, 0.5);
+        
+        --cbt-shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        --cbt-shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+        --cbt-shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
+        --cbt-shadow-glow: 0 0 20px rgba(59, 130, 246, 0.15);
+        
+        --cbt-radius-sm: 12px;
+        --cbt-radius-md: 20px;
+        --cbt-radius-lg: 32px;
+        
+        --cbt-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+            
+        .cbt-report-admin-page {
+            max-width: 1280px;
+            margin: 20px auto;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--cbt-text-main);
+            
+        }
+        .cbt-report-admin-page * {
+            box-sizing: border-box;
+        }
+
+            
+            .cbt-report-admin-shell::before {
+                content: ''; position: absolute; top: -150px; left: -100px; width: 600px; height: 600px;
+                background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(255,255,255,0) 70%);
+                z-index: -1; border-radius: 50%; pointer-events: none; filter: blur(60px);
             }
+            .cbt-report-admin-shell::after {
+                content: ''; position: absolute; bottom: -100px; right: -50px; width: 500px; height: 500px;
+                background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, rgba(255,255,255,0) 70%);
+                z-index: -1; border-radius: 50%; pointer-events: none; filter: blur(60px);
+            }
+
             .cbt-report-admin-shell {
                 display: grid;
                 gap: 18px;
                 margin-top: 18px;
+            
+                position: relative;
+                z-index: 1;
+                isolation: isolate;}
+            
+            .cbt-report-admin-hero::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 5px;
+                background: linear-gradient(90deg, var(--cbt-primary), var(--cbt-secondary), var(--cbt-accent));
             }
+
             .cbt-report-admin-hero {
                 display: flex;
                 align-items: flex-start;
                 justify-content: space-between;
                 gap: 22px;
                 padding: 24px 28px;
-                border: 1px solid #d7dbe2;
-                border-radius: 22px;
-                background:
-                    radial-gradient(circle at top right, rgba(34, 113, 177, 0.10), transparent 34%),
-                    linear-gradient(135deg, #ffffff 0%, #f6f9fc 100%);
-                box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+                border-radius: var(--cbt-radius-lg);
+                
+                
+                border: 1px solid var(--cbt-border);
+                box-shadow: var(--cbt-shadow-lg);
+            
+                background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                position: relative;
+                overflow: hidden;
             }
             .cbt-report-admin-hero-copy {
                 max-width: 660px;
@@ -29,7 +102,7 @@
                 min-height: 28px;
                 padding: 0 12px;
                 border-radius: 999px;
-                background: #e8f1ff;
+                background: rgba(59,130,246,0.1);
                 color: #0f4fa8;
                 font-size: 12px;
                 font-weight: 700;
@@ -40,6 +113,12 @@
                 margin: 12px 0 8px;
                 font-size: 30px;
                 line-height: 1.15;
+            
+                font-weight: 800;
+                background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                letter-spacing: -0.02em;
             }
             .cbt-report-admin-hero p {
                 margin: 0;
@@ -59,7 +138,7 @@
                 min-height: 34px;
                 padding: 0 14px;
                 border-radius: 999px;
-                background: rgba(255, 255, 255, 0.92);
+                background: rgba(255,255,255,0.4); backdrop-filter: blur(4px);
                 border: 1px solid #d7e4f5;
                 color: #1e3a5f;
                 font-size: 13px;
@@ -71,10 +150,11 @@
                 gap: 10px;
                 flex-wrap: wrap;
                 padding: 6px;
-                border: 1px solid #d9e1ea;
-                border-radius: 18px;
-                background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
-                box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+                border-radius: var(--cbt-radius-md);
+                background: var(--cbt-bg-card);
+                backdrop-filter: blur(10px);
+                border: 1px solid var(--cbt-border);
+                box-shadow: var(--cbt-shadow-md);
             }
             .cbt-report-admin-tab {
                 display: inline-flex;
@@ -114,10 +194,16 @@
             }
             .cbt-report-admin-panel {
                 padding: 24px;
-                border: 1px solid #dcdcde;
-                border-radius: 20px;
-                background: #ffffff;
-                box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+                border-radius: var(--cbt-radius-md);
+                
+                
+                border: 1px solid var(--cbt-border);
+                box-shadow: var(--cbt-shadow-md);
+                transition: var(--cbt-transition);
+            
+                background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
             }
             .cbt-report-admin-panel-header {
                 display: flex;
@@ -191,12 +277,12 @@
                 box-sizing: border-box;
                 min-height: 48px;
                 padding: 0 15px;
-                border: 1px solid #c9d7e6;
-                border-radius: 16px;
-                background: #f8fbff;
-                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-                color: #0f172a;
-                transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+                border: 1px solid var(--cbt-border);
+                border-radius: var(--cbt-radius-sm);
+                background: rgba(255, 255, 255, 0.5);
+                backdrop-filter: blur(5px);
+                color: var(--cbt-text-main);
+                transition: var(--cbt-transition);
             }
             .cbt-report-admin-panel select {
                 appearance: none;
@@ -241,7 +327,7 @@
                 min-height: 34px;
                 padding: 0 14px;
                 border-radius: 999px;
-                background: #f8fbff;
+                background: rgba(255,255,255,0.4);
                 border: 1px solid #dbe7f3;
                 color: #1e3a5f;
                 font-size: 13px;
@@ -321,11 +407,13 @@
                 gap: 14px;
             }
             .cbt-report-admin-insight {
-                padding: 18px;
-                border: 1px solid #dfe7ef;
-                border-radius: 18px;
-                background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-            }
+        padding: 18px;
+        border-radius: var(--cbt-radius-md);
+        background: var(--cbt-bg-card);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--cbt-border);
+        box-shadow: var(--cbt-shadow-sm);
+    }
             .cbt-report-admin-insight strong {
                 display: block;
                 margin-bottom: 6px;
@@ -406,10 +494,16 @@
             }
             .cbt-report-admin-incident-form-card,
             .cbt-report-admin-incident-table-card {
-                padding: 20px;
-                border: 1px solid #dfe7ef;
-                border-radius: 18px;
-                background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+                padding: 24px;
+                border-radius: var(--cbt-radius-md);
+                
+                
+                border: 1px solid var(--cbt-border);
+                box-shadow: var(--cbt-shadow-md);
+            
+                background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
             }
             .cbt-report-admin-incident-card-header {
                 display: flex;
@@ -441,7 +535,7 @@
                 padding: 10px 14px;
                 border: 1px solid #c9d7e6;
                 border-radius: 16px;
-                background: #f8fbff;
+                background: rgba(255,255,255,0.4);
                 box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
                 display: flex;
                 align-items: center;
@@ -554,7 +648,7 @@
             .cbt-report-admin-student-picker-option:hover,
             .cbt-report-admin-student-picker-option:focus-visible {
                 border-color: #cfe0f4;
-                background: #f8fbff;
+                background: rgba(255,255,255,0.4);
                 outline: none;
             }
             .cbt-report-admin-student-picker-option.is-selected {
@@ -569,7 +663,7 @@
                 padding: 14px 15px;
                 border: 1px solid #c9d7e6;
                 border-radius: 16px;
-                background: #f8fbff;
+                background: rgba(255,255,255,0.4);
                 box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
                 color: #0f172a;
                 resize: vertical;
@@ -594,7 +688,7 @@
                 min-height: 34px;
                 padding: 0 12px;
                 border-radius: 999px;
-                background: #f8fbff;
+                background: rgba(255,255,255,0.4);
                 border: 1px solid #dbe7f3;
                 color: #1e3a5f;
                 font-size: 12px;
@@ -625,7 +719,7 @@
                 font-weight: 800;
                 text-transform: uppercase;
                 letter-spacing: 0.08em;
-                background: #f8fbff;
+                background: rgba(255,255,255,0.4);
                 white-space: nowrap;
             }
             .cbt-report-admin-incident-table tbody tr:hover td {
@@ -824,16 +918,34 @@
                     margin-right: 10px;
                 }
                 .cbt-report-admin-tabs {
-                    gap: 8px;
-                    padding: 5px;
-                }
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+                padding: 6px;
+                border-radius: var(--cbt-radius-md);
+                background: var(--cbt-bg-card);
+                backdrop-filter: blur(10px);
+                border: 1px solid var(--cbt-border);
+                box-shadow: var(--cbt-shadow-md);
+            }
                 .cbt-report-admin-tab {
                     width: 100%;
                 }
                 .cbt-report-admin-hero,
                 .cbt-report-admin-panel {
-                    padding: 20px;
-                }
+                padding: 24px;
+                border-radius: var(--cbt-radius-md);
+                
+                
+                border: 1px solid var(--cbt-border);
+                box-shadow: var(--cbt-shadow-md);
+                transition: var(--cbt-transition);
+            
+                background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+            }
             }
         </style>
         <div class="wrap cbt-report-admin-page">

@@ -37,20 +37,77 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                 </div>
             </section>
             <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+                
+        /* Modern Design System Tokens */
+        :root {
+            --cbt-primary: #3b82f6;
+            --cbt-primary-hover: #2563eb;
+            --cbt-primary-light: #eff6ff;
+            --cbt-secondary: #0ea5e9;
+            --cbt-accent: #8b5cf6;
+            
+            --cbt-bg-base: #f8fafc;
+            --cbt-bg-card: rgba(255, 255, 255, 0.7);
+            --cbt-bg-card-hover: rgba(255, 255, 255, 0.9);
+            
+            --cbt-text-main: #0f172a;
+            --cbt-text-muted: #64748b;
+            --cbt-text-inverse: #ffffff;
+            
+            --cbt-border: rgba(226, 232, 240, 0.8);
+            --cbt-border-light: rgba(255, 255, 255, 0.5);
+            
+            --cbt-shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            --cbt-shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+            --cbt-shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
+            --cbt-shadow-glow: 0 0 20px rgba(59, 130, 246, 0.15);
+            
+            --cbt-radius-sm: 12px;
+            --cbt-radius-md: 20px;
+            --cbt-radius-lg: 32px;
+            
+            --cbt-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
                 .cbt-results-page {
-                    padding-right: 18px;
-                    animation: cbtSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-                opacity: 0;
-            }
+            max-width: 1280px;
+            margin: 20px auto;
+            padding: 24px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--cbt-text-main);
+            background: radial-gradient(circle at top left, #e0e7ff 0%, #f8fafc 40%, #f0fdf4 100%);
+            border-radius: var(--cbt-radius-lg);
+            box-sizing: border-box;
+        }
+        .cbt-results-page * {
+            box-sizing: border-box;
+        }
             @keyframes cbtSlideUp {
                 0% { opacity: 0; transform: translateY(15px); }
                 100% { opacity: 1; transform: translateY(0); }
             }
-                .cbt-results-shell {
+                
+        .cbt-results-shell::before {
+            content: ''; position: absolute; top: -150px; left: -100px; width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(255,255,255,0) 70%);
+            z-index: -1; border-radius: 50%; pointer-events: none; filter: blur(60px);
+        }
+        .cbt-results-shell::after {
+            content: ''; position: absolute; bottom: -100px; right: -50px; width: 500px; height: 500px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, rgba(255,255,255,0) 70%);
+            z-index: -1; border-radius: 50%; pointer-events: none; filter: blur(60px);
+        }
+        .cbt-results-shell {
                     max-width: 1320px;
                     display: grid;
                     gap: 20px;
-                }
+                
+            position: relative;
+            z-index: 1;
+            isolation: isolate;
+        }
                 .cbt-results-page .notice {
                     margin: 0;
                 }
@@ -60,20 +117,33 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                     display: grid;
                     grid-template-columns: minmax(0, 1.75fr) minmax(320px, 1fr);
                     gap: 18px;
-                    padding: 26px 28px;
-                    border: 1px solid rgba(255, 255, 255, 0.6);
-                    border-radius: 24px;
-                    background: linear-gradient(145deg, #ffffff 0%, #f0f4f8 100%);
+                    
+                    
+                    
+                    
 
                     
-                    box-shadow: 0 20px 40px rgba(15, 23, 42, 0.05), inset 0 2px 0 rgba(255, 255, 255, 0.9);
-                }
+                    
+                
+            padding: 28px;
+            border-radius: var(--cbt-radius-lg);
+            background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-lg), var(--cbt-shadow-glow);
+            position: relative;
+            overflow: hidden;
+        }
                 .cbt-results-hero::before {
-                    content: ""; position: absolute;
-                    top: -200px; right: -200px; width: 600px; height: 600px;
-                    background: radial-gradient(circle, rgba(59, 130, 246, 0.12) 0%, transparent 70%);
-                    border-radius: 50%; pointer-events: none;
-                }
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, var(--cbt-primary), var(--cbt-secondary), var(--cbt-accent));
+        }
                 .cbt-results-hero-copy {
                     display: grid;
                     gap: 10px;
@@ -140,11 +210,21 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                     display: grid;
                     gap: 16px;
                     padding: 22px 24px;
-                    border: 1px solid #d9e3ef;
-                    border-radius: 24px;
-                    background: #fff;
-                    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.05);
-                }
+                    
+                    
+                    
+                    
+                
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;
+        }
                 .cbt-results-card-header {
                     display: flex;
                     align-items: flex-start;
@@ -2318,8 +2398,18 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                     .cbt-results-hero,
                     .cbt-results-card {
                         padding: 20px 18px;
-                        border-radius: 20px;
-                    }
+                        
+                    
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;
+        }
                     .cbt-results-hero,
                     .cbt-results-filter-form,
                     .cbt-results-field-grid,

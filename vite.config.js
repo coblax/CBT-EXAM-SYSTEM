@@ -30,6 +30,7 @@ export default defineConfig(({ command }) => ({
             input: {
                 frontend: resolve(__dirname, 'src/frontend/main.js'),
                 adminMath: resolve(__dirname, 'src/admin/math-main.js'),
+                adminAnalytics: resolve(__dirname, 'src/admin/analytics-main.js'),
             },
             output: {
                 entryFileNames(chunkInfo) {

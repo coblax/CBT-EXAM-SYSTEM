@@ -14,6 +14,9 @@ $exam_item_flags = (array) (($exam_analytics['item_flags'] ?? []) ?: []);
 $exam_meta = (array) (($exam_analytics['exam'] ?? []) ?: []);
 $exam_distribution = (array) (($exam_analytics['distribution'] ?? []) ?: []);
 $exam_kelas_summary = (array) (($exam_analytics['per_kelas_summary'] ?? []) ?: []);
+$exam_behavioral_quadrant = (array) (($exam_analytics['behavioral_quadrant'] ?? []) ?: []);
+$exam_benchmark_overlay = (array) (($exam_analytics['benchmark_overlay'] ?? []) ?: []);
+$exam_predictive_pass_rate = (array) (($exam_analytics['predictive_pass_rate'] ?? []) ?: []);
 $item_analysis_summary = (array) ($item_analysis_summary ?? []);
 
 $has_selected_exam = $selected_exam_id > 0 && !empty($selected_exam);
@@ -25,8 +28,14 @@ $overview_analytic_all_url = CBT_Admin_Analytics_Service::build_analytics_url([
     'cbt_run_analytics' => 'all',
 ]);
 $current_tab = CBT_Admin_Analytics_Service::normalize_tab((string) ($active_tab ?? 'overview'));
-$item_rows_json = wp_json_encode(array_values((array) $item_analysis_rows));
-$student_rows_json = wp_json_encode(array_values((array) $student_rows));
+$json_encode_flags = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
+$item_rows_json = wp_json_encode(array_values((array) $item_analysis_rows), $json_encode_flags);
+$student_rows_json = wp_json_encode(array_values((array) $student_rows), $json_encode_flags);
+$analytics_chart_payload_json = wp_json_encode([
+    'behavioral_quadrant' => $exam_behavioral_quadrant,
+    'benchmark_overlay' => $exam_benchmark_overlay,
+    'predictive_pass_rate' => $exam_predictive_pass_rate,
+], $json_encode_flags);
 $quality_reliability_label = (string) ($exam_quality['reliability_label'] ?? 'Insufficient Data');
 $quality_reliability_display = (string) ($exam_quality['reliability_display'] ?? 'Insufficient Data');
 $quality_reliability_value = isset($exam_quality['reliability']) && is_numeric($exam_quality['reliability']) ? (float) $exam_quality['reliability'] : null;
@@ -144,13 +153,69 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
     <?php endif; ?>
 
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        
+        /* Modern Design System Tokens */
+        :root {
+            --cbt-primary: #3b82f6;
+            --cbt-primary-hover: #2563eb;
+            --cbt-primary-light: #eff6ff;
+            --cbt-secondary: #0ea5e9;
+            --cbt-accent: #8b5cf6;
+            
+            --cbt-bg-base: #f8fafc;
+            --cbt-bg-card: rgba(255, 255, 255, 0.7);
+            --cbt-bg-card-hover: rgba(255, 255, 255, 0.9);
+            
+            --cbt-text-main: #0f172a;
+            --cbt-text-muted: #64748b;
+            --cbt-text-inverse: #ffffff;
+            
+            --cbt-border: rgba(226, 232, 240, 0.8);
+            --cbt-border-light: rgba(255, 255, 255, 0.5);
+            
+            --cbt-shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            --cbt-shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+            --cbt-shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
+            --cbt-shadow-glow: 0 0 20px rgba(59, 130, 246, 0.15);
+            
+            --cbt-radius-sm: 12px;
+            --cbt-radius-md: 20px;
+            --cbt-radius-lg: 32px;
+            
+            --cbt-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
         .cbt-analytics-page {
+            max-width: 1280px;
+            margin: 20px auto;
             padding-right: 18px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--cbt-text-main);
+            background: radial-gradient(circle at top left, #e0e7ff 0%, #f8fafc 40%, #f0fdf4 100%);
+            border-radius: var(--cbt-radius-lg);
+            padding: 24px;
+        }
+        .cbt-analytics-page * {
+            box-sizing: border-box;
         }
         .cbt-analytics-shell {
             max-width: 1320px;
             display: grid;
             gap: 20px;
+            position: relative;
+            z-index: 1;
+            isolation: isolate;
+        }
+        .cbt-analytics-shell::before {
+            content: ''; position: absolute; top: -150px; left: -100px; width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(255,255,255,0) 70%);
+            z-index: -1; border-radius: 50%; pointer-events: none; filter: blur(60px);
+        }
+        .cbt-analytics-shell::after {
+            content: ''; position: absolute; bottom: -100px; right: -50px; width: 500px; height: 500px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, rgba(255,255,255,0) 70%);
+            z-index: -1; border-radius: 50%; pointer-events: none; filter: blur(60px);
         }
         .cbt-analytics-page .notice {
             margin: 0;
@@ -161,18 +226,32 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             justify-content: space-between;
             gap: 24px;
             padding: 26px 28px;
-            border: 1px solid #d7dbe2;
-            border-radius: 24px;
-            background:
-                radial-gradient(circle at top right, rgba(59, 130, 246, 0.10), transparent 34%),
-                linear-gradient(135deg, #ffffff 0%, #f6f9fc 100%);
-            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+            border-radius: var(--cbt-radius-lg);
+            background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-lg), var(--cbt-shadow-glow);
+            position: relative;
+            overflow: hidden;
+        }
+        .cbt-analytics-hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, var(--cbt-primary), var(--cbt-secondary), var(--cbt-accent));
         }
         .cbt-analytics-hero-copy {
             max-width: 760px;
             display: grid;
             gap: 10px;
-        }
+            flex: 1;
+            min-width: 0;
+            word-wrap: break-word;
+            overflow-wrap: break-word;}
         .cbt-analytics-kicker {
             display: inline-flex;
             align-items: center;
@@ -180,7 +259,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             width: fit-content;
             padding: 0 12px;
             border-radius: 999px;
-            background: #e8f1ff;
+            background: rgba(59,130,246,0.1);
             color: #0f4fa8;
             font-size: 12px;
             font-weight: 700;
@@ -191,7 +270,11 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             margin: 0;
             font-size: 40px;
             line-height: 1.05;
-            color: #0f172a;
+            font-weight: 800;
+            background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
         }
         .cbt-analytics-hero p {
             margin: 0;
@@ -203,11 +286,13 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             min-width: 320px;
             max-width: 360px;
             padding: 18px;
-            border: 1px solid #dbe4f0;
-            border-radius: 22px;
-            background: rgba(255, 255, 255, 0.94);
-            box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
-        }
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            flex-shrink: 0;}
         .cbt-analytics-live-label {
             display: block;
             margin-bottom: 12px;
@@ -249,10 +334,12 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             gap: 10px;
             flex-wrap: wrap;
             padding: 6px;
-            border: 1px solid #d9e1ea;
-            border-radius: 18px;
-            background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
         }
         .cbt-analytics-tab {
             display: inline-flex;
@@ -282,10 +369,13 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
         }
         .cbt-analytics-panel {
             padding: 24px;
-            border: 1px solid #dcdcde;
-            border-radius: 20px;
-            background: #ffffff;
-            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            transition: var(--cbt-transition);
         }
         .cbt-analytics-panel-header {
             display: flex;
@@ -294,7 +384,9 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             gap: 16px;
             margin-bottom: 18px;
             flex-wrap: wrap;
-        }
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;}
         .cbt-analytics-panel-header h2 {
             margin: 0 0 6px;
             font-size: 22px;
@@ -317,7 +409,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             min-height: 30px;
             padding: 0 12px;
             border-radius: 999px;
-            background: #f8fbff;
+            background: rgba(255,255,255,0.4); backdrop-filter: blur(4px);
             border: 1px solid #dbe7f3;
             color: #1e3a5f;
             font-size: 12px;
@@ -360,11 +452,13 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             width: 100%;
             min-height: 48px;
             padding: 0 15px;
-            border: 1px solid #c9d7e6;
-            border-radius: 16px;
-            background: #f8fbff;
-            color: #0f172a;
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+            border: 1px solid var(--cbt-border);
+            border-radius: var(--cbt-radius-sm);
+            background: rgba(255,255,255,0.5);
+            backdrop-filter: blur(5px);
+            color: var(--cbt-text-main);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+            transition: var(--cbt-transition);
         }
         .cbt-analytics-field select:focus,
         .cbt-analytics-field input[type="search"]:focus {
@@ -396,7 +490,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             min-height: 34px;
             padding: 0 14px;
             border-radius: 999px;
-            background: #f8fbff;
+            background: rgba(255,255,255,0.4); backdrop-filter: blur(4px);
             border: 1px solid #dbe7f3;
             color: #1e3a5f;
             font-size: 13px;
@@ -418,11 +512,14 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             display: grid;
             gap: 6px;
             padding: 14px 16px;
-            border: 1px solid #dbe4f0;
-            border-radius: 14px;
-            background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
-        }
+            border-radius: var(--cbt-radius-sm);
+            background: rgba(255,255,255,0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--cbt-border);
+            box-shadow: var(--cbt-shadow-sm);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;}
         .cbt-analytics-metric-card span {
             color: #607287;
             font-size: 11px;
@@ -454,10 +551,13 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
         }
         .cbt-analytics-mini-glossary-item {
             padding: 12px 14px;
-            border: 1px solid #dbe4f0;
-            border-radius: 14px;
-            background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-        }
+            border-radius: var(--cbt-radius-sm);
+            background: rgba(255,255,255,0.6);
+            backdrop-filter: blur(5px);
+            border: 1px solid var(--cbt-border);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;}
         .cbt-analytics-mini-glossary-item strong {
             display: block;
             margin-bottom: 4px;
@@ -472,9 +572,11 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
         }
         .cbt-analytics-table-wrap {
             overflow: auto;
-            border: 1px solid #dcdcde;
-            border-radius: 16px;
-            background: #fff;
+            border-radius: var(--cbt-radius-md);
+            background: rgba(255,255,255,0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--cbt-border);
+            box-shadow: var(--cbt-shadow-sm);
         }
         .cbt-analytics-table {
             width: 100%;
@@ -505,7 +607,9 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             border-bottom: 1px solid #edf2f7;
             text-align: left;
             vertical-align: top;
-        }
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;}
         .cbt-analytics-table.is-compact th,
         .cbt-analytics-table.is-compact td {
             padding: 8px 10px;
@@ -533,7 +637,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             font-size: 12px;
         }
         .cbt-analytics-table tbody tr:hover {
-            background: #f8fbff;
+            background: rgba(255,255,255,0.4); backdrop-filter: blur(4px);
         }
         .cbt-analytics-table-cell-stack {
             display: grid;
@@ -598,7 +702,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
         }
         .cbt-analytics-inline-detail-row td {
             padding: 0;
-            background: #f8fbff;
+            background: rgba(255,255,255,0.4); backdrop-filter: blur(4px);
         }
         .cbt-analytics-inline-detail-wrap {
             padding: 14px;
@@ -618,7 +722,9 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             border: 1px solid #dbe4f0;
             border-radius: 14px;
             background: #fff;
-        }
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;}
         .cbt-analytics-inline-card.is-insight-summary {
             border-color: #bfdbfe;
             background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
@@ -670,7 +776,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             margin-bottom: 8px;
             padding: 0 10px;
             border-radius: 999px;
-            background: #e8f1ff;
+            background: rgba(59,130,246,0.1);
             color: #1f68a6;
             font-size: 10px;
             font-weight: 800;
@@ -730,7 +836,9 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             border: 1px dashed #c8d8eb;
             border-radius: 14px;
             background: linear-gradient(180deg, #fbfdff 0%, #f4f9ff 100%);
-        }
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;}
         .cbt-analytics-quality-subtitle {
             display: block;
             margin: 0;
@@ -749,7 +857,9 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             border: 1px solid #dbe4f0;
             border-radius: 14px;
             background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,251,255,.98) 100%);
-        }
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;}
         .cbt-analytics-quality-diagnostic-label {
             display: block;
             margin-bottom: 8px;
@@ -856,7 +966,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             margin-bottom: 8px;
             padding: 0 10px;
             border-radius: 999px;
-            background: #e8f1ff;
+            background: rgba(59,130,246,0.1);
             color: #1f68a6;
             font-size: 10px;
             font-weight: 800;
@@ -1095,6 +1205,63 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             border-radius: inherit;
             background: linear-gradient(90deg, #2f7ab9 0%, #5aa7e7 100%);
         }
+        .cbt-analytics-chart-card {
+            display: grid;
+            gap: 14px;
+            min-width: 0;
+        }
+        .cbt-analytics-chart-wrap {
+            position: relative;
+            min-height: 300px;
+            height: 320px;
+            padding: 12px;
+            border: 1px solid #dbe6f1;
+            border-radius: 8px;
+            background: #ffffff;
+        }
+        .cbt-analytics-chart-wrap.is-gauge {
+            height: 260px;
+            min-height: 240px;
+        }
+        .cbt-analytics-chart-wrap canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+        .cbt-analytics-chart-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .cbt-analytics-smart-tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+        .cbt-analytics-smart-tag {
+            display: inline-flex;
+            align-items: center;
+            min-height: 24px;
+            padding: 0 8px;
+            border-radius: 6px;
+            background: rgba(59,130,246,0.1);
+            color: #0f4fa8;
+            font-size: 11px;
+            font-weight: 800;
+        }
+        .cbt-analytics-smart-tag.is-fail {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .cbt-analytics-smart-tag.is-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .cbt-analytics-smart-tag.is-pass {
+            background: #dcfce7;
+            color: #166534;
+        }
         .cbt-analytics-empty {
             padding: 22px;
             border: 1px dashed #cbd5e1;
@@ -1140,12 +1307,40 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
         }
         @media (max-width: 1180px) {
             .cbt-analytics-hero {
-                flex-direction: column;
-            }
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 24px;
+            padding: 26px 28px;
+            border-radius: var(--cbt-radius-lg);
+            background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-lg), var(--cbt-shadow-glow);
+            position: relative;
+            overflow: hidden;
+        }
+        .cbt-analytics-hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, var(--cbt-primary), var(--cbt-secondary), var(--cbt-accent));
+        }
             .cbt-analytics-live-panel {
-                min-width: 0;
-                max-width: none;
-            }
+            min-width: 320px;
+            max-width: 360px;
+            padding: 18px;
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            flex-shrink: 0;}
             .cbt-analytics-filter-form,
             .cbt-analytics-metric-grid,
             .cbt-analytics-grid-2,
@@ -1158,14 +1353,35 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
         @media (max-width: 782px) {
             .cbt-analytics-hero,
             .cbt-analytics-panel {
-                padding: 20px;
-            }
+            padding: 24px;
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            transition: var(--cbt-transition);
+        }
             .cbt-analytics-hero h1 {
-                font-size: 32px;
-            }
+            margin: 0;
+            font-size: 40px;
+            line-height: 1.05;
+            font-weight: 800;
+            background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
+        }
             .cbt-analytics-distribution-row {
                 grid-template-columns: 1fr;
                 gap: 8px;
+            }
+            .cbt-analytics-chart-wrap {
+                height: 280px;
+                min-height: 260px;
+            }
+            .cbt-analytics-chart-wrap.is-gauge {
+                height: 230px;
             }
             .cbt-analytics-answer-graph-row {
                 grid-template-columns: 1fr;
@@ -1582,6 +1798,90 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                     </div>
                 </section>
 
+                <section class="cbt-analytics-panel">
+                    <div class="cbt-analytics-panel-header">
+                        <div>
+                            <h2>Visual Macro Analytics</h2>
+                            <p>Kuadran perilaku, benchmark kelas, dan estimasi ketuntasan sementara untuk exam terpilih.</p>
+                        </div>
+                    </div>
+                    <div class="cbt-analytics-grid-3">
+                        <article class="cbt-analytics-chart-card">
+                            <div>
+                                <h3 style="margin:0 0 6px;">Behavioral Quadrant</h3>
+                                <p class="cbt-analytics-muted" style="margin:0;">Nilai dibandingkan durasi pengerjaan untuk membaca pola mastery, diligent, guessing, dan struggling.</p>
+                            </div>
+                            <?php if (($exam_behavioral_quadrant['status'] ?? '') === 'ok'): ?>
+                                <div class="cbt-analytics-chart-wrap">
+                                    <canvas id="cbt-analytics-quadrant-chart" aria-label="Behavioral quadrant chart"></canvas>
+                                </div>
+                                <div class="cbt-analytics-chart-meta">
+                                    <span class="cbt-analytics-chip">Median Durasi <?php echo esc_html((string) ($exam_behavioral_quadrant['duration_median_percent_display'] ?? '0.00%')); ?></span>
+                                    <span class="cbt-analytics-chip">KKM <?php echo esc_html((string) ($exam_behavioral_quadrant['kkm_percentage_display'] ?? '0.00%')); ?></span>
+                                </div>
+                            <?php else: ?>
+                                <div class="cbt-analytics-empty">Belum ada completed attempt untuk membuat kuadran perilaku.</div>
+                            <?php endif; ?>
+                        </article>
+
+                        <article class="cbt-analytics-chart-card">
+                            <div>
+                                <h3 style="margin:0 0 6px;">Kelas vs Global Benchmark</h3>
+                                <p class="cbt-analytics-muted" style="margin:0;">Overlay distribusi kelas terhadap seluruh peserta pada exam yang sama.</p>
+                            </div>
+                            <?php if (($exam_benchmark_overlay['status'] ?? '') === 'ok'): ?>
+                                <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-analytics-toolbar" style="margin-bottom:0;">
+                                    <input type="hidden" name="page" value="cbt-analytics" />
+                                    <input type="hidden" name="cbt_analytics_tab" value="exam" />
+                                    <input type="hidden" name="cbt_exam_id" value="<?php echo esc_attr((string) $selected_exam_id); ?>" />
+                                    <input type="hidden" name="cbt_run_analytics" value="1" />
+                                    <div class="cbt-analytics-field">
+                                        <label for="cbt-benchmark-kelas">Benchmark Kelas</label>
+                                        <select id="cbt-benchmark-kelas" name="cbt_benchmark_kelas" onchange="this.form.submit()">
+                                            <?php foreach ((array) ($exam_benchmark_overlay['class_options'] ?? []) as $class_option): ?>
+                                                <?php $class_value = (string) ($class_option['kelas'] ?? ''); ?>
+                                                <option value="<?php echo esc_attr($class_value); ?>" <?php selected($class_value, (string) ($exam_benchmark_overlay['selected_kelas'] ?? '')); ?>>
+                                                    <?php echo esc_html($class_value . ' (' . number_format_i18n((int) ($class_option['completed_attempts'] ?? 0)) . ')'); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </form>
+                                <div class="cbt-analytics-chart-wrap">
+                                    <canvas id="cbt-analytics-benchmark-chart" aria-label="Class versus global benchmark chart"></canvas>
+                                </div>
+                                <div class="cbt-analytics-chart-meta">
+                                    <span class="cbt-analytics-chip">Global <?php echo esc_html((string) ($exam_benchmark_overlay['global_average_display'] ?? '0.00%')); ?></span>
+                                    <span class="cbt-analytics-chip">Kelas <?php echo esc_html((string) ($exam_benchmark_overlay['class_average_display'] ?? '0.00%')); ?></span>
+                                    <span class="cbt-analytics-chip <?php echo ((float) ($exam_benchmark_overlay['delta_average'] ?? 0.0) >= 0.0) ? 'is-pass' : 'is-fail'; ?>">Delta <?php echo esc_html((string) ($exam_benchmark_overlay['delta_average_display'] ?? '0.00%')); ?></span>
+                                </div>
+                            <?php else: ?>
+                                <div class="cbt-analytics-empty">Belum ada data kelas untuk benchmark.</div>
+                            <?php endif; ?>
+                        </article>
+
+                        <article class="cbt-analytics-chart-card">
+                            <div>
+                                <h3 style="margin:0 0 6px;">Live Predictive Pass Rate</h3>
+                                <p class="cbt-analytics-muted" style="margin:0;">Estimasi sementara berbasis tren completed attempt dan sisa attempt berjalan.</p>
+                            </div>
+                            <?php if (!empty($exam_predictive_pass_rate)): ?>
+                                <div class="cbt-analytics-chart-wrap is-gauge">
+                                    <canvas id="cbt-analytics-pass-gauge" aria-label="Predictive pass rate gauge"></canvas>
+                                </div>
+                                <div class="cbt-analytics-chart-meta">
+                                    <span class="cbt-analytics-chip">Saat Ini <?php echo esc_html((string) ($exam_predictive_pass_rate['current_pass_rate_display'] ?? '0.00%')); ?></span>
+                                    <span class="cbt-analytics-chip">Prediksi <?php echo esc_html((string) ($exam_predictive_pass_rate['predicted_final_pass_rate_display'] ?? '0.00%')); ?></span>
+                                    <span class="cbt-analytics-chip">Berjalan <?php echo esc_html(number_format_i18n((int) ($exam_predictive_pass_rate['in_progress_count'] ?? 0))); ?></span>
+                                </div>
+                                <p class="cbt-analytics-muted" style="margin:0;"><?php echo esc_html((string) ($exam_predictive_pass_rate['message'] ?? 'Estimasi sementara.')); ?></p>
+                            <?php else: ?>
+                                <div class="cbt-analytics-empty">Belum ada data ketuntasan untuk prediksi.</div>
+                            <?php endif; ?>
+                        </article>
+                    </div>
+                </section>
+
                 <div class="cbt-analytics-grid-2">
                     <section class="cbt-analytics-panel">
                         <div class="cbt-analytics-panel-header">
@@ -1775,6 +2075,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
         </section>
     </div>
 
+    <script type="application/json" id="cbt-analytics-chart-data"><?php echo $analytics_chart_payload_json ?: '{}'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></script>
     <script>
         (function () {
             const activeTabInput = document.getElementById('cbt-analytics-active-tab');
@@ -1884,6 +2185,25 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                     '</div>';
             }
 
+            function buildSmartTagList(row) {
+                const tags = Array.isArray(row.diagnostic_tags) ? row.diagnostic_tags : [];
+                const alerts = Array.isArray(row.cognitive_alerts) ? row.cognitive_alerts : [];
+                const items = tags.concat(alerts);
+                if (!items.length) {
+                    return '<span class="cbt-analytics-muted">Tidak ada</span>';
+                }
+
+                return '<div class="cbt-analytics-smart-tag-list">' + items.map((item) => {
+                    const tone = String(item && item.tone ? item.tone : 'ok');
+                    const toneClass = {
+                        pass: 'is-pass',
+                        fail: 'is-fail',
+                        warning: 'is-warning'
+                    }[tone] || '';
+                    return '<span class="cbt-analytics-smart-tag ' + toneClass + '" title="' + escapeHtml(item && item.message ? item.message : '') + '">' + escapeHtml(item && item.label ? item.label : '-') + '</span>';
+                }).join('') + '</div>';
+            }
+
             function buildPaginationMeta(total, page, perPage) {
                 if (total <= 0) {
                     return 'Tidak ada data.';
@@ -1905,6 +2225,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
 
                 const state = {
                     query: '',
+                    smartTag: '',
                     page: 1,
                     perPage: config.defaultPerPage || 10,
                     expandedId: null
@@ -1913,10 +2234,18 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
 
                 function getFilteredRows() {
                     const query = state.query.trim().toLowerCase();
-                    if (!query) {
-                        return rows.slice();
+                    let filteredRows = rows.slice();
+                    if (query) {
+                        filteredRows = filteredRows.filter((row) => String(row.search_text || '').indexOf(query) !== -1);
                     }
-                    return rows.filter((row) => String(row.search_text || '').indexOf(query) !== -1);
+                    if (config.enableSmartTagFilter && state.smartTag) {
+                        filteredRows = filteredRows.filter((row) => {
+                            const tags = Array.isArray(row.diagnostic_tags) ? row.diagnostic_tags : [];
+                            const alerts = Array.isArray(row.cognitive_alerts) ? row.cognitive_alerts : [];
+                            return tags.concat(alerts).some((item) => String(item && item.key ? item.key : '') === state.smartTag);
+                        });
+                    }
+                    return filteredRows;
                 }
 
                 function render() {
@@ -1937,6 +2266,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                     });
 
                     const searchInput = root.querySelector('[data-role="search"]');
+                    const smartTagSelect = root.querySelector('[data-role="smart-tag"]');
                     const perPageSelect = root.querySelector('[data-role="per-page"]');
                     const prevButton = root.querySelector('[data-role="prev"]');
                     const nextButton = root.querySelector('[data-role="next"]');
@@ -1946,6 +2276,16 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                         searchInput.value = state.query;
                         searchInput.addEventListener('input', function () {
                             state.query = this.value || '';
+                            state.page = 1;
+                            state.expandedId = null;
+                            render();
+                        });
+                    }
+
+                    if (smartTagSelect) {
+                        smartTagSelect.value = state.smartTag;
+                        smartTagSelect.addEventListener('change', function () {
+                            state.smartTag = this.value || '';
                             state.page = 1;
                             state.expandedId = null;
                             render();
@@ -2023,7 +2363,8 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                 rootId: 'cbt-analytics-items-app',
                 rows: <?php echo $item_rows_json ?: '[]'; ?>,
                 defaultPerPage: 10,
-                columnCount: 14,
+                columnCount: 15,
+                enableSmartTagFilter: true,
                 getRowId: function (row) {
                     return row.question_id || Math.random().toString(36);
                 },
@@ -2033,6 +2374,16 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                             '<div class="cbt-analytics-field is-search">' +
                                 '<label for="cbt-analytics-items-search">Search</label>' +
                                 '<input id="cbt-analytics-items-search" type="search" data-role="search" placeholder="Cari nomor, tipe, preview soal, atau difficulty...">' +
+                            '</div>' +
+                            '<div class="cbt-analytics-field">' +
+                                '<label for="cbt-analytics-items-smart-tag">Smart Tag</label>' +
+                                '<select id="cbt-analytics-items-smart-tag" data-role="smart-tag">' +
+                                    '<option value="">Semua tag</option>' +
+                                    '<option value="suspect_key">Kunci Meragukan</option>' +
+                                    '<option value="failed_distractor">Pengecoh Gagal</option>' +
+                                    '<option value="anchor_item">Soal Berkualitas</option>' +
+                                    '<option value="cognitive_trap">Trap Alert</option>' +
+                                '</select>' +
                             '</div>' +
                             '<div class="cbt-analytics-field">' +
                                 '<label for="cbt-analytics-items-per-page">Per Page</label>' +
@@ -2046,7 +2397,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                         '<div class="cbt-analytics-table-wrap">' +
                             '<table class="cbt-analytics-table is-dense-head">' +
                                 '<thead><tr>' +
-                                    '<th>No</th><th>Tipe</th><th>Poin</th><th>Dijawab</th><th>Benar</th><th>Salah</th><th>Kosong</th><th>Manual</th><th>Correct Rate</th><th>Omission</th><th>Discrimination</th><th>Avg Score</th><th>Insight</th><th>Detail</th>' +
+                                    '<th>No</th><th>Tipe</th><th>Poin</th><th>Dijawab</th><th>Benar</th><th>Salah</th><th>Kosong</th><th>Manual</th><th>Correct Rate</th><th>Omission</th><th>Discrimination</th><th>Avg Score</th><th>Smart Tags</th><th>Insight</th><th>Detail</th>' +
                                 '</tr></thead>' +
                                 '<tbody data-role="rows"></tbody>' +
                             '</table>' +
@@ -2074,6 +2425,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                             '<td>' + createBadge(row.omission_label || '-', row.omission_tone || '') + '<br><span class="cbt-analytics-muted">' + escapeHtml(row.omission_rate_display || '0.00%') + '</span></td>' +
                             '<td>' + createBadge(row.discrimination_label || '-', row.discrimination_tone || '') + '<br><span class="cbt-analytics-muted">' + escapeHtml(row.discrimination_display || 'Insufficient Data') + '</span></td>' +
                             '<td>' + escapeHtml(row.average_awarded_score_display || '0.00') + '</td>' +
+                            '<td>' + buildSmartTagList(row) + '</td>' +
                             '<td>' + buildInsightCell(row) + '</td>' +
                             '<td><button type="button" class="button button-small cbt-admin-btn--ghost" data-action="toggle-detail" data-row-id="' + escapeHtml(row.question_id || '') + '">' + (isExpanded ? 'Hide' : 'View') + '</button></td>' +
                         '</tr>';
@@ -2239,6 +2591,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                                                     createBadge(row.insight_display_label || row.insight_label || '-', row.insight_tone || '') +
                                                     createBadge(row.difficulty_label || '-', row.difficulty_tone || '') +
                                                 '</div>' +
+                                                '<div style="margin-top:10px;">' + buildSmartTagList(row) + '</div>' +
                                                 '<p><strong>Status:</strong> ' + escapeHtml(row.insight_display_label || row.insight_label || '-') + '</p>' +
                                                 '<p><strong>Apa artinya:</strong> ' + escapeHtml(row.insight_short_explainer || '-') + '</p>' +
                                                 '<p><strong>Kenapa muncul:</strong> ' + escapeHtml(row.insight_reason_detail || '-') + '</p>' +

@@ -107,6 +107,20 @@ final class AdminAnalyticsInsightDisplayTest extends TestCase
                 'insight_display_label' => 'Distraktor Menarik',
                 'insight_short_explainer' => 'Ada opsi salah yang efektif menarik peserta yang lebih lemah.',
                 'omission_label' => 'Low',
+                'diagnostic_tags' => [
+                    [
+                        'key' => 'failed_distractor',
+                        'label' => 'Pengecoh Gagal',
+                        'message' => 'Opsi salah tidak dipilih peserta.',
+                    ],
+                ],
+                'cognitive_alerts' => [
+                    [
+                        'key' => 'cognitive_trap',
+                        'label' => 'Trap Alert',
+                        'message' => 'Kelompok atas terjebak di opsi B.',
+                    ],
+                ],
             ],
             [
                 [
@@ -125,6 +139,157 @@ final class AdminAnalyticsInsightDisplayTest extends TestCase
         self::assertStringContainsString('attractive distractor', $searchText);
         self::assertStringContainsString('distraktor menarik', $searchText);
         self::assertStringContainsString('distraktor tidak berfungsi', $searchText);
+        self::assertStringContainsString('pengecoh gagal', $searchText);
+        self::assertStringContainsString('trap alert', $searchText);
+    }
+
+    public function test_smart_diagnostic_tags_are_generated_from_item_metrics(): void
+    {
+        $payload = $this->invokeAnalytics('build_item_diagnostic_payload', [
+            [
+                'is_objective' => true,
+                'question_type' => 'multiple_choice',
+            ],
+            12,
+            50.0,
+            ['value' => -0.21],
+            [
+                [
+                    'label' => 'A',
+                    'is_correct' => true,
+                    'selection_rate' => 50.0,
+                    'upper_rate' => 30.0,
+                ],
+                [
+                    'label' => 'B',
+                    'is_correct' => false,
+                    'selection_rate' => 0.0,
+                    'upper_rate' => 0.0,
+                ],
+            ],
+        ]);
+
+        self::assertIsArray($payload);
+        $keys = array_map(static function (array $tag): string {
+            return (string) ($tag['key'] ?? '');
+        }, $payload['diagnostic_tags']);
+
+        self::assertContains('suspect_key', $keys);
+        self::assertContains('failed_distractor', $keys);
+    }
+
+    public function test_anchor_item_and_cognitive_trap_are_detected_for_single_answer_items(): void
+    {
+        $payload = $this->invokeAnalytics('build_item_diagnostic_payload', [
+            [
+                'is_objective' => true,
+                'question_type' => 'multiple_choice',
+            ],
+            18,
+            55.0,
+            ['value' => 0.52],
+            [
+                [
+                    'label' => 'A',
+                    'is_correct' => true,
+                    'selection_rate' => 45.0,
+                    'upper_rate' => 20.0,
+                ],
+                [
+                    'label' => 'C',
+                    'is_correct' => false,
+                    'selection_rate' => 35.0,
+                    'upper_rate' => 48.0,
+                ],
+            ],
+        ]);
+
+        $tagKeys = array_map(static function (array $tag): string {
+            return (string) ($tag['key'] ?? '');
+        }, $payload['diagnostic_tags']);
+        $alertKeys = array_map(static function (array $alert): string {
+            return (string) ($alert['key'] ?? '');
+        }, $payload['cognitive_alerts']);
+
+        self::assertContains('anchor_item', $tagKeys);
+        self::assertContains('cognitive_trap', $alertKeys);
+    }
+
+    public function test_smart_tags_are_suppressed_when_attempt_sample_is_small(): void
+    {
+        $payload = $this->invokeAnalytics('build_item_diagnostic_payload', [
+            [
+                'is_objective' => true,
+                'question_type' => 'multiple_choice',
+            ],
+            9,
+            50.0,
+            ['value' => -0.3],
+            [
+                [
+                    'label' => 'B',
+                    'is_correct' => false,
+                    'selection_rate' => 0.0,
+                    'upper_rate' => 40.0,
+                ],
+            ],
+        ]);
+
+        self::assertSame([], $payload['diagnostic_tags']);
+        self::assertSame([], $payload['cognitive_alerts']);
+    }
+
+    public function test_behavioral_quadrant_classifies_all_four_segments(): void
+    {
+        $payload = $this->invokeAnalytics('build_behavioral_quadrant', [
+            [
+                ['id' => 1, 'student_name' => 'A', 'student_kelas' => 'X', 'duration_seconds' => 300, 'percentage' => 90.0],
+                ['id' => 2, 'student_name' => 'B', 'student_kelas' => 'X', 'duration_seconds' => 900, 'percentage' => 90.0],
+                ['id' => 3, 'student_name' => 'C', 'student_kelas' => 'Y', 'duration_seconds' => 300, 'percentage' => 40.0],
+                ['id' => 4, 'student_name' => 'D', 'student_kelas' => 'Y', 'duration_seconds' => 900, 'percentage' => 40.0],
+            ],
+            20,
+            75.0,
+        ]);
+
+        self::assertSame('ok', $payload['status']);
+        self::assertSame(1, $payload['counts']['mastery']);
+        self::assertSame(1, $payload['counts']['diligent']);
+        self::assertSame(1, $payload['counts']['blind_guessing']);
+        self::assertSame(1, $payload['counts']['struggling']);
+        self::assertSame(50.0, $payload['duration_median_percent']);
+    }
+
+    public function test_benchmark_overlay_selects_default_class_and_delta(): void
+    {
+        $payload = $this->invokeAnalytics('build_benchmark_overlay', [
+            [
+                ['student_kelas' => 'X IPA 1', 'percentage' => 90.0],
+                ['student_kelas' => 'X IPA 1', 'percentage' => 70.0],
+                ['student_kelas' => 'X IPA 2', 'percentage' => 50.0],
+                ['student_kelas' => 'X IPA 2', 'percentage' => 30.0],
+            ],
+            '',
+        ]);
+
+        self::assertSame('ok', $payload['status']);
+        self::assertSame('X IPA 1', $payload['selected_kelas']);
+        self::assertSame(60.0, $payload['global_average']);
+        self::assertSame(80.0, $payload['class_average']);
+        self::assertSame(20.0, $payload['delta_average']);
+        self::assertSame(2, array_sum($payload['class_counts']));
+    }
+
+    public function test_predictive_pass_rate_tracks_insufficient_and_trend_projection(): void
+    {
+        $insufficient = $this->invokeAnalytics('build_predictive_pass_rate', [4, 3, 2]);
+        $projected = $this->invokeAnalytics('build_predictive_pass_rate', [10, 6, 5]);
+
+        self::assertSame('insufficient_data', $insufficient['status']);
+        self::assertSame(75.0, $insufficient['current_pass_rate']);
+        self::assertSame('ok', $projected['status']);
+        self::assertSame(60.0, $projected['current_pass_rate']);
+        self::assertSame(60.0, $projected['predicted_final_pass_rate']);
     }
 
     public function test_option_flag_display_is_localized_after_decoration(): void

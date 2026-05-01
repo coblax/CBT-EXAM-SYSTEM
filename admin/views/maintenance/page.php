@@ -10,6 +10,8 @@ $maintenance_tab_urls = isset($maintenance_tab_urls) && is_array($maintenance_ta
 $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '';
 ?>
 <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
     /* Modern Design System Tokens */
     :root {
         --cbt-primary: #3b82f6;
@@ -62,14 +64,24 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
         justify-content: space-between;
         align-items: stretch;
         gap: 24px;
-        padding: 28px;
-        border-radius: var(--cbt-radius-lg);
-        background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+        
+        
+        
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
-        border: 1px solid var(--cbt-border-light);
-        box-shadow: var(--cbt-shadow-md), var(--cbt-shadow-glow);
-    }
+        
+        
+    
+            padding: 28px;
+            border-radius: var(--cbt-radius-lg);
+            background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-lg), var(--cbt-shadow-glow);
+            position: relative;
+            overflow: hidden;
+        }
     .cbt-maintenance-hero::before {
         content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 5px;
         background: linear-gradient(90deg, var(--cbt-primary), var(--cbt-danger), var(--cbt-accent));
@@ -109,13 +121,23 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
     
     .cbt-maintenance-card {
         padding: 24px;
-        border-radius: var(--cbt-radius-lg);
-        background: var(--cbt-bg-card);
+        
+        
         backdrop-filter: blur(10px);
-        border: 1px solid var(--cbt-border);
-        box-shadow: var(--cbt-shadow-md);
+        
+        
         transition: var(--cbt-transition);
-    }
+    
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;
+        }
 
     .cbt-maintenance-banner {
         position: relative;
@@ -271,7 +293,17 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
     .cbt-maintenance-tab.is-active 
     
     
-    .cbt-maintenance-panel { display: none; gap: 20px; }
+    .cbt-maintenance-panel { display: none; gap: 20px; 
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;
+        }
     .cbt-maintenance-panel.is-active { display: grid; grid-template-columns: 1fr; align-items: start; }
     .cbt-maintenance-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr); gap: 20px; align-items: start; }
     .cbt-maintenance-col { display: grid; gap: 20px; align-content: start; }
@@ -1430,13 +1462,23 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
         
     .cbt-maintenance-card {
         padding: 24px;
-        border-radius: var(--cbt-radius-lg);
-        background: var(--cbt-bg-card);
+        
+        
         backdrop-filter: blur(10px);
-        border: 1px solid var(--cbt-border);
-        box-shadow: var(--cbt-shadow-md);
+        
+        
         transition: var(--cbt-transition);
-    }
+    
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;
+        }
 
         .cbt-maintenance-live-value { display: flex; align-items: center; justify-content: center; min-height: 60px; margin-bottom: 8px; border-radius: var(--cbt-radius-sm); background: linear-gradient(135deg, #0f172a, #1e293b); color: #ffffff; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 20px; font-weight: 800; text-align: center; box-shadow: inset 0 2px 10px rgba(0,0,0,0.5), var(--cbt-shadow-md); letter-spacing: 0.05em; }
         .cbt-maintenance-tab,
@@ -1445,6 +1487,28 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
             justify-content: space-between;
         }
     }
+
+.cbt-maintenance-page {
+            max-width: 1280px;
+            margin: 20px auto;
+            padding: 24px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--cbt-text-main);
+            background: radial-gradient(circle at top left, #e0e7ff 0%, #f8fafc 40%, #f0fdf4 100%);
+            border-radius: var(--cbt-radius-lg);
+            box-sizing: border-box;
+        }
+        .cbt-maintenance-page * {
+            box-sizing: border-box;
+        }
+
+        .cbt-maintenance-shell {
+            position: relative;
+            z-index: 1;
+            isolation: isolate;
+            display: grid;
+            gap: 20px;
+        }
 </style>
 <div class="wrap cbt-maintenance-page">
     <div class="cbt-maintenance-shell">

@@ -1,72 +1,68 @@
 {
-  "_frontend-exam-runtime-mOVwuASw.js": {
-    "file": "assets/frontend-exam-runtime-mOVwuASw.js",
+  "_frontend-exam-runtime-TgfMkZpB.js": {
+    "file": "assets/frontend-exam-runtime-TgfMkZpB.js",
     "name": "frontend-exam-runtime",
     "imports": [
-      "_rolldown-runtime-WNZMJCWm.js"
+      "_rolldown-runtime-CmsrGqdA.js"
+    ]
+  },
+  "_frontend-feature-calculator-BFaoJj3-.js": {
+    "file": "assets/frontend-feature-calculator-BFaoJj3-.js",
+    "name": "frontend-feature-calculator",
+    "imports": [
+      "_rolldown-runtime-CmsrGqdA.js"
+    ],
+    "css": [
+      "assets/frontend-feature-calculator-BzSqRsRa.css"
     ]
   },
   "_frontend-feature-calculator-BzSqRsRa.css": {
     "file": "assets/frontend-feature-calculator-BzSqRsRa.css",
     "src": "_frontend-feature-calculator-BzSqRsRa.css"
   },
-  "_frontend-feature-calculator-CuFD8t3I.js": {
-    "file": "assets/frontend-feature-calculator-CuFD8t3I.js",
-    "name": "frontend-feature-calculator",
-    "imports": [
-      "_rolldown-runtime-WNZMJCWm.js"
-    ],
-    "css": [
-      "assets/frontend-feature-calculator-BzSqRsRa.css"
-    ]
-  },
-  "_frontend-shared-review-DK4Bt0vw.js": {
-    "file": "assets/frontend-shared-review-DK4Bt0vw.js",
+  "_frontend-shared-review-D6TbJYiV.js": {
+    "file": "assets/frontend-shared-review-D6TbJYiV.js",
     "name": "frontend-shared-review"
   },
   "_frontend-stage-exam-7rwZWLxk.css": {
     "file": "assets/frontend-stage-exam-7rwZWLxk.css",
     "src": "_frontend-stage-exam-7rwZWLxk.css"
   },
-  "_frontend-stage-exam-KkTTRwbb.js": {
-    "file": "assets/frontend-stage-exam-KkTTRwbb.js",
+  "_frontend-stage-exam-Cb9jsCEC.js": {
+    "file": "assets/frontend-stage-exam-Cb9jsCEC.js",
     "name": "frontend-stage-exam",
     "imports": [
-      "_rolldown-runtime-WNZMJCWm.js",
-      "_frontend-shared-review-DK4Bt0vw.js"
+      "_rolldown-runtime-CmsrGqdA.js",
+      "_frontend-shared-review-D6TbJYiV.js"
     ],
     "css": [
       "assets/frontend-stage-exam-7rwZWLxk.css"
-    ]
-  },
-  "_frontend-stage-result-Bx44vpO-.js": {
-    "file": "assets/frontend-stage-result-Bx44vpO-.js",
-    "name": "frontend-stage-result",
-    "imports": [
-      "_rolldown-runtime-WNZMJCWm.js",
-      "_frontend-shared-review-DK4Bt0vw.js"
-    ],
-    "css": [
-      "assets/frontend-stage-result-CbT0gLnl.css"
     ]
   },
   "_frontend-stage-result-CbT0gLnl.css": {
     "file": "assets/frontend-stage-result-CbT0gLnl.css",
     "src": "_frontend-stage-result-CbT0gLnl.css"
   },
-  "_html-l_gEEH9l.js": {
-    "file": "assets/html-l_gEEH9l.js",
+  "_frontend-stage-result-t-uqSifz.js": {
+    "file": "assets/frontend-stage-result-t-uqSifz.js",
+    "name": "frontend-stage-result",
+    "imports": [
+      "_rolldown-runtime-CmsrGqdA.js",
+      "_frontend-shared-review-D6TbJYiV.js"
+    ],
+    "css": [
+      "assets/frontend-stage-result-CbT0gLnl.css"
+    ]
+  },
+  "_html-BDUDMlpQ.js": {
+    "file": "assets/html-BDUDMlpQ.js",
     "name": "html"
   },
-  "_math-render-DvP1Qxaf.css": {
-    "file": "assets/math-render-DvP1Qxaf.css",
-    "src": "_math-render-DvP1Qxaf.css"
-  },
-  "_math-render-z4EJh76n.js": {
-    "file": "assets/math-render-z4EJh76n.js",
+  "_math-render-C3q-FVAK.js": {
+    "file": "assets/math-render-C3q-FVAK.js",
     "name": "math-render",
     "imports": [
-      "_rolldown-runtime-WNZMJCWm.js"
+      "_rolldown-runtime-CmsrGqdA.js"
     ],
     "css": [
       "assets/math-render-DvP1Qxaf.css"
@@ -133,8 +129,12 @@
       "assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf"
     ]
   },
-  "_rolldown-runtime-WNZMJCWm.js": {
-    "file": "assets/rolldown-runtime-WNZMJCWm.js",
+  "_math-render-DvP1Qxaf.css": {
+    "file": "assets/math-render-DvP1Qxaf.css",
+    "src": "_math-render-DvP1Qxaf.css"
+  },
+  "_rolldown-runtime-CmsrGqdA.js": {
+    "file": "assets/rolldown-runtime-CmsrGqdA.js",
     "name": "rolldown-runtime"
   },
   "node_modules/@fontsource/lexend/files/lexend-latin-600-normal.woff2": {
@@ -401,54 +401,60 @@
     "file": "assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2",
     "src": "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.woff2"
   },
+  "src/admin/analytics-main.js": {
+    "file": "assets/adminAnalytics-D-nidGJE.js",
+    "name": "adminAnalytics",
+    "src": "src/admin/analytics-main.js",
+    "isEntry": true
+  },
   "src/admin/math-main.js": {
-    "file": "assets/adminMath-DTOaNxWR.js",
+    "file": "assets/adminMath-C4ECSZQq.js",
     "name": "adminMath",
     "src": "src/admin/math-main.js",
     "isEntry": true,
     "imports": [
-      "_math-render-z4EJh76n.js"
+      "_math-render-C3q-FVAK.js"
     ],
     "css": [
       "assets/adminMath-DrAZLtIT.css"
     ]
   },
   "src/frontend/app/core/debug-panel.js": {
-    "file": "assets/debug-panel-BWswcLwr.js",
+    "file": "assets/debug-panel-CcHj_bft.js",
     "name": "debug-panel",
     "src": "src/frontend/app/core/debug-panel.js",
     "isDynamicEntry": true
   },
   "src/frontend/app/runtime.js": {
-    "file": "assets/runtime-CC17extD.js",
+    "file": "assets/runtime-BIWYh8gD.js",
     "name": "runtime",
     "src": "src/frontend/app/runtime.js",
     "isDynamicEntry": true,
     "imports": [
       "src/frontend/main.js",
-      "_html-l_gEEH9l.js"
+      "_html-BDUDMlpQ.js"
     ],
     "dynamicImports": [
-      "_frontend-exam-runtime-mOVwuASw.js",
-      "_math-render-z4EJh76n.js",
-      "_frontend-stage-exam-KkTTRwbb.js",
-      "_frontend-stage-result-Bx44vpO-.js",
-      "_frontend-feature-calculator-CuFD8t3I.js",
+      "_frontend-exam-runtime-TgfMkZpB.js",
+      "_math-render-C3q-FVAK.js",
+      "_frontend-stage-exam-Cb9jsCEC.js",
+      "_frontend-stage-result-t-uqSifz.js",
+      "_frontend-feature-calculator-BFaoJj3-.js",
       "src/frontend/app/core/debug-panel.js"
     ]
   },
   "src/frontend/app/supervisor/runtime.js": {
-    "file": "assets/runtime-CMjvVA2w.js",
+    "file": "assets/runtime-BQE1W2Fh.js",
     "name": "runtime",
     "src": "src/frontend/app/supervisor/runtime.js",
     "isDynamicEntry": true,
     "imports": [
       "src/frontend/main.js",
-      "_html-l_gEEH9l.js"
+      "_html-BDUDMlpQ.js"
     ]
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-BLy2v6M_.js",
+    "file": "assets/frontend-core-BR-syTqZ.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,

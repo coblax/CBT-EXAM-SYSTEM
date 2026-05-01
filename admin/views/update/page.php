@@ -1,4 +1,6 @@
 <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
     /* Modern Design System Tokens */
     :root {
         --cbt-primary: #3b82f6;
@@ -31,20 +33,30 @@
     }
 
     .cbt-update-page {
-        max-width: 1280px;
-        margin: 20px auto;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        color: var(--cbt-text-main);
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    }
+            max-width: 1280px;
+            margin: 20px auto;
+            padding: 24px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--cbt-text-main);
+            background: radial-gradient(circle at top left, #e0e7ff 0%, #f8fafc 40%, #f0fdf4 100%);
+            border-radius: var(--cbt-radius-lg);
+            box-sizing: border-box;
+        }
+        .cbt-update-page * {
+            box-sizing: border-box;
+        }
 
     .cbt-update-page * { box-sizing: border-box; }
 
     .cbt-update-shell {
         display: grid;
         gap: 20px;
-        position: relative;
-    }
+        
+    
+            position: relative;
+            z-index: 1;
+            isolation: isolate;
+        }
     
     .cbt-update-shell::before {
         content: ''; position: absolute; top: -100px; left: -100px; width: 500px; height: 500px;
@@ -59,23 +71,43 @@
         align-content: start;
     }
     .cbt-update-card {
-        border-radius: var(--cbt-radius-lg);
-        background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+        
+        
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
-        border: 1px solid var(--cbt-border-light);
-        box-shadow: var(--cbt-shadow-md);
+        
+        
         position: relative;
         overflow: hidden;
-    }
+    
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;
+        }
 
     .cbt-update-hero {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
         gap: 24px;
-        padding: 28px;
-        box-shadow: var(--cbt-shadow-lg), var(--cbt-shadow-glow);
-    }
+        
+        
+    
+            padding: 28px;
+            border-radius: var(--cbt-radius-lg);
+            background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-lg), var(--cbt-shadow-glow);
+            position: relative;
+            overflow: hidden;
+        }
     .cbt-update-hero::before {
         content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 5px;
         background: linear-gradient(90deg, var(--cbt-primary), var(--cbt-secondary), var(--cbt-accent));
@@ -165,8 +197,18 @@
     }
     .cbt-update-card {
         padding: 24px;
-        background: var(--cbt-bg-card);
-    }
+        
+    
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;
+        }
     .cbt-update-card h2 {
         margin: 0 0 8px;
         color: var(--cbt-text-main);
@@ -421,6 +463,16 @@
         }
         .cbt-update-hero, .cbt-update-card {
             padding: 20px;
+        
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-md);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            min-width: 0;
         }
     }
 </style>

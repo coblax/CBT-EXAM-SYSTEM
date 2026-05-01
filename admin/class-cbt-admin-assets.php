@@ -12,6 +12,8 @@ final class CBT_Admin_Assets
     private const ADMIN_UI_HANDLE = 'cbt-admin-ui';
     private const MATH_ENTRY = 'src/admin/math-main.js';
     private const MATH_HANDLE = 'cbt-admin-math';
+    private const ANALYTICS_ENTRY = 'src/admin/analytics-main.js';
+    private const ANALYTICS_HANDLE = 'cbt-admin-analytics';
 
     public static function enqueue_admin_assets(): void
     {
@@ -24,24 +26,31 @@ final class CBT_Admin_Assets
             );
         }
 
-        if (!self::should_enqueue_math_assets()) {
-            return;
+        if (self::should_enqueue_math_assets()) {
+            self::enqueue_vite_entry(self::MATH_ENTRY, self::MATH_HANDLE);
         }
 
+        if (self::should_enqueue_analytics_assets()) {
+            self::enqueue_vite_entry(self::ANALYTICS_ENTRY, self::ANALYTICS_HANDLE);
+        }
+    }
+
+    private static function enqueue_vite_entry(string $entry_key, string $handle): void
+    {
         $manifest = self::get_vite_manifest();
         if ($manifest === []) {
             return;
         }
 
-        $entry = self::get_manifest_entry($manifest, self::MATH_ENTRY);
+        $entry = self::get_manifest_entry($manifest, $entry_key);
         if ($entry === null || empty($entry['file']) || !is_string($entry['file'])) {
             return;
         }
 
         foreach (self::get_entry_css_files($manifest, $entry) as $index => $css_file) {
-            $handle = $index === 0 ? self::MATH_HANDLE : self::MATH_HANDLE . '-style-' . $index;
+            $style_handle = $index === 0 ? $handle : $handle . '-style-' . $index;
             wp_enqueue_style(
-                $handle,
+                $style_handle,
                 self::build_asset_url($css_file),
                 [],
                 self::build_asset_version($css_file)
@@ -49,7 +58,7 @@ final class CBT_Admin_Assets
         }
 
         wp_enqueue_script(
-            self::MATH_HANDLE,
+            $handle,
             self::build_asset_url((string) $entry['file']),
             [],
             self::build_asset_version((string) $entry['file']),
@@ -59,7 +68,7 @@ final class CBT_Admin_Assets
 
     public static function filter_script_loader_tag(string $tag, string $handle, string $src): string
     {
-        if ($handle !== self::MATH_HANDLE) {
+        if (!in_array($handle, [self::MATH_HANDLE, self::ANALYTICS_HANDLE], true)) {
             return $tag;
         }
 
@@ -86,6 +95,11 @@ final class CBT_Admin_Assets
             'cbt-questions-sa',
             'cbt-questions-essay',
         ], true);
+    }
+
+    private static function should_enqueue_analytics_assets(): bool
+    {
+        return self::get_current_admin_page_slug() === 'cbt-analytics';
     }
 
     private static function is_cbt_admin_page(): bool

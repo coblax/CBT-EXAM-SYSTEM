@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 final class CBT_Admin_Analytics_Service
 {
     private const CACHE_TTL = 300;
-    private const CACHE_VERSION = 'v3';
+    private const CACHE_VERSION = 'v4';
     private const OVERVIEW_PER_PAGE = 10;
     private const DISTRIBUTION_BUCKETS = [
         ['label' => '0-19%', 'min' => 0.0, 'max' => 19.99],
@@ -52,6 +52,9 @@ final class CBT_Admin_Analytics_Service
 
         // Analytics now always runs across all classes; the class filter has been removed from the page.
         $selected_kelas = '';
+        $selected_benchmark_kelas = self::normalize_benchmark_kelas(
+            isset($query['cbt_benchmark_kelas']) ? (string) wp_unslash($query['cbt_benchmark_kelas']) : ''
+        );
 
         $active_tab = self::normalize_tab(isset($query['cbt_analytics_tab']) ? (string) wp_unslash($query['cbt_analytics_tab']) : '');
         $exam_filter_rows = $accessible_exam_rows;
@@ -118,7 +121,8 @@ final class CBT_Admin_Analytics_Service
                 $selected_kelas,
                 $is_admin_scope,
                 $current_user_id,
-                $statistical_payload
+                $statistical_payload,
+                $selected_benchmark_kelas
             );
             $item_analysis_rows = array_values((array) ($statistical_payload['item_rows'] ?? []));
             $item_analysis_summary = (array) ($statistical_payload['item_summary'] ?? []);
@@ -159,6 +163,7 @@ final class CBT_Admin_Analytics_Service
             'overview_pagination',
             'selected_exam',
             'selected_exam_id',
+            'selected_benchmark_kelas',
             'selected_kelas',
             'student_rows'
         );
@@ -229,6 +234,11 @@ final class CBT_Admin_Analytics_Service
         return $value > 0 ? $value : 1;
     }
 
+    private static function normalize_benchmark_kelas(string $raw): string
+    {
+        return sanitize_text_field(trim($raw));
+    }
+
     /**
      * @return array<int,array<string,mixed>>
      */
@@ -242,6 +252,7 @@ final class CBT_Admin_Analytics_Service
                        e.title,
                        e.subject_id,
                        e.kkm_percentage,
+                       e.duration_minutes,
                        e.total_questions,
                        e.status,
                        COALESCE(s.name, '') AS subject_name
@@ -268,6 +279,7 @@ final class CBT_Admin_Analytics_Service
             $row['id'] = (int) ($row['id'] ?? 0);
             $row['subject_id'] = (int) ($row['subject_id'] ?? 0);
             $row['kkm_percentage'] = self::normalize_kkm_percentage((float) ($row['kkm_percentage'] ?? 75.0));
+            $row['duration_minutes'] = max(1, (int) ($row['duration_minutes'] ?? 60));
             $row['title'] = (string) ($row['title'] ?? '');
             $row['subject_name'] = (string) ($row['subject_name'] ?? '');
             $row['filter_label'] = self::build_exam_filter_label($row);
@@ -667,6 +679,7 @@ final class CBT_Admin_Analytics_Service
                 'title' => (string) ($exam['title'] ?? '-'),
                 'subject_name' => (string) ($exam['subject_name'] ?? ''),
                 'kkm_percentage' => (float) ($exam['kkm_percentage'] ?? 75.0),
+                'duration_minutes' => max(1, (int) ($exam['duration_minutes'] ?? 60)),
             ];
 
             $statistical_payload = self::get_exam_statistical_payload(
@@ -681,7 +694,8 @@ final class CBT_Admin_Analytics_Service
                 $selected_kelas,
                 $is_admin_scope,
                 $current_user_id,
-                $statistical_payload
+                $statistical_payload,
+                ''
             );
 
             self::get_student_drilldown_rows(
@@ -707,7 +721,8 @@ final class CBT_Admin_Analytics_Service
         string $selected_kelas,
         bool $is_admin_scope,
         int $current_user_id,
-        array $statistical_payload = []
+        array $statistical_payload = [],
+        string $selected_benchmark_kelas = ''
     ): array {
         $exam_id = (int) ($selected_exam['id'] ?? 0);
         if ($exam_id <= 0) {
@@ -717,6 +732,7 @@ final class CBT_Admin_Analytics_Service
         $cache_key = 'admin_analytics_exam_' . self::CACHE_VERSION . '_' . md5((string) wp_json_encode([
             'exam_id' => $exam_id,
             'kelas' => $selected_kelas,
+            'benchmark_kelas' => $selected_benchmark_kelas,
             'scope' => $is_admin_scope ? 'admin' : 'teacher',
             'user_id' => $is_admin_scope ? 0 : $current_user_id,
         ]));
@@ -729,7 +745,7 @@ final class CBT_Admin_Analytics_Service
                 CBT_Cache::namespace_analytics_exam($exam_id),
                 CBT_Cache::namespace_exam($exam_id),
             ],
-            static function () use ($exam_id, $selected_exam, $selected_kelas, $is_admin_scope, $current_user_id, $statistical_payload): array {
+            static function () use ($exam_id, $selected_exam, $selected_kelas, $selected_benchmark_kelas, $is_admin_scope, $current_user_id, $statistical_payload): array {
                 $rows = self::get_completed_attempt_metric_rows(0, $exam_id, $selected_kelas, $is_admin_scope, $current_user_id);
                 $manual_counts = self::get_manual_review_counts(0, $exam_id, $selected_kelas, $is_admin_scope, $current_user_id);
                 $question_stats = self::get_exam_question_stats($exam_id);
@@ -771,6 +787,8 @@ final class CBT_Admin_Analytics_Service
                 $current_max_score = (float) ($question_stats['total_points'] ?? 0.0);
                 $kkm_percentage = self::normalize_kkm_percentage((float) ($selected_exam['kkm_percentage'] ?? 75.0));
                 $passing_score = self::calculate_passing_score($current_max_score, $kkm_percentage);
+                $duration_minutes = max(1, (int) ($selected_exam['duration_minutes'] ?? 60));
+                $in_progress_count = self::count_in_progress_attempts($exam_id, $selected_kelas, $is_admin_scope, $current_user_id);
 
                 return [
                     'exam' => [
@@ -779,6 +797,7 @@ final class CBT_Admin_Analytics_Service
                         'subject_name' => (string) ($selected_exam['subject_name'] ?? ''),
                         'kkm_percentage' => $kkm_percentage,
                         'kkm_percentage_display' => self::format_number($kkm_percentage),
+                        'duration_minutes' => $duration_minutes,
                         'current_max_score' => $current_max_score,
                         'current_max_score_display' => self::format_number($current_max_score),
                         'passing_score' => $passing_score,
@@ -810,9 +829,16 @@ final class CBT_Admin_Analytics_Service
                         'weak_discrimination_count' => (int) ($item_summary['weak_discrimination_count'] ?? 0),
                         'high_omission_count' => (int) ($item_summary['high_omission_count'] ?? 0),
                         'pending_manual_count' => (int) ($item_summary['pending_manual_count'] ?? 0),
+                        'suspect_key_count' => (int) ($item_summary['suspect_key_count'] ?? 0),
+                        'failed_distractor_count' => (int) ($item_summary['failed_distractor_count'] ?? 0),
+                        'anchor_item_count' => (int) ($item_summary['anchor_item_count'] ?? 0),
+                        'cognitive_trap_count' => (int) ($item_summary['cognitive_trap_count'] ?? 0),
                     ],
                     'distribution' => $distribution,
                     'per_kelas_summary' => $per_kelas_summary,
+                    'behavioral_quadrant' => self::build_behavioral_quadrant($rows, $duration_minutes, $kkm_percentage),
+                    'benchmark_overlay' => self::build_benchmark_overlay($rows, $selected_benchmark_kelas),
+                    'predictive_pass_rate' => self::build_predictive_pass_rate($completed_attempts, $pass_count, $in_progress_count),
                 ];
             }
         );
@@ -1359,6 +1385,13 @@ final class CBT_Admin_Analytics_Service
                 $omission,
                 $option_analysis
             );
+            $diagnostic_payload = self::build_item_diagnostic_payload(
+                $row,
+                $eligible_completed_attempts,
+                $correct_rate,
+                $discrimination,
+                $option_analysis
+            );
 
             $row['correct_rate'] = $correct_rate;
             $row['correct_rate_display'] = self::format_percent($correct_rate);
@@ -1395,6 +1428,8 @@ final class CBT_Admin_Analytics_Service
             );
             $row['insight_next_step'] = self::build_item_insight_next_step($row['insight_label']);
             $row['difficulty_short_explainer'] = self::build_item_difficulty_short_explainer($row['difficulty_label']);
+            $row['diagnostic_tags'] = (array) ($diagnostic_payload['diagnostic_tags'] ?? []);
+            $row['cognitive_alerts'] = (array) ($diagnostic_payload['cognitive_alerts'] ?? []);
             $row['note'] = trim(implode(' ', $note_parts));
             $row['search_text'] = self::build_item_search_text($row, $option_analysis);
 
@@ -1440,6 +1475,10 @@ final class CBT_Admin_Analytics_Service
             'high_omission_count' => 0,
             'pending_manual_count' => 0,
             'problem_item_count' => 0,
+            'suspect_key_count' => 0,
+            'failed_distractor_count' => 0,
+            'anchor_item_count' => 0,
+            'cognitive_trap_count' => 0,
         ];
 
         foreach ($rows as $row) {
@@ -1458,6 +1497,23 @@ final class CBT_Admin_Analytics_Service
             }
             if ((int) ($row['manual_count'] ?? 0) > 0) {
                 $summary['pending_manual_count']++;
+                $has_problem = true;
+            }
+            foreach ((array) ($row['diagnostic_tags'] ?? []) as $tag_row) {
+                $tag = (array) $tag_row;
+                $key = (string) ($tag['key'] ?? '');
+                if ($key === 'suspect_key') {
+                    $summary['suspect_key_count']++;
+                    $has_problem = true;
+                } elseif ($key === 'failed_distractor') {
+                    $summary['failed_distractor_count']++;
+                    $has_problem = true;
+                } elseif ($key === 'anchor_item') {
+                    $summary['anchor_item_count']++;
+                }
+            }
+            if (!empty($row['cognitive_alerts'])) {
+                $summary['cognitive_trap_count']++;
                 $has_problem = true;
             }
             if ($has_problem) {
@@ -2152,6 +2208,133 @@ final class CBT_Admin_Analytics_Service
     }
 
     /**
+     * @param array<string,mixed> $row
+     * @param array<string,mixed> $discrimination
+     * @param array<int,array<string,mixed>> $option_analysis
+     * @return array{diagnostic_tags:array<int,array<string,string>>,cognitive_alerts:array<int,array<string,string>>}
+     */
+    private static function build_item_diagnostic_payload(
+        array $row,
+        int $completed_attempts,
+        float $correct_rate,
+        array $discrimination,
+        array $option_analysis
+    ): array {
+        if ($completed_attempts < 10 || empty($row['is_objective']) || (string) ($row['question_type'] ?? '') === 'essay') {
+            return [
+                'diagnostic_tags' => [],
+                'cognitive_alerts' => [],
+            ];
+        }
+
+        $tags = [];
+        $discrimination_value = $discrimination['value'] ?? null;
+        if (is_numeric($discrimination_value) && (float) $discrimination_value < 0.0) {
+            $tags[] = [
+                'key' => 'suspect_key',
+                'label' => 'Kunci Jawaban Meragukan',
+                'tone' => 'fail',
+                'message' => 'Daya beda negatif; kelompok atas justru lebih rendah daripada kelompok bawah.',
+            ];
+        }
+
+        $failed_distractors = self::collect_failed_distractor_labels($option_analysis);
+        if (!empty($failed_distractors)) {
+            $tags[] = [
+                'key' => 'failed_distractor',
+                'label' => 'Pengecoh Gagal',
+                'tone' => 'warning',
+                'message' => 'Opsi salah tidak dipilih peserta: ' . implode(', ', $failed_distractors) . '.',
+            ];
+        }
+
+        if ($correct_rate >= 40.0 && $correct_rate <= 60.0 && is_numeric($discrimination_value) && (float) $discrimination_value > 0.4) {
+            $tags[] = [
+                'key' => 'anchor_item',
+                'label' => 'Soal Berkualitas',
+                'tone' => 'pass',
+                'message' => 'Kesukaran moderat dan daya beda tinggi; kandidat Bank Soal Emas.',
+            ];
+        }
+
+        return [
+            'diagnostic_tags' => $tags,
+            'cognitive_alerts' => self::build_cognitive_trap_alerts((string) ($row['question_type'] ?? ''), $option_analysis),
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $option_analysis
+     * @return list<string>
+     */
+    private static function collect_failed_distractor_labels(array $option_analysis): array
+    {
+        $labels = [];
+        foreach ($option_analysis as $option_row) {
+            $option = (array) $option_row;
+            if (!empty($option['is_correct'])) {
+                continue;
+            }
+            if ((float) ($option['selection_rate'] ?? 0.0) <= 0.0) {
+                $labels[] = (string) ($option['label'] ?? '-');
+            }
+        }
+
+        return array_slice(array_values(array_unique(array_filter($labels, static function (string $label): bool {
+            return trim($label) !== '';
+        }))), 0, 4);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $option_analysis
+     * @return array<int,array<string,string>>
+     */
+    private static function build_cognitive_trap_alerts(string $question_type, array $option_analysis): array
+    {
+        if (!in_array($question_type, ['multiple_choice', 'true_false'], true)) {
+            return [];
+        }
+
+        $correct_option = null;
+        foreach ($option_analysis as $option_row) {
+            $option = (array) $option_row;
+            if (!empty($option['is_correct'])) {
+                $correct_option = $option;
+                break;
+            }
+        }
+
+        if (!is_array($correct_option)) {
+            return [];
+        }
+
+        $correct_upper_rate = (float) ($correct_option['upper_rate'] ?? 0.0);
+        $alerts = [];
+        foreach ($option_analysis as $option_row) {
+            $option = (array) $option_row;
+            if (!empty($option['is_correct'])) {
+                continue;
+            }
+
+            $upper_rate = (float) ($option['upper_rate'] ?? 0.0);
+            if ($upper_rate > $correct_upper_rate && $upper_rate > 0.0) {
+                $label = (string) ($option['label'] ?? '-');
+                $alerts[] = [
+                    'key' => 'cognitive_trap',
+                    'label' => 'Trap Alert',
+                    'tone' => 'warning',
+                    'message' => sprintf(
+                        'Perhatian: kelompok atas lebih sering memilih opsi %s daripada kunci. Kemungkinan ada ambiguitas redaksi atau opsi.',
+                        $label
+                    ),
+                ];
+            }
+        }
+
+        return array_slice($alerts, 0, 3);
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $option_analysis
      * @return array<int,array<string,mixed>>
      */
@@ -2409,6 +2592,20 @@ final class CBT_Admin_Analytics_Service
             (string) ($row['insight_short_explainer'] ?? ''),
             (string) ($row['omission_label'] ?? ''),
         ];
+
+        foreach ((array) ($row['diagnostic_tags'] ?? []) as $tag_row) {
+            $tag = (array) $tag_row;
+            $terms[] = (string) ($tag['key'] ?? '');
+            $terms[] = (string) ($tag['label'] ?? '');
+            $terms[] = (string) ($tag['message'] ?? '');
+        }
+
+        foreach ((array) ($row['cognitive_alerts'] ?? []) as $alert_row) {
+            $alert = (array) $alert_row;
+            $terms[] = (string) ($alert['key'] ?? '');
+            $terms[] = (string) ($alert['label'] ?? '');
+            $terms[] = (string) ($alert['message'] ?? '');
+        }
 
         foreach ($option_analysis as $option_row) {
             $option = (array) $option_row;
@@ -2914,6 +3111,52 @@ final class CBT_Admin_Analytics_Service
         return $rows;
     }
 
+    private static function count_in_progress_attempts(
+        int $exam_id,
+        string $selected_kelas,
+        bool $is_admin_scope,
+        int $current_user_id
+    ): int {
+        if ($exam_id <= 0) {
+            return 0;
+        }
+
+        global $wpdb;
+
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $where_parts = ["a.status = 'in_progress'", 'a.exam_id = %d'];
+        $params = [$exam_id];
+
+        if (!$is_admin_scope) {
+            $where_parts[] = 'e.created_by = %d';
+            $params[] = $current_user_id;
+        }
+        if ($selected_kelas !== '') {
+            $where_parts[] = 'kelas_meta.meta_value = %s';
+            $params[] = $selected_kelas;
+        }
+
+        $join_kelas = '';
+        if ($selected_kelas !== '') {
+            $join_kelas = " INNER JOIN {$wpdb->users} u ON u.ID = a.student_id
+                LEFT JOIN (
+                    SELECT user_id, MAX(meta_value) AS meta_value
+                    FROM {$wpdb->usermeta}
+                    WHERE meta_key = 'kode_kelas'
+                    GROUP BY user_id
+                ) kelas_meta ON kelas_meta.user_id = u.ID";
+        }
+
+        $sql = "SELECT COUNT(*)
+                FROM {$attempt_table} a
+                INNER JOIN {$exam_table} e ON e.id = a.exam_id
+                {$join_kelas}
+                WHERE " . implode(' AND ', $where_parts);
+
+        return max(0, (int) $wpdb->get_var($wpdb->prepare($sql, $params)));
+    }
+
     /**
      * @return array{total:int,by_exam:array<int,int>,by_class:array<string,int>,by_exam_class:array<int,array<string,int>>}
      */
@@ -3243,6 +3486,211 @@ final class CBT_Admin_Analytics_Service
 
     /**
      * @param array<int,array<string,mixed>> $rows
+     * @return array<string,mixed>
+     */
+    private static function build_behavioral_quadrant(array $rows, int $duration_minutes, float $kkm_percentage): array
+    {
+        $duration_seconds = max(60, $duration_minutes * 60);
+        $points = [];
+        $duration_percentages = [];
+        $counts = [
+            'mastery' => 0,
+            'diligent' => 0,
+            'blind_guessing' => 0,
+            'struggling' => 0,
+        ];
+
+        foreach ($rows as $row) {
+            $attempt_duration = max(0, (int) ($row['duration_seconds'] ?? 0));
+            $duration_percent = round(min(200.0, ($attempt_duration / $duration_seconds) * 100), 2);
+            $duration_percentages[] = $duration_percent;
+        }
+
+        $median_duration_percent = !empty($duration_percentages)
+            ? self::calculate_median($duration_percentages)
+            : 0.0;
+
+        foreach ($rows as $row) {
+            $attempt_duration = max(0, (int) ($row['duration_seconds'] ?? 0));
+            $duration_percent = round(min(200.0, ($attempt_duration / $duration_seconds) * 100), 2);
+            $percentage = round(max(0.0, min(100.0, (float) ($row['percentage'] ?? 0.0))), 2);
+            $quadrant = self::classify_behavioral_quadrant($duration_percent, $percentage, $median_duration_percent, $kkm_percentage);
+            $counts[$quadrant]++;
+
+            $points[] = [
+                'attempt_id' => (int) ($row['id'] ?? 0),
+                'student_name' => (string) ($row['student_name'] ?? '-'),
+                'student_kelas' => (string) (($row['student_kelas'] ?? '') !== '' ? $row['student_kelas'] : '-'),
+                'x' => $duration_percent,
+                'y' => $percentage,
+                'duration_label' => self::format_duration($attempt_duration),
+                'percentage_display' => self::format_percent($percentage),
+                'quadrant' => $quadrant,
+                'quadrant_label' => self::format_behavioral_quadrant_label($quadrant),
+            ];
+        }
+
+        return [
+            'status' => !empty($points) ? 'ok' : 'empty',
+            'x_axis_label' => 'Durasi (% dari waktu ujian)',
+            'y_axis_label' => 'Nilai (%)',
+            'duration_median_percent' => $median_duration_percent,
+            'duration_median_percent_display' => self::format_percent($median_duration_percent),
+            'kkm_percentage' => $kkm_percentage,
+            'kkm_percentage_display' => self::format_percent($kkm_percentage),
+            'points' => $points,
+            'counts' => $counts,
+        ];
+    }
+
+    private static function classify_behavioral_quadrant(
+        float $duration_percent,
+        float $percentage,
+        float $median_duration_percent,
+        float $kkm_percentage
+    ): string {
+        $is_fast = $duration_percent <= $median_duration_percent;
+        $is_high_score = $percentage >= $kkm_percentage;
+
+        if ($is_fast && $is_high_score) {
+            return 'mastery';
+        }
+        if (!$is_fast && $is_high_score) {
+            return 'diligent';
+        }
+        if ($is_fast) {
+            return 'blind_guessing';
+        }
+
+        return 'struggling';
+    }
+
+    private static function format_behavioral_quadrant_label(string $quadrant): string
+    {
+        switch ($quadrant) {
+            case 'mastery':
+                return 'Mastery';
+            case 'diligent':
+                return 'Diligent';
+            case 'blind_guessing':
+                return 'Blind Guessing';
+            default:
+                return 'Struggling';
+        }
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<string,mixed>
+     */
+    private static function build_benchmark_overlay(array $rows, string $selected_benchmark_kelas): array
+    {
+        $global_percentages = array_values(array_map(static function (array $row): float {
+            return (float) ($row['percentage'] ?? 0.0);
+        }, $rows));
+
+        $class_groups = [];
+        foreach ($rows as $row) {
+            $kelas = (string) (($row['student_kelas'] ?? '') !== '' ? $row['student_kelas'] : '-');
+            if (!isset($class_groups[$kelas])) {
+                $class_groups[$kelas] = [
+                    'kelas' => $kelas,
+                    'percentages' => [],
+                ];
+            }
+            $class_groups[$kelas]['percentages'][] = (float) ($row['percentage'] ?? 0.0);
+        }
+
+        uasort($class_groups, static function (array $left, array $right): int {
+            $count_compare = count((array) ($right['percentages'] ?? [])) <=> count((array) ($left['percentages'] ?? []));
+            if ($count_compare !== 0) {
+                return $count_compare;
+            }
+
+            return strnatcasecmp((string) ($left['kelas'] ?? ''), (string) ($right['kelas'] ?? ''));
+        });
+
+        $selected = $selected_benchmark_kelas !== '' && isset($class_groups[$selected_benchmark_kelas])
+            ? $selected_benchmark_kelas
+            : (string) (array_key_first($class_groups) ?? '');
+        $class_percentages = $selected !== '' ? (array) ($class_groups[$selected]['percentages'] ?? []) : [];
+        $global_average = !empty($global_percentages) ? round(array_sum($global_percentages) / count($global_percentages), 2) : 0.0;
+        $class_average = !empty($class_percentages) ? round(array_sum($class_percentages) / count($class_percentages), 2) : 0.0;
+
+        $global_distribution = self::build_distribution_buckets($global_percentages);
+        $class_distribution = self::build_distribution_buckets($class_percentages);
+
+        return [
+            'status' => !empty($global_percentages) ? 'ok' : 'empty',
+            'selected_kelas' => $selected,
+            'class_options' => array_values(array_map(static function (array $group): array {
+                return [
+                    'kelas' => (string) ($group['kelas'] ?? '-'),
+                    'completed_attempts' => count((array) ($group['percentages'] ?? [])),
+                ];
+            }, $class_groups)),
+            'labels' => array_values(array_map(static function (array $bucket): string {
+                return (string) ($bucket['label'] ?? '');
+            }, $global_distribution)),
+            'global_counts' => array_values(array_map(static function (array $bucket): int {
+                return (int) ($bucket['count'] ?? 0);
+            }, $global_distribution)),
+            'class_counts' => array_values(array_map(static function (array $bucket): int {
+                return (int) ($bucket['count'] ?? 0);
+            }, $class_distribution)),
+            'global_average' => $global_average,
+            'global_average_display' => self::format_percent($global_average),
+            'class_average' => $class_average,
+            'class_average_display' => self::format_percent($class_average),
+            'delta_average' => round($class_average - $global_average, 2),
+            'delta_average_display' => self::format_signed_percent($class_average - $global_average),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function build_predictive_pass_rate(int $completed_attempts, int $pass_count, int $in_progress_count): array
+    {
+        $completed_attempts = max(0, $completed_attempts);
+        $pass_count = max(0, $pass_count);
+        $in_progress_count = max(0, $in_progress_count);
+        $current_pass_rate = $completed_attempts > 0 ? round(($pass_count / $completed_attempts) * 100, 2) : 0.0;
+
+        if ($completed_attempts < 5) {
+            return [
+                'status' => 'insufficient_data',
+                'completed_attempts' => $completed_attempts,
+                'pass_count' => $pass_count,
+                'in_progress_count' => $in_progress_count,
+                'current_pass_rate' => $current_pass_rate,
+                'current_pass_rate_display' => self::format_percent($current_pass_rate),
+                'predicted_final_pass_rate' => $current_pass_rate,
+                'predicted_final_pass_rate_display' => self::format_percent($current_pass_rate),
+                'message' => 'Estimasi belum stabil karena completed attempt kurang dari 5.',
+            ];
+        }
+
+        $trend = $completed_attempts > 0 ? $pass_count / $completed_attempts : 0.0;
+        $projected_pass_count = $pass_count + ($in_progress_count * $trend);
+        $projected_total = max(1, $completed_attempts + $in_progress_count);
+        $predicted_rate = round(($projected_pass_count / $projected_total) * 100, 2);
+
+        return [
+            'status' => 'ok',
+            'completed_attempts' => $completed_attempts,
+            'pass_count' => $pass_count,
+            'in_progress_count' => $in_progress_count,
+            'current_pass_rate' => $current_pass_rate,
+            'current_pass_rate_display' => self::format_percent($current_pass_rate),
+            'predicted_final_pass_rate' => $predicted_rate,
+            'predicted_final_pass_rate_display' => self::format_percent($predicted_rate),
+            'message' => 'Estimasi sementara berdasarkan tren completed attempt saat ini.',
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
      * @param array<string,int> $manualByClass
      * @return array<int,array<string,mixed>>
      */
@@ -3278,7 +3726,9 @@ final class CBT_Admin_Analytics_Service
             $result[] = [
                 'kelas' => (string) ($group['kelas'] ?? '-'),
                 'completed_attempts' => $completed_attempts,
+                'average_percentage' => $average_percentage,
                 'average_percentage_display' => self::format_percent($average_percentage),
+                'pass_rate' => $pass_rate,
                 'pass_rate_display' => self::format_percent($pass_rate),
                 'manual_review_count' => (int) ($group['manual_review_count'] ?? 0),
             ];
@@ -3555,6 +4005,12 @@ final class CBT_Admin_Analytics_Service
     private static function format_percent(float $value): string
     {
         return number_format_i18n($value, 2) . '%';
+    }
+
+    private static function format_signed_percent(float $value): string
+    {
+        $prefix = $value > 0 ? '+' : '';
+        return $prefix . number_format_i18n($value, 2) . '%';
     }
 
     private static function format_number(float $value): string
