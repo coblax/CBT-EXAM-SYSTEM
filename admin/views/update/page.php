@@ -1,236 +1,225 @@
 <style>
-    .cbt-update-page {
-        --cbt-update-bg: #eef4fb;
-        --cbt-update-surface: rgba(255, 255, 255, 0.92);
-        --cbt-update-surface-strong: #ffffff;
-        --cbt-update-border: rgba(148, 163, 184, 0.28);
-        --cbt-update-border-strong: rgba(37, 99, 235, 0.24);
-        --cbt-update-text: #0f172a;
-        --cbt-update-muted: #64748b;
-        --cbt-update-blue: #2563eb;
-        --cbt-update-blue-dark: #1d4ed8;
-        --cbt-update-cyan: #0891b2;
-        --cbt-update-green: #059669;
-        --cbt-update-amber: #d97706;
-        --cbt-update-red: #dc2626;
-        --cbt-update-shadow: 0 20px 55px rgba(15, 23, 42, 0.10);
-        --cbt-update-radius: 18px;
-        max-width: 1320px;
-        color: var(--cbt-update-text);
+    /* Modern Design System Tokens */
+    :root {
+        --cbt-primary: #3b82f6;
+        --cbt-primary-hover: #2563eb;
+        --cbt-primary-light: #eff6ff;
+        --cbt-secondary: #0ea5e9;
+        --cbt-accent: #8b5cf6;
+        
+        --cbt-bg-base: #f8fafc;
+        --cbt-bg-card: rgba(255, 255, 255, 0.7);
+        --cbt-bg-card-hover: rgba(255, 255, 255, 0.9);
+        
+        --cbt-text-main: #0f172a;
+        --cbt-text-muted: #64748b;
+        --cbt-text-inverse: #ffffff;
+        
+        --cbt-border: rgba(226, 232, 240, 0.8);
+        --cbt-border-light: rgba(255, 255, 255, 0.5);
+        
+        --cbt-shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        --cbt-shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+        --cbt-shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
+        --cbt-shadow-glow: 0 0 20px rgba(59, 130, 246, 0.15);
+        
+        --cbt-radius-sm: 12px;
+        --cbt-radius-md: 20px;
+        --cbt-radius-lg: 32px;
+        
+        --cbt-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
+
+    .cbt-update-page {
+        max-width: 1280px;
+        margin: 20px auto;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        color: var(--cbt-text-main);
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    }
+
+    .cbt-update-page * { box-sizing: border-box; }
+
     .cbt-update-shell {
         display: grid;
         gap: 20px;
-        margin-top: 18px;
-        padding: 18px;
-        border: 1px solid rgba(191, 219, 254, 0.62);
-        border-radius: 26px;
-        background:
-            linear-gradient(90deg, rgba(37, 99, 235, 0.05) 0 1px, transparent 1px 56px),
-            linear-gradient(rgba(37, 99, 235, 0.045) 0 1px, transparent 1px 56px),
-            radial-gradient(circle at 10% 0%, rgba(14, 165, 233, 0.18), transparent 32%),
-            linear-gradient(180deg, #f8fbff 0%, var(--cbt-update-bg) 100%);
-    }
-    .cbt-update-hero,
-    .cbt-update-card {
         position: relative;
-        border: 1px solid var(--cbt-update-border);
-        border-radius: var(--cbt-update-radius);
-        background: var(--cbt-update-surface);
-        box-shadow: var(--cbt-update-shadow);
     }
-    .cbt-update-hero {
-        overflow: hidden;
+    
+    .cbt-update-shell::before {
+        content: ''; position: absolute; top: -100px; left: -100px; width: 500px; height: 500px;
+        background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, rgba(255,255,255,0) 70%);
+        z-index: -1; border-radius: 50%;
+    }
+
+    .cbt-update-hero,
+        .cbt-update-col {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-        align-items: flex-start;
-        gap: 28px;
-        padding: 30px;
-        color: #ffffff;
-        background:
-            radial-gradient(circle at 18% 22%, rgba(125, 211, 252, 0.30), transparent 28%),
-            radial-gradient(circle at 90% 10%, rgba(59, 130, 246, 0.42), transparent 34%),
-            linear-gradient(135deg, #0f172a 0%, #164e63 48%, #2563eb 100%);
-        box-shadow: 0 28px 70px rgba(15, 23, 42, 0.20);
+        gap: 20px;
+        align-content: start;
+    }
+    .cbt-update-card {
+        border-radius: var(--cbt-radius-lg);
+        background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid var(--cbt-border-light);
+        box-shadow: var(--cbt-shadow-md);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .cbt-update-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+        gap: 24px;
+        padding: 28px;
+        box-shadow: var(--cbt-shadow-lg), var(--cbt-shadow-glow);
     }
     .cbt-update-hero::before {
-        content: "";
-        position: absolute;
-        inset: -1px;
-        pointer-events: none;
-        background:
-            linear-gradient(115deg, rgba(255, 255, 255, 0.14) 0%, transparent 28%),
-            linear-gradient(90deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 70px),
-            linear-gradient(rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 70px);
-        opacity: 0.7;
+        content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 5px;
+        background: linear-gradient(90deg, var(--cbt-primary), var(--cbt-secondary), var(--cbt-accent));
     }
     .cbt-update-hero-copy {
         position: relative;
         z-index: 1;
-        max-width: 760px;
     }
     .cbt-update-kicker {
         display: inline-flex;
         align-items: center;
-        min-height: 30px;
-        padding: 0 13px;
+        padding: 6px 14px;
         border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.24);
-        background: rgba(255, 255, 255, 0.12);
-        color: #dbeafe;
-        font-size: 11px;
-        font-weight: 900;
-        letter-spacing: 0.12em;
+        background: linear-gradient(135deg, var(--cbt-primary-light), #e0e7ff);
+        color: var(--cbt-primary-hover);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
-        backdrop-filter: blur(12px);
+        margin-bottom: 16px;
+        box-shadow: var(--cbt-shadow-sm);
     }
     .cbt-update-hero h1 {
-        max-width: 760px;
-        margin: 16px 0 10px;
-        color: #ffffff;
-        font-size: clamp(34px, 4vw, 54px);
-        font-weight: 900;
-        letter-spacing: -0.045em;
-        line-height: 0.98;
+        margin: 0 0 12px;
+        font-size: 32px;
+        font-weight: 800;
+        line-height: 1.1;
+        background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -0.02em;
     }
-    .cbt-update-hero p {
+    .cbt-update-hero p, .cbt-update-card p {
         margin: 0;
-        max-width: 680px;
-        color: rgba(226, 232, 240, 0.90);
+        color: var(--cbt-text-muted);
         font-size: 15px;
         line-height: 1.6;
     }
-    .cbt-update-card p {
-        margin: 0;
-        color: var(--cbt-update-muted);
-        line-height: 1.6;
-    }
+    
     .cbt-update-overview {
         position: relative;
         z-index: 1;
         display: grid;
-        gap: 10px;
-        min-width: 260px;
-        padding: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        border-radius: 16px;
-        background: rgba(15, 23, 42, 0.20);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
-        backdrop-filter: blur(16px);
+        gap: 8px;
+        padding: 20px;
+        border-radius: var(--cbt-radius-md);
+        background: rgba(255, 255, 255, 0.6);
+        border: 1px solid var(--cbt-border);
+        box-shadow: var(--cbt-shadow-sm);
     }
     .cbt-update-pill {
         display: inline-flex;
         align-items: center;
         justify-content: space-between;
-        min-height: 38px;
-        padding: 0 13px;
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        background: rgba(255, 255, 255, 0.12);
-        color: #eff6ff;
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: var(--cbt-bg-base);
+        border: 1px solid var(--cbt-border);
+        color: var(--cbt-text-main);
         font-size: 13px;
-        font-weight: 800;
+        font-weight: 600;
         gap: 10px;
     }
     .cbt-update-status-pill {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 36px;
-        padding: 0 15px;
+        padding: 6px 16px;
         border-radius: 999px;
-        border: 1px solid transparent;
-        font-size: 12px;
-        font-weight: 900;
-        letter-spacing: 0.04em;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
+        margin-bottom: 8px;
     }
-    .cbt-update-status-pill--muted {
-        background: #eef2f7;
-        color: #475569;
-    }
-    .cbt-update-status-pill--info {
-        background: #e8f1ff;
-        color: #0f4fa8;
-    }
-    .cbt-update-status-pill--ok {
-        background: #e7f6ec;
-        color: #166534;
-    }
-    .cbt-update-status-pill--warning {
-        background: #fff6e6;
-        color: #9a6700;
-    }
-    .cbt-update-status-pill--danger {
-        background: #feecec;
-        color: #b42318;
-    }
+    .cbt-update-status-pill--muted { background: #f1f5f9; color: #475569; }
+    .cbt-update-status-pill--info { background: var(--cbt-primary-light); color: var(--cbt-primary-hover); }
+    .cbt-update-status-pill--ok { background: #dcfce7; color: #166534; }
+    .cbt-update-status-pill--warning { background: #fef3c7; color: #92400e; }
+    .cbt-update-status-pill--danger { background: #fee2e2; color: #991b1b; }
+
     .cbt-update-grid {
         display: grid;
         grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
         gap: 20px;
+        align-items: start;
     }
     .cbt-update-card {
-        overflow: hidden;
-        padding: 22px;
-        background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.94) 100%);
-    }
-    .cbt-update-card::before {
-        content: "";
-        position: absolute;
-        inset: 0 0 auto 0;
-        height: 4px;
-        background: linear-gradient(90deg, var(--cbt-update-blue), var(--cbt-update-cyan));
+        padding: 24px;
+        background: var(--cbt-bg-card);
     }
     .cbt-update-card h2 {
-        margin: 0 0 6px;
-        color: var(--cbt-update-text);
-        font-size: 21px;
-        font-weight: 900;
-        letter-spacing: -0.018em;
-        line-height: 1.15;
+        margin: 0 0 8px;
+        color: var(--cbt-text-main);
+        font-size: 20px;
+        font-weight: 800;
     }
     .cbt-update-card-header {
         display: flex;
         align-items: flex-start;
         justify-content: space-between;
         gap: 16px;
-        margin-bottom: 14px;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--cbt-border);
     }
     .cbt-update-card-header-copy {
         display: grid;
-        gap: 6px;
+        gap: 4px;
     }
+    
     .cbt-update-meta-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 12px;
-        margin-top: 18px;
     }
     .cbt-update-meta-item {
-        padding: 15px 16px;
-        border: 1px solid rgba(203, 213, 225, 0.75);
-        border-radius: 14px;
-        background:
-            radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 36%),
-            #ffffff;
-        box-shadow: 0 10px 26px rgba(15, 23, 42, 0.04);
+        padding: 16px;
+        border: 1px solid var(--cbt-border);
+        border-radius: var(--cbt-radius-sm);
+        background: rgba(255, 255, 255, 0.8);
+        box-shadow: var(--cbt-shadow-sm);
+        transition: var(--cbt-transition);
+    }
+    .cbt-update-meta-item:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--cbt-shadow-md);
+        border-color: rgba(59, 130, 246, 0.3);
     }
     .cbt-update-meta-label {
         margin-bottom: 6px;
-        color: var(--cbt-update-muted);
+        color: var(--cbt-text-muted);
         font-size: 11px;
-        font-weight: 900;
-        letter-spacing: 0.08em;
+        font-weight: 700;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
     }
     .cbt-update-meta-value {
-        color: var(--cbt-update-text);
-        font-size: 16px;
-        font-weight: 900;
+        color: var(--cbt-text-main);
+        font-size: 15px;
+        font-weight: 700;
         overflow-wrap: anywhere;
     }
+    
     .cbt-update-actions {
         display: flex;
         align-items: center;
@@ -242,128 +231,128 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 46px;
+        height: 40px;
         padding: 0 20px;
-        border-radius: 12px;
-        border: 1px solid rgba(191, 219, 254, 0.42);
-        font-weight: 900;
-        letter-spacing: 0.01em;
-        box-shadow: 0 12px 26px rgba(15, 23, 42, 0.12);
-        transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
+        border-radius: 999px;
+        font-weight: 700;
+        font-size: 13px;
+        border: none;
+        transition: var(--cbt-transition);
+        text-decoration: none;
+        cursor: pointer;
     }
     .cbt-update-actions .button:not(:disabled):hover,
     .cbt-update-actions .button:not(:disabled):focus {
-        transform: translateY(-1px);
-        box-shadow: 0 16px 34px rgba(15, 23, 42, 0.16);
+        transform: translateY(-2px);
+        box-shadow: var(--cbt-shadow-md);
     }
-    .cbt-update-actions .button[data-cbt-update-locked-disabled="1"] {
-        border-color: #cbd5e1 !important;
+    .cbt-update-actions .button[data-cbt-update-locked-disabled="1"], .cbt-update-actions .button:disabled {
         background: #f1f5f9 !important;
-        color: #64748b !important;
-        box-shadow: none !important;
+        color: #94a3b8 !important;
         cursor: not-allowed;
-        opacity: 0.72;
+        box-shadow: none !important;
     }
     .cbt-update-page .button-primary {
-        border-color: transparent;
-        background: linear-gradient(135deg, #38bdf8 0%, #2563eb 58%, #1d4ed8 100%);
+        background: linear-gradient(135deg, var(--cbt-primary), var(--cbt-secondary));
         color: #ffffff;
+        box-shadow: var(--cbt-shadow-sm);
+    }
+    .cbt-update-page .button-primary:hover {
+        box-shadow: var(--cbt-shadow-md), var(--cbt-shadow-glow);
     }
     .cbt-update-actions .button.cbt-admin-btn--warning:not([data-cbt-update-locked-disabled="1"]) {
-        border-color: rgba(245, 158, 11, 0.36);
-        background: linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%);
-        color: #92400e;
+        background: rgba(245, 158, 11, 0.1);
+        color: #d97706;
+        border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+    .cbt-update-actions .button.cbt-admin-btn--warning:not([data-cbt-update-locked-disabled="1"]):hover {
+        background: rgba(245, 158, 11, 0.15);
+        border-color: rgba(245, 158, 11, 0.3);
     }
     .cbt-update-actions .button.cbt-admin-btn--secondary {
-        border-color: rgba(37, 99, 235, 0.30);
-        background: rgba(255, 255, 255, 0.92);
-        color: #1d4ed8;
+        background: rgba(255, 255, 255, 0.8);
+        color: var(--cbt-text-main);
+        border: 1px solid var(--cbt-border);
     }
+    .cbt-update-actions .button.cbt-admin-btn--secondary:hover {
+        border-color: var(--cbt-primary);
+        color: var(--cbt-primary);
+    }
+
     .cbt-update-checklist {
         display: grid;
         gap: 12px;
-        margin-top: 16px;
     }
     .cbt-update-checklist-item {
-        padding: 15px 16px;
-        border: 1px solid rgba(203, 213, 225, 0.72);
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.92);
-        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.035);
+        padding: 16px;
+        border: 1px solid var(--cbt-border);
+        border-radius: var(--cbt-radius-sm);
+        background: rgba(255, 255, 255, 0.8);
+        box-shadow: var(--cbt-shadow-sm);
     }
     .cbt-update-checklist-item-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
-        margin-bottom: 6px;
+        margin-bottom: 8px;
     }
     .cbt-update-checklist-item-title {
-        color: var(--cbt-update-text);
-        font-weight: 900;
+        color: var(--cbt-text-main);
+        font-weight: 700;
+        font-size: 14px;
     }
     .cbt-update-checklist-item-message {
-        color: #475569;
-        line-height: 1.55;
+        color: var(--cbt-text-muted);
+        line-height: 1.5;
+        font-size: 13px;
     }
     .cbt-update-preflight-label {
         display: inline-flex;
         align-items: center;
-        min-height: 28px;
-        padding: 0 12px;
+        padding: 4px 10px;
         border-radius: 999px;
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.04em;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
     }
-    .cbt-update-preflight-label--ok {
-        background: #e7f6ec;
-        color: #166534;
-    }
-    .cbt-update-preflight-label--warning {
-        background: #fff6e6;
-        color: #9a6700;
-    }
-    .cbt-update-preflight-label--danger {
-        background: #feecec;
-        color: #b42318;
-    }
+    .cbt-update-preflight-label--ok { background: #dcfce7; color: #166534; }
+    .cbt-update-preflight-label--warning { background: #fef3c7; color: #92400e; }
+    .cbt-update-preflight-label--danger { background: #fee2e2; color: #991b1b; }
+    
     .cbt-update-changelog {
         margin-top: 16px;
-        padding: 18px 20px;
-        border: 1px solid rgba(14, 165, 233, 0.20);
-        border-radius: 14px;
-        background:
-            linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(37, 99, 235, 0.04)),
-            #ffffff;
+        padding: 20px;
+        border: 1px solid var(--cbt-border);
+        border-radius: var(--cbt-radius-sm);
+        background: rgba(248, 250, 252, 0.8);
         white-space: pre-wrap;
-        color: #334155;
-        line-height: 1.7;
+        color: var(--cbt-text-main);
+        line-height: 1.6;
+        font-size: 14px;
     }
     .cbt-update-empty {
-        padding: 16px 18px;
-        border: 1px dashed rgba(148, 163, 184, 0.62);
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.72);
-        color: #475569;
+        padding: 20px;
+        border: 1px dashed rgba(148, 163, 184, 0.6);
+        border-radius: var(--cbt-radius-sm);
+        background: rgba(255, 255, 255, 0.5);
+        color: var(--cbt-text-muted);
+        font-size: 14px;
+        text-align: center;
     }
+    
     .cbt-update-progress {
         display: grid;
         gap: 12px;
-        margin-top: 22px;
-        padding: 16px;
-        border: 1px solid rgba(125, 211, 252, 0.48);
-        border-radius: 16px;
-        background:
-            radial-gradient(circle at top right, rgba(14, 165, 233, 0.24), transparent 34%),
-            rgba(239, 246, 255, 0.92);
-        color: #0f172a;
-        box-shadow: 0 18px 38px rgba(15, 23, 42, 0.10);
+        margin-top: 20px;
+        padding: 20px;
+        border: 1px solid var(--cbt-border);
+        border-radius: var(--cbt-radius-md);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: var(--cbt-shadow-md);
     }
-    .cbt-update-progress[hidden] {
-        display: none;
-    }
+    .cbt-update-progress[hidden] { display: none; }
     .cbt-update-progress-header {
         display: flex;
         align-items: center;
@@ -371,79 +360,67 @@
         gap: 12px;
     }
     .cbt-update-progress-title {
-        color: #0f172a;
-        font-weight: 900;
+        color: var(--cbt-text-main);
+        font-weight: 700;
+        font-size: 14px;
     }
     .cbt-update-progress-label {
-        color: #1d4ed8;
+        color: var(--cbt-primary);
         font-size: 12px;
-        font-weight: 900;
-        text-transform: uppercase;
+        font-weight: 800;
     }
     .cbt-update-progress-track {
         overflow: hidden;
-        height: 11px;
+        height: 8px;
         border-radius: 999px;
-        background: #dbeafe;
-        box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.10);
+        background: #e2e8f0;
     }
     .cbt-update-progress-fill {
         width: 0%;
         height: 100%;
         border-radius: inherit;
-        background: linear-gradient(90deg, #38bdf8, #2563eb, #1d4ed8);
-        transition: width 180ms ease;
+        background: linear-gradient(90deg, var(--cbt-primary), var(--cbt-secondary));
+        transition: width 0.3s ease;
     }
     .cbt-update-progress-message {
-        color: #334155;
+        color: var(--cbt-text-muted);
+        font-size: 13px;
         line-height: 1.5;
     }
-    .cbt-update-table-wrap {
-        overflow-x: auto;
-    }
+    
+    .cbt-update-table-wrap { overflow-x: auto; }
     .cbt-update-table {
         width: 100%;
         min-width: 720px;
         border-collapse: separate;
         border-spacing: 0;
-        background: #ffffff;
-        border: 1px solid rgba(203, 213, 225, 0.72);
-        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid var(--cbt-border);
+        border-radius: var(--cbt-radius-sm);
         overflow: hidden;
     }
-    .cbt-update-table th,
-    .cbt-update-table td {
-        padding: 10px 12px;
-        border-bottom: 1px solid #edf2f7;
+    .cbt-update-table th, .cbt-update-table td {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--cbt-border);
         text-align: left;
-        vertical-align: top;
+        font-size: 13px;
     }
     .cbt-update-table th {
-        color: #475569;
-        background: #f8fafc;
+        color: var(--cbt-text-muted);
+        background: rgba(248, 250, 252, 0.9);
         font-size: 11px;
-        font-weight: 900;
-        letter-spacing: 0.08em;
+        font-weight: 700;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
     }
-    .cbt-update-table td {
-        color: var(--cbt-update-text);
-    }
+    .cbt-update-table td { color: var(--cbt-text-main); }
+    
     @media (max-width: 960px) {
-        .cbt-update-hero,
-        .cbt-update-grid {
+        .cbt-update-hero, .cbt-update-grid {
             grid-template-columns: 1fr;
-            display: grid;
         }
-        .cbt-update-shell {
-            padding: 10px;
-        }
-        .cbt-update-hero,
-        .cbt-update-card {
-            border-radius: 18px;
-        }
-        .cbt-update-hero {
-            padding: 22px;
+        .cbt-update-hero, .cbt-update-card {
+            padding: 20px;
         }
     }
 </style>
@@ -536,7 +513,8 @@
         </section>
 
         <div class="cbt-update-grid">
-            <section class="cbt-update-card">
+            <div class="cbt-update-col">
+<section class="cbt-update-card">
                 <div class="cbt-update-card-header">
                     <div class="cbt-update-card-header-copy">
                         <h2>Release Summary</h2>
@@ -591,44 +569,7 @@
                     <?php endif; ?>
                 <?php endif; ?>
             </section>
-
-            <section class="cbt-update-card">
-                <div class="cbt-update-card-header">
-                    <div class="cbt-update-card-header-copy">
-                        <h2>Preflight Checklist</h2>
-                        <p>Checklist ini bersifat read-only guard. Cek update hanya membaca manifest release; unduh ZIP penuh dan validasi checksum dijalankan saat INSTALL UPDATE.</p>
-                    </div>
-                    <a class="cbt-update-pill" href="<?php echo esc_url($repo_url); ?>" target="_blank" rel="noopener noreferrer">Buka Repo</a>
-                </div>
-
-                <?php if ($status === 'no_release'): ?>
-                    <div class="cbt-update-empty">Preflight baru dijalankan setelah release resmi tersedia. Untuk saat ini updater belum punya package release yang bisa divalidasi.</div>
-                <?php elseif (!$has_checked_state || empty($preflight['items'])): ?>
-                    <div class="cbt-update-empty">Belum ada hasil preflight. Jalankan cek update untuk memvalidasi manifest release terlebih dahulu.</div>
-                <?php else: ?>
-                    <div class="cbt-update-checklist">
-                        <?php foreach ((array) $preflight['items'] as $preflight_item): ?>
-                            <?php
-                            $item_status = isset($preflight_item['status']) ? (string) $preflight_item['status'] : 'blocked';
-                            $item_tone = $item_status === 'ok' ? 'ok' : ($item_status === 'warning' ? 'warning' : 'danger');
-                            ?>
-                            <div class="cbt-update-checklist-item">
-                                <div class="cbt-update-checklist-item-header">
-                                    <div class="cbt-update-checklist-item-title"><?php echo esc_html((string) ($preflight_item['label'] ?? 'Checklist')); ?></div>
-                                    <span class="cbt-update-preflight-label cbt-update-preflight-label--<?php echo esc_attr($item_tone); ?>">
-                                        <?php echo esc_html(strtoupper($item_status)); ?>
-                                    </span>
-                                </div>
-                                <div class="cbt-update-checklist-item-message"><?php echo esc_html((string) ($preflight_item['message'] ?? '')); ?></div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-            </section>
-        </div>
-
-        <div class="cbt-update-grid">
-            <section class="cbt-update-card">
+<section class="cbt-update-card">
                 <div class="cbt-update-card-header">
                     <div class="cbt-update-card-header-copy">
                         <h2>Update History</h2>
@@ -664,8 +605,42 @@
                     </div>
                 <?php endif; ?>
             </section>
+            </div>
+            <div class="cbt-update-col">
+<section class="cbt-update-card">
+                <div class="cbt-update-card-header">
+                    <div class="cbt-update-card-header-copy">
+                        <h2>Preflight Checklist</h2>
+                        <p>Checklist ini bersifat read-only guard. Cek update hanya membaca manifest release; unduh ZIP penuh dan validasi checksum dijalankan saat INSTALL UPDATE.</p>
+                    </div>
+                    <a class="cbt-update-pill" href="<?php echo esc_url($repo_url); ?>" target="_blank" rel="noopener noreferrer">Buka Repo</a>
+                </div>
 
-            <section class="cbt-update-card">
+                <?php if ($status === 'no_release'): ?>
+                    <div class="cbt-update-empty">Preflight baru dijalankan setelah release resmi tersedia. Untuk saat ini updater belum punya package release yang bisa divalidasi.</div>
+                <?php elseif (!$has_checked_state || empty($preflight['items'])): ?>
+                    <div class="cbt-update-empty">Belum ada hasil preflight. Jalankan cek update untuk memvalidasi manifest release terlebih dahulu.</div>
+                <?php else: ?>
+                    <div class="cbt-update-checklist">
+                        <?php foreach ((array) $preflight['items'] as $preflight_item): ?>
+                            <?php
+                            $item_status = isset($preflight_item['status']) ? (string) $preflight_item['status'] : 'blocked';
+                            $item_tone = $item_status === 'ok' ? 'ok' : ($item_status === 'warning' ? 'warning' : 'danger');
+                            ?>
+                            <div class="cbt-update-checklist-item">
+                                <div class="cbt-update-checklist-item-header">
+                                    <div class="cbt-update-checklist-item-title"><?php echo esc_html((string) ($preflight_item['label'] ?? 'Checklist')); ?></div>
+                                    <span class="cbt-update-preflight-label cbt-update-preflight-label--<?php echo esc_attr($item_tone); ?>">
+                                        <?php echo esc_html(strtoupper($item_status)); ?>
+                                    </span>
+                                </div>
+                                <div class="cbt-update-checklist-item-message"><?php echo esc_html((string) ($preflight_item['message'] ?? '')); ?></div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </section>
+<section class="cbt-update-card">
                 <div class="cbt-update-card-header">
                     <div class="cbt-update-card-header-copy">
                         <h2>Backups & Rollback</h2>
@@ -696,6 +671,7 @@
                     </div>
                 <?php endif; ?>
             </section>
+            </div>
         </div>
     </div>
 </div>

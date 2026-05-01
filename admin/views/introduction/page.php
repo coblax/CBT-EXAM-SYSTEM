@@ -15,281 +15,518 @@ $quick_link_available_count = (int) ($quick_link_available_count ?? 0);
 ?>
 <div class="wrap cbt-introduction-page">
     <style>
-        .cbt-introduction-page {
-            max-width: 1180px;
+        /* Modern Design System Tokens */
+        :root {
+            --cbt-primary: #3b82f6;
+            --cbt-primary-hover: #2563eb;
+            --cbt-primary-light: #eff6ff;
+            --cbt-secondary: #0ea5e9;
+            --cbt-accent: #8b5cf6;
+            
+            --cbt-bg-base: #f8fafc;
+            --cbt-bg-card: rgba(255, 255, 255, 0.7);
+            --cbt-bg-card-hover: rgba(255, 255, 255, 0.9);
+            
+            --cbt-text-main: #0f172a;
+            --cbt-text-muted: #64748b;
+            --cbt-text-inverse: #ffffff;
+            
+            --cbt-border: rgba(226, 232, 240, 0.8);
+            --cbt-border-light: rgba(255, 255, 255, 0.5);
+            
+            --cbt-shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            --cbt-shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+            --cbt-shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
+            --cbt-shadow-glow: 0 0 20px rgba(59, 130, 246, 0.15);
+            
+            --cbt-radius-sm: 12px;
+            --cbt-radius-md: 20px;
+            --cbt-radius-lg: 32px;
+            
+            --cbt-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
+
+        .cbt-introduction-page {
+            max-width: 1280px;
+            margin: 20px auto;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--cbt-text-main);
+            /* Import modern font */
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        }
+
+        .cbt-introduction-page * {
+            box-sizing: border-box;
+        }
+
         .cbt-introduction-shell {
             display: grid;
-            gap: 18px;
-            margin-top: 18px;
+            gap: 20px;
+            position: relative;
         }
+        
+        /* Background effects */
+        .cbt-introduction-shell::before {
+            content: '';
+            position: absolute;
+            top: -100px;
+            left: -100px;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, rgba(255,255,255,0) 70%);
+            z-index: -1;
+            border-radius: 50%;
+        }
+        
+        .cbt-introduction-shell::after {
+            content: '';
+            position: absolute;
+            bottom: -100px;
+            right: -100px;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.08) 0%, rgba(255,255,255,0) 70%);
+            z-index: -1;
+            border-radius: 50%;
+        }
+
+        /* Glassmorphism Hero Section */
         .cbt-introduction-hero {
             display: grid;
-            grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
-            gap: 20px;
+            grid-template-columns: 1.4fr 0.6fr;
+            gap: 24px;
             padding: 28px;
-            border: 1px solid #d6dce4;
-            border-radius: 24px;
-            background:
-                radial-gradient(circle at top right, rgba(37, 99, 235, 0.16), transparent 32%),
-                radial-gradient(circle at bottom left, rgba(14, 116, 144, 0.10), transparent 28%),
-                linear-gradient(135deg, #ffffff 0%, #f6f9fc 100%);
-            box-shadow: 0 22px 46px rgba(15, 23, 42, 0.06);
+            border-radius: var(--cbt-radius-lg);
+            background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--cbt-border-light);
+            box-shadow: var(--cbt-shadow-lg), var(--cbt-shadow-glow);
+            position: relative;
+            overflow: hidden;
         }
+
+        .cbt-introduction-hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, var(--cbt-primary), var(--cbt-secondary), var(--cbt-accent));
+        }
+
         .cbt-introduction-kicker {
             display: inline-flex;
             align-items: center;
-            min-height: 30px;
-            padding: 0 12px;
+            padding: 6px 16px;
             border-radius: 999px;
-            background: #e8f1ff;
-            color: #0f4fa8;
-            font-size: 12px;
+            background: linear-gradient(135deg, var(--cbt-primary-light), #e0e7ff);
+            color: var(--cbt-primary-hover);
+            font-size: 13px;
             font-weight: 700;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.1em;
             text-transform: uppercase;
+            margin-bottom: 16px;
+            box-shadow: var(--cbt-shadow-sm);
         }
+
         .cbt-introduction-hero h1 {
-            margin: 14px 0 10px;
-            font-size: 31px;
-            line-height: 1.14;
+            margin: 0 0 12px;
+            font-size: 38px;
+            font-weight: 800;
+            line-height: 1.1;
+            background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
         }
+
         .cbt-introduction-hero p {
             margin: 0;
-            max-width: 720px;
-            color: #526172;
-            font-size: 14px;
+            font-size: 15px;
             line-height: 1.7;
+            color: var(--cbt-text-muted);
         }
+
         .cbt-introduction-hero-note {
-            margin-top: 18px;
-            color: #475569;
-            font-size: 13px;
+            margin-top: 16px;
+            padding: 16px;
+            border-radius: var(--cbt-radius-md);
+            background: rgba(59, 130, 246, 0.05);
+            border-left: 4px solid var(--cbt-primary);
+            color: #334155;
+            font-size: 14px;
             line-height: 1.6;
         }
+
         .cbt-introduction-hero-side {
             display: grid;
-            gap: 12px;
+            gap: 16px;
             align-content: start;
         }
+
         .cbt-introduction-metric-grid {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(2, 1fr);
             gap: 12px;
         }
+
         .cbt-introduction-metric {
-            padding: 16px 18px;
-            border: 1px solid #dbe4ee;
-            border-radius: 18px;
-            background: rgba(255, 255, 255, 0.82);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+            padding: 16px;
+            border-radius: var(--cbt-radius-md);
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid var(--cbt-border);
+            text-align: center;
+            transition: var(--cbt-transition);
+            box-shadow: var(--cbt-shadow-sm);
         }
+
+        .cbt-introduction-metric:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--cbt-shadow-md), var(--cbt-shadow-glow);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+
         .cbt-introduction-metric strong {
             display: block;
-            font-size: 26px;
+            font-size: 32px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--cbt-primary), var(--cbt-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
             line-height: 1;
-            color: #0f172a;
         }
+
         .cbt-introduction-metric span {
             display: block;
             margin-top: 6px;
-            color: #526172;
+            color: var(--cbt-text-muted);
             font-size: 12px;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.06em;
+            letter-spacing: 0.05em;
         }
+
         .cbt-introduction-side-card {
-            padding: 18px 20px;
-            border: 1px solid #dbe4ee;
-            border-radius: 18px;
-            background: rgba(255, 255, 255, 0.78);
+            padding: 20px;
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            border: 1px solid var(--cbt-border);
+            box-shadow: var(--cbt-shadow-sm);
         }
+
         .cbt-introduction-side-card h2 {
-            margin: 0 0 10px;
+            margin: 0 0 12px;
             font-size: 16px;
-            line-height: 1.2;
+            font-weight: 700;
+            color: var(--cbt-text-main);
         }
+
         .cbt-introduction-side-card ul {
             margin: 0;
-            padding-left: 18px;
-            color: #475569;
+            padding: 0;
+            list-style: none;
         }
-        .cbt-introduction-side-card li + li {
-            margin-top: 8px;
+
+        .cbt-introduction-side-card li {
+            position: relative;
+            padding-left: 24px;
+            margin-bottom: 10px;
+            color: var(--cbt-text-muted);
+            font-size: 13px;
+            line-height: 1.6;
         }
+
+        .cbt-introduction-side-card li::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            top: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--cbt-primary-light);
+            color: var(--cbt-primary);
+            font-size: 9px;
+            font-weight: bold;
+        }
+
+        /* Modern Navigation Tabs */
         .cbt-introduction-nav {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
-            padding: 16px 18px;
-            border: 1px solid #dcdcde;
-            border-radius: 20px;
-            background: #ffffff;
-            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+            gap: 8px;
+            padding: 10px;
+            border-radius: var(--cbt-radius-lg);
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--cbt-border);
+            box-shadow: var(--cbt-shadow-sm);
+            position: sticky;
+            top: 20px;
+            z-index: 10;
         }
+
         .cbt-introduction-nav-button {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 34px;
-            padding: 0 14px;
-            border: 1px solid #cfe0f7;
+            padding: 10px 20px;
             border-radius: 999px;
-            background: #eef4ff;
-            color: #27528c;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
+            background: transparent;
+            border: none;
+            color: var(--cbt-text-muted);
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
+            transition: var(--cbt-transition);
+            position: relative;
+            overflow: hidden;
         }
-        .cbt-introduction-nav-button:hover,
-        .cbt-introduction-nav-button:focus {
-            background: #f7faff;
-            border-color: #90b8ea;
-            color: #173f73;
-            outline: none;
+
+        .cbt-introduction-nav-button::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--cbt-primary);
+            border-radius: 999px;
+            opacity: 0;
+            transform: scale(0.9);
+            transition: var(--cbt-transition);
+            z-index: -1;
         }
+
+        .cbt-introduction-nav-button:hover {
+            color: var(--cbt-primary);
+            background: rgba(59, 130, 246, 0.05);
+        }
+
         .cbt-introduction-nav-button.is-active {
-            border-color: #2563eb;
-            background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
-            color: #ffffff;
-            box-shadow: 0 12px 22px rgba(37, 99, 235, 0.18);
+            color: var(--cbt-text-inverse);
+            box-shadow: var(--cbt-shadow-md);
         }
+
+        .cbt-introduction-nav-button.is-active::before {
+            opacity: 1;
+            transform: scale(1);
+            background: linear-gradient(135deg, var(--cbt-primary), var(--cbt-secondary));
+        }
+
+        /* Content Sections */
         .cbt-introduction-panels {
             display: grid;
-            gap: 18px;
+            gap: 16px;
         }
+
         .cbt-introduction-section {
             padding: 24px;
-            border: 1px solid #dcdcde;
-            border-radius: 22px;
-            background: #ffffff;
-            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+            border-radius: var(--cbt-radius-lg);
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--cbt-border);
+            box-shadow: var(--cbt-shadow-md);
+            animation: fadeIn 0.4s ease-out forwards;
         }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         .cbt-introduction-section[hidden] {
             display: none !important;
         }
+
         .cbt-introduction-section-header {
             display: flex;
             align-items: flex-start;
             justify-content: space-between;
-            gap: 18px;
+            gap: 16px;
             margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--cbt-border);
         }
+
         .cbt-introduction-section-header h2 {
-            margin: 0 0 8px;
+            margin: 0 0 10px;
             font-size: 24px;
-            line-height: 1.15;
+            font-weight: 800;
+            color: var(--cbt-text-main);
+            letter-spacing: -0.01em;
         }
+
         .cbt-introduction-section-header p {
             margin: 0;
-            max-width: 760px;
-            color: #5b6675;
-            line-height: 1.65;
+            max-width: 800px;
+            color: var(--cbt-text-muted);
+            font-size: 15px;
+            line-height: 1.6;
         }
+
         .cbt-introduction-chip {
             display: inline-flex;
             align-items: center;
-            min-height: 30px;
-            padding: 0 12px;
+            padding: 6px 14px;
             border-radius: 999px;
-            background: #eff6ff;
-            color: #1d4f91;
+            background: linear-gradient(135deg, var(--cbt-primary-light), #e0e7ff);
+            color: var(--cbt-primary-hover);
             font-size: 12px;
             font-weight: 700;
             white-space: nowrap;
+            box-shadow: var(--cbt-shadow-sm);
         }
+
+        /* Cards & Grids */
         .cbt-introduction-grid-3 {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(3, 1fr);
             gap: 16px;
         }
+
         .cbt-introduction-info-card {
-            padding: 18px;
-            border: 1px solid #dce4ec;
-            border-radius: 18px;
-            background: linear-gradient(180deg, #ffffff 0%, #f9fbfd 100%);
+            padding: 20px;
+            border-radius: var(--cbt-radius-md);
+            background: var(--cbt-bg-card);
+            border: 1px solid var(--cbt-border);
+            transition: var(--cbt-transition);
+            position: relative;
+            overflow: hidden;
         }
+
+        .cbt-introduction-info-card:hover {
+            transform: translateY(-3px);
+            background: var(--cbt-bg-card-hover);
+            box-shadow: var(--cbt-shadow-md);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        .cbt-introduction-info-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 4px; height: 100%;
+            background: linear-gradient(180deg, var(--cbt-primary), var(--cbt-secondary));
+            opacity: 0;
+            transition: var(--cbt-transition);
+        }
+
+        .cbt-introduction-info-card:hover::before {
+            opacity: 1;
+        }
+
         .cbt-introduction-info-card h3 {
-            margin: 0 0 10px;
-            font-size: 17px;
-            line-height: 1.2;
+            margin: 0 0 8px;
+            font-size: 18px;
+            font-weight: 700;
         }
+
         .cbt-introduction-info-card p {
             margin: 0;
-            color: #526172;
-            line-height: 1.65;
+            color: var(--cbt-text-muted);
+            line-height: 1.6;
+            font-size: 14px;
         }
+
+        /* Steps */
         .cbt-introduction-steps {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(2, 1fr);
             gap: 16px;
         }
+
         .cbt-introduction-step {
             display: grid;
-            grid-template-columns: 64px minmax(0, 1fr);
-            gap: 14px;
+            grid-template-columns: auto 1fr;
+            gap: 16px;
+            padding: 16px;
+            border-radius: var(--cbt-radius-md);
+            background: var(--cbt-bg-card);
+            border: 1px solid var(--cbt-border);
+            transition: var(--cbt-transition);
             align-items: start;
-            padding: 18px;
-            border: 1px solid #dce4ec;
-            border-radius: 18px;
-            background: #fbfdff;
         }
+
+        .cbt-introduction-step:hover {
+            transform: translateX(3px);
+            background: var(--cbt-bg-card-hover);
+            box-shadow: var(--cbt-shadow-md);
+            border-color: rgba(59, 130, 246, 0.2);
+        }
+
         .cbt-introduction-step-number {
-            display: inline-flex;
+            display: flex;
             align-items: center;
             justify-content: center;
-            width: 64px;
-            min-height: 64px;
-            border-radius: 18px;
-            background: linear-gradient(180deg, #dbeafe 0%, #bfdbfe 100%);
-            color: #0f4fa8;
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--cbt-primary), var(--cbt-secondary));
+            color: white;
+            font-size: 20px;
+            font-weight: 800;
+            box-shadow: var(--cbt-shadow-sm);
+        }
+
+        .cbt-introduction-step h3 {
+            margin: 0 0 6px;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .cbt-introduction-step p {
+            margin: 0;
+            color: var(--cbt-text-muted);
+            line-height: 1.5;
+            font-size: 14px;
+        }
+
+        /* Feature Groups */
+        .cbt-introduction-feature-groups {
+            display: grid;
+            gap: 20px;
+        }
+
+        .cbt-introduction-feature-group {
+            padding: 24px;
+            border-radius: var(--cbt-radius-lg);
+            background: rgba(248, 250, 252, 0.7);
+            border: 1px solid var(--cbt-border);
+        }
+
+        .cbt-introduction-feature-group h3 {
+            margin: 0 0 10px;
             font-size: 22px;
             font-weight: 800;
         }
-        .cbt-introduction-step h3 {
-            margin: 0 0 8px;
-            font-size: 18px;
-            line-height: 1.2;
-        }
-        .cbt-introduction-step p {
-            margin: 0;
-            color: #526172;
-            line-height: 1.6;
-        }
-        .cbt-introduction-feature-groups {
-            display: grid;
-            gap: 18px;
-        }
-        .cbt-introduction-feature-group {
-            padding: 20px;
-            border: 1px solid #dce4ec;
-            border-radius: 20px;
-            background: #fafcff;
-        }
-        .cbt-introduction-feature-group h3 {
-            margin: 0 0 8px;
-            font-size: 20px;
-            line-height: 1.2;
-        }
+
         .cbt-introduction-feature-group > p {
             margin: 0 0 16px;
-            color: #566376;
+            color: var(--cbt-text-muted);
+            font-size: 15px;
             line-height: 1.6;
         }
+
         .cbt-introduction-feature-grid {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(2, 1fr);
             gap: 16px;
         }
+
         .cbt-introduction-feature-card {
-            padding: 18px;
-            border: 1px solid #dce4ec;
-            border-radius: 18px;
+            padding: 16px;
+            border-radius: var(--cbt-radius-md);
             background: #ffffff;
+            border: 1px solid var(--cbt-border);
+            transition: var(--cbt-transition);
         }
+
+        .cbt-introduction-feature-card:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--cbt-shadow-md);
+        }
+
         .cbt-introduction-feature-card-head {
             display: flex;
             align-items: center;
@@ -297,178 +534,203 @@ $quick_link_available_count = (int) ($quick_link_available_count ?? 0);
             gap: 12px;
             margin-bottom: 12px;
         }
+
         .cbt-introduction-feature-card h4 {
             margin: 0;
-            font-size: 18px;
-            line-height: 1.2;
+            font-size: 16px;
+            font-weight: 700;
         }
+
         .cbt-introduction-feature-card p {
             margin: 0;
-            color: #536172;
-            line-height: 1.6;
+            color: var(--cbt-text-muted);
+            line-height: 1.5;
+            font-size: 13px;
         }
+
         .cbt-introduction-feature-stack {
             display: grid;
             gap: 12px;
-            margin-top: 14px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px dashed var(--cbt-border);
         }
+
         .cbt-introduction-feature-stack strong {
             display: block;
             margin-bottom: 4px;
-            color: #0f172a;
-            font-size: 12px;
-            letter-spacing: 0.06em;
+            color: var(--cbt-text-main);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
             text-transform: uppercase;
         }
+
+        .cbt-introduction-feature-stack p {
+            font-size: 13px;
+        }
+
+        /* Guidance Grid */
         .cbt-introduction-guidance-grid {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(2, 1fr);
             gap: 16px;
         }
+
         .cbt-introduction-guidance-card {
-            padding: 18px;
-            border: 1px solid #dce4ec;
-            border-radius: 18px;
-            background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+            padding: 20px;
+            border-radius: var(--cbt-radius-md);
+            background: linear-gradient(145deg, #ffffff, rgba(248, 250, 252, 0.8));
+            border: 1px solid var(--cbt-border);
+            transition: var(--cbt-transition);
         }
+
+        .cbt-introduction-guidance-card:hover {
+            transform: translateY(-3px) scale(1.01);
+            box-shadow: var(--cbt-shadow-md);
+        }
+
         .cbt-introduction-guidance-card h3 {
             margin: 0 0 10px;
-            font-size: 17px;
-            line-height: 1.25;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--cbt-primary-hover);
         }
-        .cbt-introduction-guidance-card p {
-            margin: 0;
-            color: #526172;
-            line-height: 1.65;
-        }
+
+        /* Links Grid */
         .cbt-introduction-links-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(3, 1fr);
             gap: 16px;
         }
-        .cbt-introduction-link-card,
-        .cbt-introduction-link-card.is-disabled {
-            display: block;
-            padding: 18px;
-            border: 1px solid #dce4ec;
-            border-radius: 18px;
-            background: #ffffff;
-            text-decoration: none;
-            box-shadow: 0 10px 22px rgba(15, 23, 42, 0.03);
-        }
+
         .cbt-introduction-link-card {
-            color: #0f172a;
-            transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            border-radius: var(--cbt-radius-md);
+            background: #ffffff;
+            border: 1px solid var(--cbt-border);
+            text-decoration: none;
+            color: inherit;
+            transition: var(--cbt-transition);
+            height: 100%;
         }
-        .cbt-introduction-link-card:hover,
-        .cbt-introduction-link-card:focus {
-            transform: translateY(-1px);
-            border-color: #9bbce6;
-            box-shadow: 0 16px 30px rgba(15, 23, 42, 0.06);
-            outline: none;
+
+        .cbt-introduction-link-card:not(.is-disabled):hover {
+            transform: translateY(-3px);
+            border-color: rgba(59, 130, 246, 0.4);
+            box-shadow: var(--cbt-shadow-md), var(--cbt-shadow-glow);
         }
+
         .cbt-introduction-link-card.is-disabled {
-            color: #475569;
             background: #f8fafc;
-            opacity: 0.96;
-            cursor: default;
+            opacity: 0.7;
+            cursor: not-allowed;
+            filter: grayscale(100%);
         }
+
         .cbt-introduction-link-head {
             display: flex;
             align-items: flex-start;
             justify-content: space-between;
             gap: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
         }
+
         .cbt-introduction-link-head h3 {
             margin: 0;
-            font-size: 18px;
-            line-height: 1.2;
+            font-size: 16px;
+            font-weight: 700;
         }
+
         .cbt-introduction-link-card p {
-            margin: 0;
-            color: #536172;
-            line-height: 1.65;
+            margin: 0 0 16px;
+            color: var(--cbt-text-muted);
+            line-height: 1.5;
+            font-size: 13px;
+            flex-grow: 1;
         }
-        .cbt-introduction-link-meta {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 14px;
-        }
+
         .cbt-introduction-badge {
             display: inline-flex;
             align-items: center;
-            min-height: 28px;
-            padding: 0 10px;
+            padding: 4px 10px;
             border-radius: 999px;
             font-size: 11px;
             font-weight: 700;
-            letter-spacing: 0.04em;
+            letter-spacing: 0.05em;
             text-transform: uppercase;
             white-space: nowrap;
         }
-        .cbt-introduction-badge.is-available {
-            background: #dcfce7;
-            color: #166534;
-        }
-        .cbt-introduction-badge.is-admin {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-        .cbt-introduction-badge.is-restricted {
-            background: #fef3c7;
-            color: #92400e;
-        }
-        .cbt-introduction-badge.is-group {
-            background: #eff6ff;
-            color: #1d4f91;
-        }
+
+        .cbt-introduction-badge.is-available { background: #dcfce7; color: #166534; }
+        .cbt-introduction-badge.is-admin { background: #fee2e2; color: #991b1b; }
+        .cbt-introduction-badge.is-restricted { background: #fef3c7; color: #92400e; }
+        .cbt-introduction-badge.is-group { background: var(--cbt-primary-light); color: var(--cbt-primary-hover); }
+
         .cbt-introduction-link-cta {
-            margin-top: 14px;
-            color: #0f4fa8;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: auto;
+            color: var(--cbt-primary);
             font-size: 13px;
             font-weight: 700;
+            transition: var(--cbt-transition);
         }
+
+        .cbt-introduction-link-card:not(.is-disabled):hover .cbt-introduction-link-cta {
+            gap: 12px;
+            color: var(--cbt-primary-hover);
+        }
+
+        .cbt-introduction-link-cta::after {
+            content: '→';
+            font-size: 15px;
+            transition: var(--cbt-transition);
+        }
+
+        .cbt-introduction-link-card.is-disabled .cbt-introduction-link-cta::after {
+            content: none;
+        }
+
         .cbt-introduction-muted {
-            color: #64748b;
+            color: var(--cbt-text-muted);
+            font-weight: 500;
         }
-        @media (max-width: 1080px) {
-            .cbt-introduction-hero,
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .cbt-introduction-hero {
+                grid-template-columns: 1fr;
+            }
             .cbt-introduction-grid-3,
             .cbt-introduction-links-grid {
-                grid-template-columns: 1fr;
-            }
-            .cbt-introduction-feature-grid,
-            .cbt-introduction-steps,
-            .cbt-introduction-guidance-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: repeat(2, 1fr);
             }
         }
-        @media (max-width: 782px) {
-            .cbt-introduction-hero,
+
+        @media (max-width: 768px) {
             .cbt-introduction-section {
                 padding: 20px;
             }
             .cbt-introduction-section-header {
                 flex-direction: column;
+                gap: 12px;
             }
-            .cbt-introduction-metric-grid {
-                grid-template-columns: 1fr 1fr;
-            }
-            .cbt-introduction-step {
-                grid-template-columns: 56px minmax(0, 1fr);
-            }
-            .cbt-introduction-step-number {
-                width: 56px;
-                min-height: 56px;
-                border-radius: 16px;
-                font-size: 20px;
-            }
-        }
-        @media (max-width: 640px) {
-            .cbt-introduction-metric-grid {
+            .cbt-introduction-grid-3,
+            .cbt-introduction-links-grid,
+            .cbt-introduction-steps,
+            .cbt-introduction-feature-grid,
+            .cbt-introduction-guidance-grid {
                 grid-template-columns: 1fr;
+            }
+            .cbt-introduction-hero {
+                padding: 24px 20px;
+            }
+            .cbt-introduction-hero h1 {
+                font-size: 28px;
             }
         }
     </style>
@@ -496,7 +758,7 @@ $quick_link_available_count = (int) ($quick_link_available_count ?? 0);
                 </div>
 
                 <div class="cbt-introduction-side-card">
-                    <h2>Urutan singkat</h2>
+                    <h2>Urutan Singkat</h2>
                     <ul>
                         <li>Siapkan sistem, subject, user, dan bank soal.</li>
                         <li>Rakit exam, siapkan token, lalu cetak kebutuhan administrasi.</li>
@@ -527,7 +789,7 @@ $quick_link_available_count = (int) ($quick_link_available_count ?? 0);
                         <h2>Apa itu CBT Exam System</h2>
                         <p>CBT Exam System adalah plugin administrasi ujian berbasis komputer untuk WordPress. Halaman admin-nya dibagi ke beberapa kelompok fitur agar sekolah bisa memisahkan pekerjaan persiapan, operasional lapangan, monitoring hasil, dan maintenance sistem.</p>
                     </div>
-                    <span class="cbt-introduction-chip">Panduan admin plugin</span>
+                    <span class="cbt-introduction-chip">Panduan Admin</span>
                 </div>
 
                 <div class="cbt-introduction-grid-3">
@@ -546,7 +808,7 @@ $quick_link_available_count = (int) ($quick_link_available_count ?? 0);
                         <h2>Alur Pemakaian</h2>
                         <p>Urutan di bawah ini adalah alur yang direkomendasikan untuk pemakaian normal. Mengikuti urutan ini membantu mencegah data master belum siap saat exam mulai dirakit atau hasil mulai dibaca.</p>
                     </div>
-                    <span class="cbt-introduction-chip"><?php echo esc_html(number_format_i18n(count($workflow_steps))); ?> langkah</span>
+                    <span class="cbt-introduction-chip"><?php echo esc_html(number_format_i18n(count($workflow_steps))); ?> Langkah</span>
                 </div>
 
                 <div class="cbt-introduction-steps">
@@ -568,7 +830,7 @@ $quick_link_available_count = (int) ($quick_link_available_count ?? 0);
                         <h2>Penjelasan Fitur per Menu</h2>
                         <p>Setiap menu punya peran yang berbeda. Gunakan bagian ini sebagai peta fitur agar tim tahu menu mana yang dipakai untuk konfigurasi, mana yang dipakai untuk pelaksanaan ujian, dan mana yang dipakai setelah ujian selesai.</p>
                     </div>
-                    <span class="cbt-introduction-chip"><?php echo esc_html(number_format_i18n(count($feature_groups))); ?> kelompok</span>
+                    <span class="cbt-introduction-chip"><?php echo esc_html(number_format_i18n(count($feature_groups))); ?> Kelompok</span>
                 </div>
 
                 <div class="cbt-introduction-feature-groups">
@@ -589,11 +851,11 @@ $quick_link_available_count = (int) ($quick_link_available_count ?? 0);
 
                                         <div class="cbt-introduction-feature-stack">
                                             <div>
-                                                <strong>Kapan dipakai</strong>
+                                                <strong>Kapan Dipakai</strong>
                                                 <p><?php echo esc_html((string) ($item['when_to_use'] ?? '')); ?></p>
                                             </div>
                                             <div>
-                                                <strong>Hasil yang diharapkan</strong>
+                                                <strong>Hasil yang Diharapkan</strong>
                                                 <p><?php echo esc_html((string) ($item['output'] ?? '')); ?></p>
                                             </div>
                                         </div>
@@ -611,7 +873,7 @@ $quick_link_available_count = (int) ($quick_link_available_count ?? 0);
                         <h2>Rekomendasi Alur Kerja</h2>
                         <p>Bagian ini membantu memilih menu yang tepat sesuai fase pekerjaan. Tidak semua menu dibuka setiap hari, jadi penting untuk tahu prioritasnya berdasarkan konteks operasional.</p>
                     </div>
-                    <span class="cbt-introduction-chip">Panduan praktis</span>
+                    <span class="cbt-introduction-chip">Panduan Praktis</span>
                 </div>
 
                 <div class="cbt-introduction-guidance-grid">
@@ -630,7 +892,7 @@ $quick_link_available_count = (int) ($quick_link_available_count ?? 0);
                         <h2>Quick Links</h2>
                         <p>Quick link di bawah mengikuti izin akun yang sedang login. Jika menu tidak tersedia untuk akun ini, kartunya tetap dijelaskan tetapi tidak bisa diklik.</p>
                     </div>
-                    <span class="cbt-introduction-chip"><?php echo esc_html(number_format_i18n($quick_link_available_count)); ?> link aktif</span>
+                    <span class="cbt-introduction-chip"><?php echo esc_html(number_format_i18n($quick_link_available_count)); ?> Link Aktif</span>
                 </div>
 
                 <div class="cbt-introduction-links-grid">
@@ -659,15 +921,15 @@ $quick_link_available_count = (int) ($quick_link_available_count ?? 0);
 
                                 <p><?php echo esc_html((string) ($link['summary'] ?? '')); ?></p>
 
-                                <div class="cbt-introduction-link-meta">
+                                <div class="cbt-introduction-link-meta" style="margin-bottom: 16px;">
                                     <span class="cbt-introduction-badge is-group"><?php echo esc_html((string) ($link['group_title'] ?? 'Kelompok')); ?></span>
                                 </div>
 
                                 <div class="cbt-introduction-link-cta">
                                     <?php if ($can_open): ?>
-                                        Buka menu
+                                        Buka Menu
                                     <?php else: ?>
-                                        <span class="cbt-introduction-muted"><?php echo esc_html((string) ($link['access_hint'] ?? 'Tidak tersedia dari akun ini.')); ?></span>
+                                        <span class="cbt-introduction-muted"><?php echo esc_html((string) ($link['access_hint'] ?? 'Tidak tersedia untuk akun ini.')); ?></span>
                                     <?php endif; ?>
                                 </div>
                         <?php if ($can_open): ?>
@@ -696,7 +958,15 @@ $quick_link_available_count = (int) ($quick_link_available_count ?? 0);
                 });
 
                 panels.forEach((panel) => {
-                    panel.hidden = panel.getAttribute('data-introduction-panel') !== nextTab;
+                    if (panel.getAttribute('data-introduction-panel') === nextTab) {
+                        panel.hidden = false;
+                        // Trigger animation reset
+                        panel.style.animation = 'none';
+                        panel.offsetHeight; /* trigger reflow */
+                        panel.style.animation = null;
+                    } else {
+                        panel.hidden = true;
+                    }
                 });
             }
 

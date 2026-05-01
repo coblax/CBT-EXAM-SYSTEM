@@ -4,94 +4,93 @@
         $is_branding_view = !$is_security_view;
         ?>
         <style>
-            .cbt-setup-page {
-                max-width: 1160px;
-            }
-            .cbt-setup-shell {
-                display: grid;
-                gap: 18px;
-                margin-top: 18px;
-            }
-            .cbt-setup-hero {
-                display: flex;
-                align-items: flex-start;
-                justify-content: space-between;
-                gap: 18px;
-                padding: 24px 28px;
-                border: 1px solid #d7dbe2;
-                border-radius: 22px;
-                background:
-                    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 35%),
-                    linear-gradient(135deg, #ffffff 0%, #f6f9fc 100%);
-                box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
-            }
+    /* Modern Design System Tokens */
+    :root {
+        --cbt-primary: #3b82f6;
+        --cbt-primary-hover: #2563eb;
+        --cbt-primary-light: #eff6ff;
+        --cbt-secondary: #0ea5e9;
+        --cbt-accent: #8b5cf6;
+        --cbt-success: #10b981;
+        --cbt-danger: #ef4444;
+        
+        --cbt-bg-base: #f8fafc;
+        --cbt-bg-card: rgba(255, 255, 255, 0.7);
+        --cbt-bg-card-hover: rgba(255, 255, 255, 0.9);
+        
+        --cbt-text-main: #0f172a;
+        --cbt-text-muted: #64748b;
+        --cbt-text-inverse: #ffffff;
+        
+        --cbt-border: rgba(226, 232, 240, 0.8);
+        --cbt-border-light: rgba(255, 255, 255, 0.5);
+        
+        --cbt-shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        --cbt-shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+        --cbt-shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
+        --cbt-shadow-glow: 0 0 20px rgba(59, 130, 246, 0.15);
+        
+        --cbt-radius-sm: 12px;
+        --cbt-radius-md: 20px;
+        --cbt-radius-lg: 32px;
+        
+        --cbt-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    
+    .cbt-setup-shell::before {
+        content: ''; position: absolute; top: -100px; left: -100px; width: 500px; height: 500px;
+        background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, rgba(255,255,255,0) 70%);
+        z-index: -1; border-radius: 50%;
+    }
+    
+    
+    .cbt-setup-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr); gap: 20px; align-items: start; }
+    .cbt-setup-security-masonry { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+    .cbt-setup-col { display: grid; gap: 20px; align-content: start; }
+
+            
+            
+            
+    .cbt-setup-hero {
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        justify-content: space-between;
+        align-items: stretch;
+        gap: 24px;
+        padding: 28px;
+        border-radius: var(--cbt-radius-lg);
+        background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid var(--cbt-border-light);
+        box-shadow: var(--cbt-shadow-md), var(--cbt-shadow-glow);
+        margin-bottom: 24px;
+    }
+    .cbt-setup-hero::before {
+        content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 5px;
+        background: linear-gradient(90deg, var(--cbt-primary), var(--cbt-secondary), var(--cbt-accent));
+    }
+
             .cbt-setup-hero-copy {
                 max-width: 720px;
             }
-            .cbt-setup-kicker {
-                display: inline-flex;
-                align-items: center;
-                min-height: 28px;
-                padding: 0 12px;
-                border-radius: 999px;
-                background: #e8f1ff;
-                color: #0f4fa8;
-                font-size: 12px;
-                font-weight: 700;
-                letter-spacing: 0.06em;
-                text-transform: uppercase;
-            }
-            .cbt-setup-hero h1 {
-                margin: 12px 0 8px;
-                font-size: 30px;
-                line-height: 1.15;
-            }
-            .cbt-setup-hero p {
-                margin: 0;
-                max-width: 680px;
-                color: #4b5563;
-                font-size: 14px;
-                line-height: 1.6;
-            }
-            .cbt-setup-tabs {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                flex-wrap: wrap;
-                margin-top: 18px;
-            }
-            .cbt-setup-tab {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 32px;
-                padding: 0 14px;
-                border: 1px solid #cfe0f7;
-                border-radius: 999px;
-                background: #eef4ff;
-                color: #27528c;
-                font-size: 12px;
-                font-weight: 700;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-                cursor: pointer;
-                transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease, color 140ms ease, transform 140ms ease;
-            }
-            .cbt-setup-tab:hover,
-            .cbt-setup-tab:focus {
-                border-color: #8bb3e4;
-                background: #f6f9ff;
-                color: #173f73;
-                box-shadow: 0 10px 20px rgba(59, 130, 246, 0.10);
-                transform: translateY(-1px);
-                outline: none;
-            }
-            .cbt-setup-tab.is-active {
-                border-color: #2563eb;
-                background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
-                color: #ffffff;
-                box-shadow: 0 12px 22px rgba(37, 99, 235, 0.18);
-            }
+            .cbt-setup-kicker { display: inline-flex; align-items: center; width: max-content; padding: 6px 14px; border-radius: 999px; background: linear-gradient(135deg, var(--cbt-primary-light), #e0e7ff); color: var(--cbt-primary-hover); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; box-shadow: var(--cbt-shadow-sm); }
+            .cbt-setup-hero h1 { margin: 0; font-size: 32px; font-weight: 800; line-height: 1.1; background: linear-gradient(135deg, #0f172a 0%, #334155 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -0.02em; }
+            .cbt-setup-hero p { margin: 0; max-width: 720px; color: var(--cbt-text-muted); font-size: 15px; line-height: 1.6; }
+            
+            
+            
+            
+    .cbt-setup-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
+    .cbt-setup-tab {
+        display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0 20px; border-radius: 999px; background: rgba(255, 255, 255, 0.8); color: var(--cbt-text-main); border: 1px solid var(--cbt-border); font-size: 14px; font-weight: 700; cursor: pointer; transition: var(--cbt-transition); text-decoration: none;
+    }
+    .cbt-setup-tab:hover, .cbt-setup-tab:focus { border-color: var(--cbt-primary); box-shadow: var(--cbt-shadow-sm); background: #ffffff; color: var(--cbt-primary); transform: translateY(-2px); outline: none; }
+    .cbt-setup-tab.is-active { background: linear-gradient(135deg, var(--cbt-primary), var(--cbt-secondary)); border-color: transparent; color: #fff; box-shadow: var(--cbt-shadow-md), var(--cbt-shadow-glow);
+        margin-bottom: 24px; }
+
             .cbt-setup-panels {
                 display: grid;
                 gap: 18px;
@@ -103,13 +102,17 @@
                 display: grid;
                 gap: 18px;
             }
-            .cbt-setup-card {
-                padding: 24px;
-                border: 1px solid #dcdcde;
-                border-radius: 20px;
-                background: #ffffff;
-                box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
-            }
+            
+    .cbt-setup-card {
+        padding: 24px;
+        border-radius: var(--cbt-radius-lg);
+        background: var(--cbt-bg-card);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--cbt-border);
+        box-shadow: var(--cbt-shadow-md);
+        transition: var(--cbt-transition);
+    }
+
             .cbt-setup-card-header {
                 display: flex;
                 align-items: flex-start;
@@ -175,15 +178,8 @@
             .cbt-setup-clear-button:active {
                 transform: translateY(1px);
             }
-            .cbt-setup-field-grid {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 16px 18px;
-            }
-            .cbt-setup-field {
-                display: grid;
-                gap: 8px;
-            }
+            .cbt-setup-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+            .cbt-setup-field { display: grid; gap: 8px; align-content: start; }
             .cbt-setup-field--full {
                 grid-column: 1 / -1;
             }
@@ -336,17 +332,20 @@
                 color: #912018;
                 box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
             }
-            .cbt-setup-actions {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 12px;
-                padding: 18px 22px;
-                border: 1px solid #dcdcde;
-                border-radius: 18px;
-                background: #ffffff;
-                box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
-            }
+            
+    .cbt-setup-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 20px 24px;
+        border: 1px solid var(--cbt-border);
+        border-radius: var(--cbt-radius-lg);
+        background: var(--cbt-bg-card);
+        backdrop-filter: blur(10px);
+        box-shadow: var(--cbt-shadow-md);
+    }
+
             .cbt-setup-actions .description {
                 margin: 0;
                 color: #646970;
@@ -385,10 +384,7 @@
                 color: #4b5563;
                 line-height: 1.65;
             }
-            .cbt-setup-security-form {
-                display: grid;
-                gap: 16px;
-            }
+            .cbt-setup-security-form { display: grid; gap: 20px; }
             .cbt-setup-security-option {
                 padding: 16px 18px;
                 border: 1px solid #d7e4f5;
@@ -416,7 +412,7 @@
                 color: #5b6574;
                 line-height: 1.55;
             }
-            .cbt-setup-security-actions {
+            .cbt-setup-security-actions { grid-column: 1 / -1;
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
@@ -1887,7 +1883,7 @@
                 .cbt-setup-hero,
                 .cbt-setup-card-header,
                 .cbt-setup-actions,
-                .cbt-setup-security-actions {
+                .cbt-setup-security-actions { grid-column: 1 / -1;
                     flex-direction: column;
                     align-items: stretch;
                 }
@@ -1939,13 +1935,19 @@
                 }
             }
             @media (max-width: 782px) {
-                .cbt-setup-page {
-                    margin-right: 10px;
-                }
+                
                 .cbt-setup-hero,
-                .cbt-setup-card {
-                    padding: 20px;
-                }
+                
+    .cbt-setup-card {
+        padding: 24px;
+        border-radius: var(--cbt-radius-lg);
+        background: var(--cbt-bg-card);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--cbt-border);
+        box-shadow: var(--cbt-shadow-md);
+        transition: var(--cbt-transition);
+    }
+
                 .cbt-native-spec-grid,
                 .cbt-native-tool-grid,
                 .cbt-native-auth-grid,
@@ -2022,7 +2024,7 @@
                                     </div>
                                 </div>
                                 <div class="cbt-setup-field-grid" id="cbt-setup-identity-fields">
-                                    <div class="cbt-setup-field cbt-setup-field--full">
+                                    <div class="cbt-setup-field">
                                         <label for="cbt-setup-exam-program-name">Nama Program Ujian</label>
                                         <input
                                             type="text"
@@ -2033,7 +2035,7 @@
                                         />
                                         <p class="description">Opsional. Dipakai untuk identitas program ujian pada dokumen cetak dan area branding CBT yang relevan.</p>
                                     </div>
-                                    <div class="cbt-setup-field cbt-setup-field--full">
+                                    <div class="cbt-setup-field">
                                         <label for="cbt-setup-school-name">Nama Sekolah CBT</label>
                                         <input
                                             type="text"
@@ -2044,7 +2046,7 @@
                                         />
                                         <p class="description">Jika kosong, otomatis memakai nama situs WordPress.</p>
                                     </div>
-                                    <div class="cbt-setup-field cbt-setup-field--full">
+                                    <div class="cbt-setup-field">
                                         <label for="cbt-setup-school-motto">Moto Sekolah</label>
                                         <input
                                             type="text"
@@ -2241,7 +2243,9 @@
                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-security-form">
                                     <?php wp_nonce_field('cbt_save_security_settings'); ?>
                                     <input type="hidden" name="action" value="cbt_save_security_settings" />
-                                    <div class="cbt-setup-security-option">
+                                    <div class="cbt-setup-security-masonry">
+<div class="cbt-setup-col">
+<div class="cbt-setup-security-option">
                                         <label class="cbt-setup-security-checkbox" for="cbt-setup-security-force-fullscreen">
                                             <input
                                                 type="checkbox"
@@ -2328,7 +2332,9 @@
                                             <p class="description">Idle dihitung hanya saat tab ujian terlihat dan window masih fokus. Event hidden/blur tetap dicatat terpisah lewat security logging yang sudah ada.</p>
                                         </div>
                                     </div>
-                                    <div class="cbt-setup-security-option">
+                                    </div>
+<div class="cbt-setup-col">
+<div class="cbt-setup-security-option">
                                         <label class="cbt-setup-security-checkbox" for="cbt-setup-security-block-copy-paste">
                                             <input
                                                 type="checkbox"
@@ -2426,7 +2432,9 @@
                                             </span>
                                         </label>
                                     </div>
-                                    <div class="cbt-setup-security-actions">
+                                    </div>
+</div>
+<div class="cbt-setup-security-actions">
                                         <p class="description">Simpan perubahan security untuk langsung diterapkan pada frontend ujian.</p>
                                         <button type="submit" class="button button-primary button-large cbt-setup-save-button">Simpan Pengaturan Security</button>
                                     </div>
