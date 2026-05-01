@@ -294,6 +294,45 @@ final class UpdateReleaseHelperTest extends TestCase
         self::assertSame('Update Available', $context['status_meta']['label']);
     }
 
+    public function test_build_page_context_keeps_up_to_date_state_non_installable(): void
+    {
+        $currentVersion = \CBT_Update_Release_Helper::current_version();
+        set_transient(\CBT_Update_Release_Helper::release_state_transient(), [
+            'checked_at' => 1774353600,
+            'status' => 'up_to_date',
+            'error_message' => '',
+            'manifest' => [
+                'version' => $currentVersion,
+                'tag' => 'v' . $currentVersion,
+                'published_at' => '2026-03-29T12:00:00Z',
+                'download_url' => 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/download/v' . $currentVersion . '/cbt-exam-system.zip',
+                'sha256' => str_repeat('a', 64),
+                'requires_php' => '8.0',
+                'requires_wp' => '6.0',
+                'tested_up_to' => '6.8.1',
+                'changelog' => 'Already current',
+            ],
+            'release' => [
+                'tag' => 'v' . $currentVersion,
+                'name' => 'CBT ' . $currentVersion,
+                'html_url' => 'https://github.com/coblax/CBT-EXAM-SYSTEM/releases/tag/v' . $currentVersion,
+                'published_at' => '2026-03-29T12:00:00Z',
+            ],
+            'preflight' => [
+                'status' => 'ok',
+                'items' => [],
+                'has_blocked' => false,
+            ],
+        ], HOUR_IN_SECONDS);
+
+        $context = \CBT_Admin_Update_Service::build_page_context([]);
+
+        self::assertSame('up_to_date', $context['status']);
+        self::assertFalse($context['has_update']);
+        self::assertFalse($context['can_install']);
+        self::assertSame('Up to Date', $context['status_meta']['label']);
+    }
+
     public function test_start_install_creates_lightweight_job_without_downloading_package(): void
     {
         $remoteVersion = $this->nextPatchVersion(\CBT_Update_Release_Helper::current_version());

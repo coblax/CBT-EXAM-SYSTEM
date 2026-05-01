@@ -1,81 +1,149 @@
 <style>
     .cbt-update-page {
-        max-width: 1180px;
+        --cbt-update-bg: #eef4fb;
+        --cbt-update-surface: rgba(255, 255, 255, 0.92);
+        --cbt-update-surface-strong: #ffffff;
+        --cbt-update-border: rgba(148, 163, 184, 0.28);
+        --cbt-update-border-strong: rgba(37, 99, 235, 0.24);
+        --cbt-update-text: #0f172a;
+        --cbt-update-muted: #64748b;
+        --cbt-update-blue: #2563eb;
+        --cbt-update-blue-dark: #1d4ed8;
+        --cbt-update-cyan: #0891b2;
+        --cbt-update-green: #059669;
+        --cbt-update-amber: #d97706;
+        --cbt-update-red: #dc2626;
+        --cbt-update-shadow: 0 20px 55px rgba(15, 23, 42, 0.10);
+        --cbt-update-radius: 18px;
+        max-width: 1320px;
+        color: var(--cbt-update-text);
     }
     .cbt-update-shell {
         display: grid;
-        gap: 18px;
+        gap: 20px;
         margin-top: 18px;
+        padding: 18px;
+        border: 1px solid rgba(191, 219, 254, 0.62);
+        border-radius: 26px;
+        background:
+            linear-gradient(90deg, rgba(37, 99, 235, 0.05) 0 1px, transparent 1px 56px),
+            linear-gradient(rgba(37, 99, 235, 0.045) 0 1px, transparent 1px 56px),
+            radial-gradient(circle at 10% 0%, rgba(14, 165, 233, 0.18), transparent 32%),
+            linear-gradient(180deg, #f8fbff 0%, var(--cbt-update-bg) 100%);
     }
     .cbt-update-hero,
     .cbt-update-card {
-        padding: 24px 28px;
-        border: 1px solid #d7dbe2;
-        border-radius: 22px;
-        background:
-            radial-gradient(circle at top right, rgba(34, 113, 177, 0.08), transparent 34%),
-            linear-gradient(135deg, #ffffff 0%, #f6f9fc 100%);
-        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.05);
+        position: relative;
+        border: 1px solid var(--cbt-update-border);
+        border-radius: var(--cbt-update-radius);
+        background: var(--cbt-update-surface);
+        box-shadow: var(--cbt-update-shadow);
     }
     .cbt-update-hero {
-        display: flex;
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
         align-items: flex-start;
-        justify-content: space-between;
-        gap: 24px;
+        gap: 28px;
+        padding: 30px;
+        color: #ffffff;
+        background:
+            radial-gradient(circle at 18% 22%, rgba(125, 211, 252, 0.30), transparent 28%),
+            radial-gradient(circle at 90% 10%, rgba(59, 130, 246, 0.42), transparent 34%),
+            linear-gradient(135deg, #0f172a 0%, #164e63 48%, #2563eb 100%);
+        box-shadow: 0 28px 70px rgba(15, 23, 42, 0.20);
+    }
+    .cbt-update-hero::before {
+        content: "";
+        position: absolute;
+        inset: -1px;
+        pointer-events: none;
+        background:
+            linear-gradient(115deg, rgba(255, 255, 255, 0.14) 0%, transparent 28%),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 70px),
+            linear-gradient(rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 70px);
+        opacity: 0.7;
     }
     .cbt-update-hero-copy {
-        max-width: 720px;
+        position: relative;
+        z-index: 1;
+        max-width: 760px;
     }
     .cbt-update-kicker {
         display: inline-flex;
         align-items: center;
-        min-height: 28px;
-        padding: 0 12px;
+        min-height: 30px;
+        padding: 0 13px;
         border-radius: 999px;
-        background: #e8f1ff;
-        color: #0f4fa8;
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.06em;
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        background: rgba(255, 255, 255, 0.12);
+        color: #dbeafe;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
+        backdrop-filter: blur(12px);
     }
     .cbt-update-hero h1 {
-        margin: 12px 0 8px;
-        font-size: 30px;
-        line-height: 1.12;
+        max-width: 760px;
+        margin: 16px 0 10px;
+        color: #ffffff;
+        font-size: clamp(34px, 4vw, 54px);
+        font-weight: 900;
+        letter-spacing: -0.045em;
+        line-height: 0.98;
     }
-    .cbt-update-hero p,
+    .cbt-update-hero p {
+        margin: 0;
+        max-width: 680px;
+        color: rgba(226, 232, 240, 0.90);
+        font-size: 15px;
+        line-height: 1.6;
+    }
     .cbt-update-card p {
         margin: 0;
-        color: #4b5563;
+        color: var(--cbt-update-muted);
         line-height: 1.6;
     }
     .cbt-update-overview {
+        position: relative;
+        z-index: 1;
         display: grid;
         gap: 10px;
-        min-width: 250px;
+        min-width: 260px;
+        padding: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 16px;
+        background: rgba(15, 23, 42, 0.20);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        backdrop-filter: blur(16px);
     }
     .cbt-update-pill {
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        min-height: 34px;
-        padding: 0 14px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.92);
-        border: 1px solid #d7e4f5;
-        color: #1e3a5f;
+        justify-content: space-between;
+        min-height: 38px;
+        padding: 0 13px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.12);
+        color: #eff6ff;
         font-size: 13px;
-        font-weight: 600;
+        font-weight: 800;
+        gap: 10px;
     }
     .cbt-update-status-pill {
         display: inline-flex;
         align-items: center;
-        min-height: 34px;
-        padding: 0 14px;
+        justify-content: center;
+        min-height: 36px;
+        padding: 0 15px;
         border-radius: 999px;
-        font-size: 13px;
-        font-weight: 700;
+        border: 1px solid transparent;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
     }
     .cbt-update-status-pill--muted {
         background: #eef2f7;
@@ -100,12 +168,28 @@
     .cbt-update-grid {
         display: grid;
         grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
-        gap: 18px;
+        gap: 20px;
+    }
+    .cbt-update-card {
+        overflow: hidden;
+        padding: 22px;
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.94) 100%);
+    }
+    .cbt-update-card::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 4px;
+        background: linear-gradient(90deg, var(--cbt-update-blue), var(--cbt-update-cyan));
     }
     .cbt-update-card h2 {
         margin: 0 0 6px;
-        font-size: 19px;
-        line-height: 1.2;
+        color: var(--cbt-update-text);
+        font-size: 21px;
+        font-weight: 900;
+        letter-spacing: -0.018em;
+        line-height: 1.15;
     }
     .cbt-update-card-header {
         display: flex;
@@ -122,41 +206,78 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 12px;
-        margin-top: 16px;
+        margin-top: 18px;
     }
     .cbt-update-meta-item {
-        padding: 14px 16px;
-        border: 1px solid #dbe5ef;
-        border-radius: 16px;
-        background: #ffffff;
+        padding: 15px 16px;
+        border: 1px solid rgba(203, 213, 225, 0.75);
+        border-radius: 14px;
+        background:
+            radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 36%),
+            #ffffff;
+        box-shadow: 0 10px 26px rgba(15, 23, 42, 0.04);
     }
     .cbt-update-meta-label {
         margin-bottom: 6px;
-        color: #64748b;
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.04em;
+        color: var(--cbt-update-muted);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
     }
     .cbt-update-meta-value {
-        color: #0f172a;
+        color: var(--cbt-update-text);
         font-size: 16px;
-        font-weight: 700;
+        font-weight: 900;
+        overflow-wrap: anywhere;
     }
     .cbt-update-actions {
         display: flex;
         align-items: center;
         gap: 12px;
         flex-wrap: wrap;
-        margin-top: 20px;
+        margin-top: 24px;
     }
     .cbt-update-actions .button {
-        min-height: 44px;
-        padding: 0 18px;
-        border-radius: 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 46px;
+        padding: 0 20px;
+        border-radius: 12px;
+        border: 1px solid rgba(191, 219, 254, 0.42);
+        font-weight: 900;
+        letter-spacing: 0.01em;
+        box-shadow: 0 12px 26px rgba(15, 23, 42, 0.12);
+        transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+    .cbt-update-actions .button:not(:disabled):hover,
+    .cbt-update-actions .button:not(:disabled):focus {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 34px rgba(15, 23, 42, 0.16);
+    }
+    .cbt-update-actions .button[data-cbt-update-locked-disabled="1"] {
+        border-color: #cbd5e1 !important;
+        background: #f1f5f9 !important;
+        color: #64748b !important;
+        box-shadow: none !important;
+        cursor: not-allowed;
+        opacity: 0.72;
     }
     .cbt-update-page .button-primary {
-        box-shadow: 0 10px 20px rgba(34, 113, 177, 0.18);
+        border-color: transparent;
+        background: linear-gradient(135deg, #38bdf8 0%, #2563eb 58%, #1d4ed8 100%);
+        color: #ffffff;
+    }
+    .cbt-update-actions .button.cbt-admin-btn--warning:not([data-cbt-update-locked-disabled="1"]) {
+        border-color: rgba(245, 158, 11, 0.36);
+        background: linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%);
+        color: #92400e;
+    }
+    .cbt-update-actions .button.cbt-admin-btn--secondary {
+        border-color: rgba(37, 99, 235, 0.30);
+        background: rgba(255, 255, 255, 0.92);
+        color: #1d4ed8;
     }
     .cbt-update-checklist {
         display: grid;
@@ -164,10 +285,11 @@
         margin-top: 16px;
     }
     .cbt-update-checklist-item {
-        padding: 14px 16px;
-        border: 1px solid #dbe5ef;
-        border-radius: 16px;
-        background: #ffffff;
+        padding: 15px 16px;
+        border: 1px solid rgba(203, 213, 225, 0.72);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.035);
     }
     .cbt-update-checklist-item-header {
         display: flex;
@@ -177,8 +299,8 @@
         margin-bottom: 6px;
     }
     .cbt-update-checklist-item-title {
-        color: #0f172a;
-        font-weight: 700;
+        color: var(--cbt-update-text);
+        font-weight: 900;
     }
     .cbt-update-checklist-item-message {
         color: #475569;
@@ -209,29 +331,35 @@
     }
     .cbt-update-changelog {
         margin-top: 16px;
-        padding: 16px 18px;
-        border: 1px solid #dbe5ef;
-        border-radius: 16px;
-        background: #ffffff;
+        padding: 18px 20px;
+        border: 1px solid rgba(14, 165, 233, 0.20);
+        border-radius: 14px;
+        background:
+            linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(37, 99, 235, 0.04)),
+            #ffffff;
         white-space: pre-wrap;
         color: #334155;
         line-height: 1.7;
     }
     .cbt-update-empty {
         padding: 16px 18px;
-        border: 1px dashed #cbd5e1;
-        border-radius: 16px;
-        background: #ffffff;
+        border: 1px dashed rgba(148, 163, 184, 0.62);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.72);
         color: #475569;
     }
     .cbt-update-progress {
         display: grid;
-        gap: 10px;
-        margin-top: 18px;
-        padding: 14px 16px;
-        border: 1px solid #bfdbfe;
-        border-radius: 8px;
-        background: #eff6ff;
+        gap: 12px;
+        margin-top: 22px;
+        padding: 16px;
+        border: 1px solid rgba(125, 211, 252, 0.48);
+        border-radius: 16px;
+        background:
+            radial-gradient(circle at top right, rgba(14, 165, 233, 0.24), transparent 34%),
+            rgba(239, 246, 255, 0.92);
+        color: #0f172a;
+        box-shadow: 0 18px 38px rgba(15, 23, 42, 0.10);
     }
     .cbt-update-progress[hidden] {
         display: none;
@@ -244,25 +372,26 @@
     }
     .cbt-update-progress-title {
         color: #0f172a;
-        font-weight: 700;
+        font-weight: 900;
     }
     .cbt-update-progress-label {
         color: #1d4ed8;
         font-size: 12px;
-        font-weight: 700;
+        font-weight: 900;
         text-transform: uppercase;
     }
     .cbt-update-progress-track {
         overflow: hidden;
-        height: 10px;
+        height: 11px;
         border-radius: 999px;
         background: #dbeafe;
+        box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.10);
     }
     .cbt-update-progress-fill {
         width: 0%;
         height: 100%;
         border-radius: inherit;
-        background: #2271b1;
+        background: linear-gradient(90deg, #38bdf8, #2563eb, #1d4ed8);
         transition: width 180ms ease;
     }
     .cbt-update-progress-message {
@@ -275,10 +404,11 @@
     .cbt-update-table {
         width: 100%;
         min-width: 720px;
-        border-collapse: collapse;
+        border-collapse: separate;
+        border-spacing: 0;
         background: #ffffff;
-        border: 1px solid #dbe5ef;
-        border-radius: 8px;
+        border: 1px solid rgba(203, 213, 225, 0.72);
+        border-radius: 14px;
         overflow: hidden;
     }
     .cbt-update-table th,
@@ -290,17 +420,30 @@
     }
     .cbt-update-table th {
         color: #475569;
-        font-size: 12px;
+        background: #f8fafc;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
     }
     .cbt-update-table td {
-        color: #0f172a;
+        color: var(--cbt-update-text);
     }
     @media (max-width: 960px) {
         .cbt-update-hero,
         .cbt-update-grid {
             grid-template-columns: 1fr;
             display: grid;
+        }
+        .cbt-update-shell {
+            padding: 10px;
+        }
+        .cbt-update-hero,
+        .cbt-update-card {
+            border-radius: 18px;
+        }
+        .cbt-update-hero {
+            padding: 22px;
         }
     }
 </style>
@@ -322,6 +465,20 @@
                 <?php if ($release_message !== '' && $status !== 'check_failed'): ?>
                     <div class="cbt-update-empty" style="margin-top:16px;"><?php echo esc_html($release_message); ?></div>
                 <?php endif; ?>
+                <?php
+                $install_disabled_reason = '';
+                if (!$can_install) {
+                    if (!$has_update && $remote_version !== '') {
+                        $install_disabled_reason = 'Tidak ada versi update yang lebih baru untuk diinstall.';
+                    } elseif (!$has_update) {
+                        $install_disabled_reason = 'Jalankan cek update terlebih dahulu sebelum install.';
+                    } elseif ((string) ($preflight['status'] ?? 'blocked') === 'blocked') {
+                        $install_disabled_reason = 'Preflight update masih blocked. Perbaiki checklist sebelum install.';
+                    } else {
+                        $install_disabled_reason = 'Install update belum tersedia untuk state release saat ini.';
+                    }
+                }
+                ?>
                 <div class="cbt-update-actions">
                     <form method="post" action="<?php echo esc_url($check_action_url); ?>" style="margin:0;" data-cbt-update-form="check">
                         <input type="hidden" name="action" value="cbt_check_update_now" />
@@ -331,7 +488,17 @@
                     <form method="post" action="<?php echo esc_url($install_action_url); ?>" style="margin:0;" data-cbt-update-form="install">
                         <input type="hidden" name="action" value="cbt_install_update_now" />
                         <?php wp_nonce_field('cbt_install_update_now'); ?>
-                        <button type="submit" class="button cbt-admin-btn--warning" <?php echo $can_install ? '' : 'disabled'; ?>>Install Update</button>
+                        <button
+                            type="submit"
+                            class="button cbt-admin-btn--warning"
+                            <?php disabled(!$can_install); ?>
+                            <?php if (!$can_install): ?>
+                                aria-disabled="true"
+                                data-cbt-update-locked-disabled="1"
+                                data-cbt-update-disabled-message="<?php echo esc_attr($install_disabled_reason); ?>"
+                                title="<?php echo esc_attr($install_disabled_reason); ?>"
+                            <?php endif; ?>
+                        >Install Update</button>
                     </form>
                     <a class="button cbt-admin-btn--secondary" href="<?php echo esc_url($release_url); ?>" target="_blank" rel="noopener noreferrer">Lihat Release GitHub</a>
                 </div>
@@ -561,6 +728,10 @@
 
     function setButtonsDisabled(disabled) {
         Array.from(document.querySelectorAll('[data-cbt-update-form] button, [data-cbt-update-rollback]')).forEach(function (button) {
+            if (button.getAttribute('data-cbt-update-locked-disabled') === '1') {
+                button.disabled = true;
+                return;
+            }
             button.disabled = !!disabled;
         });
     }
@@ -664,11 +835,21 @@
 
     Array.from(document.querySelectorAll('[data-cbt-update-form]')).forEach(function (form) {
         form.addEventListener('submit', function (event) {
+            var isInstallForm = form.getAttribute('data-cbt-update-form') === 'install';
+            var submitButton = form.querySelector('button[type="submit"]');
+            if (isInstallForm && submitButton && submitButton.getAttribute('data-cbt-update-locked-disabled') === '1') {
+                event.preventDefault();
+                panel.hidden = false;
+                if (message) {
+                    message.textContent = submitButton.getAttribute('data-cbt-update-disabled-message') || 'Tidak ada versi update yang lebih baru untuk diinstall.';
+                }
+                return;
+            }
             if (typeof window.ajaxurl === 'undefined') {
                 return;
             }
             event.preventDefault();
-            start(form.getAttribute('data-cbt-update-form') === 'install' ? 'start_install' : 'start_check');
+            start(isInstallForm ? 'start_install' : 'start_check');
         });
     });
 
