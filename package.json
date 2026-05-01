@@ -1,5 +1,6 @@
 {
   "name": "cbt-exam-system",
+  "version": "3.2.0",
   "private": true,
   "engines": {
     "node": ">=20.0.0"
@@ -8,6 +9,7 @@
     "dev": "vite",
     "build": "vite build && node bin/check-frontend-budgets.mjs",
     "build:watch": "vite build --watch",
+    "release:plugin": "node bin/cbt-release.mjs",
     "test:js": "vitest run",
     "test:js:watch": "vitest",
     "test:js:coverage": "vitest run --coverage",

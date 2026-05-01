@@ -265,6 +265,43 @@ Contoh:
 CBT_E2E_BASE_URL=http://localhost/wordpress npm run test:e2e
 ```
 
+### Release Plugin ke GitHub
+
+Release resmi dibuat dari tag Git. Command release dijalankan di terminal laptop developer dari root folder plugin CBT, yaitu folder yang berisi `package.json`, `cbt-exam-system.php`, dan `.git`.
+
+Contoh untuk environment server/WSL yang memakai path plugin standar:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+npm run release:plugin -- 3.2.0
+```
+
+Kalau repo ada di laptop lokal, masuk dulu ke folder clone repo tersebut, lalu jalankan command yang sama:
+
+```bash
+cd /path/ke/cbt-exam-system
+npm run release:plugin -- 3.2.0
+```
+
+Script ini akan memastikan branch `main`, worktree bersih, remote `origin` tersedia, versi baru lebih tinggi dari versi saat ini, dan tag `v3.2.0` belum ada. Jika valid, script memperbarui `cbt-exam-system.php`, membuat commit `chore(release): v3.2.0`, membuat annotated tag, lalu push branch dan tag ke GitHub.
+
+Catatan release dapat diberikan langsung atau dari file:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+npm run release:plugin -- 3.2.0 --notes "Ringkasan perubahan"
+npm run release:plugin -- 3.2.0 --notes-file CHANGELOG.md
+```
+
+Untuk cek aman tanpa mengubah file, commit, tag, atau push:
+
+```bash
+cd /var/www/wordpress/wp-content/plugins/cbt-exam-system
+npm run release:plugin -- 3.2.0 --dry-run
+```
+
+Setelah tag ter-push, GitHub Actions otomatis menjalankan build production, memasang Composer dependencies mode production, membuat `cbt-exam-system.zip`, membuat `cbt-update-manifest.json`, lalu mengunggah keduanya ke GitHub Release. Jika script menolak karena worktree dirty, commit atau stash perubahan fitur terlebih dahulu agar release tidak membawa perubahan tidak sengaja.
+
 ## Peta Menu Admin
 
 | Menu | Fungsi utama |

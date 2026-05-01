@@ -19,6 +19,18 @@ final class ActivatorDeactivatorLifecycleTest extends TestCase
         self::assertStringContainsString('SET a.deadline_at = TIMESTAMPADD(', $activator);
     }
 
+    public function test_foreign_key_migration_skips_existing_constraints(): void
+    {
+        $activator = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/class-cbt-activator.php');
+
+        self::assertStringContainsString('get_existing_foreign_key_constraint_names', $activator);
+        self::assertStringContainsString('information_schema.TABLE_CONSTRAINTS', $activator);
+        self::assertStringContainsString('CONSTRAINT_TYPE = %s', $activator);
+        self::assertStringContainsString('fk_cbt_exams_subject', $activator);
+        self::assertStringContainsString('isset($existing_constraints[$name])', $activator);
+        self::assertStringContainsString('continue;', $activator);
+    }
+
     #[RunInSeparateProcess]
     public function test_deactivator_stops_student_cohort_index_worker_without_deleting_data(): void
     {

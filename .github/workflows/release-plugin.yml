@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -22,6 +24,24 @@ jobs:
           php-version: '8.3'
           tools: composer
           coverage: none
+
+      - name: Validate release tag matches plugin version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must use vMAJOR.MINOR.PATCH format. Got: ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PLUGIN_VERSION=$(php -r '$header=file_get_contents("cbt-exam-system.php"); if (!preg_match("/^\\s*\\*?\\s*Version:\\s*(.+)$/mi", $header, $m)) { fwrite(STDERR, "Unable to read plugin version\n"); exit(1); } echo trim($m[1]);')
+
+          if [ "${TAG_VERSION}" != "${PLUGIN_VERSION}" ]; then
+            echo "Tag version ${TAG_VERSION} does not match plugin header version ${PLUGIN_VERSION}" >&2
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -52,15 +72,16 @@ jobs:
           rm -rf "${DIST_ROOT}"
           mkdir -p "${PLUGIN_ROOT}"
 
-          VERSION=$(php -r '$header=file_get_contents("cbt-exam-system.php"); if (!preg_match("/^\\s*Version:\\s*(.+)$/mi", $header, $m)) { fwrite(STDERR, "Unable to read plugin version\n"); exit(1); } echo trim($m[1]);')
-          REQUIRES_WP=$(php -r '$header=file_get_contents("cbt-exam-system.php"); if (!preg_match("/^\\s*Requires at least:\\s*(.+)$/mi", $header, $m)) { fwrite(STDERR, "Unable to read Requires at least\n"); exit(1); } echo trim($m[1]);')
-          REQUIRES_PHP=$(php -r '$header=file_get_contents("cbt-exam-system.php"); if (!preg_match("/^\\s*Requires PHP:\\s*(.+)$/mi", $header, $m)) { fwrite(STDERR, "Unable to read Requires PHP\n"); exit(1); } echo trim($m[1]);')
+          VERSION=$(php -r '$header=file_get_contents("cbt-exam-system.php"); if (!preg_match("/^\\s*\\*?\\s*Version:\\s*(.+)$/mi", $header, $m)) { fwrite(STDERR, "Unable to read plugin version\n"); exit(1); } echo trim($m[1]);')
+          REQUIRES_WP=$(php -r '$header=file_get_contents("cbt-exam-system.php"); if (!preg_match("/^\\s*\\*?\\s*Requires at least:\\s*(.+)$/mi", $header, $m)) { fwrite(STDERR, "Unable to read Requires at least\n"); exit(1); } echo trim($m[1]);')
+          REQUIRES_PHP=$(php -r '$header=file_get_contents("cbt-exam-system.php"); if (!preg_match("/^\\s*\\*?\\s*Requires PHP:\\s*(.+)$/mi", $header, $m)) { fwrite(STDERR, "Unable to read Requires PHP\n"); exit(1); } echo trim($m[1]);')
           DOWNLOAD_URL="https://github.com/coblax/CBT-EXAM-SYSTEM/releases/download/${TAG_NAME}/${PACKAGE_NAME}"
           PUBLISHED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           CHANGELOG=$(git tag -l --format='%(contents)' "${TAG_NAME}")
           if [ -z "${CHANGELOG}" ]; then
             CHANGELOG="Release ${VERSION}"
           fi
+          RELEASE_NOTES_PATH="${DIST_ROOT}/release-notes.md"
 
           rsync -a \
             --exclude='.git' \
@@ -109,12 +130,16 @@ jobs:
           file_put_contents(getenv("MANIFEST_PATH"), json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
           '
 
+          printf "%s\n" "${CHANGELOG}" > "${RELEASE_NOTES_PATH}"
+
           echo "PACKAGE_PATH=${DIST_ROOT}/${PACKAGE_NAME}" >> "${GITHUB_ENV}"
           echo "MANIFEST_PATH=${DIST_ROOT}/${MANIFEST_NAME}" >> "${GITHUB_ENV}"
+          echo "RELEASE_NOTES_PATH=${RELEASE_NOTES_PATH}" >> "${GITHUB_ENV}"
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
+          body_path: ${{ env.RELEASE_NOTES_PATH }}
           files: |
             ${{ env.PACKAGE_PATH }}
             ${{ env.MANIFEST_PATH }}

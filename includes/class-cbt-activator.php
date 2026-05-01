@@ -278,26 +278,59 @@ class CBT_Activator
         $prefix = $wpdb->prefix;
 
         $constraints = [
-            "ALTER TABLE {$prefix}cbt_exams ADD CONSTRAINT fk_cbt_exams_subject FOREIGN KEY (subject_id) REFERENCES {$prefix}cbt_subjects(id) ON DELETE SET NULL",
-            "ALTER TABLE {$prefix}cbt_questions ADD CONSTRAINT fk_cbt_questions_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_options ADD CONSTRAINT fk_cbt_options_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_question_multiple_choice ADD CONSTRAINT fk_cbt_qmc_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_question_multiple_answer ADD CONSTRAINT fk_cbt_qma_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_question_true_false ADD CONSTRAINT fk_cbt_qtf_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_question_short_answer ADD CONSTRAINT fk_cbt_qsa_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_question_essay ADD CONSTRAINT fk_cbt_qes_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_attempts ADD CONSTRAINT fk_cbt_attempts_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_attempt FOREIGN KEY (attempt_id) REFERENCES {$prefix}cbt_attempts(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_exam_incidents ADD CONSTRAINT fk_cbt_incidents_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_student_subject_choices ADD CONSTRAINT fk_cbt_student_subject_choices_user FOREIGN KEY (user_id) REFERENCES {$wpdb->users}(ID) ON DELETE CASCADE",
-            "ALTER TABLE {$prefix}cbt_student_subject_choices ADD CONSTRAINT fk_cbt_student_subject_choices_subject FOREIGN KEY (subject_id) REFERENCES {$prefix}cbt_subjects(id) ON DELETE CASCADE"
+            ['name' => 'fk_cbt_exams_subject', 'sql' => "ALTER TABLE {$prefix}cbt_exams ADD CONSTRAINT fk_cbt_exams_subject FOREIGN KEY (subject_id) REFERENCES {$prefix}cbt_subjects(id) ON DELETE SET NULL"],
+            ['name' => 'fk_cbt_questions_exam', 'sql' => "ALTER TABLE {$prefix}cbt_questions ADD CONSTRAINT fk_cbt_questions_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_options_question', 'sql' => "ALTER TABLE {$prefix}cbt_options ADD CONSTRAINT fk_cbt_options_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qmc_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_multiple_choice ADD CONSTRAINT fk_cbt_qmc_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qma_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_multiple_answer ADD CONSTRAINT fk_cbt_qma_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qtf_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_true_false ADD CONSTRAINT fk_cbt_qtf_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qsa_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_short_answer ADD CONSTRAINT fk_cbt_qsa_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qes_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_essay ADD CONSTRAINT fk_cbt_qes_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_attempts_exam', 'sql' => "ALTER TABLE {$prefix}cbt_attempts ADD CONSTRAINT fk_cbt_attempts_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_answers_attempt', 'sql' => "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_attempt FOREIGN KEY (attempt_id) REFERENCES {$prefix}cbt_attempts(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_answers_question', 'sql' => "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_incidents_exam', 'sql' => "ALTER TABLE {$prefix}cbt_exam_incidents ADD CONSTRAINT fk_cbt_incidents_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_student_subject_choices_user', 'sql' => "ALTER TABLE {$prefix}cbt_student_subject_choices ADD CONSTRAINT fk_cbt_student_subject_choices_user FOREIGN KEY (user_id) REFERENCES {$wpdb->users}(ID) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_student_subject_choices_subject', 'sql' => "ALTER TABLE {$prefix}cbt_student_subject_choices ADD CONSTRAINT fk_cbt_student_subject_choices_subject FOREIGN KEY (subject_id) REFERENCES {$prefix}cbt_subjects(id) ON DELETE CASCADE"],
         ];
 
-        foreach ($constraints as $sql) {
-            // Ignore if constraint exists or storage engine does not support it.
-            $wpdb->query($sql);
+        $existing_constraints = self::get_existing_foreign_key_constraint_names($wpdb);
+        foreach ($constraints as $constraint) {
+            $name = strtolower((string) ($constraint['name'] ?? ''));
+            if ($name !== '' && isset($existing_constraints[$name])) {
+                continue;
+            }
+
+            $wpdb->query((string) ($constraint['sql'] ?? ''));
+            if ($name !== '') {
+                $existing_constraints[$name] = true;
+            }
         }
+    }
+
+    /**
+     * @return array<string,bool>
+     */
+    private static function get_existing_foreign_key_constraint_names(wpdb $wpdb): array
+    {
+        $rows = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT CONSTRAINT_NAME
+                   FROM information_schema.TABLE_CONSTRAINTS
+                  WHERE CONSTRAINT_SCHEMA = DATABASE()
+                    AND CONSTRAINT_TYPE = %s",
+                'FOREIGN KEY'
+            )
+        );
+        $names = [];
+        foreach ((array) $rows as $row) {
+            $name = strtolower((string) $row);
+            if ($name !== '') {
+                $names[$name] = true;
+            }
+        }
+
+        return $names;
     }
 
     private static function ensure_security_log_ingest_schema(wpdb $wpdb): void
