@@ -7,6 +7,19 @@ if (!defined('ABSPATH')) {
 $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_array($attempt_security_timeline_map)
     ? $attempt_security_timeline_map
     : [];
+$active_results_tab = isset($active_results_tab) && in_array((string) $active_results_tab, ['monitoring', 'essay'], true)
+    ? (string) $active_results_tab
+    : 'monitoring';
+$selected_essay_exam_id = isset($selected_essay_exam_id) ? (int) $selected_essay_exam_id : 0;
+$selected_essay_question_id = isset($selected_essay_question_id) ? (int) $selected_essay_question_id : 0;
+$selected_essay_kelas = isset($selected_essay_kelas) ? (string) $selected_essay_kelas : '';
+$selected_essay_keyword = isset($selected_essay_keyword) ? (string) $selected_essay_keyword : '';
+$essay_question_rows = isset($essay_question_rows) && is_array($essay_question_rows) ? $essay_question_rows : [];
+$selected_essay_question = isset($selected_essay_question) && is_array($selected_essay_question) ? $selected_essay_question : [];
+$essay_rows = isset($essay_rows) && is_array($essay_rows) ? $essay_rows : [];
+$essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary)
+    ? $essay_bulk_summary
+    : ['total_rows' => count($essay_rows), 'graded_count' => 0, 'pending_count' => 0, 'empty_count' => 0, 'savable_count' => 0];
 ?>
         <div class="wrap cbt-results-page">
             <div class="cbt-results-shell">
@@ -2365,31 +2378,154 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                     box-shadow: none;
                     padding: 0 2px;
                 }
-                .cbt-results-essay-form {
+                .cbt-results-essay-filter-form {
+                    display: grid;
+                    gap: 14px;
+                }
+                .cbt-results-essay-toolbar {
+                    display: grid;
+                    grid-template-columns: minmax(220px, 1.1fr) minmax(260px, 1.3fr) minmax(160px, 0.7fr) minmax(180px, 0.8fr) auto;
+                    gap: 12px;
+                    align-items: end;
+                }
+                .cbt-results-essay-question-card {
+                    display: grid;
+                    gap: 10px;
+                    padding: 14px;
+                    border: 1px solid #d7e6f7;
+                    border-radius: 8px;
+                    background: #f8fbff;
+                }
+                .cbt-results-essay-question-card h3,
+                .cbt-results-essay-answer-card h3 {
+                    margin: 0;
+                    font-size: 15px;
+                    line-height: 1.35;
+                    color: #0f172a;
+                }
+                .cbt-results-essay-summary {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                }
+                .cbt-results-essay-chip {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 28px;
+                    padding: 0 10px;
+                    border: 1px solid #cfe0f2;
+                    border-radius: 6px;
+                    background: #eef6ff;
+                    color: #164b7d;
+                    font-size: 12px;
+                    font-weight: 800;
+                }
+                .cbt-results-essay-chip.is-success {
+                    border-color: #bbf7d0;
+                    background: #dcfce7;
+                    color: #166534;
+                }
+                .cbt-results-essay-chip.is-warning {
+                    border-color: #fde68a;
+                    background: #fef3c7;
+                    color: #92400e;
+                }
+                .cbt-results-essay-chip.is-muted {
+                    border-color: #d8e2ef;
+                    background: #f3f7fb;
+                    color: #64748b;
+                }
+                .cbt-results-essay-answer-list {
+                    display: grid;
+                    gap: 12px;
+                }
+                .cbt-results-essay-answer-card {
+                    display: grid;
+                    grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.5fr) minmax(150px, 0.45fr);
+                    gap: 14px;
+                    align-items: start;
+                    padding: 16px;
+                    border: 1px solid #d9e7f6;
+                    border-radius: 8px;
+                    background: #ffffff;
+                    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+                }
+                .cbt-results-essay-answer-card.is-changed {
+                    border-color: #7db8ee;
+                    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+                }
+                .cbt-results-essay-answer-card.is-invalid {
+                    border-color: #fca5a5;
+                    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+                }
+                .cbt-results-essay-student-meta,
+                .cbt-results-essay-score-box {
+                    display: grid;
+                    gap: 8px;
+                }
+                .cbt-results-essay-answer-text {
+                    min-height: 96px;
+                    max-height: 260px;
+                    overflow: auto;
+                    padding: 12px;
+                    border: 1px solid #e1ebf6;
+                    border-radius: 8px;
+                    background: #f8fbff;
+                    color: #162033;
+                    line-height: 1.65;
+                    white-space: pre-wrap;
+                }
+                .cbt-results-essay-score-input-row {
                     display: flex;
                     align-items: center;
                     gap: 8px;
-                    flex-wrap: wrap;
                 }
-                .cbt-results-essay-form input[type="number"] {
-                    width: 96px;
-                    min-height: 40px;
+                .cbt-results-essay-score-input-row input[type="number"] {
+                    width: 110px;
+                    min-height: 42px;
                     padding: 0 12px;
                     border: 1px solid #c9d5e3;
-                    border-radius: 12px;
+                    border-radius: 8px;
                     background: #f8fbff;
                     box-shadow: none;
+                    font-size: 15px;
+                    font-weight: 800;
                 }
-                .cbt-results-essay-form input[type="number"]:focus {
+                .cbt-results-essay-score-input-row input[type="number"]:focus {
                     border-color: #2271b1;
                     background: #fff;
                     box-shadow: 0 0 0 4px rgba(34, 113, 177, 0.12);
                     outline: none;
                 }
-                .cbt-results-essay-form .button {
-                    min-height: 40px;
-                    padding: 0 14px;
-                    border-radius: 12px;
+                .cbt-results-essay-input-error {
+                    display: none;
+                    color: #b91c1c;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+                .cbt-results-essay-answer-card.is-invalid .cbt-results-essay-input-error {
+                    display: block;
+                }
+                .cbt-results-essay-sticky-bar {
+                    position: sticky;
+                    bottom: 12px;
+                    z-index: 5;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    margin-top: 16px;
+                    padding: 12px;
+                    border: 1px solid #cfe0f2;
+                    border-radius: 8px;
+                    background: rgba(248, 251, 255, 0.96);
+                    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+                    backdrop-filter: blur(12px);
+                }
+                .cbt-results-essay-sticky-bar .button {
+                    min-height: 42px;
+                    border-radius: 8px;
+                    padding: 0 16px;
                 }
                 @media (max-width: 782px) {
                     .cbt-results-page {
@@ -2420,6 +2556,14 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                     }
                     .cbt-results-filter-actions {
                         flex-wrap: wrap;
+                    }
+                    .cbt-results-essay-toolbar,
+                    .cbt-results-essay-answer-card {
+                        grid-template-columns: 1fr;
+                    }
+                    .cbt-results-essay-sticky-bar {
+                        align-items: stretch;
+                        flex-direction: column;
                     }
                     .cbt-results-tab-nav {
                         width: 100%;
@@ -2488,9 +2632,9 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                 <button
                     type="button"
                     id="cbt-results-tab-btn-monitoring"
-                    class="cbt-results-tab-button is-active"
+                    class="cbt-results-tab-button<?php echo $active_results_tab === 'monitoring' ? ' is-active' : ''; ?>"
                     role="tab"
-                    aria-selected="true"
+                    aria-selected="<?php echo $active_results_tab === 'monitoring' ? 'true' : 'false'; ?>"
                     aria-controls="cbt-results-tab-panel-monitoring"
                     data-cbt-results-tab="monitoring"
                 >
@@ -2499,19 +2643,19 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                 <button
                     type="button"
                     id="cbt-results-tab-btn-essay"
-                    class="cbt-results-tab-button"
+                    class="cbt-results-tab-button<?php echo $active_results_tab === 'essay' ? ' is-active' : ''; ?>"
                     role="tab"
-                    aria-selected="false"
+                    aria-selected="<?php echo $active_results_tab === 'essay' ? 'true' : 'false'; ?>"
                     aria-controls="cbt-results-tab-panel-essay"
                     data-cbt-results-tab="essay"
                 >
-                    Essay Manual Scoring
+                    Koreksi Essay
                 </button>
             </nav>
 
             <div
                 id="cbt-results-tab-panel-monitoring"
-                class="cbt-results-tab-panel is-active"
+                class="cbt-results-tab-panel<?php echo $active_results_tab === 'monitoring' ? ' is-active' : ''; ?>"
                 role="tabpanel"
                 aria-labelledby="cbt-results-tab-btn-monitoring"
                 data-cbt-results-tab-panel="monitoring"
@@ -4272,7 +4416,7 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
 
 	            <div
                 id="cbt-results-tab-panel-essay"
-                class="cbt-results-tab-panel"
+                class="cbt-results-tab-panel<?php echo $active_results_tab === 'essay' ? ' is-active' : ''; ?>"
                 role="tabpanel"
                 aria-labelledby="cbt-results-tab-btn-essay"
                 data-cbt-results-tab-panel="essay"
@@ -4280,62 +4424,327 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
             <section id="cbt-results-essay-card" class="cbt-results-card">
                 <div class="cbt-results-card-header">
                     <div>
-                        <h2>Essay Manual Scoring</h2>
-                        <p>Nilai jawaban essay langsung dari panel ini tanpa keluar dari halaman monitoring utama.</p>
+                        <h2>Koreksi Essay Massal</h2>
+                        <p>Pilih satu soal essay, lalu nilai semua jawaban siswa untuk soal tersebut dari satu layar kerja.</p>
                     </div>
                 </div>
-                <div class="cbt-results-table-shell">
-            <table class="widefat striped">
-                <thead>
-                <tr>
-                    <th>Answer ID</th>
-                    <th>Student</th>
-                    <th>Attempt</th>
-                    <th>Exam</th>
-                    <th>Question</th>
-                    <th>Answer</th>
-                    <th>Max Points</th>
-                    <th>Score</th>
-                    <th>Action</th>
-                </tr>
-                </thead>
-                <tbody>
-                <?php if (!$essay_rows): ?>
+
+                <form
+                    method="get"
+                    action="<?php echo esc_url(admin_url('admin.php')); ?>"
+                    class="cbt-results-essay-filter-form"
+                    data-cbt-essay-filter
+                    data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
+                    data-nonce="<?php echo esc_attr(wp_create_nonce('cbt_results_essay_questions')); ?>"
+                >
+                    <input type="hidden" name="page" value="cbt-results" />
+                    <input type="hidden" name="cbt_results_tab" value="essay" />
+                    <div class="cbt-results-essay-toolbar">
+                        <div class="cbt-results-field">
+                            <label for="cbt-essay-exam-id">Exam</label>
+                            <select id="cbt-essay-exam-id" name="cbt_essay_exam_id" data-cbt-essay-exam>
+                                <option value="0">Pilih exam</option>
+                                <?php foreach ($exam_filter_rows as $exam_filter_row): ?>
+                                    <option value="<?php echo (int) ($exam_filter_row['id'] ?? 0); ?>" <?php selected($selected_essay_exam_id, (int) ($exam_filter_row['id'] ?? 0)); ?>>
+                                        <?php echo esc_html((string) ($exam_filter_row['title'] ?? '-')); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="cbt-results-field">
+                            <label for="cbt-essay-question-id">Soal Essay</label>
+                            <select id="cbt-essay-question-id" name="cbt_essay_question_id" data-cbt-essay-question data-selected-question="<?php echo (int) $selected_essay_question_id; ?>" <?php disabled($selected_essay_exam_id <= 0); ?>>
+                                <option value="0"><?php echo $selected_essay_exam_id > 0 ? 'Pilih soal essay' : 'Pilih exam dulu'; ?></option>
+                                <?php foreach ($essay_question_rows as $essay_question_row): ?>
+                                    <option value="<?php echo (int) ($essay_question_row['id'] ?? 0); ?>" <?php selected($selected_essay_question_id, (int) ($essay_question_row['id'] ?? 0)); ?>>
+                                        <?php echo esc_html((string) ($essay_question_row['label'] ?? '-')); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="cbt-results-field">
+                            <label for="cbt-essay-kelas">Kelas</label>
+                            <select id="cbt-essay-kelas" name="cbt_essay_kelas">
+                                <option value="">Semua kelas</option>
+                                <?php foreach ($kelas_filter_rows as $kelas_filter_row): ?>
+                                    <option value="<?php echo esc_attr($kelas_filter_row); ?>" <?php selected($selected_essay_kelas, $kelas_filter_row); ?>>
+                                        <?php echo esc_html($kelas_filter_row); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="cbt-results-field">
+                            <label for="cbt-essay-q">Cari Siswa</label>
+                            <input id="cbt-essay-q" type="search" name="cbt_essay_q" value="<?php echo esc_attr($selected_essay_keyword); ?>" placeholder="Nama, username, NISN" />
+                        </div>
+                        <div class="cbt-results-filter-actions">
+                            <button type="submit" class="button button-primary">Tampilkan</button>
+                        </div>
+                    </div>
+                </form>
+
+                <?php if ($selected_essay_exam_id <= 0): ?>
                     <?php
-                    echo CBT_Admin_UI_Helper::render_table_empty_state(9, [
-                        'title' => 'Belum ada jawaban essay',
-                        'message' => 'Jawaban essay akan muncul setelah siswa mengirim jawaban pada exam yang memiliki soal essay.',
+                    echo CBT_Admin_UI_Helper::render_empty_state([
+                        'title' => 'Pilih exam terlebih dahulu',
+                        'message' => 'Pilih exam untuk memuat daftar soal essay yang bisa dikoreksi massal.',
+                        'class' => 'cbt-results-empty',
+                    ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                    ?>
+                <?php elseif (empty($essay_question_rows)): ?>
+                    <?php
+                    echo CBT_Admin_UI_Helper::render_empty_state([
+                        'title' => 'Exam ini belum memiliki soal essay',
+                        'message' => 'Pilih exam lain atau tambahkan soal bertipe essay terlebih dahulu.',
+                        'class' => 'cbt-results-empty',
+                    ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                    ?>
+                <?php elseif ($selected_essay_question_id <= 0): ?>
+                    <?php
+                    echo CBT_Admin_UI_Helper::render_empty_state([
+                        'title' => 'Pilih soal essay',
+                        'message' => 'Setelah soal dipilih, semua jawaban completed attempt untuk soal tersebut akan muncul di workspace koreksi.',
+                        'class' => 'cbt-results-empty',
+                    ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                    ?>
+                <?php elseif (empty($essay_rows)): ?>
+                    <?php
+                    echo CBT_Admin_UI_Helper::render_empty_state([
+                        'title' => 'Belum ada completed attempt',
+                        'message' => 'Jawaban essay massal hanya menampilkan attempt yang sudah selesai. Cek kembali filter kelas atau pencarian siswa.',
+                        'class' => 'cbt-results-empty',
                     ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
                     ?>
                 <?php else: ?>
-                    <?php foreach ($essay_rows as $row): ?>
-                        <tr>
-                            <td><?php echo (int) $row['answer_id']; ?></td>
-                            <td><?php echo esc_html($row['display_name']); ?></td>
-                            <td><?php echo (int) $row['attempt_id']; ?></td>
-                            <td><?php echo esc_html((string) ($row['exam_title'] ?? '-')); ?></td>
-                            <td><?php echo esc_html(wp_trim_words((string) $row['question_text'], 10)); ?></td>
-                            <td><?php echo esc_html(wp_trim_words((string) $row['answer_text'], 12)); ?></td>
-                            <td><?php echo esc_html((string) $row['points']); ?></td>
-                            <td>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-results-essay-form">
-                                    <?php wp_nonce_field('cbt_grade_essay'); ?>
-                                    <input type="hidden" name="action" value="cbt_grade_essay" />
-                                    <input type="hidden" name="answer_id" value="<?php echo (int) $row['answer_id']; ?>" />
-                                    <input type="number" step="0.01" min="0" max="<?php echo esc_attr((string) $row['points']); ?>" name="score_awarded" value="<?php echo esc_attr((string) $row['score_awarded']); ?>" />
-                            </td>
-                            <td>
-                                    <button class="button button-primary" type="submit">Save</button>
-                                </form>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
+                    <div class="cbt-results-essay-question-card">
+                        <div>
+                            <h3><?php echo esc_html((string) ($selected_essay_question['label'] ?? 'Soal Essay')); ?></h3>
+                            <p class="cbt-results-muted" style="margin:6px 0 0;"><?php echo esc_html((string) ($selected_essay_question['question_preview'] ?? '-')); ?></p>
+                        </div>
+                        <?php if (!empty($selected_essay_question['rubric_preview'])): ?>
+                            <p class="cbt-results-muted" style="margin:0;"><strong>Rubrik:</strong> <?php echo esc_html((string) $selected_essay_question['rubric_preview']); ?></p>
+                        <?php endif; ?>
+                        <div class="cbt-results-essay-summary">
+                            <span class="cbt-results-essay-chip"><?php echo esc_html(number_format_i18n((int) ($essay_bulk_summary['total_rows'] ?? 0))); ?> siswa</span>
+                            <span class="cbt-results-essay-chip is-success"><?php echo esc_html(number_format_i18n((int) ($essay_bulk_summary['graded_count'] ?? 0))); ?> sudah dinilai</span>
+                            <span class="cbt-results-essay-chip is-warning"><?php echo esc_html(number_format_i18n((int) ($essay_bulk_summary['pending_count'] ?? 0))); ?> belum dinilai</span>
+                            <span class="cbt-results-essay-chip is-muted"><?php echo esc_html(number_format_i18n((int) ($essay_bulk_summary['empty_count'] ?? 0))); ?> kosong</span>
+                        </div>
+                    </div>
+
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="cbt-results-bulk-essay-form" data-cbt-bulk-essay-form>
+                        <?php wp_nonce_field('cbt_bulk_grade_essay'); ?>
+                        <input type="hidden" name="action" value="cbt_bulk_grade_essay" />
+                        <input type="hidden" name="cbt_essay_exam_id" value="<?php echo (int) $selected_essay_exam_id; ?>" />
+                        <input type="hidden" name="cbt_essay_question_id" value="<?php echo (int) $selected_essay_question_id; ?>" />
+                        <input type="hidden" name="cbt_essay_kelas" value="<?php echo esc_attr($selected_essay_kelas); ?>" />
+                        <input type="hidden" name="cbt_essay_q" value="<?php echo esc_attr($selected_essay_keyword); ?>" />
+
+                        <div class="cbt-results-essay-answer-list">
+                            <?php foreach ($essay_rows as $row): ?>
+                                <?php
+                                $answer_id = (int) ($row['answer_id'] ?? 0);
+                                $status_key = sanitize_html_class((string) ($row['status_key'] ?? 'pending'), 'pending');
+                                $score_value = number_format((float) ($row['score_awarded'] ?? 0.0), 2, '.', '');
+                                $max_points = number_format((float) ($row['max_points'] ?? 0.0), 2, '.', '');
+                                ?>
+                                <article class="cbt-results-essay-answer-card" data-cbt-essay-row>
+                                    <div class="cbt-results-essay-student-meta">
+                                        <h3><?php echo esc_html((string) ($row['student_name'] ?? '-')); ?></h3>
+                                        <span class="cbt-results-muted"><?php echo esc_html((string) ($row['student_username'] ?? '-')); ?><?php echo !empty($row['student_nisn']) ? ' - ' . esc_html((string) $row['student_nisn']) : ''; ?></span>
+                                        <div class="cbt-results-essay-summary">
+                                            <span class="cbt-results-essay-chip is-muted"><?php echo esc_html((string) (($row['student_kelas'] ?? '') !== '' ? $row['student_kelas'] : 'Tanpa kelas')); ?></span>
+                                            <span class="cbt-results-essay-chip is-muted">Attempt #<?php echo (int) ($row['attempt_id'] ?? 0); ?></span>
+                                            <span class="cbt-results-essay-chip <?php echo $status_key === 'graded' ? 'is-success' : ($status_key === 'empty' ? 'is-muted' : 'is-warning'); ?>"><?php echo esc_html((string) ($row['status_label'] ?? 'Belum dinilai')); ?></span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h3>Jawaban Siswa</h3>
+                                        <div class="cbt-results-essay-answer-text"><?php echo $row['answer_text'] !== '' ? nl2br(esc_html((string) $row['answer_text'])) : '<span class="cbt-results-muted">Siswa tidak mengisi jawaban untuk soal ini.</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></div>
+                                    </div>
+                                    <div class="cbt-results-essay-score-box">
+                                        <label for="cbt-essay-score-<?php echo $answer_id > 0 ? $answer_id : (int) ($row['attempt_id'] ?? 0); ?>">Nilai</label>
+                                        <div class="cbt-results-essay-score-input-row">
+                                            <input
+                                                id="cbt-essay-score-<?php echo $answer_id > 0 ? $answer_id : (int) ($row['attempt_id'] ?? 0); ?>"
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                max="<?php echo esc_attr($max_points); ?>"
+                                                value="<?php echo esc_attr($score_value); ?>"
+                                                data-initial-score="<?php echo esc_attr($score_value); ?>"
+                                                data-max-score="<?php echo esc_attr($max_points); ?>"
+                                                data-cbt-essay-score-input
+                                                <?php echo $answer_id > 0 ? 'name="essay_scores[' . (int) $answer_id . ']"' : 'disabled'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                            />
+                                            <strong>/ <?php echo esc_html((string) ($row['max_points_display'] ?? '0.00')); ?></strong>
+                                        </div>
+                                        <span class="cbt-results-essay-input-error">Nilai harus berada antara 0 dan <?php echo esc_html((string) ($row['max_points_display'] ?? '0.00')); ?>.</span>
+                                        <?php if ($answer_id <= 0): ?>
+                                            <span class="cbt-results-muted">Tidak ada record jawaban untuk disimpan.</span>
+                                        <?php endif; ?>
+                                    </div>
+                                </article>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <div class="cbt-results-essay-sticky-bar" data-cbt-essay-sticky-bar>
+                            <div class="cbt-results-essay-summary">
+                                <span class="cbt-results-essay-chip"><span data-cbt-essay-total><?php echo esc_html(number_format_i18n((int) ($essay_bulk_summary['savable_count'] ?? 0))); ?></span> dapat disimpan</span>
+                                <span class="cbt-results-essay-chip is-warning"><span data-cbt-essay-changed>0</span> berubah</span>
+                                <span class="cbt-results-essay-chip is-muted"><span data-cbt-essay-invalid>0</span> invalid</span>
+                            </div>
+                            <button type="submit" class="button button-primary">Simpan Semua Nilai Essay</button>
+                        </div>
+                    </form>
                 <?php endif; ?>
-                </tbody>
-            </table>
-                </div>
             </section>
             </div>
+            <script>
+                (function () {
+                    function toArray(list) {
+                        return Array.prototype.slice.call(list || []);
+                    }
+
+                    function parseScore(value) {
+                        var normalized = String(value || '').replace(',', '.').trim();
+                        if (normalized === '') {
+                            return NaN;
+                        }
+                        return Number(normalized);
+                    }
+
+                    function formatQuestionOption(item) {
+                        var option = document.createElement('option');
+                        option.value = String(item && item.id ? item.id : 0);
+                        option.textContent = String(item && item.label ? item.label : 'Soal essay');
+                        return option;
+                    }
+
+                    function setupEssayQuestionFilter() {
+                        var form = document.querySelector('[data-cbt-essay-filter]');
+                        if (!form || !window.fetch || !window.FormData) {
+                            return;
+                        }
+
+                        var examSelect = form.querySelector('[data-cbt-essay-exam]');
+                        var questionSelect = form.querySelector('[data-cbt-essay-question]');
+                        if (!examSelect || !questionSelect) {
+                            return;
+                        }
+
+                        examSelect.addEventListener('change', function () {
+                            var examId = parseInt(examSelect.value || '0', 10);
+                            questionSelect.innerHTML = '';
+                            questionSelect.appendChild(new Option(examId > 0 ? 'Memuat soal essay...' : 'Pilih exam dulu', '0'));
+                            questionSelect.disabled = examId <= 0;
+                            questionSelect.setAttribute('data-selected-question', '0');
+
+                            if (examId <= 0) {
+                                return;
+                            }
+
+                            var request = new FormData();
+                            request.append('action', 'cbt_results_essay_questions');
+                            request.append('nonce', form.getAttribute('data-nonce') || '');
+                            request.append('exam_id', String(examId));
+
+                            fetch(form.getAttribute('data-ajax-url') || window.ajaxurl || '', {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                body: request
+                            })
+                                .then(function (response) {
+                                    return response.json();
+                                })
+                                .then(function (payload) {
+                                    var items = payload && payload.success && payload.data && Array.isArray(payload.data.items)
+                                        ? payload.data.items
+                                        : [];
+                                    questionSelect.innerHTML = '';
+                                    questionSelect.appendChild(new Option(items.length ? 'Pilih soal essay' : 'Exam ini belum punya soal essay', '0'));
+                                    items.forEach(function (item) {
+                                        questionSelect.appendChild(formatQuestionOption(item));
+                                    });
+                                    questionSelect.disabled = false;
+                                })
+                                .catch(function () {
+                                    questionSelect.innerHTML = '';
+                                    questionSelect.appendChild(new Option('Gagal memuat soal essay', '0'));
+                                    questionSelect.disabled = false;
+                                });
+                        });
+                    }
+
+                    function setupBulkEssayForm() {
+                        var form = document.querySelector('[data-cbt-bulk-essay-form]');
+                        if (!form) {
+                            return;
+                        }
+
+                        var inputs = toArray(form.querySelectorAll('[data-cbt-essay-score-input]'));
+                        var changedOutput = form.querySelector('[data-cbt-essay-changed]');
+                        var invalidOutput = form.querySelector('[data-cbt-essay-invalid]');
+
+                        function syncState() {
+                            var changedCount = 0;
+                            var invalidCount = 0;
+
+                            inputs.forEach(function (input) {
+                                var row = input.closest('[data-cbt-essay-row]');
+                                var currentScore = parseScore(input.value);
+                                var initialScore = parseScore(input.getAttribute('data-initial-score'));
+                                var maxScore = parseScore(input.getAttribute('data-max-score'));
+                                var isInvalid = !Number.isFinite(currentScore) || currentScore < 0 || currentScore > maxScore;
+                                var isChanged = !isInvalid && Math.abs(currentScore - initialScore) >= 0.005;
+
+                                if (row) {
+                                    row.classList.toggle('is-invalid', isInvalid);
+                                    row.classList.toggle('is-changed', isChanged);
+                                }
+                                if (isInvalid) {
+                                    invalidCount += 1;
+                                }
+                                if (isChanged) {
+                                    changedCount += 1;
+                                }
+                            });
+
+                            if (changedOutput) {
+                                changedOutput.textContent = String(changedCount);
+                            }
+                            if (invalidOutput) {
+                                invalidOutput.textContent = String(invalidCount);
+                            }
+
+                            return invalidCount;
+                        }
+
+                        inputs.forEach(function (input) {
+                            input.addEventListener('input', syncState);
+                            input.addEventListener('change', syncState);
+                        });
+
+                        form.addEventListener('submit', function (event) {
+                            var invalidCount = syncState();
+                            if (invalidCount <= 0) {
+                                return;
+                            }
+
+                            event.preventDefault();
+                            var firstInvalid = form.querySelector('.cbt-results-essay-answer-card.is-invalid [data-cbt-essay-score-input]');
+                            if (firstInvalid) {
+                                firstInvalid.focus();
+                            }
+                        });
+
+                        syncState();
+                    }
+
+                    setupEssayQuestionFilter();
+                    setupBulkEssayForm();
+                })();
+            </script>
             <script>
                 (function () {
                     var storageKey = 'cbt_results_active_tab';
@@ -4399,7 +4808,20 @@ $attempt_security_timeline_map = isset($attempt_security_timeline_map) && is_arr
                         setActiveTab(tabButton.getAttribute('data-cbt-results-tab') || 'monitoring');
                     });
 
-                    setActiveTab(readStoredTab());
+                    function readInitialTab() {
+                        var storedTab = readStoredTab();
+                        try {
+                            if (!window.URLSearchParams) {
+                                return storedTab;
+                            }
+                            var query = new URLSearchParams(window.location.search || '');
+                            return normalizeTabName(query.get('cbt_results_tab') || storedTab);
+                        } catch (error) {
+                            return storedTab;
+                        }
+                    }
+
+                    setActiveTab(readInitialTab());
                 })();
             </script>
             </div>

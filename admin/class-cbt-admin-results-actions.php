@@ -11,6 +11,16 @@ final class CBT_Admin_Results_Actions
         CBT_Admin_Results_Service::handle_grade_essay();
     }
 
+    public static function handle_bulk_grade_essay(): void
+    {
+        CBT_Admin_Results_Service::handle_bulk_grade_essay();
+    }
+
+    public static function handle_essay_questions_ajax(): void
+    {
+        CBT_Admin_Results_Service::handle_essay_questions_ajax();
+    }
+
     public static function handle_reset_user_login(): void
     {
         CBT_Admin_Results_Service::handle_reset_user_login();

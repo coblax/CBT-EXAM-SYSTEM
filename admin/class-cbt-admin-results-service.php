@@ -81,6 +81,14 @@ final class CBT_Admin_Results_Service
         $selected_kelas = isset($query['cbt_result_kelas']) ? sanitize_text_field(wp_unslash((string) $query['cbt_result_kelas'])) : '';
         $student_keyword = isset($query['cbt_student_q']) ? sanitize_text_field(wp_unslash((string) $query['cbt_student_q'])) : '';
         $current_page = isset($query['cbt_results_paged']) ? max(1, absint(wp_unslash((string) $query['cbt_results_paged']))) : 1;
+        $active_results_tab = isset($query['cbt_results_tab']) ? sanitize_key((string) wp_unslash((string) $query['cbt_results_tab'])) : '';
+        if (!in_array($active_results_tab, ['monitoring', 'essay'], true)) {
+            $active_results_tab = '';
+        }
+        $selected_essay_exam_id = isset($query['cbt_essay_exam_id']) ? absint(wp_unslash((string) $query['cbt_essay_exam_id'])) : 0;
+        $selected_essay_question_id = isset($query['cbt_essay_question_id']) ? absint(wp_unslash((string) $query['cbt_essay_question_id'])) : 0;
+        $selected_essay_kelas = isset($query['cbt_essay_kelas']) ? sanitize_text_field(wp_unslash((string) $query['cbt_essay_kelas'])) : '';
+        $selected_essay_keyword = isset($query['cbt_essay_q']) ? sanitize_text_field(wp_unslash((string) $query['cbt_essay_q'])) : '';
         $results_bulk_job_token = isset($query[self::BULK_JOB_QUERY_ARG]) ? sanitize_key((string) wp_unslash((string) $query[self::BULK_JOB_QUERY_ARG])) : '';
         $results_per_page = 20;
         $allowed_statuses = ['in_progress', 'completed'];
@@ -106,6 +114,15 @@ final class CBT_Admin_Results_Service
 
         $selected_kelas = trim($selected_kelas);
         $student_keyword = trim($student_keyword);
+        $selected_essay_kelas = trim($selected_essay_kelas);
+        $selected_essay_keyword = trim($selected_essay_keyword);
+        $accessible_exam_ids = array_values(array_filter(array_map(static function ($row): int {
+            return is_array($row) ? (int) ($row['id'] ?? 0) : 0;
+        }, (array) $exam_filter_rows)));
+        if ($selected_essay_exam_id > 0 && !in_array($selected_essay_exam_id, $accessible_exam_ids, true)) {
+            $selected_essay_exam_id = 0;
+            $selected_essay_question_id = 0;
+        }
         $attempt_base_where_parts = ['1=1'];
         $attempt_base_where_params = [];
         if (!$is_admin_scope) {
@@ -268,37 +285,38 @@ final class CBT_Admin_Results_Service
         $submit_health = (array) ($submit_flow_monitoring['submit_health'] ?? []);
         $submit_watchlist = (array) ($submit_flow_monitoring['submit_watchlist'] ?? []);
 
-        $essay_where_parts = ["q.question_type = 'essay'"];
-        $essay_where_params = [];
-        if (!$is_admin_scope) {
-            $essay_where_parts[] = 'ex.created_by = %d';
-            $essay_where_params[] = $current_user_id;
+        $essay_question_rows = self::get_exam_essay_questions(
+            $selected_essay_exam_id,
+            $is_admin_scope,
+            $current_user_id
+        );
+        $selected_essay_question = [];
+        if ($selected_essay_question_id > 0) {
+            foreach ($essay_question_rows as $essay_question_row) {
+                if ((int) ($essay_question_row['id'] ?? 0) === $selected_essay_question_id) {
+                    $selected_essay_question = $essay_question_row;
+                    break;
+                }
+            }
+            if (empty($selected_essay_question)) {
+                $selected_essay_question_id = 0;
+            }
         }
-        if ($selected_exam_id > 0) {
-            $essay_where_parts[] = 'att.exam_id = %d';
-            $essay_where_params[] = $selected_exam_id;
+
+        $essay_rows = [];
+        if ($selected_essay_exam_id > 0 && $selected_essay_question_id > 0) {
+            $essay_rows = self::get_student_answers_for_essay_question(
+                $selected_essay_exam_id,
+                $selected_essay_question_id,
+                [
+                    'kelas' => $selected_essay_kelas,
+                    'student_keyword' => $selected_essay_keyword,
+                    'is_admin_scope' => $is_admin_scope,
+                    'current_user_id' => $current_user_id,
+                ]
+            );
         }
-        $essay_where = ' WHERE ' . implode(' AND ', $essay_where_parts);
-        $essay_sql = "SELECT ans.id AS answer_id,
-                             ans.attempt_id,
-                             ans.answer_text,
-                             ans.score_awarded,
-                             q.points,
-                             q.question_text,
-                             u.display_name,
-                             ex.title AS exam_title
-                      FROM {$answer_table} ans
-                      INNER JOIN {$question_table} q ON q.id = ans.question_id
-                      INNER JOIN {$attempt_table} att ON att.id = ans.attempt_id
-                      INNER JOIN {$exam_table} ex ON ex.id = att.exam_id
-                      INNER JOIN {$wpdb->users} u ON u.ID = att.student_id
-                      {$essay_where}
-                      ORDER BY ans.id DESC
-                      LIMIT 300";
-        if (!empty($essay_where_params)) {
-            $essay_sql = $wpdb->prepare($essay_sql, $essay_where_params);
-        }
-        $essay_rows = $wpdb->get_results($essay_sql, ARRAY_A);
+        $essay_bulk_summary = self::build_bulk_essay_summary($essay_rows);
 
         $selected_exam_label = 'Semua exam';
         foreach ($exam_filter_rows as $exam_filter_row) {
@@ -366,7 +384,7 @@ final class CBT_Admin_Results_Service
             ],
             [
                 'label' => 'Essay Review',
-                'value' => count((array) $essay_rows),
+                'value' => (int) ($essay_bulk_summary['total_rows'] ?? 0),
             ],
         ];
         $results_bulk_job = self::get_results_bulk_job_ui_state_from_query($query);
@@ -378,6 +396,258 @@ final class CBT_Admin_Results_Service
         unset($query, $wpdb);
 
         return get_defined_vars();
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    public static function get_exam_essay_questions(
+        int $exam_id,
+        ?bool $is_admin_scope = null,
+        ?int $current_user_id = null
+    ): array {
+        $exam_id = max(0, $exam_id);
+        if ($exam_id <= 0) {
+            return [];
+        }
+
+        global $wpdb;
+
+        $is_admin_scope = $is_admin_scope ?? self::is_admin_scope();
+        $current_user_id = $current_user_id ?? get_current_user_id();
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $essay_table = $wpdb->prefix . 'cbt_question_essay';
+
+        $where_parts = [
+            'q.exam_id = %d',
+            "q.question_type = 'essay'",
+            'COALESCE(q.is_active, 1) = 1',
+        ];
+        $params = [$exam_id];
+        if (!$is_admin_scope) {
+            $where_parts[] = 'ex.created_by = %d';
+            $params[] = max(0, (int) $current_user_id);
+        }
+
+        $sql = "SELECT q.id,
+                       q.exam_id,
+                       q.question_text,
+                       q.points,
+                       COALESCE(qes.rubric_text, q.correct_text, '') AS rubric_text
+                FROM {$question_table} q
+                INNER JOIN {$exam_table} ex ON ex.id = q.exam_id
+                LEFT JOIN {$essay_table} qes ON qes.question_id = q.id
+                WHERE " . implode(' AND ', $where_parts) . '
+                ORDER BY q.id ASC';
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $number = 1;
+        $result = [];
+        foreach ($rows as $row) {
+            $question_text = trim(wp_strip_all_tags((string) ($row['question_text'] ?? '')));
+            $result[] = [
+                'id' => (int) ($row['id'] ?? 0),
+                'exam_id' => (int) ($row['exam_id'] ?? 0),
+                'number' => $number,
+                'label' => sprintf(
+                    'Essay #%d - %s',
+                    $number,
+                    $question_text !== '' ? self::trim_words_plain($question_text, 10) : 'Tanpa teks'
+                ),
+                'question_text' => (string) ($row['question_text'] ?? ''),
+                'question_preview' => $question_text !== '' ? self::trim_words_plain($question_text, 22) : '-',
+                'points' => (float) ($row['points'] ?? 0.0),
+                'points_display' => number_format_i18n((float) ($row['points'] ?? 0.0), 2),
+                'rubric_text' => (string) ($row['rubric_text'] ?? ''),
+                'rubric_preview' => trim(wp_strip_all_tags((string) ($row['rubric_text'] ?? ''))) !== ''
+                    ? self::trim_words_plain(wp_strip_all_tags((string) ($row['rubric_text'] ?? '')), 28)
+                    : '',
+            ];
+            $number++;
+        }
+
+        return $result;
+    }
+
+    private static function trim_words_plain(string $text, int $limit): string
+    {
+        $text = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags($text)) ?? '');
+        $limit = max(1, $limit);
+        if ($text === '') {
+            return '';
+        }
+        if (function_exists('wp_trim_words')) {
+            return (string) wp_trim_words($text, $limit, '...');
+        }
+
+        $words = preg_split('/\s+/', $text) ?: [];
+        if (count($words) <= $limit) {
+            return $text;
+        }
+
+        return implode(' ', array_slice($words, 0, $limit)) . '...';
+    }
+
+    /**
+     * @param array<string,mixed> $filters
+     * @return array<int,array<string,mixed>>
+     */
+    public static function get_student_answers_for_essay_question(int $exam_id, int $question_id, array $filters = []): array
+    {
+        $exam_id = max(0, $exam_id);
+        $question_id = max(0, $question_id);
+        if ($exam_id <= 0 || $question_id <= 0) {
+            return [];
+        }
+
+        global $wpdb;
+
+        $is_admin_scope = array_key_exists('is_admin_scope', $filters) ? (bool) $filters['is_admin_scope'] : self::is_admin_scope();
+        $current_user_id = array_key_exists('current_user_id', $filters) ? max(0, (int) $filters['current_user_id']) : get_current_user_id();
+        $selected_kelas = trim(sanitize_text_field((string) ($filters['kelas'] ?? '')));
+        $student_keyword = trim(sanitize_text_field((string) ($filters['student_keyword'] ?? '')));
+
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $essay_table = $wpdb->prefix . 'cbt_question_essay';
+
+        $where_parts = [
+            'a.exam_id = %d',
+            "a.status = 'completed'",
+            'q.id = %d',
+            "q.question_type = 'essay'",
+        ];
+        $params = [$exam_id, $question_id];
+        if (!$is_admin_scope) {
+            $where_parts[] = 'ex.created_by = %d';
+            $params[] = $current_user_id;
+        }
+        if ($selected_kelas !== '') {
+            $where_parts[] = 'kelas_meta.meta_value = %s';
+            $params[] = $selected_kelas;
+        }
+        if ($student_keyword !== '') {
+            $student_like = '%' . $wpdb->esc_like($student_keyword) . '%';
+            $where_parts[] = '(u.display_name LIKE %s OR u.user_login LIKE %s OR nisn_meta.meta_value LIKE %s)';
+            $params[] = $student_like;
+            $params[] = $student_like;
+            $params[] = $student_like;
+        }
+
+        $sql = "SELECT ans.id AS answer_id,
+                       ans.answer_text,
+                       ans.score_awarded,
+                       ans.updated_at AS answer_updated_at,
+                       a.id AS attempt_id,
+                       a.student_id,
+                       a.exam_id,
+                       a.score AS attempt_score,
+                       a.finished_at,
+                       q.id AS question_id,
+                       q.points,
+                       q.question_text,
+                       COALESCE(qes.rubric_text, q.correct_text, '') AS rubric_text,
+                       ex.title AS exam_title,
+                       u.display_name AS student_name,
+                       u.user_login AS student_username,
+                       COALESCE(kelas_meta.meta_value, '') AS student_kelas,
+                       COALESCE(nisn_meta.meta_value, '') AS student_nisn
+                FROM {$attempt_table} a
+                INNER JOIN {$exam_table} ex ON ex.id = a.exam_id
+                INNER JOIN {$question_table} q ON q.exam_id = a.exam_id
+                LEFT JOIN {$essay_table} qes ON qes.question_id = q.id
+                INNER JOIN {$wpdb->users} u ON u.ID = a.student_id
+                LEFT JOIN {$answer_table} ans ON ans.attempt_id = a.id AND ans.question_id = q.id
+                LEFT JOIN (
+                    SELECT user_id, MAX(meta_value) AS meta_value
+                    FROM {$wpdb->usermeta}
+                    WHERE meta_key = 'kode_kelas'
+                    GROUP BY user_id
+                ) kelas_meta ON kelas_meta.user_id = u.ID
+                LEFT JOIN (
+                    SELECT user_id, MAX(meta_value) AS meta_value
+                    FROM {$wpdb->usermeta}
+                    WHERE meta_key = 'nisn'
+                    GROUP BY user_id
+                ) nisn_meta ON nisn_meta.user_id = u.ID
+                WHERE " . implode(' AND ', $where_parts) . '
+                ORDER BY COALESCE(kelas_meta.meta_value, \'\') ASC, u.display_name ASC, a.id ASC';
+
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($rows as $row) {
+            $answer_text = trim((string) ($row['answer_text'] ?? ''));
+            $answer_id = (int) ($row['answer_id'] ?? 0);
+            $score_awarded = $answer_id > 0 ? (float) ($row['score_awarded'] ?? 0.0) : 0.0;
+            $max_points = max(0.0, (float) ($row['points'] ?? 0.0));
+            $is_empty = $answer_text === '';
+            $is_graded = $answer_id > 0 && !$is_empty && $score_awarded > 0.0;
+            $result[] = [
+                'answer_id' => $answer_id,
+                'attempt_id' => (int) ($row['attempt_id'] ?? 0),
+                'student_id' => (int) ($row['student_id'] ?? 0),
+                'student_name' => trim((string) ($row['student_name'] ?? '')) !== '' ? (string) ($row['student_name'] ?? '') : (string) ($row['student_username'] ?? '-'),
+                'student_username' => (string) ($row['student_username'] ?? ''),
+                'student_nisn' => (string) ($row['student_nisn'] ?? ''),
+                'student_kelas' => (string) ($row['student_kelas'] ?? ''),
+                'exam_id' => (int) ($row['exam_id'] ?? 0),
+                'exam_title' => (string) ($row['exam_title'] ?? ''),
+                'question_id' => (int) ($row['question_id'] ?? 0),
+                'question_text' => (string) ($row['question_text'] ?? ''),
+                'rubric_text' => (string) ($row['rubric_text'] ?? ''),
+                'answer_text' => $answer_text,
+                'score_awarded' => $score_awarded,
+                'score_awarded_display' => number_format_i18n($score_awarded, 2),
+                'max_points' => $max_points,
+                'max_points_display' => number_format_i18n($max_points, 2),
+                'status_key' => $is_empty ? 'empty' : ($is_graded ? 'graded' : 'pending'),
+                'status_label' => $is_empty ? 'Kosong' : ($is_graded ? 'Sudah dinilai' : 'Belum dinilai'),
+                'finished_at' => (string) ($row['finished_at'] ?? ''),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<string,int>
+     */
+    private static function build_bulk_essay_summary(array $rows): array
+    {
+        $summary = [
+            'total_rows' => count($rows),
+            'graded_count' => 0,
+            'pending_count' => 0,
+            'empty_count' => 0,
+            'savable_count' => 0,
+        ];
+
+        foreach ($rows as $row) {
+            $status_key = (string) ($row['status_key'] ?? '');
+            if ($status_key === 'graded') {
+                $summary['graded_count']++;
+            } elseif ($status_key === 'empty') {
+                $summary['empty_count']++;
+            } else {
+                $summary['pending_count']++;
+            }
+            if ((int) ($row['answer_id'] ?? 0) > 0) {
+                $summary['savable_count']++;
+            }
+        }
+
+        return $summary;
     }
 
     /**
@@ -2454,6 +2724,282 @@ final class CBT_Admin_Results_Service
 
         wp_safe_redirect(admin_url('admin.php?page=cbt-results&cbt_msg=' . rawurlencode('Essay score updated')));
         exit;
+    }
+
+    public static function handle_bulk_grade_essay(): void
+    {
+        if (!current_user_can('cbt_grade_essay')) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_bulk_grade_essay');
+
+        global $wpdb;
+
+        $context = self::get_bulk_essay_return_context_from_request();
+        $redirect = static function (?string $message = null, ?string $error = null) use ($context): void {
+            self::dispatch_redirect(self::build_bulk_essay_results_url($context, $message, $error));
+        };
+
+        $exam_id = (int) ($context['essay_exam_id'] ?? 0);
+        $question_id = (int) ($context['essay_question_id'] ?? 0);
+        if ($exam_id <= 0 || $question_id <= 0) {
+            $redirect(null, 'Pilih exam dan soal essay terlebih dahulu.');
+        }
+
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        $question_rows = self::get_exam_essay_questions($exam_id, $is_admin_scope, $current_user_id);
+        $question_is_accessible = false;
+        foreach ($question_rows as $question_row) {
+            if ((int) ($question_row['id'] ?? 0) === $question_id) {
+                $question_is_accessible = true;
+                break;
+            }
+        }
+        if (!$question_is_accessible) {
+            $redirect(null, 'Soal essay tidak ditemukan atau berada di luar scope akun Anda.');
+        }
+
+        $raw_scores = isset($_POST['essay_scores']) && is_array($_POST['essay_scores'])
+            ? (array) wp_unslash($_POST['essay_scores'])
+            : [];
+        $submitted_scores = [];
+        foreach ($raw_scores as $raw_answer_id => $raw_score) {
+            $answer_id = absint((string) $raw_answer_id);
+            if ($answer_id <= 0 || !is_scalar($raw_score)) {
+                continue;
+            }
+            $submitted_scores[$answer_id] = trim((string) $raw_score);
+        }
+
+        if (empty($submitted_scores)) {
+            $redirect(null, 'Tidak ada nilai essay yang dikirim.');
+        }
+
+        $answer_rows = self::get_bulk_essay_answer_rows(
+            array_keys($submitted_scores),
+            $exam_id,
+            $question_id,
+            $is_admin_scope,
+            $current_user_id
+        );
+
+        $invalid_count = 0;
+        $updates = [];
+        $submitted_answer_ids = array_keys($submitted_scores);
+        foreach ($submitted_answer_ids as $answer_id) {
+            if (!isset($answer_rows[$answer_id])) {
+                $invalid_count++;
+                continue;
+            }
+
+            $score_raw = str_replace(',', '.', (string) $submitted_scores[$answer_id]);
+            if ($score_raw === '' || !is_numeric($score_raw)) {
+                $invalid_count++;
+                continue;
+            }
+
+            $answer_row = $answer_rows[$answer_id];
+            $score = round((float) $score_raw, 2);
+            $max_points = max(0.0, (float) ($answer_row['points'] ?? 0.0));
+            if ($score < 0.0 || $score > $max_points) {
+                $invalid_count++;
+                continue;
+            }
+
+            $current_score = round((float) ($answer_row['score_awarded'] ?? 0.0), 2);
+            if (abs($score - $current_score) < 0.005) {
+                continue;
+            }
+
+            $updates[$answer_id] = [
+                'answer_id' => $answer_id,
+                'attempt_id' => (int) ($answer_row['attempt_id'] ?? 0),
+                'student_id' => (int) ($answer_row['student_id'] ?? 0),
+                'exam_id' => (int) ($answer_row['exam_id'] ?? 0),
+                'score_awarded' => $score,
+            ];
+        }
+
+        if ($invalid_count > 0) {
+            $redirect(null, sprintf('%d nilai essay invalid atau tidak bisa diakses. Tidak ada perubahan disimpan.', $invalid_count));
+        }
+        if (empty($updates)) {
+            $redirect('Tidak ada nilai essay yang berubah.');
+        }
+
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $updated_at = current_time('mysql');
+        $attempt_ids = array_values(array_unique(array_filter(array_map(static function (array $update): int {
+            return (int) ($update['attempt_id'] ?? 0);
+        }, $updates))));
+        $student_ids = array_values(array_unique(array_filter(array_map(static function (array $update): int {
+            return (int) ($update['student_id'] ?? 0);
+        }, $updates))));
+
+        $wpdb->query('START TRANSACTION');
+        try {
+            foreach ($updates as $update) {
+                $result = $wpdb->update(
+                    $answer_table,
+                    [
+                        'is_correct' => 0,
+                        'score_awarded' => (float) $update['score_awarded'],
+                        'updated_at' => $updated_at,
+                    ],
+                    ['id' => (int) $update['answer_id']],
+                    ['%d', '%f', '%s'],
+                    ['%d']
+                );
+                if ($result === false) {
+                    throw new RuntimeException('Gagal menyimpan nilai essay.');
+                }
+            }
+
+            foreach ($attempt_ids as $attempt_id) {
+                $total_score = (float) $wpdb->get_var(
+                    $wpdb->prepare("SELECT COALESCE(SUM(score_awarded),0) FROM {$answer_table} WHERE attempt_id = %d", $attempt_id)
+                );
+                $result = $wpdb->update(
+                    $attempt_table,
+                    [
+                        'score' => $total_score,
+                        'updated_at' => $updated_at,
+                    ],
+                    ['id' => $attempt_id],
+                    ['%f', '%s'],
+                    ['%d']
+                );
+                if ($result === false) {
+                    throw new RuntimeException('Gagal menghitung ulang skor attempt.');
+                }
+            }
+
+            $wpdb->query('COMMIT');
+        } catch (Throwable $throwable) {
+            $wpdb->query('ROLLBACK');
+            $redirect(null, 'Gagal menyimpan nilai essay massal. Silakan coba ulang.');
+        }
+
+        CBT_Cache::invalidate_attempts($attempt_ids);
+        CBT_Cache::invalidate_users($student_ids);
+        CBT_Cache::invalidate_analytics();
+        CBT_Cache::invalidate_analytics_exam($exam_id);
+
+        $redirect(sprintf('%d nilai essay berhasil disimpan.', count($updates)));
+    }
+
+    public static function handle_essay_questions_ajax(): void
+    {
+        if (!current_user_can('cbt_grade_essay')) {
+            self::dispatch_results_bulk_job_ajax(false, ['message' => 'Unauthorized'], 403);
+        }
+
+        check_admin_referer('cbt_results_essay_questions', 'nonce');
+
+        $exam_id = isset($_POST['exam_id']) ? absint(wp_unslash((string) $_POST['exam_id'])) : 0;
+        $rows = self::get_exam_essay_questions($exam_id, self::is_admin_scope(), get_current_user_id());
+
+        self::dispatch_results_bulk_job_ajax(true, [
+            'items' => $rows,
+            'total' => count($rows),
+        ]);
+    }
+
+    /**
+     * @return array{essay_exam_id:int,essay_question_id:int,essay_kelas:string,essay_keyword:string}
+     */
+    private static function get_bulk_essay_return_context_from_request(): array
+    {
+        return [
+            'essay_exam_id' => isset($_POST['cbt_essay_exam_id']) ? absint(wp_unslash((string) $_POST['cbt_essay_exam_id'])) : 0,
+            'essay_question_id' => isset($_POST['cbt_essay_question_id']) ? absint(wp_unslash((string) $_POST['cbt_essay_question_id'])) : 0,
+            'essay_kelas' => isset($_POST['cbt_essay_kelas']) ? sanitize_text_field(wp_unslash((string) $_POST['cbt_essay_kelas'])) : '',
+            'essay_keyword' => isset($_POST['cbt_essay_q']) ? sanitize_text_field(wp_unslash((string) $_POST['cbt_essay_q'])) : '',
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function build_bulk_essay_results_url(array $context, ?string $message = null, ?string $error = null): string
+    {
+        $extra_args = [
+            'cbt_results_tab' => 'essay',
+            'cbt_essay_exam_id' => max(0, (int) ($context['essay_exam_id'] ?? 0)),
+            'cbt_essay_question_id' => max(0, (int) ($context['essay_question_id'] ?? 0)),
+            'cbt_essay_kelas' => sanitize_text_field((string) ($context['essay_kelas'] ?? '')),
+            'cbt_essay_q' => sanitize_text_field((string) ($context['essay_keyword'] ?? '')),
+        ];
+
+        return self::build_results_page_url([], $message, $error, $extra_args);
+    }
+
+    /**
+     * @param int[] $answer_ids
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_bulk_essay_answer_rows(
+        array $answer_ids,
+        int $exam_id,
+        int $question_id,
+        bool $is_admin_scope,
+        int $current_user_id
+    ): array {
+        $answer_ids = array_values(array_unique(array_filter(array_map('absint', $answer_ids))));
+        $exam_id = max(0, $exam_id);
+        $question_id = max(0, $question_id);
+        if (empty($answer_ids) || $exam_id <= 0 || $question_id <= 0) {
+            return [];
+        }
+
+        global $wpdb;
+
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $placeholders = implode(',', array_fill(0, count($answer_ids), '%d'));
+        $where_parts = [
+            "ans.id IN ({$placeholders})",
+            'ans.question_id = %d',
+            'att.exam_id = %d',
+            "att.status = 'completed'",
+            "q.question_type = 'essay'",
+        ];
+        $params = array_merge($answer_ids, [$question_id, $exam_id]);
+        if (!$is_admin_scope) {
+            $where_parts[] = 'ex.created_by = %d';
+            $params[] = max(0, $current_user_id);
+        }
+
+        $sql = "SELECT ans.id AS answer_id,
+                       ans.attempt_id,
+                       ans.score_awarded,
+                       att.student_id,
+                       att.exam_id,
+                       q.points
+                FROM {$answer_table} ans
+                INNER JOIN {$attempt_table} att ON att.id = ans.attempt_id
+                INNER JOIN {$question_table} q ON q.id = ans.question_id
+                INNER JOIN {$exam_table} ex ON ex.id = att.exam_id
+                WHERE " . implode(' AND ', $where_parts);
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $by_id = [];
+        foreach ($rows as $row) {
+            $answer_id = (int) ($row['answer_id'] ?? 0);
+            if ($answer_id > 0) {
+                $by_id[$answer_id] = $row;
+            }
+        }
+
+        return $by_id;
     }
 
     /**
