@@ -216,7 +216,7 @@ export function createQuestionStateManager(deps) {
             };
         }
 
-        if (questionType === 'multiple_answer') {
+        if (questionType === 'multiple_answer' || questionType === 'ordering') {
             if (!Array.isArray(answer)) {
                 return null;
             }
@@ -237,7 +237,7 @@ export function createQuestionStateManager(deps) {
             }
 
             return {
-                kind: 'option_multi',
+                kind: questionType === 'ordering' ? 'option_ordered' : 'option_multi',
                 option_keys: selectedOptionKeys,
                 question_updated_at: questionUpdatedAt
             };
@@ -320,7 +320,7 @@ export function createQuestionStateManager(deps) {
             var selectedOption = findQuestionOptionByKey(question, preservedAnswer.option_key);
             nextValue = Number(selectedOption && selectedOption.id) || 0;
             hasValue = nextValue > 0;
-        } else if (kind === 'option_multi') {
+        } else if (kind === 'option_multi' || kind === 'option_ordered') {
             var selectedOptionIds = [];
             var seenOptionIds = {};
             var optionKeys = Array.isArray(preservedAnswer.option_keys) ? preservedAnswer.option_keys : [];
@@ -434,7 +434,22 @@ export function createQuestionStateManager(deps) {
             return selected > 0 ? selected : null;
         }
 
-        if (question.question_type === 'multiple_answer') {
+        if (question.question_type === 'multiple_answer' || question.question_type === 'ordering') {
+            if (question.question_type === 'ordering' && !Array.isArray(answer)) {
+                var defaultOrderingIds = [];
+                var seenDefaultOrderingIds = {};
+                var defaultOrderingOptions = Array.isArray(question.options) ? question.options : [];
+                defaultOrderingOptions.forEach(function (option) {
+                    var optionId = Number(option && option.id) || 0;
+                    if (optionId <= 0 || seenDefaultOrderingIds[optionId]) {
+                        return;
+                    }
+                    seenDefaultOrderingIds[optionId] = true;
+                    defaultOrderingIds.push(optionId);
+                });
+                return defaultOrderingIds.length > 1 ? defaultOrderingIds : null;
+            }
+
             var normalizedMultiAnswer = normalizeAnswerValueForQuestion(question, answer, {
                 preserveText: true
             });

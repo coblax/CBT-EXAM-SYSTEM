@@ -195,6 +195,48 @@ describe('createAnswerInputManager', function () {
         expect(fixture.state.answeredQuestionLookup[72]).toBe(true);
     });
 
+    it('moves ordering items and schedules autosave with the ordered option ids', function () {
+        var fixture = createFixture({
+            renderExamPartial: function () {
+                return true;
+            },
+            state: {
+                answers: {},
+                answeredQuestionLookup: {},
+                error: '',
+                notice: '',
+                success: ''
+            }
+        });
+        fixture.root.innerHTML = [
+            '<div data-cbt-ordering-list="1" data-qid="71">',
+            '<div class="cbt-ordering-item" data-option-id="31"><button type="button" data-action="answer-ordering-move" data-qid="71" data-option-id="31" data-direction="down">Down</button></div>',
+            '<div class="cbt-ordering-item" data-option-id="32"></div>',
+            '<div class="cbt-ordering-item" data-option-id="33"></div>',
+            '</div>'
+        ].join('');
+
+        var button = fixture.root.querySelector('[data-action="answer-ordering-move"]');
+
+        expect(fixture.manager.handleClickTarget(button)).toBe(true);
+        expect(fixture.state.answers[71]).toEqual([32, 31, 33]);
+        expect(fixture.state.answeredQuestionLookup[71]).toBe(true);
+        expect(fixture.calls.scheduleQuestionCachePersist).toEqual([200]);
+        expect(fixture.calls.scheduleAutoSave).toEqual([
+            {
+                delayMs: 250,
+                questionId: 71
+            }
+        ]);
+        expect(fixture.calls.renderExamPartial[0]).toMatchObject({
+            meta: {
+                inputType: 'ordering',
+                questionId: 71
+            },
+            reason: 'answer-change'
+        });
+    });
+
     it('uses partial question patch for single choice changes without remounting the full question region', function () {
         var fixture = createFixture({
             renderExamPartial: function () {

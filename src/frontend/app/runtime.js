@@ -917,6 +917,7 @@ export function bootstrapFrontendApp() {
     var renderNavigationQuestionTypeBadge = bindExamRuntimeMethod('navigationManager', 'renderNavigationQuestionTypeBadge', '');
 
     var handleAnswerChangeTarget = bindExamRuntimeMethod('answerInputManager', 'handleChangeTarget', undefined);
+    var handleAnswerClickTarget = bindExamRuntimeMethod('answerInputManager', 'handleClickTarget', undefined);
     var handleAnswerInputTarget = bindExamRuntimeMethod('answerInputManager', 'handleInputTarget', undefined);
     var handleAnswerPointerTarget = bindExamRuntimeMethod('answerInputManager', 'handlePointerTarget', undefined);
 
@@ -1814,6 +1815,7 @@ export function bootstrapFrontendApp() {
         getCurrentUserPhoto: getCurrentUserPhoto,
         recordActionTrail: recordActionTrail,
         handleAnswerChangeTarget: handleAnswerChangeTarget,
+        handleAnswerClickTarget: handleAnswerClickTarget,
         handleAnswerInputTarget: handleAnswerInputTarget,
         handleAnswerPointerTarget: handleAnswerPointerTarget,
         handleArrowNavigationKey: handleArrowNavigationKey,

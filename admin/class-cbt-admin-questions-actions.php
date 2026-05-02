@@ -65,4 +65,9 @@ final class CBT_Admin_Questions_Actions
     {
         CBT_Admin_Questions_Import_Helper::handle_download_question_template_word_essay();
     }
+
+    public static function handle_download_question_template_word_ordering(): void
+    {
+        CBT_Admin_Questions_Import_Helper::handle_download_question_template_word_ordering();
+    }
 }

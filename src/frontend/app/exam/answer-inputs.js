@@ -170,6 +170,92 @@ export function createAnswerInputManager(deps) {
         questionHeadNode.classList.toggle('is-answered', !isDoubtful && isAnswered);
     }
 
+    function readOrderingOptionIdsFromDom(questionId) {
+        var safeQuestionId = Number(questionId) || 0;
+        if (safeQuestionId <= 0 || !(root instanceof HTMLElement)) {
+            return [];
+        }
+
+        var list = root.querySelector('[data-cbt-ordering-list="1"][data-qid="' + safeQuestionId + '"]');
+        if (!(list instanceof HTMLElement)) {
+            return [];
+        }
+
+        var ids = [];
+        var seen = {};
+        list.querySelectorAll('.cbt-ordering-item[data-option-id]').forEach(function (node) {
+            if (!(node instanceof HTMLElement)) {
+                return;
+            }
+            var optionId = Number(node.getAttribute('data-option-id')) || 0;
+            if (optionId <= 0 || seen[optionId]) {
+                return;
+            }
+            seen[optionId] = true;
+            ids.push(optionId);
+        });
+
+        return ids;
+    }
+
+    function handleClickTarget(target) {
+        var action = String(target.getAttribute('data-action') || '');
+        if (action !== 'answer-ordering-move') {
+            return false;
+        }
+
+        var questionId = Number(target.getAttribute('data-qid')) || 0;
+        var optionId = Number(target.getAttribute('data-option-id')) || 0;
+        var direction = String(target.getAttribute('data-direction') || '').trim().toLowerCase();
+        if (questionId <= 0 || optionId <= 0 || (direction !== 'up' && direction !== 'down')) {
+            return true;
+        }
+
+        var orderedIds = readOrderingOptionIdsFromDom(questionId);
+        if (!orderedIds.length && Array.isArray(state.answers[questionId])) {
+            var seenStateIds = {};
+            orderedIds = state.answers[questionId].reduce(function (accumulator, item) {
+                var currentId = Number(item) || 0;
+                if (currentId <= 0 || seenStateIds[currentId]) {
+                    return accumulator;
+                }
+                seenStateIds[currentId] = true;
+                accumulator.push(currentId);
+                return accumulator;
+            }, []);
+        }
+
+        var index = orderedIds.indexOf(optionId);
+        var nextIndex = direction === 'up' ? index - 1 : index + 1;
+        if (index < 0 || nextIndex < 0 || nextIndex >= orderedIds.length) {
+            return true;
+        }
+
+        var moved = orderedIds[index];
+        orderedIds[index] = orderedIds[nextIndex];
+        orderedIds[nextIndex] = moved;
+
+        var hadVisibleMessages = !!(state.error || state.notice || state.success);
+        state.answers[questionId] = orderedIds;
+        if (orderedIds.length > 1) {
+            state.answeredQuestionLookup[questionId] = true;
+        } else {
+            delete state.answeredQuestionLookup[questionId];
+        }
+        scheduleQuestionCachePersist(200);
+        clearMessages();
+        scheduleAutoSave(questionId, autoSaveChoiceDelayMs);
+        syncCurrentQuestionHeadUi(questionId);
+        renderAnswerChangePatch('answer-change', {
+            questionId: questionId,
+            inputType: 'ordering'
+        }, {
+            includeNotice: hadVisibleMessages
+        });
+
+        return true;
+    }
+
     function handleChangeTarget(target) {
         var targetAction = String(target.getAttribute('data-action') || '');
 
@@ -417,6 +503,7 @@ export function createAnswerInputManager(deps) {
 
     return {
         handlePointerTarget: handlePointerTarget,
+        handleClickTarget: handleClickTarget,
         handleChangeTarget: handleChangeTarget,
         handleInputTarget: handleInputTarget
     };

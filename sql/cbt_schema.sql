@@ -119,6 +119,28 @@ CREATE TABLE wp_cbt_question_essay (
   CONSTRAINT fk_cbt_qes_question FOREIGN KEY (question_id) REFERENCES wp_cbt_questions(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
 
+CREATE TABLE wp_cbt_question_ordering (
+  question_id BIGINT UNSIGNED NOT NULL,
+  scoring_mode VARCHAR(30) NOT NULL DEFAULT 'exact',
+  shuffle_items TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (question_id),
+  CONSTRAINT fk_cbt_qord_question FOREIGN KEY (question_id) REFERENCES wp_cbt_questions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
+
+CREATE TABLE wp_cbt_question_ordering_items (
+  question_id BIGINT UNSIGNED NOT NULL,
+  option_id BIGINT UNSIGNED NOT NULL,
+  correct_position SMALLINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (question_id, option_id),
+  UNIQUE KEY uniq_question_position (question_id, correct_position),
+  KEY idx_option_id (option_id),
+  CONSTRAINT fk_cbt_qordi_question FOREIGN KEY (question_id) REFERENCES wp_cbt_questions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cbt_qordi_option FOREIGN KEY (option_id) REFERENCES wp_cbt_options(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
+
 CREATE TABLE wp_cbt_attempts (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   exam_id BIGINT UNSIGNED NOT NULL,

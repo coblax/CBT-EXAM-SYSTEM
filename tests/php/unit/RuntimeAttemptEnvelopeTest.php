@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use CbtExamSystem\Tests\TestCase;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 if (!class_exists('CBT_Cache')) {
     class CBT_Cache
@@ -19,6 +21,8 @@ if (!class_exists('CBT_Cache')) {
 
 require_once dirname(__DIR__, 3) . '/includes/class-cbt-runtime.php';
 
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 final class RuntimeAttemptEnvelopeTest extends TestCase
 {
     /** @var CBT_Runtime_Test_Redis_Client */

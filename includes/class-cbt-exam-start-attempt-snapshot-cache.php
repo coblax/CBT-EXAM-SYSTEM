@@ -797,6 +797,7 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
             'option_randomization_tokens_by_question' => self::normalize_option_randomization_tokens_map(
                 $payload['option_randomization_tokens_by_question'] ?? []
             ),
+            'force_option_shuffle_question_ids' => self::normalize_question_ids($payload['force_option_shuffle_question_ids'] ?? []),
         ];
 
         return $normalized;

@@ -229,15 +229,16 @@ final class CBT_Admin_Questions_Service
                 $option_table = $wpdb->prefix . 'cbt_options';
                 $is_admin_scope = self::is_admin_scope();
                 $current_user_id = get_current_user_id();
-                $allowed_question_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'];
-                $question_type_labels = [
-                    'multiple_choice' => 'Multiple Choice',
-                    'multiple_answer' => 'Multiple Answer',
-                    'true_false' => 'True/False',
-                    'true_false_matrix' => 'True/False Matrix',
-                    'short_answer' => 'Short Answer',
-                    'essay' => 'Essay',
-                ];
+            $allowed_question_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'];
+            $question_type_labels = [
+                'multiple_choice' => 'Multiple Choice',
+                'multiple_answer' => 'Multiple Answer',
+                'true_false' => 'True/False',
+                'true_false_matrix' => 'True/False Matrix',
+                'short_answer' => 'Short Answer',
+                'essay' => 'Essay',
+                'ordering' => 'Ordering',
+            ];
                 $current_page_slug = CBT_Admin_Questions_Helper::normalize_question_page_slug(isset($query['page']) ? wp_unslash($query['page']) : 'cbt-question-bank');
                 $page_locked_type = CBT_Admin_Questions_Helper::forced_question_type_for_page($current_page_slug);
                 $active_question_type = '';
@@ -257,13 +258,14 @@ final class CBT_Admin_Questions_Service
                     'multiple_choice' => 'Mode import aktif: Multiple Choice. DOCX didukung (minimal 3 opsi, maks 5 opsi, tepat 1 jawaban benar berupa nomor opsi, opsi tidak boleh duplikat, gambar bisa ditempel, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
                     'multiple_answer' => 'Mode import aktif: Multiple Answer. DOCX didukung (minimal 3 opsi, maks 12 opsi, minimal 1 jawaban benar, opsi tidak boleh duplikat, jawaban bisa lebih dari satu: contoh 1,3,5, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
                     'true_false' => 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
-                    'true_false_matrix' => 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false secara berurutan tanpa nomor loncat, pernyataan tidak boleh duplikat, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
-                    'short_answer' => 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, wajib gunakan placeholder [INPUT_1] s.d. [INPUT_8] tanpa duplikat di teks soal, jumlah placeholder harus sama dengan jumlah jawaban valid, dan wajib pakai JAWABAN_A..H sesuai key input, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
-                    'essay' => 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
-                ];
+                'true_false_matrix' => 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false secara berurutan tanpa nomor loncat, pernyataan tidak boleh duplikat, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                'short_answer' => 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, wajib gunakan placeholder [INPUT_1] s.d. [INPUT_8] tanpa duplikat di teks soal, jumlah placeholder harus sama dengan jumlah jawaban valid, dan wajib pakai JAWABAN_A..H sesuai key input, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                'essay' => 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                'ordering' => 'Mode import aktif: Ordering. DOCX didukung (isi ITEM_1..12 sesuai urutan benar, minimal 2 item, item tidak boleh duplikat, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+            ];
                 $import_active_type = $lock_question_type ? $active_question_type : 'multiple_choice';
                 $import_help_text = $import_type_help_map[$import_active_type] ?? $import_type_help_map['multiple_choice'];
-                $import_allow_docx = in_array($import_active_type, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'], true);
+            $import_allow_docx = in_array($import_active_type, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'], true);
                 $import_file_accept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
         
                 $bank_exam_title_like = 'Bank Soal - %';
@@ -895,6 +897,7 @@ final class CBT_Admin_Questions_Service
                 $mc_option_values = array_fill(1, 5, '');
                 $ma_option_values = array_fill(1, 12, '');
                 $ma_option_correct = array_fill(1, 12, false);
+                $ordering_option_values = array_fill(1, 12, '');
                 $mc_correct_index = 1;
                 $legacy_tf_seed = (string) ($editing_detail['correct_text'] ?? ($editing_question['correct_text'] ?? ''));
                 $tf_correct = ((int) ($editing_detail['correct_value'] ?? (strtolower(trim($legacy_tf_seed)) === 'false' ? 0 : 1)) === 0)
@@ -921,6 +924,38 @@ final class CBT_Admin_Questions_Service
                             }
                             $ma_option_values[$pos] = (string) ($opt['option_text'] ?? '');
                             $ma_option_correct[$pos] = ((int) ($opt['is_correct'] ?? 0) === 1);
+                        }
+                    } elseif ($editing_type === 'ordering') {
+                        $ordered_option_ids = is_array($editing_detail['correct_option_ids'] ?? null)
+                            ? array_values(array_map('intval', (array) $editing_detail['correct_option_ids']))
+                            : [];
+                        $options_by_id = [];
+                        foreach ($editing_options as $opt) {
+                            $option_id = (int) ($opt['id'] ?? 0);
+                            if ($option_id > 0) {
+                                $options_by_id[$option_id] = (array) $opt;
+                            }
+                        }
+                        $ordered_options = [];
+                        foreach ($ordered_option_ids as $option_id) {
+                            if (isset($options_by_id[$option_id])) {
+                                $ordered_options[] = $options_by_id[$option_id];
+                                unset($options_by_id[$option_id]);
+                            }
+                        }
+                        foreach ($editing_options as $opt) {
+                            $option_id = (int) ($opt['id'] ?? 0);
+                            if ($option_id > 0 && isset($options_by_id[$option_id])) {
+                                $ordered_options[] = (array) $opt;
+                                unset($options_by_id[$option_id]);
+                            }
+                        }
+                        foreach ($ordered_options as $idx => $opt) {
+                            $pos = $idx + 1;
+                            if ($pos > 12) {
+                                break;
+                            }
+                            $ordering_option_values[$pos] = (string) ($opt['option_text'] ?? '');
                         }
                     } elseif ($editing_type === 'true_false' && empty($editing_detail)) {
                         foreach ($editing_options as $opt) {
@@ -1239,7 +1274,7 @@ final class CBT_Admin_Questions_Service
             $previous_exam_id = 0;
             $previous_question_snapshot = [];
 
-            $allowed_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'];
+            $allowed_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'];
             if (!in_array($question_type, $allowed_types, true)) {
                 $question_type = 'multiple_choice';
             }
@@ -1305,6 +1340,8 @@ final class CBT_Admin_Questions_Service
                 $normalized_detail_text = CBT_Admin_Questions_Helper::normalize_short_answer_payload($correct_text_raw);
             } elseif ($question_type === 'essay') {
                 $normalized_detail_text = trim($essay_answer);
+            } elseif ($question_type === 'ordering') {
+                $normalized_detail_text = '';
             }
     
             $resolved_bank_exam_id = 0;
@@ -1504,6 +1541,16 @@ final class CBT_Admin_Questions_Service
                         self::redirect_question_import_with_error($choice_validation_error, $return_page);
                     }
                 }
+
+                if ($question_type === 'ordering') {
+                    $ordering_validation_error = CBT_Admin_Questions_Helper::validate_ordering_options($options_to_insert);
+                    if ($ordering_validation_error !== '') {
+                        self::redirect_question_import_with_error($ordering_validation_error, $return_page);
+                    }
+                    foreach ($options_to_insert as $ordering_idx => $ordering_option) {
+                        $options_to_insert[$ordering_idx]['is_correct'] = 0;
+                    }
+                }
     
                 if ($question_type === 'true_false' && empty($options_to_insert)) {
                     $true_is_correct = CBT_Admin_Questions_Helper::normalize_true_false_value($normalized_detail_text) === 1 ? 1 : 0;
@@ -1513,8 +1560,9 @@ final class CBT_Admin_Questions_Service
                     ];
                 }
     
+                $inserted_option_ids = [];
                 foreach ($options_to_insert as $idx => $opt) {
-                    $wpdb->insert(
+                    $inserted = $wpdb->insert(
                         $option_table,
                         [
                             'question_id' => $question_id,
@@ -1525,9 +1573,17 @@ final class CBT_Admin_Questions_Service
                         ],
                         ['%d', '%s', '%s', '%d', '%s']
                     );
+                    if ($inserted !== false) {
+                        $inserted_option_ids[] = (int) $wpdb->insert_id;
+                    }
                 }
     
-                CBT_Admin_Questions_Helper::save_question_type_detail($question_id, $question_type, $normalized_detail_text);
+                CBT_Admin_Questions_Helper::save_question_type_detail(
+                    $question_id,
+                    $question_type,
+                    $normalized_detail_text,
+                    ['ordered_option_ids' => $inserted_option_ids]
+                );
             }
     
             CBT_Cache::invalidate_catalog();
@@ -1588,7 +1644,7 @@ final class CBT_Admin_Questions_Service
                 isset($_GET['question_per_page']) ? absint(wp_unslash($_GET['question_per_page'])) : 20
             );
             $question_paged = isset($_GET['question_paged']) ? max(1, absint(wp_unslash($_GET['question_paged']))) : 1;
-            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'];
+            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'];
             if (!in_array($filter_type, $allowed_filter_types, true)) {
                 $filter_type = '';
             }
@@ -1775,7 +1831,7 @@ final class CBT_Admin_Questions_Service
                 isset($_POST['redirect_question_per_page']) ? absint(wp_unslash($_POST['redirect_question_per_page'])) : 20
             );
             $question_paged = isset($_POST['redirect_question_paged']) ? max(1, absint(wp_unslash($_POST['redirect_question_paged']))) : 1;
-            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'];
+            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'];
             if (!in_array($filter_type, $allowed_filter_types, true)) {
                 $filter_type = '';
             }
@@ -1895,7 +1951,7 @@ final class CBT_Admin_Questions_Service
             $filter_type = isset($state['filter_type']) ? sanitize_text_field((string) $state['filter_type']) : '';
             $filter_source_kind = isset($state['filter_source_kind']) ? sanitize_text_field((string) $state['filter_source_kind']) : '';
             $filter_subject_id = isset($state['filter_subject_id']) ? absint($state['filter_subject_id']) : 0;
-            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'];
+            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'];
             if (!in_array($filter_type, $allowed_filter_types, true)) {
                 $filter_type = '';
             }

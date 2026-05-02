@@ -5,6 +5,9 @@ export function createAppEventManager(deps) {
     var fontScaleStep = deps.fontScaleStep;
     var getCurrentUserPhoto = deps.getCurrentUserPhoto;
     var handleAnswerChangeTarget = deps.handleAnswerChangeTarget;
+    var handleAnswerClickTarget = typeof deps.handleAnswerClickTarget === 'function'
+        ? deps.handleAnswerClickTarget
+        : null;
     var handleAnswerInputTarget = deps.handleAnswerInputTarget;
     var handleAnswerPointerTarget = typeof deps.handleAnswerPointerTarget === 'function'
         ? deps.handleAnswerPointerTarget
@@ -539,6 +542,22 @@ export function createAppEventManager(deps) {
         if (isExamFullscreenBlockingActive() && action !== 'logout' && action !== 'toggle-theme') {
             event.preventDefault();
             return true;
+        }
+
+        if (handleAnswerClickTarget && action.indexOf('answer-') === 0) {
+            if (isQuestionRevisionRefreshActive() || isExamAnswerEditingLocked()) {
+                if (typeof event.preventDefault === 'function') {
+                    event.preventDefault();
+                }
+                return true;
+            }
+            safeNoteQuestionPrefetchActivity();
+            if (handleAnswerClickTarget(actionNode)) {
+                if (typeof event.preventDefault === 'function') {
+                    event.preventDefault();
+                }
+                return true;
+            }
         }
 
         if (action === 'font-dec') {

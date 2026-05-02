@@ -615,7 +615,10 @@ trait CBT_REST_Start_Attempt_Routes
                             isset($start_snapshot['option_randomization_tokens_by_question']) && is_array($start_snapshot['option_randomization_tokens_by_question'])
                                 ? $start_snapshot['option_randomization_tokens_by_question']
                                 : [],
-                            (int) ($exam['randomize_options'] ?? 0) === 1
+                            (int) ($exam['randomize_options'] ?? 0) === 1,
+                            isset($start_snapshot['force_option_shuffle_question_ids']) && is_array($start_snapshot['force_option_shuffle_question_ids'])
+                                ? $start_snapshot['force_option_shuffle_question_ids']
+                                : []
                         )
                     );
                     $start_attempt_question_manifest = self::build_lightweight_question_manifest_from_start_snapshot(

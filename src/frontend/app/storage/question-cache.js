@@ -489,6 +489,10 @@ export function createQuestionCacheStorage(deps) {
             normalized.true_false_matrix_meta = item.true_false_matrix_meta;
         }
 
+        if (item.ordering_meta && typeof item.ordering_meta === 'object') {
+            normalized.ordering_meta = item.ordering_meta;
+        }
+
         if (item.short_answer_meta && typeof item.short_answer_meta === 'object') {
             normalized.short_answer_meta = item.short_answer_meta;
         }

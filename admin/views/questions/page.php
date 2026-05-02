@@ -1650,6 +1650,7 @@ if (!defined('ABSPATH')) {
                                         <button type="button" class="button<?php echo $editing_type === 'true_false_matrix' ? ' cbt-active' : ''; ?>" data-qtype="true_false_matrix">TF Matrix</button>
                                         <button type="button" class="button<?php echo $editing_type === 'short_answer' ? ' cbt-active' : ''; ?>" data-qtype="short_answer">Short Answer</button>
                                         <button type="button" class="button<?php echo $editing_type === 'essay' ? ' cbt-active' : ''; ?>" data-qtype="essay">Essay</button>
+                                        <button type="button" class="button<?php echo $editing_type === 'ordering' ? ' cbt-active' : ''; ?>" data-qtype="ordering">Ordering</button>
                                     </div>
                                 <?php endif; ?>
                             </td>
@@ -1821,6 +1822,34 @@ if (!defined('ABSPATH')) {
                                 );
                                 ?>
                                 <p class="description">Isi jawaban/acuan jawaban essay. Bisa paste gambar langsung dari clipboard untuk file kecil, atau gunakan Add Media untuk file besar.</p>
+                            </td>
+                        </tr>
+                        <tr class="cbt-qtype-panel<?php echo $editing_type === 'ordering' ? ' cbt-active' : ''; ?>" data-qtype="ordering">
+                            <th>Ordering</th>
+                            <td>
+                                <div class="cbt-option-list">
+                                    <?php for ($i = 1; $i <= 12; $i++): ?>
+                                        <div class="cbt-option-row">
+                                            <label for="cbt_ordering_item_<?php echo (int) $i; ?>">Urutan benar <?php echo (int) $i; ?></label>
+                                            <?php
+                                            $ordering_editor_id = 'cbt_ordering_item_' . (int) $i;
+                                            wp_editor(
+                                                (string) ($ordering_option_values[$i] ?? ''),
+                                                $ordering_editor_id,
+                                                [
+                                                    'textarea_name' => $ordering_editor_id,
+                                                    'textarea_rows' => 3,
+                                                    'media_buttons' => true,
+                                                    'teeny' => true,
+                                                    'quicktags' => true,
+                                                    'tinymce' => $question_editor_tinymce,
+                                                ]
+                                            );
+                                            ?>
+                                        </div>
+                                    <?php endfor; ?>
+                                </div>
+                                <p class="cbt-inline-help">Isi item sesuai urutan benar. Saat ujian, item akan diacak dan siswa menyusun kembali urutannya. Minimal 2 item, maksimal 12 item, dan item tidak boleh duplikat.</p>
                             </td>
                         </tr>
                         <tr>
@@ -2096,11 +2125,12 @@ if (!defined('ABSPATH')) {
                         <button type="button" class="button<?php echo $import_active_type === 'multiple_choice' ? ' cbt-active' : ''; ?>" data-import-type="multiple_choice">Multiple Choice</button>
                         <button type="button" class="button<?php echo $import_active_type === 'multiple_answer' ? ' cbt-active' : ''; ?>" data-import-type="multiple_answer">Multiple Answer</button>
                         <button type="button" class="button<?php echo $import_active_type === 'true_false' ? ' cbt-active' : ''; ?>" data-import-type="true_false">True/False</button>
-                        <button type="button" class="button<?php echo $import_active_type === 'true_false_matrix' ? ' cbt-active' : ''; ?>" data-import-type="true_false_matrix">TF Matrix</button>
-                        <button type="button" class="button<?php echo $import_active_type === 'short_answer' ? ' cbt-active' : ''; ?>" data-import-type="short_answer">Short Answer</button>
-                        <button type="button" class="button<?php echo $import_active_type === 'essay' ? ' cbt-active' : ''; ?>" data-import-type="essay">Essay</button>
-                    </div>
-                <?php endif; ?>
+                                <button type="button" class="button<?php echo $import_active_type === 'true_false_matrix' ? ' cbt-active' : ''; ?>" data-import-type="true_false_matrix">TF Matrix</button>
+                                <button type="button" class="button<?php echo $import_active_type === 'short_answer' ? ' cbt-active' : ''; ?>" data-import-type="short_answer">Short Answer</button>
+                                <button type="button" class="button<?php echo $import_active_type === 'essay' ? ' cbt-active' : ''; ?>" data-import-type="essay">Essay</button>
+                                <button type="button" class="button<?php echo $import_active_type === 'ordering' ? ' cbt-active' : ''; ?>" data-import-type="ordering">Ordering</button>
+                            </div>
+                        <?php endif; ?>
                 <p class="description" id="cbt-import-type-help"><?php echo esc_html($import_help_text); ?></p>
                 <div class="notice notice-warning inline" style="margin:10px 0 14px;">
                     <p style="margin:8px 0;">
@@ -2126,6 +2156,7 @@ if (!defined('ABSPATH')) {
                         data-url-tfm="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_question_template_word_tfm'), 'cbt_download_question_template_word_tfm')); ?>"
                         data-url-sa="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_question_template_word_sa'), 'cbt_download_question_template_word_sa')); ?>"
                         data-url-essay="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_question_template_word_essay'), 'cbt_download_question_template_word_essay')); ?>"
+                        data-url-ordering="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_question_template_word_ordering'), 'cbt_download_question_template_word_ordering')); ?>"
                         href="<?php echo esc_url(add_query_arg('question_count', 10, wp_nonce_url(admin_url('admin-post.php?action=cbt_download_question_template_word_mc'), 'cbt_download_question_template_word_mc'))); ?>"
                     >
                         Download Template Word MC (.docx)
@@ -2739,6 +2770,8 @@ if (!defined('ABSPATH')) {
                         document.getElementById('cbt-correct-sa-1')?.focus();
                     } else if (type === 'essay') {
                         document.getElementById('cbt_essay_answer_editor')?.focus();
+                    } else if (type === 'ordering') {
+                        document.getElementById('cbt_ordering_item_1')?.focus();
                     }
                 }
 
@@ -2819,6 +2852,11 @@ if (!defined('ABSPATH')) {
                         buttonLabel: 'Download Template Word Essay (.docx)',
                         urlKey: 'urlEssay',
                     },
+            ordering: {
+                help: 'Mode import aktif: Ordering. DOCX didukung (isi ITEM_1..12 sesuai urutan benar, minimal 2 item, item tidak boleh duplikat, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
+                buttonLabel: 'Download Template Word Ordering (.docx)',
+                urlKey: 'urlOrdering',
+            },
                 };
 
                 function activateImportType(type) {
@@ -3134,7 +3172,7 @@ if (!defined('ABSPATH')) {
                 bindQuestionListInteractions();
 
                 const clipboardImageMaxBytes = 1572864;
-                const manualRichEditorIdPattern = /^(cbt_question_text_editor|cbt_essay_answer_editor|cbt_question_explanation_editor|cbt_(mc|ma)_option_\d+)$/;
+                const manualRichEditorIdPattern = /^(cbt_question_text_editor|cbt_essay_answer_editor|cbt_question_explanation_editor|cbt_(mc|ma)_option_\d+|cbt_ordering_item_\d+)$/;
                 const manualForm = document.getElementById('cbt-question-manual-form');
 
                 function isManualRichEditorId(editorId) {
@@ -3688,6 +3726,34 @@ if (!defined('ABSPATH')) {
                                 provided_keys: providedShortAnswerKeysSorted,
                             });
                         } else if (type === 'essay') {
+                            validationMetaHidden.value = JSON.stringify({ type });
+                        } else if (type === 'ordering') {
+                            const optionsPayload = [];
+                            let filledCount = 0;
+
+                            for (let i = 1; i <= 12; i += 1) {
+                                const itemVal = editorValue(`cbt_ordering_item_${i}`);
+                                if (!hasOptionContent(itemVal)) continue;
+                                filledCount += 1;
+                                optionsPayload.push({
+                                    option_text: itemVal,
+                                    is_correct: 0,
+                                });
+                            }
+
+                            if (filledCount < 2) {
+                                event.preventDefault();
+                                window.alert('Ordering minimal harus punya 2 item.');
+                                return;
+                            }
+                            if (findDuplicateOptionIndexes(optionsPayload).length > 0) {
+                                event.preventDefault();
+                                window.alert('Ordering tidak boleh punya item duplikat.');
+                                return;
+                            }
+
+                            optionsHidden.value = JSON.stringify(optionsPayload);
+                            correctTextHidden.value = '';
                             validationMetaHidden.value = JSON.stringify({ type });
                         }
                     });

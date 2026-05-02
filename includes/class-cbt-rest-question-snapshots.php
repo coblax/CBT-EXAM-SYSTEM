@@ -1205,13 +1205,17 @@ trait CBT_REST_Question_Snapshot_Helpers
 
         $question_table = $wpdb->prefix . 'cbt_questions';
         $short_answer_table = $wpdb->prefix . 'cbt_question_short_answer';
+        $ordering_table = $wpdb->prefix . 'cbt_question_ordering';
         $question_rows = (array) $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text, q.created_at, q.updated_at,
                         COALESCE(q.is_active, 1) AS is_active,
-                        qsa.correct_text AS short_answer_correct_text
+                        qsa.correct_text AS short_answer_correct_text,
+                        qord.scoring_mode AS ordering_scoring_mode,
+                        qord.shuffle_items AS ordering_shuffle_items
                  FROM {$question_table} q
                  LEFT JOIN {$short_answer_table} qsa ON qsa.question_id = q.id
+                 LEFT JOIN {$ordering_table} qord ON qord.question_id = q.id
                  WHERE q.exam_id = %d
                    AND COALESCE(q.is_active, 1) = 1
                  ORDER BY q.id ASC",
@@ -1267,6 +1271,7 @@ trait CBT_REST_Question_Snapshot_Helpers
         $question_ids = [];
         $option_question_ids = [];
         $option_tokens_by_question = [];
+        $force_option_shuffle_question_ids = [];
         $question_manifest = [];
 
         foreach ($question_rows as $question_row) {
@@ -1286,8 +1291,11 @@ trait CBT_REST_Question_Snapshot_Helpers
             $question_manifest[] = $manifest_item;
 
             $question_type = (string) ($question['question_type'] ?? '');
-            if (in_array($question_type, ['multiple_choice', 'multiple_answer'], true)) {
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'ordering'], true)) {
                 $option_question_ids[] = $question_id;
+                if ($question_type === 'ordering' && (int) ($question['ordering_shuffle_items'] ?? 1) !== 0) {
+                    $force_option_shuffle_question_ids[$question_id] = $question_id;
+                }
                 continue;
             }
 
@@ -1342,6 +1350,7 @@ trait CBT_REST_Question_Snapshot_Helpers
             'show_student_result' => self::normalize_show_student_result($exam_row['show_student_result'] ?? 1),
             'enable_calculator' => self::normalize_enable_calculator($exam_row['enable_calculator'] ?? 1),
             'option_randomization_tokens_by_question' => self::normalize_attempt_option_order_map($option_tokens_by_question),
+            'force_option_shuffle_question_ids' => array_values($force_option_shuffle_question_ids),
         ];
     }
 
@@ -1414,6 +1423,7 @@ trait CBT_REST_Question_Snapshot_Helpers
 
         $question_table = $wpdb->prefix . 'cbt_questions';
         $short_answer_table = $wpdb->prefix . 'cbt_question_short_answer';
+        $ordering_table = $wpdb->prefix . 'cbt_question_ordering';
         $question_ids = array_values(array_unique(array_filter(array_map('intval', $question_ids), static function (int $question_id): bool {
             return $question_id > 0;
         })));
@@ -1426,9 +1436,12 @@ trait CBT_REST_Question_Snapshot_Helpers
             $wpdb->prepare(
                 "SELECT q.id, q.exam_id, q.question_text, q.question_type, q.points, q.correct_text, q.created_at, q.updated_at,
                         COALESCE(q.is_active, 1) AS is_active,
-                        qsa.correct_text AS short_answer_correct_text
+                        qsa.correct_text AS short_answer_correct_text,
+                        qord.scoring_mode AS ordering_scoring_mode,
+                        qord.shuffle_items AS ordering_shuffle_items
                  FROM {$question_table} q
                  LEFT JOIN {$short_answer_table} qsa ON qsa.question_id = q.id
+                 LEFT JOIN {$ordering_table} qord ON qord.question_id = q.id
                  WHERE q.exam_id = %d
                    AND q.id IN ({$placeholders})
                  ORDER BY q.id ASC",
@@ -1461,7 +1474,7 @@ trait CBT_REST_Question_Snapshot_Helpers
             if ($question_id <= 0) {
                 continue;
             }
-            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false'], true)) {
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering'], true)) {
                 $option_question_ids[] = $question_id;
             }
         }
@@ -1528,9 +1541,18 @@ trait CBT_REST_Question_Snapshot_Helpers
                         ];
                     }, $matrix_items, array_keys($matrix_items)),
                 ];
+            } elseif ((string) ($question['question_type'] ?? '') === 'ordering') {
+                $question['ordering_meta'] = [
+                    'item_count' => count((array) ($question['options'] ?? [])),
+                    'scoring_mode' => in_array((string) ($question['ordering_scoring_mode'] ?? 'exact'), ['exact', 'partial_position'], true)
+                        ? (string) ($question['ordering_scoring_mode'] ?? 'exact')
+                        : 'exact',
+                    'shuffle_items' => ((int) ($question['ordering_shuffle_items'] ?? 1) === 0) ? 0 : 1,
+                ];
             }
 
             unset($question['short_answer_correct_text']);
+            unset($question['ordering_scoring_mode'], $question['ordering_shuffle_items']);
             if ((string) ($question['question_type'] ?? '') === 'true_false_matrix') {
                 unset($question['correct_text']);
             }
@@ -1611,6 +1633,15 @@ trait CBT_REST_Question_Snapshot_Helpers
                 $sanitized['true_false_matrix_meta'] = [
                     'item_count' => max(0, (int) ($question['true_false_matrix_meta']['item_count'] ?? count($items))),
                     'items' => $items,
+                ];
+            }
+
+            if (!empty($question['ordering_meta']) && is_array($question['ordering_meta'])) {
+                $scoring_mode = (string) ($question['ordering_meta']['scoring_mode'] ?? 'exact');
+                $sanitized['ordering_meta'] = [
+                    'item_count' => max(0, (int) ($question['ordering_meta']['item_count'] ?? count($sanitized['options']))),
+                    'scoring_mode' => in_array($scoring_mode, ['exact', 'partial_position'], true) ? $scoring_mode : 'exact',
+                    'shuffle_items' => ((int) ($question['ordering_meta']['shuffle_items'] ?? 1) === 0) ? 0 : 1,
                 ];
             }
 
@@ -2189,10 +2220,6 @@ trait CBT_REST_Question_Snapshot_Helpers
      */
     private static function build_attempt_option_order_map(array $questions, bool $shuffle_items): array
     {
-        if (!$shuffle_items) {
-            return [];
-        }
-
         $option_order_map = [];
 
         foreach ($questions as $question_row) {
@@ -2202,12 +2229,17 @@ trait CBT_REST_Question_Snapshot_Helpers
                 continue;
             }
 
+            $force_shuffle = ((string) ($question['question_type'] ?? '') === 'ordering');
+            if (!$shuffle_items && !$force_shuffle) {
+                continue;
+            }
+
             $item_tokens = self::extract_randomizable_question_item_keys($question);
             if (count($item_tokens) <= 1) {
                 continue;
             }
 
-            if ($shuffle_items) {
+            if ($shuffle_items || $force_shuffle) {
                 shuffle($item_tokens);
             }
 
@@ -2221,17 +2253,20 @@ trait CBT_REST_Question_Snapshot_Helpers
      * @param array<int,array<int,string>> $option_tokens_by_question
      * @return array<int,array<int,string>>
      */
-    private static function build_attempt_option_order_map_from_snapshot_tokens(array $option_tokens_by_question, bool $shuffle_items): array
+    private static function build_attempt_option_order_map_from_snapshot_tokens(array $option_tokens_by_question, bool $shuffle_items, array $force_shuffle_question_ids = []): array
     {
-        if (!$shuffle_items) {
-            return [];
-        }
-
         $option_order_map = [];
         $normalized_tokens_by_question = self::normalize_attempt_option_order_map($option_tokens_by_question);
+        $force_shuffle_lookup = array_fill_keys(array_values(array_filter(array_map('intval', $force_shuffle_question_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        })), true);
         foreach ($normalized_tokens_by_question as $question_id => $item_tokens) {
             $safe_question_id = (int) $question_id;
             if ($safe_question_id <= 0 || count($item_tokens) <= 1) {
+                continue;
+            }
+
+            if (!$shuffle_items && empty($force_shuffle_lookup[$safe_question_id])) {
                 continue;
             }
 
@@ -2298,7 +2333,7 @@ trait CBT_REST_Question_Snapshot_Helpers
             }
 
             $question_type = (string) ($question['question_type'] ?? '');
-            if (in_array($question_type, ['multiple_choice', 'multiple_answer'], true)) {
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'ordering'], true)) {
                 $ordered_options = self::order_question_options_by_attempt_sequence(
                     is_array($question['options'] ?? null) ? $question['options'] : [],
                     $option_order_map[$question_id]
@@ -2331,7 +2366,15 @@ trait CBT_REST_Question_Snapshot_Helpers
      */
     private static function question_supports_option_randomization(array $question): bool
     {
-        return in_array((string) ($question['question_type'] ?? ''), ['multiple_choice', 'multiple_answer', 'true_false_matrix'], true);
+        $question_type = (string) ($question['question_type'] ?? '');
+        if ($question_type === 'ordering') {
+            $meta = isset($question['ordering_meta']) && is_array($question['ordering_meta'])
+                ? $question['ordering_meta']
+                : [];
+            return ((int) ($meta['shuffle_items'] ?? 1) !== 0);
+        }
+
+        return in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false_matrix'], true);
     }
 
     /**
@@ -2342,7 +2385,7 @@ trait CBT_REST_Question_Snapshot_Helpers
     {
         $question_type = (string) ($question['question_type'] ?? '');
 
-        if (in_array($question_type, ['multiple_choice', 'multiple_answer'], true)) {
+        if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'ordering'], true)) {
             $tokens = [];
             $options = is_array($question['options'] ?? null) ? $question['options'] : [];
             foreach ($options as $option_row) {
@@ -2661,7 +2704,7 @@ trait CBT_REST_Question_Snapshot_Helpers
             }
 
             $question_type = (string) ($question['question_type'] ?? '');
-            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false'], true)) {
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering'], true)) {
                 $manifest_item['options'] = array_map(static function ($option): array {
                     $option_row = (array) $option;
                     return [
@@ -2670,6 +2713,10 @@ trait CBT_REST_Question_Snapshot_Helpers
                         'option_text' => (string) ($option_row['option_text'] ?? ''),
                     ];
                 }, is_array($question['options'] ?? null) ? $question['options'] : []);
+            }
+
+            if ($question_type === 'ordering' && isset($question['ordering_meta']) && is_array($question['ordering_meta'])) {
+                $manifest_item['ordering_meta'] = $question['ordering_meta'];
             }
 
             if ($question_type === 'true_false_matrix' && isset($question['true_false_matrix_meta']) && is_array($question['true_false_matrix_meta'])) {
@@ -3040,6 +3087,12 @@ trait CBT_REST_Question_Snapshot_Helpers
                 case 'multiple_answer':
                     if (!empty($selected_option_ids)) {
                         $question['existing_answer'] = $selected_option_ids;
+                    }
+                    break;
+                case 'ordering':
+                    $ordered_option_ids = self::decode_ordered_selected_option_ids($existing_answer_row['selected_option_ids'] ?? null);
+                    if (!empty($ordered_option_ids)) {
+                        $question['existing_answer'] = $ordered_option_ids;
                     }
                     break;
                 case 'true_false_matrix':

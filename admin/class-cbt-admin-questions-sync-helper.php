@@ -69,6 +69,12 @@ final class CBT_Admin_Questions_Sync_Helper
             } elseif ($question_type === 'true_false_matrix') {
                 $normalized_detail_text = (string) ($row['correct_text'] ?? '');
             }
+            if ($question_type === 'ordering') {
+                $options = self::order_options_by_correct_option_ids(
+                    is_array($options) ? $options : [],
+                    (array) ($detail['correct_option_ids'] ?? [])
+                );
+            }
     
             return [
                 'question_id' => (int) ($row['id'] ?? 0),
@@ -84,6 +90,42 @@ final class CBT_Admin_Questions_Sync_Helper
                 'normalized_detail_text' => $normalized_detail_text,
                 'options' => is_array($options) ? $options : [],
             ];
+        }
+
+        private static function order_options_by_correct_option_ids(array $options, array $correct_option_ids): array
+        {
+            $options_by_id = [];
+            foreach ($options as $option) {
+                $option_array = (array) $option;
+                $option_id = (int) ($option_array['id'] ?? 0);
+                if ($option_id > 0) {
+                    $options_by_id[$option_id] = $option;
+                }
+            }
+
+            $ordered = [];
+            $used = [];
+            foreach ($correct_option_ids as $option_id) {
+                $option_id = absint($option_id);
+                if ($option_id <= 0 || isset($used[$option_id]) || !isset($options_by_id[$option_id])) {
+                    continue;
+                }
+
+                $ordered[] = $options_by_id[$option_id];
+                $used[$option_id] = true;
+            }
+
+            foreach ($options as $option) {
+                $option_array = (array) $option;
+                $option_id = (int) ($option_array['id'] ?? 0);
+                if ($option_id <= 0 || isset($used[$option_id])) {
+                    continue;
+                }
+
+                $ordered[] = $option;
+            }
+
+            return $ordered;
         }
 
         private static function normalize_question_sync_options(array $options): array
@@ -444,10 +486,19 @@ final class CBT_Admin_Questions_Sync_Helper
                 (array) ($target_snapshot['options'] ?? [])
             );
     
+            $detail_context = [];
+            if ($question_type === 'ordering') {
+                $detail_context['ordered_option_ids'] = self::resolve_synced_option_ids_in_snapshot_order(
+                    $target_question_id,
+                    (array) ($source_snapshot['options'] ?? [])
+                );
+            }
+
             CBT_Admin_Questions_Helper::save_question_type_detail(
                 $target_question_id,
                 $question_type,
-                (string) ($source_snapshot['normalized_detail_text'] ?? '')
+                (string) ($source_snapshot['normalized_detail_text'] ?? ''),
+                $detail_context
             );
     
             if ($old_question_type !== $question_type) {
@@ -456,9 +507,10 @@ final class CBT_Admin_Questions_Sync_Helper
                     CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, [], true);
                 }
             } elseif (self::question_type_uses_choice_options($question_type)) {
-                self::remap_question_answer_option_ids($target_question_id, $option_id_map);
+                $preserve_option_order = $question_type === 'ordering';
+                self::remap_question_answer_option_ids($target_question_id, $option_id_map, $preserve_option_order);
                 if (class_exists('CBT_Runtime')) {
-                    CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, $option_id_map, false);
+                    CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, $option_id_map, false, $preserve_option_order);
                 }
             }
     
@@ -571,10 +623,51 @@ final class CBT_Admin_Questions_Sync_Helper
 
         private static function question_type_uses_choice_options(string $question_type): bool
         {
-            return in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false'], true);
+            return in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering'], true);
         }
 
-        private static function remap_question_answer_option_ids(int $question_id, array $option_id_map): void
+        private static function resolve_synced_option_ids_in_snapshot_order(int $question_id, array $desired_options): array
+        {
+            global $wpdb;
+
+            if ($question_id <= 0 || empty($desired_options)) {
+                return [];
+            }
+
+            $option_table = $wpdb->prefix . 'cbt_options';
+            $existing_options = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT id, option_key, option_text, is_correct
+                     FROM {$option_table}
+                     WHERE question_id = %d
+                     ORDER BY id ASC",
+                    $question_id
+                ),
+                ARRAY_A
+            );
+
+            $ids_by_match_key = [];
+            foreach (self::normalize_question_sync_options((array) $existing_options) as $existing_option) {
+                $option_id = (int) ($existing_option['id'] ?? 0);
+                $match_key = (string) ($existing_option['match_key'] ?? '');
+                if ($option_id > 0 && $match_key !== '') {
+                    $ids_by_match_key[$match_key] = $option_id;
+                }
+            }
+
+            $ordered_ids = [];
+            foreach (self::normalize_question_sync_options($desired_options) as $desired_option) {
+                $match_key = (string) ($desired_option['match_key'] ?? '');
+                $option_id = $match_key !== '' ? (int) ($ids_by_match_key[$match_key] ?? 0) : 0;
+                if ($option_id > 0) {
+                    $ordered_ids[] = $option_id;
+                }
+            }
+
+            return array_values(array_unique($ordered_ids));
+        }
+
+        private static function remap_question_answer_option_ids(int $question_id, array $option_id_map, bool $preserve_order = false): void
         {
             global $wpdb;
     
@@ -609,19 +702,25 @@ final class CBT_Admin_Questions_Sync_Helper
                 $existing_option_ids = array_values(array_unique(array_filter(array_map('intval', $existing_option_ids), static function (int $option_id): bool {
                     return $option_id > 0;
                 })));
-                sort($existing_option_ids);
+                if (!$preserve_order) {
+                    sort($existing_option_ids);
+                }
     
                 $remapped_option_ids = [];
+                $seen_remapped_option_ids = [];
                 foreach ($existing_option_ids as $existing_option_id) {
                     $existing_option_id = (int) $existing_option_id;
                     $new_option_id = isset($option_id_map[$existing_option_id]) ? (int) $option_id_map[$existing_option_id] : 0;
-                    if ($new_option_id > 0) {
+                    if ($new_option_id > 0 && !isset($seen_remapped_option_ids[$new_option_id])) {
+                        $seen_remapped_option_ids[$new_option_id] = true;
                         $remapped_option_ids[] = $new_option_id;
                     }
                 }
     
-                $remapped_option_ids = array_values(array_unique($remapped_option_ids));
-                sort($remapped_option_ids);
+                $remapped_option_ids = array_values($remapped_option_ids);
+                if (!$preserve_order) {
+                    sort($remapped_option_ids);
+                }
                 if ($remapped_option_ids === $existing_option_ids) {
                     continue;
                 }

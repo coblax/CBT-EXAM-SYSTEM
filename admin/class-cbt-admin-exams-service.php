@@ -341,6 +341,42 @@ final class CBT_Admin_Exams_Service
         ]));
     }
 
+    private static function order_source_options_by_correct_option_ids(array $options, array $correct_option_ids): array
+    {
+        $options_by_id = [];
+        foreach ($options as $option) {
+            $option_array = (array) $option;
+            $option_id = (int) ($option_array['id'] ?? 0);
+            if ($option_id > 0) {
+                $options_by_id[$option_id] = $option;
+            }
+        }
+
+        $ordered = [];
+        $used = [];
+        foreach ($correct_option_ids as $option_id) {
+            $option_id = absint($option_id);
+            if ($option_id <= 0 || isset($used[$option_id]) || !isset($options_by_id[$option_id])) {
+                continue;
+            }
+
+            $ordered[] = $options_by_id[$option_id];
+            $used[$option_id] = true;
+        }
+
+        foreach ($options as $option) {
+            $option_array = (array) $option;
+            $option_id = (int) ($option_array['id'] ?? 0);
+            if ($option_id <= 0 || isset($used[$option_id])) {
+                continue;
+            }
+
+            $ordered[] = $option;
+        }
+
+        return $ordered;
+    }
+
     private static function question_snapshots_are_sync_equivalent(array $left, array $right): bool
     {
         return self::question_sync_signature($left) === self::question_sync_signature($right);
@@ -7838,8 +7874,9 @@ final class CBT_Admin_Exams_Service
                 }
 
                 $new_question_id = (int) $wpdb->insert_id;
+                $inserted_option_ids = [];
                 foreach ((array) ($source_snapshot['options'] ?? []) as $source_option) {
-                    $wpdb->insert(
+                    $option_inserted = $wpdb->insert(
                         $option_table,
                         [
                             'question_id' => $new_question_id,
@@ -7850,12 +7887,19 @@ final class CBT_Admin_Exams_Service
                         ],
                         ['%d', '%s', '%s', '%d', '%s']
                     );
+                    if ($option_inserted) {
+                        $inserted_option_ids[] = (int) $wpdb->insert_id;
+                    }
                 }
 
+                $detail_context = $question_type === 'ordering'
+                    ? ['ordered_option_ids' => $inserted_option_ids]
+                    : [];
                 CBT_Admin_Questions_Helper::save_question_type_detail(
                     $new_question_id,
                     $question_type,
-                    (string) ($source_snapshot['normalized_detail_text'] ?? '')
+                    (string) ($source_snapshot['normalized_detail_text'] ?? ''),
+                    $detail_context
                 );
                 $matched_existing_lookup[$new_question_id] = true;
                 $state['matched_existing_question_ids'][$new_question_id] = $new_question_id;
@@ -7903,6 +7947,12 @@ final class CBT_Admin_Exams_Service
             $detail_text = (string) ($source_detail['correct_text'] ?? ($source_row['correct_text'] ?? ''));
         } elseif ($question_type === 'essay') {
             $detail_text = (string) ($source_detail['rubric_text'] ?? ($source_row['correct_text'] ?? ''));
+        }
+        if ($question_type === 'ordering') {
+            $source_options = self::order_source_options_by_correct_option_ids(
+                $source_options,
+                (array) ($source_detail['correct_option_ids'] ?? [])
+            );
         }
 
         return [
@@ -8069,6 +8119,12 @@ final class CBT_Admin_Exams_Service
             } elseif ($question_type === 'essay') {
                 $detail_text = (string) ($source_detail['rubric_text'] ?? ($source_row['correct_text'] ?? ''));
             }
+            if ($question_type === 'ordering') {
+                $source_options = self::order_source_options_by_correct_option_ids(
+                    $source_options,
+                    (array) ($source_detail['correct_option_ids'] ?? [])
+                );
+            }
 
             $source_snapshot = [
                 'question_text' => (string) ($source_row['question_text'] ?? ''),
@@ -8152,8 +8208,9 @@ final class CBT_Admin_Exams_Service
             }
 
             $new_question_id = (int) $wpdb->insert_id;
+            $inserted_option_ids = [];
             foreach ($source_options as $source_option) {
-                $wpdb->insert(
+                $option_inserted = $wpdb->insert(
                     $option_table,
                     [
                         'question_id' => $new_question_id,
@@ -8164,9 +8221,15 @@ final class CBT_Admin_Exams_Service
                     ],
                     ['%d', '%s', '%s', '%d', '%s']
                 );
+                if ($option_inserted) {
+                    $inserted_option_ids[] = (int) $wpdb->insert_id;
+                }
             }
 
-            CBT_Admin_Questions_Helper::save_question_type_detail($new_question_id, $question_type, $detail_text);
+            $detail_context = $question_type === 'ordering'
+                ? ['ordered_option_ids' => $inserted_option_ids]
+                : [];
+            CBT_Admin_Questions_Helper::save_question_type_detail($new_question_id, $question_type, $detail_text, $detail_context);
             $sync_summary['created_new_count']++;
         }
 

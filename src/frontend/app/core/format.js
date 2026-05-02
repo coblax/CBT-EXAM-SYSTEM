@@ -95,6 +95,7 @@ export function formatQuestionType(type) {
         multiple_answer: 'Multiple Answer',
         true_false: 'True / False',
         true_false_matrix: 'True / False Matrix',
+        ordering: 'Ordering',
         short_answer: 'Short Answer',
         essay: 'Essay'
     };
@@ -107,6 +108,7 @@ export function navigationQuestionTypeBadgeConfig(questionType) {
         multiple_answer: { code: 'MA', className: 'is-ma' },
         true_false: { code: 'TF', className: 'is-tf' },
         true_false_matrix: { code: 'TFM', className: 'is-tf' },
+        ordering: { code: 'ORD', className: 'is-ord' },
         short_answer: { code: 'SA', className: 'is-sa' },
         essay: { code: 'ES', className: 'is-es' }
     };

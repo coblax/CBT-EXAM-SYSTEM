@@ -1476,6 +1476,72 @@
     margin-bottom: 0;
 }
 
+.cbt-ordering {
+    margin-top: 16px;
+    display: grid;
+    gap: 10px;
+}
+
+.cbt-ordering-item {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    align-items: stretch;
+    gap: 10px;
+    border: 1px solid var(--cbt-border);
+    border-radius: 12px;
+    padding: 10px;
+    background: #fff;
+}
+
+.cbt-ordering-position {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    min-height: 34px;
+    border-radius: 9px;
+    background: #eef6ff;
+    color: #0f4c81;
+    font-weight: 800;
+}
+
+.cbt-ordering-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    min-width: 0;
+}
+
+.cbt-ordering-controls {
+    display: grid;
+    grid-template-columns: repeat(2, 34px);
+    gap: 6px;
+    align-content: start;
+}
+
+.cbt-ordering-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    border: 1px solid #cbd8e6;
+    background: #f8fafc;
+    color: #0f4c81;
+    font-size: 16px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.cbt-ordering-btn:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+}
+
+.cbt-ordering-btn:focus-visible {
+    outline: 2px solid rgba(27, 122, 165, 0.35);
+    outline-offset: 2px;
+}
+
 .cbt-rich-option-card {
     display: flex;
     align-items: flex-start;
@@ -1642,6 +1708,55 @@
 .cbt-review-tf-matrix .cbt-tf-matrix-choice {
     font-size: calc(12px * var(--cbt-font-scale));
     font-weight: 700;
+}
+
+.cbt-review-ordering {
+    margin-top: 12px;
+    overflow-x: auto;
+}
+
+.cbt-ordering-review-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #d5dee8;
+    background: #fff;
+    table-layout: fixed;
+}
+
+.cbt-ordering-review-table th,
+.cbt-ordering-review-table td {
+    border: 1px solid #d5dee8;
+    padding: 8px 10px;
+    font-size: calc(13px * var(--cbt-font-scale));
+    line-height: 1.45;
+    vertical-align: top;
+}
+
+.cbt-ordering-review-table th {
+    background: #f3f6fb;
+    color: #0f172a;
+    font-weight: 700;
+    text-align: left;
+}
+
+.cbt-ordering-review-position {
+    width: 72px;
+    text-align: center;
+    font-weight: 800;
+    color: #0f4c81;
+}
+
+.cbt-ordering-review-answer {
+    color: #1f2937;
+    overflow-wrap: anywhere;
+}
+
+.cbt-ordering-review-answer.is-match {
+    background: #ecfbf4;
+}
+
+.cbt-ordering-review-answer.is-mismatch {
+    background: #fff1f2;
 }
 
 .cbt-question-actions {
@@ -2687,6 +2802,10 @@
 
 .cbt-nav-type-badge.is-tf {
     background: #b4690e;
+}
+
+.cbt-nav-type-badge.is-ord {
+    background: #6d5bd0;
 }
 
 .cbt-nav-type-badge.is-sa {

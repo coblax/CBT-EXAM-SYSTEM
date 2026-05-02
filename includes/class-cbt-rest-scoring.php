@@ -216,7 +216,8 @@ trait CBT_REST_Scoring_Helpers
 
         $question_type = (string) ($question_context['question_type'] ?? '');
         $deferred_scoring = self::should_defer_submit_scoring();
-        if ($deferred_scoring) {
+        $can_defer_scoring = $deferred_scoring && $question_type !== 'ordering';
+        if ($can_defer_scoring) {
             $normalized_storage = self::normalize_submission_for_storage($question_type, $answer_input);
             $evaluated = [
                 'selected_option_ids' => $normalized_storage['selected_option_ids'],
@@ -236,7 +237,7 @@ trait CBT_REST_Scoring_Helpers
             'score_awarded' => (float) ($evaluated['score_awarded'] ?? 0),
             'answered_at' => $now,
             'clear' => 0,
-            'deferred' => $deferred_scoring ? 1 : 0,
+            'deferred' => $can_defer_scoring ? 1 : 0,
             'answer' => self::normalize_runtime_answer_value($answer_input),
         ];
     }
@@ -780,13 +781,27 @@ trait CBT_REST_Scoring_Helpers
             $is_answered = is_array($answer_row);
 
             $selected_option_ids = $is_answered
-                ? self::decode_selected_option_ids($answer_row['selected_option_ids'] ?? null)
+                ? (
+                    $question_type === 'ordering'
+                        ? self::decode_ordered_selected_option_ids($answer_row['selected_option_ids'] ?? null)
+                        : self::decode_selected_option_ids($answer_row['selected_option_ids'] ?? null)
+                )
                 : [];
-            sort($selected_option_ids);
+            if ($question_type !== 'ordering') {
+                sort($selected_option_ids);
+            }
 
-            $correct_option_ids = is_array($submission_context['correct_option_ids'] ?? null)
-                ? array_values(array_unique(array_map('intval', $submission_context['correct_option_ids'])))
-                : [];
+            $correct_option_ids = $question_type === 'ordering'
+                ? (
+                    is_array($submission_context['ordering_correct_option_ids'] ?? null)
+                        ? self::decode_ordered_selected_option_ids($submission_context['ordering_correct_option_ids'])
+                        : []
+                )
+                : (
+                    is_array($submission_context['correct_option_ids'] ?? null)
+                        ? array_values(array_unique(array_map('intval', $submission_context['correct_option_ids'])))
+                        : []
+                );
             $has_submission_correct_option_ids = !empty($correct_option_ids);
             $options_with_state = [];
             foreach ($options as $option_row) {
@@ -828,7 +843,9 @@ trait CBT_REST_Scoring_Helpers
                 $question_detail = self::get_question_type_detail($question_id, $question_type);
             }
             $correct_option_ids = array_values(array_unique($correct_option_ids));
-            sort($correct_option_ids);
+            if ($question_type !== 'ordering') {
+                sort($correct_option_ids);
+            }
 
             $is_correct = null;
             $answer_text = '';
@@ -847,10 +864,10 @@ trait CBT_REST_Scoring_Helpers
 
             if (
                 $is_answered &&
-                in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix'], true)
+                in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'ordering'], true)
             ) {
                 $answer_input_for_eval = null;
-                if ($question_type === 'multiple_answer') {
+                if ($question_type === 'multiple_answer' || $question_type === 'ordering') {
                     $answer_input_for_eval = $selected_option_ids;
                 } elseif ($question_type === 'true_false_matrix') {
                     $answer_input_for_eval = $answer_text;
@@ -878,6 +895,7 @@ trait CBT_REST_Scoring_Helpers
             $correct_short_answers = [];
             $short_answer_input_keys = [];
             $true_false_matrix_rows = [];
+            $ordering_rows = [];
             $essay_rubric = '';
             $question_max_points = (float) ($question['points'] ?? 0);
             if ($question_type === 'short_answer') {
@@ -939,6 +957,35 @@ trait CBT_REST_Scoring_Helpers
                         'is_match' => ($submitted_value !== '' && $submitted_value === $correct_value) ? 1 : 0,
                     ];
                 }
+            } elseif ($question_type === 'ordering') {
+                $options_by_id = [];
+                foreach ($options as $option_row) {
+                    $option = (array) $option_row;
+                    $option_id = (int) ($option['id'] ?? 0);
+                    if ($option_id > 0) {
+                        $options_by_id[$option_id] = $option;
+                    }
+                }
+
+                $row_count = max(count($correct_option_ids), count($selected_option_ids));
+                for ($ordering_idx = 0; $ordering_idx < $row_count; $ordering_idx++) {
+                    $submitted_option_id = (int) ($selected_option_ids[$ordering_idx] ?? 0);
+                    $correct_option_id = (int) ($correct_option_ids[$ordering_idx] ?? 0);
+                    $submitted_option = $submitted_option_id > 0 && isset($options_by_id[$submitted_option_id])
+                        ? $options_by_id[$submitted_option_id]
+                        : [];
+                    $correct_option = $correct_option_id > 0 && isset($options_by_id[$correct_option_id])
+                        ? $options_by_id[$correct_option_id]
+                        : [];
+                    $ordering_rows[] = [
+                        'position' => $ordering_idx + 1,
+                        'submitted_option_id' => $submitted_option_id,
+                        'submitted_text' => (string) ($submitted_option['option_text'] ?? ''),
+                        'correct_option_id' => $correct_option_id,
+                        'correct_text' => (string) ($correct_option['option_text'] ?? ''),
+                        'is_match' => ($submitted_option_id > 0 && $submitted_option_id === $correct_option_id) ? 1 : 0,
+                    ];
+                }
             } elseif ($question_type === 'essay') {
                 $essay_rubric = (string) ($question_detail['rubric_text'] ?? ($question['correct_text'] ?? ''));
             }
@@ -975,6 +1022,7 @@ trait CBT_REST_Scoring_Helpers
                 'correct_short_answers' => $correct_short_answers,
                 'short_answer_input_keys' => $short_answer_input_keys,
                 'true_false_matrix_rows' => $true_false_matrix_rows,
+                'ordering_rows' => $ordering_rows,
                 'essay_rubric' => $essay_rubric,
                 'options' => $options_with_state,
             ];
@@ -1145,6 +1193,75 @@ trait CBT_REST_Scoring_Helpers
     }
 
     /**
+     * @return int[]
+     */
+    private static function decode_ordered_selected_option_ids($raw): array
+    {
+        $normalized = self::normalize_ordering_selected_option_ids($raw);
+        return $normalized['ids'];
+    }
+
+    /**
+     * @param mixed $raw
+     * @return array{ids: int[], invalid: bool}
+     */
+    private static function normalize_ordering_selected_option_ids($raw): array
+    {
+        if (is_array($raw)) {
+            $values = $raw;
+        } else {
+            $raw_text = trim((string) $raw);
+            if ($raw_text === '') {
+                return [
+                    'ids' => [],
+                    'invalid' => false,
+                ];
+            }
+
+            $decoded = json_decode($raw_text, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $values = $decoded;
+            } elseif (preg_match('/^\d+$/', $raw_text)) {
+                $values = [(int) $raw_text];
+            } else {
+                return [
+                    'ids' => [],
+                    'invalid' => true,
+                ];
+            }
+        }
+
+        $ids = [];
+        $seen = [];
+        $invalid = false;
+        foreach ((array) $values as $value) {
+            if (is_int($value)) {
+                $id = $value;
+            } elseif (is_float($value) && floor($value) === $value) {
+                $id = (int) $value;
+            } elseif (is_string($value) && preg_match('/^\d+$/', trim($value))) {
+                $id = (int) trim($value);
+            } else {
+                $invalid = true;
+                continue;
+            }
+
+            if ($id <= 0 || isset($seen[$id])) {
+                $invalid = true;
+                continue;
+            }
+
+            $seen[$id] = true;
+            $ids[] = $id;
+        }
+
+        return [
+            'ids' => $ids,
+            'invalid' => $invalid,
+        ];
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $review_items
      * @return array<string,int>
      */
@@ -1196,7 +1313,7 @@ trait CBT_REST_Scoring_Helpers
             return;
         }
 
-        $auto_graded_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer'];
+        $auto_graded_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'ordering'];
         $answer_table = $wpdb->prefix . 'cbt_answers';
         $now = current_time('mysql');
 
@@ -1319,6 +1436,7 @@ trait CBT_REST_Scoring_Helpers
     {
         $selected_option_ids = [];
         $answer_text = null;
+        $preserve_selected_order = false;
 
         if ($question_type === 'multiple_choice' || $question_type === 'true_false') {
             $selected_option_ids = self::decode_selected_option_ids($answer_input);
@@ -1327,6 +1445,10 @@ trait CBT_REST_Scoring_Helpers
             }
         } elseif ($question_type === 'multiple_answer') {
             $selected_option_ids = self::decode_selected_option_ids($answer_input);
+        } elseif ($question_type === 'ordering') {
+            $ordering_submission = self::normalize_ordering_selected_option_ids($answer_input);
+            $selected_option_ids = $ordering_submission['ids'];
+            $preserve_selected_order = true;
         } elseif ($question_type === 'true_false_matrix') {
             $normalized_matrix = self::normalize_true_false_matrix_submission($answer_input);
             if (!empty($normalized_matrix)) {
@@ -1366,10 +1488,14 @@ trait CBT_REST_Scoring_Helpers
             }
         }
 
-        $selected_option_ids = array_values(array_unique(array_filter(array_map('intval', $selected_option_ids), static function ($id): bool {
-            return $id > 0;
-        })));
-        sort($selected_option_ids);
+        if ($preserve_selected_order) {
+            $selected_option_ids = self::decode_ordered_selected_option_ids($selected_option_ids);
+        } else {
+            $selected_option_ids = array_values(array_unique(array_filter(array_map('intval', $selected_option_ids), static function ($id): bool {
+                return $id > 0;
+            })));
+            sort($selected_option_ids);
+        }
 
         return [
             'selected_option_ids' => !empty($selected_option_ids) ? wp_json_encode($selected_option_ids) : null,
@@ -1387,6 +1513,7 @@ trait CBT_REST_Scoring_Helpers
     {
         $question_type = (string) ($question['question_type'] ?? '');
         $correct_option_ids = [];
+        $ordering_correct_option_ids = [];
         $true_false_option_value_by_id = [];
 
         foreach ($options as $option_row) {
@@ -1400,6 +1527,10 @@ trait CBT_REST_Scoring_Helpers
                 $correct_option_ids[] = $option_id;
             }
 
+            if ($question_type === 'ordering') {
+                $ordering_correct_option_ids[] = $option_id;
+            }
+
             if ($question_type === 'true_false') {
                 $normalized_option_value = self::normalize_true_false_value((string) ($option['option_text'] ?? ''), true);
                 if ($normalized_option_value !== null) {
@@ -1410,6 +1541,12 @@ trait CBT_REST_Scoring_Helpers
 
         $correct_option_ids = array_values(array_unique($correct_option_ids));
         sort($correct_option_ids);
+
+        if ($question_type === 'ordering' && isset($question_detail['correct_option_ids']) && is_array($question_detail['correct_option_ids'])) {
+            $ordering_correct_option_ids = self::decode_ordered_selected_option_ids($question_detail['correct_option_ids']);
+        } elseif ($question_type === 'ordering') {
+            $ordering_correct_option_ids = self::decode_ordered_selected_option_ids($ordering_correct_option_ids);
+        }
 
         $true_false_correct_value = null;
         if ($question_type === 'true_false') {
@@ -1444,6 +1581,7 @@ trait CBT_REST_Scoring_Helpers
             'question_type' => $question_type,
             'points' => (float) ($question['points'] ?? 0),
             'correct_option_ids' => $correct_option_ids,
+            'ordering_correct_option_ids' => $ordering_correct_option_ids,
             'true_false_correct_value' => $true_false_correct_value,
             'true_false_option_value_by_id' => $true_false_option_value_by_id,
             'short_answer_values' => $short_answer_values,
@@ -1469,6 +1607,9 @@ trait CBT_REST_Scoring_Helpers
             : [];
         $short_answer_values = isset($question_context['short_answer_values']) && is_array($question_context['short_answer_values'])
             ? array_values($question_context['short_answer_values'])
+            : [];
+        $ordering_correct_option_ids = isset($question_context['ordering_correct_option_ids']) && is_array($question_context['ordering_correct_option_ids'])
+            ? self::decode_ordered_selected_option_ids($question_context['ordering_correct_option_ids'])
             : [];
         $true_false_matrix_answers = isset($question_context['true_false_matrix_answers']) && is_array($question_context['true_false_matrix_answers'])
             ? $question_context['true_false_matrix_answers']
@@ -1540,6 +1681,27 @@ trait CBT_REST_Scoring_Helpers
                 sort($selected_option_ids);
 
                 $is_correct = ($selected_option_ids === $correct_option_ids) ? 1 : 0;
+                $score = $is_correct ? $points : 0.0;
+                break;
+
+            case 'ordering':
+                $ordering_submission = self::normalize_ordering_selected_option_ids($answer_input);
+                $selected_option_ids = $ordering_submission['ids'];
+                $correct_lookup = array_fill_keys($ordering_correct_option_ids, true);
+                $has_foreign_option = false;
+                foreach ($selected_option_ids as $selected_option_id) {
+                    if (!isset($correct_lookup[$selected_option_id])) {
+                        $has_foreign_option = true;
+                        break;
+                    }
+                }
+                $is_correct = (
+                    empty($ordering_submission['invalid']) &&
+                    !empty($ordering_correct_option_ids) &&
+                    !$has_foreign_option &&
+                    count($selected_option_ids) === count($ordering_correct_option_ids) &&
+                    $selected_option_ids === $ordering_correct_option_ids
+                ) ? 1 : 0;
                 $score = $is_correct ? $points : 0.0;
                 break;
 
@@ -1665,6 +1827,7 @@ trait CBT_REST_Scoring_Helpers
             'true_false' => $wpdb->prefix . 'cbt_question_true_false',
             'short_answer' => $wpdb->prefix . 'cbt_question_short_answer',
             'essay' => $wpdb->prefix . 'cbt_question_essay',
+            'ordering' => $wpdb->prefix . 'cbt_question_ordering',
         ];
 
         if (isset($table_map[$question_type])) {
@@ -1673,6 +1836,9 @@ trait CBT_REST_Scoring_Helpers
                 ARRAY_A
             );
             if (is_array($detail) && !empty($detail)) {
+                if ($question_type === 'ordering') {
+                    $detail['correct_option_ids'] = self::get_ordering_correct_option_ids($question_id);
+                }
                 return $detail;
             }
         }
@@ -1710,6 +1876,52 @@ trait CBT_REST_Scoring_Helpers
         }
 
         return [];
+    }
+
+    /**
+     * @return int[]
+     */
+    private static function get_ordering_correct_option_ids(int $question_id): array
+    {
+        global $wpdb;
+
+        if ($question_id <= 0) {
+            return [];
+        }
+
+        $ordering_items_table = $wpdb->prefix . 'cbt_question_ordering_items';
+        $option_table = $wpdb->prefix . 'cbt_options';
+        $rows = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT oi.option_id
+                 FROM {$ordering_items_table} oi
+                 INNER JOIN {$option_table} o ON o.id = oi.option_id AND o.question_id = oi.question_id
+                 WHERE oi.question_id = %d
+                 ORDER BY oi.correct_position ASC, oi.option_id ASC",
+                $question_id
+            )
+        );
+
+        $ids = array_values(array_filter(array_map('intval', (array) $rows), static function (int $option_id): bool {
+            return $option_id > 0;
+        }));
+        if (!empty($ids)) {
+            return array_values(array_unique($ids));
+        }
+
+        $fallback_rows = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT id
+                 FROM {$option_table}
+                 WHERE question_id = %d
+                 ORDER BY id ASC",
+                $question_id
+            )
+        );
+
+        return array_values(array_unique(array_filter(array_map('intval', (array) $fallback_rows), static function (int $option_id): bool {
+            return $option_id > 0;
+        })));
     }
 
     private static function normalize_true_false_value(string $value, bool $strict = false): ?int

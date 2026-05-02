@@ -68,7 +68,7 @@ final class CBT_Admin_Questions_Import_Helper
             }
 
             $requested_import_type = isset($_POST['import_question_type']) ? sanitize_text_field(wp_unslash($_POST['import_question_type'])) : 'all';
-            $allowed_import_types = ['all', 'multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'];
+            $allowed_import_types = ['all', 'multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'];
             if (!in_array($requested_import_type, $allowed_import_types, true)) {
                 $requested_import_type = 'all';
             }
@@ -82,8 +82,8 @@ final class CBT_Admin_Questions_Import_Helper
                 self::redirect_question_import_with_error($extension_validation->get_error_message(), $return_page);
             }
 
-            if ($extension === 'docx' && !in_array($requested_import_type, ['all', 'multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay'], true)) {
-                self::redirect_question_import_with_error('Import DOCX hanya tersedia untuk tab Multiple Choice, Multiple Answer, True/False, TF Matrix, Short Answer, dan Essay.', $return_page);
+            if ($extension === 'docx' && !in_array($requested_import_type, ['all', 'multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'], true)) {
+                self::redirect_question_import_with_error('Import DOCX hanya tersedia untuk tab Multiple Choice, Multiple Answer, True/False, TF Matrix, Short Answer, Essay, dan Ordering.', $return_page);
             }
 
             $parsed = self::parse_question_docx($tmp_path);
@@ -386,6 +386,15 @@ final class CBT_Admin_Questions_Import_Helper
                 'cbt_download_question_template_word_essay',
                 'essay',
                 'cbt-question-import-template-essay.docx'
+            );
+        }
+
+        public static function handle_download_question_template_word_ordering(): void
+        {
+            self::download_word_question_template(
+                'cbt_download_question_template_word_ordering',
+                'ordering',
+                'cbt-question-import-template-ordering.docx'
             );
         }
 
@@ -3203,6 +3212,16 @@ final class CBT_Admin_Questions_Import_Helper
                     return self::failed_import_result($row, 'Essay wajib memiliki acuan jawaban atau rubrik.');
                 }
                 $options_raw = '';
+            } elseif ($question_type === 'ordering') {
+                $ordering_source = $options_input !== ''
+                    ? $options_input
+                    : ($correct_text !== '' ? $correct_text : $correct_answer);
+                $built = self::build_ordering_options_raw_from_import($ordering_source);
+                if ($built === '') {
+                    return self::failed_import_result($row, 'Ordering minimal harus punya 2 item valid dan tidak boleh duplikat.');
+                }
+                $options_raw = $built;
+                $correct_text = '';
             } else {
                 $correct_text = '';
                 $options_raw = '';
@@ -3228,6 +3247,7 @@ final class CBT_Admin_Questions_Import_Helper
 
             $question_id = (int) $wpdb->insert_id;
             $options_to_insert = CBT_Admin_Questions_Helper::parse_options($options_raw);
+            $inserted_option_ids = [];
 
             if ($question_type === 'true_false' && empty($options_to_insert)) {
                 $true_is_correct = (strtolower($correct_text) === 'true') ? 1 : 0;
@@ -3238,7 +3258,7 @@ final class CBT_Admin_Questions_Import_Helper
             }
 
             foreach ($options_to_insert as $idx => $opt) {
-                $wpdb->insert(
+                $option_inserted = $wpdb->insert(
                     $wpdb->prefix . 'cbt_options',
                     [
                         'question_id' => $question_id,
@@ -3249,9 +3269,15 @@ final class CBT_Admin_Questions_Import_Helper
                     ],
                     ['%d', '%s', '%s', '%d', '%s']
                 );
+                if ($option_inserted) {
+                    $inserted_option_ids[] = (int) $wpdb->insert_id;
+                }
             }
 
-            CBT_Admin_Questions_Helper::save_question_type_detail($question_id, $question_type, $correct_text);
+            $detail_context = $question_type === 'ordering'
+                ? ['ordered_option_ids' => $inserted_option_ids]
+                : [];
+            CBT_Admin_Questions_Helper::save_question_type_detail($question_id, $question_type, $correct_text, $detail_context);
 
             return [
                 'status' => 'created',
@@ -3515,6 +3541,53 @@ final class CBT_Admin_Questions_Import_Helper
             return is_string($encoded) ? $encoded : '';
         }
 
+        public static function build_ordering_options_raw_from_import(string $options_input): string
+        {
+            $parts = strpos($options_input, '||') !== false
+                ? explode('||', $options_input)
+                : preg_split('/\r\n|\r|\n/', $options_input);
+            $entries = [];
+            $seen = [];
+
+            foreach ((array) $parts as $part) {
+                $part = trim((string) $part);
+                if ($part === '') {
+                    continue;
+                }
+
+                $part = (string) preg_replace('/^(?:item|urutan|sequence|ordering|pilihan|opsi|option)_?([1-9]|1[0-2])\s*[:\.\)]\s*/iu', '', $part);
+                $part = (string) preg_replace('/^([A-La-l])\s*[:\.\)]\s*/u', '', $part);
+                $part = trim($part);
+                if ($part === '') {
+                    continue;
+                }
+
+                $text = CBT_Admin_Questions_Helper::sanitize_editor_html($part);
+                $dedupe_key = wp_strip_all_tags($text);
+                $dedupe_key = html_entity_decode($dedupe_key, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                $dedupe_key = (string) preg_replace('/\s+/u', ' ', trim($dedupe_key));
+                $dedupe_key = function_exists('mb_strtolower') ? mb_strtolower($dedupe_key, 'UTF-8') : strtolower($dedupe_key);
+                if ($dedupe_key === '' || isset($seen[$dedupe_key])) {
+                    return '';
+                }
+
+                $seen[$dedupe_key] = true;
+                $entries[] = [
+                    'option_text' => $text,
+                    'is_correct' => 0,
+                ];
+            }
+
+            $validation_error = CBT_Admin_Questions_Helper::validate_ordering_options($entries);
+            if ($validation_error !== '') {
+                return '';
+            }
+
+            $encoded = wp_json_encode($entries, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            return is_string($encoded) ? $encoded : '';
+        }
+
         public static function map_import_question_type(string $raw): string
         {
             $raw = strtolower(trim($raw));
@@ -3538,6 +3611,12 @@ final class CBT_Admin_Questions_Import_Helper
                     return 'short_answer';
                 case 'essay':
                     return 'essay';
+                case 'ordering':
+                case 'sequence':
+                case 'sequencing':
+                case 'urut':
+                case 'mengurutkan':
+                    return 'ordering';
                 default:
                     return '';
             }
@@ -3708,6 +3787,9 @@ final class CBT_Admin_Questions_Import_Helper
                 }
                 if ($context_type === 'matrix_statement' && $context_index > 0) {
                     return 'PERNYATAAN_' . $context_index;
+                }
+                if ($context_type === 'ordering_item' && $context_index > 0) {
+                    return 'ITEM_' . $context_index;
                 }
             }
 
@@ -4470,6 +4552,32 @@ final class CBT_Admin_Questions_Import_Helper
                         'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
                 }
+            } elseif ($template_type === 'ordering') {
+                $header_lines = array_merge($header_lines, [
+                    'Template Word ini untuk import Ordering / Sequencing (format tabel).',
+                    'Setiap blok soal dipisahkan oleh ---',
+                    'Field wajib: JENIS_SOAL, SOAL, ITEM_1..ITEM_minimal_2.',
+                    'ITEM_1 sampai ITEM_12 diisi sesuai urutan benar. Sistem akan mengacak item saat ujian.',
+                    'Item tidak boleh duplikat.',
+                    'POIN opsional, default 1.',
+                    'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
+                    'Boleh tempel gambar atau tabel langsung di bawah baris SOAL atau ITEM_n. Kontennya akan ikut masuk.',
+                    'Jumlah blok template: ' . $question_count . ' soal.',
+                    '',
+                ]);
+
+                for ($idx = 1; $idx <= $question_count; $idx++) {
+                    $blocks[] = [
+                        'JENIS_SOAL: ordering',
+                        'SOAL: [ORD ' . $idx . '] Susun langkah berikut sesuai urutan yang benar.',
+                        'ITEM_1: Langkah pertama',
+                        'ITEM_2: Langkah kedua',
+                        'ITEM_3: Langkah ketiga',
+                        'ITEM_4: Langkah keempat',
+                        'POIN: 1',
+                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
+                    ];
+                }
             } else {
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Multiple Choice (format tabel).',
@@ -4606,6 +4714,7 @@ final class CBT_Admin_Questions_Import_Helper
             $answer_text = '';
             $answer_parts = [];
             $short_answer_map = [];
+            $ordering_item_map = [];
             $tf_matrix_statement_map = [];
             $tf_matrix_answer_map = [];
             $diagnostic_entries = [];
@@ -4627,7 +4736,8 @@ final class CBT_Admin_Questions_Import_Helper
                             $explanation_parts,
                             $answer_parts,
                             $options_map,
-                            $tf_matrix_statement_map
+                            $tf_matrix_statement_map,
+                            $ordering_item_map
                         );
                     }
                     continue;
@@ -4656,7 +4766,8 @@ final class CBT_Admin_Questions_Import_Helper
                             $explanation_parts,
                             $answer_parts,
                             $options_map,
-                            $tf_matrix_statement_map
+                            $tf_matrix_statement_map,
+                            $ordering_item_map
                         );
                     }
                     continue;
@@ -4713,7 +4824,7 @@ final class CBT_Admin_Questions_Import_Helper
 
                     if (in_array($key, ['jenis_soal', 'question_type', 'type'], true)) {
                         $mapped = self::map_import_question_type($value);
-                        if (in_array($mapped, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'essay', 'short_answer'], true)) {
+                        if (in_array($mapped, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'essay', 'short_answer', 'ordering'], true)) {
                             $forced_question_type = $mapped;
                         }
                         continue;
@@ -4734,6 +4845,15 @@ final class CBT_Admin_Questions_Import_Helper
                             $explanation_parts[] = $value;
                         }
                         $active_context = 'explanation';
+                        continue;
+                    }
+
+                    if ($forced_question_type === 'ordering' && preg_match('/^(item|urutan|sequence|ordering)_?([1-9]|1[0-2])$/', $key, $matches)) {
+                        $item_idx = (int) $matches[2];
+                        if ($item_idx >= 1 && $item_idx <= $max_option_index) {
+                            $ordering_item_map[$item_idx] = $value;
+                        }
+                        $active_context = ['ordering_item', $item_idx];
                         continue;
                     }
 
@@ -4835,6 +4955,17 @@ final class CBT_Admin_Questions_Import_Helper
                         $tf_matrix_statement_map[$statement_idx] = ($current === '')
                             ? $line
                             : ($current . ' ' . $line);
+                        continue;
+                    }
+                }
+
+                if (is_array($active_context) && ($active_context[0] ?? '') === 'ordering_item') {
+                    $item_idx = (int) ($active_context[1] ?? 0);
+                    if ($item_idx >= 1 && $item_idx <= $max_option_index) {
+                        $current = trim((string) ($ordering_item_map[$item_idx] ?? ''));
+                        $ordering_item_map[$item_idx] = ($current === '')
+                            ? $line
+                            : ($current . '<br />' . $line);
                         continue;
                     }
                 }
@@ -4976,6 +5107,60 @@ final class CBT_Admin_Questions_Import_Helper
                     'options' => '',
                     'correct_answer' => '',
                     'correct_text' => wp_json_encode($short_answer_values),
+                ];
+                if ($subject_code !== '') {
+                    $row['subject_code'] = $subject_code;
+                }
+                if ($exam_title !== '') {
+                    $row['exam_title'] = $exam_title;
+                }
+                if ($explanation_text !== null) {
+                    $row['explanation'] = $explanation_text;
+                }
+                $row['__import_diagnostics'] = $diagnostic_entries;
+                return $row;
+            }
+
+            if ($forced_question_type === 'ordering') {
+                $source_items = !empty(array_filter($ordering_item_map, static fn($value): bool => trim((string) $value) !== ''))
+                    ? $ordering_item_map
+                    : $options_map;
+                $ordering_items = [];
+                foreach (range(1, $max_option_index) as $idx) {
+                    $val = trim((string) ($source_items[$idx] ?? ''));
+                    if ($val !== '') {
+                        $ordering_items[$idx] = $val;
+                    }
+                }
+
+                if (count($ordering_items) < 2) {
+                    return null;
+                }
+
+                $filled_indices = array_keys($ordering_items);
+                sort($filled_indices);
+                $max_idx = (int) max($filled_indices);
+                for ($idx = 1; $idx <= $max_idx; $idx++) {
+                    if (!isset($ordering_items[$idx])) {
+                        return null;
+                    }
+                }
+
+                $ordered_items = [];
+                for ($idx = 1; $idx <= $max_idx; $idx++) {
+                    $ordered_items[] = $ordering_items[$idx];
+                }
+                if (self::build_ordering_options_raw_from_import(implode('||', $ordered_items)) === '') {
+                    return null;
+                }
+
+                $row = [
+                    'question_type' => 'ordering',
+                    'question_text' => $question_text,
+                    'points' => (string) max(0, $points),
+                    'options' => implode('||', $ordered_items),
+                    'correct_answer' => '',
+                    'correct_text' => '',
                 ];
                 if ($subject_code !== '') {
                     $row['subject_code'] = $subject_code;
@@ -5189,7 +5374,7 @@ final class CBT_Admin_Questions_Import_Helper
                 if (
                     preg_match('/^([1-9]|1[0-2])[\.\)]\s*\S+/u', $line) === 1 ||
                     preg_match('/^([A-La-l])[\.\)]\s*\S+/u', $line) === 1 ||
-                    preg_match('/^(soal|question|pertanyaan|question_text|jenis_soal|question_type|type|jawaban|answer|correct_answer|correct_text|rubrik|rubric|pernyataan|statement|kunci|truth|tf|pilihan|opsi|option)\b/i', $line) === 1 ||
+                    preg_match('/^(soal|question|pertanyaan|question_text|jenis_soal|question_type|type|jawaban|answer|correct_answer|correct_text|rubrik|rubric|pernyataan|statement|item|kunci|truth|tf|pilihan|opsi|option)\b/i', $line) === 1 ||
                     strpos($line, '__IMG__:') === 0 ||
                     strpos($line, self::DOCX_HTML_MARKER_PREFIX) === 0 ||
                     strpos($line, self::DOCX_DIAGNOSTIC_MARKER_PREFIX) === 0
@@ -5311,6 +5496,7 @@ final class CBT_Admin_Questions_Import_Helper
             $answer_text = '';
             $answer_indices = [];
             $options_map = [];
+            $ordering_item_map = [];
             $tf_matrix_statement_map = [];
             $tf_matrix_answer_map = [];
             $short_answer_map = [];
@@ -5343,6 +5529,11 @@ final class CBT_Admin_Questions_Import_Helper
                 if (in_array($key, ['jawaban', 'answer', 'correct_answer', 'jawaban_ke', 'answer_option', 'correct_text', 'rubrik', 'rubric', 'rubric_text'], true)) {
                     $answer_text = $value;
                     $answer_indices = self::normalize_docx_answer_indices($value);
+                    continue;
+                }
+
+                if ($forced_question_type === 'ordering' && preg_match('/^(item|urutan|sequence|ordering)_?([1-9]|1[0-2])$/', $key, $matches)) {
+                    $ordering_item_map[(int) $matches[2]] = $value;
                     continue;
                 }
 
@@ -5447,6 +5638,46 @@ final class CBT_Admin_Questions_Import_Helper
                 }
 
                 return 'Blok Short Answer tidak sesuai template.';
+            }
+
+            if ($forced_question_type === 'ordering') {
+                $source_items = !empty($ordering_item_map) ? $ordering_item_map : $options_map;
+                $items = [];
+                foreach ($source_items as $item_index => $item_text) {
+                    $item_text = trim((string) $item_text);
+                    if ($item_text !== '') {
+                        $items[(int) $item_index] = $item_text;
+                    }
+                }
+                ksort($items);
+
+                if (count($items) < 2) {
+                    return 'Ordering minimal harus punya 2 ITEM yang valid.';
+                }
+
+                $filled_item_indexes = array_keys($items);
+                sort($filled_item_indexes);
+                $max_item_index = (int) max($filled_item_indexes);
+                for ($index = 1; $index <= $max_item_index; $index++) {
+                    if (!isset($items[$index])) {
+                        return 'ITEM Ordering harus diisi berurutan tanpa nomor yang loncat.';
+                    }
+                }
+
+                $ordering_options = [];
+                foreach ($items as $item_text) {
+                    $ordering_options[] = [
+                        'option_text' => $item_text,
+                        'is_correct' => 0,
+                    ];
+                }
+
+                $ordering_validation_error = CBT_Admin_Questions_Helper::validate_ordering_options($ordering_options);
+                if ($ordering_validation_error !== '') {
+                    return $ordering_validation_error;
+                }
+
+                return 'Blok Ordering tidak sesuai template.';
             }
 
             if ($forced_question_type === 'true_false_matrix' || !empty($tf_matrix_statement_map) || !empty($tf_matrix_answer_map)) {
@@ -5617,7 +5848,7 @@ final class CBT_Admin_Questions_Import_Helper
             }
 
             return (bool) preg_match(
-                '/^(jenis_soal|question_type|type|soal|question|pertanyaan|subject_code|kode_mapel|exam_title|judul_exam|ujian|point|points|poin|nilai|pembahasan|explanation|jawaban|answer|correct_answer|jawaban_ke|answer_option|correct_text|rubrik|rubric|rubric_text|(pilihan|opsi|option)_?([1-9]|1[0-2])|(pernyataan|statement|item)_?([1-9]|10)|(kunci|truth|tf)_?([1-9]|10)|(jawaban|answer|correct)_?([1-9]|10|[a-h])|[a-l])$/i',
+                '/^(jenis_soal|question_type|type|soal|question|pertanyaan|subject_code|kode_mapel|exam_title|judul_exam|ujian|point|points|poin|nilai|pembahasan|explanation|jawaban|answer|correct_answer|jawaban_ke|answer_option|correct_text|rubrik|rubric|rubric_text|(pilihan|opsi|option)_?([1-9]|1[0-2])|(pernyataan|statement|item)_?([1-9]|1[0-2])|(kunci|truth|tf)_?([1-9]|10)|(jawaban|answer|correct)_?([1-9]|10|[a-h])|[a-l])$/i',
                 $line
             );
         }
@@ -5676,7 +5907,8 @@ final class CBT_Admin_Questions_Import_Helper
             array &$explanation_parts,
             array &$answer_parts,
             array &$options_map,
-            array &$tf_matrix_statement_map
+            array &$tf_matrix_statement_map,
+            array &$ordering_item_map
         ): void {
             if ($html_fragment === '') {
                 return;
@@ -5694,6 +5926,14 @@ final class CBT_Admin_Questions_Import_Helper
                 $statement_idx = (int) ($active_context[1] ?? 0);
                 if ($statement_idx >= 1 && $statement_idx <= 10) {
                     $tf_matrix_statement_map[$statement_idx] = self::append_docx_html_fragment_to_string((string) ($tf_matrix_statement_map[$statement_idx] ?? ''), $html_fragment);
+                    return;
+                }
+            }
+
+            if (is_array($active_context) && ($active_context[0] ?? '') === 'ordering_item') {
+                $item_idx = (int) ($active_context[1] ?? 0);
+                if ($item_idx >= 1 && $item_idx <= 12) {
+                    $ordering_item_map[$item_idx] = self::append_docx_html_fragment_to_string((string) ($ordering_item_map[$item_idx] ?? ''), $html_fragment);
                     return;
                 }
             }

@@ -97,6 +97,7 @@ final class CBT_Admin_Results_Helper
 
         $exam_ids_sql = implode(',', array_values($exam_ids));
         $question_short_answer_table = $wpdb->prefix . 'cbt_question_short_answer';
+        $question_ordering_items_table = $wpdb->prefix . 'cbt_question_ordering_items';
         $question_rows = $wpdb->get_results(
             "SELECT q.id, q.exam_id, q.question_type, q.points, q.correct_text,
                     qsa.correct_text AS short_answer_correct_text,
@@ -171,10 +172,11 @@ final class CBT_Admin_Results_Helper
         if (!empty($all_question_ids)) {
             $question_ids_sql = implode(',', array_values($all_question_ids));
             $option_rows = $wpdb->get_results(
-                "SELECT id, question_id, option_key, option_text, is_correct
-                 FROM {$option_table}
-                 WHERE question_id IN ({$question_ids_sql})
-                 ORDER BY question_id ASC, id ASC",
+                "SELECT o.id, o.question_id, o.option_key, o.option_text, o.is_correct, oi.correct_position
+                 FROM {$option_table} o
+                 LEFT JOIN {$question_ordering_items_table} oi ON oi.question_id = o.question_id AND oi.option_id = o.id
+                 WHERE o.question_id IN ({$question_ids_sql})
+                 ORDER BY o.question_id ASC, COALESCE(oi.correct_position, 999999), o.id ASC",
                 ARRAY_A
             );
 
@@ -194,7 +196,13 @@ final class CBT_Admin_Results_Helper
                     (string) ($option['option_text'] ?? '')
                 );
 
-                if ((int) ($option['is_correct'] ?? 0) === 1) {
+                $question_type = (string) ($questions_by_id[$question_id]['question_type'] ?? '');
+                if ($question_type === 'ordering' && (int) ($option['correct_position'] ?? 0) > 0) {
+                    if (!isset($correct_option_ids_by_question[$question_id])) {
+                        $correct_option_ids_by_question[$question_id] = [];
+                    }
+                    $correct_option_ids_by_question[$question_id][] = $option_id;
+                } elseif ((int) ($option['is_correct'] ?? 0) === 1) {
                     if (!isset($correct_option_ids_by_question[$question_id])) {
                         $correct_option_ids_by_question[$question_id] = [];
                     }
@@ -356,11 +364,15 @@ final class CBT_Admin_Results_Helper
             $selected_option_ids = CBT_Admin_Questions_Helper::decode_attempt_selected_option_ids((string) ($answer_row['selected_option_ids'] ?? ''));
         }
 
-        if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false'], true)) {
-            sort($selected_option_ids);
+        if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering'], true)) {
+            if ($question_type !== 'ordering') {
+                sort($selected_option_ids);
+            }
 
             $normalized_correct_option_ids = array_values(array_unique(array_map('intval', $correct_option_ids)));
-            sort($normalized_correct_option_ids);
+            if ($question_type !== 'ordering') {
+                sort($normalized_correct_option_ids);
+            }
 
             if (!is_array($answer_row) || empty($selected_option_ids)) {
                 $status = 'unanswered';
@@ -651,6 +663,8 @@ final class CBT_Admin_Results_Helper
                 return 'True / False';
             case 'true_false_matrix':
                 return 'TF Matrix';
+            case 'ordering':
+                return 'Ordering';
             case 'short_answer':
                 return 'Short Answer';
             case 'essay':

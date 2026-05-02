@@ -252,6 +252,35 @@ afterEach(function () {
 });
 
 describe('createExamNavigationManager', function () {
+    it('renders ordering navigation status as completed item count', function () {
+        var fixture = createFixture({
+            questionLookup: {
+                104: createQuestion(104, 'ordering', {
+                    options: [
+                        { id: 201, option_key: 'A' },
+                        { id: 202, option_key: 'B' },
+                        { id: 203, option_key: 'C' }
+                    ],
+                    question_number: 4
+                })
+            },
+            questionOrderIds: [104],
+            state: {
+                answers: {
+                    104: [201, 203, 202]
+                },
+                answeredQuestionLookup: {
+                    104: true
+                }
+            }
+        });
+
+        var question = fixture.questionLookup[104];
+
+        expect(fixture.navigationManager.isQuestionAnswered(question)).toBe(true);
+        expect(fixture.navigationManager.renderNavigationAnswerBadges(question)).toContain('3/3');
+    });
+
     it('keeps currentIndex clamped to a valid question and preserves per-question state across navigation jumps', async function () {
         var fixture = createFixture();
 

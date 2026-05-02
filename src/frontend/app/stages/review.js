@@ -199,7 +199,33 @@ export function createReviewRenderer(deps) {
         var explanationText = String(item && item.explanation ? item.explanation : '').trim();
 
         var answerMarkup = '';
-        if (options.length > 0) {
+        if (questionType === 'ordering') {
+            var orderingRows = item && Array.isArray(item.ordering_rows) ? item.ordering_rows : [];
+            if (!orderingRows.length) {
+                answerMarkup = '<div class="cbt-review-text">Data urutan tidak tersedia.</div>';
+            } else {
+                answerMarkup = [
+                    '<div class="cbt-review-ordering">',
+                    '<table class="cbt-ordering-review-table">',
+                    '<thead><tr><th>Posisi</th><th>Jawaban Anda</th><th>Kunci</th></tr></thead>',
+                    '<tbody>',
+                    orderingRows.map(function (row) {
+                        var isMatch = Number(row && row.is_match) === 1;
+                        var matchClass = isMatch ? ' is-match' : ' is-mismatch';
+                        return [
+                            '<tr>',
+                            '<td class="cbt-ordering-review-position">' + escapeHtml(row && row.position ? row.position : '-') + '</td>',
+                            '<td class="cbt-ordering-review-answer' + matchClass + '">' + safeRichHtml(row && row.submitted_text ? row.submitted_text : '') + '</td>',
+                            '<td class="cbt-ordering-review-answer">' + safeRichHtml(row && row.correct_text ? row.correct_text : '') + '</td>',
+                            '</tr>'
+                        ].join('');
+                    }).join(''),
+                    '</tbody>',
+                    '</table>',
+                    '</div>'
+                ].join('');
+            }
+        } else if (options.length > 0) {
             answerMarkup = [
                 '<div class="cbt-review-options">',
                 options.map(function (option, index) {

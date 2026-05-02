@@ -103,6 +103,42 @@ describe('createReviewRenderer', function () {
         expect(markup).toContain('Jawaban dengan skor parsial');
     });
 
+    it('renders ordering review rows with submitted and correct order', function () {
+        var renderer = createFixture([
+            {
+                question_number: 5,
+                question_text: '<p>Susun prosedur</p>',
+                question_type: 'ordering',
+                points: 3,
+                score_awarded: 0,
+                status: 'incorrect',
+                ordering_rows: [
+                    {
+                        position: 1,
+                        submitted_text: '<p>Langkah B</p>',
+                        correct_text: '<p>Langkah A</p>',
+                        is_match: 0
+                    },
+                    {
+                        position: 2,
+                        submitted_text: '<p>Langkah A</p>',
+                        correct_text: '<p>Langkah B</p>',
+                        is_match: 0
+                    }
+                ]
+            }
+        ]);
+
+        var markup = renderer.renderResultReviewSection();
+
+        expect(markup).toContain('cbt-ordering-review-table');
+        expect(markup).toContain('Jawaban Anda');
+        expect(markup).toContain('Kunci');
+        expect(markup).toContain('<p>Langkah B</p>');
+        expect(markup).toContain('<p>Langkah A</p>');
+        expect(markup).toContain('is-mismatch');
+    });
+
     it('preserves cbt math wrappers inside review rich html payloads', function () {
         var renderer = createFixture([
             {

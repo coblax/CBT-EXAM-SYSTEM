@@ -117,6 +117,13 @@ export function createExamNavigationManager(deps) {
             return Array.isArray(answer) && answer.length > 0;
         }
 
+        if (question.question_type === 'ordering') {
+            if (Array.isArray(answer)) {
+                return answer.length > 1;
+            }
+            return Array.isArray(question.options) && question.options.length > 1;
+        }
+
         if (question.question_type === 'short_answer') {
             if (!answer || typeof answer !== 'object') {
                 return false;
@@ -329,6 +336,17 @@ export function createExamNavigationManager(deps) {
             }
 
             return keys;
+        }
+
+        if (type === 'ordering') {
+            var orderingAnswerIds = Array.isArray(answer)
+                ? answer.map(function (item) { return Number(item) || 0; }).filter(function (item) { return item > 0; })
+                : [];
+            var orderingCount = orderingAnswerIds.length > 0 ? orderingAnswerIds.length : options.length;
+            if (orderingCount <= 1 || options.length <= 1) {
+                return [];
+            }
+            return [String(orderingCount) + '/' + String(options.length)];
         }
 
         if (type === 'true_false_matrix') {

@@ -62,4 +62,31 @@ describe('createQuestionRenderManager', function () {
         expect(html).toContain('rendered-option');
         expect(html).toContain('data-action="open-rich-zoom"');
     });
+
+    it('renders ordering items with rich content and up down controls', function () {
+        var manager = createManager();
+        var html = manager.renderQuestionInput({
+            id: 42,
+            question_type: 'ordering',
+            options: [
+                {
+                    id: 301,
+                    option_key: 'A',
+                    option_text: '<table><tbody><tr><td>Langkah 1</td></tr></tbody></table>'
+                },
+                {
+                    id: 302,
+                    option_key: 'B',
+                    option_text: '<p>Langkah 2</p>'
+                }
+            ]
+        });
+
+        expect(html).toContain('class="cbt-ordering"');
+        expect(html).toContain('data-cbt-ordering-list="1"');
+        expect(html).toContain('data-action="answer-ordering-move"');
+        expect(html).toContain('data-direction="up"');
+        expect(html).toContain('data-direction="down"');
+        expect(html).toContain('<div class="rendered-option"><table>');
+    });
 });

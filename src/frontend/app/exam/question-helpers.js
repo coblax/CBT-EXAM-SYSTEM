@@ -130,7 +130,7 @@ export function normalizeAnswerValueForQuestion(question, rawAnswer, options) {
         };
     }
 
-    if (questionType === 'multiple_answer') {
+    if (questionType === 'multiple_answer' || questionType === 'ordering') {
         if (!Array.isArray(rawAnswer)) {
             return {
                 hasValue: false,

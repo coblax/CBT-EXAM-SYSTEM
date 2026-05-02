@@ -242,6 +242,73 @@ export function createQuestionRenderManager(deps) {
             ].join('');
         }
 
+        if (question.question_type === 'ordering') {
+            var optionLookup = {};
+            var rawOptions = Array.isArray(question.options) ? question.options : [];
+            rawOptions.forEach(function (option, index) {
+                var optionId = Number(option && option.id) || 0;
+                if (optionId <= 0) {
+                    return;
+                }
+                optionLookup[optionId] = {
+                    index: index,
+                    option: option
+                };
+            });
+
+            var orderedIds = [];
+            var seenOrderingIds = {};
+            if (Array.isArray(answer)) {
+                answer.forEach(function (item) {
+                    var optionId = Number(item) || 0;
+                    if (optionId <= 0 || seenOrderingIds[optionId] || !optionLookup[optionId]) {
+                        return;
+                    }
+                    seenOrderingIds[optionId] = true;
+                    orderedIds.push(optionId);
+                });
+            }
+            rawOptions.forEach(function (option) {
+                var optionId = Number(option && option.id) || 0;
+                if (optionId <= 0 || seenOrderingIds[optionId]) {
+                    return;
+                }
+                seenOrderingIds[optionId] = true;
+                orderedIds.push(optionId);
+            });
+
+            if (orderedIds.length < 2) {
+                return '<p class="cbt-muted">Item ordering belum tersedia.</p>';
+            }
+
+            return [
+                '<div class="cbt-ordering" data-cbt-ordering-list="1" data-qid="' + escapeHtml(question.id) + '">',
+                orderedIds.map(function (optionId, positionIndex) {
+                    var entry = optionLookup[optionId] || {};
+                    var option = entry.option || {};
+                    var originalIndex = Number(entry.index) || 0;
+                    var upDisabled = positionIndex <= 0 || isExamAnswerEditingLocked();
+                    var downDisabled = positionIndex >= orderedIds.length - 1 || isExamAnswerEditingLocked();
+                    return [
+                        '<div class="cbt-ordering-item" data-option-id="' + escapeHtml(optionId) + '">',
+                        '<div class="cbt-ordering-position">' + escapeHtml(positionIndex + 1) + '</div>',
+                        '<div class="cbt-ordering-content">',
+                        '<span class="cbt-option-key">' + escapeHtml(questionOptionKey(option, originalIndex)) + '</span>',
+                        '<div class="cbt-option-label">' + renderExamRichHtml(option.option_text || '', {
+                            context: 'option'
+                        }) + '</div>',
+                        '</div>',
+                        '<div class="cbt-ordering-controls">',
+                        '<button type="button" class="cbt-ordering-btn" data-action="answer-ordering-move" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '" data-direction="up" aria-label="Naikkan item" title="Naikkan item"' + (upDisabled ? ' disabled' : '') + '>&uarr;</button>',
+                        '<button type="button" class="cbt-ordering-btn" data-action="answer-ordering-move" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '" data-direction="down" aria-label="Turunkan item" title="Turunkan item"' + (downDisabled ? ' disabled' : '') + '>&darr;</button>',
+                        '</div>',
+                        '</div>'
+                    ].join('');
+                }).join(''),
+                '</div>'
+            ].join('');
+        }
+
         if (question.question_type === 'true_false_matrix') {
             var matrixItems = getTrueFalseMatrixItems(question);
             var matrixAnswer = normalizeTrueFalseMatrixAnswer(answer);

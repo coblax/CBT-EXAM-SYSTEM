@@ -982,7 +982,7 @@ class CBT_Runtime
     /**
      * @param array<int,int> $option_id_map
      */
-    public static function remap_active_attempt_answers_for_question(int $question_id, array $option_id_map = [], bool $clear_answer = false): int
+    public static function remap_active_attempt_answers_for_question(int $question_id, array $option_id_map = [], bool $clear_answer = false, bool $preserve_order = false): int
     {
         $question_id = absint($question_id);
         if ($question_id <= 0) {
@@ -1041,17 +1041,21 @@ class CBT_Runtime
                     $has_changes = true;
                 }
             } else {
-                $selected_option_ids = self::decode_selected_option_ids_string((string) ($entry['selected_option_ids'] ?? ''));
+                $selected_option_ids = self::decode_selected_option_ids_string((string) ($entry['selected_option_ids'] ?? ''), $preserve_order);
                 $remapped_option_ids = [];
+                $seen_remapped_option_ids = [];
                 foreach ($selected_option_ids as $selected_option_id) {
                     $new_option_id = isset($option_id_map[$selected_option_id]) ? (int) $option_id_map[$selected_option_id] : 0;
-                    if ($new_option_id > 0) {
+                    if ($new_option_id > 0 && !isset($seen_remapped_option_ids[$new_option_id])) {
+                        $seen_remapped_option_ids[$new_option_id] = true;
                         $remapped_option_ids[] = $new_option_id;
                     }
                 }
 
-                $remapped_option_ids = array_values(array_unique($remapped_option_ids));
-                sort($remapped_option_ids);
+                $remapped_option_ids = array_values($remapped_option_ids);
+                if (!$preserve_order) {
+                    sort($remapped_option_ids);
+                }
                 $next_selected_option_ids = !empty($remapped_option_ids) ? (string) wp_json_encode($remapped_option_ids) : '';
                 if ($next_selected_option_ids !== (string) ($entry['selected_option_ids'] ?? '')) {
                     $entry['selected_option_ids'] = $next_selected_option_ids;
@@ -1617,7 +1621,7 @@ class CBT_Runtime
     /**
      * @return int[]
      */
-    private static function decode_selected_option_ids_string(string $raw): array
+    private static function decode_selected_option_ids_string(string $raw, bool $preserve_order = false): array
     {
         $raw = trim($raw);
         if ($raw === '') {
@@ -1637,7 +1641,9 @@ class CBT_Runtime
             return $option_id > 0;
         }));
         $ids = array_values(array_unique($ids));
-        sort($ids);
+        if (!$preserve_order) {
+            sort($ids);
+        }
         return $ids;
     }
 

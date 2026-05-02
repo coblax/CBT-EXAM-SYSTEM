@@ -61,7 +61,14 @@ describe('createQuestionStateManager', function () {
                         input_keys: ['A', 'B']
                     }
                 }),
-                5: createQuestion(5, 'essay')
+                5: createQuestion(5, 'essay'),
+                6: createQuestion(6, 'ordering', {
+                    options: [
+                        { id: 61, option_key: 'A' },
+                        { id: 62, option_key: 'B' },
+                        { id: 63, option_key: 'C' }
+                    ]
+                })
             },
             state: {
                 answers: {
@@ -75,14 +82,16 @@ describe('createQuestionStateManager', function () {
                         A: '  alpha  ',
                         B: ' '
                     },
-                    5: '  paragraf  '
+                    5: '  paragraf  ',
+                    6: [62, 61, 62, 999, 63]
                 },
                 answeredQuestionLookup: {
                     1: true,
                     2: true,
                     3: true,
                     4: true,
-                    5: true
+                    5: true,
+                    6: true
                 }
             }
         });
@@ -96,6 +105,7 @@ describe('createQuestionStateManager', function () {
             input_a: 'alpha'
         });
         expect(fixture.manager.questionAnswerPayload(fixture.questionsById[5])).toBe('paragraf');
+        expect(fixture.manager.questionAnswerPayload(fixture.questionsById[6])).toEqual([62, 61, 63]);
     });
 
     it('restores revision-safe answers by option key when option ids change', function () {

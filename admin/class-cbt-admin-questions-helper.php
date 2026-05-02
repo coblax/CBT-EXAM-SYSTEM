@@ -15,6 +15,7 @@ final class CBT_Admin_Questions_Helper
                 'cbt-questions-tf',
                 'cbt-questions-sa',
                 'cbt-questions-essay',
+                'cbt-questions-ordering',
             ];
         }
 
@@ -40,6 +41,8 @@ final class CBT_Admin_Questions_Helper
                     return 'short_answer';
                 case 'cbt-questions-essay':
                     return 'essay';
+                case 'cbt-questions-ordering':
+                    return 'ordering';
                 default:
                     return '';
             }
@@ -52,7 +55,7 @@ final class CBT_Admin_Questions_Helper
             }
     
             $answer_text = trim((string) ($answer_row['answer_text'] ?? ''));
-            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false'], true)) {
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering'], true)) {
                 $selected_ids = self::decode_attempt_selected_option_ids((string) ($answer_row['selected_option_ids'] ?? ''));
                 $labels = [];
                 foreach ($selected_ids as $option_id) {
@@ -599,10 +602,11 @@ final class CBT_Admin_Questions_Helper
                 'true_false' => $wpdb->prefix . 'cbt_question_true_false',
                 'short_answer' => $wpdb->prefix . 'cbt_question_short_answer',
                 'essay' => $wpdb->prefix . 'cbt_question_essay',
+                'ordering' => $wpdb->prefix . 'cbt_question_ordering',
             ];
         }
 
-        public static function save_question_type_detail(int $question_id, string $question_type, string $correct_text): void
+        public static function save_question_type_detail(int $question_id, string $question_type, string $correct_text, array $context = []): void
         {
             global $wpdb;
     
@@ -611,6 +615,8 @@ final class CBT_Admin_Questions_Helper
             }
     
             $tables = self::question_type_detail_tables();
+            $ordering_item_table = $wpdb->prefix . 'cbt_question_ordering_items';
+            $wpdb->delete($ordering_item_table, ['question_id' => $question_id], ['%d']);
             foreach ($tables as $table) {
                 $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
             }
@@ -684,7 +690,109 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%s', '%s']
                 );
+                return;
             }
+
+            if ($question_type === 'ordering' && isset($tables['ordering'])) {
+                $wpdb->insert(
+                    $tables['ordering'],
+                    [
+                        'question_id' => $question_id,
+                        'scoring_mode' => 'exact',
+                        'shuffle_items' => 1,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    ['%d', '%s', '%d', '%s', '%s']
+                );
+
+                $ordered_option_ids = isset($context['ordered_option_ids']) && is_array($context['ordered_option_ids'])
+                    ? array_values($context['ordered_option_ids'])
+                    : [];
+                self::save_ordering_item_positions($question_id, $ordered_option_ids);
+            }
+        }
+
+        /**
+         * @param array<int,mixed> $ordered_option_ids
+         */
+        public static function save_ordering_item_positions(int $question_id, array $ordered_option_ids): void
+        {
+            global $wpdb;
+
+            if ($question_id <= 0) {
+                return;
+            }
+
+            $table = $wpdb->prefix . 'cbt_question_ordering_items';
+            $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
+
+            $seen = [];
+            $position = 1;
+            $now = current_time('mysql');
+            foreach ($ordered_option_ids as $option_id_raw) {
+                $option_id = (int) $option_id_raw;
+                if ($option_id <= 0 || isset($seen[$option_id])) {
+                    continue;
+                }
+
+                $seen[$option_id] = true;
+                $wpdb->insert(
+                    $table,
+                    [
+                        'question_id' => $question_id,
+                        'option_id' => $option_id,
+                        'correct_position' => $position,
+                        'created_at' => $now,
+                    ],
+                    ['%d', '%d', '%d', '%s']
+                );
+                $position++;
+            }
+        }
+
+        /**
+         * @return int[]
+         */
+        public static function get_ordering_correct_option_ids(int $question_id): array
+        {
+            global $wpdb;
+
+            if ($question_id <= 0) {
+                return [];
+            }
+
+            $item_table = $wpdb->prefix . 'cbt_question_ordering_items';
+            $option_table = $wpdb->prefix . 'cbt_options';
+            $rows = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT oi.option_id
+                     FROM {$item_table} oi
+                     INNER JOIN {$option_table} o ON o.id = oi.option_id AND o.question_id = oi.question_id
+                     WHERE oi.question_id = %d
+                     ORDER BY oi.correct_position ASC, oi.option_id ASC",
+                    $question_id
+                )
+            );
+
+            $ids = array_values(array_filter(array_map('intval', (array) $rows), static function (int $option_id): bool {
+                return $option_id > 0;
+            }));
+
+            if (!empty($ids)) {
+                return array_values(array_unique($ids));
+            }
+
+            $fallback = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT id FROM {$option_table} WHERE question_id = %d ORDER BY id ASC",
+                    $question_id
+                )
+            );
+
+            return array_values(array_unique(array_filter(array_map('intval', (array) $fallback), static function (int $option_id): bool {
+                return $option_id > 0;
+            })));
         }
 
         public static function get_question_type_detail(int $question_id, string $question_type): array
@@ -706,6 +814,9 @@ final class CBT_Admin_Questions_Helper
                         $values = self::normalize_short_answer_values((string) ($detail['correct_text'] ?? ''));
                         $detail['correct_text'] = !empty($values) ? (string) wp_json_encode($values) : '';
                         $detail['correct_answers'] = $values;
+                    }
+                    if ($question_type === 'ordering') {
+                        $detail['correct_option_ids'] = self::get_ordering_correct_option_ids($question_id);
                     }
                     return $detail;
                 }
@@ -756,8 +867,44 @@ final class CBT_Admin_Questions_Helper
                     'rubric_text' => $legacy_text,
                 ];
             }
+
+            if ($question_type === 'ordering') {
+                return [
+                    'question_id' => $question_id,
+                    'scoring_mode' => 'exact',
+                    'shuffle_items' => 1,
+                    'correct_option_ids' => self::get_ordering_correct_option_ids($question_id),
+                ];
+            }
     
             return [];
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $options
+         */
+        public static function validate_ordering_options(array $options): string
+        {
+            $valid_count = 0;
+            foreach ($options as $option) {
+                if (!is_array($option)) {
+                    continue;
+                }
+                if (!self::has_non_empty_option_content((string) ($option['option_text'] ?? ''))) {
+                    return 'Item Ordering tidak boleh kosong.';
+                }
+                $valid_count++;
+            }
+
+            if ($valid_count < 2) {
+                return 'Ordering minimal harus punya 2 item.';
+            }
+
+            if (!empty(self::find_duplicate_option_indexes($options))) {
+                return 'Ordering tidak boleh punya item duplikat.';
+            }
+
+            return '';
         }
 
         public static function normalize_true_false_value(string $value): int
@@ -784,6 +931,8 @@ final class CBT_Admin_Questions_Helper
                     return 'Short Answer';
                 case 'essay':
                     return 'Essay';
+                case 'ordering':
+                    return 'Ordering';
                 default:
                     return ucwords(str_replace('_', ' ', $question_type));
             }
@@ -1278,6 +1427,36 @@ CSS;
         ): string {
             $question_type = (string) ($question['question_type'] ?? '');
 
+            if ($question_type === 'ordering' && !empty($options)) {
+                $correct_option_ids = is_array($question_detail['correct_option_ids'] ?? null)
+                    ? array_values(array_map('intval', (array) $question_detail['correct_option_ids']))
+                    : [];
+                $options_by_id = [];
+                foreach ($options as $option) {
+                    $option_id = (int) ($option['id'] ?? 0);
+                    if ($option_id > 0) {
+                        $options_by_id[$option_id] = (array) $option;
+                    }
+                }
+
+                $ordered_options = [];
+                foreach ($correct_option_ids as $option_id) {
+                    if (isset($options_by_id[$option_id])) {
+                        $ordered_options[] = $options_by_id[$option_id];
+                        unset($options_by_id[$option_id]);
+                    }
+                }
+                foreach ($options as $option) {
+                    $option_id = (int) ($option['id'] ?? 0);
+                    if ($option_id > 0 && isset($options_by_id[$option_id])) {
+                        $ordered_options[] = (array) $option;
+                        unset($options_by_id[$option_id]);
+                    }
+                }
+
+                return self::render_admin_student_preview_ordering_options($ordered_options, $show_answer_key);
+            }
+
             if (!empty($options)) {
                 return self::render_admin_student_preview_options($options, $show_answer_key);
             }
@@ -1359,6 +1538,32 @@ CSS;
             }
 
             return '';
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $options
+         */
+        private static function render_admin_student_preview_ordering_options(array $options, bool $show_answer_key = true): string
+        {
+            ob_start();
+            ?>
+            <section class="cbt-admin-student-preview-section">
+                <strong class="cbt-admin-student-preview-section-title"><?php echo esc_html($show_answer_key ? 'Urutan Benar' : 'Item Ordering'); ?></strong>
+                <div class="cbt-admin-student-preview-options">
+                    <?php foreach ($options as $index => $option): ?>
+                        <div class="cbt-admin-student-preview-option">
+                            <div class="cbt-admin-student-preview-option-main">
+                                <span class="cbt-admin-student-preview-option-key"><?php echo esc_html((string) ($index + 1)); ?></span>
+                                <div class="cbt-admin-student-preview-option-text cbt-admin-student-preview-richtext">
+                                    <?php echo self::render_editor_html((string) ($option['option_text'] ?? '')); ?>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+            <?php
+            return trim((string) ob_get_clean());
         }
 
         /**

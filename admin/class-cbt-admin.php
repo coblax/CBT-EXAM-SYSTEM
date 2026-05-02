@@ -110,6 +110,7 @@ class CBT_Admin
         add_action('admin_post_cbt_download_question_template_word_tf', [CBT_Admin_Questions_Actions::class, 'handle_download_question_template_word_tf']);
         add_action('admin_post_cbt_download_question_template_word_tfm', [CBT_Admin_Questions_Actions::class, 'handle_download_question_template_word_tfm']);
         add_action('admin_post_cbt_download_question_template_word_essay', [CBT_Admin_Questions_Actions::class, 'handle_download_question_template_word_essay']);
+        add_action('admin_post_cbt_download_question_template_word_ordering', [CBT_Admin_Questions_Actions::class, 'handle_download_question_template_word_ordering']);
         add_action('admin_post_cbt_grade_essay', [CBT_Admin_Results_Actions::class, 'handle_grade_essay']);
         add_action('admin_post_cbt_bulk_grade_essay', [CBT_Admin_Results_Actions::class, 'handle_bulk_grade_essay']);
         add_action('admin_post_cbt_save_essay_ai_settings', [CBT_Admin_Results_Actions::class, 'handle_save_essay_ai_settings']);

@@ -10,7 +10,7 @@ class CBT_Activator
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
     private const OPTION_SUPERVISOR_FRONTEND_PAGE_ID = 'cbt_exam_system_supervisor_page_id';
     private const OPTION_FRONTEND_PAGE_SYNC_PENDING = 'cbt_exam_system_frontend_page_sync_pending';
-    private const DB_VERSION = '1.6.17';
+    private const DB_VERSION = '1.6.18';
 
     public static function activate(): void
     {
@@ -184,6 +184,25 @@ class CBT_Activator
             PRIMARY KEY (question_id)
         ) $charset;";
 
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_ordering (
+            question_id BIGINT UNSIGNED NOT NULL,
+            scoring_mode VARCHAR(30) NOT NULL DEFAULT 'exact',
+            shuffle_items TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (question_id)
+        ) $charset;";
+
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_ordering_items (
+            question_id BIGINT UNSIGNED NOT NULL,
+            option_id BIGINT UNSIGNED NOT NULL,
+            correct_position SMALLINT UNSIGNED NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (question_id, option_id),
+            UNIQUE KEY uniq_question_position (question_id, correct_position),
+            KEY idx_option_id (option_id)
+        ) $charset;";
+
         $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_attempts (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             exam_id BIGINT UNSIGNED NOT NULL,
@@ -289,6 +308,9 @@ class CBT_Activator
             ['name' => 'fk_cbt_qtf_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_true_false ADD CONSTRAINT fk_cbt_qtf_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_qsa_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_short_answer ADD CONSTRAINT fk_cbt_qsa_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_qes_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_essay ADD CONSTRAINT fk_cbt_qes_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qord_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_ordering ADD CONSTRAINT fk_cbt_qord_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qordi_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_ordering_items ADD CONSTRAINT fk_cbt_qordi_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qordi_option', 'sql' => "ALTER TABLE {$prefix}cbt_question_ordering_items ADD CONSTRAINT fk_cbt_qordi_option FOREIGN KEY (option_id) REFERENCES {$prefix}cbt_options(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_attempts_exam', 'sql' => "ALTER TABLE {$prefix}cbt_attempts ADD CONSTRAINT fk_cbt_attempts_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_answers_attempt', 'sql' => "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_attempt FOREIGN KEY (attempt_id) REFERENCES {$prefix}cbt_attempts(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_answers_question', 'sql' => "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],

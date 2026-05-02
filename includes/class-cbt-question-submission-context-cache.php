@@ -603,6 +603,7 @@ class CBT_Question_Submission_Context_Cache
         $question_table = $wpdb->prefix . 'cbt_questions';
         $question_true_false_table = $wpdb->prefix . 'cbt_question_true_false';
         $question_short_answer_table = $wpdb->prefix . 'cbt_question_short_answer';
+        $question_ordering_items_table = $wpdb->prefix . 'cbt_question_ordering_items';
         $option_table = $wpdb->prefix . 'cbt_options';
 
         $ids_sql = implode(',', $question_ids);
@@ -634,16 +635,20 @@ class CBT_Question_Submission_Context_Cache
         $option_rows = [];
         $option_question_ids = array_values(array_filter(array_keys($question_types_by_id), static function (int $question_id) use ($question_types_by_id): bool {
             $type = (string) ($question_types_by_id[$question_id] ?? '');
-            return in_array($type, ['multiple_choice', 'multiple_answer', 'true_false'], true);
+            return in_array($type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering'], true);
         }));
 
         if (!empty($option_question_ids)) {
             $option_ids_sql = implode(',', array_map('intval', $option_question_ids));
             $option_rows = $wpdb->get_results(
-                "SELECT id, question_id, option_text, is_correct
-                 FROM {$option_table}
-                 WHERE question_id IN ({$option_ids_sql})
-                 ORDER BY question_id ASC, id ASC",
+                "SELECT id, question_id, option_text, is_correct, correct_position
+                 FROM (
+                     SELECT o.id, o.question_id, o.option_text, o.is_correct, oi.correct_position
+                     FROM {$option_table} o
+                     LEFT JOIN {$question_ordering_items_table} oi ON oi.question_id = o.question_id AND oi.option_id = o.id
+                     WHERE o.question_id IN ({$option_ids_sql})
+                 ) option_context
+                 ORDER BY question_id ASC, COALESCE(correct_position, 9999) ASC, id ASC",
                 ARRAY_A
             );
         }
@@ -663,6 +668,7 @@ class CBT_Question_Submission_Context_Cache
                 'id' => (int) ($option_row['id'] ?? 0),
                 'option_text' => (string) ($option_row['option_text'] ?? ''),
                 'is_correct' => (int) ($option_row['is_correct'] ?? 0),
+                'correct_position' => (int) ($option_row['correct_position'] ?? 0),
             ];
         }
 
@@ -1024,6 +1030,7 @@ class CBT_Question_Submission_Context_Cache
         }
 
         $correct_option_ids = [];
+        $ordering_correct_option_ids = [];
         $true_false_option_value_by_id = [];
         foreach ($options as $option) {
             $option_id = absint($option['id'] ?? 0);
@@ -1033,6 +1040,10 @@ class CBT_Question_Submission_Context_Cache
 
             if ((int) ($option['is_correct'] ?? 0) === 1) {
                 $correct_option_ids[] = $option_id;
+            }
+
+            if ($question_type === 'ordering') {
+                $ordering_correct_option_ids[] = $option_id;
             }
 
             if ($question_type === 'true_false') {
@@ -1089,6 +1100,7 @@ class CBT_Question_Submission_Context_Cache
             'question_type' => $question_type,
             'points' => (float) ($question_row['points'] ?? 0),
             'correct_option_ids' => $correct_option_ids,
+            'ordering_correct_option_ids' => $ordering_correct_option_ids,
             'true_false_correct_value' => $true_false_correct_value,
             'true_false_option_value_by_id' => $true_false_option_value_by_id,
             'short_answer_values' => $short_answer_values,
@@ -1115,6 +1127,19 @@ class CBT_Question_Submission_Context_Cache
                 return $option_id > 0;
             })));
             sort($correct_option_ids);
+        }
+
+        $ordering_correct_option_ids = [];
+        if (isset($raw['ordering_correct_option_ids']) && is_array($raw['ordering_correct_option_ids'])) {
+            $seen_ordering_option_ids = [];
+            foreach ($raw['ordering_correct_option_ids'] as $option_id_raw) {
+                $option_id = (int) $option_id_raw;
+                if ($option_id <= 0 || isset($seen_ordering_option_ids[$option_id])) {
+                    continue;
+                }
+                $seen_ordering_option_ids[$option_id] = true;
+                $ordering_correct_option_ids[] = $option_id;
+            }
         }
 
         $true_false_option_value_by_id = [];
@@ -1190,6 +1215,7 @@ class CBT_Question_Submission_Context_Cache
             'question_type' => $question_type,
             'points' => max(0.0, (float) ($raw['points'] ?? 0)),
             'correct_option_ids' => $correct_option_ids,
+            'ordering_correct_option_ids' => $ordering_correct_option_ids,
             'true_false_correct_value' => $true_false_correct_value,
             'true_false_option_value_by_id' => $true_false_option_value_by_id,
             'short_answer_values' => $short_answer_values,
