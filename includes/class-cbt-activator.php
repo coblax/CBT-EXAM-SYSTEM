@@ -10,7 +10,7 @@ class CBT_Activator
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
     private const OPTION_SUPERVISOR_FRONTEND_PAGE_ID = 'cbt_exam_system_supervisor_page_id';
     private const OPTION_FRONTEND_PAGE_SYNC_PENDING = 'cbt_exam_system_frontend_page_sync_pending';
-    private const DB_VERSION = '1.6.16';
+    private const DB_VERSION = '1.6.17';
 
     public static function activate(): void
     {
@@ -231,6 +231,9 @@ class CBT_Activator
 
         $tables[] = CBT_Security_Log::get_create_table_sql($wpdb);
         $tables[] = CBT_Incident_Report::get_create_table_sql($wpdb);
+        if (class_exists('CBT_Essay_AI_Grading_Service')) {
+            $tables[] = CBT_Essay_AI_Grading_Service::get_create_table_sql($wpdb);
+        }
         if (class_exists('CBT_Exam_Audience_Service')) {
             $tables[] = CBT_Exam_Audience_Service::get_create_table_sql($wpdb);
         }

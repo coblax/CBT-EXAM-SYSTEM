@@ -72,6 +72,7 @@ final class CBT_Admin_Maintenance_Common
 
         return [
             $prefix . 'cbt_answers',
+            $prefix . 'cbt_essay_ai_suggestions',
             $prefix . 'cbt_attempts',
             $prefix . 'cbt_security_logs',
             $prefix . 'cbt_exam_incidents',

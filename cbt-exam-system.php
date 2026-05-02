@@ -50,6 +50,7 @@ require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-ui-state.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-security-log.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-security-user-agent-guard.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-incident-report.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-essay-ai-grading-service.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-auth.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-frontend.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-update-release-helper.php';

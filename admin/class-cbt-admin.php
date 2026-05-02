@@ -112,6 +112,7 @@ class CBT_Admin
         add_action('admin_post_cbt_download_question_template_word_essay', [CBT_Admin_Questions_Actions::class, 'handle_download_question_template_word_essay']);
         add_action('admin_post_cbt_grade_essay', [CBT_Admin_Results_Actions::class, 'handle_grade_essay']);
         add_action('admin_post_cbt_bulk_grade_essay', [CBT_Admin_Results_Actions::class, 'handle_bulk_grade_essay']);
+        add_action('admin_post_cbt_save_essay_ai_settings', [CBT_Admin_Results_Actions::class, 'handle_save_essay_ai_settings']);
         add_action('admin_post_cbt_reset_user_login', [CBT_Admin_Results_Actions::class, 'handle_reset_user_login']);
         add_action('admin_post_cbt_reset_attempt', [CBT_Admin_Results_Actions::class, 'handle_reset_attempt']);
         add_action('admin_post_cbt_extend_attempt_time', [CBT_Admin_Results_Actions::class, 'handle_extend_attempt_time']);
@@ -119,6 +120,10 @@ class CBT_Admin
         add_action('admin_post_cbt_bulk_reset_attempts', [CBT_Admin_Results_Actions::class, 'handle_bulk_reset_attempts']);
         add_action('admin_post_cbt_bulk_force_complete_attempts', [CBT_Admin_Results_Actions::class, 'handle_bulk_force_complete_attempts']);
         add_action('wp_ajax_cbt_results_essay_questions', [CBT_Admin_Results_Actions::class, 'handle_essay_questions_ajax']);
+        add_action('wp_ajax_cbt_results_essay_ai_start', [CBT_Admin_Results_Actions::class, 'handle_essay_ai_start_ajax']);
+        add_action('wp_ajax_cbt_results_essay_ai_tick', [CBT_Admin_Results_Actions::class, 'handle_essay_ai_tick_ajax']);
+        add_action('wp_ajax_cbt_results_essay_ai_stop', [CBT_Admin_Results_Actions::class, 'handle_essay_ai_stop_ajax']);
+        add_action('wp_ajax_cbt_results_essay_ai_models', [CBT_Admin_Results_Actions::class, 'handle_essay_ai_models_ajax']);
         add_action('wp_ajax_cbt_results_bulk_job_tick', [CBT_Admin_Results_Actions::class, 'handle_bulk_job_tick_ajax']);
         add_action('wp_ajax_cbt_results_bulk_job_stop', [CBT_Admin_Results_Actions::class, 'handle_bulk_job_stop_ajax']);
         add_action('admin_post_cbt_export_exam_report_pdf', [CBT_Admin_Report_Exam_Actions::class, 'handle_export_exam_report_pdf']);
@@ -938,6 +943,7 @@ class CBT_Admin
 
         return [
             $prefix . 'cbt_answers',
+            $prefix . 'cbt_essay_ai_suggestions',
             $prefix . 'cbt_attempts',
             $prefix . 'cbt_security_logs',
             $prefix . 'cbt_exam_incidents',

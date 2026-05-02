@@ -24,6 +24,10 @@ if (!class_exists('CBT_Admin_Results_Helper')) {
     require_once __DIR__ . '/class-cbt-admin-results-helper.php';
 }
 
+if (!class_exists('CBT_Essay_AI_Grading_Service')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-essay-ai-grading-service.php';
+}
+
 if (!class_exists('CBT_Security_Log')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-security-log.php';
 }
@@ -316,7 +320,22 @@ final class CBT_Admin_Results_Service
                 ]
             );
         }
+        $essay_rows = CBT_Essay_AI_Grading_Service::attach_suggestions_to_rows($essay_rows);
         $essay_bulk_summary = self::build_bulk_essay_summary($essay_rows);
+        $essay_ai_summary = CBT_Essay_AI_Grading_Service::build_ai_summary($essay_rows);
+        $essay_ai_status = CBT_Essay_AI_Grading_Service::get_admin_status();
+        $essay_ai_settings = (array) ($essay_ai_status['settings'] ?? CBT_Essay_AI_Grading_Service::get_settings());
+        $essay_ai_provider_options = CBT_Essay_AI_Grading_Service::get_provider_options();
+        $essay_ai_model_options_by_provider = CBT_Essay_AI_Grading_Service::get_model_options_by_provider();
+        $essay_ai_gemini_models = [];
+        $essay_ai_openai_models = [];
+        if (($essay_ai_settings['provider'] ?? 'gemini') === 'openai') {
+            $essay_ai_openai_models = CBT_Essay_AI_Grading_Service::get_openai_model_options_result($essay_ai_settings);
+            $essay_ai_model_options_by_provider['openai'] = (array) ($essay_ai_openai_models['options'] ?? $essay_ai_model_options_by_provider['openai']);
+        } else {
+            $essay_ai_gemini_models = CBT_Essay_AI_Grading_Service::get_gemini_model_options_result($essay_ai_settings);
+            $essay_ai_model_options_by_provider['gemini'] = (array) ($essay_ai_gemini_models['options'] ?? $essay_ai_model_options_by_provider['gemini']);
+        }
 
         $selected_exam_label = 'Semua exam';
         foreach ($exam_filter_rows as $exam_filter_row) {
@@ -542,6 +561,7 @@ final class CBT_Admin_Results_Service
 
         $sql = "SELECT ans.id AS answer_id,
                        ans.answer_text,
+                       ans.is_correct,
                        ans.score_awarded,
                        ans.updated_at AS answer_updated_at,
                        a.id AS attempt_id,
@@ -591,7 +611,8 @@ final class CBT_Admin_Results_Service
             $score_awarded = $answer_id > 0 ? (float) ($row['score_awarded'] ?? 0.0) : 0.0;
             $max_points = max(0.0, (float) ($row['points'] ?? 0.0));
             $is_empty = $answer_text === '';
-            $is_graded = $answer_id > 0 && !$is_empty && $score_awarded > 0.0;
+            $is_correct_raw = $row['is_correct'] ?? null;
+            $is_graded = $answer_id > 0 && $is_correct_raw !== null && $is_correct_raw !== '';
             $result[] = [
                 'answer_id' => $answer_id,
                 'attempt_id' => (int) ($row['attempt_id'] ?? 0),
@@ -606,6 +627,7 @@ final class CBT_Admin_Results_Service
                 'question_text' => (string) ($row['question_text'] ?? ''),
                 'rubric_text' => (string) ($row['rubric_text'] ?? ''),
                 'answer_text' => $answer_text,
+                'is_correct' => $is_correct_raw === null || $is_correct_raw === '' ? null : (int) $is_correct_raw,
                 'score_awarded' => $score_awarded,
                 'score_awarded_display' => number_format_i18n($score_awarded, 2),
                 'max_points' => $max_points,
@@ -2891,6 +2913,199 @@ final class CBT_Admin_Results_Service
         $redirect(sprintf('%d nilai essay berhasil disimpan.', count($updates)));
     }
 
+    public static function handle_save_essay_ai_settings(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('cbt_save_essay_ai_settings');
+
+        $context = self::get_bulk_essay_return_context_from_request();
+        CBT_Essay_AI_Grading_Service::save_settings([
+            'provider' => isset($_POST['essay_ai_provider']) ? sanitize_key(wp_unslash((string) $_POST['essay_ai_provider'])) : '',
+            'enabled' => !empty($_POST['essay_ai_enabled']),
+            'endpoint' => isset($_POST['essay_ai_endpoint']) ? esc_url_raw(wp_unslash((string) $_POST['essay_ai_endpoint'])) : '',
+            'model' => isset($_POST['essay_ai_model']) ? sanitize_text_field(wp_unslash((string) $_POST['essay_ai_model'])) : '',
+            'api_key' => isset($_POST['essay_ai_api_key']) ? sanitize_text_field(wp_unslash((string) $_POST['essay_ai_api_key'])) : '',
+            'clear_api_key' => !empty($_POST['essay_ai_clear_api_key']),
+            'timeout' => isset($_POST['essay_ai_timeout']) ? absint(wp_unslash((string) $_POST['essay_ai_timeout'])) : 0,
+            'batch_limit' => isset($_POST['essay_ai_batch_limit']) ? absint(wp_unslash((string) $_POST['essay_ai_batch_limit'])) : 0,
+        ]);
+
+        self::dispatch_redirect(self::build_bulk_essay_results_url($context, 'Pengaturan AI Essay Correction disimpan.'));
+    }
+
+    public static function handle_essay_ai_start_ajax(): void
+    {
+        if (!current_user_can('cbt_grade_essay')) {
+            self::dispatch_results_bulk_job_ajax(false, ['message' => 'Unauthorized'], 403);
+        }
+
+        check_admin_referer('cbt_results_essay_ai', 'nonce');
+
+        $status = CBT_Essay_AI_Grading_Service::get_admin_status();
+        if (($status['status'] ?? '') !== 'ready') {
+            self::dispatch_results_bulk_job_ajax(false, [
+                'message' => (string) ($status['message'] ?? 'AI Essay belum siap.'),
+                'status' => (string) ($status['status'] ?? 'disabled'),
+            ], 400);
+        }
+
+        $context = self::get_essay_ai_context_from_request();
+        $exam_id = (int) ($context['essay_exam_id'] ?? 0);
+        $question_id = (int) ($context['essay_question_id'] ?? 0);
+        $scope = sanitize_key((string) ($context['scope'] ?? 'question'));
+        $retry_mode = sanitize_key((string) ($context['retry_mode'] ?? 'all'));
+        $auto_apply = !empty($context['auto_apply']) && $scope === 'exam';
+        if ($exam_id <= 0) {
+            self::dispatch_results_bulk_job_ajax(false, ['message' => 'Pilih exam terlebih dahulu.'], 400);
+        }
+
+        $is_admin_scope = self::is_admin_scope();
+        $current_user_id = get_current_user_id();
+        if ($scope === 'exam') {
+            if (empty(self::get_exam_essay_questions($exam_id, $is_admin_scope, $current_user_id))) {
+                self::dispatch_results_bulk_job_ajax(false, ['message' => 'Exam ini belum memiliki soal essay yang bisa diakses.'], 403);
+            }
+        } else {
+            if ($question_id <= 0) {
+                self::dispatch_results_bulk_job_ajax(false, ['message' => 'Pilih soal essay terlebih dahulu.'], 400);
+            }
+            if (!self::essay_question_is_accessible($exam_id, $question_id, $is_admin_scope, $current_user_id)) {
+                self::dispatch_results_bulk_job_ajax(false, ['message' => 'Soal essay tidak ditemukan atau berada di luar scope akun Anda.'], 403);
+            }
+        }
+
+        $answer_id = isset($_POST['answer_id']) ? absint(wp_unslash((string) $_POST['answer_id'])) : 0;
+        $force = !empty($_POST['force']);
+        if ($answer_id > 0) {
+            $scope = 'question';
+            $auto_apply = false;
+            $context['scope'] = $scope;
+            $context['auto_apply'] = false;
+            $retry_mode = 'all';
+            $context['retry_mode'] = $retry_mode;
+        }
+
+        $targets = self::build_essay_ai_targets(
+            $context,
+            $is_admin_scope,
+            $current_user_id,
+            $answer_id,
+            $force || $auto_apply,
+            $scope,
+            $auto_apply,
+            $retry_mode
+        );
+        $state = CBT_Essay_AI_Grading_Service::create_job($targets, $context);
+        if (($state['status'] ?? '') === 'completed' && !empty($state['auto_apply'])) {
+            $state = self::maybe_auto_apply_essay_ai_job($state, $is_admin_scope, $current_user_id);
+        }
+
+        self::dispatch_results_bulk_job_ajax(true, CBT_Essay_AI_Grading_Service::build_job_response($state));
+    }
+
+    public static function handle_essay_ai_tick_ajax(): void
+    {
+        if (!current_user_can('cbt_grade_essay')) {
+            self::dispatch_results_bulk_job_ajax(false, ['message' => 'Unauthorized'], 403);
+        }
+
+        check_admin_referer('cbt_results_essay_ai', 'nonce');
+
+        $token = isset($_POST['token']) ? sanitize_key(wp_unslash((string) $_POST['token'])) : '';
+        $state = CBT_Essay_AI_Grading_Service::get_job_state($token);
+        if (!is_array($state) || (int) ($state['created_by'] ?? 0) !== get_current_user_id()) {
+            self::dispatch_results_bulk_job_ajax(false, ['message' => 'Job AI tidak ditemukan atau bukan milik sesi admin ini.'], 404);
+        }
+
+        if (!in_array((string) ($state['status'] ?? ''), ['completed', 'failed', 'stopped'], true)) {
+            $state = CBT_Essay_AI_Grading_Service::tick_job($state);
+        }
+        if (($state['status'] ?? '') === 'completed' && !empty($state['auto_apply']) && empty($state['auto_apply_done'])) {
+            $state = self::maybe_auto_apply_essay_ai_job($state, self::is_admin_scope(), get_current_user_id());
+        }
+
+        self::dispatch_results_bulk_job_ajax(true, CBT_Essay_AI_Grading_Service::build_job_response($state));
+    }
+
+    public static function handle_essay_ai_stop_ajax(): void
+    {
+        if (!current_user_can('cbt_grade_essay')) {
+            self::dispatch_results_bulk_job_ajax(false, ['message' => 'Unauthorized'], 403);
+        }
+
+        check_admin_referer('cbt_results_essay_ai', 'nonce');
+
+        $token = isset($_POST['token']) ? sanitize_key(wp_unslash((string) $_POST['token'])) : '';
+        $state = CBT_Essay_AI_Grading_Service::get_job_state($token);
+        if (!is_array($state) || (int) ($state['created_by'] ?? 0) !== get_current_user_id()) {
+            self::dispatch_results_bulk_job_ajax(false, ['message' => 'Job AI tidak ditemukan atau bukan milik sesi admin ini.'], 404);
+        }
+
+        CBT_Essay_AI_Grading_Service::request_stop_job($token);
+        $state['status'] = 'stopped';
+        $state['last_message'] = 'Job rekomendasi AI dihentikan.';
+
+        self::dispatch_results_bulk_job_ajax(true, CBT_Essay_AI_Grading_Service::build_job_response($state));
+    }
+
+    public static function handle_essay_ai_models_ajax(): void
+    {
+        if (!current_user_can('manage_options')) {
+            self::dispatch_results_bulk_job_ajax(false, ['message' => 'Unauthorized'], 403);
+        }
+
+        check_admin_referer('cbt_results_essay_ai_models', 'nonce');
+
+        $settings = CBT_Essay_AI_Grading_Service::get_settings();
+        $posted_api_key = '';
+        if (isset($_POST['api_key'])) {
+            $posted_api_key = trim(sanitize_text_field(wp_unslash((string) $_POST['api_key'])));
+            if ($posted_api_key !== '') {
+                $settings['api_key'] = $posted_api_key;
+            }
+        }
+        if (isset($_POST['endpoint'])) {
+            $posted_endpoint = trim(esc_url_raw(wp_unslash((string) $_POST['endpoint'])));
+            if ($posted_endpoint !== '') {
+                $settings['endpoint'] = $posted_endpoint;
+            }
+        }
+        $provider = isset($_POST['provider']) ? sanitize_key(wp_unslash((string) $_POST['provider'])) : (string) ($settings['provider'] ?? 'gemini');
+        if ($provider === 'openai') {
+            if ($posted_api_key === '') {
+                $settings['api_key'] = (string) ($settings['openai_api_key'] ?? '');
+            }
+            $result = CBT_Essay_AI_Grading_Service::get_openai_model_options_result($settings, true);
+        } else {
+            $provider = 'gemini';
+            if ($posted_api_key === '') {
+                $settings['api_key'] = (string) ($settings['gemini_api_key'] ?? '');
+            }
+            $result = CBT_Essay_AI_Grading_Service::get_gemini_model_options_result($settings, true);
+        }
+        $options = (array) ($result['options'] ?? []);
+        $items = [];
+        foreach ($options as $model_id => $label) {
+            $items[] = [
+                'id' => (string) $model_id,
+                'label' => (string) $label,
+            ];
+        }
+
+        self::dispatch_results_bulk_job_ajax(true, [
+            'provider' => $provider,
+            'items' => $items,
+            'total' => count($items),
+            'status' => (string) ($result['status'] ?? 'fallback'),
+            'source' => (string) ($result['source'] ?? 'fallback'),
+            'message' => (string) ($result['message'] ?? ''),
+            'fetched_at' => max(0, (int) ($result['fetched_at'] ?? 0)),
+        ]);
+    }
+
     public static function handle_essay_questions_ajax(): void
     {
         if (!current_user_can('cbt_grade_essay')) {
@@ -2918,6 +3133,404 @@ final class CBT_Admin_Results_Service
             'essay_question_id' => isset($_POST['cbt_essay_question_id']) ? absint(wp_unslash((string) $_POST['cbt_essay_question_id'])) : 0,
             'essay_kelas' => isset($_POST['cbt_essay_kelas']) ? sanitize_text_field(wp_unslash((string) $_POST['cbt_essay_kelas'])) : '',
             'essay_keyword' => isset($_POST['cbt_essay_q']) ? sanitize_text_field(wp_unslash((string) $_POST['cbt_essay_q'])) : '',
+        ];
+    }
+
+    /**
+     * @return array{essay_exam_id:int,essay_question_id:int,essay_kelas:string,essay_keyword:string,scope:string,auto_apply:bool,retry_mode:string}
+     */
+    private static function get_essay_ai_context_from_request(): array
+    {
+        $context = self::get_bulk_essay_return_context_from_request();
+        $scope = isset($_POST['scope']) ? sanitize_key(wp_unslash((string) $_POST['scope'])) : 'question';
+        $scope = $scope === 'exam' ? 'exam' : 'question';
+        $retry_mode = isset($_POST['retry_mode']) ? sanitize_key(wp_unslash((string) $_POST['retry_mode'])) : 'all';
+        $context['scope'] = $scope;
+        $context['auto_apply'] = $scope === 'exam' && !empty($_POST['auto_apply']);
+        $context['retry_mode'] = $retry_mode === 'failed_only' ? 'failed_only' : 'all';
+
+        return $context;
+    }
+
+    private static function essay_question_is_accessible(int $exam_id, int $question_id, bool $is_admin_scope, int $current_user_id): bool
+    {
+        foreach (self::get_exam_essay_questions($exam_id, $is_admin_scope, $current_user_id) as $question_row) {
+            if ((int) ($question_row['id'] ?? 0) === $question_id) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     * @return array<int,array<string,mixed>>
+     */
+    private static function build_essay_ai_targets(
+        array $context,
+        bool $is_admin_scope,
+        int $current_user_id,
+        int $only_answer_id = 0,
+        bool $force = false,
+        string $scope = 'question',
+        bool $only_ungraded = false,
+        string $retry_mode = 'all'
+    ): array {
+        $exam_id = max(0, (int) ($context['essay_exam_id'] ?? 0));
+        $question_id = max(0, (int) ($context['essay_question_id'] ?? 0));
+        if ($exam_id <= 0) {
+            return [];
+        }
+
+        $question_ids = [];
+        if ($scope === 'exam') {
+            foreach (self::get_exam_essay_questions($exam_id, $is_admin_scope, $current_user_id) as $question_row) {
+                $available_question_id = (int) ($question_row['id'] ?? 0);
+                if ($available_question_id > 0) {
+                    $question_ids[] = $available_question_id;
+                }
+            }
+        } elseif ($question_id > 0) {
+            $question_ids[] = $question_id;
+        }
+
+        if (empty($question_ids)) {
+            return [];
+        }
+
+        $targets = [];
+        foreach (array_values(array_unique($question_ids)) as $target_question_id) {
+            $rows = self::get_student_answers_for_essay_question($exam_id, (int) $target_question_id, [
+                'kelas' => (string) ($context['essay_kelas'] ?? ''),
+                'student_keyword' => (string) ($context['essay_keyword'] ?? ''),
+                'is_admin_scope' => $is_admin_scope,
+                'current_user_id' => $current_user_id,
+            ]);
+            $rows = CBT_Essay_AI_Grading_Service::attach_suggestions_to_rows($rows);
+            foreach ($rows as $row) {
+                $answer_id = (int) ($row['answer_id'] ?? 0);
+                if ($only_answer_id > 0 && $answer_id !== $only_answer_id) {
+                    continue;
+                }
+                if ($retry_mode === 'failed_only' && !self::essay_answer_has_fresh_failed_ai_suggestion($row)) {
+                    continue;
+                }
+                if ($only_ungraded && self::essay_answer_has_final_score($row)) {
+                    continue;
+                }
+                if (!CBT_Essay_AI_Grading_Service::row_is_ai_candidate($row, $force || $only_answer_id > 0)) {
+                    continue;
+                }
+
+                $targets[$answer_id] = CBT_Essay_AI_Grading_Service::normalize_target_row($row);
+            }
+        }
+
+        return array_values($targets);
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     */
+    private static function essay_answer_has_fresh_failed_ai_suggestion(array $row): bool
+    {
+        $suggestion = is_array($row['ai_suggestion'] ?? null) ? (array) $row['ai_suggestion'] : [];
+
+        return (string) ($suggestion['status'] ?? '') === 'failed';
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     */
+    private static function essay_answer_has_final_score(array $row): bool
+    {
+        if ((int) ($row['answer_id'] ?? 0) <= 0) {
+            return false;
+        }
+
+        $is_correct = $row['is_correct'] ?? null;
+
+        return $is_correct !== null && $is_correct !== '';
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private static function maybe_auto_apply_essay_ai_job(array $state, bool $is_admin_scope, int $current_user_id): array
+    {
+        if (empty($state['auto_apply']) || !empty($state['auto_apply_done']) || (string) ($state['status'] ?? '') !== 'completed') {
+            return $state;
+        }
+
+        $targets = is_array($state['targets'] ?? null) ? array_values((array) $state['targets']) : [];
+        $target_map = [];
+        foreach ($targets as $target) {
+            if (!is_array($target)) {
+                continue;
+            }
+            $normalized = CBT_Essay_AI_Grading_Service::normalize_target_row($target);
+            $answer_id = (int) ($normalized['answer_id'] ?? 0);
+            if ($answer_id > 0) {
+                $target_map[$answer_id] = $normalized;
+            }
+        }
+
+        $answer_ids = array_keys($target_map);
+        if (empty($answer_ids)) {
+            $state['auto_apply_done'] = true;
+            $state['applied_count'] = 0;
+            $state['auto_apply_skipped_count'] = 0;
+            CBT_Essay_AI_Grading_Service::save_job_state($state);
+            return $state;
+        }
+
+        $context = is_array($state['context'] ?? null) ? (array) $state['context'] : [];
+        $exam_id = max(0, (int) ($context['essay_exam_id'] ?? 0));
+        $suggestions = CBT_Essay_AI_Grading_Service::get_suggestions_for_answer_ids($answer_ids);
+        $answer_rows = self::get_essay_answer_rows_for_auto_apply($answer_ids, $exam_id, $is_admin_scope, $current_user_id);
+        $updates = [];
+        $skipped_count = 0;
+
+        foreach ($answer_ids as $answer_id) {
+            $current_row = is_array($answer_rows[$answer_id] ?? null) ? (array) $answer_rows[$answer_id] : [];
+            $suggestion = is_array($suggestions[$answer_id] ?? null) ? (array) $suggestions[$answer_id] : [];
+            if (empty($current_row) || empty($suggestion)) {
+                $skipped_count++;
+                continue;
+            }
+
+            if (self::essay_answer_has_final_score($current_row)) {
+                $skipped_count++;
+                continue;
+            }
+
+            if ((string) ($suggestion['status'] ?? '') !== 'success' || !is_numeric($suggestion['suggested_score'] ?? null)) {
+                $skipped_count++;
+                continue;
+            }
+
+            $stored_hash = (string) ($suggestion['content_hash'] ?? '');
+            $current_hash = CBT_Essay_AI_Grading_Service::build_content_hash($current_row);
+            if ($stored_hash === '' || !hash_equals($stored_hash, $current_hash)) {
+                $skipped_count++;
+                continue;
+            }
+
+            if (!CBT_Essay_AI_Grading_Service::row_is_ai_candidate($current_row, true)) {
+                $skipped_count++;
+                continue;
+            }
+
+            $max_points = max(0.0, (float) ($current_row['points'] ?? $current_row['max_points'] ?? 0.0));
+            $score = round(max(0.0, min((float) $suggestion['suggested_score'], $max_points)), 2);
+            $updates[$answer_id] = [
+                'answer_id' => $answer_id,
+                'attempt_id' => (int) ($current_row['attempt_id'] ?? 0),
+                'student_id' => (int) ($current_row['student_id'] ?? 0),
+                'exam_id' => (int) ($current_row['exam_id'] ?? $exam_id),
+                'score_awarded' => $score,
+            ];
+        }
+
+        try {
+            $apply_result = [
+                'applied_count' => 0,
+            ];
+            if (!empty($updates)) {
+                $apply_result = self::apply_essay_score_updates($updates, $exam_id);
+            }
+            $applied_count = max(0, (int) ($apply_result['applied_count'] ?? 0));
+            $state['auto_apply_done'] = true;
+            $state['applied_count'] = $applied_count;
+            $state['auto_apply_skipped_count'] = $skipped_count + max(0, count($updates) - $applied_count);
+            $state['last_message'] = sprintf(
+                'AI selesai. Berhasil %d, gagal %d, dilewati %d. Nilai otomatis disimpan %d, dilewati auto-save %d.',
+                (int) ($state['success_count'] ?? 0),
+                (int) ($state['failure_count'] ?? 0),
+                (int) ($state['skipped_count'] ?? 0),
+                (int) ($state['applied_count'] ?? 0),
+                (int) ($state['auto_apply_skipped_count'] ?? 0)
+            );
+        } catch (Throwable $throwable) {
+            $state['status'] = 'failed';
+            $state['last_error_message'] = 'AI selesai, tetapi gagal menyimpan nilai otomatis.';
+            $state['last_message'] = $state['last_error_message'];
+        }
+
+        CBT_Essay_AI_Grading_Service::save_job_state($state);
+
+        return $state;
+    }
+
+    /**
+     * @param int[] $answer_ids
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_essay_answer_rows_for_auto_apply(
+        array $answer_ids,
+        int $exam_id,
+        bool $is_admin_scope,
+        int $current_user_id
+    ): array {
+        $answer_ids = array_values(array_unique(array_filter(array_map('absint', $answer_ids))));
+        $exam_id = max(0, $exam_id);
+        if (empty($answer_ids) || $exam_id <= 0) {
+            return [];
+        }
+
+        global $wpdb;
+
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $essay_table = $wpdb->prefix . 'cbt_question_essay';
+        $placeholders = implode(',', array_fill(0, count($answer_ids), '%d'));
+        $where_parts = [
+            "ans.id IN ({$placeholders})",
+            'att.exam_id = %d',
+            "att.status = 'completed'",
+            "q.question_type = 'essay'",
+            'COALESCE(q.is_active, 1) = 1',
+        ];
+        $params = array_merge($answer_ids, [$exam_id]);
+        if (!$is_admin_scope) {
+            $where_parts[] = 'ex.created_by = %d';
+            $params[] = max(0, $current_user_id);
+        }
+
+        $sql = "SELECT ans.id AS answer_id,
+                       ans.attempt_id,
+                       ans.question_id,
+                       ans.answer_text,
+                       ans.is_correct,
+                       ans.score_awarded,
+                       att.student_id,
+                       att.exam_id,
+                       q.points,
+                       q.question_text,
+                       COALESCE(qes.rubric_text, q.correct_text, '') AS rubric_text
+                FROM {$answer_table} ans
+                INNER JOIN {$attempt_table} att ON att.id = ans.attempt_id
+                INNER JOIN {$question_table} q ON q.id = ans.question_id
+                INNER JOIN {$exam_table} ex ON ex.id = att.exam_id
+                LEFT JOIN {$essay_table} qes ON qes.question_id = q.id
+                WHERE " . implode(' AND ', $where_parts);
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $by_id = [];
+        foreach ($rows as $row) {
+            $answer_id = (int) ($row['answer_id'] ?? 0);
+            if ($answer_id > 0) {
+                $by_id[$answer_id] = $row;
+            }
+        }
+
+        return $by_id;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $updates
+     * @return array{attempt_ids:int[],student_ids:int[],applied_count:int}
+     */
+    private static function apply_essay_score_updates(array $updates, int $exam_id): array
+    {
+        if (empty($updates)) {
+            return [
+                'attempt_ids' => [],
+                'student_ids' => [],
+                'applied_count' => 0,
+            ];
+        }
+
+        global $wpdb;
+
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $attempt_table = $wpdb->prefix . 'cbt_attempts';
+        $updated_at = current_time('mysql');
+        $attempt_ids = [];
+        $student_ids = [];
+        $applied_count = 0;
+
+        $wpdb->query('START TRANSACTION');
+        try {
+            foreach ($updates as $update) {
+                $result = $wpdb->update(
+                    $answer_table,
+                    [
+                        'is_correct' => 0,
+                        'score_awarded' => (float) $update['score_awarded'],
+                        'updated_at' => $updated_at,
+                    ],
+                    [
+                        'id' => (int) $update['answer_id'],
+                        'is_correct' => null,
+                    ],
+                    ['%d', '%f', '%s'],
+                    ['%d', '%d']
+                );
+                if ($result === false) {
+                    throw new RuntimeException('Gagal menyimpan nilai essay.');
+                }
+                if ((int) $result <= 0) {
+                    continue;
+                }
+
+                $applied_count++;
+                $attempt_id = (int) ($update['attempt_id'] ?? 0);
+                $student_id = (int) ($update['student_id'] ?? 0);
+                if ($attempt_id > 0) {
+                    $attempt_ids[] = $attempt_id;
+                }
+                if ($student_id > 0) {
+                    $student_ids[] = $student_id;
+                }
+            }
+
+            $attempt_ids = array_values(array_unique($attempt_ids));
+            $student_ids = array_values(array_unique($student_ids));
+
+            foreach ($attempt_ids as $attempt_id) {
+                $total_score = (float) $wpdb->get_var(
+                    $wpdb->prepare("SELECT COALESCE(SUM(score_awarded),0) FROM {$answer_table} WHERE attempt_id = %d", $attempt_id)
+                );
+                $result = $wpdb->update(
+                    $attempt_table,
+                    [
+                        'score' => $total_score,
+                        'updated_at' => $updated_at,
+                    ],
+                    ['id' => $attempt_id],
+                    ['%f', '%s'],
+                    ['%d']
+                );
+                if ($result === false) {
+                    throw new RuntimeException('Gagal menghitung ulang skor attempt.');
+                }
+            }
+
+            $wpdb->query('COMMIT');
+        } catch (Throwable $throwable) {
+            $wpdb->query('ROLLBACK');
+            throw $throwable;
+        }
+
+        if ($applied_count > 0) {
+            CBT_Cache::invalidate_attempts($attempt_ids);
+            CBT_Cache::invalidate_users($student_ids);
+            CBT_Cache::invalidate_analytics();
+            CBT_Cache::invalidate_analytics_exam($exam_id);
+        }
+
+        return [
+            'attempt_ids' => $attempt_ids,
+            'student_ids' => $student_ids,
+            'applied_count' => $applied_count,
         ];
     }
 

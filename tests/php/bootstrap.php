@@ -508,6 +508,8 @@ if (!function_exists('cbt_test_reset_wordpress_storage')) {
             @mkdir(WP_PLUGIN_DIR, 0777, true);
         }
         $GLOBALS['cbt_test_wp_remote_get_map'] = [];
+        $GLOBALS['cbt_test_wp_remote_post_map'] = [];
+        $GLOBALS['cbt_test_wp_remote_post_log'] = [];
         $GLOBALS['cbt_test_download_url_map'] = [];
         $GLOBALS['cbt_test_current_user_id'] = 1;
         $GLOBALS['cbt_test_current_user_caps'] = [
@@ -1970,6 +1972,27 @@ if (!function_exists('wp_remote_get')) {
         }
 
         return $GLOBALS['cbt_test_wp_remote_get_map'][$key];
+    }
+}
+
+if (!function_exists('wp_remote_post')) {
+    function wp_remote_post($url, $args = [])
+    {
+        $key = is_scalar($url) ? (string) $url : '';
+        $GLOBALS['cbt_test_wp_remote_post_log'][] = [
+            'url' => $key,
+            'args' => is_array($args) ? $args : [],
+        ];
+        if (!array_key_exists($key, $GLOBALS['cbt_test_wp_remote_post_map'])) {
+            return new WP_Error('missing_remote_stub', 'No remote POST stub registered for ' . $key);
+        }
+
+        $response = $GLOBALS['cbt_test_wp_remote_post_map'][$key];
+        if (is_callable($response)) {
+            return $response($url, $args);
+        }
+
+        return $response;
     }
 }
 

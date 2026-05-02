@@ -2382,6 +2382,16 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                     display: grid;
                     gap: 14px;
                 }
+                .cbt-results-essay-content {
+                    display: grid;
+                    gap: 16px;
+                    margin-top: 16px;
+                    position: relative;
+                }
+                .cbt-results-essay-content > form[data-cbt-bulk-essay-form] {
+                    display: grid;
+                    gap: 16px;
+                }
                 .cbt-results-essay-toolbar {
                     display: grid;
                     grid-template-columns: minmax(220px, 1.1fr) minmax(260px, 1.3fr) minmax(160px, 0.7fr) minmax(180px, 0.8fr) auto;
@@ -2437,12 +2447,12 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                 }
                 .cbt-results-essay-answer-list {
                     display: grid;
-                    gap: 12px;
+                    gap: 16px;
                 }
                 .cbt-results-essay-answer-card {
                     display: grid;
                     grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.5fr) minmax(150px, 0.45fr);
-                    gap: 14px;
+                    gap: 16px;
                     align-items: start;
                     padding: 16px;
                     border: 1px solid #d9e7f6;
@@ -2506,6 +2516,305 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                 .cbt-results-essay-answer-card.is-invalid .cbt-results-essay-input-error {
                     display: block;
                 }
+                .cbt-results-essay-ai-settings,
+                .cbt-results-essay-ai-panel,
+                .cbt-results-essay-ai-box {
+                    display: grid;
+                    gap: 10px;
+                    padding: 12px;
+                    border: 1px solid #cfe0f2;
+                    border-radius: 10px;
+                    background: #f8fbff;
+                }
+                .cbt-results-essay-ai-settings {
+                    margin-top: 0;
+                }
+                .cbt-results-essay-ai-settings [hidden] {
+                    display: none !important;
+                }
+                .cbt-results-essay-ai-settings-head {
+                    align-items: flex-start;
+                }
+                .cbt-results-essay-ai-settings-title {
+                    display: grid;
+                    gap: 4px;
+                    min-width: 0;
+                }
+                .cbt-results-essay-ai-settings-summary {
+                    margin: 0;
+                    color: #475569;
+                    line-height: 1.45;
+                }
+                .cbt-results-essay-ai-settings-meta {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    justify-content: flex-end;
+                    gap: 8px;
+                }
+                .cbt-results-essay-ai-settings-body {
+                    display: grid;
+                    gap: 12px;
+                }
+                .cbt-results-essay-ai-config {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.85fr);
+                    gap: 14px;
+                    align-items: stretch;
+                }
+                .cbt-results-essay-ai-main {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr);
+                    gap: 12px;
+                    align-items: stretch;
+                    min-width: 0;
+                }
+                .cbt-results-essay-ai-main .is-wide {
+                    grid-column: auto;
+                }
+                .cbt-results-essay-ai-provider-row {
+                    display: grid;
+                    grid-template-columns: minmax(0, .8fr) minmax(0, 1fr);
+                    gap: 10px;
+                    min-width: 0;
+                }
+                .cbt-results-essay-ai-endpoint-note {
+                    display: grid;
+                    gap: 6px;
+                    padding: 10px 12px;
+                    border: 1px solid #bfdbfe;
+                    border-radius: 10px;
+                    background: #ffffff;
+                    min-width: 0;
+                }
+                .cbt-results-essay-ai-endpoint-note code {
+                    display: block;
+                    padding: 8px 10px;
+                    border-radius: 8px;
+                    background: #eff6ff;
+                    color: #0f3b73;
+                    white-space: normal;
+                    word-break: break-all;
+                }
+                .cbt-results-essay-ai-settings .cbt-results-field {
+                    min-width: 0;
+                }
+                .cbt-results-essay-ai-settings .cbt-results-field input,
+                .cbt-results-essay-ai-settings .cbt-results-field select {
+                    width: 100%;
+                    max-width: 100%;
+                    min-height: 40px;
+                    box-sizing: border-box;
+                }
+                .cbt-results-essay-ai-compact-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 10px;
+                    min-width: 0;
+                }
+                .cbt-results-essay-ai-secret-row {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    gap: 10px 16px;
+                    padding: 10px 12px;
+                    border: 1px dashed #bfd7f4;
+                    border-radius: 10px;
+                    background: #fff;
+                }
+                .cbt-results-essay-ai-secret-row label {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    margin: 0;
+                    font-weight: 700;
+                }
+                .cbt-results-essay-ai-key-status {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    padding: 12px 14px;
+                    border: 1px solid #fed7aa;
+                    border-radius: 12px;
+                    background: #fffbeb;
+                    color: #92400e;
+                }
+                .cbt-results-essay-ai-key-status.is-saved {
+                    border-color: #bbf7d0;
+                    background: #f0fdf4;
+                    color: #166534;
+                }
+                .cbt-results-essay-ai-key-status strong {
+                    display: block;
+                    font-size: 12px;
+                    font-weight: 900;
+                    letter-spacing: .08em;
+                    text-transform: uppercase;
+                }
+                .cbt-results-essay-ai-key-status span {
+                    color: inherit;
+                    opacity: .85;
+                }
+                .cbt-results-essay-ai-key-pill {
+                    flex: 0 0 auto;
+                    padding: 6px 10px;
+                    border-radius: 999px;
+                    background: rgba(255, 255, 255, 0.7);
+                    font-size: 11px;
+                    font-weight: 900;
+                    letter-spacing: .08em;
+                    text-transform: uppercase;
+                }
+                .cbt-results-essay-ai-save-row {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    justify-content: flex-start;
+                    gap: 10px;
+                    grid-column: 1 / -1;
+                }
+                .cbt-results-essay-ai-save-row .button-primary {
+                    margin-left: auto;
+                }
+                .cbt-results-essay-content.is-loading {
+                    opacity: .62;
+                    pointer-events: none;
+                }
+                .cbt-results-essay-sticky-actions {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    justify-content: flex-end;
+                    gap: 8px;
+                }
+                .cbt-results-essay-ai-apply-all-note {
+                    flex: 1 1 100%;
+                    margin: 0;
+                    text-align: right;
+                    font-size: 12px;
+                    font-weight: 700;
+                    color: #0f766e;
+                }
+                .cbt-results-essay-ai-guide {
+                    display: grid;
+                    gap: 10px;
+                    align-content: start;
+                    padding: 14px;
+                    border: 1px solid #bfdbfe;
+                    border-radius: 12px;
+                    background: linear-gradient(135deg, #ffffff 0%, #eff6ff 100%);
+                }
+                .cbt-results-essay-ai-guide-card {
+                    display: grid;
+                    gap: 8px;
+                    padding: 10px;
+                    border: 1px solid rgba(37, 99, 235, 0.16);
+                    border-radius: 10px;
+                    background: rgba(255, 255, 255, 0.72);
+                }
+                .cbt-results-essay-ai-guide h4 {
+                    margin: 0;
+                    font-size: 13px;
+                    font-weight: 900;
+                    letter-spacing: .06em;
+                    text-transform: uppercase;
+                    color: #0f3b73;
+                }
+                .cbt-results-essay-ai-guide ol {
+                    margin: 0;
+                    padding-left: 18px;
+                    color: #334155;
+                    line-height: 1.55;
+                }
+                .cbt-results-essay-ai-guide li {
+                    margin: 3px 0;
+                }
+                .cbt-results-essay-ai-guide .button {
+                    justify-self: start;
+                }
+                .cbt-results-essay-ai-panel {
+                    border-color: #bfdbfe;
+                    background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%);
+                }
+                .cbt-results-essay-ai-panel.is-running {
+                    border-color: #60a5fa;
+                    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+                }
+                .cbt-results-essay-ai-head {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                }
+                .cbt-results-essay-ai-actions {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    align-items: center;
+                }
+                .cbt-results-essay-ai-progress {
+                    display: none;
+                    gap: 8px;
+                }
+                .cbt-results-essay-ai-panel.is-running .cbt-results-essay-ai-progress,
+                .cbt-results-essay-ai-panel.is-complete .cbt-results-essay-ai-progress {
+                    display: grid;
+                }
+                .cbt-results-essay-ai-progress-track {
+                    height: 9px;
+                    overflow: hidden;
+                    border-radius: 999px;
+                    background: #dbeafe;
+                }
+                .cbt-results-essay-ai-progress-bar {
+                    width: 0%;
+                    height: 100%;
+                    border-radius: inherit;
+                    background: linear-gradient(90deg, #2563eb, #14b8a6);
+                    transition: width 180ms ease;
+                }
+                .cbt-results-essay-ai-box {
+                    margin-top: 12px;
+                    border-color: #dbeafe;
+                    background: #ffffff;
+                }
+                .cbt-results-essay-ai-box.is-success {
+                    border-color: #bbf7d0;
+                    background: #f0fdf4;
+                }
+                .cbt-results-essay-ai-box.is-failed,
+                .cbt-results-essay-ai-box.is-stale {
+                    border-color: #fed7aa;
+                    background: #fff7ed;
+                }
+                .cbt-results-essay-ai-title {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                    margin: 0;
+                    font-size: 12px;
+                    font-weight: 900;
+                    letter-spacing: .08em;
+                    text-transform: uppercase;
+                    color: #0f172a;
+                }
+                .cbt-results-essay-ai-feedback {
+                    margin: 0;
+                    color: #334155;
+                    line-height: 1.55;
+                }
+                .cbt-results-essay-ai-list {
+                    margin: 0;
+                    padding-left: 18px;
+                    color: #475569;
+                }
+                .cbt-results-essay-ai-list li {
+                    margin: 3px 0;
+                }
                 .cbt-results-essay-sticky-bar {
                     position: sticky;
                     bottom: 12px;
@@ -2558,12 +2867,27 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                         flex-wrap: wrap;
                     }
                     .cbt-results-essay-toolbar,
+                    .cbt-results-essay-ai-config,
+                    .cbt-results-essay-ai-main,
+                    .cbt-results-essay-ai-provider-row,
                     .cbt-results-essay-answer-card {
                         grid-template-columns: 1fr;
+                    }
+                    .cbt-results-essay-ai-main .is-wide {
+                        grid-column: auto;
                     }
                     .cbt-results-essay-sticky-bar {
                         align-items: stretch;
                         flex-direction: column;
+                    }
+                    .cbt-results-essay-sticky-actions {
+                        justify-content: stretch;
+                    }
+                    .cbt-results-essay-sticky-actions .button {
+                        flex: 1 1 180px;
+                    }
+                    .cbt-results-essay-ai-apply-all-note {
+                        text-align: left;
                     }
                     .cbt-results-tab-nav {
                         width: 100%;
@@ -4464,7 +4788,7 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                         </div>
                         <div class="cbt-results-field">
                             <label for="cbt-essay-kelas">Kelas</label>
-                            <select id="cbt-essay-kelas" name="cbt_essay_kelas">
+                            <select id="cbt-essay-kelas" name="cbt_essay_kelas" data-cbt-essay-auto-filter>
                                 <option value="">Semua kelas</option>
                                 <?php foreach ($kelas_filter_rows as $kelas_filter_row): ?>
                                     <option value="<?php echo esc_attr($kelas_filter_row); ?>" <?php selected($selected_essay_kelas, $kelas_filter_row); ?>>
@@ -4475,13 +4799,329 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                         </div>
                         <div class="cbt-results-field">
                             <label for="cbt-essay-q">Cari Siswa</label>
-                            <input id="cbt-essay-q" type="search" name="cbt_essay_q" value="<?php echo esc_attr($selected_essay_keyword); ?>" placeholder="Nama, username, NISN" />
+                            <input id="cbt-essay-q" type="search" name="cbt_essay_q" value="<?php echo esc_attr($selected_essay_keyword); ?>" placeholder="Nama, username, NISN" data-cbt-essay-search />
                         </div>
                         <div class="cbt-results-filter-actions">
-                            <button type="submit" class="button button-primary">Tampilkan</button>
+                            <a class="button" href="<?php echo esc_url(add_query_arg(['page' => 'cbt-results', 'cbt_results_tab' => 'essay'], admin_url('admin.php'))); ?>" data-cbt-essay-reset-filter>Reset Filter</a>
                         </div>
                     </div>
                 </form>
+
+                <div class="cbt-results-essay-content" data-cbt-essay-content>
+                <?php if (current_user_can('manage_options')): ?>
+                    <?php
+                    $essay_ai_settings = is_array($essay_ai_settings ?? null) ? $essay_ai_settings : [];
+                    $essay_ai_status = is_array($essay_ai_status ?? null) ? $essay_ai_status : [];
+                    $essay_ai_gemini_models = is_array($essay_ai_gemini_models ?? null) ? $essay_ai_gemini_models : [];
+                    $essay_ai_openai_models = is_array($essay_ai_openai_models ?? null) ? $essay_ai_openai_models : [];
+                    $essay_ai_provider_options = is_array($essay_ai_provider_options ?? null) ? $essay_ai_provider_options : [];
+                    $essay_ai_model_options_by_provider = is_array($essay_ai_model_options_by_provider ?? null) ? $essay_ai_model_options_by_provider : [];
+                    $essay_ai_current_provider = (string) ($essay_ai_settings['provider'] ?? 'gemini');
+                    $essay_ai_current_model = (string) ($essay_ai_settings['model'] ?? 'gemini-2.5-flash-lite');
+                    $essay_ai_gemini_models_source = (string) ($essay_ai_gemini_models['source'] ?? 'fallback');
+                    $essay_ai_gemini_models_message = (string) ($essay_ai_gemini_models['message'] ?? '');
+                    $essay_ai_gemini_models_verified = in_array($essay_ai_gemini_models_source, ['api', 'cache'], true);
+                    $essay_ai_openai_models_source = (string) ($essay_ai_openai_models['source'] ?? 'fallback');
+                    $essay_ai_openai_models_message = (string) ($essay_ai_openai_models['message'] ?? '');
+                    $essay_ai_openai_models_verified = in_array($essay_ai_openai_models_source, ['api', 'cache'], true);
+                    if (empty($essay_ai_provider_options)) {
+                        $essay_ai_provider_options = [
+                            'gemini' => 'Google Gemini',
+                            'openai' => 'OpenAI',
+                        ];
+                    }
+                    if (!array_key_exists($essay_ai_current_provider, $essay_ai_provider_options)) {
+                        $essay_ai_current_provider = 'gemini';
+                    }
+                    if (empty($essay_ai_model_options_by_provider)) {
+                        $essay_ai_model_options_by_provider = [
+                            'gemini' => ['gemini-2.5-flash-lite' => 'Gemini 2.5 Flash Lite (Recommended, free quota)'],
+                            'openai' => ['gpt-5.4-mini' => 'GPT-5.4 Mini (Recommended)'],
+                        ];
+                    }
+                    $essay_ai_gemini_model_missing = $essay_ai_current_provider === 'gemini'
+                        && $essay_ai_current_model !== ''
+                        && !array_key_exists($essay_ai_current_model, $essay_ai_model_options_by_provider['gemini'] ?? []);
+                    $essay_ai_openai_model_missing = $essay_ai_current_provider === 'openai'
+                        && $essay_ai_current_model !== ''
+                        && !array_key_exists($essay_ai_current_model, $essay_ai_model_options_by_provider['openai'] ?? []);
+                    if ($essay_ai_current_model !== '' && !array_key_exists($essay_ai_current_model, $essay_ai_model_options_by_provider[$essay_ai_current_provider] ?? [])) {
+                        if (
+                            ($essay_ai_current_provider === 'gemini' && !$essay_ai_gemini_models_verified)
+                            || ($essay_ai_current_provider === 'openai' && !$essay_ai_openai_models_verified)
+                        ) {
+                            $essay_ai_model_options_by_provider[$essay_ai_current_provider][$essay_ai_current_model] = $essay_ai_current_model . ' (custom/current)';
+                        }
+                    }
+                    $essay_ai_gemini_model_status = 'Daftar model Gemini memakai fallback sampai API key disimpan.';
+                    if ($essay_ai_gemini_model_missing && $essay_ai_gemini_models_verified) {
+                        $essay_ai_gemini_model_status = 'Model Gemini tersimpan tidak ada di ListModels. Pilih model yang tersedia lalu simpan.';
+                    } elseif ($essay_ai_gemini_models_message !== '') {
+                        $essay_ai_gemini_model_status = $essay_ai_gemini_models_message;
+                    }
+                    $essay_ai_openai_model_status = 'Daftar model OpenAI memakai fallback sampai API key disimpan.';
+                    if ($essay_ai_openai_model_missing && $essay_ai_openai_models_verified) {
+                        $essay_ai_openai_model_status = 'Model OpenAI tersimpan tidak ada di Models API. Pilih model yang tersedia lalu simpan.';
+                    } elseif ($essay_ai_openai_models_message !== '') {
+                        $essay_ai_openai_model_status = $essay_ai_openai_models_message;
+                    }
+                    $essay_ai_model_status = $essay_ai_current_provider === 'openai' ? $essay_ai_openai_model_status : $essay_ai_gemini_model_status;
+                    $essay_ai_gemini_endpoint = (string) ($essay_ai_settings['gemini_endpoint'] ?? 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent');
+                    $essay_ai_current_openai_endpoint = (string) ($essay_ai_settings['endpoint'] ?? 'https://api.openai.com/v1/responses');
+                    $essay_ai_openai_endpoint_options = [
+                        'https://api.openai.com/v1/responses' => 'Responses API (Recommended)',
+                        'https://api.openai.com/v1/chat/completions' => 'Chat Completions API (Legacy)',
+                    ];
+                    if ($essay_ai_current_openai_endpoint !== '' && !array_key_exists($essay_ai_current_openai_endpoint, $essay_ai_openai_endpoint_options)) {
+                        $essay_ai_openai_endpoint_options[$essay_ai_current_openai_endpoint] = 'Custom/current endpoint';
+                    }
+                    $essay_ai_gemini_has_api_key = !empty($essay_ai_settings['gemini_has_api_key']);
+                    $essay_ai_openai_has_api_key = !empty($essay_ai_settings['openai_has_api_key']);
+                    $essay_ai_current_has_api_key = $essay_ai_current_provider === 'openai' ? $essay_ai_openai_has_api_key : $essay_ai_gemini_has_api_key;
+                    $essay_ai_current_provider_name = $essay_ai_current_provider === 'openai' ? 'OpenAI' : 'Gemini';
+                    $essay_ai_key_title = $essay_ai_current_has_api_key ? 'API key ' . $essay_ai_current_provider_name . ' tersimpan' : 'Belum ada API key ' . $essay_ai_current_provider_name;
+                    $essay_ai_key_message = $essay_ai_current_has_api_key
+                        ? 'Secret ' . $essay_ai_current_provider_name . ' sudah tersimpan aman. Kosongkan field API Key jika tidak ingin mengganti.'
+                        : 'Masukkan API key ' . $essay_ai_current_provider_name . ', lalu klik Simpan AI.';
+                    $essay_ai_key_pill = $essay_ai_current_has_api_key ? $essay_ai_current_provider_name . ' siap' : 'Wajib diisi';
+                    $essay_ai_key_placeholder = $essay_ai_current_has_api_key
+                        ? 'Kosongkan untuk mempertahankan API key ' . $essay_ai_current_provider_name . ' lama'
+                        : 'Masukkan API key ' . $essay_ai_current_provider_name;
+                    $essay_ai_current_model_label = (string) ($essay_ai_model_options_by_provider[$essay_ai_current_provider][$essay_ai_current_model] ?? $essay_ai_current_model);
+                    $essay_ai_current_endpoint_label = (string) ($essay_ai_openai_endpoint_options[$essay_ai_current_openai_endpoint] ?? $essay_ai_current_openai_endpoint);
+                    $essay_ai_summary_parts = [
+                        $essay_ai_current_provider_name,
+                        'Model: ' . ($essay_ai_current_model_label !== '' ? $essay_ai_current_model_label : $essay_ai_current_model),
+                    ];
+                    if ($essay_ai_current_provider === 'openai') {
+                        $essay_ai_summary_parts[] = 'Endpoint: ' . $essay_ai_current_endpoint_label;
+                    }
+                    $essay_ai_summary_parts[] = $essay_ai_current_has_api_key ? 'API key tersimpan' : 'API key belum diisi';
+                    $essay_ai_summary_parts[] = (string) ($essay_ai_status['label'] ?? 'AI Essay');
+                    $essay_ai_settings_summary = implode(' - ', array_filter($essay_ai_summary_parts, static function ($item): bool {
+                        return trim((string) $item) !== '';
+                    }));
+                    ?>
+                    <form
+                        method="post"
+                        action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
+                        class="cbt-results-essay-ai-settings"
+                        data-cbt-essay-ai-settings
+                        data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
+                        data-models-nonce="<?php echo esc_attr(wp_create_nonce('cbt_results_essay_ai_models')); ?>"
+                    >
+                        <?php wp_nonce_field('cbt_save_essay_ai_settings'); ?>
+                        <input type="hidden" name="action" value="cbt_save_essay_ai_settings" />
+                        <input type="hidden" name="cbt_essay_exam_id" value="<?php echo (int) $selected_essay_exam_id; ?>" />
+                        <input type="hidden" name="cbt_essay_question_id" value="<?php echo (int) $selected_essay_question_id; ?>" />
+                        <input type="hidden" name="cbt_essay_kelas" value="<?php echo esc_attr($selected_essay_kelas); ?>" />
+                        <input type="hidden" name="cbt_essay_q" value="<?php echo esc_attr($selected_essay_keyword); ?>" />
+                        <div class="cbt-results-essay-ai-head cbt-results-essay-ai-settings-head">
+                            <div class="cbt-results-essay-ai-settings-title">
+                                <h3 style="margin:0;">AI Essay Correction</h3>
+                                <p
+                                    class="cbt-results-essay-ai-settings-summary"
+                                    data-cbt-essay-ai-settings-summary
+                                ><?php echo esc_html($essay_ai_settings_summary); ?></p>
+                            </div>
+                            <div class="cbt-results-essay-ai-settings-meta">
+                                <span class="cbt-results-essay-chip <?php echo (($essay_ai_status['status'] ?? '') === 'ready') ? 'is-success' : 'is-warning'; ?>" data-cbt-essay-ai-settings-status-label><?php echo esc_html((string) ($essay_ai_status['label'] ?? 'AI Essay')); ?></span>
+                                <button
+                                    type="button"
+                                    class="button"
+                                    data-cbt-essay-ai-settings-toggle
+                                    aria-expanded="false"
+                                    aria-controls="cbt-results-essay-ai-settings-body"
+                                >Buka Pengaturan</button>
+                            </div>
+                        </div>
+                        <div
+                            id="cbt-results-essay-ai-settings-body"
+                            class="cbt-results-essay-ai-settings-body"
+                            data-cbt-essay-ai-settings-body
+                            hidden
+                        >
+                            <p class="cbt-results-muted" style="margin:0;"><?php echo esc_html((string) ($essay_ai_status['message'] ?? 'AI memberi rekomendasi nilai untuk admin, bukan nilai final otomatis.')); ?></p>
+                            <div class="cbt-results-essay-ai-config">
+                                <div class="cbt-results-essay-ai-main">
+                                <div class="cbt-results-essay-ai-provider-row">
+                                    <label class="cbt-results-field">
+                                        <span>Status AI</span>
+                                        <select name="essay_ai_enabled">
+                                            <option value="0" <?php selected(empty($essay_ai_settings['enabled'])); ?>>Nonaktif</option>
+                                            <option value="1" <?php selected(!empty($essay_ai_settings['enabled'])); ?>>Aktif</option>
+                                        </select>
+                                    </label>
+                                    <label class="cbt-results-field">
+                                        <span>Provider AI</span>
+                                        <select name="essay_ai_provider" data-cbt-essay-ai-provider>
+                                            <?php foreach ($essay_ai_provider_options as $provider_id => $provider_label): ?>
+                                                <option value="<?php echo esc_attr((string) $provider_id); ?>" <?php selected($essay_ai_current_provider, (string) $provider_id); ?>>
+                                                    <?php echo esc_html((string) $provider_label); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </label>
+                                </div>
+                                <label class="cbt-results-field is-wide" data-cbt-essay-ai-openai-endpoint <?php echo $essay_ai_current_provider === 'openai' ? '' : 'hidden'; ?>>
+                                    <span>Endpoint OpenAI</span>
+                                    <select name="essay_ai_endpoint">
+                                        <?php foreach ($essay_ai_openai_endpoint_options as $endpoint_url => $endpoint_label): ?>
+                                            <option value="<?php echo esc_attr((string) $endpoint_url); ?>" <?php selected($essay_ai_current_openai_endpoint, (string) $endpoint_url); ?>>
+                                                <?php echo esc_html((string) $endpoint_label); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+                                <div class="cbt-results-essay-ai-endpoint-note" data-cbt-essay-ai-gemini-endpoint <?php echo $essay_ai_current_provider === 'gemini' ? '' : 'hidden'; ?>>
+                                    <strong>Endpoint Gemini otomatis</strong>
+                                    <code data-cbt-essay-ai-gemini-endpoint-text><?php echo esc_html($essay_ai_gemini_endpoint); ?></code>
+                                    <span class="cbt-results-muted">Tidak perlu diisi manual. Sistem memakai model Gemini dan API key yang Anda simpan.</span>
+                                </div>
+                                <label class="cbt-results-field">
+                                    <span>Model</span>
+                                    <select name="essay_ai_model" data-cbt-essay-ai-model>
+                                        <?php foreach ($essay_ai_model_options_by_provider as $provider_id => $model_options): ?>
+                                            <?php foreach ((array) $model_options as $model_id => $model_label): ?>
+                                                <option
+                                                    value="<?php echo esc_attr((string) $model_id); ?>"
+                                                    data-provider="<?php echo esc_attr((string) $provider_id); ?>"
+                                                    <?php selected($essay_ai_current_model, (string) $model_id); ?>
+                                                >
+                                                    <?php echo esc_html((string) $model_label); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+                                <div class="cbt-results-essay-ai-secret-row" data-cbt-essay-ai-model-refresh-row>
+                                    <button type="button" class="button" data-cbt-essay-ai-refresh-models>Refresh Model <?php echo $essay_ai_current_provider === 'openai' ? 'OpenAI' : 'Gemini'; ?></button>
+                                    <span
+                                        class="cbt-results-muted"
+                                        data-cbt-essay-ai-model-status
+                                        data-gemini-status="<?php echo esc_attr($essay_ai_gemini_model_status); ?>"
+                                        data-openai-status="<?php echo esc_attr($essay_ai_openai_model_status); ?>"
+                                    >
+                                        <?php echo esc_html($essay_ai_model_status); ?>
+                                    </span>
+                                </div>
+                                <div class="cbt-results-essay-ai-compact-grid">
+                                    <label class="cbt-results-field">
+                                        <span>Timeout</span>
+                                        <input type="number" min="5" max="90" name="essay_ai_timeout" value="<?php echo esc_attr((string) ((int) ($essay_ai_settings['timeout'] ?? 30))); ?>" />
+                                    </label>
+                                    <label class="cbt-results-field">
+                                        <span>Batch</span>
+                                        <input type="number" min="1" max="20" name="essay_ai_batch_limit" value="<?php echo esc_attr((string) ((int) ($essay_ai_settings['batch_limit'] ?? 3))); ?>" />
+                                    </label>
+                                </div>
+                                <label class="cbt-results-field is-wide">
+                                    <span>API Key</span>
+                                    <input
+                                        type="password"
+                                        name="essay_ai_api_key"
+                                        value=""
+                                        placeholder="<?php echo esc_attr($essay_ai_key_placeholder); ?>"
+                                        autocomplete="off"
+                                        data-cbt-essay-ai-api-key-input
+                                    />
+                                </label>
+                                <div
+                                    class="cbt-results-essay-ai-key-status <?php echo $essay_ai_current_has_api_key ? 'is-saved' : 'is-missing'; ?>"
+                                    data-cbt-essay-ai-key-status
+                                    data-gemini-saved="<?php echo $essay_ai_gemini_has_api_key ? '1' : '0'; ?>"
+                                    data-openai-saved="<?php echo $essay_ai_openai_has_api_key ? '1' : '0'; ?>"
+                                >
+                                    <div>
+                                        <strong data-cbt-essay-ai-key-status-title><?php echo esc_html($essay_ai_key_title); ?></strong>
+                                        <span data-cbt-essay-ai-key-status-message><?php echo esc_html($essay_ai_key_message); ?></span>
+                                    </div>
+                                    <span class="cbt-results-essay-ai-key-pill" data-cbt-essay-ai-key-status-pill><?php echo esc_html($essay_ai_key_pill); ?></span>
+                                </div>
+                                <div class="cbt-results-essay-ai-save-row">
+                                    <input type="hidden" name="essay_ai_clear_api_key" value="0" data-cbt-essay-ai-clear-key-input />
+                                    <button
+                                        type="button"
+                                        class="button"
+                                        data-cbt-essay-ai-clear-key-button
+                                        <?php disabled(!$essay_ai_current_has_api_key); ?>
+                                    >Hapus API key <?php echo esc_html($essay_ai_current_provider_name); ?></button>
+                                    <span class="cbt-results-muted">API key Gemini dan OpenAI disimpan terpisah.</span>
+                                    <button type="submit" class="button button-primary button-hero">Simpan AI</button>
+                                </div>
+                                </div>
+                                <aside class="cbt-results-essay-ai-guide" aria-label="Cara mendapatkan API key AI">
+                                <div class="cbt-results-essay-ai-guide-card" data-cbt-essay-ai-guide-card="openai" <?php echo $essay_ai_current_provider === 'openai' ? '' : 'hidden'; ?>>
+                                    <h4>API key ChatGPT/OpenAI</h4>
+                                    <ol>
+                                        <li>Buka dashboard OpenAI Platform dan login.</li>
+                                        <li>Masuk ke menu API keys, lalu buat secret key baru.</li>
+                                        <li>Salin key sekali saja, lalu tempel di field API Key.</li>
+                                        <li>Pastikan billing/project aktif agar request tidak ditolak.</li>
+                                    </ol>
+                                    <a class="button" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">Buka OpenAI API Keys</a>
+                                </div>
+                                <div class="cbt-results-essay-ai-guide-card" data-cbt-essay-ai-guide-card="gemini" <?php echo $essay_ai_current_provider === 'gemini' ? '' : 'hidden'; ?>>
+                                    <h4>API key Google Gemini</h4>
+                                    <ol>
+                                        <li>Buka Google AI Studio dan login akun Google.</li>
+                                        <li>Pilih menu API key, lalu buat key baru.</li>
+                                        <li>Pilih provider Google Gemini di kiri, lalu tempel key tersebut.</li>
+                                        <li>Gunakan Gemini 2.5 Flash Lite agar tidak langsung kena 429 di free quota.</li>
+                                    </ol>
+                                    <a class="button" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Buka Gemini API Keys</a>
+                                </div>
+                                </aside>
+                            </div>
+                        </div>
+                    </form>
+                <?php endif; ?>
+
+                <?php if ($selected_essay_exam_id > 0 && !empty($essay_question_rows) && current_user_can('cbt_grade_essay')): ?>
+                    <div
+                        class="cbt-results-essay-ai-panel"
+                        data-cbt-essay-ai-panel
+                        data-scope="exam"
+                        data-auto-apply="1"
+                        data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
+                        data-nonce="<?php echo esc_attr(wp_create_nonce('cbt_results_essay_ai')); ?>"
+                        data-exam-id="<?php echo (int) $selected_essay_exam_id; ?>"
+                        data-question-id="0"
+                        data-kelas="<?php echo esc_attr($selected_essay_kelas); ?>"
+                        data-keyword="<?php echo esc_attr($selected_essay_keyword); ?>"
+                    >
+                        <div class="cbt-results-essay-ai-head">
+                            <div>
+                                <h3 style="margin:0;">Koreksi Semua Essay di Exam dengan AI</h3>
+                                <p class="cbt-results-muted" style="margin:4px 0 0;" data-cbt-essay-ai-message>Mode santai: AI memproses semua soal essay di exam ini sesuai filter aktif, lalu langsung mengisi jawaban yang belum dinilai.</p>
+                            </div>
+                            <div class="cbt-results-essay-ai-actions">
+                                <span class="cbt-results-essay-chip"><?php echo esc_html(number_format_i18n(count($essay_question_rows))); ?> soal essay</span>
+                                <button
+                                    type="button"
+                                    class="button button-primary"
+                                    data-cbt-essay-ai-start
+                                    data-retry-mode="all"
+                                    <?php disabled(($essay_ai_status['status'] ?? '') !== 'ready'); ?>
+                                >Koreksi Exam dengan AI</button>
+                                <button
+                                    type="button"
+                                    class="button"
+                                    data-cbt-essay-ai-start
+                                    data-retry-mode="failed_only"
+                                    <?php disabled(($essay_ai_status['status'] ?? '') !== 'ready'); ?>
+                                >Ulangi Gagal Saja</button>
+                                <button type="button" class="button" data-cbt-essay-ai-stop hidden>Stop</button>
+                            </div>
+                        </div>
+                        <div class="cbt-results-essay-ai-progress">
+                            <div class="cbt-results-essay-ai-progress-track">
+                                <div class="cbt-results-essay-ai-progress-bar" data-cbt-essay-ai-progress-bar></div>
+                            </div>
+                            <p class="cbt-results-muted" style="margin:0;" data-cbt-essay-ai-progress-text>Menunggu job AI exam.</p>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
                 <?php if ($selected_essay_exam_id <= 0): ?>
                     <?php
@@ -4503,7 +5143,7 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                     <?php
                     echo CBT_Admin_UI_Helper::render_empty_state([
                         'title' => 'Pilih soal essay',
-                        'message' => 'Setelah soal dipilih, semua jawaban completed attempt untuk soal tersebut akan muncul di workspace koreksi.',
+                        'message' => 'Pilih soal untuk review detail per-jawaban, atau gunakan Koreksi Semua Essay di Exam dengan AI untuk mode santai.',
                         'class' => 'cbt-results-empty',
                     ]); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
                     ?>
@@ -4529,6 +5169,50 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                             <span class="cbt-results-essay-chip is-success"><?php echo esc_html(number_format_i18n((int) ($essay_bulk_summary['graded_count'] ?? 0))); ?> sudah dinilai</span>
                             <span class="cbt-results-essay-chip is-warning"><?php echo esc_html(number_format_i18n((int) ($essay_bulk_summary['pending_count'] ?? 0))); ?> belum dinilai</span>
                             <span class="cbt-results-essay-chip is-muted"><?php echo esc_html(number_format_i18n((int) ($essay_bulk_summary['empty_count'] ?? 0))); ?> kosong</span>
+                            <span class="cbt-results-essay-chip is-success"><?php echo esc_html(number_format_i18n((int) ($essay_ai_summary['ready_count'] ?? 0))); ?> rekomendasi AI</span>
+                            <span class="cbt-results-essay-chip is-warning"><?php echo esc_html(number_format_i18n((int) ($essay_ai_summary['failed_count'] ?? 0))); ?> gagal AI</span>
+                            <span class="cbt-results-essay-chip is-warning"><?php echo esc_html(number_format_i18n((int) ($essay_ai_summary['candidate_count'] ?? 0))); ?> kandidat AI</span>
+                        </div>
+                    </div>
+
+                    <div
+                        class="cbt-results-essay-ai-panel"
+                        data-cbt-essay-ai-panel
+                        data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
+                        data-nonce="<?php echo esc_attr(wp_create_nonce('cbt_results_essay_ai')); ?>"
+                        data-exam-id="<?php echo (int) $selected_essay_exam_id; ?>"
+                        data-question-id="<?php echo (int) $selected_essay_question_id; ?>"
+                        data-kelas="<?php echo esc_attr($selected_essay_kelas); ?>"
+                        data-keyword="<?php echo esc_attr($selected_essay_keyword); ?>"
+                    >
+                        <div class="cbt-results-essay-ai-head">
+                            <div>
+                                <h3 style="margin:0;">Rekomendasi AI untuk Soal Ini</h3>
+                                <p class="cbt-results-muted" style="margin:4px 0 0;" data-cbt-essay-ai-message><?php echo esc_html((string) ($essay_ai_status['message'] ?? 'AI memberi rekomendasi nilai untuk admin.')); ?></p>
+                            </div>
+                            <div class="cbt-results-essay-ai-actions">
+                                <button
+                                    type="button"
+                                    class="button button-primary"
+                                    data-cbt-essay-ai-start
+                                    data-retry-mode="all"
+                                    <?php disabled(($essay_ai_status['status'] ?? '') !== 'ready' || (int) ($essay_ai_summary['candidate_count'] ?? 0) <= 0); ?>
+                                >Buat Rekomendasi AI</button>
+                                <button
+                                    type="button"
+                                    class="button"
+                                    data-cbt-essay-ai-start
+                                    data-retry-mode="failed_only"
+                                    <?php disabled(($essay_ai_status['status'] ?? '') !== 'ready' || (int) ($essay_ai_summary['failed_count'] ?? 0) <= 0); ?>
+                                >Ulangi Gagal Saja</button>
+                                <button type="button" class="button" data-cbt-essay-ai-stop hidden>Stop</button>
+                            </div>
+                        </div>
+                        <div class="cbt-results-essay-ai-progress">
+                            <div class="cbt-results-essay-ai-progress-track">
+                                <div class="cbt-results-essay-ai-progress-bar" data-cbt-essay-ai-progress-bar></div>
+                            </div>
+                            <p class="cbt-results-muted" style="margin:0;" data-cbt-essay-ai-progress-text>Menunggu job AI.</p>
                         </div>
                     </div>
 
@@ -4561,6 +5245,65 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                     <div>
                                         <h3>Jawaban Siswa</h3>
                                         <div class="cbt-results-essay-answer-text"><?php echo $row['answer_text'] !== '' ? nl2br(esc_html((string) $row['answer_text'])) : '<span class="cbt-results-muted">Siswa tidak mengisi jawaban untuk soal ini.</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></div>
+                                        <?php
+                                        $ai_suggestion = is_array($row['ai_suggestion'] ?? null) ? (array) $row['ai_suggestion'] : [];
+                                        $ai_status = sanitize_html_class((string) ($ai_suggestion['status'] ?? 'not_processed'), 'not_processed');
+                                        $ai_flags = is_array($ai_suggestion['flags'] ?? null) ? (array) $ai_suggestion['flags'] : [];
+                                        $ai_breakdown = is_array($ai_suggestion['rubric_breakdown'] ?? null) ? (array) $ai_suggestion['rubric_breakdown'] : [];
+                                        $ai_can_retry = ($essay_ai_status['status'] ?? '') === 'ready'
+                                            && $answer_id > 0
+                                            && !in_array($ai_status, ['unavailable', 'skipped', 'blocked'], true);
+                                        ?>
+                                        <div class="cbt-results-essay-ai-box is-<?php echo esc_attr($ai_status); ?>" data-cbt-essay-ai-box>
+                                            <p class="cbt-results-essay-ai-title">
+                                                <span>AI Essay: <?php echo esc_html((string) ($ai_suggestion['label'] ?? 'Belum diproses')); ?></span>
+                                                <span class="cbt-results-essay-chip <?php echo $ai_status === 'success' ? 'is-success' : ($ai_status === 'failed' || $ai_status === 'stale' ? 'is-warning' : 'is-muted'); ?>"><?php echo esc_html((string) ($ai_suggestion['confidence_display'] ?? '-')); ?></span>
+                                            </p>
+                                            <p class="cbt-results-essay-ai-feedback"><?php echo esc_html((string) ($ai_suggestion['message'] ?? 'Belum ada rekomendasi AI.')); ?></p>
+                                            <?php if ($ai_status === 'success' || $ai_status === 'stale'): ?>
+                                                <div class="cbt-results-essay-summary">
+                                                    <span class="cbt-results-essay-chip is-success">Skor AI: <?php echo esc_html((string) ($ai_suggestion['suggested_score_display'] ?? '-')); ?> / <?php echo esc_html((string) ($row['max_points_display'] ?? '0.00')); ?></span>
+                                                    <?php if (!empty($ai_suggestion['needs_manual_review'])): ?>
+                                                        <span class="cbt-results-essay-chip is-warning">Perlu review manual</span>
+                                                    <?php endif; ?>
+                                                </div>
+                                            <?php endif; ?>
+                                            <?php if (!empty($ai_suggestion['feedback_internal'])): ?>
+                                                <p class="cbt-results-essay-ai-feedback"><strong>Feedback AI:</strong> <?php echo esc_html((string) $ai_suggestion['feedback_internal']); ?></p>
+                                            <?php endif; ?>
+                                            <?php if (!empty($ai_breakdown)): ?>
+                                                <ul class="cbt-results-essay-ai-list">
+                                                    <?php foreach ($ai_breakdown as $item): ?>
+                                                        <li><?php echo esc_html(is_scalar($item) ? (string) $item : wp_json_encode($item)); ?></li>
+                                                    <?php endforeach; ?>
+                                                </ul>
+                                            <?php endif; ?>
+                                            <?php if (!empty($ai_flags)): ?>
+                                                <div class="cbt-results-essay-summary">
+                                                    <?php foreach ($ai_flags as $flag): ?>
+                                                        <span class="cbt-results-essay-chip is-warning"><?php echo esc_html(is_scalar($flag) ? (string) $flag : wp_json_encode($flag)); ?></span>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php endif; ?>
+                                            <div class="cbt-results-essay-ai-actions">
+                                                <?php if (($ai_status === 'success' || $ai_status === 'stale') && isset($ai_suggestion['suggested_score'])): ?>
+                                                    <button
+                                                        type="button"
+                                                        class="button"
+                                                        data-cbt-essay-ai-apply
+                                                        data-score="<?php echo esc_attr(number_format((float) $ai_suggestion['suggested_score'], 2, '.', '')); ?>"
+                                                    >Pakai skor AI</button>
+                                                <?php endif; ?>
+                                                <?php if ($ai_can_retry): ?>
+                                                    <button
+                                                        type="button"
+                                                        class="button"
+                                                        data-cbt-essay-ai-retry
+                                                        data-answer-id="<?php echo (int) $answer_id; ?>"
+                                                    >Coba ulang AI</button>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div class="cbt-results-essay-score-box">
                                         <label for="cbt-essay-score-<?php echo $answer_id > 0 ? $answer_id : (int) ($row['attempt_id'] ?? 0); ?>">Nilai</label>
@@ -4575,6 +5318,9 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                                 data-initial-score="<?php echo esc_attr($score_value); ?>"
                                                 data-max-score="<?php echo esc_attr($max_points); ?>"
                                                 data-cbt-essay-score-input
+                                                <?php if (($ai_status === 'success' || $ai_status === 'stale') && isset($ai_suggestion['suggested_score'])): ?>
+                                                    data-ai-score="<?php echo esc_attr(number_format((float) $ai_suggestion['suggested_score'], 2, '.', '')); ?>"
+                                                <?php endif; ?>
                                                 <?php echo $answer_id > 0 ? 'name="essay_scores[' . (int) $answer_id . ']"' : 'disabled'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                                             />
                                             <strong>/ <?php echo esc_html((string) ($row['max_points_display'] ?? '0.00')); ?></strong>
@@ -4594,14 +5340,21 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                 <span class="cbt-results-essay-chip is-warning"><span data-cbt-essay-changed>0</span> berubah</span>
                                 <span class="cbt-results-essay-chip is-muted"><span data-cbt-essay-invalid>0</span> invalid</span>
                             </div>
-                            <button type="submit" class="button button-primary">Simpan Semua Nilai Essay</button>
+                            <div class="cbt-results-essay-sticky-actions">
+                                <button type="button" class="button" data-cbt-essay-ai-apply-all>Pakai Nilai AI untuk Semua</button>
+                                <button type="submit" class="button button-primary">Simpan Semua Nilai Essay</button>
+                                <p class="cbt-results-essay-ai-apply-all-note" data-cbt-essay-ai-apply-all-note hidden></p>
+                            </div>
                         </div>
                     </form>
                 <?php endif; ?>
+                </div>
             </section>
             </div>
             <script>
                 (function () {
+                    var sharedState = window.cbtResultsPageState || (window.cbtResultsPageState = {});
+
                     function toArray(list) {
                         return Array.prototype.slice.call(list || []);
                     }
@@ -4621,16 +5374,98 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                         return option;
                     }
 
+                    function getEssayContent() {
+                        return document.querySelector('[data-cbt-essay-content]');
+                    }
+
+                    function buildEssayFilterUrl(form) {
+                        var url = new URL(form.getAttribute('action') || window.location.href, window.location.href);
+                        var params = new URLSearchParams();
+                        new FormData(form).forEach(function (value, key) {
+                            params.set(key, String(value));
+                        });
+                        url.search = params.toString();
+
+                        return url;
+                    }
+
+                    function initializeEssayDynamicArea() {
+                        setupBulkEssayForm();
+                        setupEssayAiSettings();
+                        setupEssayAiActions();
+                    }
+
+                    function refreshEssayContentFromUrl(url, updateHistory) {
+                        var currentContent = getEssayContent();
+                        if (!currentContent || !window.fetch || !window.DOMParser) {
+                            window.location.href = String(url);
+                            return Promise.resolve(false);
+                        }
+
+                        currentContent.classList.add('is-loading');
+
+                        return fetch(String(url), {
+                            method: 'GET',
+                            credentials: 'same-origin'
+                        })
+                            .then(function (response) {
+                                return response.text();
+                            })
+                            .then(function (html) {
+                                var parsed = new DOMParser().parseFromString(html, 'text/html');
+                                var nextContent = parsed.querySelector('[data-cbt-essay-content]');
+                                var liveContent = getEssayContent();
+                                if (!nextContent || !liveContent) {
+                                    throw new Error('Area essay tidak ditemukan.');
+                                }
+
+                                liveContent.replaceWith(nextContent);
+                                initializeEssayDynamicArea();
+                                if (updateHistory !== false && window.history && window.history.replaceState) {
+                                    window.history.replaceState({}, '', String(url));
+                                }
+
+                                return true;
+                            })
+                            .catch(function () {
+                                window.location.href = String(url);
+                                return false;
+                            })
+                            .then(function (ok) {
+                                var liveContent = getEssayContent();
+                                if (liveContent) {
+                                    liveContent.classList.remove('is-loading');
+                                }
+                                return ok;
+                            });
+                    }
+
                     function setupEssayQuestionFilter() {
                         var form = document.querySelector('[data-cbt-essay-filter]');
                         if (!form || !window.fetch || !window.FormData) {
                             return;
                         }
+                        if (form.getAttribute('data-cbt-essay-filter-ready') === '1') {
+                            return;
+                        }
+                        form.setAttribute('data-cbt-essay-filter-ready', '1');
 
                         var examSelect = form.querySelector('[data-cbt-essay-exam]');
                         var questionSelect = form.querySelector('[data-cbt-essay-question]');
+                        var searchInput = form.querySelector('[data-cbt-essay-search]');
+                        var resetLink = form.querySelector('[data-cbt-essay-reset-filter]');
+                        var searchTimer = null;
                         if (!examSelect || !questionSelect) {
                             return;
+                        }
+
+                        function submitFilter() {
+                            refreshEssayContentFromUrl(buildEssayFilterUrl(form));
+                        }
+
+                        function submitFilterSoon() {
+                            window.clearTimeout(searchTimer);
+                            searchTimer = window.setTimeout(submitFilter, 450);
                         }
 
                         examSelect.addEventListener('change', function () {
@@ -4641,6 +5476,7 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                             questionSelect.setAttribute('data-selected-question', '0');
 
                             if (examId <= 0) {
+                                submitFilter();
                                 return;
                             }
 
@@ -4667,13 +5503,47 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                         questionSelect.appendChild(formatQuestionOption(item));
                                     });
                                     questionSelect.disabled = false;
+                                    submitFilter();
                                 })
                                 .catch(function () {
                                     questionSelect.innerHTML = '';
                                     questionSelect.appendChild(new Option('Gagal memuat soal essay', '0'));
                                     questionSelect.disabled = false;
+                                    submitFilter();
                                 });
                         });
+
+                        questionSelect.addEventListener('change', submitFilter);
+                        Array.prototype.forEach.call(form.querySelectorAll('[data-cbt-essay-auto-filter]'), function (input) {
+                            input.addEventListener('change', submitFilter);
+                        });
+                        if (searchInput) {
+                            searchInput.addEventListener('input', submitFilterSoon);
+                            searchInput.addEventListener('search', submitFilter);
+                            searchInput.addEventListener('keydown', function (event) {
+                                if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    submitFilter();
+                                }
+                            });
+                        }
+                        if (resetLink) {
+                            resetLink.addEventListener('click', function (event) {
+                                event.preventDefault();
+                                examSelect.value = '0';
+                                questionSelect.innerHTML = '';
+                                questionSelect.appendChild(new Option('Pilih exam dulu', '0'));
+                                questionSelect.disabled = true;
+                                questionSelect.setAttribute('data-selected-question', '0');
+                                Array.prototype.forEach.call(form.querySelectorAll('[data-cbt-essay-auto-filter]'), function (input) {
+                                    input.value = '';
+                                });
+                                if (searchInput) {
+                                    searchInput.value = '';
+                                }
+                                refreshEssayContentFromUrl(new URL(resetLink.href, window.location.href));
+                            });
+                        }
                     }
 
                     function setupBulkEssayForm() {
@@ -4681,10 +5551,16 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                         if (!form) {
                             return;
                         }
+                        if (form.getAttribute('data-cbt-bulk-essay-ready') === '1') {
+                            return;
+                        }
+                        form.setAttribute('data-cbt-bulk-essay-ready', '1');
 
                         var inputs = toArray(form.querySelectorAll('[data-cbt-essay-score-input]'));
                         var changedOutput = form.querySelector('[data-cbt-essay-changed]');
                         var invalidOutput = form.querySelector('[data-cbt-essay-invalid]');
+                        var applyAllButton = form.querySelector('[data-cbt-essay-ai-apply-all]');
+                        var applyAllNote = form.querySelector('[data-cbt-essay-ai-apply-all-note]');
 
                         function syncState() {
                             var changedCount = 0;
@@ -4720,10 +5596,40 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                             return invalidCount;
                         }
 
+                        function countAiApplicableInputs() {
+                            return inputs.filter(function (input) {
+                                return !input.disabled && String(input.getAttribute('data-ai-score') || '').trim() !== '';
+                            }).length;
+                        }
+
                         inputs.forEach(function (input) {
                             input.addEventListener('input', syncState);
                             input.addEventListener('change', syncState);
                         });
+
+                        if (applyAllButton) {
+                            applyAllButton.disabled = countAiApplicableInputs() <= 0;
+                            applyAllButton.addEventListener('click', function () {
+                                var appliedCount = 0;
+                                inputs.forEach(function (input) {
+                                    var aiScore = String(input.getAttribute('data-ai-score') || '').trim();
+                                    if (input.disabled || aiScore === '') {
+                                        return;
+                                    }
+                                    input.value = aiScore;
+                                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                                    appliedCount += 1;
+                                });
+
+                                syncState();
+                                if (applyAllNote) {
+                                    applyAllNote.hidden = false;
+                                    applyAllNote.textContent = appliedCount > 0
+                                        ? 'Nilai AI diterapkan ke ' + appliedCount + ' jawaban yang tampil. Klik Simpan Semua Nilai Essay untuk menyimpan.'
+                                        : 'Belum ada rekomendasi AI yang bisa diterapkan pada daftar ini.';
+                                }
+                            });
+                        }
 
                         form.addEventListener('submit', function (event) {
                             var invalidCount = syncState();
@@ -4741,8 +5647,547 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                         syncState();
                     }
 
+                    function setupEssayAiActions() {
+                        sharedState.essayQuestionStartJob = null;
+                        var panels = toArray(document.querySelectorAll('[data-cbt-essay-ai-panel]'));
+                        if (!panels.length || !window.fetch || !window.FormData) {
+                            return;
+                        }
+
+                        panels.forEach(function (panel) {
+                            if (panel.getAttribute('data-cbt-essay-ai-panel-ready') === '1') {
+                                return;
+                            }
+                            panel.setAttribute('data-cbt-essay-ai-panel-ready', '1');
+
+                            var ajaxUrl = panel.getAttribute('data-ajax-url') || window.ajaxurl || '';
+                            var nonce = panel.getAttribute('data-nonce') || '';
+                            var startButtons = toArray(panel.querySelectorAll('[data-cbt-essay-ai-start]'));
+                            var stopButton = panel.querySelector('[data-cbt-essay-ai-stop]');
+                            var message = panel.querySelector('[data-cbt-essay-ai-message]');
+                            var progressBar = panel.querySelector('[data-cbt-essay-ai-progress-bar]');
+                            var progressText = panel.querySelector('[data-cbt-essay-ai-progress-text]');
+                            var panelScope = panel.getAttribute('data-scope') || 'question';
+                            var autoApply = panel.getAttribute('data-auto-apply') === '1';
+                            var activeToken = '';
+
+                            function setMessage(text) {
+                                if (message) {
+                                    message.textContent = String(text || '');
+                                }
+                            }
+
+                            function setProgress(payload) {
+                                var percent = payload && Number.isFinite(Number(payload.progress_percent))
+                                    ? Math.max(0, Math.min(100, Number(payload.progress_percent)))
+                                    : 0;
+                                if (progressBar) {
+                                    progressBar.style.width = percent + '%';
+                                }
+                                if (progressText) {
+                                    progressText.textContent = String(payload && payload.message ? payload.message : 'Memproses rekomendasi AI...') +
+                                        ' (' + percent.toFixed(0) + '%)';
+                                }
+                            }
+
+                            function setStartButtonsDisabled(disabled) {
+                                startButtons.forEach(function (button) {
+                                    button.disabled = !!disabled;
+                                });
+                            }
+
+                            function postAction(action, extra) {
+                                var request = new FormData();
+                                request.append('action', action);
+                                request.append('nonce', nonce);
+                                Object.keys(extra || {}).forEach(function (key) {
+                                    request.append(key, String(extra[key]));
+                                });
+
+                                return fetch(ajaxUrl, {
+                                    method: 'POST',
+                                    credentials: 'same-origin',
+                                    body: request
+                                }).then(function (response) {
+                                    return response.json().then(function (payload) {
+                                        if (!payload || !payload.success) {
+                                            var messageText = payload && payload.data && payload.data.message
+                                                ? payload.data.message
+                                                : 'Request AI gagal.';
+                                            throw new Error(messageText);
+                                        }
+                                        return payload.data || {};
+                                    });
+                                });
+                            }
+
+                            function finishJob(payload) {
+                                panel.classList.remove('is-running');
+                                panel.classList.add('is-complete');
+                                setStartButtonsDisabled(false);
+                                if (stopButton) {
+                                    stopButton.hidden = true;
+                                }
+                                if (payload) {
+                                    setProgress(payload);
+                                }
+                                window.setTimeout(function () {
+                                    var filterForm = document.querySelector('[data-cbt-essay-filter]');
+                                    if (filterForm) {
+                                        refreshEssayContentFromUrl(buildEssayFilterUrl(filterForm), false);
+                                        return;
+                                    }
+                                    window.location.reload();
+                                }, autoApply ? 1200 : 700);
+                            }
+
+                            function tickJob() {
+                                if (!activeToken) {
+                                    return;
+                                }
+
+                                postAction('cbt_results_essay_ai_tick', { token: activeToken })
+                                    .then(function (payload) {
+                                        setProgress(payload);
+                                        if (payload.complete) {
+                                            finishJob(payload);
+                                            return;
+                                        }
+                                        var retryAfter = payload && Number.isFinite(Number(payload.retry_after_seconds))
+                                            ? Number(payload.retry_after_seconds)
+                                            : 0;
+                                        var nextDelay = retryAfter > 0
+                                            ? Math.max(900, Math.min(300000, retryAfter * 1000))
+                                            : 900;
+                                        window.setTimeout(tickJob, nextDelay);
+                                    })
+                                    .catch(function (error) {
+                                        panel.classList.remove('is-running');
+                                        setMessage(error && error.message ? error.message : 'AI gagal diproses.');
+                                        setStartButtonsDisabled(false);
+                                        if (stopButton) {
+                                            stopButton.hidden = true;
+                                        }
+                                    });
+                            }
+
+                            function startJob(options) {
+                                var payload = {
+                                    cbt_essay_exam_id: panel.getAttribute('data-exam-id') || '0',
+                                    cbt_essay_question_id: panel.getAttribute('data-question-id') || '0',
+                                    cbt_essay_kelas: panel.getAttribute('data-kelas') || '',
+                                    cbt_essay_q: panel.getAttribute('data-keyword') || '',
+                                    scope: panelScope,
+                                    auto_apply: autoApply ? '1' : '0',
+                                    retry_mode: options && options.retryMode === 'failed_only' ? 'failed_only' : 'all'
+                                };
+                                if (options && options.answerId) {
+                                    payload.answer_id = options.answerId;
+                                    payload.force = '1';
+                                    payload.scope = 'question';
+                                    payload.auto_apply = '0';
+                                    payload.retry_mode = 'all';
+                                }
+
+                                panel.classList.add('is-running');
+                                panel.classList.remove('is-complete');
+                                setStartButtonsDisabled(true);
+                                if (stopButton) {
+                                    stopButton.hidden = false;
+                                }
+                                setMessage(payload.retry_mode === 'failed_only'
+                                    ? 'Membuat antrean ulang rekomendasi AI yang gagal...'
+                                    : (autoApply ? 'Membuat antrean koreksi AI exam...' : 'Membuat antrean rekomendasi AI...'));
+                                setProgress({ progress_percent: 0, message: 'Menyiapkan job AI...' });
+
+                                postAction('cbt_results_essay_ai_start', payload)
+                                    .then(function (response) {
+                                        activeToken = response.token || '';
+                                        setProgress(response);
+                                        if (response.complete) {
+                                            finishJob(response);
+                                            return;
+                                        }
+                                        tickJob();
+                                    })
+                                    .catch(function (error) {
+                                        panel.classList.remove('is-running');
+                                        setMessage(error && error.message ? error.message : 'Gagal memulai AI Essay.');
+                                        setStartButtonsDisabled(false);
+                                        if (stopButton) {
+                                            stopButton.hidden = true;
+                                        }
+                                    });
+                            }
+
+                            if (panelScope === 'question') {
+                                sharedState.essayQuestionStartJob = startJob;
+                            }
+                            startButtons.forEach(function (button) {
+                                button.addEventListener('click', function () {
+                                    startJob({
+                                        retryMode: button.getAttribute('data-retry-mode') || 'all'
+                                    });
+                                });
+                            });
+                            if (stopButton) {
+                                stopButton.addEventListener('click', function () {
+                                    if (!activeToken) {
+                                        return;
+                                    }
+                                    stopButton.disabled = true;
+                                    postAction('cbt_results_essay_ai_stop', { token: activeToken })
+                                        .then(function (payload) {
+                                            setProgress(payload);
+                                            panel.classList.remove('is-running');
+                                            setStartButtonsDisabled(false);
+                                            stopButton.hidden = true;
+                                            stopButton.disabled = false;
+                                        })
+                                        .catch(function () {
+                                            stopButton.disabled = false;
+                                        });
+                                });
+                            }
+                        });
+
+                        if (sharedState.essayAiDocumentClickReady) {
+                            return;
+                        }
+                        sharedState.essayAiDocumentClickReady = true;
+
+                        document.addEventListener('click', function (event) {
+                            var applyButton = event.target && event.target.closest
+                                ? event.target.closest('[data-cbt-essay-ai-apply]')
+                                : null;
+                            if (applyButton) {
+                                var row = applyButton.closest('[data-cbt-essay-row]');
+                                var input = row ? row.querySelector('[data-cbt-essay-score-input]') : null;
+                                if (input) {
+                                    input.value = applyButton.getAttribute('data-score') || input.value;
+                                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                                    input.focus();
+                                }
+                                return;
+                            }
+
+                            var retryButton = event.target && event.target.closest
+                                ? event.target.closest('[data-cbt-essay-ai-retry]')
+                                : null;
+                            if (retryButton && sharedState.essayQuestionStartJob) {
+                                sharedState.essayQuestionStartJob({ answerId: retryButton.getAttribute('data-answer-id') || '0' });
+                            }
+                        });
+                    }
+
+                    function setupEssayAiSettings() {
+                        var settingsForm = document.querySelector('[data-cbt-essay-ai-settings]');
+                        var providerSelect = document.querySelector('[data-cbt-essay-ai-provider]');
+                        var modelSelect = document.querySelector('[data-cbt-essay-ai-model]');
+                        if (!providerSelect || !modelSelect) {
+                            return;
+                        }
+                        if (settingsForm && settingsForm.getAttribute('data-cbt-essay-ai-settings-ready') === '1') {
+                            return;
+                        }
+                        if (settingsForm) {
+                            settingsForm.setAttribute('data-cbt-essay-ai-settings-ready', '1');
+                        }
+
+                        var settingsBody = document.querySelector('[data-cbt-essay-ai-settings-body]');
+                        var settingsToggle = document.querySelector('[data-cbt-essay-ai-settings-toggle]');
+                        var settingsSummary = document.querySelector('[data-cbt-essay-ai-settings-summary]');
+                        var settingsStatusLabel = document.querySelector('[data-cbt-essay-ai-settings-status-label]');
+                        var openaiEndpoint = document.querySelector('[data-cbt-essay-ai-openai-endpoint]');
+                        var openaiEndpointSelect = settingsForm && settingsForm.elements ? settingsForm.elements.essay_ai_endpoint : null;
+                        var geminiEndpoint = document.querySelector('[data-cbt-essay-ai-gemini-endpoint]');
+                        var geminiEndpointText = document.querySelector('[data-cbt-essay-ai-gemini-endpoint-text]');
+                        var modelRefreshRow = document.querySelector('[data-cbt-essay-ai-model-refresh-row]');
+                        var refreshModelsButton = document.querySelector('[data-cbt-essay-ai-refresh-models]');
+                        var modelStatus = document.querySelector('[data-cbt-essay-ai-model-status]');
+                        var guideCards = document.querySelectorAll('[data-cbt-essay-ai-guide-card]');
+                        var apiKeyInput = document.querySelector('[data-cbt-essay-ai-api-key-input]');
+                        var keyStatus = document.querySelector('[data-cbt-essay-ai-key-status]');
+                        var keyStatusTitle = document.querySelector('[data-cbt-essay-ai-key-status-title]');
+                        var keyStatusMessage = document.querySelector('[data-cbt-essay-ai-key-status-message]');
+                        var keyStatusPill = document.querySelector('[data-cbt-essay-ai-key-status-pill]');
+                        var clearKeyInput = document.querySelector('[data-cbt-essay-ai-clear-key-input]');
+                        var clearKeyButton = document.querySelector('[data-cbt-essay-ai-clear-key-button]');
+                        var geminiEndpointBase = 'https://generativelanguage.googleapis.com/v1beta/models/';
+                        var providerModelStatuses = {
+                            gemini: modelStatus ? (modelStatus.getAttribute('data-gemini-status') || '') : '',
+                            openai: modelStatus ? (modelStatus.getAttribute('data-openai-status') || '') : ''
+                        };
+
+                        function providerDisplayName(provider) {
+                            return provider === 'openai' ? 'OpenAI' : 'Gemini';
+                        }
+
+                        function selectedOptionText(select) {
+                            if (!select || !select.options || select.selectedIndex < 0) {
+                                return '';
+                            }
+
+                            return String(select.options[select.selectedIndex].textContent || select.value || '').trim();
+                        }
+
+                        function providerHasSavedKey(provider) {
+                            if (!keyStatus) {
+                                return false;
+                            }
+
+                            return (keyStatus.getAttribute(provider === 'openai' ? 'data-openai-saved' : 'data-gemini-saved') || '') === '1';
+                        }
+
+                        function syncKeyStatus(provider) {
+                            var label = providerDisplayName(provider);
+                            var saved = providerHasSavedKey(provider);
+
+                            if (apiKeyInput) {
+                                apiKeyInput.placeholder = saved
+                                    ? 'Kosongkan untuk mempertahankan API key ' + label + ' lama'
+                                    : 'Masukkan API key ' + label;
+                            }
+                            if (keyStatus) {
+                                keyStatus.classList.toggle('is-saved', saved);
+                                keyStatus.classList.toggle('is-missing', !saved);
+                            }
+                            if (keyStatusTitle) {
+                                keyStatusTitle.textContent = saved ? 'API key ' + label + ' tersimpan' : 'Belum ada API key ' + label;
+                            }
+                            if (keyStatusMessage) {
+                                keyStatusMessage.textContent = saved
+                                    ? 'Secret ' + label + ' sudah tersimpan aman. Kosongkan field API Key jika tidak ingin mengganti.'
+                                    : 'Masukkan API key ' + label + ', lalu klik Simpan AI.';
+                            }
+                            if (keyStatusPill) {
+                                keyStatusPill.textContent = saved ? label + ' siap' : 'Wajib diisi';
+                            }
+                            if (clearKeyButton) {
+                                clearKeyButton.textContent = 'Hapus API key ' + label;
+                                clearKeyButton.disabled = !saved;
+                            }
+                        }
+
+                        function syncSettingsSummary(provider) {
+                            if (!settingsSummary) {
+                                return;
+                            }
+
+                            var parts = [
+                                providerDisplayName(provider),
+                                'Model: ' + (selectedOptionText(modelSelect) || modelSelect.value || '-')
+                            ];
+                            if (provider === 'openai') {
+                                parts.push('Endpoint: ' + (selectedOptionText(openaiEndpointSelect) || (openaiEndpointSelect ? openaiEndpointSelect.value : '') || '-'));
+                            }
+                            parts.push(providerHasSavedKey(provider) ? 'API key tersimpan' : 'API key belum diisi');
+                            if (settingsStatusLabel) {
+                                parts.push(String(settingsStatusLabel.textContent || '').trim());
+                            }
+
+                            settingsSummary.textContent = parts.filter(Boolean).join(' - ');
+                        }
+
+                        function setSettingsExpanded(expanded) {
+                            if (!settingsBody || !settingsToggle) {
+                                return;
+                            }
+
+                            settingsBody.hidden = !expanded;
+                            settingsToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+                            settingsToggle.textContent = expanded ? 'Tutup Pengaturan' : 'Buka Pengaturan';
+                        }
+
+                        function syncSettingsUi() {
+                            var provider = providerSelect.value || 'gemini';
+                            var hasSelectedVisibleOption = false;
+                            var firstVisibleOption = null;
+
+                            Array.prototype.forEach.call(modelSelect.options, function (option) {
+                                var optionProvider = option.getAttribute('data-provider') || 'gemini';
+                                var visible = optionProvider === provider;
+                                option.hidden = !visible;
+                                option.disabled = !visible;
+                                if (visible && !firstVisibleOption) {
+                                    firstVisibleOption = option;
+                                }
+                                if (visible && option.selected) {
+                                    hasSelectedVisibleOption = true;
+                                }
+                            });
+
+                            if (!hasSelectedVisibleOption && firstVisibleOption) {
+                                firstVisibleOption.selected = true;
+                            }
+
+                            if (openaiEndpoint) {
+                                openaiEndpoint.hidden = provider === 'gemini';
+                            }
+                            if (geminiEndpoint) {
+                                geminiEndpoint.hidden = provider !== 'gemini';
+                            }
+                            Array.prototype.forEach.call(guideCards, function (card) {
+                                card.hidden = (card.getAttribute('data-cbt-essay-ai-guide-card') || '') !== provider;
+                            });
+                            if (modelRefreshRow) {
+                                modelRefreshRow.hidden = provider !== 'gemini' && provider !== 'openai';
+                            }
+                            if (refreshModelsButton) {
+                                refreshModelsButton.textContent = provider === 'openai' ? 'Refresh Model OpenAI' : 'Refresh Model Gemini';
+                            }
+                            if (modelStatus) {
+                                modelStatus.textContent = providerModelStatuses[provider] || (provider === 'openai'
+                                    ? 'Daftar model OpenAI memakai fallback sampai API key disimpan.'
+                                    : 'Daftar model Gemini memakai fallback sampai API key disimpan.');
+                            }
+                            syncKeyStatus(provider);
+                            syncSettingsSummary(provider);
+                            if (geminiEndpointText) {
+                                geminiEndpointText.textContent = geminiEndpointBase + encodeURIComponent(modelSelect.value || 'gemini-2.5-flash-lite') + ':generateContent';
+                            }
+                        }
+
+                        function setModelStatus(text) {
+                            if (modelStatus) {
+                                modelStatus.textContent = String(text || '');
+                            }
+                        }
+
+                        function hasProviderOption(provider, value) {
+                            var found = false;
+                            Array.prototype.forEach.call(modelSelect.options, function (option) {
+                                var optionProvider = option.getAttribute('data-provider') || 'gemini';
+                                if (optionProvider === provider && option.value === value) {
+                                    found = true;
+                                }
+                            });
+
+                            return found;
+                        }
+
+                        function replaceProviderOptions(provider, items) {
+                            var currentValue = modelSelect.value;
+                            Array.prototype.slice.call(modelSelect.options).forEach(function (option) {
+                                var optionProvider = option.getAttribute('data-provider') || 'gemini';
+                                if (optionProvider === provider) {
+                                    modelSelect.removeChild(option);
+                                }
+                            });
+
+                            (items || []).forEach(function (item) {
+                                var id = item && item.id ? String(item.id) : '';
+                                if (!id) {
+                                    return;
+                                }
+
+                                var option = document.createElement('option');
+                                option.value = id;
+                                option.textContent = item && item.label ? String(item.label) : id;
+                                option.setAttribute('data-provider', provider);
+                                modelSelect.appendChild(option);
+                            });
+
+                            if (currentValue && hasProviderOption(provider, currentValue)) {
+                                modelSelect.value = currentValue;
+                            }
+                            syncSettingsUi();
+                        }
+
+                        if (settingsToggle && settingsBody) {
+                            setSettingsExpanded(false);
+                            settingsToggle.addEventListener('click', function () {
+                                setSettingsExpanded(settingsToggle.getAttribute('aria-expanded') !== 'true');
+                            });
+                        }
+
+                        if (refreshModelsButton && settingsForm) {
+                            refreshModelsButton.addEventListener('click', function () {
+                                var provider = providerSelect.value || 'gemini';
+                                var ajaxUrl = settingsForm.getAttribute('data-ajax-url') || window.ajaxurl || '';
+                                if ((provider !== 'gemini' && provider !== 'openai') || !ajaxUrl) {
+                                    return;
+                                }
+
+                                var request = new FormData();
+                                request.append('action', 'cbt_results_essay_ai_models');
+                                request.append('nonce', settingsForm.getAttribute('data-models-nonce') || '');
+                                request.append('provider', provider);
+                                if (settingsForm.elements.essay_ai_api_key && settingsForm.elements.essay_ai_api_key.value) {
+                                    request.append('api_key', settingsForm.elements.essay_ai_api_key.value);
+                                }
+                                if (settingsForm.elements.essay_ai_endpoint && settingsForm.elements.essay_ai_endpoint.value) {
+                                    request.append('endpoint', settingsForm.elements.essay_ai_endpoint.value);
+                                }
+
+                                refreshModelsButton.disabled = true;
+                                setModelStatus(provider === 'openai'
+                                    ? 'Memuat daftar model OpenAI...'
+                                    : 'Memuat daftar model Gemini dari Google...');
+
+                                fetch(ajaxUrl, {
+                                    method: 'POST',
+                                    credentials: 'same-origin',
+                                    body: request
+                                })
+                                    .then(function (response) {
+                                        return response.json();
+                                    })
+                                    .then(function (payload) {
+                                        var data = payload && payload.data ? payload.data : {};
+                                        if (!payload || !payload.success) {
+                                            throw new Error(data.message || (provider === 'openai'
+                                                ? 'Gagal memuat model OpenAI.'
+                                                : 'Gagal memuat model Gemini.'));
+                                        }
+
+                                        replaceProviderOptions(provider, Array.isArray(data.items) ? data.items : []);
+                                        providerModelStatuses[provider] = data.message || (provider === 'openai'
+                                            ? 'Daftar model OpenAI diperbarui.'
+                                            : 'Daftar model Gemini diperbarui.');
+                                        setModelStatus(providerModelStatuses[provider]);
+                                    })
+                                    .catch(function (error) {
+                                        setModelStatus(error && error.message ? error.message : (provider === 'openai'
+                                            ? 'Gagal memuat model OpenAI.'
+                                            : 'Gagal memuat model Gemini.'));
+                                    })
+                                    .then(function () {
+                                        refreshModelsButton.disabled = false;
+                                    });
+                            });
+                        }
+
+                        if (clearKeyButton && clearKeyInput && settingsForm) {
+                            clearKeyButton.addEventListener('click', function () {
+                                var provider = providerSelect.value || 'gemini';
+                                var label = providerDisplayName(provider);
+                                if (clearKeyButton.disabled) {
+                                    return;
+                                }
+                                if (!window.confirm('Hapus API key ' + label + ' yang tersimpan?')) {
+                                    return;
+                                }
+
+                                clearKeyInput.value = '1';
+                                if (settingsForm.requestSubmit) {
+                                    settingsForm.requestSubmit();
+                                } else {
+                                    settingsForm.submit();
+                                }
+                            });
+                        }
+
+                        providerSelect.addEventListener('change', syncSettingsUi);
+                        modelSelect.addEventListener('change', syncSettingsUi);
+                        if (openaiEndpointSelect) {
+                            openaiEndpointSelect.addEventListener('change', syncSettingsUi);
+                        }
+                        syncSettingsUi();
+                    }
+
                     setupEssayQuestionFilter();
-                    setupBulkEssayForm();
+                    initializeEssayDynamicArea();
                 })();
             </script>
             <script>

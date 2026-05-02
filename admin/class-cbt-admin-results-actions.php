@@ -16,9 +16,34 @@ final class CBT_Admin_Results_Actions
         CBT_Admin_Results_Service::handle_bulk_grade_essay();
     }
 
+    public static function handle_save_essay_ai_settings(): void
+    {
+        CBT_Admin_Results_Service::handle_save_essay_ai_settings();
+    }
+
     public static function handle_essay_questions_ajax(): void
     {
         CBT_Admin_Results_Service::handle_essay_questions_ajax();
+    }
+
+    public static function handle_essay_ai_start_ajax(): void
+    {
+        CBT_Admin_Results_Service::handle_essay_ai_start_ajax();
+    }
+
+    public static function handle_essay_ai_tick_ajax(): void
+    {
+        CBT_Admin_Results_Service::handle_essay_ai_tick_ajax();
+    }
+
+    public static function handle_essay_ai_stop_ajax(): void
+    {
+        CBT_Admin_Results_Service::handle_essay_ai_stop_ajax();
+    }
+
+    public static function handle_essay_ai_models_ajax(): void
+    {
+        CBT_Admin_Results_Service::handle_essay_ai_models_ajax();
     }
 
     public static function handle_reset_user_login(): void
