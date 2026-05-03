@@ -373,6 +373,47 @@ export function createAnswerInputManager(deps) {
             return true;
         }
 
+        if (targetAction === 'answer-matching' || targetAction === 'answer-cloze-dropdown') {
+            var dropdownQid = Number(target.getAttribute('data-qid')) || 0;
+            var dropdownKey = String(
+                target.getAttribute(targetAction === 'answer-matching' ? 'data-matching-key' : 'data-cloze-key') || ''
+            ).trim();
+            var dropdownOptionId = target instanceof HTMLSelectElement ? (Number(target.value) || 0) : 0;
+            if (dropdownQid <= 0 || dropdownKey === '') {
+                return true;
+            }
+            if (!state.answers[dropdownQid] || typeof state.answers[dropdownQid] !== 'object' || Array.isArray(state.answers[dropdownQid])) {
+                state.answers[dropdownQid] = {};
+            }
+
+            var hadDropdownVisibleMessages = !!(state.error || state.notice || state.success);
+            if (dropdownOptionId > 0) {
+                state.answers[dropdownQid][dropdownKey] = dropdownOptionId;
+            } else {
+                delete state.answers[dropdownQid][dropdownKey];
+            }
+
+            if (Object.keys(state.answers[dropdownQid]).length > 0) {
+                state.answeredQuestionLookup[dropdownQid] = true;
+            } else {
+                delete state.answeredQuestionLookup[dropdownQid];
+            }
+
+            scheduleQuestionCachePersist(240);
+            clearMessages();
+            scheduleAutoSave(dropdownQid, autoSaveChoiceDelayMs);
+            syncCurrentQuestionHeadUi(dropdownQid);
+            renderAnswerChangePatch('answer-change', {
+                questionId: dropdownQid,
+                inputType: targetAction === 'answer-matching' ? 'matching' : 'cloze-dropdown'
+            }, {
+                includeInput: false,
+                includeQuestionHead: false,
+                includeNotice: hadDropdownVisibleMessages
+            });
+            return true;
+        }
+
         return false;
     }
 

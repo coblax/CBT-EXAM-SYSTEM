@@ -943,15 +943,15 @@ test.describe('Import & Preview flow check', () => {
             });
 
             await test.step('Gap numbering diblokir saat statement diisi loncat', async () => {
-                await adminPage.locator('#cbt-tfm-statement-1').fill('Air membeku pada 0C.');
-                await adminPage.locator('#cbt-tfm-statement-3').fill('Matahari adalah bintang.');
+                await setWpEditorContent(adminPage, 'cbt-tfm-statement-1', '<p>Air membeku pada 0C.</p>');
+                await setWpEditorContent(adminPage, 'cbt-tfm-statement-3', '<p>Matahari adalah bintang.</p>');
                 const dialog = await submitManualQuestionExpectDialog(adminPage);
                 expect(dialog.message()).toContain('Pernyataan True/False Matrix harus diisi berurutan tanpa nomor yang loncat.');
                 await dialog.dismiss();
             });
 
             await test.step('Duplicate statement diblokir setelah numbering dibuat kontigu', async () => {
-                await adminPage.locator('#cbt-tfm-statement-2').fill(' air membeku pada 0c. ');
+                await setWpEditorContent(adminPage, 'cbt-tfm-statement-2', '<p> air membeku pada 0c. </p>');
                 const dialog = await submitManualQuestionExpectDialog(adminPage);
                 expect(dialog.message()).toContain('True/False Matrix tidak boleh punya pernyataan duplikat.');
                 await dialog.dismiss();
@@ -1110,13 +1110,13 @@ test.describe('Import & Preview flow check', () => {
                     questionType: 'true_false_matrix',
                     questionHtml: `<p>${manualEquationTfmMarker}</p>`,
                 });
-                await adminPage.locator('#cbt-tfm-statement-1').fill('Hitung nilai berikut ');
+                await setWpEditorContent(adminPage, 'cbt-tfm-statement-1', '<p>Hitung nilai berikut </p>');
                 await insertEquationIntoTfMatrixStatement(adminPage, 1, {
                     categoryKey: 'basic',
                     templateKey: 'fraction',
                     useSuggestedDisplay: true,
                 });
-                await adminPage.locator('#cbt-tfm-statement-2').fill('Pernyataan kontrol tanpa equation');
+                await setWpEditorContent(adminPage, 'cbt-tfm-statement-2', '<p>Pernyataan kontrol tanpa equation</p>');
                 await adminPage.selectOption('#cbt-tfm-answer-1', 'true');
                 await adminPage.selectOption('#cbt-tfm-answer-2', 'false');
                 await expect.poll(async () => adminPage.evaluate(() => String(document.getElementById('cbt-tfm-statement-1')?.value || ''))).toContain('data-cbt-math-display="block"');

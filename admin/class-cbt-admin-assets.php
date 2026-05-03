@@ -94,6 +94,9 @@ final class CBT_Admin_Assets
             'cbt-questions-tf',
             'cbt-questions-sa',
             'cbt-questions-essay',
+            'cbt-questions-ordering',
+            'cbt-questions-matching',
+            'cbt-questions-cloze',
         ], true);
     }
 

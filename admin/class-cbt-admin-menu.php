@@ -192,6 +192,8 @@ final class CBT_Admin_Menu
             'cbt-questions-sa',
             'cbt-questions-essay',
             'cbt-questions-ordering',
+            'cbt-questions-matching',
+            'cbt-questions-cloze',
         ];
 
         if (!in_array($page, $removed_pages, true)) {

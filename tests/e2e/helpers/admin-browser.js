@@ -318,66 +318,7 @@ async function insertEquationIntoWpEditor(page, editorId, options = {}) {
 
 async function insertEquationIntoTfMatrixStatement(page, index, options = {}) {
     const targetIndex = Number(index || 1);
-    const source = String(options.source || '');
-    const displayMode = String(options.displayMode || 'inline').toLowerCase() === 'block' ? 'block' : 'inline';
-    const existing = !!options.editExisting;
-    const templateKey = String(options.templateKey || '').trim();
-    const categoryKey = String(options.categoryKey || '').trim();
-    const symbolKeys = Array.isArray(options.symbolKeys) ? options.symbolKeys.map((item) => String(item || '').trim()).filter(Boolean) : [];
-    const useSuggestedDisplay = !!options.useSuggestedDisplay;
-    const textarea = page.locator(`#cbt-tfm-statement-${targetIndex}`).first();
-
-    await expect(textarea).toBeVisible({ timeout: 20000 });
-    await page.evaluate(({ statementId, existingWrapper }) => {
-        const field = document.getElementById(statementId);
-        if (!(field instanceof HTMLTextAreaElement)) {
-            return;
-        }
-        const rawValue = String(field.value || '');
-        if (existingWrapper) {
-            const match = rawValue.match(/<(span|div)\b[\s\S]*?class=(["'])[^"']*\bcbt-math\b[^"']*\2[\s\S]*?<\/\1>/i);
-            if (match && typeof field.setSelectionRange === 'function') {
-                const start = rawValue.indexOf(match[0]);
-                const caret = start >= 0 ? start + Math.floor(match[0].length / 2) : rawValue.length;
-                field.focus();
-                field.setSelectionRange(caret, caret);
-                return;
-            }
-        }
-        field.focus();
-        field.setSelectionRange(rawValue.length, rawValue.length);
-    }, { statementId: `cbt-tfm-statement-${targetIndex}`, existingWrapper: existing });
-
-    const trigger = page.locator(`[data-cbt-tfm-equation-trigger="${targetIndex}"]`).first();
-    await expect(trigger).toBeVisible({ timeout: 20000 });
-    await trigger.click({ force: true });
-
-    const modal = page.locator('#cbt-admin-equation-modal').first();
-    await expect(modal).toBeVisible({ timeout: 20000 });
-    if (categoryKey !== '') {
-        await modal.locator(`[data-cbt-equation-category="${categoryKey}"]`).first().click({ force: true });
-    }
-    if (templateKey !== '') {
-        await modal.locator(`[data-cbt-equation-template="${templateKey}"]`).first().click({ force: true });
-    }
-    if (source !== '') {
-        await modal.locator('#cbt-admin-equation-source').fill(source);
-    }
-    for (const symbolKey of symbolKeys) {
-        await modal.locator(`[data-cbt-equation-symbol="${symbolKey}"]`).first().click({ force: true });
-    }
-    if (useSuggestedDisplay) {
-        const suggestionButton = modal.locator('[data-cbt-equation-use-suggestion="1"]').first();
-        await expect(suggestionButton).toBeEnabled({ timeout: 20000 });
-        await suggestionButton.click({ force: true });
-    } else {
-        await modal.locator(`input[name="cbt-admin-equation-display"][value="${displayMode}"]`).check({ force: true });
-    }
-    const applyButton = modal.locator('#cbt-admin-equation-apply').first();
-    await expect(applyButton).toBeEnabled({ timeout: 20000 });
-    await applyButton.scrollIntoViewIfNeeded();
-    await applyButton.click({ force: true });
-    await expect(modal).toBeHidden({ timeout: 20000 });
+    await insertEquationIntoWpEditor(page, `cbt-tfm-statement-${targetIndex}`, options);
 }
 
 async function prepareManualQuestion(page, options = {}) {

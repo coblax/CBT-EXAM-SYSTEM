@@ -1068,6 +1068,50 @@ XML;
         self::assertNull($legacyUnkeyedAnswers);
     }
 
+    public function test_parse_docx_matching_and_cloze_dropdown_structured_blocks(): void
+    {
+        $matching = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Cocokkan negara dengan ibu kotanya.',
+            'QUESTION_TYPE: matching',
+            'KIRI_1: Indonesia',
+            'KANAN_1: Jakarta',
+            'KIRI_2: Jepang',
+            'KANAN_2: Tokyo',
+        ]]);
+        $cloze = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Ibu kota Jepang adalah [DROPDOWN_1].',
+            'QUESTION_TYPE: cloze_dropdown',
+            'DROPDOWN_1_OPSI_1: Seoul',
+            'DROPDOWN_1_OPSI_2: Tokyo',
+            'DROPDOWN_1_JAWABAN: 2',
+        ]]);
+
+        self::assertIsArray($matching);
+        self::assertSame('matching', $matching['question_type']);
+        self::assertCount(2, $matching['matching_items']);
+        self::assertSame('Indonesia', $matching['matching_items'][0]['prompt_text']);
+        self::assertSame('Jakarta', $matching['matching_items'][0]['option_text']);
+
+        self::assertIsArray($cloze);
+        self::assertSame('cloze_dropdown', $cloze['question_type']);
+        self::assertCount(1, $cloze['cloze_blanks']);
+        self::assertSame('1', $cloze['cloze_blanks'][0]['blank_key']);
+        self::assertSame(1, $cloze['cloze_blanks'][0]['options'][1]['is_correct']);
+    }
+
+    public function test_build_word_template_lines_include_matching_and_cloze_dropdown_templates(): void
+    {
+        $matchingLines = $this->invokeImportHelper('build_word_template_lines', ['matching', 10]);
+        $clozeLines = $this->invokeImportHelper('build_word_template_lines', ['cloze_dropdown', 10]);
+
+        self::assertContains('JENIS_SOAL: matching', $matchingLines);
+        self::assertContains('KIRI_1: Istilah pertama', $matchingLines);
+        self::assertContains('KANAN_1: Pasangan pertama', $matchingLines);
+        self::assertContains('JENIS_SOAL: cloze_dropdown', $clozeLines);
+        self::assertContains('DROPDOWN_1_OPSI_1: Opsi 1A', $clozeLines);
+        self::assertContains('DROPDOWN_1_JAWABAN: 2', $clozeLines);
+    }
+
     public function test_describe_docx_block_failure_reports_specific_reason_for_empty_correct_option(): void
     {
         $message = $this->invokeImportHelper('describe_docx_block_failure', [[

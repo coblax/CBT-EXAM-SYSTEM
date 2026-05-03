@@ -10,7 +10,7 @@ class CBT_Activator
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
     private const OPTION_SUPERVISOR_FRONTEND_PAGE_ID = 'cbt_exam_system_supervisor_page_id';
     private const OPTION_FRONTEND_PAGE_SYNC_PENDING = 'cbt_exam_system_frontend_page_sync_pending';
-    private const DB_VERSION = '1.6.18';
+    private const DB_VERSION = '1.6.19';
 
     public static function activate(): void
     {
@@ -203,6 +203,64 @@ class CBT_Activator
             KEY idx_option_id (option_id)
         ) $charset;";
 
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_matching (
+            question_id BIGINT UNSIGNED NOT NULL,
+            scoring_mode VARCHAR(30) NOT NULL DEFAULT 'partial',
+            shuffle_choices TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (question_id)
+        ) $charset;";
+
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_matching_items (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            question_id BIGINT UNSIGNED NOT NULL,
+            item_key VARCHAR(10) NOT NULL,
+            item_position SMALLINT UNSIGNED NOT NULL,
+            prompt_text LONGTEXT NOT NULL,
+            correct_option_id BIGINT UNSIGNED NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uniq_question_item_key (question_id, item_key),
+            UNIQUE KEY uniq_question_item_position (question_id, item_position),
+            KEY idx_correct_option_id (correct_option_id)
+        ) $charset;";
+
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_cloze_dropdown (
+            question_id BIGINT UNSIGNED NOT NULL,
+            scoring_mode VARCHAR(30) NOT NULL DEFAULT 'partial',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (question_id)
+        ) $charset;";
+
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_cloze_dropdown_blanks (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            question_id BIGINT UNSIGNED NOT NULL,
+            blank_key VARCHAR(10) NOT NULL,
+            blank_position SMALLINT UNSIGNED NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uniq_question_blank_key (question_id, blank_key),
+            UNIQUE KEY uniq_question_blank_position (question_id, blank_position)
+        ) $charset;";
+
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_cloze_dropdown_options (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            question_id BIGINT UNSIGNED NOT NULL,
+            blank_id BIGINT UNSIGNED NOT NULL,
+            option_key VARCHAR(10) NULL,
+            option_text LONGTEXT NOT NULL,
+            is_correct TINYINT(1) NOT NULL DEFAULT 0,
+            option_order SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_question_blank (question_id, blank_id),
+            KEY idx_blank_id (blank_id)
+        ) $charset;";
+
         $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_attempts (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             exam_id BIGINT UNSIGNED NOT NULL,
@@ -311,6 +369,13 @@ class CBT_Activator
             ['name' => 'fk_cbt_qord_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_ordering ADD CONSTRAINT fk_cbt_qord_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_qordi_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_ordering_items ADD CONSTRAINT fk_cbt_qordi_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_qordi_option', 'sql' => "ALTER TABLE {$prefix}cbt_question_ordering_items ADD CONSTRAINT fk_cbt_qordi_option FOREIGN KEY (option_id) REFERENCES {$prefix}cbt_options(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qmatch_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_matching ADD CONSTRAINT fk_cbt_qmatch_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qmatchi_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_matching_items ADD CONSTRAINT fk_cbt_qmatchi_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qmatchi_option', 'sql' => "ALTER TABLE {$prefix}cbt_question_matching_items ADD CONSTRAINT fk_cbt_qmatchi_option FOREIGN KEY (correct_option_id) REFERENCES {$prefix}cbt_options(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qcloze_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_cloze_dropdown ADD CONSTRAINT fk_cbt_qcloze_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qclozeb_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_cloze_dropdown_blanks ADD CONSTRAINT fk_cbt_qclozeb_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qclozeo_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_cloze_dropdown_options ADD CONSTRAINT fk_cbt_qclozeo_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qclozeo_blank', 'sql' => "ALTER TABLE {$prefix}cbt_question_cloze_dropdown_options ADD CONSTRAINT fk_cbt_qclozeo_blank FOREIGN KEY (blank_id) REFERENCES {$prefix}cbt_question_cloze_dropdown_blanks(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_attempts_exam', 'sql' => "ALTER TABLE {$prefix}cbt_attempts ADD CONSTRAINT fk_cbt_attempts_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_answers_attempt', 'sql' => "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_attempt FOREIGN KEY (attempt_id) REFERENCES {$prefix}cbt_attempts(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_answers_question', 'sql' => "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],

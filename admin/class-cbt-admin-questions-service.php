@@ -229,7 +229,7 @@ final class CBT_Admin_Questions_Service
                 $option_table = $wpdb->prefix . 'cbt_options';
                 $is_admin_scope = self::is_admin_scope();
                 $current_user_id = get_current_user_id();
-            $allowed_question_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'];
+            $allowed_question_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'];
             $question_type_labels = [
                 'multiple_choice' => 'Multiple Choice',
                 'multiple_answer' => 'Multiple Answer',
@@ -238,6 +238,8 @@ final class CBT_Admin_Questions_Service
                 'short_answer' => 'Short Answer',
                 'essay' => 'Essay',
                 'ordering' => 'Ordering',
+                'matching' => 'Matching',
+                'cloze_dropdown' => 'Cloze Dropdown',
             ];
                 $current_page_slug = CBT_Admin_Questions_Helper::normalize_question_page_slug(isset($query['page']) ? wp_unslash($query['page']) : 'cbt-question-bank');
                 $page_locked_type = CBT_Admin_Questions_Helper::forced_question_type_for_page($current_page_slug);
@@ -262,10 +264,12 @@ final class CBT_Admin_Questions_Service
                 'short_answer' => 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, wajib gunakan placeholder [INPUT_1] s.d. [INPUT_8] tanpa duplikat di teks soal, jumlah placeholder harus sama dengan jumlah jawaban valid, dan wajib pakai JAWABAN_A..H sesuai key input, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
                 'essay' => 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
                 'ordering' => 'Mode import aktif: Ordering. DOCX didukung (isi ITEM_1..12 sesuai urutan benar, minimal 2 item, item tidak boleh duplikat, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                'matching' => 'Mode import aktif: Matching. DOCX didukung (isi KIRI_1..12 dan KANAN_1..12, minimal 2 pasangan, tidak boleh duplikat, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                'cloze_dropdown' => 'Mode import aktif: Cloze Dropdown. DOCX didukung (pakai placeholder [DROPDOWN_1] s.d. [DROPDOWN_8], tiap dropdown minimal 2 opsi dan tepat 1 kunci).' . $import_type_help_suffix,
             ];
                 $import_active_type = $lock_question_type ? $active_question_type : 'multiple_choice';
                 $import_help_text = $import_type_help_map[$import_active_type] ?? $import_type_help_map['multiple_choice'];
-            $import_allow_docx = in_array($import_active_type, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'], true);
+            $import_allow_docx = in_array($import_active_type, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'], true);
                 $import_file_accept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
         
                 $bank_exam_title_like = 'Bank Soal - %';
@@ -898,6 +902,12 @@ final class CBT_Admin_Questions_Service
                 $ma_option_values = array_fill(1, 12, '');
                 $ma_option_correct = array_fill(1, 12, false);
                 $ordering_option_values = array_fill(1, 12, '');
+                $matching_left_values = array_fill(1, 12, '');
+                $matching_right_values = array_fill(1, 12, '');
+                $cloze_dropdown_rows = array_fill(1, 8, [
+                    'options' => array_fill(1, 6, ''),
+                    'correct' => 1,
+                ]);
                 $mc_correct_index = 1;
                 $legacy_tf_seed = (string) ($editing_detail['correct_text'] ?? ($editing_question['correct_text'] ?? ''));
                 $tf_correct = ((int) ($editing_detail['correct_value'] ?? (strtolower(trim($legacy_tf_seed)) === 'false' ? 0 : 1)) === 0)
@@ -957,6 +967,18 @@ final class CBT_Admin_Questions_Service
                             }
                             $ordering_option_values[$pos] = (string) ($opt['option_text'] ?? '');
                         }
+                    } elseif ($editing_type === 'matching') {
+                        $matching_items = isset($editing_detail['items']) && is_array($editing_detail['items'])
+                            ? $editing_detail['items']
+                            : [];
+                        foreach ($matching_items as $idx => $item) {
+                            $pos = $idx + 1;
+                            if ($pos > 12) {
+                                break;
+                            }
+                            $matching_left_values[$pos] = (string) ($item['prompt_text'] ?? '');
+                            $matching_right_values[$pos] = (string) ($item['correct_option_text'] ?? '');
+                        }
                     } elseif ($editing_type === 'true_false' && empty($editing_detail)) {
                         foreach ($editing_options as $opt) {
                             if ((int) ($opt['is_correct'] ?? 0) === 1) {
@@ -1005,6 +1027,34 @@ final class CBT_Admin_Questions_Service
                     $editing_tf_matrix_payload = !empty($editing_tf_matrix_values)
                         ? (string) wp_json_encode(['statements' => array_values($editing_tf_matrix_values)])
                         : '';
+                }
+
+                if ($editing_type === 'cloze_dropdown') {
+                    $editing_blanks = isset($editing_detail['blanks']) && is_array($editing_detail['blanks'])
+                        ? $editing_detail['blanks']
+                        : [];
+                    foreach ($editing_blanks as $blank) {
+                        $pos = (int) ($blank['blank_key'] ?? 0);
+                        if ($pos < 1 || $pos > 8) {
+                            continue;
+                        }
+                        $options = array_fill(1, 6, '');
+                        $correct = 1;
+                        foreach ((array) ($blank['options'] ?? []) as $idx => $option) {
+                            $option_pos = $idx + 1;
+                            if ($option_pos > 6) {
+                                break;
+                            }
+                            $options[$option_pos] = (string) ($option['option_text'] ?? '');
+                            if ((int) ($option['is_correct'] ?? 0) === 1) {
+                                $correct = $option_pos;
+                            }
+                        }
+                        $cloze_dropdown_rows[$pos] = [
+                            'options' => $options,
+                            'correct' => $correct,
+                        ];
+                    }
                 }
         
                 $initial_subject_id = $selected_subject_id > 0
@@ -1274,7 +1324,7 @@ final class CBT_Admin_Questions_Service
             $previous_exam_id = 0;
             $previous_question_snapshot = [];
 
-            $allowed_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'];
+            $allowed_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'];
             if (!in_array($question_type, $allowed_types, true)) {
                 $question_type = 'multiple_choice';
             }
@@ -1307,6 +1357,8 @@ final class CBT_Admin_Questions_Service
             $normalized_detail_text = '';
             $matrix_source_rows = [];
             $matrix_provided_indexes = [];
+            $matching_items = $question_type === 'matching' ? self::read_matching_items_from_post() : [];
+            $cloze_blanks = $question_type === 'cloze_dropdown' ? self::read_cloze_dropdown_blanks_from_post() : [];
             if ($question_type === 'true_false') {
                 $normalized_detail_text = CBT_Admin_Questions_Helper::normalize_true_false_value($correct_text) === 1 ? 'true' : 'false';
             } elseif ($question_type === 'true_false_matrix') {
@@ -1342,6 +1394,10 @@ final class CBT_Admin_Questions_Service
                 $normalized_detail_text = trim($essay_answer);
             } elseif ($question_type === 'ordering') {
                 $normalized_detail_text = '';
+            } elseif ($question_type === 'matching') {
+                $normalized_detail_text = CBT_Admin_Questions_Helper::build_matching_payload($matching_items);
+            } elseif ($question_type === 'cloze_dropdown') {
+                $normalized_detail_text = CBT_Admin_Questions_Helper::build_cloze_dropdown_payload($cloze_blanks);
             }
     
             $resolved_bank_exam_id = 0;
@@ -1364,6 +1420,20 @@ final class CBT_Admin_Questions_Service
     
             if ($question_type === 'short_answer' && $normalized_detail_text === '') {
                 self::redirect_question_import_with_error('Short Answer minimal harus punya 1 jawaban valid.', $return_page);
+            }
+
+            if ($question_type === 'matching') {
+                $matching_validation_error = CBT_Admin_Questions_Helper::validate_matching_items($matching_items);
+                if ($matching_validation_error !== '') {
+                    self::redirect_question_import_with_error($matching_validation_error, $return_page);
+                }
+            }
+
+            if ($question_type === 'cloze_dropdown') {
+                $cloze_validation_error = CBT_Admin_Questions_Helper::validate_cloze_dropdown_definition($question_text, $cloze_blanks);
+                if ($cloze_validation_error !== '') {
+                    self::redirect_question_import_with_error($cloze_validation_error, $return_page);
+                }
             }
 
             if ($question_type === 'short_answer') {
@@ -1551,6 +1621,19 @@ final class CBT_Admin_Questions_Service
                         $options_to_insert[$ordering_idx]['is_correct'] = 0;
                     }
                 }
+
+                if ($question_type === 'matching') {
+                    $options_to_insert = array_map(static function (array $item): array {
+                        return [
+                            'option_text' => (string) ($item['option_text'] ?? ''),
+                            'is_correct' => 0,
+                        ];
+                    }, $matching_items);
+                }
+
+                if ($question_type === 'cloze_dropdown') {
+                    $options_to_insert = [];
+                }
     
                 if ($question_type === 'true_false' && empty($options_to_insert)) {
                     $true_is_correct = CBT_Admin_Questions_Helper::normalize_true_false_value($normalized_detail_text) === 1 ? 1 : 0;
@@ -1577,12 +1660,36 @@ final class CBT_Admin_Questions_Service
                         $inserted_option_ids[] = (int) $wpdb->insert_id;
                     }
                 }
+
+                $matching_detail_items = [];
+                if ($question_type === 'matching') {
+                    foreach ($matching_items as $idx => $matching_item) {
+                        $option_id = (int) ($inserted_option_ids[$idx] ?? 0);
+                        if ($option_id <= 0) {
+                            continue;
+                        }
+                        $matching_detail_items[] = [
+                            'position' => (int) ($matching_item['position'] ?? ($idx + 1)),
+                            'item_key' => (string) ($matching_item['item_key'] ?? ($idx + 1)),
+                            'prompt_text' => (string) ($matching_item['prompt_text'] ?? ''),
+                            'correct_option_id' => $option_id,
+                        ];
+                    }
+                }
+
+                $detail_context = ['ordered_option_ids' => $inserted_option_ids];
+                if ($question_type === 'matching') {
+                    $detail_context['matching_items'] = $matching_detail_items;
+                }
+                if ($question_type === 'cloze_dropdown') {
+                    $detail_context['cloze_blanks'] = $cloze_blanks;
+                }
     
                 CBT_Admin_Questions_Helper::save_question_type_detail(
                     $question_id,
                     $question_type,
                     $normalized_detail_text,
-                    ['ordered_option_ids' => $inserted_option_ids]
+                    $detail_context
                 );
             }
     
@@ -1644,7 +1751,7 @@ final class CBT_Admin_Questions_Service
                 isset($_GET['question_per_page']) ? absint(wp_unslash($_GET['question_per_page'])) : 20
             );
             $question_paged = isset($_GET['question_paged']) ? max(1, absint(wp_unslash($_GET['question_paged']))) : 1;
-            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'];
+            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'];
             if (!in_array($filter_type, $allowed_filter_types, true)) {
                 $filter_type = '';
             }
@@ -1831,7 +1938,7 @@ final class CBT_Admin_Questions_Service
                 isset($_POST['redirect_question_per_page']) ? absint(wp_unslash($_POST['redirect_question_per_page'])) : 20
             );
             $question_paged = isset($_POST['redirect_question_paged']) ? max(1, absint(wp_unslash($_POST['redirect_question_paged']))) : 1;
-            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'];
+            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'];
             if (!in_array($filter_type, $allowed_filter_types, true)) {
                 $filter_type = '';
             }
@@ -1951,7 +2058,7 @@ final class CBT_Admin_Questions_Service
             $filter_type = isset($state['filter_type']) ? sanitize_text_field((string) $state['filter_type']) : '';
             $filter_source_kind = isset($state['filter_source_kind']) ? sanitize_text_field((string) $state['filter_source_kind']) : '';
             $filter_subject_id = isset($state['filter_subject_id']) ? absint($state['filter_subject_id']) : 0;
-            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering'];
+            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'];
             if (!in_array($filter_type, $allowed_filter_types, true)) {
                 $filter_type = '';
             }
@@ -2170,6 +2277,68 @@ final class CBT_Admin_Questions_Service
             $value = CBT_Admin_Questions_Helper::sanitize_editor_html((string) wp_unslash($_POST[$field_name]));
 
             return CBT_Admin_Questions_Helper::has_non_empty_html_content($value);
+        }
+
+        /**
+         * @return array<int,array{position:int,item_key:string,prompt_text:string,option_text:string}>
+         */
+        private static function read_matching_items_from_post(): array
+        {
+            $rows = [];
+            for ($index = 1; $index <= 12; $index++) {
+                $left_field = 'cbt_matching_left_' . $index;
+                $right_field = 'cbt_matching_right_' . $index;
+                $rows[] = [
+                    'position' => $index,
+                    'prompt_text' => isset($_POST[$left_field])
+                        ? CBT_Admin_Questions_Helper::sanitize_editor_html((string) wp_unslash($_POST[$left_field]))
+                        : '',
+                    'option_text' => isset($_POST[$right_field])
+                        ? CBT_Admin_Questions_Helper::sanitize_editor_html((string) wp_unslash($_POST[$right_field]))
+                        : '',
+                ];
+            }
+
+            return CBT_Admin_Questions_Helper::normalize_matching_items($rows);
+        }
+
+        /**
+         * @return array<int,array<string,mixed>>
+         */
+        private static function read_cloze_dropdown_blanks_from_post(): array
+        {
+            $rows = [];
+            for ($blank_index = 1; $blank_index <= 8; $blank_index++) {
+                $options = [];
+                $correct_index = isset($_POST['cbt_cloze_correct_' . $blank_index])
+                    ? (int) wp_unslash($_POST['cbt_cloze_correct_' . $blank_index])
+                    : 1;
+                for ($option_index = 1; $option_index <= 6; $option_index++) {
+                    $field = 'cbt_cloze_' . $blank_index . '_option_' . $option_index;
+                    $value = isset($_POST[$field]) ? sanitize_text_field((string) wp_unslash($_POST[$field])) : '';
+                    if (trim($value) === '') {
+                        continue;
+                    }
+                    $options[] = [
+                        'option_key' => chr(64 + count($options) + 1),
+                        'option_text' => $value,
+                        'is_correct' => ($option_index === $correct_index) ? 1 : 0,
+                        'option_order' => count($options) + 1,
+                    ];
+                }
+
+                if (empty($options)) {
+                    continue;
+                }
+
+                $rows[] = [
+                    'blank_key' => (string) $blank_index,
+                    'blank_position' => $blank_index,
+                    'options' => $options,
+                ];
+            }
+
+            return CBT_Admin_Questions_Helper::normalize_cloze_dropdown_blanks($rows);
         }
 
         private static function redirect_question_import_with_error(string $message, string $return_page = 'cbt-question-bank'): void

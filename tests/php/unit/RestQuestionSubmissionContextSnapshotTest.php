@@ -148,6 +148,57 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
         self::assertSame(6.0, $matrix['score_awarded']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_evaluate_answer_from_submission_context_scores_matching_and_cloze_dropdown_partially(): void
+    {
+        $this->bootstrapRestScaffold();
+
+        $method = new ReflectionMethod('CBT_REST', 'evaluate_answer_from_submission_context');
+        $method->setAccessible(true);
+
+        $matchingContext = [
+            'id' => 403,
+            'exam_id' => 90,
+            'question_type' => 'matching',
+            'points' => 4,
+            'correct_option_ids' => [],
+            'true_false_correct_value' => null,
+            'true_false_option_value_by_id' => [],
+            'short_answer_values' => [],
+            'true_false_matrix_answers' => [],
+            'matching_correct_option_ids_by_key' => ['1' => 101, '2' => 102],
+            'cloze_dropdown_correct_option_ids_by_key' => [],
+        ];
+        $clozeContext = [
+            'id' => 404,
+            'exam_id' => 90,
+            'question_type' => 'cloze_dropdown',
+            'points' => 6,
+            'correct_option_ids' => [],
+            'true_false_correct_value' => null,
+            'true_false_option_value_by_id' => [],
+            'short_answer_values' => [],
+            'true_false_matrix_answers' => [],
+            'matching_correct_option_ids_by_key' => [],
+            'cloze_dropdown_correct_option_ids_by_key' => ['1' => 301, '2' => 302],
+        ];
+
+        $matchingFull = $method->invoke(null, $matchingContext, ['1' => 101, '2' => 102]);
+        $matchingPartial = $method->invoke(null, $matchingContext, ['1' => 101, '2' => 999]);
+        $matchingForeignKey = $method->invoke(null, $matchingContext, ['1' => 101, 'x' => 102]);
+        $clozePartial = $method->invoke(null, $clozeContext, '{"1":301}');
+
+        self::assertSame(1, $matchingFull['is_correct']);
+        self::assertSame(4.0, $matchingFull['score_awarded']);
+        self::assertSame(0, $matchingPartial['is_correct']);
+        self::assertSame(2.0, $matchingPartial['score_awarded']);
+        self::assertSame(0, $matchingForeignKey['is_correct']);
+        self::assertSame(2.0, $matchingForeignKey['score_awarded']);
+        self::assertSame(0, $clozePartial['is_correct']);
+        self::assertSame(3.0, $clozePartial['score_awarded']);
+        self::assertSame('{"1":301}', $clozePartial['answer_text']);
+    }
+
     private function bootstrapRestScaffold(): void
     {
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';

@@ -1,8 +1,10 @@
 import {
     findQuestionOptionByKey,
     findQuestionOptionKeyById,
+    getClozeDropdownBlanks,
     getShortAnswerKeys,
     normalizeAnswerValueForQuestion,
+    normalizeDropdownOptionAnswer,
     normalizeTrueFalseMatrixAnswer
 } from './question-helpers';
 
@@ -258,6 +260,58 @@ export function createQuestionStateManager(deps) {
             };
         }
 
+        if (questionType === 'matching' || questionType === 'cloze_dropdown') {
+            var normalizedDropdownAnswer = normalizeAnswerValueForQuestion(question, answer, {
+                preserveText: true
+            });
+            if (!normalizedDropdownAnswer.hasValue) {
+                return null;
+            }
+
+            var dropdownOptionKeysByAnswerKey = {};
+            if (questionType === 'matching') {
+                Object.keys(normalizedDropdownAnswer.value).forEach(function (answerKey) {
+                    var optionKey = findQuestionOptionKeyById(question, normalizedDropdownAnswer.value[answerKey]);
+                    if (optionKey !== '') {
+                        dropdownOptionKeysByAnswerKey[answerKey] = optionKey;
+                    }
+                });
+            } else {
+                var clozeBlanksByKey = getClozeDropdownBlanks(question).reduce(function (accumulator, blank) {
+                    accumulator[String(blank.key || '').trim()] = blank;
+                    return accumulator;
+                }, {});
+                Object.keys(normalizedDropdownAnswer.value).forEach(function (answerKey) {
+                    var blank = clozeBlanksByKey[answerKey];
+                    var selectedOptionId = Number(normalizedDropdownAnswer.value[answerKey]) || 0;
+                    if (!blank || selectedOptionId <= 0) {
+                        return;
+                    }
+                    var matchedOptionKey = '';
+                    blank.options.forEach(function (option, index) {
+                        if (matchedOptionKey !== '' || Number(option && option.id) !== selectedOptionId) {
+                            return;
+                        }
+                        matchedOptionKey = String(option && option.option_key ? option.option_key : String.fromCharCode(65 + index)).trim().toUpperCase();
+                    });
+                    if (matchedOptionKey !== '') {
+                        dropdownOptionKeysByAnswerKey[answerKey] = matchedOptionKey;
+                    }
+                });
+            }
+
+            if (!Object.keys(dropdownOptionKeysByAnswerKey).length) {
+                return null;
+            }
+
+            return {
+                kind: 'dropdown_option_map',
+                question_type: questionType,
+                option_keys_by_answer_key: dropdownOptionKeysByAnswerKey,
+                question_updated_at: questionUpdatedAt
+            };
+        }
+
         if (questionType === 'short_answer') {
             var normalizedShortAnswer = normalizeAnswerValueForQuestion(question, answer, {
                 preserveText: true
@@ -335,6 +389,47 @@ export function createQuestionStateManager(deps) {
             });
             nextValue = selectedOptionIds;
             hasValue = selectedOptionIds.length > 0;
+        } else if (kind === 'dropdown_option_map') {
+            var dropdownValue = {};
+            var dropdownQuestionType = String(question.question_type || '');
+            var optionKeysByAnswerKey = preservedAnswer.option_keys_by_answer_key && typeof preservedAnswer.option_keys_by_answer_key === 'object'
+                ? preservedAnswer.option_keys_by_answer_key
+                : {};
+
+            if (dropdownQuestionType === 'matching') {
+                Object.keys(optionKeysByAnswerKey).forEach(function (answerKey) {
+                    var option = findQuestionOptionByKey(question, optionKeysByAnswerKey[answerKey]);
+                    var optionId = Number(option && option.id) || 0;
+                    if (optionId > 0) {
+                        dropdownValue[String(answerKey || '').trim()] = optionId;
+                    }
+                });
+            } else if (dropdownQuestionType === 'cloze_dropdown') {
+                var blankLookup = getClozeDropdownBlanks(question).reduce(function (accumulator, blank) {
+                    accumulator[String(blank.key || '').trim()] = blank;
+                    return accumulator;
+                }, {});
+                Object.keys(optionKeysByAnswerKey).forEach(function (answerKey) {
+                    var blank = blankLookup[String(answerKey || '').trim()];
+                    var wantedOptionKey = String(optionKeysByAnswerKey[answerKey] || '').trim().toUpperCase();
+                    if (!blank || wantedOptionKey === '') {
+                        return;
+                    }
+                    blank.options.forEach(function (option) {
+                        var optionKey = String(option && option.option_key ? option.option_key : '').trim().toUpperCase();
+                        var optionId = Number(option && option.id) || 0;
+                        if (optionId > 0 && optionKey === wantedOptionKey) {
+                            dropdownValue[String(answerKey || '').trim()] = optionId;
+                        }
+                    });
+                });
+            }
+
+            var normalizedDropdown = normalizeAnswerValueForQuestion(question, dropdownValue, {
+                preserveText: true
+            });
+            nextValue = normalizedDropdown.value;
+            hasValue = normalizedDropdown.hasValue;
         } else if (kind === 'true_false_matrix' || kind === 'short_answer' || kind === 'text') {
             var normalizedAnswer = normalizeAnswerValueForQuestion(
                 question,
@@ -474,6 +569,16 @@ export function createQuestionStateManager(deps) {
                 return null;
             }
             return normalizeTrueFalseMatrixAnswer(normalizedMatrixAnswer.value);
+        }
+
+        if (question.question_type === 'matching' || question.question_type === 'cloze_dropdown') {
+            var normalizedDropdownAnswer = normalizeAnswerValueForQuestion(question, answer, {
+                preserveText: true
+            });
+            if (!normalizedDropdownAnswer.hasValue || !normalizedDropdownAnswer.value || !Object.keys(normalizedDropdownAnswer.value).length) {
+                return null;
+            }
+            return normalizeDropdownOptionAnswer(question, normalizedDropdownAnswer.value, question.question_type);
         }
 
         if (question.question_type === 'short_answer') {

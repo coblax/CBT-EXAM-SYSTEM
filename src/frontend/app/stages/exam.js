@@ -749,6 +749,11 @@ export function createExamStageRenderer(deps) {
             skeletonClasses.push('is-multiple-answer');
             bodyMarkup = renderQuestionSkeletonOptionRows('is-checkbox');
             break;
+        case 'matching':
+        case 'cloze_dropdown':
+            skeletonClasses.push('is-multiple-answer');
+            bodyMarkup = renderQuestionSkeletonOptionRows('is-generic');
+            break;
         case 'short_answer':
             skeletonClasses.push('is-short-answer');
             bodyMarkup = renderQuestionSkeletonShortAnswerInputs();

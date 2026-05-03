@@ -43,6 +43,50 @@ function getTrueFalseMatrixItems(question) {
     });
 }
 
+function getMatchingItems(question) {
+    var meta = question && question.matching_meta ? question.matching_meta : null;
+    var items = meta && Array.isArray(meta.items) ? meta.items : [];
+
+    return items.map(function (item, index) {
+        var key = String(item && item.key ? item.key : (index + 1)).trim();
+        if (key === '') {
+            key = String(index + 1);
+        }
+
+        return {
+            key: key,
+            text: String(item && item.text ? item.text : '')
+        };
+    });
+}
+
+function getClozeDropdownBlanks(question) {
+    var meta = question && question.cloze_dropdown_meta ? question.cloze_dropdown_meta : null;
+    var blanks = meta && Array.isArray(meta.blanks) ? meta.blanks : [];
+
+    return blanks.map(function (blank, index) {
+        var key = String(blank && blank.key ? blank.key : (index + 1)).trim();
+        if (key === '') {
+            key = String(index + 1);
+        }
+
+        var options = Array.isArray(blank && blank.options) ? blank.options : [];
+        return {
+            key: key,
+            position: Number(blank && blank.position) || (index + 1),
+            options: options.map(function (option, optionIndex) {
+                return {
+                    id: Number(option && option.id) || 0,
+                    option_key: String(option && option.option_key ? option.option_key : questionOptionKey(option, optionIndex)),
+                    option_text: String(option && option.option_text ? option.option_text : '')
+                };
+            }).filter(function (option) {
+                return option.id > 0;
+            })
+        };
+    });
+}
+
 function normalizeTrueFalseMatrixAnswer(answer) {
     if (!answer || typeof answer !== 'object') {
         return {};
@@ -58,6 +102,29 @@ function normalizeTrueFalseMatrixAnswer(answer) {
         accumulator[normalizedKey] = value === null || value === undefined ? '' : String(value);
         return accumulator;
     }, {});
+}
+
+function normalizeDropdownOptionAnswer(answer) {
+    if (!answer || typeof answer !== 'object' || Array.isArray(answer)) {
+        return {};
+    }
+
+    return Object.keys(answer).reduce(function (accumulator, key) {
+        var normalizedKey = String(key || '').trim();
+        var optionId = Number(answer[key]) || 0;
+        if (normalizedKey !== '' && optionId > 0) {
+            accumulator[normalizedKey] = optionId;
+        }
+        return accumulator;
+    }, {});
+}
+
+function htmlToPlainText(html) {
+    var text = String(html || '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/gi, ' ');
+
+    return text.replace(/\s+/g, ' ').trim();
 }
 
 export function createQuestionRenderManager(deps) {
@@ -183,9 +250,153 @@ export function createQuestionRenderManager(deps) {
         return stemMarkup;
     }
 
+    function clozeDropdownKeyToIndex(key) {
+        var normalized = String(key || '').trim();
+        return /^[1-8]$/.test(normalized) ? Number(normalized) : 0;
+    }
+
+    function hasClozeDropdownPlaceholder(questionText) {
+        return /\[\s*dropdown(?:\s*[_-]?\s*)?([1-8])\s*\]/i.test(String(questionText || ''));
+    }
+
+    function buildClozeDropdownPlaceholderPattern(token) {
+        var escapedToken = String(token || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp('\\[\\s*dropdown(?:\\s*[_-]?\\s*)?' + escapedToken + '\\s*\\]', 'ig');
+    }
+
+    function renderDropdownOptionTags(options, selectedOptionId) {
+        var safeSelectedOptionId = Number(selectedOptionId) || 0;
+        return [
+            '<option value=""></option>',
+            options.map(function (option, index) {
+                var optionId = Number(option && option.id) || 0;
+                if (optionId <= 0) {
+                    return '';
+                }
+                var selectedAttr = optionId === safeSelectedOptionId ? ' selected' : '';
+                var label = htmlToPlainText(option.option_text || '');
+                if (label === '') {
+                    label = questionOptionKey(option, index);
+                }
+                return '<option value="' + escapeHtml(optionId) + '"' + selectedAttr + '>' + escapeHtml(label) + '</option>';
+            }).join('')
+        ].join('');
+    }
+
+    function renderClozeDropdownInlineField(questionId, blank, value, instance, isFallback) {
+        var safeQuestionId = Number(questionId) || 0;
+        var safeKey = String(blank && blank.key ? blank.key : '').trim();
+        var safeInstance = Number(instance) || 1;
+        var selectId = 'cbt_cloze_' + safeQuestionId + '_' + safeKey + '_' + safeInstance;
+        var wrapperClass = 'cbt-cloze-inline-field' + (isFallback ? ' is-fallback' : '');
+        var keyChip = isFallback ? ('<span class="cbt-short-inline-key">' + escapeHtml(safeKey) + '</span>') : '';
+        var disabledAttr = isExamAnswerEditingLocked() ? ' disabled' : '';
+        var selectedOptionId = Number(value) || 0;
+        var options = Array.isArray(blank && blank.options) ? blank.options : [];
+
+        return [
+            '<span class="' + wrapperClass + '">',
+            keyChip,
+            '<select',
+            ' id="' + escapeHtml(selectId) + '"',
+            ' class="cbt-input cbt-cloze-inline-select"',
+            ' data-action="answer-cloze-dropdown"',
+            ' data-qid="' + escapeHtml(safeQuestionId) + '"',
+            ' data-cloze-key="' + escapeHtml(safeKey) + '"',
+            disabledAttr,
+            '>',
+            renderDropdownOptionTags(options, selectedOptionId),
+            '</select>',
+            '</span>'
+        ].join('');
+    }
+
+    function renderClozeDropdownStem(question) {
+        var rawStem = String(question && question.question_text ? question.question_text : '');
+        var questionId = Number(question && question.id) || 0;
+        var blanks = getClozeDropdownBlanks(question);
+        var answer = normalizeDropdownOptionAnswer(resolveStoredAnswerValueForQuestion(question));
+        var blanksByKey = {};
+        var inlineFieldCountByKey = {};
+        var usedKeyMap = {};
+        var hasInlinePlaceholders = hasClozeDropdownPlaceholder(rawStem);
+        var stemWithFields = rawStem;
+
+        blanks.forEach(function (blank) {
+            blanksByKey[String(blank.key || '').trim()] = blank;
+        });
+
+        function nextFieldInstance(key) {
+            var safeKey = String(key || '').trim();
+            var nextValue = Number(inlineFieldCountByKey[safeKey] || 0) + 1;
+            inlineFieldCountByKey[safeKey] = nextValue;
+            return nextValue;
+        }
+
+        function replacePlaceholder(pattern, key) {
+            var blank = blanksByKey[key];
+            if (!blank) {
+                return;
+            }
+            stemWithFields = stemWithFields.replace(pattern, function () {
+                usedKeyMap[key] = true;
+                return renderClozeDropdownInlineField(
+                    questionId,
+                    blank,
+                    answer[key],
+                    nextFieldInstance(key),
+                    false
+                );
+            });
+        }
+
+        blanks.forEach(function (blank) {
+            var key = String(blank.key || '').trim();
+            if (key === '') {
+                return;
+            }
+            replacePlaceholder(buildClozeDropdownPlaceholderPattern(key), key);
+
+            var keyIndex = clozeDropdownKeyToIndex(key);
+            if (keyIndex > 0) {
+                replacePlaceholder(buildClozeDropdownPlaceholderPattern(String(keyIndex)), key);
+            }
+        });
+
+        var stemMarkup = renderExamRichHtml(stemWithFields, {
+            context: 'question'
+        });
+        var missingBlanks = blanks.filter(function (blank) {
+            return !usedKeyMap[String(blank.key || '').trim()];
+        });
+
+        if (!hasInlinePlaceholders || missingBlanks.length) {
+            var fallbackBlanks = hasInlinePlaceholders ? missingBlanks : blanks;
+            var fallbackMarkup = fallbackBlanks.map(function (blank) {
+                var key = String(blank.key || '').trim();
+                return renderClozeDropdownInlineField(
+                    questionId,
+                    blank,
+                    answer[key],
+                    nextFieldInstance(key),
+                    true
+                );
+            }).join('');
+
+            if (fallbackMarkup !== '') {
+                stemMarkup += '<div class="cbt-short-inline-fallback">' + fallbackMarkup + '</div>';
+            }
+        }
+
+        return stemMarkup;
+    }
+
     function renderQuestionStem(question) {
         if (question && question.question_type === 'short_answer') {
             return renderShortAnswerStem(question);
+        }
+        if (question && question.question_type === 'cloze_dropdown') {
+            return renderClozeDropdownStem(question);
         }
         return renderExamRichHtml(question && question.question_text ? question.question_text : '', {
             context: 'question'
@@ -305,6 +516,39 @@ export function createQuestionRenderManager(deps) {
                         '</div>'
                     ].join('');
                 }).join(''),
+                '</div>'
+            ].join('');
+        }
+
+        if (question.question_type === 'matching') {
+            var matchingItems = getMatchingItems(question);
+            var matchingAnswer = normalizeDropdownOptionAnswer(answer);
+            var matchingOptions = Array.isArray(question.options) ? question.options : [];
+            if (!matchingItems.length || !matchingOptions.length) {
+                return '<p class="cbt-muted">Konfigurasi matching belum tersedia.</p>';
+            }
+
+            return [
+                '<div class="cbt-matching-wrap">',
+                '<table class="cbt-matching-table">',
+                '<tbody>',
+                matchingItems.map(function (item, index) {
+                    var selectedOptionId = Number(matchingAnswer[item.key]) || 0;
+                    return [
+                        '<tr>',
+                        '<td class="cbt-matching-prompt"><span class="cbt-option-key">' + escapeHtml(index + 1) + '.</span> <span>' + renderExamRichHtml(item.text || '', {
+                            context: 'question'
+                        }) + '</span></td>',
+                        '<td class="cbt-matching-choice">',
+                        '<select class="cbt-input cbt-matching-select" data-action="answer-matching" data-qid="' + escapeHtml(question.id) + '" data-matching-key="' + escapeHtml(item.key) + '"' + disabledAttr + '>',
+                        renderDropdownOptionTags(matchingOptions, selectedOptionId),
+                        '</select>',
+                        '</td>',
+                        '</tr>'
+                    ].join('');
+                }).join(''),
+                '</tbody>',
+                '</table>',
                 '</div>'
             ].join('');
         }

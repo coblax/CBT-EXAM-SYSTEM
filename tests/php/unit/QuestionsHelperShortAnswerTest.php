@@ -147,6 +147,74 @@ final class QuestionsHelperShortAnswerTest extends TestCase
         self::assertSame('Pernyataan True/False Matrix tidak boleh kosong.', $emptyStatementMessage);
     }
 
+    public function test_validate_matching_items_allows_valid_pairs_and_rejects_duplicates(): void
+    {
+        $items = \CBT_Admin_Questions_Helper::normalize_matching_items([
+            ['prompt_text' => '<p>Indonesia</p>', 'option_text' => 'Jakarta'],
+            ['prompt_text' => '<p>Jepang</p>', 'option_text' => 'Tokyo'],
+        ]);
+
+        self::assertSame('', \CBT_Admin_Questions_Helper::validate_matching_items($items));
+        self::assertSame('1', $items[0]['item_key']);
+        self::assertSame('2', $items[1]['item_key']);
+
+        $duplicateMessage = \CBT_Admin_Questions_Helper::validate_matching_items(
+            \CBT_Admin_Questions_Helper::normalize_matching_items([
+                ['prompt_text' => 'Indonesia', 'option_text' => 'Jakarta'],
+                ['prompt_text' => ' indonesia ', 'option_text' => 'Tokyo'],
+            ])
+        );
+
+        self::assertSame('Matching tidak boleh punya sisi kiri duplikat.', $duplicateMessage);
+    }
+
+    public function test_validate_cloze_dropdown_definition_checks_placeholders_options_and_correct_answer(): void
+    {
+        $validBlanks = \CBT_Admin_Questions_Helper::normalize_cloze_dropdown_blanks([
+            [
+                'blank_key' => '1',
+                'options' => [
+                    ['option_text' => 'Seoul', 'is_correct' => 0],
+                    ['option_text' => 'Tokyo', 'is_correct' => 1],
+                ],
+            ],
+        ]);
+
+        self::assertSame(
+            '',
+            \CBT_Admin_Questions_Helper::validate_cloze_dropdown_definition(
+                'Ibu kota Jepang adalah [DROPDOWN_1].',
+                $validBlanks
+            )
+        );
+
+        self::assertSame(
+            'Key placeholder Cloze Dropdown harus cocok dengan konfigurasi dropdown.',
+            \CBT_Admin_Questions_Helper::validate_cloze_dropdown_definition(
+                'Ibu kota Jepang adalah [DROPDOWN_2].',
+                $validBlanks
+            )
+        );
+
+        $missingCorrectBlanks = \CBT_Admin_Questions_Helper::normalize_cloze_dropdown_blanks([
+            [
+                'blank_key' => '1',
+                'options' => [
+                    ['option_text' => 'Seoul', 'is_correct' => 0],
+                    ['option_text' => 'Tokyo', 'is_correct' => 0],
+                ],
+            ],
+        ]);
+
+        self::assertSame(
+            'Setiap Cloze Dropdown harus punya tepat 1 jawaban benar.',
+            \CBT_Admin_Questions_Helper::validate_cloze_dropdown_definition(
+                'Ibu kota Jepang adalah [DROPDOWN_1].',
+                $missingCorrectBlanks
+            )
+        );
+    }
+
     public function test_validate_short_answer_definition_allows_duplicate_normalized_answers_for_different_inputs(): void
     {
         $message = \CBT_Admin_Questions_Helper::validate_short_answer_definition(

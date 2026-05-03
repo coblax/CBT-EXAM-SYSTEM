@@ -38,6 +38,46 @@ export function getTrueFalseMatrixItems(question) {
     });
 }
 
+export function getMatchingItems(question) {
+    var meta = question && question.matching_meta ? question.matching_meta : null;
+    var items = meta && Array.isArray(meta.items) ? meta.items : [];
+    return items.map(function (item, index) {
+        var key = String(item && item.key ? item.key : (index + 1)).trim();
+        if (key === '') {
+            key = String(index + 1);
+        }
+        return {
+            key: key,
+            text: String(item && item.text ? item.text : '')
+        };
+    });
+}
+
+export function getClozeDropdownBlanks(question) {
+    var meta = question && question.cloze_dropdown_meta ? question.cloze_dropdown_meta : null;
+    var blanks = meta && Array.isArray(meta.blanks) ? meta.blanks : [];
+    return blanks.map(function (blank, index) {
+        var key = String(blank && blank.key ? blank.key : (index + 1)).trim();
+        if (key === '') {
+            key = String(index + 1);
+        }
+        var options = Array.isArray(blank && blank.options) ? blank.options : [];
+        return {
+            key: key,
+            position: Number(blank && blank.position) || (index + 1),
+            options: options.map(function (option, optionIndex) {
+                return {
+                    id: Number(option && option.id) || 0,
+                    option_key: String(option && option.option_key ? option.option_key : questionOptionKey(option, optionIndex)),
+                    option_text: String(option && option.option_text ? option.option_text : '')
+                };
+            }).filter(function (option) {
+                return option.id > 0;
+            })
+        };
+    });
+}
+
 export function findQuestionOptionById(question, optionId) {
     var safeOptionId = Number(optionId) || 0;
     if (safeOptionId <= 0 || !question || !Array.isArray(question.options)) {
@@ -108,6 +148,83 @@ export function normalizeTrueFalseMatrixAnswer(answer) {
     return normalized;
 }
 
+export function normalizeDropdownOptionAnswer(question, rawAnswer, mode) {
+    var sourceAnswer = rawAnswer;
+    if (typeof sourceAnswer === 'string') {
+        var trimmed = sourceAnswer.trim();
+        if (trimmed === '') {
+            return {};
+        }
+        try {
+            sourceAnswer = JSON.parse(trimmed);
+        } catch (error) {
+            return {};
+        }
+    }
+
+    if (!sourceAnswer || typeof sourceAnswer !== 'object' || Array.isArray(sourceAnswer)) {
+        return {};
+    }
+
+    var normalizedMode = String(mode || '').trim();
+    var allowedKeys = {};
+    var allowedOptionIdsByKey = {};
+
+    if (normalizedMode === 'cloze_dropdown') {
+        getClozeDropdownBlanks(question).forEach(function (blank) {
+            var key = String(blank.key || '').trim();
+            if (key === '') {
+                return;
+            }
+            allowedKeys[key] = true;
+            allowedOptionIdsByKey[key] = {};
+            blank.options.forEach(function (option) {
+                var optionId = Number(option && option.id) || 0;
+                if (optionId > 0) {
+                    allowedOptionIdsByKey[key][optionId] = true;
+                }
+            });
+        });
+    } else {
+        getMatchingItems(question).forEach(function (item) {
+            var key = String(item.key || '').trim();
+            if (key !== '') {
+                allowedKeys[key] = true;
+            }
+        });
+        var matchingOptionIds = {};
+        (Array.isArray(question && question.options) ? question.options : []).forEach(function (option) {
+            var optionId = Number(option && option.id) || 0;
+            if (optionId > 0) {
+                matchingOptionIds[optionId] = true;
+            }
+        });
+        Object.keys(allowedKeys).forEach(function (key) {
+            allowedOptionIdsByKey[key] = matchingOptionIds;
+        });
+    }
+
+    return Object.keys(sourceAnswer).sort(function (a, b) {
+        if (/^\d+$/.test(a) && /^\d+$/.test(b)) {
+            return Number(a) - Number(b);
+        }
+        return String(a).localeCompare(String(b), undefined, {
+            numeric: true
+        });
+    }).reduce(function (accumulator, key) {
+        var normalizedKey = String(key || '').trim();
+        var optionId = Number(sourceAnswer[key]) || 0;
+        if (normalizedKey === '' || optionId <= 0 || !allowedKeys[normalizedKey]) {
+            return accumulator;
+        }
+        if (allowedOptionIdsByKey[normalizedKey] && !allowedOptionIdsByKey[normalizedKey][optionId]) {
+            return accumulator;
+        }
+        accumulator[normalizedKey] = optionId;
+        return accumulator;
+    }, {});
+}
+
 export function normalizeAnswerValueForQuestion(question, rawAnswer, options) {
     options = options || {};
 
@@ -172,6 +289,14 @@ export function normalizeAnswerValueForQuestion(question, rawAnswer, options) {
         return {
             hasValue: Object.keys(filteredMatrixValue).length > 0,
             value: Object.keys(filteredMatrixValue).length ? filteredMatrixValue : null
+        };
+    }
+
+    if (questionType === 'matching' || questionType === 'cloze_dropdown') {
+        var dropdownValue = normalizeDropdownOptionAnswer(question, rawAnswer, questionType);
+        return {
+            hasValue: Object.keys(dropdownValue).length > 0,
+            value: Object.keys(dropdownValue).length ? dropdownValue : null
         };
     }
 

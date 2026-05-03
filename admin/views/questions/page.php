@@ -640,6 +640,370 @@ if (!defined('ABSPATH')) {
                     .cbt-option-row .wp-editor-wrap .wp-editor-area {
                         width: 100%;
                     }
+                    .cbt-authoring-panel {
+                        display: grid;
+                        gap: 16px;
+                        width: min(100%, 1080px);
+                        padding: 18px;
+                        border: 1px solid #d7e3ef;
+                        border-radius: 18px;
+                        background:
+                            linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 251, 255, 0.96) 100%);
+                        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.045);
+                    }
+                    .cbt-authoring-panel-head {
+                        display: flex;
+                        align-items: flex-start;
+                        justify-content: space-between;
+                        gap: 14px;
+                        flex-wrap: wrap;
+                        padding-bottom: 14px;
+                        border-bottom: 1px solid #e3ebf4;
+                    }
+                    .cbt-authoring-panel-head strong {
+                        display: block;
+                        margin-bottom: 4px;
+                        color: #0f172a;
+                        font-size: 15px;
+                        line-height: 1.35;
+                    }
+                    .cbt-authoring-panel-head p {
+                        margin: 0;
+                        color: #64748b;
+                        font-size: 13px;
+                        line-height: 1.55;
+                    }
+                    .cbt-authoring-badge {
+                        display: inline-flex;
+                        align-items: center;
+                        min-height: 30px;
+                        padding: 0 12px;
+                        border: 1px solid #bfdbfe;
+                        border-radius: 999px;
+                        background: #eff6ff;
+                        color: #1d4ed8;
+                        font-size: 12px;
+                        font-weight: 700;
+                        white-space: nowrap;
+                    }
+                    .cbt-matching-author-grid,
+                    .cbt-cloze-author-grid {
+                        display: grid;
+                        gap: 12px;
+                    }
+                    .cbt-matching-author-row {
+                        display: grid;
+                        grid-template-columns: 54px minmax(260px, 1fr) 38px minmax(260px, 1fr);
+                        gap: 12px;
+                        align-items: start;
+                        padding: 14px;
+                        border: 1px solid #e1eaf3;
+                        border-radius: 16px;
+                        background: #ffffff;
+                    }
+                    .cbt-author-row-index {
+                        display: grid;
+                        place-items: center;
+                        gap: 3px;
+                        min-height: 54px;
+                        border: 1px solid #dbeafe;
+                        border-radius: 14px;
+                        background: #f8fbff;
+                        color: #1e40af;
+                    }
+                    .cbt-author-row-index span {
+                        font-size: 18px;
+                        font-weight: 800;
+                        line-height: 1;
+                    }
+                    .cbt-author-row-index small {
+                        color: #64748b;
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 0.05em;
+                        text-transform: uppercase;
+                    }
+                    .cbt-matching-author-left,
+                    .cbt-matching-author-right {
+                        min-width: 0;
+                    }
+                    .cbt-matching-author-left > label,
+                    .cbt-matching-author-right > label,
+                    .cbt-cloze-correct-row > label,
+                    .cbt-cloze-option-field > span {
+                        display: block;
+                        margin: 0 0 7px;
+                        color: #334155;
+                        font-size: 12px;
+                        font-weight: 700;
+                        letter-spacing: 0.02em;
+                    }
+                    .cbt-matching-author-left .wp-editor-wrap,
+                    .cbt-matching-author-right .wp-editor-wrap {
+                        max-width: none;
+                    }
+                    .cbt-matching-author-left .wp-editor-container,
+                    .cbt-matching-author-right .wp-editor-container {
+                        border-radius: 14px;
+                    }
+                    .cbt-matching-author-link {
+                        display: inline-grid;
+                        place-items: center;
+                        width: 38px;
+                        height: 38px;
+                        margin-top: 34px;
+                        border: 1px solid #dbeafe;
+                        border-radius: 999px;
+                        background: #eff6ff;
+                        color: #1d4ed8;
+                        font-size: 18px;
+                        font-weight: 800;
+                    }
+                    .cbt-authoring-panel--cloze {
+                        border-radius: 10px;
+                        background: #fbfdff;
+                    }
+                    .cbt-cloze-tag-toolbar {
+                        display: flex;
+                        flex-wrap: wrap;
+                        align-items: center;
+                        gap: 8px;
+                        padding: 10px 12px;
+                        border: 1px solid #e1eaf3;
+                        border-radius: 8px;
+                        background: #ffffff;
+                    }
+                    .cbt-question-tags {
+                        display: none;
+                        margin-bottom: 10px;
+                    }
+                    .cbt-question-tags.is-active {
+                        display: flex;
+                    }
+                    .cbt-cloze-tag-toolbar-label {
+                        margin-right: 2px;
+                        color: #475569;
+                        font-size: 12px;
+                        font-weight: 700;
+                    }
+                    .cbt-cloze-tag-button.button,
+                    .cbt-short-answer-tag-button.button {
+                        min-height: 30px;
+                        padding: 0 10px;
+                        border-color: #bfdbfe;
+                        border-radius: 8px;
+                        background: #f8fbff;
+                        color: #1d4ed8;
+                        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                        font-size: 11px;
+                        font-weight: 800;
+                        line-height: 28px;
+                    }
+                    .cbt-cloze-author-grid {
+                        gap: 10px;
+                    }
+                    .cbt-cloze-author-row {
+                        display: grid;
+                        grid-template-columns: 118px minmax(0, 1fr) 150px;
+                        gap: 12px;
+                        align-items: start;
+                        min-width: 0;
+                        padding: 12px;
+                        border: 1px solid #e1eaf3;
+                        border-radius: 8px;
+                        background: #ffffff;
+                    }
+                    .cbt-cloze-blank-meta {
+                        display: grid;
+                        gap: 6px;
+                        align-content: start;
+                        min-width: 0;
+                    }
+                    .cbt-cloze-blank-meta strong {
+                        color: #0f172a;
+                        font-size: 13px;
+                        line-height: 1.3;
+                    }
+                    .cbt-cloze-placeholder {
+                        display: inline-flex;
+                        align-items: center;
+                        width: fit-content;
+                        max-width: 100%;
+                        min-height: 26px;
+                        padding: 0 8px;
+                        border: 1px solid #bbf7d0;
+                        border-radius: 8px;
+                        background: #f0fdf4;
+                        color: #047857;
+                        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                        font-size: 11px;
+                        font-weight: 800;
+                        overflow-wrap: anywhere;
+                    }
+                    .cbt-cloze-options-grid {
+                        display: grid;
+                        grid-template-columns: repeat(3, minmax(0, 1fr));
+                        gap: 8px;
+                        min-width: 0;
+                    }
+                    .cbt-cloze-option-field {
+                        display: grid;
+                        gap: 0;
+                        min-width: 0;
+                    }
+                    .cbt-cloze-option-field input[type="text"] {
+                        min-width: 0;
+                    }
+                    .cbt-cloze-option-field input.regular-text {
+                        width: 100%;
+                        max-width: none;
+                    }
+                    .cbt-cloze-correct-row {
+                        display: grid;
+                        gap: 7px;
+                        min-width: 0;
+                    }
+                    .cbt-cloze-correct-row > label {
+                        margin: 0;
+                    }
+                    .cbt-cloze-correct-row select {
+                        width: 100%;
+                        min-width: 0;
+                    }
+                    .cbt-short-answer-grid {
+                        display: grid;
+                        gap: 10px;
+                    }
+                    .cbt-short-answer-row {
+                        display: grid;
+                        grid-template-columns: minmax(130px, 170px) minmax(240px, 1fr);
+                        gap: 12px;
+                        align-items: center;
+                        min-width: 0;
+                        padding: 12px 14px;
+                        border: 1px solid #e1eaf3;
+                        border-radius: 16px;
+                        background: #ffffff;
+                    }
+                    .cbt-short-answer-label {
+                        display: grid;
+                        gap: 5px;
+                    }
+                    .cbt-short-answer-label strong {
+                        color: #0f172a;
+                        font-size: 13px;
+                        line-height: 1.3;
+                    }
+                    .cbt-short-answer-tag {
+                        display: inline-flex;
+                        align-items: center;
+                        width: fit-content;
+                        min-height: 26px;
+                        padding: 0 9px;
+                        border: 1px solid #bfdbfe;
+                        border-radius: 999px;
+                        background: #eff6ff;
+                        color: #1d4ed8;
+                        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                        font-size: 11px;
+                        font-weight: 800;
+                    }
+                    .cbt-short-answer-row input.regular-text {
+                        width: 100%;
+                        max-width: none;
+                    }
+                    .cbt-tfm-author-grid {
+                        display: grid;
+                        gap: 12px;
+                    }
+                    .cbt-tfm-author-row {
+                        display: grid;
+                        grid-template-columns: 54px minmax(300px, 1fr) minmax(180px, 220px);
+                        gap: 12px;
+                        align-items: start;
+                        padding: 14px;
+                        border: 1px solid #e1eaf3;
+                        border-radius: 16px;
+                        background: #ffffff;
+                    }
+                    .cbt-tfm-author-statement {
+                        min-width: 0;
+                    }
+                    .cbt-tfm-author-statement > label,
+                    .cbt-tfm-author-answer > label {
+                        display: block;
+                        margin: 0 0 7px;
+                        color: #334155;
+                        font-size: 12px;
+                        font-weight: 700;
+                        letter-spacing: 0.02em;
+                    }
+                    .cbt-tfm-author-statement .wp-editor-wrap {
+                        max-width: none;
+                    }
+                    .cbt-tfm-author-statement .wp-editor-container {
+                        border-radius: 14px;
+                    }
+                    .cbt-tfm-author-answer {
+                        display: grid;
+                        gap: 10px;
+                        min-width: 0;
+                    }
+                    .cbt-tfm-author-answer select {
+                        width: 100%;
+                    }
+                    @media (max-width: 980px) {
+                        .cbt-matching-author-row {
+                            grid-template-columns: 48px 1fr;
+                        }
+                        .cbt-matching-author-link {
+                            display: none;
+                        }
+                        .cbt-matching-author-right {
+                            grid-column: 2;
+                        }
+                        .cbt-tfm-author-row {
+                            grid-template-columns: 48px 1fr;
+                        }
+                        .cbt-tfm-author-answer {
+                            grid-column: 2;
+                        }
+                        .cbt-cloze-author-row {
+                            grid-template-columns: 110px minmax(0, 1fr);
+                        }
+                        .cbt-cloze-correct-row {
+                            grid-column: 2;
+                        }
+                        .cbt-cloze-options-grid {
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                        }
+                    }
+                    @media (max-width: 640px) {
+                        .cbt-authoring-panel {
+                            padding: 14px;
+                        }
+                        .cbt-matching-author-row {
+                            grid-template-columns: 1fr;
+                        }
+                        .cbt-author-row-index,
+                        .cbt-matching-author-right,
+                        .cbt-tfm-author-answer {
+                            grid-column: auto;
+                        }
+                        .cbt-author-row-index {
+                            width: 54px;
+                        }
+                        .cbt-cloze-author-grid,
+                        .cbt-cloze-options-grid,
+                        .cbt-short-answer-row,
+                        .cbt-tfm-author-row,
+                        .cbt-cloze-author-row {
+                            grid-template-columns: 1fr;
+                        }
+                        .cbt-cloze-correct-row {
+                            grid-column: auto;
+                        }
+                    }
                     .cbt-questions-actions,
                     .cbt-questions-form-actions,
                     .cbt-questions-list-actions {
@@ -1651,6 +2015,8 @@ if (!defined('ABSPATH')) {
                                         <button type="button" class="button<?php echo $editing_type === 'short_answer' ? ' cbt-active' : ''; ?>" data-qtype="short_answer">Short Answer</button>
                                         <button type="button" class="button<?php echo $editing_type === 'essay' ? ' cbt-active' : ''; ?>" data-qtype="essay">Essay</button>
                                         <button type="button" class="button<?php echo $editing_type === 'ordering' ? ' cbt-active' : ''; ?>" data-qtype="ordering">Ordering</button>
+                                        <button type="button" class="button<?php echo $editing_type === 'matching' ? ' cbt-active' : ''; ?>" data-qtype="matching">Matching</button>
+                                        <button type="button" class="button<?php echo $editing_type === 'cloze_dropdown' ? ' cbt-active' : ''; ?>" data-qtype="cloze_dropdown">Cloze Dropdown</button>
                                     </div>
                                 <?php endif; ?>
                             </td>
@@ -1658,6 +2024,31 @@ if (!defined('ABSPATH')) {
                         <tr>
                             <th><label for="cbt_question_text_editor">Question</label></th>
                             <td>
+                                <div
+                                    id="cbt-cloze-question-tags"
+                                    class="cbt-cloze-tag-toolbar cbt-question-tags<?php echo $editing_type === 'cloze_dropdown' ? ' is-active' : ''; ?>"
+                                    data-cbt-qtype-toolbar="cloze_dropdown"
+                                    aria-label="Tag Cloze Dropdown"
+                                    <?php echo $editing_type === 'cloze_dropdown' ? '' : 'hidden'; ?>
+                                >
+                                    <span class="cbt-cloze-tag-toolbar-label">Tag</span>
+                                    <?php for ($i = 1; $i <= 8; $i++): ?>
+                                        <button type="button" class="button button-secondary cbt-cloze-tag-button" data-cbt-cloze-placeholder="[DROPDOWN_<?php echo (int) $i; ?>]">[DROPDOWN_<?php echo (int) $i; ?>]</button>
+                                    <?php endfor; ?>
+                                </div>
+                                <div
+                                    id="cbt-short-answer-question-tags"
+                                    class="cbt-cloze-tag-toolbar cbt-question-tags<?php echo $editing_type === 'short_answer' ? ' is-active' : ''; ?>"
+                                    data-cbt-qtype-toolbar="short_answer"
+                                    aria-label="Tag Short Answer"
+                                    <?php echo $editing_type === 'short_answer' ? '' : 'hidden'; ?>
+                                >
+                                    <span class="cbt-cloze-tag-toolbar-label">Tag</span>
+                                    <?php for ($i = 1; $i <= 8; $i++): ?>
+                                        <?php $short_answer_tag_key = chr(64 + $i); ?>
+                                        <button type="button" class="button button-secondary cbt-short-answer-tag-button" data-cbt-short-answer-placeholder="[INPUT_<?php echo esc_attr($short_answer_tag_key); ?>]">[INPUT_<?php echo esc_html($short_answer_tag_key); ?>]</button>
+                                    <?php endfor; ?>
+                                </div>
                                 <?php
                                 wp_editor(
                                     (string) ($editing_question['question_text'] ?? ''),
@@ -1757,51 +2148,78 @@ if (!defined('ABSPATH')) {
                         <tr class="cbt-qtype-panel<?php echo $editing_type === 'true_false_matrix' ? ' cbt-active' : ''; ?>" data-qtype="true_false_matrix">
                             <th>True/False Matrix</th>
                             <td>
-                                <div class="cbt-option-list">
-                                    <?php for ($i = 1; $i <= 10; $i++): ?>
-                                        <div class="cbt-option-row">
-                                            <label for="cbt-tfm-statement-<?php echo (int) $i; ?>">Pernyataan <?php echo (int) $i; ?></label>
-                                            <textarea
-                                                id="cbt-tfm-statement-<?php echo (int) $i; ?>"
-                                                class="large-text code cbt-tfm-statement-field"
-                                                style="flex:1; min-width:260px; min-height:84px;"
-                                                placeholder="Isi pernyataan ke-<?php echo (int) $i; ?>"
-                                                data-cbt-tfm-statement-field="1"
-                                            ><?php echo esc_textarea((string) ($tf_matrix_rows[$i]['text'] ?? '')); ?></textarea>
-                                            <button
-                                                type="button"
-                                                class="button button-secondary cbt-tfm-equation-button"
-                                                data-cbt-tfm-equation-trigger="<?php echo (int) $i; ?>"
-                                                data-cbt-tfm-statement-target="cbt-tfm-statement-<?php echo (int) $i; ?>"
-                                            >
-                                                Equation
-                                            </button>
-                                            <select id="cbt-tfm-answer-<?php echo (int) $i; ?>">
-                                                <option value="true" <?php selected((string) ($tf_matrix_rows[$i]['answer'] ?? 'true'), 'true'); ?>>Benar</option>
-                                                <option value="false" <?php selected((string) ($tf_matrix_rows[$i]['answer'] ?? 'true'), 'false'); ?>>Salah</option>
-                                            </select>
-                                            <div
-                                                class="cbt-tfm-statement-preview cbt-admin-student-preview-richtext"
-                                                data-cbt-tfm-statement-preview="cbt-tfm-statement-<?php echo (int) $i; ?>"
-                                            ><?php echo CBT_Admin_Questions_Helper::render_editor_html((string) ($tf_matrix_rows[$i]['text'] ?? '')); ?></div>
+                                <div class="cbt-authoring-panel cbt-authoring-panel--tfm">
+                                    <div class="cbt-authoring-panel-head">
+                                        <div>
+                                            <strong>Pernyataan dan kunci Benar/Salah</strong>
+                                            <p>Tulis pernyataan dengan editor, lalu pilih kunci untuk setiap baris yang dipakai.</p>
                                         </div>
+                                        <span class="cbt-authoring-badge">Minimal 2 pernyataan</span>
+                                    </div>
+                                    <div class="cbt-tfm-author-grid">
+                                    <?php for ($i = 1; $i <= 10; $i++): ?>
+                                        <section class="cbt-tfm-author-row">
+                                            <div class="cbt-author-row-index">
+                                                <span><?php echo (int) $i; ?></span>
+                                                <small>Baris</small>
+                                            </div>
+                                            <div class="cbt-tfm-author-statement">
+                                                <label for="cbt-tfm-statement-<?php echo (int) $i; ?>">Pernyataan</label>
+                                                <?php
+                                                $tfm_editor_id = 'cbt-tfm-statement-' . (int) $i;
+                                                wp_editor(
+                                                    (string) ($tf_matrix_rows[$i]['text'] ?? ''),
+                                                    $tfm_editor_id,
+                                                    [
+                                                        'textarea_name' => $tfm_editor_id,
+                                                        'textarea_rows' => 3,
+                                                        'media_buttons' => true,
+                                                        'teeny' => true,
+                                                        'quicktags' => true,
+                                                        'tinymce' => $question_editor_tinymce,
+                                                    ]
+                                                );
+                                                ?>
+                                            </div>
+                                            <div class="cbt-tfm-author-answer">
+                                                <label for="cbt-tfm-answer-<?php echo (int) $i; ?>">Kunci</label>
+                                                <select id="cbt-tfm-answer-<?php echo (int) $i; ?>">
+                                                    <option value="true" <?php selected((string) ($tf_matrix_rows[$i]['answer'] ?? 'true'), 'true'); ?>>Benar</option>
+                                                    <option value="false" <?php selected((string) ($tf_matrix_rows[$i]['answer'] ?? 'true'), 'false'); ?>>Salah</option>
+                                                </select>
+                                            </div>
+                                        </section>
                                     <?php endfor; ?>
+                                    </div>
+                                    <p class="cbt-inline-help">Isi minimal 2 pernyataan secara berurutan dari nomor 1 tanpa loncat. Pernyataan tidak boleh duplikat. Box preview lama di samping kunci sudah dihilangkan karena pernyataan kini langsung memakai editor.</p>
                                 </div>
-                                <p class="cbt-inline-help">Isi minimal 2 pernyataan secara berurutan dari nomor 1 tanpa loncat. Pernyataan tidak boleh duplikat. Statement TF Matrix manual dibatasi ke teks biasa + equation wrapper. Gunakan tombol Equation untuk menyisipkan rumus tanpa membuka rich editor penuh.</p>
                             </td>
                         </tr>
                         <tr class="cbt-qtype-panel<?php echo $editing_type === 'short_answer' ? ' cbt-active' : ''; ?>" data-qtype="short_answer">
                             <th>Short Answer</th>
                             <td>
-                                <div class="cbt-option-list">
-                                    <?php for ($i = 1; $i <= 8; $i++): ?>
-                                        <div class="cbt-option-row">
-                                            <label for="cbt-correct-sa-<?php echo (int) $i; ?>">Input <?php echo esc_html(chr(64 + $i)); ?></label>
-                                            <input type="text" id="cbt-correct-sa-<?php echo (int) $i; ?>" class="regular-text" value="<?php echo esc_attr((string) ($editing_short_answer_inputs[$i] ?? '')); ?>" placeholder="Jawaban valid <?php echo esc_attr(chr(64 + $i)); ?>" />
+                                <div class="cbt-authoring-panel cbt-authoring-panel--short-answer">
+                                    <div class="cbt-authoring-panel-head">
+                                        <div>
+                                            <strong>Jawaban valid per input</strong>
+                                            <p>Isi kunci untuk setiap input yang dipakai pada teks soal.</p>
                                         </div>
+                                        <span class="cbt-authoring-badge">8 input tersedia</span>
+                                    </div>
+                                    <div class="cbt-short-answer-grid">
+                                    <?php for ($i = 1; $i <= 8; $i++): ?>
+                                        <?php $short_answer_key = chr(64 + $i); ?>
+                                        <section class="cbt-short-answer-row">
+                                            <div class="cbt-short-answer-label">
+                                                <strong>Input <?php echo esc_html($short_answer_key); ?></strong>
+                                                <span class="cbt-short-answer-tag">[INPUT_<?php echo esc_html($short_answer_key); ?>]</span>
+                                            </div>
+                                            <input type="text" id="cbt-correct-sa-<?php echo (int) $i; ?>" class="regular-text" value="<?php echo esc_attr((string) ($editing_short_answer_inputs[$i] ?? '')); ?>" placeholder="Jawaban valid <?php echo esc_attr($short_answer_key); ?>" />
+                                        </section>
                                     <?php endfor; ?>
+                                    </div>
+                                    <p class="cbt-inline-help">Gunakan toolbar tag di atas editor Question untuk menaruh [INPUT_A] sampai [INPUT_H]. Format lama [INPUT_1] sampai [INPUT_8] tetap didukung; tag tidak boleh duplikat dan jumlah tag harus sama dengan jumlah jawaban valid.</p>
                                 </div>
-                                <p class="cbt-inline-help">Isi berurutan dari Input A sampai maksimal Input H (8 textbox). Gunakan placeholder [INPUT_1] s.d. [INPUT_8] pada teks soal, placeholder tidak boleh duplikat, jumlah placeholder harus sama dengan jumlah jawaban valid, dan key input harus cocok dengan key jawaban.</p>
                             </td>
                         </tr>
                         <tr class="cbt-qtype-panel<?php echo $editing_type === 'essay' ? ' cbt-active' : ''; ?>" data-qtype="essay">
@@ -1850,6 +2268,116 @@ if (!defined('ABSPATH')) {
                                     <?php endfor; ?>
                                 </div>
                                 <p class="cbt-inline-help">Isi item sesuai urutan benar. Saat ujian, item akan diacak dan siswa menyusun kembali urutannya. Minimal 2 item, maksimal 12 item, dan item tidak boleh duplikat.</p>
+                            </td>
+                        </tr>
+                        <tr class="cbt-qtype-panel<?php echo $editing_type === 'matching' ? ' cbt-active' : ''; ?>" data-qtype="matching">
+                            <th>Matching</th>
+                            <td>
+                                <div class="cbt-authoring-panel cbt-authoring-panel--matching">
+                                    <div class="cbt-authoring-panel-head">
+                                        <div>
+                                            <strong>Pasangan kiri dan pilihan kanan</strong>
+                                            <p>Prompt kiri boleh rich text. Pilihan kanan dibuat sebagai label dropdown yang dipilih siswa.</p>
+                                        </div>
+                                        <span class="cbt-authoring-badge">Partial score per pasangan</span>
+                                    </div>
+                                    <div class="cbt-matching-author-grid">
+                                    <?php for ($i = 1; $i <= 12; $i++): ?>
+                                        <section class="cbt-matching-author-row">
+                                            <div class="cbt-author-row-index">
+                                                <span><?php echo (int) $i; ?></span>
+                                                <small>Baris</small>
+                                            </div>
+                                            <div class="cbt-matching-author-left">
+                                                <label for="cbt_matching_left_<?php echo (int) $i; ?>">Prompt kiri</label>
+                                                <?php
+                                                $matching_left_editor_id = 'cbt_matching_left_' . (int) $i;
+                                                wp_editor(
+                                                    (string) ($matching_left_values[$i] ?? ''),
+                                                    $matching_left_editor_id,
+                                                    [
+                                                        'textarea_name' => $matching_left_editor_id,
+                                                        'textarea_rows' => 3,
+                                                        'media_buttons' => true,
+                                                        'teeny' => true,
+                                                        'quicktags' => true,
+                                                        'tinymce' => $question_editor_tinymce,
+                                                    ]
+                                                );
+                                                ?>
+                                            </div>
+                                            <div class="cbt-matching-author-link" aria-hidden="true">&rarr;</div>
+                                            <div class="cbt-matching-author-right">
+                                                <label for="cbt_matching_right_<?php echo (int) $i; ?>">Pilihan kanan</label>
+                                                <?php
+                                                $matching_right_editor_id = 'cbt_matching_right_' . (int) $i;
+                                                wp_editor(
+                                                    (string) ($matching_right_values[$i] ?? ''),
+                                                    $matching_right_editor_id,
+                                                    [
+                                                        'textarea_name' => $matching_right_editor_id,
+                                                        'textarea_rows' => 3,
+                                                        'media_buttons' => true,
+                                                        'teeny' => true,
+                                                        'quicktags' => true,
+                                                        'tinymce' => $question_editor_tinymce,
+                                                    ]
+                                                );
+                                                ?>
+                                            </div>
+                                        </section>
+                                    <?php endfor; ?>
+                                    </div>
+                                    <p class="cbt-inline-help">Isi pasangan kiri dan kanan sesuai kunci. Saat ujian, pilihan kanan otomatis menjadi dropdown. Minimal 2 pasangan, maksimal 12 pasangan, dan tidak boleh duplikat.</p>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr class="cbt-qtype-panel<?php echo $editing_type === 'cloze_dropdown' ? ' cbt-active' : ''; ?>" data-qtype="cloze_dropdown">
+                            <th>Cloze Dropdown</th>
+                            <td>
+                                <div class="cbt-authoring-panel cbt-authoring-panel--cloze">
+                                    <div class="cbt-authoring-panel-head">
+                                        <div>
+                                            <strong>Dropdown inline di teks soal</strong>
+                                            <p>Masukkan tag ke teks soal, lalu isi opsi dan kunci pada baris blank yang dipakai.</p>
+                                        </div>
+                                        <span class="cbt-authoring-badge">8 blank tersedia</span>
+                                    </div>
+                                    <div class="cbt-cloze-author-grid">
+                                    <?php for ($i = 1; $i <= 8; $i++): ?>
+                                        <section class="cbt-cloze-author-row">
+                                            <div class="cbt-cloze-blank-meta">
+                                                <strong>Blank <?php echo (int) $i; ?></strong>
+                                                <span class="cbt-cloze-placeholder">[DROPDOWN_<?php echo (int) $i; ?>]</span>
+                                            </div>
+                                            <div class="cbt-cloze-options-grid">
+                                                <?php for ($j = 1; $j <= 6; $j++): ?>
+                                                    <label class="cbt-cloze-option-field" for="cbt_cloze_<?php echo (int) $i; ?>_option_<?php echo (int) $j; ?>">
+                                                        <span>Opsi <?php echo (int) $j; ?></span>
+                                                        <input
+                                                            type="text"
+                                                            id="cbt_cloze_<?php echo (int) $i; ?>_option_<?php echo (int) $j; ?>"
+                                                            name="cbt_cloze_<?php echo (int) $i; ?>_option_<?php echo (int) $j; ?>"
+                                                            class="regular-text"
+                                                            value="<?php echo esc_attr((string) ($cloze_dropdown_rows[$i]['options'][$j] ?? '')); ?>"
+                                                            placeholder="Teks opsi"
+                                                        />
+                                                    </label>
+                                                <?php endfor; ?>
+                                            </div>
+                                            <div class="cbt-cloze-correct-row">
+                                                <label for="cbt_cloze_correct_<?php echo (int) $i; ?>">Kunci jawaban</label>
+                                                <select id="cbt_cloze_correct_<?php echo (int) $i; ?>" name="cbt_cloze_correct_<?php echo (int) $i; ?>">
+                                                    <?php for ($j = 1; $j <= 6; $j++): ?>
+                                                        <option value="<?php echo (int) $j; ?>" <?php selected((int) ($cloze_dropdown_rows[$i]['correct'] ?? 1), $j); ?>>Opsi <?php echo (int) $j; ?></option>
+                                                    <?php endfor; ?>
+                                                </select>
+                                            </div>
+                                        </section>
+                                    <?php endfor; ?>
+                                    </div>
+                                    <p class="cbt-inline-help">Setiap tag yang dipakai minimal punya 2 opsi dan tepat 1 kunci.</p>
+                                </div>
                             </td>
                         </tr>
                         <tr>
@@ -2129,6 +2657,8 @@ if (!defined('ABSPATH')) {
                                 <button type="button" class="button<?php echo $import_active_type === 'short_answer' ? ' cbt-active' : ''; ?>" data-import-type="short_answer">Short Answer</button>
                                 <button type="button" class="button<?php echo $import_active_type === 'essay' ? ' cbt-active' : ''; ?>" data-import-type="essay">Essay</button>
                                 <button type="button" class="button<?php echo $import_active_type === 'ordering' ? ' cbt-active' : ''; ?>" data-import-type="ordering">Ordering</button>
+                                <button type="button" class="button<?php echo $import_active_type === 'matching' ? ' cbt-active' : ''; ?>" data-import-type="matching">Matching</button>
+                                <button type="button" class="button<?php echo $import_active_type === 'cloze_dropdown' ? ' cbt-active' : ''; ?>" data-import-type="cloze_dropdown">Cloze Dropdown</button>
                             </div>
                         <?php endif; ?>
                 <p class="description" id="cbt-import-type-help"><?php echo esc_html($import_help_text); ?></p>
@@ -2157,6 +2687,8 @@ if (!defined('ABSPATH')) {
                         data-url-sa="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_question_template_word_sa'), 'cbt_download_question_template_word_sa')); ?>"
                         data-url-essay="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_question_template_word_essay'), 'cbt_download_question_template_word_essay')); ?>"
                         data-url-ordering="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_question_template_word_ordering'), 'cbt_download_question_template_word_ordering')); ?>"
+                        data-url-matching="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_question_template_word_matching'), 'cbt_download_question_template_word_matching')); ?>"
+                        data-url-cloze="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cbt_download_question_template_word_cloze'), 'cbt_download_question_template_word_cloze')); ?>"
                         href="<?php echo esc_url(add_query_arg('question_count', 10, wp_nonce_url(admin_url('admin-post.php?action=cbt_download_question_template_word_mc'), 'cbt_download_question_template_word_mc'))); ?>"
                     >
                         Download Template Word MC (.docx)
@@ -2743,6 +3275,7 @@ if (!defined('ABSPATH')) {
                 const qTypeHidden = document.getElementById('cbt-question-type-hidden');
                 const qTypeTabs = document.getElementById('cbt-question-type-tabs');
                 const qTypePanels = document.querySelectorAll('.cbt-qtype-panel');
+                const qTypeToolbars = document.querySelectorAll('[data-cbt-qtype-toolbar]');
 
                 function activateQType(type, shouldFocus = false) {
                     if (!qTypeHidden) return;
@@ -2754,6 +3287,11 @@ if (!defined('ABSPATH')) {
                     }
                     qTypePanels.forEach((panel) => {
                         panel.classList.toggle('cbt-active', panel.getAttribute('data-qtype') === type);
+                    });
+                    qTypeToolbars.forEach((toolbar) => {
+                        const isActive = toolbar.getAttribute('data-cbt-qtype-toolbar') === type;
+                        toolbar.classList.toggle('is-active', isActive);
+                        toolbar.hidden = !isActive;
                     });
 
                     if (!shouldFocus) return;
@@ -2772,6 +3310,10 @@ if (!defined('ABSPATH')) {
                         document.getElementById('cbt_essay_answer_editor')?.focus();
                     } else if (type === 'ordering') {
                         document.getElementById('cbt_ordering_item_1')?.focus();
+                    } else if (type === 'matching') {
+                        document.getElementById('cbt_matching_left_1')?.focus();
+                    } else if (type === 'cloze_dropdown') {
+                        document.getElementById('cbt_cloze_1_option_1')?.focus();
                     }
                 }
 
@@ -2852,11 +3394,21 @@ if (!defined('ABSPATH')) {
                         buttonLabel: 'Download Template Word Essay (.docx)',
                         urlKey: 'urlEssay',
                     },
-            ordering: {
-                help: 'Mode import aktif: Ordering. DOCX didukung (isi ITEM_1..12 sesuai urutan benar, minimal 2 item, item tidak boleh duplikat, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
-                buttonLabel: 'Download Template Word Ordering (.docx)',
-                urlKey: 'urlOrdering',
-            },
+                    ordering: {
+                        help: 'Mode import aktif: Ordering. DOCX didukung (isi ITEM_1..12 sesuai urutan benar, minimal 2 item, item tidak boleh duplikat, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
+                        buttonLabel: 'Download Template Word Ordering (.docx)',
+                        urlKey: 'urlOrdering',
+                    },
+                    matching: {
+                        help: 'Mode import aktif: Matching. DOCX didukung (isi KIRI_1..12 dan KANAN_1..12, minimal 2 pasangan, tidak boleh duplikat, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
+                        buttonLabel: 'Download Template Word Matching (.docx)',
+                        urlKey: 'urlMatching',
+                    },
+                    cloze_dropdown: {
+                        help: 'Mode import aktif: Cloze Dropdown. DOCX didukung (pakai placeholder [DROPDOWN_1] s.d. [DROPDOWN_8], tiap dropdown minimal 2 opsi dan tepat 1 kunci).' + importHelpSuffix,
+                        buttonLabel: 'Download Template Word Cloze (.docx)',
+                        urlKey: 'urlCloze',
+                    },
                 };
 
                 function activateImportType(type) {
@@ -3172,7 +3724,7 @@ if (!defined('ABSPATH')) {
                 bindQuestionListInteractions();
 
                 const clipboardImageMaxBytes = 1572864;
-                const manualRichEditorIdPattern = /^(cbt_question_text_editor|cbt_essay_answer_editor|cbt_question_explanation_editor|cbt_(mc|ma)_option_\d+|cbt_ordering_item_\d+)$/;
+                const manualRichEditorIdPattern = /^(cbt_question_text_editor|cbt_essay_answer_editor|cbt_question_explanation_editor|cbt_(mc|ma)_option_\d+|cbt_ordering_item_\d+|cbt_matching_(left|right)_\d+|cbt-tfm-statement-\d+)$/;
                 const manualForm = document.getElementById('cbt-question-manual-form');
 
                 function isManualRichEditorId(editorId) {
@@ -3399,6 +3951,50 @@ if (!defined('ABSPATH')) {
                 bindManualTinyMceClipboardHandlers();
 
                 if (manualForm) {
+                    const insertTextIntoManualEditor = (editorId, text) => {
+                        const safeText = String(text || '');
+                        if (safeText === '') {
+                            return;
+                        }
+
+                        const tinyMceGlobal = window.tinymce || window.tinyMCE;
+                        const editor = tinyMceGlobal && typeof tinyMceGlobal.get === 'function'
+                            ? tinyMceGlobal.get(editorId)
+                            : null;
+                        if (editor && !editor.isHidden?.()) {
+                            editor.focus();
+                            if (typeof editor.insertContent === 'function') {
+                                editor.insertContent(safeText);
+                            } else if (typeof editor.execCommand === 'function') {
+                                editor.execCommand('mceInsertContent', false, safeText);
+                            }
+                            if (typeof editor.save === 'function') {
+                                editor.save();
+                            }
+                            return;
+                        }
+
+                        const textarea = document.getElementById(editorId);
+                        if (textarea instanceof HTMLTextAreaElement) {
+                            insertHtmlIntoTextarea(textarea, safeText);
+                        }
+                    };
+
+                    manualForm.addEventListener('click', (event) => {
+                        const target = event.target instanceof Element
+                            ? event.target.closest('[data-cbt-cloze-placeholder], [data-cbt-short-answer-placeholder]')
+                            : null;
+                        if (!(target instanceof HTMLElement)) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        insertTextIntoManualEditor(
+                            'cbt_question_text_editor',
+                            String(target.getAttribute('data-cbt-cloze-placeholder') || target.getAttribute('data-cbt-short-answer-placeholder') || '')
+                        );
+                    });
+
                     manualForm.addEventListener('submit', (event) => {
                         if (window.tinyMCE && typeof window.tinyMCE.triggerSave === 'function') {
                             window.tinyMCE.triggerSave();
@@ -3449,6 +4045,44 @@ if (!defined('ABSPATH')) {
                             const counts = {};
                             const duplicates = [];
                             extractShortAnswerInputTokens(html).forEach((token) => {
+                                counts[token] = Number(counts[token] || 0) + 1;
+                                if (counts[token] === 2) {
+                                    duplicates.push(token);
+                                }
+                            });
+                            return duplicates;
+                        };
+                        const normalizeClozeDropdownToken = (rawToken) => {
+                            const token = String(rawToken || '').trim();
+                            return /^[1-8]$/.test(token) ? token : '';
+                        };
+                        const extractClozeDropdownTokens = (html) => {
+                            const plain = String(html || '').replace(/<[^>]*>/g, ' ');
+                            const matches = plain.match(/\[\s*dropdown(?:\s*[_-]?\s*)?([1-8])\s*\]/gi) || [];
+                            const tokens = [];
+                            matches.forEach((match) => {
+                                const tokenMatch = String(match).match(/\[\s*dropdown(?:\s*[_-]?\s*)?([1-8])\s*\]/i);
+                                if (!tokenMatch || !tokenMatch[1]) return;
+                                const token = normalizeClozeDropdownToken(tokenMatch[1]);
+                                if (token !== '') {
+                                    tokens.push(token);
+                                }
+                            });
+                            return tokens;
+                        };
+                        const extractClozeDropdownKeys = (html) => {
+                            const keys = [];
+                            extractClozeDropdownTokens(html).forEach((token) => {
+                                if (!keys.includes(token)) {
+                                    keys.push(token);
+                                }
+                            });
+                            return keys;
+                        };
+                        const findDuplicateClozeDropdownKeys = (html) => {
+                            const counts = {};
+                            const duplicates = [];
+                            extractClozeDropdownTokens(html).forEach((token) => {
                                 counts[token] = Number(counts[token] || 0) + 1;
                                 if (counts[token] === 2) {
                                     duplicates.push(token);
@@ -3508,7 +4142,7 @@ if (!defined('ABSPATH')) {
                             const signatures = new Map();
                             const duplicates = [];
                             statements.forEach((item) => {
-                                const signature = normalizeCompareText(item?.text || '', { stripHtml: true });
+                                const signature = normalizeOptionSignature(item?.text || '');
                                 if (signature === '') return;
                                 const itemIndex = Number(item?.index || 0);
                                 if (signatures.has(signature)) {
@@ -3636,7 +4270,7 @@ if (!defined('ABSPATH')) {
                             let foundGapAfterFilledStatement = false;
                             for (let i = 1; i <= 10; i += 1) {
                                 const statementText = String(document.getElementById(`cbt-tfm-statement-${i}`)?.value || '').trim();
-                                if (statementText === '') {
+                                if (!hasOptionContent(statementText)) {
                                     if (encounteredFilledStatement) {
                                         foundGapAfterFilledStatement = true;
                                     }
@@ -3701,7 +4335,7 @@ if (!defined('ABSPATH')) {
                             const shortAnswerInputKeys = extractShortAnswerInputKeys(questionEditorHtml);
                             if (shortAnswerInputKeys.length === 0) {
                                 event.preventDefault();
-                                window.alert('Short Answer wajib memakai placeholder [INPUT_1] s.d. [INPUT_8] pada teks soal.');
+                                window.alert('Short Answer wajib memakai tag [INPUT_A] s.d. [INPUT_H] atau [INPUT_1] s.d. [INPUT_8] pada teks soal.');
                                 return;
                             }
 
@@ -3755,6 +4389,113 @@ if (!defined('ABSPATH')) {
                             optionsHidden.value = JSON.stringify(optionsPayload);
                             correctTextHidden.value = '';
                             validationMetaHidden.value = JSON.stringify({ type });
+                        } else if (type === 'matching') {
+                            const leftSignatures = new Map();
+                            const rightSignatures = new Map();
+                            let filledCount = 0;
+
+                            for (let i = 1; i <= 12; i += 1) {
+                                const leftVal = editorValue(`cbt_matching_left_${i}`);
+                                const rightVal = editorValue(`cbt_matching_right_${i}`);
+                                const hasLeft = hasOptionContent(leftVal);
+                                const hasRight = hasOptionContent(rightVal);
+
+                                if (!hasLeft && !hasRight) {
+                                    continue;
+                                }
+
+                                if (!hasLeft || !hasRight) {
+                                    event.preventDefault();
+                                    window.alert('Matching harus mengisi prompt kiri dan pilihan kanan pada baris yang sama.');
+                                    return;
+                                }
+
+                                const leftSignature = normalizeOptionSignature(leftVal);
+                                const rightSignature = normalizeOptionSignature(rightVal);
+                                if (leftSignature !== '' && leftSignatures.has(leftSignature)) {
+                                    event.preventDefault();
+                                    window.alert('Matching tidak boleh punya teks kiri duplikat.');
+                                    return;
+                                }
+                                if (rightSignature !== '' && rightSignatures.has(rightSignature)) {
+                                    event.preventDefault();
+                                    window.alert('Matching tidak boleh punya pilihan kanan duplikat.');
+                                    return;
+                                }
+
+                                leftSignatures.set(leftSignature, true);
+                                rightSignatures.set(rightSignature, true);
+                                filledCount += 1;
+                            }
+
+                            if (filledCount < 2) {
+                                event.preventDefault();
+                                window.alert('Matching minimal harus punya 2 pasangan.');
+                                return;
+                            }
+
+                            correctTextHidden.value = '';
+                            validationMetaHidden.value = JSON.stringify({ type });
+                        } else if (type === 'cloze_dropdown') {
+                            const questionEditorHtml = editorValue('cbt_question_text_editor');
+                            const duplicateClozeKeys = findDuplicateClozeDropdownKeys(questionEditorHtml);
+                            if (duplicateClozeKeys.length > 0) {
+                                event.preventDefault();
+                                window.alert('Placeholder Cloze Dropdown tidak boleh duplikat.');
+                                return;
+                            }
+
+                            const clozeKeys = extractClozeDropdownKeys(questionEditorHtml);
+                            if (clozeKeys.length === 0) {
+                                event.preventDefault();
+                                window.alert('Cloze Dropdown wajib memakai placeholder [DROPDOWN_1] s.d. [DROPDOWN_8] pada teks soal.');
+                                return;
+                            }
+
+                            for (const key of clozeKeys) {
+                                const optionValues = [];
+                                const optionSignatures = new Map();
+                                const correctIndex = parseInt(String(document.getElementById(`cbt_cloze_correct_${key}`)?.value || '1'), 10);
+                                let correctOptionFilled = false;
+
+                                for (let optionIndex = 1; optionIndex <= 6; optionIndex += 1) {
+                                    const optionValue = String(document.getElementById(`cbt_cloze_${key}_option_${optionIndex}`)?.value || '').trim();
+                                    if (optionValue === '') {
+                                        continue;
+                                    }
+
+                                    const signature = normalizeCompareText(optionValue);
+                                    if (signature !== '' && optionSignatures.has(signature)) {
+                                        event.preventDefault();
+                                        window.alert(`Opsi Cloze Dropdown ${key} tidak boleh duplikat.`);
+                                        return;
+                                    }
+
+                                    optionSignatures.set(signature, true);
+                                    optionValues.push(optionValue);
+                                    if (optionIndex === correctIndex) {
+                                        correctOptionFilled = true;
+                                    }
+                                }
+
+                                if (optionValues.length < 2) {
+                                    event.preventDefault();
+                                    window.alert(`Dropdown ${key} minimal harus punya 2 opsi.`);
+                                    return;
+                                }
+
+                                if (!correctOptionFilled) {
+                                    event.preventDefault();
+                                    window.alert(`Kunci Dropdown ${key} tidak boleh menunjuk opsi kosong.`);
+                                    return;
+                                }
+                            }
+
+                            correctTextHidden.value = '';
+                            validationMetaHidden.value = JSON.stringify({
+                                type,
+                                provided_keys: clozeKeys.slice().sort(),
+                            });
                         }
                     });
                 }

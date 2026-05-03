@@ -1,7 +1,7 @@
 import { renderMathInContainer } from '../shared/math-render';
 import './math-authoring.css';
 
-var MANUAL_RICH_EDITOR_ID_PATTERN = /^(cbt_question_text_editor|cbt_essay_answer_editor|cbt_question_explanation_editor|cbt_(mc|ma)_option_\d+)$/;
+var MANUAL_RICH_EDITOR_ID_PATTERN = /^(cbt_question_text_editor|cbt_essay_answer_editor|cbt_question_explanation_editor|cbt_(mc|ma)_option_\d+|cbt_ordering_item_\d+|cbt_matching_(left|right)_\d+|cbt-tfm-statement-\d+)$/;
 var EQUATION_MODAL_ID = 'cbt-admin-equation-modal';
 var EQUATION_INSERT_BUTTON_ID = 'cbt-admin-equation-apply';
 var EQUATION_SOURCE_ID = 'cbt-admin-equation-source';
@@ -843,7 +843,7 @@ function ensureVisualEquationButton(editorId) {
         return;
     }
 
-    var toolbarHost = wrap.querySelector('.mce-toolbar-grp') || wrap.querySelector('.wp-media-buttons');
+    var toolbarHost = wrap.querySelector('.wp-media-buttons') || wrap.querySelector('.mce-toolbar-grp');
     if (!(toolbarHost instanceof HTMLElement)) {
         return;
     }
@@ -991,6 +991,9 @@ function bindAuthoringTriggerDelegation() {
 function ensureTfMatrixTriggerButtons() {
     Array.from(document.querySelectorAll('[data-cbt-tfm-equation-trigger]')).forEach(function (button) {
         if (!(button instanceof HTMLElement)) {
+            return;
+        }
+        if (String(button.getAttribute('data-cbt-equation-trigger') || '') === 'editor') {
             return;
         }
         button.setAttribute('data-cbt-equation-trigger', 'tfm');

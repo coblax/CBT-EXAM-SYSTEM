@@ -31,6 +31,36 @@ final class ActivatorDeactivatorLifecycleTest extends TestCase
         self::assertStringContainsString('continue;', $activator);
     }
 
+    public function test_schema_declares_matching_and_cloze_dropdown_tables(): void
+    {
+        $schema = (string) file_get_contents(dirname(__DIR__, 3) . '/sql/cbt_schema.sql');
+        $activator = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/class-cbt-activator.php');
+
+        foreach ([
+            'cbt_question_matching',
+            'cbt_question_matching_items',
+            'cbt_question_cloze_dropdown',
+            'cbt_question_cloze_dropdown_blanks',
+            'cbt_question_cloze_dropdown_options',
+        ] as $table_name) {
+            self::assertStringContainsString('CREATE TABLE wp_' . $table_name . ' (', $schema);
+            self::assertStringContainsString('CREATE TABLE {$wpdb->prefix}' . $table_name . ' (', $activator);
+        }
+
+        foreach ([
+            'fk_cbt_qmatch_question',
+            'fk_cbt_qmatchi_question',
+            'fk_cbt_qmatchi_option',
+            'fk_cbt_qcloze_question',
+            'fk_cbt_qclozeb_question',
+            'fk_cbt_qclozeo_question',
+            'fk_cbt_qclozeo_blank',
+        ] as $constraint_name) {
+            self::assertStringContainsString($constraint_name, $schema);
+            self::assertStringContainsString($constraint_name, $activator);
+        }
+    }
+
     #[RunInSeparateProcess]
     public function test_deactivator_stops_student_cohort_index_worker_without_deleting_data(): void
     {

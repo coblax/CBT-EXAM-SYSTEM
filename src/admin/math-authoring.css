@@ -6,6 +6,16 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    margin-left: 6px;
+    padding: 0;
+    vertical-align: top;
+}
+
+.wp-media-buttons .cbt-equation-toolbar-button {
+    margin-left: 0;
+}
+
+.mce-toolbar-grp .cbt-equation-visual-toolbar {
     padding: 6px 8px 0;
 }
 

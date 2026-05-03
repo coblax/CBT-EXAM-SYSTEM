@@ -16,6 +16,8 @@ final class CBT_Admin_Questions_Helper
                 'cbt-questions-sa',
                 'cbt-questions-essay',
                 'cbt-questions-ordering',
+                'cbt-questions-matching',
+                'cbt-questions-cloze',
             ];
         }
 
@@ -43,6 +45,10 @@ final class CBT_Admin_Questions_Helper
                     return 'essay';
                 case 'cbt-questions-ordering':
                     return 'ordering';
+                case 'cbt-questions-matching':
+                    return 'matching';
+                case 'cbt-questions-cloze':
+                    return 'cloze_dropdown';
                 default:
                     return '';
             }
@@ -84,6 +90,19 @@ final class CBT_Admin_Questions_Helper
                     return implode(' | ', $preview_values);
                 }
                 return 'Terjawab';
+            }
+
+            if (in_array($question_type, ['matching', 'cloze_dropdown'], true)) {
+                $decoded = json_decode($answer_text, true);
+                if (is_array($decoded)) {
+                    $count = 0;
+                    foreach ($decoded as $value) {
+                        if ((int) $value > 0) {
+                            $count++;
+                        }
+                    }
+                    return $count > 0 ? ('Terjawab ' . $count . ' item') : 'Terjawab';
+                }
             }
     
             if ($answer_text === '') {
@@ -287,6 +306,265 @@ final class CBT_Admin_Questions_Helper
             }
 
             return $duplicates;
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $rows
+         * @return array<int,array{position:int,item_key:string,prompt_text:string,option_text:string}>
+         */
+        public static function normalize_matching_items(array $rows): array
+        {
+            $items = [];
+            foreach ($rows as $index => $row) {
+                if (count($items) >= 12 || !is_array($row)) {
+                    continue;
+                }
+
+                $position = (int) ($row['position'] ?? ($index + 1));
+                if ($position <= 0) {
+                    $position = count($items) + 1;
+                }
+
+                $prompt = self::sanitize_editor_html(trim((string) ($row['prompt_text'] ?? $row['left'] ?? $row['kiri'] ?? '')));
+                $option_text = self::sanitize_editor_html(trim((string) ($row['option_text'] ?? $row['right'] ?? $row['kanan'] ?? '')));
+                if (!self::has_non_empty_option_content($prompt) && !self::has_non_empty_option_content($option_text)) {
+                    continue;
+                }
+
+                $items[] = [
+                    'position' => count($items) + 1,
+                    'item_key' => (string) (count($items) + 1),
+                    'prompt_text' => $prompt,
+                    'option_text' => $option_text,
+                ];
+            }
+
+            return $items;
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $items
+         */
+        public static function validate_matching_items(array $items): string
+        {
+            if (count($items) < 2) {
+                return 'Matching minimal harus punya 2 pasangan.';
+            }
+
+            $prompt_signatures = [];
+            $option_signatures = [];
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $prompt = (string) ($item['prompt_text'] ?? '');
+                $option_text = (string) ($item['option_text'] ?? '');
+                if (!self::has_non_empty_option_content($prompt) || !self::has_non_empty_option_content($option_text)) {
+                    return 'Pasangan Matching tidak boleh kosong.';
+                }
+
+                $prompt_signature = self::normalize_option_compare_signature($prompt);
+                $option_signature = self::normalize_option_compare_signature($option_text);
+                if ($prompt_signature !== '' && isset($prompt_signatures[$prompt_signature])) {
+                    return 'Matching tidak boleh punya sisi kiri duplikat.';
+                }
+                if ($option_signature !== '' && isset($option_signatures[$option_signature])) {
+                    return 'Matching tidak boleh punya pilihan kanan duplikat.';
+                }
+                $prompt_signatures[$prompt_signature] = true;
+                $option_signatures[$option_signature] = true;
+            }
+
+            return '';
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $items
+         */
+        public static function build_matching_payload(array $items): string
+        {
+            $normalized = self::normalize_matching_items($items);
+            if (empty($normalized)) {
+                return '';
+            }
+
+            return (string) wp_json_encode([
+                'pairs' => $normalized,
+            ]);
+        }
+
+        /**
+         * @return string[]
+         */
+        public static function resolve_cloze_dropdown_blank_keys(string $question_text): array
+        {
+            $keys = [];
+            foreach (self::extract_cloze_dropdown_blank_key_tokens($question_text) as $token) {
+                if (!in_array($token, $keys, true)) {
+                    $keys[] = $token;
+                }
+            }
+
+            return $keys;
+        }
+
+        /**
+         * @return string[]
+         */
+        public static function find_duplicate_cloze_dropdown_blank_keys(string $question_text): array
+        {
+            $counts = [];
+            foreach (self::extract_cloze_dropdown_blank_key_tokens($question_text) as $token) {
+                $counts[$token] = (int) ($counts[$token] ?? 0) + 1;
+            }
+
+            $duplicates = [];
+            foreach ($counts as $token => $count) {
+                if ($count > 1) {
+                    $duplicates[] = (string) $token;
+                }
+            }
+
+            return $duplicates;
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $rows
+         * @return array<int,array{blank_key:string,blank_position:int,options:array<int,array{option_key:string,option_text:string,is_correct:int,option_order:int}>}>
+         */
+        public static function normalize_cloze_dropdown_blanks(array $rows): array
+        {
+            $blanks = [];
+            foreach ($rows as $index => $row) {
+                if (count($blanks) >= 8 || !is_array($row)) {
+                    continue;
+                }
+
+                $raw_key = (string) ($row['blank_key'] ?? $row['key'] ?? ($index + 1));
+                $blank_key = self::normalize_cloze_dropdown_blank_token($raw_key);
+                if ($blank_key === '') {
+                    continue;
+                }
+
+                $options = [];
+                foreach ((array) ($row['options'] ?? []) as $option_index => $option_row) {
+                    if (count($options) >= 12 || !is_array($option_row)) {
+                        continue;
+                    }
+
+                    $option_text = sanitize_text_field(trim((string) ($option_row['option_text'] ?? $option_row['text'] ?? '')));
+                    if ($option_text === '') {
+                        continue;
+                    }
+
+                    $option_key = strtoupper(trim((string) ($option_row['option_key'] ?? '')));
+                    if ($option_key === '') {
+                        $option_key = chr(65 + (count($options) % 26));
+                    }
+
+                    $options[] = [
+                        'option_key' => $option_key,
+                        'option_text' => $option_text,
+                        'is_correct' => ((int) ($option_row['is_correct'] ?? 0) === 1) ? 1 : 0,
+                        'option_order' => count($options) + 1,
+                    ];
+                }
+
+                $blanks[] = [
+                    'blank_key' => $blank_key,
+                    'blank_position' => count($blanks) + 1,
+                    'options' => $options,
+                ];
+            }
+
+            usort($blanks, static function (array $left, array $right): int {
+                return ((int) $left['blank_key']) <=> ((int) $right['blank_key']);
+            });
+
+            foreach ($blanks as $idx => $blank) {
+                $blanks[$idx]['blank_position'] = $idx + 1;
+            }
+
+            return $blanks;
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $blanks
+         */
+        public static function validate_cloze_dropdown_definition(string $question_text, array $blanks): string
+        {
+            if (!empty(self::find_duplicate_cloze_dropdown_blank_keys($question_text))) {
+                return 'Placeholder Cloze Dropdown tidak boleh duplikat.';
+            }
+
+            $placeholder_keys = self::resolve_cloze_dropdown_blank_keys($question_text);
+            if (empty($placeholder_keys)) {
+                return 'Cloze Dropdown wajib memakai placeholder [DROPDOWN_1] s.d. [DROPDOWN_8] pada teks soal.';
+            }
+
+            $provided_keys = array_values(array_filter(array_map(static function ($blank): string {
+                return is_array($blank) ? (string) ($blank['blank_key'] ?? '') : '';
+            }, $blanks), static function (string $key): bool {
+                return $key !== '';
+            }));
+            sort($placeholder_keys);
+            sort($provided_keys);
+            if ($placeholder_keys !== $provided_keys) {
+                return 'Key placeholder Cloze Dropdown harus cocok dengan konfigurasi dropdown.';
+            }
+
+            foreach ($blanks as $blank) {
+                if (!is_array($blank)) {
+                    continue;
+                }
+
+                $options = isset($blank['options']) && is_array($blank['options']) ? $blank['options'] : [];
+                if (count($options) < 2) {
+                    return 'Setiap Cloze Dropdown minimal punya 2 pilihan.';
+                }
+
+                $correct_count = 0;
+                $seen = [];
+                foreach ($options as $option) {
+                    if (!is_array($option)) {
+                        continue;
+                    }
+                    $option_text = sanitize_text_field(trim((string) ($option['option_text'] ?? '')));
+                    if ($option_text === '') {
+                        return 'Pilihan Cloze Dropdown tidak boleh kosong.';
+                    }
+                    $signature = self::normalize_short_answer_compare_value($option_text);
+                    if ($signature !== '' && isset($seen[$signature])) {
+                        return 'Pilihan Cloze Dropdown dalam satu dropdown tidak boleh duplikat.';
+                    }
+                    $seen[$signature] = true;
+                    if ((int) ($option['is_correct'] ?? 0) === 1) {
+                        $correct_count++;
+                    }
+                }
+
+                if ($correct_count !== 1) {
+                    return 'Setiap Cloze Dropdown harus punya tepat 1 jawaban benar.';
+                }
+            }
+
+            return '';
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $blanks
+         */
+        public static function build_cloze_dropdown_payload(array $blanks): string
+        {
+            $normalized = self::normalize_cloze_dropdown_blanks($blanks);
+            if (empty($normalized)) {
+                return '';
+            }
+
+            return (string) wp_json_encode([
+                'blanks' => $normalized,
+            ]);
         }
 
         public static function validate_true_false_matrix_items(array $items, array $context = []): string
@@ -603,6 +881,8 @@ final class CBT_Admin_Questions_Helper
                 'short_answer' => $wpdb->prefix . 'cbt_question_short_answer',
                 'essay' => $wpdb->prefix . 'cbt_question_essay',
                 'ordering' => $wpdb->prefix . 'cbt_question_ordering',
+                'matching' => $wpdb->prefix . 'cbt_question_matching',
+                'cloze_dropdown' => $wpdb->prefix . 'cbt_question_cloze_dropdown',
             ];
         }
 
@@ -616,6 +896,12 @@ final class CBT_Admin_Questions_Helper
     
             $tables = self::question_type_detail_tables();
             $ordering_item_table = $wpdb->prefix . 'cbt_question_ordering_items';
+            $matching_item_table = $wpdb->prefix . 'cbt_question_matching_items';
+            $cloze_option_table = $wpdb->prefix . 'cbt_question_cloze_dropdown_options';
+            $cloze_blank_table = $wpdb->prefix . 'cbt_question_cloze_dropdown_blanks';
+            $wpdb->delete($cloze_option_table, ['question_id' => $question_id], ['%d']);
+            $wpdb->delete($cloze_blank_table, ['question_id' => $question_id], ['%d']);
+            $wpdb->delete($matching_item_table, ['question_id' => $question_id], ['%d']);
             $wpdb->delete($ordering_item_table, ['question_id' => $question_id], ['%d']);
             foreach ($tables as $table) {
                 $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
@@ -710,6 +996,45 @@ final class CBT_Admin_Questions_Helper
                     ? array_values($context['ordered_option_ids'])
                     : [];
                 self::save_ordering_item_positions($question_id, $ordered_option_ids);
+                return;
+            }
+
+            if ($question_type === 'matching' && isset($tables['matching'])) {
+                $wpdb->insert(
+                    $tables['matching'],
+                    [
+                        'question_id' => $question_id,
+                        'scoring_mode' => 'partial',
+                        'shuffle_choices' => 1,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    ['%d', '%s', '%d', '%s', '%s']
+                );
+
+                $matching_items = isset($context['matching_items']) && is_array($context['matching_items'])
+                    ? array_values($context['matching_items'])
+                    : [];
+                self::save_matching_items($question_id, $matching_items);
+                return;
+            }
+
+            if ($question_type === 'cloze_dropdown' && isset($tables['cloze_dropdown'])) {
+                $wpdb->insert(
+                    $tables['cloze_dropdown'],
+                    [
+                        'question_id' => $question_id,
+                        'scoring_mode' => 'partial',
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    ['%d', '%s', '%s', '%s']
+                );
+
+                $cloze_blanks = isset($context['cloze_blanks']) && is_array($context['cloze_blanks'])
+                    ? array_values($context['cloze_blanks'])
+                    : [];
+                self::save_cloze_dropdown_blanks($question_id, $cloze_blanks);
             }
         }
 
@@ -795,6 +1120,240 @@ final class CBT_Admin_Questions_Helper
             })));
         }
 
+        /**
+         * @param array<int,array<string,mixed>> $items
+         */
+        public static function save_matching_items(int $question_id, array $items): void
+        {
+            global $wpdb;
+
+            if ($question_id <= 0) {
+                return;
+            }
+
+            $table = $wpdb->prefix . 'cbt_question_matching_items';
+            $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
+
+            $now = current_time('mysql');
+            foreach ($items as $index => $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $option_id = (int) ($item['correct_option_id'] ?? 0);
+                $prompt_text = self::sanitize_editor_html((string) ($item['prompt_text'] ?? ''));
+                if ($option_id <= 0 || !self::has_non_empty_option_content($prompt_text)) {
+                    continue;
+                }
+
+                $position = (int) ($item['position'] ?? ($index + 1));
+                if ($position <= 0) {
+                    $position = $index + 1;
+                }
+                $item_key = trim((string) ($item['item_key'] ?? $position));
+                if ($item_key === '') {
+                    $item_key = (string) $position;
+                }
+
+                $wpdb->insert(
+                    $table,
+                    [
+                        'question_id' => $question_id,
+                        'item_key' => $item_key,
+                        'item_position' => $position,
+                        'prompt_text' => $prompt_text,
+                        'correct_option_id' => $option_id,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    ['%d', '%s', '%d', '%s', '%d', '%s', '%s']
+                );
+            }
+        }
+
+        /**
+         * @return array<int,array<string,mixed>>
+         */
+        public static function get_matching_items(int $question_id): array
+        {
+            global $wpdb;
+
+            if ($question_id <= 0) {
+                return [];
+            }
+
+            $item_table = $wpdb->prefix . 'cbt_question_matching_items';
+            $option_table = $wpdb->prefix . 'cbt_options';
+            $rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT mi.id, mi.question_id, mi.item_key, mi.item_position, mi.prompt_text, mi.correct_option_id,
+                            o.option_text AS correct_option_text, o.option_key AS correct_option_key
+                     FROM {$item_table} mi
+                     LEFT JOIN {$option_table} o ON o.id = mi.correct_option_id AND o.question_id = mi.question_id
+                     WHERE mi.question_id = %d
+                     ORDER BY mi.item_position ASC, mi.id ASC",
+                    $question_id
+                ),
+                ARRAY_A
+            );
+
+            return is_array($rows) ? array_values($rows) : [];
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $blanks
+         */
+        public static function save_cloze_dropdown_blanks(int $question_id, array $blanks): void
+        {
+            global $wpdb;
+
+            if ($question_id <= 0) {
+                return;
+            }
+
+            $blank_table = $wpdb->prefix . 'cbt_question_cloze_dropdown_blanks';
+            $option_table = $wpdb->prefix . 'cbt_question_cloze_dropdown_options';
+            $wpdb->delete($option_table, ['question_id' => $question_id], ['%d']);
+            $wpdb->delete($blank_table, ['question_id' => $question_id], ['%d']);
+
+            $now = current_time('mysql');
+            foreach ($blanks as $index => $blank) {
+                if (!is_array($blank)) {
+                    continue;
+                }
+                $blank_key = trim((string) ($blank['blank_key'] ?? ($index + 1)));
+                if ($blank_key === '') {
+                    continue;
+                }
+                $blank_position = (int) ($blank['blank_position'] ?? ($index + 1));
+                if ($blank_position <= 0) {
+                    $blank_position = $index + 1;
+                }
+
+                $inserted = $wpdb->insert(
+                    $blank_table,
+                    [
+                        'question_id' => $question_id,
+                        'blank_key' => $blank_key,
+                        'blank_position' => $blank_position,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    ['%d', '%s', '%d', '%s', '%s']
+                );
+                if ($inserted === false) {
+                    continue;
+                }
+
+                $blank_id = (int) $wpdb->insert_id;
+                foreach ((array) ($blank['options'] ?? []) as $option_index => $option) {
+                    if (!is_array($option)) {
+                        continue;
+                    }
+                    $option_text = sanitize_text_field(trim((string) ($option['option_text'] ?? '')));
+                    if ($option_text === '') {
+                        continue;
+                    }
+                    $option_key = strtoupper(trim((string) ($option['option_key'] ?? '')));
+                    if ($option_key === '') {
+                        $option_key = chr(65 + ($option_index % 26));
+                    }
+                    $option_order = (int) ($option['option_order'] ?? ($option_index + 1));
+                    if ($option_order <= 0) {
+                        $option_order = $option_index + 1;
+                    }
+
+                    $wpdb->insert(
+                        $option_table,
+                        [
+                            'question_id' => $question_id,
+                            'blank_id' => $blank_id,
+                            'option_key' => $option_key,
+                            'option_text' => $option_text,
+                            'is_correct' => ((int) ($option['is_correct'] ?? 0) === 1) ? 1 : 0,
+                            'option_order' => $option_order,
+                            'created_at' => $now,
+                        ],
+                        ['%d', '%d', '%s', '%s', '%d', '%d', '%s']
+                    );
+                }
+            }
+        }
+
+        /**
+         * @return array<int,array<string,mixed>>
+         */
+        public static function get_cloze_dropdown_blanks(int $question_id, bool $include_correct = true): array
+        {
+            global $wpdb;
+
+            if ($question_id <= 0) {
+                return [];
+            }
+
+            $blank_table = $wpdb->prefix . 'cbt_question_cloze_dropdown_blanks';
+            $option_table = $wpdb->prefix . 'cbt_question_cloze_dropdown_options';
+            $blank_rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT id, question_id, blank_key, blank_position
+                     FROM {$blank_table}
+                     WHERE question_id = %d
+                     ORDER BY blank_position ASC, id ASC",
+                    $question_id
+                ),
+                ARRAY_A
+            );
+
+            if (!is_array($blank_rows) || empty($blank_rows)) {
+                return [];
+            }
+
+            $blank_ids = array_values(array_filter(array_map(static fn($row): int => (int) ($row['id'] ?? 0), $blank_rows), static fn(int $id): bool => $id > 0));
+            $options_by_blank = [];
+            if (!empty($blank_ids)) {
+                $blank_ids_sql = implode(',', array_map('intval', $blank_ids));
+                $option_rows = $wpdb->get_results(
+                    "SELECT id, question_id, blank_id, option_key, option_text, is_correct, option_order
+                     FROM {$option_table}
+                     WHERE blank_id IN ({$blank_ids_sql})
+                     ORDER BY blank_id ASC, option_order ASC, id ASC",
+                    ARRAY_A
+                );
+                foreach ((array) $option_rows as $option_row) {
+                    $blank_id = (int) ($option_row['blank_id'] ?? 0);
+                    if ($blank_id <= 0) {
+                        continue;
+                    }
+                    if (!isset($options_by_blank[$blank_id])) {
+                        $options_by_blank[$blank_id] = [];
+                    }
+                    $option = [
+                        'id' => (int) ($option_row['id'] ?? 0),
+                        'option_key' => (string) ($option_row['option_key'] ?? ''),
+                        'option_text' => (string) ($option_row['option_text'] ?? ''),
+                        'option_order' => (int) ($option_row['option_order'] ?? 0),
+                    ];
+                    if ($include_correct) {
+                        $option['is_correct'] = (int) ($option_row['is_correct'] ?? 0);
+                    }
+                    $options_by_blank[$blank_id][] = $option;
+                }
+            }
+
+            $blanks = [];
+            foreach ($blank_rows as $blank_row) {
+                $blank_id = (int) ($blank_row['id'] ?? 0);
+                $blanks[] = [
+                    'id' => $blank_id,
+                    'question_id' => (int) ($blank_row['question_id'] ?? 0),
+                    'blank_key' => (string) ($blank_row['blank_key'] ?? ''),
+                    'blank_position' => (int) ($blank_row['blank_position'] ?? 0),
+                    'options' => $options_by_blank[$blank_id] ?? [],
+                ];
+            }
+
+            return $blanks;
+        }
+
         public static function get_question_type_detail(int $question_id, string $question_type): array
         {
             global $wpdb;
@@ -817,6 +1376,12 @@ final class CBT_Admin_Questions_Helper
                     }
                     if ($question_type === 'ordering') {
                         $detail['correct_option_ids'] = self::get_ordering_correct_option_ids($question_id);
+                    }
+                    if ($question_type === 'matching') {
+                        $detail['items'] = self::get_matching_items($question_id);
+                    }
+                    if ($question_type === 'cloze_dropdown') {
+                        $detail['blanks'] = self::get_cloze_dropdown_blanks($question_id, true);
                     }
                     return $detail;
                 }
@@ -876,6 +1441,23 @@ final class CBT_Admin_Questions_Helper
                     'correct_option_ids' => self::get_ordering_correct_option_ids($question_id),
                 ];
             }
+
+            if ($question_type === 'matching') {
+                return [
+                    'question_id' => $question_id,
+                    'scoring_mode' => 'partial',
+                    'shuffle_choices' => 1,
+                    'items' => self::get_matching_items($question_id),
+                ];
+            }
+
+            if ($question_type === 'cloze_dropdown') {
+                return [
+                    'question_id' => $question_id,
+                    'scoring_mode' => 'partial',
+                    'blanks' => self::get_cloze_dropdown_blanks($question_id, true),
+                ];
+            }
     
             return [];
         }
@@ -933,6 +1515,10 @@ final class CBT_Admin_Questions_Helper
                     return 'Essay';
                 case 'ordering':
                     return 'Ordering';
+                case 'matching':
+                    return 'Matching';
+                case 'cloze_dropdown':
+                    return 'Cloze Dropdown';
                 default:
                     return ucwords(str_replace('_', ' ', $question_type));
             }
@@ -1457,6 +2043,79 @@ CSS;
                 return self::render_admin_student_preview_ordering_options($ordered_options, $show_answer_key);
             }
 
+            if ($question_type === 'matching') {
+                $items = isset($question_detail['items']) && is_array($question_detail['items'])
+                    ? $question_detail['items']
+                    : [];
+                if (empty($items)) {
+                    return '';
+                }
+
+                ob_start();
+                ?>
+                <section class="cbt-admin-student-preview-section">
+                    <strong class="cbt-admin-student-preview-section-title"><?php echo esc_html($show_answer_key ? 'Pasangan Matching' : 'Item Matching'); ?></strong>
+                    <div class="cbt-admin-student-preview-options">
+                        <?php foreach ($items as $item): ?>
+                            <div class="cbt-admin-student-preview-option">
+                                <div class="cbt-admin-student-preview-option-main">
+                                    <span class="cbt-admin-student-preview-option-key"><?php echo esc_html((string) ($item['item_key'] ?? '')); ?></span>
+                                    <div class="cbt-admin-student-preview-option-text cbt-admin-student-preview-richtext">
+                                        <?php echo self::render_editor_html((string) ($item['prompt_text'] ?? '')); ?>
+                                        <?php if ($show_answer_key): ?>
+                                            <div><strong><?php echo esc_html('Pasangan:'); ?></strong> <?php echo esc_html(wp_strip_all_tags((string) ($item['correct_option_text'] ?? ''))); ?></div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+                <?php
+                return trim((string) ob_get_clean());
+            }
+
+            if ($question_type === 'cloze_dropdown') {
+                $blanks = isset($question_detail['blanks']) && is_array($question_detail['blanks'])
+                    ? $question_detail['blanks']
+                    : [];
+                if (empty($blanks)) {
+                    return '';
+                }
+
+                ob_start();
+                ?>
+                <section class="cbt-admin-student-preview-section">
+                    <strong class="cbt-admin-student-preview-section-title"><?php echo esc_html($show_answer_key ? 'Dropdown dan Kunci' : 'Dropdown'); ?></strong>
+                    <div class="cbt-admin-student-preview-options">
+                        <?php foreach ($blanks as $blank): ?>
+                            <div class="cbt-admin-student-preview-option">
+                                <div class="cbt-admin-student-preview-option-main">
+                                    <span class="cbt-admin-student-preview-option-key"><?php echo esc_html((string) ($blank['blank_key'] ?? '')); ?></span>
+                                    <div class="cbt-admin-student-preview-option-text">
+                                        <?php
+                                        $labels = [];
+                                        foreach ((array) ($blank['options'] ?? []) as $option) {
+                                            $label = (string) ($option['option_text'] ?? '');
+                                            if ($show_answer_key && (int) ($option['is_correct'] ?? 0) === 1) {
+                                                $label .= ' (Kunci)';
+                                            }
+                                            if ($label !== '') {
+                                                $labels[] = $label;
+                                            }
+                                        }
+                                        echo esc_html(implode(' | ', $labels));
+                                        ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+                <?php
+                return trim((string) ob_get_clean());
+            }
+
             if (!empty($options)) {
                 return self::render_admin_student_preview_options($options, $show_answer_key);
             }
@@ -1954,6 +2613,40 @@ CSS;
             }
 
             return preg_match('/^[A-H]$/', $token) === 1 ? $token : '';
+        }
+
+        /**
+         * @return string[]
+         */
+        private static function extract_cloze_dropdown_blank_key_tokens(string $question_text): array
+        {
+            $plain = wp_strip_all_tags((string) $question_text);
+            $tokens = [];
+
+            if (preg_match_all('/\[\s*dropdown(?:\s*[_-]?\s*)?([1-8])\s*\]/i', $plain, $matches)) {
+                foreach ((array) ($matches[1] ?? []) as $token) {
+                    $normalized = self::normalize_cloze_dropdown_blank_token((string) $token);
+                    if ($normalized !== '') {
+                        $tokens[] = $normalized;
+                    }
+                }
+            }
+
+            return $tokens;
+        }
+
+        private static function normalize_cloze_dropdown_blank_token(string $token): string
+        {
+            $token = trim($token);
+            if ($token === '') {
+                return '';
+            }
+
+            if (preg_match('/^dropdown(?:\s*[_-]?\s*)?([1-8])$/i', $token, $matches)) {
+                $token = (string) ($matches[1] ?? '');
+            }
+
+            return preg_match('/^[1-8]$/', $token) === 1 ? $token : '';
         }
 
         private static function normalize_option_compare_signature(string $html): string

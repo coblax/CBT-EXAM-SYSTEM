@@ -852,6 +852,14 @@
     vertical-align: middle;
 }
 
+.cbt-cloze-inline-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 4px;
+    vertical-align: middle;
+}
+
 .cbt-short-inline-input.cbt-input {
     width: clamp(88px, 15vw, 168px);
     min-width: 88px;
@@ -859,6 +867,15 @@
     padding: 6px 9px;
     border-radius: 10px;
     text-align: center;
+    font-size: 0.95em;
+}
+
+.cbt-cloze-inline-select.cbt-input {
+    width: clamp(116px, 18vw, 220px);
+    min-width: 116px;
+    min-height: 36px;
+    padding: 6px 28px 6px 9px;
+    border-radius: 10px;
     font-size: 0.95em;
 }
 
@@ -1652,6 +1669,50 @@
     font-weight: 600;
     color: #334155;
     cursor: pointer;
+}
+
+.cbt-matching-wrap {
+    margin-top: 16px;
+    overflow-x: auto;
+}
+
+.cbt-matching-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #d5dee8;
+    background: #fff;
+}
+
+.cbt-matching-table td {
+    border: 1px solid #d5dee8;
+    padding: 10px 12px;
+    vertical-align: top;
+}
+
+.cbt-matching-prompt {
+    font-size: 14px;
+    line-height: 1.55;
+    color: #1f2937;
+    overflow-wrap: anywhere;
+}
+
+.cbt-matching-prompt :where(p, ul, ol) {
+    margin-top: 0;
+    margin-bottom: 0.6em;
+}
+
+.cbt-matching-prompt :where(p, ul, ol):last-child {
+    margin-bottom: 0;
+}
+
+.cbt-matching-choice {
+    width: min(42%, 320px);
+}
+
+.cbt-matching-select.cbt-input {
+    width: 100%;
+    min-height: 38px;
+    padding-right: 30px;
 }
 
 .cbt-tf-matrix-review td.is-match {

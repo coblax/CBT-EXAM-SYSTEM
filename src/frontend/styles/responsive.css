@@ -318,6 +318,11 @@
         gap: 5px;
     }
 
+    .cbt-cloze-inline-field {
+        margin: 2px 3px;
+        gap: 5px;
+    }
+
     .cbt-short-inline-input.cbt-input {
         width: clamp(76px, 30vw, 126px);
         min-width: 76px;
@@ -325,8 +330,41 @@
         padding: 5px 8px;
     }
 
+    .cbt-cloze-inline-select.cbt-input {
+        width: min(72vw, 210px);
+        min-width: 112px;
+        min-height: 32px;
+        padding: 5px 28px 5px 8px;
+    }
+
     .cbt-short-inline-fallback {
         gap: 6px;
+    }
+
+    .cbt-matching-table,
+    .cbt-matching-table tbody,
+    .cbt-matching-table tr,
+    .cbt-matching-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .cbt-matching-table tr {
+        border-bottom: 1px solid #d5dee8;
+    }
+
+    .cbt-matching-table tr:last-child {
+        border-bottom: 0;
+    }
+
+    .cbt-matching-table td {
+        border-width: 0;
+        padding: 8px 10px;
+    }
+
+    .cbt-matching-choice {
+        width: 100%;
+        padding-top: 0 !important;
     }
 
     .cbt-question-actions {
