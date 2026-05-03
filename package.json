@@ -9,6 +9,8 @@
     "dev": "vite",
     "build": "vite build && node bin/check-frontend-budgets.mjs",
     "build:watch": "vite build --watch",
+    "release:check": "npm run build && npm run release:package-check",
+    "release:package-check": "node bin/check-release-package.mjs",
     "release:plugin": "node bin/cbt-release.mjs",
     "test:js": "vitest run",
     "test:js:watch": "vitest",

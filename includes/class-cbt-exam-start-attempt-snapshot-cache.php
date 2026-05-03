@@ -14,6 +14,7 @@ if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
 
 class CBT_Exam_Start_Attempt_Snapshot_Cache
 {
+    private const SNAPSHOT_PAYLOAD_VERSION = 2;
     private const START_REDIS_TTL_SECONDS = 44100;
     private const START_EVENT_REDIS_TTL_SECONDS = 604800;
     private const START_REDIS_DEFAULT_HOST = '127.0.0.1';
@@ -150,6 +151,7 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
                 $stored_signature = is_scalar($decoded['revision_signature'] ?? null)
                     ? (string) $decoded['revision_signature']
                     : '';
+                $stored_payload_version = max(0, (int) ($decoded['snapshot_payload_version'] ?? 0));
                 $expected_signature = self::revision_signature($revision_meta);
                 $question_ids = self::normalize_question_ids($decoded['question_ids'] ?? []);
                 $snapshot_item_count = count($question_ids);
@@ -157,7 +159,12 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
                 $duration_minutes = max(0, (int) ($decoded['duration_minutes'] ?? 0));
                 $show_student_result = !empty($decoded['show_student_result']) ? 1 : 0;
                 $enable_calculator = !empty($decoded['enable_calculator']) ? 1 : 0;
-                $snapshot_valid = $stored_exam_id === $exam_id && $stored_signature === $expected_signature;
+                $snapshot_valid = $stored_exam_id === $exam_id
+                    && $stored_signature === $expected_signature
+                    && $stored_payload_version === self::SNAPSHOT_PAYLOAD_VERSION;
+                if (!$snapshot_valid && $stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION) {
+                    self::write_start_event_marker($exam_id, 'invalid_payload');
+                }
             } else {
                 self::write_start_event_marker($exam_id, 'invalid_payload');
             }
@@ -399,9 +406,17 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
         $stored_signature = is_scalar($decoded['revision_signature'] ?? null)
             ? (string) $decoded['revision_signature']
             : '';
+        $stored_payload_version = max(0, (int) ($decoded['snapshot_payload_version'] ?? 0));
         $expected_signature = self::revision_signature($revision_meta);
-        if ($stored_exam_id !== $exam_id || $stored_signature !== $expected_signature) {
+        if (
+            $stored_exam_id !== $exam_id
+            || $stored_signature !== $expected_signature
+            || $stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION
+        ) {
             $redis->del($storage_key);
+            if ($stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION) {
+                self::write_start_event_marker($exam_id, 'invalid_payload');
+            }
             return null;
         }
 
@@ -428,6 +443,7 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
 
         $storage_key = self::storage_key($exam_id, $revision_meta);
         $encoded_payload = wp_json_encode(array_merge($payload, [
+            'snapshot_payload_version' => self::SNAPSHOT_PAYLOAD_VERSION,
             'exam_id' => $exam_id,
             'revision_signature' => self::revision_signature($revision_meta),
         ]));

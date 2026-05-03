@@ -43,7 +43,49 @@ final class AttemptRuntimeSnapshotCacheTest extends TestCase
         CBT_Attempt_Session_Snapshot_Cache::update_attempt_status(501, 'completed');
         $updated = CBT_Attempt_Session_Snapshot_Cache::get_attempt_snapshot(501, static fn (): array => []);
 
+        self::assertSame(2, (int) ($updated['snapshot_payload_version'] ?? 0));
         self::assertSame('completed', $updated['status']);
+    }
+
+    public function test_attempt_session_snapshot_discards_stale_payload_version(): void
+    {
+        CBT_Attempt_Session_Snapshot_Cache::write_attempt_snapshot(501, [
+            'attempt_id' => 501,
+            'exam_id' => 77,
+            'student_id' => 71,
+            'status' => 'in_progress',
+            'started_at' => '2026-04-04 07:00:00',
+            'duration_minutes' => 90,
+            'question_count' => 8,
+            'question_order_signature' => 'runtime-sig-501',
+        ]);
+
+        $storageKey = 'cbt_attempt_session:attempt:501';
+        $payload = json_decode((string) ($GLOBALS['cbt_test_redis_storage'][$storageKey] ?? ''), true);
+        self::assertIsArray($payload);
+        self::assertSame(2, (int) ($payload['snapshot_payload_version'] ?? 0));
+        unset($payload['snapshot_payload_version']);
+        $GLOBALS['cbt_test_redis_storage'][$storageKey] = wp_json_encode($payload);
+
+        $producerCalls = 0;
+        $rehydrated = CBT_Attempt_Session_Snapshot_Cache::get_attempt_snapshot(501, static function (int $attemptId) use (&$producerCalls): array {
+            $producerCalls++;
+
+            return [
+                'attempt_id' => $attemptId,
+                'exam_id' => 77,
+                'student_id' => 71,
+                'status' => 'in_progress',
+                'started_at' => '2026-04-04 07:00:00',
+                'duration_minutes' => 90,
+                'question_count' => 9,
+                'question_order_signature' => 'runtime-sig-501-new',
+            ];
+        });
+
+        self::assertSame(1, $producerCalls);
+        self::assertSame(9, $rehydrated['question_count']);
+        self::assertSame(2, (int) ($rehydrated['snapshot_payload_version'] ?? 0));
     }
 
     public function test_attempt_contract_snapshot_can_be_cleared(): void
@@ -77,6 +119,53 @@ final class AttemptRuntimeSnapshotCacheTest extends TestCase
         $after_clear = CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot_diagnostics(501);
         self::assertFalse($after_clear['snapshot_exists']);
         self::assertSame('miss', $after_clear['snapshot_status']);
+    }
+
+    public function test_attempt_contract_snapshot_discards_stale_payload_version(): void
+    {
+        CBT_Attempt_Question_Contract_Cache::write_attempt_snapshot(501, [
+            'attempt_id' => 501,
+            'exam_id' => 77,
+            'student_id' => 71,
+            'status' => 'in_progress',
+            'question_order_ids' => [901],
+            'question_number_map' => [901 => 1],
+            'question_order_signature' => 'runtime-sig-501',
+            'question_manifest' => [
+                ['id' => 901, 'question_number' => 1],
+            ],
+            'option_order_map' => [],
+        ]);
+
+        $storageKey = 'cbt_attempt_contract:attempt:501';
+        $payload = json_decode((string) ($GLOBALS['cbt_test_redis_storage'][$storageKey] ?? ''), true);
+        self::assertIsArray($payload);
+        self::assertSame(2, (int) ($payload['snapshot_payload_version'] ?? 0));
+        unset($payload['snapshot_payload_version']);
+        $GLOBALS['cbt_test_redis_storage'][$storageKey] = wp_json_encode($payload);
+
+        $producerCalls = 0;
+        $rehydrated = CBT_Attempt_Question_Contract_Cache::get_attempt_snapshot(501, static function (int $attemptId) use (&$producerCalls): array {
+            $producerCalls++;
+
+            return [
+                'attempt_id' => $attemptId,
+                'exam_id' => 77,
+                'student_id' => 71,
+                'status' => 'in_progress',
+                'question_order_ids' => [903],
+                'question_number_map' => [903 => 1],
+                'question_order_signature' => 'runtime-sig-501-new',
+                'question_manifest' => [
+                    ['id' => 903, 'question_number' => 1],
+                ],
+                'option_order_map' => [],
+            ];
+        });
+
+        self::assertSame(1, $producerCalls);
+        self::assertSame([903], $rehydrated['question_order_ids']);
+        self::assertSame(2, (int) ($rehydrated['snapshot_payload_version'] ?? 0));
     }
 
     private function useFakeAttemptSessionRedis(): void

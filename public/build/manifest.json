@@ -24,34 +24,34 @@
     "file": "assets/frontend-shared-review-BI6mGepo.js",
     "name": "frontend-shared-review"
   },
-  "_frontend-stage-exam-BsOL4Mfi.css": {
-    "file": "assets/frontend-stage-exam-BsOL4Mfi.css",
-    "src": "_frontend-stage-exam-BsOL4Mfi.css"
-  },
-  "_frontend-stage-exam-CNfjQcGx.js": {
-    "file": "assets/frontend-stage-exam-CNfjQcGx.js",
+  "_frontend-stage-exam-B2LS2Csd.js": {
+    "file": "assets/frontend-stage-exam-B2LS2Csd.js",
     "name": "frontend-stage-exam",
     "imports": [
       "_rolldown-runtime-CmsrGqdA.js",
       "_frontend-shared-review-BI6mGepo.js"
     ],
     "css": [
-      "assets/frontend-stage-exam-BsOL4Mfi.css"
+      "assets/frontend-stage-exam-BWpwaw_h.css"
     ]
   },
-  "_frontend-stage-result-CbT0gLnl.css": {
-    "file": "assets/frontend-stage-result-CbT0gLnl.css",
-    "src": "_frontend-stage-result-CbT0gLnl.css"
+  "_frontend-stage-exam-BWpwaw_h.css": {
+    "file": "assets/frontend-stage-exam-BWpwaw_h.css",
+    "src": "_frontend-stage-exam-BWpwaw_h.css"
   },
-  "_frontend-stage-result-WIyC7IuH.js": {
-    "file": "assets/frontend-stage-result-WIyC7IuH.js",
+  "_frontend-stage-result-BF2_Henf.css": {
+    "file": "assets/frontend-stage-result-BF2_Henf.css",
+    "src": "_frontend-stage-result-BF2_Henf.css"
+  },
+  "_frontend-stage-result-DPg5t1Iu.js": {
+    "file": "assets/frontend-stage-result-DPg5t1Iu.js",
     "name": "frontend-stage-result",
     "imports": [
       "_rolldown-runtime-CmsrGqdA.js",
       "_frontend-shared-review-BI6mGepo.js"
     ],
     "css": [
-      "assets/frontend-stage-result-CbT0gLnl.css"
+      "assets/frontend-stage-result-BF2_Henf.css"
     ]
   },
   "_html-BDUDMlpQ.js": {
@@ -426,7 +426,7 @@
     "isDynamicEntry": true
   },
   "src/frontend/app/runtime.js": {
-    "file": "assets/runtime-CdfRUtdE.js",
+    "file": "assets/runtime-CinwhJGi.js",
     "name": "runtime",
     "src": "src/frontend/app/runtime.js",
     "isDynamicEntry": true,
@@ -437,14 +437,14 @@
     "dynamicImports": [
       "_frontend-exam-runtime-CPI_rzw_.js",
       "_math-render-C3q-FVAK.js",
-      "_frontend-stage-exam-CNfjQcGx.js",
-      "_frontend-stage-result-WIyC7IuH.js",
+      "_frontend-stage-exam-B2LS2Csd.js",
+      "_frontend-stage-result-DPg5t1Iu.js",
       "_frontend-feature-calculator-BFaoJj3-.js",
       "src/frontend/app/core/debug-panel.js"
     ]
   },
   "src/frontend/app/supervisor/runtime.js": {
-    "file": "assets/runtime-LhKjLgtP.js",
+    "file": "assets/runtime-Bn0GFdRK.js",
     "name": "runtime",
     "src": "src/frontend/app/supervisor/runtime.js",
     "isDynamicEntry": true,
@@ -454,7 +454,7 @@
     ]
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-Cq4tK0Yv.js",
+    "file": "assets/frontend-core-C0Lb4JPN.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,

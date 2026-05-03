@@ -10,6 +10,7 @@ if (!class_exists('CBT_Cache')) {
 
 class CBT_Attempt_Session_Snapshot_Cache
 {
+    private const SNAPSHOT_PAYLOAD_VERSION = 2;
     private const SNAPSHOT_REDIS_TTL_SECONDS = 44100;
     private const SNAPSHOT_REDIS_DEFAULT_HOST = '127.0.0.1';
     private const SNAPSHOT_REDIS_DEFAULT_PORT = 6379;
@@ -115,9 +116,11 @@ class CBT_Attempt_Session_Snapshot_Cache
             $decoded = json_decode($raw_payload, true);
             if (is_array($decoded)) {
                 $normalized = self::normalize_snapshot_payload($decoded);
+                $payload_version = max(0, (int) ($decoded['snapshot_payload_version'] ?? 0));
                 $snapshot_valid = (int) ($normalized['attempt_id'] ?? 0) === $attempt_id
                     && (int) ($normalized['exam_id'] ?? 0) > 0
-                    && (int) ($normalized['student_id'] ?? 0) > 0;
+                    && (int) ($normalized['student_id'] ?? 0) > 0
+                    && $payload_version === self::SNAPSHOT_PAYLOAD_VERSION;
                 $question_count = (int) ($normalized['question_count'] ?? 0);
                 $question_order_signature = (string) ($normalized['question_order_signature'] ?? '');
                 $status = (string) ($normalized['status'] ?? '');
@@ -277,6 +280,11 @@ class CBT_Attempt_Session_Snapshot_Cache
             return null;
         }
 
+        if (max(0, (int) ($decoded['snapshot_payload_version'] ?? 0)) !== self::SNAPSHOT_PAYLOAD_VERSION) {
+            $redis->del($storage_key);
+            return null;
+        }
+
         $payload = self::normalize_snapshot_payload($decoded);
         if (
             (int) ($payload['attempt_id'] ?? 0) !== $attempt_id
@@ -307,6 +315,7 @@ class CBT_Attempt_Session_Snapshot_Cache
         }
 
         return [
+            'snapshot_payload_version' => self::SNAPSHOT_PAYLOAD_VERSION,
             'attempt_id' => absint($payload['attempt_id'] ?? 0),
             'exam_id' => absint($payload['exam_id'] ?? 0),
             'student_id' => absint($payload['student_id'] ?? 0),

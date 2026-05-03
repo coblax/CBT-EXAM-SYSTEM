@@ -105,6 +105,41 @@ final class ExamStartAttemptSnapshotTest extends TestCase
         self::assertGreaterThanOrEqual(2, count($this->storedRedisKeys()));
     }
 
+    public function test_get_exam_snapshot_discards_stale_payload_version(): void
+    {
+        $producerCalls = 0;
+        $producer = static function (int $examId) use (&$producerCalls): array {
+            $producerCalls++;
+
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [201],
+                'question_count' => 1,
+                'question_number_map' => [201 => 1],
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'duration_minutes' => 60,
+                'show_student_result' => 0,
+                'enable_calculator' => 0,
+                'option_randomization_tokens_by_question' => [],
+            ];
+        };
+
+        CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot(55, $producer);
+        $storageKey = $this->storedRedisKeys()[0] ?? '';
+        self::assertNotSame('', $storageKey);
+        $payload = json_decode((string) ($GLOBALS['cbt_test_redis_storage'][$storageKey] ?? ''), true);
+        self::assertIsArray($payload);
+        self::assertSame(2, (int) ($payload['snapshot_payload_version'] ?? 0));
+        unset($payload['snapshot_payload_version']);
+        $GLOBALS['cbt_test_redis_storage'][$storageKey] = wp_json_encode($payload);
+
+        $second = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot(55, $producer);
+
+        self::assertSame(2, $producerCalls);
+        self::assertSame([201], $second['question_ids']);
+    }
+
     public function test_get_exam_snapshot_diagnostics_reports_ready_snapshot(): void
     {
         CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot(55, static function (int $examId): array {

@@ -424,6 +424,26 @@
     background: #4f46e5;
 }
 
+.cbt-nav-type-badge.is-ord {
+    background: #7c3aed;
+}
+
+.cbt-nav-type-badge.is-match {
+    background: #0f766e;
+}
+
+.cbt-nav-type-badge.is-cloze {
+    background: #be123c;
+}
+
+.cbt-nav-type-badge.is-cat {
+    background: #7c2d12;
+}
+
+.cbt-nav-type-badge.is-table {
+    background: #0369a1;
+}
+
 .cbt-nav-type-badge.is-sa {
     background: #0f766e;
 }

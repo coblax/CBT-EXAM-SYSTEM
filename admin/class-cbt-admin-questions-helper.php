@@ -103,12 +103,18 @@ final class CBT_Admin_Questions_Helper
                 if (is_array($decoded)) {
                     $count = 0;
                     foreach ($decoded as $value) {
-                        if (is_scalar($value) && trim((string) $value) !== '' && (string) $value !== '0') {
+                        if (!is_scalar($value)) {
+                            continue;
+                        }
+                        if ($question_type === 'table_completion' && trim((string) $value) !== '') {
+                            $count++;
+                        } elseif ((int) $value > 0) {
                             $count++;
                         }
                     }
-                    return $count > 0 ? ('Terjawab ' . $count . ' item') : 'Terjawab';
+                    return $count > 0 ? ('Terjawab ' . $count . ' item') : 'Belum dijawab';
                 }
+                return $answer_text === '' ? 'Belum dijawab' : 'Terjawab';
             }
     
             if ($answer_text === '') {
@@ -892,6 +898,56 @@ final class CBT_Admin_Questions_Helper
                 'categorization' => $wpdb->prefix . 'cbt_question_categorization',
                 'table_completion' => $wpdb->prefix . 'cbt_question_table_completion',
             ];
+        }
+
+        /**
+         * @param int[] $question_ids
+         */
+        public static function delete_question_dependents(array $question_ids, bool $include_answers = true): void
+        {
+            global $wpdb;
+
+            $question_ids = array_values(array_unique(array_filter(array_map('absint', $question_ids), static function (int $question_id): bool {
+                return $question_id > 0;
+            })));
+            if (empty($question_ids)) {
+                return;
+            }
+
+            $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+            $tables = [
+                $wpdb->prefix . 'cbt_essay_ai_suggestions',
+                $wpdb->prefix . 'cbt_question_table_completion_cell_options',
+                $wpdb->prefix . 'cbt_question_table_completion_cells',
+                $wpdb->prefix . 'cbt_question_table_completion',
+                $wpdb->prefix . 'cbt_question_categorization_items',
+                $wpdb->prefix . 'cbt_question_categorization',
+                $wpdb->prefix . 'cbt_question_cloze_dropdown_options',
+                $wpdb->prefix . 'cbt_question_cloze_dropdown_blanks',
+                $wpdb->prefix . 'cbt_question_cloze_dropdown',
+                $wpdb->prefix . 'cbt_question_matching_items',
+                $wpdb->prefix . 'cbt_question_matching',
+                $wpdb->prefix . 'cbt_question_ordering_items',
+                $wpdb->prefix . 'cbt_question_ordering',
+                $wpdb->prefix . 'cbt_question_essay',
+                $wpdb->prefix . 'cbt_question_short_answer',
+                $wpdb->prefix . 'cbt_question_true_false',
+                $wpdb->prefix . 'cbt_question_multiple_answer',
+                $wpdb->prefix . 'cbt_question_multiple_choice',
+                $wpdb->prefix . 'cbt_options',
+            ];
+            if ($include_answers) {
+                array_splice($tables, 1, 0, [$wpdb->prefix . 'cbt_answers']);
+            }
+
+            foreach ($tables as $table) {
+                $wpdb->query(
+                    $wpdb->prepare(
+                        "DELETE FROM {$table} WHERE question_id IN ({$placeholders})",
+                        ...$question_ids
+                    )
+                );
+            }
         }
 
         public static function save_question_type_detail(int $question_id, string $question_type, string $correct_text, array $context = []): void

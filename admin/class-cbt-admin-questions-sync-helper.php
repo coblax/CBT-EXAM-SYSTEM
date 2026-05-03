@@ -462,6 +462,7 @@ final class CBT_Admin_Questions_Sync_Helper
             $correct_text = (string) ($source_snapshot['correct_text'] ?? '');
             $explanation = (string) ($source_snapshot['explanation'] ?? '');
             $old_question_type = (string) ($target_snapshot['question_type'] ?? '');
+            $answer_contract_changed = self::question_answer_contract_changed($target_snapshot, $source_snapshot);
     
             $updated = $wpdb->update(
                 $question_table,
@@ -585,6 +586,16 @@ final class CBT_Admin_Questions_Sync_Helper
                 if (class_exists('CBT_Runtime')) {
                     CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, $option_id_map, false, $preserve_option_order);
                 }
+            } elseif (self::question_type_uses_external_object_option_answer_map($question_type) && $answer_contract_changed) {
+                self::remap_question_answer_object_option_ids($target_question_id, $option_id_map, true);
+                if (class_exists('CBT_Runtime')) {
+                    CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, [], true);
+                }
+            } elseif (self::question_type_uses_embedded_object_option_answer_map($question_type) && $answer_contract_changed) {
+                self::clear_question_answer_records($target_question_id, true);
+                if (class_exists('CBT_Runtime')) {
+                    CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, [], true);
+                }
             }
     
             return (int) ($target_snapshot['exam_id'] ?? 0);
@@ -697,6 +708,25 @@ final class CBT_Admin_Questions_Sync_Helper
         private static function question_type_uses_choice_options(string $question_type): bool
         {
             return in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering'], true);
+        }
+
+        private static function question_type_uses_external_object_option_answer_map(string $question_type): bool
+        {
+            return in_array($question_type, ['matching', 'categorization'], true);
+        }
+
+        private static function question_type_uses_embedded_object_option_answer_map(string $question_type): bool
+        {
+            return in_array($question_type, ['cloze_dropdown', 'table_completion'], true);
+        }
+
+        private static function question_answer_contract_changed(array $left, array $right): bool
+        {
+            return
+                (string) ($left['question_type'] ?? '') !== (string) ($right['question_type'] ?? '') ||
+                (string) ($left['correct_text'] ?? '') !== (string) ($right['correct_text'] ?? '') ||
+                (string) ($left['normalized_detail_text'] ?? '') !== (string) ($right['normalized_detail_text'] ?? '') ||
+                self::option_sync_signature((array) ($left['options'] ?? [])) !== self::option_sync_signature((array) ($right['options'] ?? []));
         }
 
         private static function resolve_synced_option_ids_in_snapshot_order(int $question_id, array $desired_options): array
@@ -815,6 +845,89 @@ final class CBT_Admin_Questions_Sync_Helper
                 }
             }
     
+            if (!empty($affected_attempt_ids)) {
+                CBT_Cache::invalidate_attempts(array_values($affected_attempt_ids));
+            }
+        }
+
+        private static function remap_question_answer_object_option_ids(int $question_id, array $option_id_map, bool $force_regrade = false): void
+        {
+            global $wpdb;
+
+            if ($question_id <= 0) {
+                return;
+            }
+
+            $answer_table = $wpdb->prefix . 'cbt_answers';
+            $answer_rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT id, attempt_id, answer_text, is_correct, score_awarded
+                     FROM {$answer_table}
+                     WHERE question_id = %d
+                       AND answer_text IS NOT NULL
+                       AND answer_text <> ''",
+                    $question_id
+                ),
+                ARRAY_A
+            );
+
+            $affected_attempt_ids = [];
+            foreach ((array) $answer_rows as $answer_row) {
+                $answer_id = (int) ($answer_row['id'] ?? 0);
+                if ($answer_id <= 0) {
+                    continue;
+                }
+
+                $decoded = json_decode((string) ($answer_row['answer_text'] ?? ''), true);
+                if (!is_array($decoded)) {
+                    continue;
+                }
+
+                $remapped = [];
+                foreach ($decoded as $key => $value) {
+                    $safe_key = trim((string) $key);
+                    $old_option_id = (int) $value;
+                    $new_option_id = isset($option_id_map[$old_option_id]) ? (int) $option_id_map[$old_option_id] : 0;
+                    if ($safe_key === '' || $old_option_id <= 0 || $new_option_id <= 0) {
+                        continue;
+                    }
+                    $remapped[$safe_key] = $new_option_id;
+                }
+
+                uksort($remapped, static function (string $left, string $right): int {
+                    if (ctype_digit($left) && ctype_digit($right)) {
+                        return ((int) $left) <=> ((int) $right);
+                    }
+                    return strnatcasecmp($left, $right);
+                });
+
+                $next_answer_text = !empty($remapped) ? wp_json_encode($remapped) : null;
+                $current_answer_text = (string) ($answer_row['answer_text'] ?? '');
+                $next_answer_text_string = is_string($next_answer_text) ? $next_answer_text : '';
+                $score_was_graded = $answer_row['is_correct'] !== null || (float) ($answer_row['score_awarded'] ?? 0) !== 0.0;
+                if ($next_answer_text_string === $current_answer_text && (!$force_regrade || !$score_was_graded)) {
+                    continue;
+                }
+
+                $wpdb->update(
+                    $answer_table,
+                    [
+                        'answer_text' => $next_answer_text,
+                        'is_correct' => null,
+                        'score_awarded' => 0,
+                        'updated_at' => current_time('mysql'),
+                    ],
+                    ['id' => $answer_id],
+                    ['%s', '%d', '%f', '%s'],
+                    ['%d']
+                );
+
+                $attempt_id = (int) ($answer_row['attempt_id'] ?? 0);
+                if ($attempt_id > 0) {
+                    $affected_attempt_ids[$attempt_id] = $attempt_id;
+                }
+            }
+
             if (!empty($affected_attempt_ids)) {
                 CBT_Cache::invalidate_attempts(array_values($affected_attempt_ids));
             }

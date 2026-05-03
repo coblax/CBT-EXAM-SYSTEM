@@ -18,6 +18,7 @@ if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
 
 class CBT_Question_Submission_Context_Cache
 {
+    private const SNAPSHOT_PAYLOAD_VERSION = 2;
     private const SNAPSHOT_REDIS_TTL_SECONDS = 44100;
     private const SNAPSHOT_EVENT_REDIS_TTL_SECONDS = 604800;
     private const SNAPSHOT_REDIS_DEFAULT_HOST = '127.0.0.1';
@@ -517,7 +518,7 @@ class CBT_Question_Submission_Context_Cache
                 continue;
             }
 
-            $snapshot = self::sanitize_snapshot($decoded);
+            $snapshot = self::sanitize_snapshot($decoded, true);
             if ($snapshot === null || (int) ($snapshot['id'] ?? 0) !== $question_id) {
                 $redis->del($pointer_key, $storage_key);
                 continue;
@@ -566,6 +567,7 @@ class CBT_Question_Submission_Context_Cache
             $encoded_pointer = wp_json_encode([
                 'question_id' => $question_id,
                 'exam_id' => $exam_id,
+                'snapshot_payload_version' => self::SNAPSHOT_PAYLOAD_VERSION,
                 'catalog_version' => $catalog_version,
                 'exam_version' => $exam_version_cache[$exam_id],
                 'storage_key' => $storage_key,
@@ -832,7 +834,7 @@ class CBT_Question_Submission_Context_Cache
             ];
         }
 
-        $snapshot = self::sanitize_snapshot($decoded);
+        $snapshot = self::sanitize_snapshot($decoded, true);
         $is_valid = is_array($snapshot)
             && (int) ($snapshot['id'] ?? 0) === $question_id
             && (int) ($snapshot['exam_id'] ?? 0) === $exam_id;
@@ -1178,6 +1180,7 @@ class CBT_Question_Submission_Context_Cache
         }
 
         return self::sanitize_snapshot([
+            'snapshot_payload_version' => self::SNAPSHOT_PAYLOAD_VERSION,
             'id' => $question_id,
             'exam_id' => $exam_id,
             'question_type' => $question_type,
@@ -1199,8 +1202,13 @@ class CBT_Question_Submission_Context_Cache
      * @param array<string,mixed> $raw
      * @return array<string,mixed>|null
      */
-    private static function sanitize_snapshot(array $raw): ?array
+    private static function sanitize_snapshot(array $raw, bool $require_payload_version = false): ?array
     {
+        $payload_version = max(0, (int) ($raw['snapshot_payload_version'] ?? 0));
+        if ($require_payload_version && $payload_version !== self::SNAPSHOT_PAYLOAD_VERSION) {
+            return null;
+        }
+
         $question_id = absint($raw['id'] ?? 0);
         $exam_id = absint($raw['exam_id'] ?? 0);
         $question_type = sanitize_key((string) ($raw['question_type'] ?? ''));
@@ -1302,6 +1310,7 @@ class CBT_Question_Submission_Context_Cache
         $table_completion_answers_by_key = self::sanitize_table_completion_answer_key_map($raw['table_completion_answers_by_key'] ?? []);
 
         return [
+            'snapshot_payload_version' => self::SNAPSHOT_PAYLOAD_VERSION,
             'id' => $question_id,
             'exam_id' => $exam_id,
             'question_type' => $question_type,
@@ -1499,6 +1508,7 @@ class CBT_Question_Submission_Context_Cache
         return self::SNAPSHOT_REDIS_PREFIX
             . 'question:' . max(0, $question_id)
             . ':exam:' . max(0, $exam_id)
+            . ':payload:' . self::SNAPSHOT_PAYLOAD_VERSION
             . ':catalog:' . max(1, $catalog_version)
             . ':version:' . max(1, $exam_version);
     }

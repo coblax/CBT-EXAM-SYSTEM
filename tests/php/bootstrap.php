@@ -97,6 +97,13 @@ if (!function_exists('wp_strip_all_tags')) {
     }
 }
 
+if (!function_exists('wp_kses_post')) {
+    function wp_kses_post($data): string
+    {
+        return is_scalar($data) ? (string) $data : '';
+    }
+}
+
 if (!function_exists('wp_json_encode')) {
     function wp_json_encode($value, $flags = 0, $depth = 512): string|false
     {
@@ -142,6 +149,17 @@ if (!function_exists('esc_url_raw')) {
     function esc_url_raw($url, $protocols = null): string
     {
         return is_scalar($url) ? trim((string) $url) : '';
+    }
+}
+
+if (!function_exists('wp_upload_bits')) {
+    function wp_upload_bits($name, $deprecated, $bits, $time = null): array
+    {
+        return [
+            'error' => 'Uploads are disabled in unit tests.',
+            'url' => '',
+            'file' => '',
+        ];
     }
 }
 

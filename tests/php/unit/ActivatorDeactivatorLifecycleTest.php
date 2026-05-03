@@ -42,6 +42,11 @@ final class ActivatorDeactivatorLifecycleTest extends TestCase
             'cbt_question_cloze_dropdown',
             'cbt_question_cloze_dropdown_blanks',
             'cbt_question_cloze_dropdown_options',
+            'cbt_question_categorization',
+            'cbt_question_categorization_items',
+            'cbt_question_table_completion',
+            'cbt_question_table_completion_cells',
+            'cbt_question_table_completion_cell_options',
         ] as $table_name) {
             self::assertStringContainsString('CREATE TABLE wp_' . $table_name . ' (', $schema);
             self::assertStringContainsString('CREATE TABLE {$wpdb->prefix}' . $table_name . ' (', $activator);
@@ -55,10 +60,24 @@ final class ActivatorDeactivatorLifecycleTest extends TestCase
             'fk_cbt_qclozeb_question',
             'fk_cbt_qclozeo_question',
             'fk_cbt_qclozeo_blank',
+            'fk_cbt_qcat_question',
+            'fk_cbt_qcati_question',
+            'fk_cbt_qcati_option',
+            'fk_cbt_qtable_question',
+            'fk_cbt_qtablec_question',
+            'fk_cbt_qtableo_question',
+            'fk_cbt_qtableo_cell',
         ] as $constraint_name) {
             self::assertStringContainsString($constraint_name, $schema);
             self::assertStringContainsString($constraint_name, $activator);
         }
+    }
+
+    public function test_schema_version_was_bumped_for_question_type_detail_upgrade(): void
+    {
+        $activator = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/class-cbt-activator.php');
+
+        self::assertStringContainsString("private const DB_VERSION = '1.6.21';", $activator);
     }
 
     #[RunInSeparateProcess]

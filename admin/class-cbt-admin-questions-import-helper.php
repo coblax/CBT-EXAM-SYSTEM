@@ -5365,7 +5365,9 @@ final class CBT_Admin_Questions_Import_Helper
                             $options_map,
                             $tf_matrix_statement_map,
                             $ordering_item_map,
-                            $matching_left_map
+                            $matching_left_map,
+                            $categorization_item_map,
+                            $table_cell_map
                         );
                     }
                     continue;
@@ -5396,7 +5398,9 @@ final class CBT_Admin_Questions_Import_Helper
                             $options_map,
                             $tf_matrix_statement_map,
                             $ordering_item_map,
-                            $matching_left_map
+                            $matching_left_map,
+                            $categorization_item_map,
+                            $table_cell_map
                         );
                     }
                     continue;
@@ -5707,6 +5711,30 @@ final class CBT_Admin_Questions_Import_Helper
                         $matching_right_map[$item_idx] = ($current === '')
                             ? $line
                             : ($current . ' ' . $line);
+                        continue;
+                    }
+                }
+
+                if (is_array($active_context) && ($active_context[0] ?? '') === 'categorization_item') {
+                    $item_idx = (int) ($active_context[1] ?? 0);
+                    if ($item_idx >= 1 && $item_idx <= 24) {
+                        $current = trim((string) ($categorization_item_map[$item_idx] ?? ''));
+                        $categorization_item_map[$item_idx] = ($current === '')
+                            ? $line
+                            : ($current . '<br />' . $line);
+                        continue;
+                    }
+                }
+
+                if (is_array($active_context) && ($active_context[0] ?? '') === 'table_cell') {
+                    $cell_key = strtoupper((string) ($active_context[1] ?? ''));
+                    $field_key = strtolower((string) ($active_context[2] ?? ''));
+                    if ($cell_key !== '' && $field_key !== '' && isset($table_cell_map[$cell_key]) && is_array($table_cell_map[$cell_key])) {
+                        $current = trim((string) ($table_cell_map[$cell_key][$field_key] ?? ''));
+                        $separator = preg_match('/^(opsi|option)_/', $field_key) === 1 ? ' ' : '<br />';
+                        $table_cell_map[$cell_key][$field_key] = ($current === '')
+                            ? $line
+                            : ($current . $separator . $line);
                         continue;
                     }
                 }
@@ -6818,7 +6846,7 @@ final class CBT_Admin_Questions_Import_Helper
             }
 
             return (bool) preg_match(
-                '/^(jenis_soal|question_type|type|soal|question|pertanyaan|subject_code|kode_mapel|exam_title|judul_exam|ujian|point|points|poin|nilai|pembahasan|explanation|jawaban|answer|correct_answer|jawaban_ke|answer_option|correct_text|rubrik|rubric|rubric_text|(pilihan|opsi|option)_?([1-9]|1[0-2])|(pernyataan|statement|item)_?([1-9]|1[0-2])|(kunci|truth|tf)_?([1-9]|10)|(jawaban|answer|correct)_?([1-9]|10|[a-h])|(kiri|left|prompt)_?([1-9]|1[0-2])|(kanan|right|pasangan|match)_?([1-9]|1[0-2])|dropdown_?([1-8])_?(opsi|option|pilihan)_?([1-9]|1[0-2])|dropdown_?([1-8])_?(jawaban|answer|correct|kunci)|[a-l])$/i',
+                '/^(jenis_soal|question_type|type|soal|question|pertanyaan|subject_code|kode_mapel|exam_title|judul_exam|ujian|point|points|poin|nilai|pembahasan|explanation|jawaban|answer|correct_answer|jawaban_ke|answer_option|correct_text|rubrik|rubric|rubric_text|(pilihan|opsi|option)_?([1-9]|1[0-2])|(pernyataan|statement|item)_?([1-9]|1[0-2])|(kunci|truth|tf)_?([1-9]|10)|(jawaban|answer|correct)_?([1-9]|10|[a-h])|(kiri|left|prompt)_?([1-9]|1[0-2])|(kanan|right|pasangan|match)_?([1-9]|1[0-2])|dropdown_?([1-8])_?(opsi|option|pilihan)_?([1-9]|1[0-2])|dropdown_?([1-8])_?(jawaban|answer|correct|kunci)|(kategori|category)_?([1-8])|item_?([1-9]|1[0-9]|2[0-4])|(kunci|answer|correct)_?([1-9]|1[0-9]|2[0-4])|table_?(rows|cols|columns)|cell_?([a-f][1-8])_?(type|text|jawaban|answer|opsi_[1-6]|option_[1-6])|[a-l])$/i',
                 $line
             );
         }
@@ -6879,7 +6907,9 @@ final class CBT_Admin_Questions_Import_Helper
             array &$options_map,
             array &$tf_matrix_statement_map,
             array &$ordering_item_map,
-            array &$matching_left_map
+            array &$matching_left_map,
+            array &$categorization_item_map,
+            array &$table_cell_map
         ): void {
             if ($html_fragment === '') {
                 return;
@@ -6913,6 +6943,29 @@ final class CBT_Admin_Questions_Import_Helper
                 $item_idx = (int) ($active_context[1] ?? 0);
                 if ($item_idx >= 1 && $item_idx <= 12) {
                     $matching_left_map[$item_idx] = self::append_docx_html_fragment_to_string((string) ($matching_left_map[$item_idx] ?? ''), $html_fragment);
+                    return;
+                }
+            }
+
+            if (is_array($active_context) && ($active_context[0] ?? '') === 'categorization_item') {
+                $item_idx = (int) ($active_context[1] ?? 0);
+                if ($item_idx >= 1 && $item_idx <= 24) {
+                    $categorization_item_map[$item_idx] = self::append_docx_html_fragment_to_string((string) ($categorization_item_map[$item_idx] ?? ''), $html_fragment);
+                    return;
+                }
+            }
+
+            if (is_array($active_context) && ($active_context[0] ?? '') === 'table_cell') {
+                $cell_key = strtoupper((string) ($active_context[1] ?? ''));
+                $field_key = strtolower((string) ($active_context[2] ?? ''));
+                if ($cell_key !== '' && $field_key !== '') {
+                    if (!isset($table_cell_map[$cell_key]) || !is_array($table_cell_map[$cell_key])) {
+                        $table_cell_map[$cell_key] = [];
+                    }
+                    $table_cell_map[$cell_key][$field_key] = self::append_docx_html_fragment_to_string(
+                        (string) ($table_cell_map[$cell_key][$field_key] ?? ''),
+                        $html_fragment
+                    );
                     return;
                 }
             }

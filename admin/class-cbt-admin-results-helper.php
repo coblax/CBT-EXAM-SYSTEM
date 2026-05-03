@@ -462,6 +462,22 @@ final class CBT_Admin_Results_Helper
             }
         }
 
+        if (in_array($question_type, ['matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
+            $answered_count = is_array($answer_row)
+                ? self::count_object_map_answer_values($question_type, $answer_text)
+                : 0;
+            if ($answered_count <= 0) {
+                $status = 'unanswered';
+                $score_awarded = 0.0;
+            } elseif (
+                array_key_exists('is_correct', (array) $answer_row)
+                && $answer_row['is_correct'] !== null
+                && $answer_row['is_correct'] !== ''
+            ) {
+                $status = ((int) $answer_row['is_correct'] === 1) ? 'correct' : 'wrong';
+            }
+        }
+
         return [
             'question_id' => $question_id,
             'question_number' => $question_number,
@@ -483,6 +499,39 @@ final class CBT_Admin_Results_Helper
             'true_false_matrix_submission' => $matrix_submission,
             'detail_note' => '',
         ];
+    }
+
+    private static function count_object_map_answer_values(string $question_type, string $answer_text): int
+    {
+        $answer_text = trim($answer_text);
+        if ($answer_text === '') {
+            return 0;
+        }
+
+        $decoded = json_decode($answer_text, true);
+        if (!is_array($decoded) || empty($decoded)) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($decoded as $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+
+            if ($question_type === 'table_completion') {
+                if (trim((string) $value) !== '') {
+                    $count++;
+                }
+                continue;
+            }
+
+            if ((int) $value > 0) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     /**
@@ -665,6 +714,14 @@ final class CBT_Admin_Results_Helper
                 return 'TF Matrix';
             case 'ordering':
                 return 'Ordering';
+            case 'matching':
+                return 'Matching';
+            case 'cloze_dropdown':
+                return 'Cloze Dropdown';
+            case 'categorization':
+                return 'Categorization';
+            case 'table_completion':
+                return 'Table Completion';
             case 'short_answer':
                 return 'Short Answer';
             case 'essay':

@@ -103,6 +103,128 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
         self::assertGreaterThanOrEqual(2, count($this->storedRedisKeys()));
     }
 
+    public function test_get_exam_payload_discards_stale_payload_version(): void
+    {
+        $producerCalls = 0;
+        $producer = static function (int $examId) use (&$producerCalls): array {
+            $producerCalls++;
+
+            return [
+                [
+                    'id' => 201,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal 1',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [],
+                ],
+            ];
+        };
+
+        CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, $producer);
+        $storageKey = $this->storedRedisKeys()[0] ?? '';
+        self::assertNotSame('', $storageKey);
+        $payload = json_decode((string) ($GLOBALS['cbt_test_redis_storage'][$storageKey] ?? ''), true);
+        self::assertIsArray($payload);
+        self::assertSame(2, (int) ($payload['snapshot_payload_version'] ?? 0));
+        unset($payload['snapshot_payload_version']);
+        $GLOBALS['cbt_test_redis_storage'][$storageKey] = wp_json_encode($payload);
+
+        $second = CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, $producer);
+
+        self::assertSame(2, $producerCalls);
+        self::assertSame(201, $second[0]['id']);
+    }
+
+    public function test_get_exam_payload_redacts_sensitive_keys_for_new_object_map_types(): void
+    {
+        $payload = CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, static function (int $examId): array {
+            return [
+                [
+                    'id' => 301,
+                    'exam_id' => $examId,
+                    'question_text' => 'Matching',
+                    'question_type' => 'matching',
+                    'points' => 5,
+                    'correct_text' => '{"1":9101}',
+                    'options' => [
+                        ['id' => 9101, 'option_key' => 'A', 'option_text' => 'Jakarta', 'is_correct' => 1],
+                    ],
+                    'matching_meta' => [
+                        'items' => [
+                            ['key' => '1', 'text' => 'Ibu kota', 'correct_option_id' => 9101],
+                        ],
+                    ],
+                ],
+                [
+                    'id' => 302,
+                    'exam_id' => $examId,
+                    'question_text' => 'Cloze [DROPDOWN_1]',
+                    'question_type' => 'cloze_dropdown',
+                    'points' => 5,
+                    'cloze_dropdown_meta' => [
+                        'blanks' => [
+                            [
+                                'key' => '1',
+                                'options' => [
+                                    ['id' => 9201, 'option_text' => 'Bandung', 'is_correct' => 0],
+                                    ['id' => 9202, 'option_text' => 'Jakarta', 'is_correct' => 1],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+                [
+                    'id' => 303,
+                    'exam_id' => $examId,
+                    'question_text' => 'Categorization',
+                    'question_type' => 'categorization',
+                    'points' => 5,
+                    'options' => [
+                        ['id' => 9301, 'option_key' => 'A', 'option_text' => 'Mamalia', 'is_correct' => 0],
+                    ],
+                    'categorization_meta' => [
+                        'items' => [
+                            ['key' => '1', 'text' => 'Kucing', 'correct_option_id' => 9301, 'correct_category_index' => 1],
+                        ],
+                    ],
+                ],
+                [
+                    'id' => 304,
+                    'exam_id' => $examId,
+                    'question_text' => 'Table',
+                    'question_type' => 'table_completion',
+                    'points' => 5,
+                    'table_completion_meta' => [
+                        'cells' => [
+                            ['key' => 'A1', 'type' => 'text', 'text' => '', 'correct_text' => 'Tokyo'],
+                            [
+                                'key' => 'B1',
+                                'type' => 'dropdown',
+                                'text' => '',
+                                'options' => [
+                                    ['id' => 9401, 'option_text' => 'Osaka', 'is_correct' => 0],
+                                    ['id' => 9402, 'option_text' => 'Tokyo', 'is_correct' => 1],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ];
+        });
+
+        self::assertCount(4, $payload);
+        foreach ($payload as $question) {
+            self::assertDeliveryPayloadDoesNotContainSensitiveKeys($question);
+        }
+
+        $storageKey = $this->storedRedisKeys()[0] ?? '';
+        self::assertNotSame('', $storageKey);
+        $cached = json_decode((string) ($GLOBALS['cbt_test_redis_storage'][$storageKey] ?? ''), true);
+        self::assertIsArray($cached);
+        self::assertDeliveryPayloadDoesNotContainSensitiveKeys($cached);
+    }
+
     public function test_get_exam_payload_falls_back_to_producer_when_redis_is_unavailable(): void
     {
         $this->setDeliveryRedisUnavailable();
@@ -403,6 +525,40 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
         self::assertFalse($unavailableRepair['success']);
         self::assertSame('unavailable', $unavailableRepair['diagnostics']['snapshot_status']);
         self::assertSame('redis_unavailable', $unavailableRepair['diagnostics']['snapshot_miss_reason']);
+    }
+
+    private static function assertDeliveryPayloadDoesNotContainSensitiveKeys(array $payload): void
+    {
+        $sensitiveKeys = [
+            'correct_text',
+            'short_answer_correct_text',
+            'is_correct',
+            'correct_value',
+            'correct_values',
+            'correct_option_id',
+            'correct_option_ids',
+            'correct_option_ids_by_key',
+            'correct_option_key',
+            'correct_option_text',
+            'correct_category_index',
+            'correct_position',
+            'ordering_correct_option_ids',
+            'true_false_correct_value',
+            'true_false_option_value_by_id',
+            'short_answer_values',
+            'true_false_matrix_answers',
+            'matching_correct_option_ids_by_key',
+            'cloze_dropdown_correct_option_ids_by_key',
+            'categorization_correct_option_ids_by_key',
+            'table_completion_answers_by_key',
+        ];
+
+        foreach ($payload as $key => $value) {
+            self::assertNotContains((string) $key, $sensitiveKeys);
+            if (is_array($value)) {
+                self::assertDeliveryPayloadDoesNotContainSensitiveKeys($value);
+            }
+        }
     }
 
     private function useFakeDeliveryRedis(): void

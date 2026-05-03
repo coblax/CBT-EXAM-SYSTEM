@@ -1214,6 +1214,41 @@ final class CBT_Admin_Results_Service
     }
 
     /**
+     * @param int[] $attempt_ids
+     */
+    private static function delete_attempt_answers(array $attempt_ids): bool
+    {
+        global $wpdb;
+
+        $attempt_ids = array_values(array_unique(array_filter(array_map('absint', $attempt_ids), static function (int $attempt_id): bool {
+            return $attempt_id > 0;
+        })));
+        if (empty($attempt_ids)) {
+            return true;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($attempt_ids), '%d'));
+        $answer_table = $wpdb->prefix . 'cbt_answers';
+        $essay_ai_table = $wpdb->prefix . 'cbt_essay_ai_suggestions';
+
+        $wpdb->query(
+            $wpdb->prepare(
+                "DELETE FROM {$essay_ai_table} WHERE attempt_id IN ({$placeholders})",
+                ...$attempt_ids
+            )
+        );
+
+        $answer_result = $wpdb->query(
+            $wpdb->prepare(
+                "DELETE FROM {$answer_table} WHERE attempt_id IN ({$placeholders})",
+                ...$attempt_ids
+            )
+        );
+
+        return $answer_result !== false;
+    }
+
+    /**
      * @return array<string,mixed>|null
      */
     private static function get_results_bulk_job_state(string $token): ?array
@@ -1930,6 +1965,9 @@ final class CBT_Admin_Results_Service
             $reset_result = $wpdb->query($reset_sql);
             if ($reset_result === false) {
                 return new WP_Error('results_bulk_reset_failed', 'Gagal melakukan reset attempt untuk batch ini.');
+            }
+            if (!self::delete_attempt_answers($eligible_attempt_ids)) {
+                return new WP_Error('results_bulk_reset_answer_cleanup_failed', 'Attempt berhasil di-reset, tetapi jawaban lama gagal dibersihkan.');
             }
 
             if (class_exists('CBT_Runtime')) {
@@ -4037,6 +4075,9 @@ final class CBT_Admin_Results_Service
 
         if ($updated === false) {
             $redirect_with(null, 'Gagal melakukan reset attempt.');
+        }
+        if (!self::delete_attempt_answers([$attempt_id])) {
+            $redirect_with(null, 'Attempt berhasil di-reset, tetapi jawaban lama gagal dibersihkan.');
         }
 
         if (class_exists('CBT_Runtime')) {

@@ -60,6 +60,33 @@ final class QuestionSubmissionContextSnapshotTest extends TestCase
         self::assertSame($snapshot['correct_option_ids'], $rehydrated['correct_option_ids']);
     }
 
+    public function test_get_snapshot_discards_stale_payload_version_and_rehydrates_from_db(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionSubmissionContextSnapshotFakeWpdb();
+
+        $snapshot = CBT_Question_Submission_Context_Cache::get_snapshot(201);
+        self::assertSame(1, $wpdb->questionHydrateCalls);
+        self::assertSame(2, (int) ($snapshot['snapshot_payload_version'] ?? 0));
+
+        foreach ($this->storedRedisKeys() as $key) {
+            if (strpos($key, 'cbt_submit_context:question:201:') !== 0) {
+                continue;
+            }
+
+            $payload = json_decode((string) ($GLOBALS['cbt_test_redis_storage'][$key] ?? ''), true);
+            self::assertIsArray($payload);
+            unset($payload['snapshot_payload_version']);
+            $GLOBALS['cbt_test_redis_storage'][$key] = wp_json_encode($payload);
+        }
+
+        $rehydrated = CBT_Question_Submission_Context_Cache::get_snapshot(201);
+
+        self::assertSame(2, $wpdb->questionHydrateCalls);
+        self::assertSame($snapshot['correct_option_ids'], $rehydrated['correct_option_ids']);
+        self::assertSame(2, (int) ($rehydrated['snapshot_payload_version'] ?? 0));
+    }
+
     public function test_get_snapshot_falls_back_to_db_when_redis_is_unavailable(): void
     {
         global $wpdb;
@@ -72,6 +99,38 @@ final class QuestionSubmissionContextSnapshotTest extends TestCase
         self::assertSame(1, $snapshot['true_false_correct_value']);
         self::assertSame(1, $wpdb->questionHydrateCalls);
         self::assertSame([], $this->storedRedisKeys());
+    }
+
+    public function test_get_snapshots_hydrates_object_map_keys_for_new_question_types(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionSubmissionContextSnapshotFakeWpdb();
+
+        $snapshots = CBT_Question_Submission_Context_Cache::get_snapshots([204, 205, 206, 207]);
+
+        self::assertSame([9102, 9101], array_values($snapshots[204]['matching_correct_option_ids_by_key']));
+        self::assertSame(['1' => 9102, '2' => 9101], $snapshots[204]['matching_correct_option_ids_by_key']);
+        self::assertSame(['1' => 9202, '2' => 9203], $snapshots[205]['cloze_dropdown_correct_option_ids_by_key']);
+        self::assertSame(['1' => 9301, '2' => 9302], $snapshots[206]['categorization_correct_option_ids_by_key']);
+        self::assertSame(
+            [
+                'A1' => [
+                    'cell_type' => 'text',
+                    'correct_values' => ['Tokyo', 'TOKYO'],
+                ],
+                'B1' => [
+                    'cell_type' => 'dropdown',
+                    'correct_option_id' => 9402,
+                ],
+            ],
+            $snapshots[207]['table_completion_answers_by_key']
+        );
+
+        foreach ($snapshots as $snapshot) {
+            self::assertSame(2, (int) ($snapshot['snapshot_payload_version'] ?? 0));
+            self::assertArrayNotHasKey('correct_text', $snapshot);
+            self::assertArrayNotHasKey('option_text', $snapshot);
+        }
     }
 
     public function test_warm_exam_snapshots_reports_ready_counts_and_preview_items(): void
@@ -268,6 +327,27 @@ final class QuestionSubmissionContextSnapshotFakeWpdb
     /** @var array<int,array<int,array<string,mixed>>> */
     private array $optionsByQuestion;
 
+    /** @var array<int,array<int,array<string,mixed>>> */
+    private array $matchingItemsByQuestion;
+
+    /** @var array<int,array<int,array<string,mixed>>> */
+    private array $clozeBlanksByQuestion;
+
+    /** @var array<int,array<int,array<string,mixed>>> */
+    private array $clozeOptionsByBlank;
+
+    /** @var array<int,array<int,array<string,mixed>>> */
+    private array $categorizationItemsByQuestion;
+
+    /** @var array<int,array<string,mixed>> */
+    private array $tableCompletionDetailByQuestion;
+
+    /** @var array<int,array<int,array<string,mixed>>> */
+    private array $tableCompletionCellsByQuestion;
+
+    /** @var array<int,array<int,array<string,mixed>>> */
+    private array $tableCompletionOptionsByCell;
+
     public function __construct()
     {
         $this->questionRows = [
@@ -298,6 +378,42 @@ final class QuestionSubmissionContextSnapshotFakeWpdb
                 'true_false_correct_value' => 1,
                 'short_answer_correct_text' => null,
             ],
+            204 => [
+                'id' => 204,
+                'exam_id' => 57,
+                'question_type' => 'matching',
+                'points' => 4,
+                'correct_text' => '{"1":9102,"2":9101}',
+                'true_false_correct_value' => null,
+                'short_answer_correct_text' => null,
+            ],
+            205 => [
+                'id' => 205,
+                'exam_id' => 57,
+                'question_type' => 'cloze_dropdown',
+                'points' => 4,
+                'correct_text' => '{"1":9202,"2":9203}',
+                'true_false_correct_value' => null,
+                'short_answer_correct_text' => null,
+            ],
+            206 => [
+                'id' => 206,
+                'exam_id' => 57,
+                'question_type' => 'categorization',
+                'points' => 4,
+                'correct_text' => '{"1":9301,"2":9302}',
+                'true_false_correct_value' => null,
+                'short_answer_correct_text' => null,
+            ],
+            207 => [
+                'id' => 207,
+                'exam_id' => 57,
+                'question_type' => 'table_completion',
+                'points' => 4,
+                'correct_text' => '{"A1":"Tokyo","B1":9402}',
+                'true_false_correct_value' => null,
+                'short_answer_correct_text' => null,
+            ],
         ];
 
         $this->optionsByQuestion = [
@@ -309,7 +425,87 @@ final class QuestionSubmissionContextSnapshotFakeWpdb
                 ['id' => 9010, 'question_id' => 203, 'option_text' => 'Benar', 'is_correct' => 1],
                 ['id' => 9011, 'question_id' => 203, 'option_text' => 'Salah', 'is_correct' => 0],
             ],
+            204 => [
+                ['id' => 9101, 'question_id' => 204, 'option_text' => 'Bandung', 'is_correct' => 0],
+                ['id' => 9102, 'question_id' => 204, 'option_text' => 'Jakarta', 'is_correct' => 0],
+            ],
+            206 => [
+                ['id' => 9301, 'question_id' => 206, 'option_text' => 'Mamalia', 'is_correct' => 0],
+                ['id' => 9302, 'question_id' => 206, 'option_text' => 'Reptil', 'is_correct' => 0],
+            ],
         ];
+
+        $this->matchingItemsByQuestion = [
+            204 => [
+                ['id' => 1, 'question_id' => 204, 'item_key' => '1', 'item_position' => 1, 'prompt_text' => 'Ibu kota Indonesia', 'correct_option_id' => 9102],
+                ['id' => 2, 'question_id' => 204, 'item_key' => '2', 'item_position' => 2, 'prompt_text' => 'Ibu kota Jawa Barat', 'correct_option_id' => 9101],
+            ],
+        ];
+
+        $this->clozeBlanksByQuestion = [
+            205 => [
+                ['id' => 701, 'question_id' => 205, 'blank_key' => '1', 'blank_position' => 1],
+                ['id' => 702, 'question_id' => 205, 'blank_key' => '2', 'blank_position' => 2],
+            ],
+        ];
+
+        $this->clozeOptionsByBlank = [
+            701 => [
+                ['id' => 9201, 'question_id' => 205, 'blank_id' => 701, 'option_key' => 'A', 'option_text' => 'Bandung', 'is_correct' => 0, 'option_order' => 1],
+                ['id' => 9202, 'question_id' => 205, 'blank_id' => 701, 'option_key' => 'B', 'option_text' => 'Jakarta', 'is_correct' => 1, 'option_order' => 2],
+            ],
+            702 => [
+                ['id' => 9203, 'question_id' => 205, 'blank_id' => 702, 'option_key' => 'A', 'option_text' => 'Benar', 'is_correct' => 1, 'option_order' => 1],
+                ['id' => 9204, 'question_id' => 205, 'blank_id' => 702, 'option_key' => 'B', 'option_text' => 'Salah', 'is_correct' => 0, 'option_order' => 2],
+            ],
+        ];
+
+        $this->categorizationItemsByQuestion = [
+            206 => [
+                ['id' => 1, 'question_id' => 206, 'item_key' => '1', 'item_position' => 1, 'item_text' => 'Kucing', 'correct_option_id' => 9301],
+                ['id' => 2, 'question_id' => 206, 'item_key' => '2', 'item_position' => 2, 'item_text' => 'Ular', 'correct_option_id' => 9302],
+            ],
+        ];
+
+        $this->tableCompletionDetailByQuestion = [
+            207 => ['question_id' => 207, 'scoring_mode' => 'partial', 'row_count' => 1, 'column_count' => 2],
+        ];
+
+        $this->tableCompletionCellsByQuestion = [
+            207 => [
+                ['id' => 801, 'question_id' => 207, 'cell_key' => 'A1', 'row_position' => 1, 'column_position' => 1, 'cell_type' => 'text', 'cell_text' => '', 'correct_text' => '["Tokyo","TOKYO"]'],
+                ['id' => 802, 'question_id' => 207, 'cell_key' => 'B1', 'row_position' => 1, 'column_position' => 2, 'cell_type' => 'dropdown', 'cell_text' => '', 'correct_text' => ''],
+            ],
+        ];
+
+        $this->tableCompletionOptionsByCell = [
+            802 => [
+                ['id' => 9401, 'question_id' => 207, 'cell_id' => 802, 'option_key' => 'A', 'option_text' => 'Osaka', 'is_correct' => 0, 'option_order' => 1],
+                ['id' => 9402, 'question_id' => 207, 'cell_id' => 802, 'option_key' => 'B', 'option_text' => 'Tokyo', 'is_correct' => 1, 'option_order' => 2],
+            ],
+        ];
+    }
+
+    public function prepare($query, ...$args): string
+    {
+        $prepared = (string) $query;
+        foreach ($args as $arg) {
+            $replacement = is_int($arg) ? (string) $arg : "'" . str_replace("'", "''", (string) $arg) . "'";
+            $prepared = preg_replace('/%[ds]/', $replacement, $prepared, 1) ?? $prepared;
+        }
+        return $prepared;
+    }
+
+    /** @param array<string,mixed>|string $prepared */
+    public function get_row($prepared, $output = null): ?array
+    {
+        $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
+        if (strpos($query, 'FROM wp_cbt_question_table_completion') !== false) {
+            $questionId = $this->extractQuestionIdEquals($query);
+            return $this->tableCompletionDetailByQuestion[$questionId] ?? null;
+        }
+
+        return null;
     }
 
     /** @param array<string,mixed>|string $prepared */
@@ -348,6 +544,42 @@ final class QuestionSubmissionContextSnapshotFakeWpdb
             return $rows;
         }
 
+        if (strpos($query, 'FROM wp_cbt_question_matching_items') !== false) {
+            return $this->matchingItemsByQuestion[$this->extractQuestionIdEquals($query)] ?? [];
+        }
+
+        if (strpos($query, 'FROM wp_cbt_question_cloze_dropdown_blanks') !== false) {
+            return $this->clozeBlanksByQuestion[$this->extractQuestionIdEquals($query)] ?? [];
+        }
+
+        if (strpos($query, 'FROM wp_cbt_question_cloze_dropdown_options') !== false) {
+            $rows = [];
+            foreach ($this->extractIdsFromInClause($query) as $blankId) {
+                foreach ($this->clozeOptionsByBlank[$blankId] ?? [] as $optionRow) {
+                    $rows[] = $optionRow;
+                }
+            }
+            return $rows;
+        }
+
+        if (strpos($query, 'FROM wp_cbt_question_categorization_items') !== false) {
+            return $this->categorizationItemsByQuestion[$this->extractQuestionIdEquals($query)] ?? [];
+        }
+
+        if (strpos($query, 'FROM wp_cbt_question_table_completion_cells') !== false) {
+            return $this->tableCompletionCellsByQuestion[$this->extractQuestionIdEquals($query)] ?? [];
+        }
+
+        if (strpos($query, 'FROM wp_cbt_question_table_completion_cell_options') !== false) {
+            $rows = [];
+            foreach ($this->extractIdsFromInClause($query) as $cellId) {
+                foreach ($this->tableCompletionOptionsByCell[$cellId] ?? [] as $optionRow) {
+                    $rows[] = $optionRow;
+                }
+            }
+            return $rows;
+        }
+
         if (strpos($query, 'FROM wp_cbt_options') !== false) {
             $this->optionHydrateCalls++;
             $ids = $this->extractIdsFromInClause($query);
@@ -377,5 +609,14 @@ final class QuestionSubmissionContextSnapshotFakeWpdb
         return array_values(array_filter(array_map('intval', $parts), static function (int $value): bool {
             return $value > 0;
         }));
+    }
+
+    private function extractQuestionIdEquals(string $query): int
+    {
+        if (preg_match('/question_id\s*=\s*(\d+)/', $query, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return 0;
     }
 }

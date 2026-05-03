@@ -52,6 +52,7 @@ final class MaintenanceModularizationTest extends TestCase
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-auth.php';
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-branding-settings.php';
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-questions-helper.php';
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-questions-import-helper.php';
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-maintenance-service.php';
 
         global $wpdb;
@@ -105,8 +106,13 @@ final class MaintenanceModularizationTest extends TestCase
         self::assertSame('medium', $context['selected_seed_preset']);
         self::assertSame('Medium', $context['selected_seed_preset_data']['label']);
         self::assertSame(5, $context['selected_seed_preset_data']['subjects']);
-        self::assertSame(17, $context['selected_seed_preset_data']['exams']);
-        self::assertSame(750, $context['selected_seed_preset_data']['questions']);
+        self::assertSame(22, $context['selected_seed_preset_data']['exams']);
+        self::assertSame(1100, $context['selected_seed_preset_data']['questions']);
+        self::assertSame(100, $context['selected_seed_preset_data']['questions_per_type']);
+        self::assertCount(11, $context['selected_seed_question_type_counts']);
+        foreach ($context['selected_seed_question_type_counts'] as $questionCount) {
+            self::assertSame(100, $questionCount);
+        }
         self::assertSame('GENERATE TEST DATA', $context['test_data_seed_confirm_phrase']);
         self::assertSame('Skills39', $context['test_data_seed_default_password']);
         self::assertNotSame('{}', $context['seed_presets_json']);
@@ -122,12 +128,15 @@ final class MaintenanceModularizationTest extends TestCase
         self::assertSame(5, $context['seed_presets']['small']['subjects']);
         self::assertSame(5, $context['seed_presets']['medium']['subjects']);
         self::assertSame(5, $context['seed_presets']['large']['subjects']);
-        self::assertSame(17, $context['seed_presets']['small']['exams']);
-        self::assertSame(17, $context['seed_presets']['medium']['exams']);
-        self::assertSame(17, $context['seed_presets']['large']['exams']);
-        self::assertSame(200, $context['seed_presets']['small']['questions']);
-        self::assertSame(750, $context['seed_presets']['medium']['questions']);
-        self::assertSame(2500, $context['seed_presets']['large']['questions']);
+        self::assertSame(22, $context['seed_presets']['small']['exams']);
+        self::assertSame(22, $context['seed_presets']['medium']['exams']);
+        self::assertSame(22, $context['seed_presets']['large']['exams']);
+        self::assertSame(660, $context['seed_presets']['small']['questions']);
+        self::assertSame(1100, $context['seed_presets']['medium']['questions']);
+        self::assertSame(2200, $context['seed_presets']['large']['questions']);
+        self::assertSame(60, $context['seed_presets']['small']['questions_per_type']);
+        self::assertSame(100, $context['seed_presets']['medium']['questions_per_type']);
+        self::assertSame(200, $context['seed_presets']['large']['questions_per_type']);
     }
 
     #[RunInSeparateProcess]
@@ -231,12 +240,87 @@ final class MaintenanceModularizationTest extends TestCase
 
         ksort($subjectCounts);
         self::assertSame([
-            1 => 150,
-            2 => 150,
-            3 => 150,
-            4 => 150,
-            5 => 150,
+            1 => 220,
+            2 => 220,
+            3 => 220,
+            4 => 220,
+            5 => 220,
         ], $subjectCounts);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_builds_type_exam_profiles_and_mixed_profile(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $method = $service->getMethod('build_test_data_seed_exam_profiles');
+        $method->setAccessible(true);
+
+        $profiles = $method->invoke(null, 'small', 22);
+        $profileKeys = array_map(static fn(array $profile): string => (string) $profile['profile'], $profiles);
+
+        self::assertCount(22, $profiles);
+        self::assertContains('type_all_multiple_choice', $profileKeys);
+        self::assertContains('type_all_matching', $profileKeys);
+        self::assertContains('type_all_cloze_dropdown', $profileKeys);
+        self::assertContains('type_all_categorization', $profileKeys);
+        self::assertContains('type_all_table_completion', $profileKeys);
+        self::assertContains('mixed_50', $profileKeys);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_sync_source_selection_uses_all_type_questions_for_type_exam(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $method = $service->getMethod('build_test_data_seed_sync_source_question_ids_for_exam');
+        $method->setAccessible(true);
+
+        $selectedIds = $method->invoke(
+            null,
+            [
+                'id' => 91,
+                'subject_id' => 1,
+                'seed_profile' => 'type_all_matching',
+                'seed_profile_question_type' => 'matching',
+            ],
+            [],
+            [],
+            [],
+            [
+                'matching' => [101, 102, 103, 104],
+                'multiple_choice' => [1, 2, 3, 4],
+            ],
+            'small'
+        );
+
+        self::assertSame([101, 102, 103, 104], array_values($selectedIds));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_sync_source_selection_uses_half_per_type_for_mixed_exam(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $method = $service->getMethod('build_test_data_seed_sync_source_question_ids_for_exam');
+        $method->setAccessible(true);
+
+        $selectedIds = $method->invoke(
+            null,
+            [
+                'id' => 92,
+                'subject_id' => 1,
+                'seed_profile' => 'mixed_50',
+                'seed_profile_question_type' => '',
+            ],
+            [],
+            [],
+            [],
+            [
+                'multiple_choice' => [1, 2, 3, 4],
+                'matching' => [101, 102, 103, 104, 105, 106],
+            ],
+            'small'
+        );
+
+        self::assertSame([1, 2, 101, 102, 103], array_values($selectedIds));
     }
 
     #[RunInSeparateProcess]
@@ -386,6 +470,188 @@ final class MaintenanceModularizationTest extends TestCase
         self::assertStringContainsString('Pernyataan 1.', (string) $tfmRow['correct_text']);
         self::assertStringContainsString('class="cbt-math"', (string) $tfmRow['correct_text']);
         self::assertStringContainsString('|true', (string) $tfmRow['correct_text']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_generates_valid_rows_for_new_question_types(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $method = $service->getMethod('build_test_data_seed_bank_question_row');
+        $method->setAccessible(true);
+
+        $exams = [
+            ['id' => 201, 'subject_id' => 1, 'seed_profile' => 'type_all_ordering', 'seed_profile_question_type' => 'ordering'],
+            ['id' => 202, 'subject_id' => 1, 'seed_profile' => 'type_all_matching', 'seed_profile_question_type' => 'matching'],
+            ['id' => 203, 'subject_id' => 1, 'seed_profile' => 'type_all_cloze_dropdown', 'seed_profile_question_type' => 'cloze_dropdown'],
+            ['id' => 204, 'subject_id' => 1, 'seed_profile' => 'type_all_categorization', 'seed_profile_question_type' => 'categorization'],
+            ['id' => 205, 'subject_id' => 1, 'seed_profile' => 'type_all_table_completion', 'seed_profile_question_type' => 'table_completion'],
+        ];
+        $bankExams = [
+            1 => ['id' => 301, 'subject_id' => 1, 'subject_name' => 'TEST Subject 01', 'image_bucket' => 'mathematics'],
+            2 => ['id' => 302, 'subject_id' => 2, 'subject_name' => 'TEST Subject 02', 'image_bucket' => 'physics'],
+        ];
+        $sourceMap = [];
+
+        $orderingRow = $method->invokeArgs(null, [360, $exams, $bankExams, 'small', &$sourceMap]);
+        $orderingOptionsRaw = \CBT_Admin_Questions_Import_Helper::build_ordering_options_raw_from_import((string) $orderingRow['options']);
+        self::assertSame('ordering', $orderingRow['question_type']);
+        self::assertSame('', \CBT_Admin_Questions_Helper::validate_ordering_options(\CBT_Admin_Questions_Helper::parse_options($orderingOptionsRaw)));
+
+        $matchingRow = $method->invokeArgs(null, [420, $exams, $bankExams, 'small', &$sourceMap]);
+        self::assertSame('matching', $matchingRow['question_type']);
+        self::assertSame('', \CBT_Admin_Questions_Helper::validate_matching_items((array) $matchingRow['matching_items']));
+
+        $clozeRow = $method->invokeArgs(null, [480, $exams, $bankExams, 'small', &$sourceMap]);
+        self::assertSame('cloze_dropdown', $clozeRow['question_type']);
+        self::assertSame('', \CBT_Admin_Questions_Helper::validate_cloze_dropdown_definition((string) $clozeRow['question_text'], (array) $clozeRow['cloze_blanks']));
+
+        $categorizationRow = $method->invokeArgs(null, [540, $exams, $bankExams, 'small', &$sourceMap]);
+        self::assertSame('categorization', $categorizationRow['question_type']);
+        self::assertSame('', \CBT_Admin_Questions_Helper::validate_categorization_definition(
+            (array) $categorizationRow['categorization_categories'],
+            (array) $categorizationRow['categorization_items']
+        ));
+
+        $tableRow = $method->invokeArgs(null, [600, $exams, $bankExams, 'small', &$sourceMap]);
+        self::assertSame('table_completion', $tableRow['question_type']);
+        self::assertSame('', \CBT_Admin_Questions_Helper::validate_table_completion_definition((array) $tableRow['table_completion']));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_seed_service_cycles_size_variants_for_bulk_question_types(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $method = $service->getMethod('build_test_data_seed_bank_question_row');
+        $method->setAccessible(true);
+
+        $types = [
+            'multiple_choice',
+            'multiple_answer',
+            'true_false',
+            'true_false_matrix',
+            'short_answer',
+            'essay',
+            'ordering',
+            'matching',
+            'cloze_dropdown',
+            'categorization',
+            'table_completion',
+        ];
+        $exams = [];
+        foreach ($types as $idx => $type) {
+            $exams[] = [
+                'id' => 200 + $idx,
+                'subject_id' => 1,
+                'seed_profile' => 'type_all_' . $type,
+                'seed_profile_question_type' => $type,
+            ];
+        }
+        $bankExams = [
+            1 => ['id' => 301, 'subject_id' => 1, 'subject_name' => 'TEST Subject 01', 'image_bucket' => 'mathematics'],
+        ];
+        $sourceMap = [];
+        $uniqueInts = static function (array $values): array {
+            $values = array_values(array_unique(array_map('intval', $values)));
+            sort($values);
+
+            return $values;
+        };
+        $optionCount = static function (array $row): int {
+            return count(array_values(array_filter(explode('||', (string) ($row['options'] ?? '')), static fn(string $value): bool => trim($value) !== '')));
+        };
+        $rowFor = function (string $type, int $variantOffset) use ($types, $method, $bankExams, &$sourceMap): array {
+            $typeIndex = array_search($type, $types, true);
+            self::assertIsInt($typeIndex);
+            $offset = ($typeIndex * 60) + $variantOffset;
+
+            return $method->invokeArgs(null, [$offset, [], $bankExams, 'small', &$sourceMap]);
+        };
+
+        $mcOptionCounts = [];
+        for ($idx = 0; $idx < 3; $idx++) {
+            $mcOptionCounts[] = $optionCount($rowFor('multiple_choice', $idx));
+        }
+        self::assertSame([3, 4, 5], $uniqueInts($mcOptionCounts));
+
+        $maOptionCounts = [];
+        for ($idx = 0; $idx < 10; $idx++) {
+            $maOptionCounts[] = $optionCount($rowFor('multiple_answer', $idx));
+        }
+        self::assertSame(range(3, 12), $uniqueInts($maOptionCounts));
+
+        $tfMatrixCounts = [];
+        for ($idx = 0; $idx < 9; $idx++) {
+            $row = $rowFor('true_false_matrix', $idx);
+            $tfMatrixCounts[] = count(\CBT_Admin_Questions_Helper::normalize_true_false_matrix_config((string) $row['correct_text']));
+        }
+        self::assertSame(range(2, 10), $uniqueInts($tfMatrixCounts));
+
+        $shortAnswerCounts = [];
+        for ($idx = 0; $idx < 8; $idx++) {
+            $row = $rowFor('short_answer', $idx);
+            preg_match_all('/\\[INPUT_(\\d+)\\]/', (string) $row['question_text'], $matches);
+            $shortAnswerCounts[] = !empty($matches[1]) ? max(array_map('intval', $matches[1])) : 0;
+        }
+        self::assertSame(range(1, 8), $uniqueInts($shortAnswerCounts));
+
+        $orderingCounts = [];
+        $matchingCounts = [];
+        for ($idx = 0; $idx < 11; $idx++) {
+            $orderingCounts[] = $optionCount($rowFor('ordering', $idx));
+            $matchingCounts[] = count((array) $rowFor('matching', $idx)['matching_items']);
+        }
+        self::assertSame(range(2, 12), $uniqueInts($orderingCounts));
+        self::assertSame(range(2, 12), $uniqueInts($matchingCounts));
+
+        $clozeBlankCounts = [];
+        $clozeOptionCounts = [];
+        for ($idx = 0; $idx < 40; $idx++) {
+            $row = $rowFor('cloze_dropdown', $idx);
+            $blanks = (array) $row['cloze_blanks'];
+            $clozeBlankCounts[] = count($blanks);
+            foreach ($blanks as $blank) {
+                $clozeOptionCounts[] = count((array) ($blank['options'] ?? []));
+            }
+        }
+        self::assertSame(range(1, 8), $uniqueInts($clozeBlankCounts));
+        self::assertSame(range(2, 6), $uniqueInts($clozeOptionCounts));
+
+        $categoryCounts = [];
+        $categoryItemCounts = [];
+        for ($idx = 0; $idx < 23; $idx++) {
+            $row = $rowFor('categorization', $idx);
+            $categoryCounts[] = count((array) $row['categorization_categories']);
+            $categoryItemCounts[] = count((array) $row['categorization_items']);
+        }
+        self::assertSame(range(2, 8), $uniqueInts($categoryCounts));
+        self::assertSame(range(2, 24), $uniqueInts($categoryItemCounts));
+
+        $tableRows = [];
+        $tableColumns = [];
+        $tableDropdownOptionCounts = [];
+        $tableCellTypes = [];
+        for ($idx = 0; $idx < 35; $idx++) {
+            $row = $rowFor('table_completion', $idx);
+            $definition = (array) $row['table_completion'];
+            $tableRows[] = (int) ($definition['row_count'] ?? 0);
+            $tableColumns[] = (int) ($definition['column_count'] ?? 0);
+            $answerCount = 0;
+            foreach ((array) ($definition['cells'] ?? []) as $cell) {
+                if (!is_array($cell) || (string) ($cell['cell_type'] ?? 'static') === 'static') {
+                    continue;
+                }
+                $answerCount++;
+                $tableCellTypes[] = (string) $cell['cell_type'];
+                if ((string) $cell['cell_type'] === 'dropdown') {
+                    $tableDropdownOptionCounts[] = count((array) ($cell['options'] ?? []));
+                }
+            }
+            self::assertLessThanOrEqual(24, $answerCount);
+        }
+        self::assertSame(range(2, 8), $uniqueInts($tableRows));
+        self::assertSame(range(2, 6), $uniqueInts($tableColumns));
+        self::assertSame(['dropdown', 'text'], array_values(array_intersect(['dropdown', 'text'], array_unique($tableCellTypes))));
+        self::assertSame(range(2, 6), $uniqueInts($tableDropdownOptionCounts));
     }
 
     #[RunInSeparateProcess]

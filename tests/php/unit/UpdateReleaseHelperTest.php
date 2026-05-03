@@ -432,6 +432,22 @@ final class UpdateReleaseHelperTest extends TestCase
         self::assertSame('failed', $result['status']);
     }
 
+    public function test_health_check_schema_item_reports_missing_question_detail_tables(): void
+    {
+        global $wpdb;
+        $wpdb = new UpdateHealthSchemaFakeWpdb(['wp_cbt_question_table_completion_cells']);
+
+        $reflection = new \ReflectionClass(\CBT_Update_Health_Service::class);
+        $method = $reflection->getMethod('question_detail_schema_item');
+        $method->setAccessible(true);
+
+        $item = $method->invoke(null);
+
+        self::assertSame('question_detail_schema', $item['key']);
+        self::assertSame('failed', $item['status']);
+        self::assertStringContainsString('wp_cbt_question_table_completion_cells', $item['message']);
+    }
+
     public function test_build_page_context_maps_check_failed_state(): void
     {
         set_transient(\CBT_Update_Release_Helper::release_state_transient(), [
@@ -597,5 +613,49 @@ final class UpdateReleaseHelperTest extends TestCase
             }
         }
         @rmdir($path);
+    }
+}
+
+final class UpdateHealthSchemaFakeWpdb
+{
+    public string $prefix = 'wp_';
+
+    /** @var array<string,bool> */
+    private array $missingTables;
+
+    /**
+     * @param array<int,string> $missingTables
+     */
+    public function __construct(array $missingTables = [])
+    {
+        $this->missingTables = array_fill_keys($missingTables, true);
+    }
+
+    public function prepare(string $query, ...$args): array
+    {
+        return [
+            'query' => $query,
+            'args' => $args,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed>|string $prepared
+     */
+    public function get_var($prepared)
+    {
+        $tableName = '';
+        if (is_array($prepared)) {
+            $args = isset($prepared['args']) && is_array($prepared['args']) ? $prepared['args'] : [];
+            $tableName = is_scalar($args[0] ?? null) ? (string) $args[0] : '';
+        } elseif (is_string($prepared) && preg_match("/LIKE '([^']+)'/", $prepared, $matches)) {
+            $tableName = (string) ($matches[1] ?? '');
+        }
+
+        if ($tableName === '' || isset($this->missingTables[$tableName])) {
+            return null;
+        }
+
+        return $tableName;
     }
 }

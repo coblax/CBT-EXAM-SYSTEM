@@ -49,6 +49,8 @@ final class AdminResultsResetRuntimeCleanupTest extends TestCase
         self::assertSame([44], CBT_Cache::$invalidatedAttemptIds);
         self::assertSame([7], CBT_Cache::$invalidatedUserIds);
         self::assertSame([9], CBT_Cache::$invalidatedAnalyticsExamIds);
+        self::assertSame([44], $wpdb->answerCleanupAttemptIds);
+        self::assertSame([44], $wpdb->essayAiCleanupAttemptIds);
         self::assertSame([[31, 32]], CBT_UI_State::$clearedAttemptStatesByAttemptIds);
         self::assertSame([[7, 44]], CBT_UI_State::$clearedAttemptStates);
         self::assertSame([], CBT_Auth::$clearedLoginSessionUserIds);
@@ -248,6 +250,10 @@ final class AdminResultsResetRuntimeCleanupFakeWpdb
     public string $prefix = 'wp_';
     public string $users = 'wp_users';
     public string $usermeta = 'wp_usermeta';
+    /** @var int[] */
+    public array $answerCleanupAttemptIds = [];
+    /** @var int[] */
+    public array $essayAiCleanupAttemptIds = [];
 
     /** @var array<string,mixed>|null */
     private ?array $singleAttempt;
@@ -319,6 +325,18 @@ final class AdminResultsResetRuntimeCleanupFakeWpdb
         $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
         $args = is_array($prepared) ? (array) ($prepared['args'] ?? []) : [];
 
+        if (str_contains($query, 'DELETE FROM wp_cbt_essay_ai_suggestions')) {
+            $attemptIds = $this->positiveIntArgs($args);
+            $this->essayAiCleanupAttemptIds = array_values(array_unique(array_merge($this->essayAiCleanupAttemptIds, $attemptIds)));
+            return count($attemptIds);
+        }
+
+        if (str_contains($query, 'DELETE FROM wp_cbt_answers')) {
+            $attemptIds = $this->positiveIntArgs($args);
+            $this->answerCleanupAttemptIds = array_values(array_unique(array_merge($this->answerCleanupAttemptIds, $attemptIds)));
+            return count($attemptIds);
+        }
+
         if (str_contains($query, "SET status = 'abandoned'")) {
             if (isset($args[1], $args[2])) {
                 $key = ((int) $args[1]) . ':' . ((int) $args[2]);
@@ -338,6 +356,17 @@ final class AdminResultsResetRuntimeCleanupFakeWpdb
         }
 
         return 0;
+    }
+
+    /**
+     * @param array<int,mixed> $args
+     * @return int[]
+     */
+    private function positiveIntArgs(array $args): array
+    {
+        return array_values(array_filter(array_map('absint', $args), static function (int $value): bool {
+            return $value > 0;
+        }));
     }
 
     /**

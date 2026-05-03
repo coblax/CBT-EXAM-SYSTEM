@@ -227,6 +227,83 @@ async function fillCurrentEssay(page, text) {
     await waitForAnswerSync(page, 3600);
 }
 
+async function selectDropdownAnswer(selectLocator, optionOffset = 0) {
+    await expect(selectLocator).toBeVisible({ timeout: 20000 });
+    const value = await selectLocator.evaluate((select, offset) => {
+        const usableOptions = Array.from(select.options || []).filter((option) => Number(option.value) > 0);
+        if (!usableOptions.length) {
+            return '';
+        }
+        const index = Math.max(0, Math.min(usableOptions.length - 1, Number(offset) || 0));
+        return String(usableOptions[index].value || '');
+    }, optionOffset);
+    expect(value).not.toBe('');
+    await selectLocator.selectOption(value);
+    return Number(value) || 0;
+}
+
+async function answerCurrentDropdownMap(page, selector, keyAttribute) {
+    const controls = page.locator(selector);
+    const total = await controls.count();
+    expect(total).toBeGreaterThan(0);
+
+    const selected = {};
+    for (let index = 0; index < total; index += 1) {
+        const control = controls.nth(index);
+        const key = String(await control.getAttribute(keyAttribute) || '').trim();
+        const selectedOptionId = await selectDropdownAnswer(control, index);
+        if (key !== '') {
+            selected[key] = selectedOptionId;
+        }
+    }
+    await waitForAnswerSync(page, 3600);
+    return selected;
+}
+
+async function answerCurrentMatching(page) {
+    return answerCurrentDropdownMap(page, '[data-action="answer-matching"]', 'data-matching-key');
+}
+
+async function answerCurrentClozeDropdown(page) {
+    return answerCurrentDropdownMap(page, '[data-action="answer-cloze-dropdown"]', 'data-cloze-key');
+}
+
+async function answerCurrentCategorization(page) {
+    return answerCurrentDropdownMap(page, '[data-action="answer-categorization"]', 'data-categorization-key');
+}
+
+async function answerCurrentTableCompletion(page, textPrefix = 'table-flow') {
+    const textInputs = page.locator('[data-action="answer-table-completion-text"]');
+    const dropdowns = page.locator('[data-action="answer-table-completion-dropdown"]');
+    const textTotal = await textInputs.count();
+    const dropdownTotal = await dropdowns.count();
+    expect(textTotal + dropdownTotal).toBeGreaterThan(0);
+
+    const selected = {};
+    for (let index = 0; index < textTotal; index += 1) {
+        const input = textInputs.nth(index);
+        await expect(input).toBeVisible({ timeout: 20000 });
+        const key = String(await input.getAttribute('data-table-key') || '').trim().toUpperCase();
+        const value = `${textPrefix}-${key || index + 1}`;
+        await input.fill(value);
+        if (key !== '') {
+            selected[key] = value;
+        }
+    }
+
+    for (let index = 0; index < dropdownTotal; index += 1) {
+        const dropdown = dropdowns.nth(index);
+        const key = String(await dropdown.getAttribute('data-table-key') || '').trim().toUpperCase();
+        const selectedOptionId = await selectDropdownAnswer(dropdown, index);
+        if (key !== '') {
+            selected[key] = selectedOptionId;
+        }
+    }
+
+    await waitForAnswerSync(page, 4200);
+    return selected;
+}
+
 async function clickNextQuestion(page) {
     const currentNumber = await getCurrentQuestionNumber(page);
     await page.locator('[data-action="next"]').first().click({ force: true });
@@ -244,12 +321,23 @@ async function clickPreviousQuestion(page) {
 async function jumpToQuestion(page, questionNumber) {
     const targetNumber = Number(questionNumber) || 1;
     const targetIndex = Math.max(0, targetNumber - 1);
-    const targetButton = page.locator(`[data-action="jump"][data-index="${targetIndex}"]`).first();
-    await expect(targetButton).toBeVisible({ timeout: 20000 });
-    await targetButton.scrollIntoViewIfNeeded();
-    await targetButton.click({ force: true });
-    await expect(page.locator('.cbt-chip-question-index .cbt-chip-value')).toHaveText(String(targetNumber), { timeout: 20000 });
-    await waitForAttemptUiSync(page, 2200);
+    let lastError = null;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const targetButton = page.locator(`[data-action="jump"][data-index="${targetIndex}"]`).first();
+        try {
+            await expect(targetButton).toBeVisible({ timeout: 20000 });
+            await targetButton.click({ force: true });
+            await expect(page.locator('.cbt-chip-question-index .cbt-chip-value')).toHaveText(String(targetNumber), { timeout: 20000 });
+            await waitForAttemptUiSync(page, 2200);
+            return;
+        } catch (error) {
+            lastError = error;
+            await page.waitForTimeout(500);
+        }
+    }
+
+    throw lastError || new Error(`Gagal pindah ke soal ${targetNumber}.`);
 }
 
 async function getQuestionNavCount(page) {
@@ -443,8 +531,12 @@ async function clearLocalQuestionCache(page, fixture, attemptId) {
 
 module.exports = {
     AUTH_SESSION_STORAGE_KEY,
+    answerCurrentCategorization,
+    answerCurrentClozeDropdown,
+    answerCurrentMatching,
     answerCurrentMultipleChoice,
     answerCurrentSingleChoice,
+    answerCurrentTableCompletion,
     captureBrowserStorage,
     clearLocalQuestionCache,
     clickNextQuestion,

@@ -166,7 +166,8 @@ if (!defined('ABSPATH')) {
                 akan membuat root question di Bank Soal per mapel, lalu menyinkronkannya ke exam uji. User login dibuat dengan password default
                 <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_default_password); ?></span>.
                 Akun test khusus yang selalu dibuat: <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_username); ?></span> / <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_password); ?></span>.
-                Short answer bulk memakai placeholder inline <span class="cbt-maintenance-inline-code">[INPUT_1]</span> sampai <span class="cbt-maintenance-inline-code">[INPUT_8]</span>, dan jumlah input selalu sama dengan jumlah jawaban yang disimpan.
+                Setiap tipe soal dibuat dalam jumlah tetap per preset, dengan variasi jumlah opsi/struktur agar tampilan bisa dicek dari batas minimum sampai maksimum, lalu disediakan exam khusus per tipe dan exam Mixed 50%.
+                Short answer bulk memakai placeholder inline <span class="cbt-maintenance-inline-code">[INPUT_1]</span> sampai <span class="cbt-maintenance-inline-code">[INPUT_8]</span>, Cloze memakai <span class="cbt-maintenance-inline-code">[DROPDOWN_1]</span>, dan tipe struktur baru ikut tersinkron ke exam uji.
                 Rich content bulk memakai sample image internal plugin, lalu menyimpan gambar seperti import soal: prioritas ke uploads WordPress dan fallback ke base64 bila upload gagal.
                 Tabel HTML dipakai di stem soal, dan option <code>multiple_choice</code> / <code>multiple_answer</code> bisa membawa gambar serta tabel ringkas yang compact.
             </p>

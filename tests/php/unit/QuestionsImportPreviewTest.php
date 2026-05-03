@@ -1099,6 +1099,70 @@ XML;
         self::assertSame(1, $cloze['cloze_blanks'][0]['options'][1]['is_correct']);
     }
 
+    public function test_parse_docx_categorization_and_table_completion_structured_blocks(): void
+    {
+        $categorization = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Kelompokkan contoh berikut.',
+            'QUESTION_TYPE: categorization',
+            'KATEGORI_1: Mamalia',
+            'KATEGORI_2: Reptil',
+            'ITEM_1: Kucing',
+            'KUNCI_1: 1',
+            'ITEM_2: Ular',
+            'KUNCI_2: Reptil',
+        ]]);
+        $table = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Lengkapi tabel ibu kota.',
+            'QUESTION_TYPE: table_completion',
+            'TABLE_ROWS: 2',
+            'TABLE_COLS: 2',
+            'CELL_A1_TYPE: static',
+            'CELL_A1_TEXT: Negara',
+            'CELL_B1_TYPE: static',
+            'CELL_B1_TEXT: Ibu kota',
+            'CELL_A2_TYPE: static',
+            'CELL_A2_TEXT: Jepang',
+            'CELL_B2_TYPE: dropdown',
+            'CELL_B2_OPSI_1: Seoul',
+            'CELL_B2_OPSI_2: Tokyo',
+            'CELL_B2_JAWABAN: 2',
+        ]]);
+
+        self::assertIsArray($categorization);
+        self::assertSame('categorization', $categorization['question_type']);
+        self::assertCount(2, $categorization['categorization_categories']);
+        self::assertCount(2, $categorization['categorization_items']);
+        self::assertSame('Ular', $categorization['categorization_items'][1]['item_text']);
+        self::assertSame(2, $categorization['categorization_items'][1]['correct_category_index']);
+
+        self::assertIsArray($table);
+        self::assertSame('table_completion', $table['question_type']);
+        self::assertSame(2, $table['table_completion']['row_count']);
+        self::assertSame(2, $table['table_completion']['column_count']);
+        $cells = array_column($table['table_completion']['cells'], null, 'cell_key');
+        self::assertSame('dropdown', $cells['B2']['cell_type']);
+        self::assertSame(1, $cells['B2']['options'][1]['is_correct']);
+    }
+
+    public function test_docx_key_normalization_recognizes_categorization_and_table_completion_keys(): void
+    {
+        self::assertTrue($this->invokeImportHelper('is_docx_key_only_line', ['KATEGORI_1']));
+        self::assertTrue($this->invokeImportHelper('is_docx_key_only_line', ['ITEM_24']));
+        self::assertTrue($this->invokeImportHelper('is_docx_key_only_line', ['KUNCI_24']));
+        self::assertTrue($this->invokeImportHelper('is_docx_key_only_line', ['TABLE_ROWS']));
+        self::assertTrue($this->invokeImportHelper('is_docx_key_only_line', ['CELL_B2_OPSI_6']));
+
+        $normalizedLines = $this->invokeImportHelper('normalize_docx_extracted_lines', [[
+            'KATEGORI_1',
+            'Mamalia',
+            'CELL_B2_TEXT',
+            'Tokyo',
+        ]]);
+
+        self::assertContains('KATEGORI_1: Mamalia', $normalizedLines);
+        self::assertContains('CELL_B2_TEXT: Tokyo', $normalizedLines);
+    }
+
     public function test_build_word_template_lines_include_matching_and_cloze_dropdown_templates(): void
     {
         $matchingLines = $this->invokeImportHelper('build_word_template_lines', ['matching', 10]);
@@ -1110,6 +1174,36 @@ XML;
         self::assertContains('JENIS_SOAL: cloze_dropdown', $clozeLines);
         self::assertContains('DROPDOWN_1_OPSI_1: Opsi 1A', $clozeLines);
         self::assertContains('DROPDOWN_1_JAWABAN: 2', $clozeLines);
+    }
+
+    public function test_build_word_template_lines_respects_custom_counts_for_structured_types(): void
+    {
+        $matchingLines = $this->invokeImportHelper('build_word_template_lines', ['matching', 10, ['pair_count' => 2]]);
+        $clozeLines = $this->invokeImportHelper('build_word_template_lines', ['cloze_dropdown', 10, [
+            'dropdown_count' => 1,
+            'dropdown_option_count' => 2,
+        ]]);
+        $categorizationLines = $this->invokeImportHelper('build_word_template_lines', ['categorization', 10, [
+            'category_count' => 3,
+            'categorization_item_count' => 4,
+        ]]);
+        $tableLines = $this->invokeImportHelper('build_word_template_lines', ['table_completion', 10, [
+            'table_rows' => 3,
+            'table_cols' => 3,
+        ]]);
+
+        self::assertContains('KIRI_2: Istilah kedua', $matchingLines);
+        self::assertNotContains('KIRI_3: Istilah ketiga', $matchingLines);
+        self::assertContains('DROPDOWN_1_OPSI_2: Opsi 1B', $clozeLines);
+        self::assertNotContains('DROPDOWN_1_OPSI_3: Opsi 1C', $clozeLines);
+        self::assertStringNotContainsString('[DROPDOWN_2]', implode("\n", $clozeLines));
+        self::assertContains('KATEGORI_3: Kategori 3', $categorizationLines);
+        self::assertContains('ITEM_4: Item 4', $categorizationLines);
+        self::assertNotContains('KATEGORI_4: Kategori 4', $categorizationLines);
+        self::assertContains('TABLE_ROWS: 3', $tableLines);
+        self::assertContains('TABLE_COLS: 3', $tableLines);
+        self::assertContains('CELL_C3_TYPE: text', $tableLines);
+        self::assertNotContains('CELL_D1_TYPE: static', $tableLines);
     }
 
     public function test_describe_docx_block_failure_reports_specific_reason_for_empty_correct_option(): void

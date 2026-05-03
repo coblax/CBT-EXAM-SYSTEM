@@ -96,6 +96,10 @@ export function formatQuestionType(type) {
         true_false: 'True / False',
         true_false_matrix: 'True / False Matrix',
         ordering: 'Ordering',
+        matching: 'Matching',
+        cloze_dropdown: 'Cloze Dropdown',
+        categorization: 'Categorization',
+        table_completion: 'Table Completion',
         short_answer: 'Short Answer',
         essay: 'Essay'
     };
@@ -109,6 +113,10 @@ export function navigationQuestionTypeBadgeConfig(questionType) {
         true_false: { code: 'TF', className: 'is-tf' },
         true_false_matrix: { code: 'TFM', className: 'is-tf' },
         ordering: { code: 'ORD', className: 'is-ord' },
+        matching: { code: 'MAT', className: 'is-match' },
+        cloze_dropdown: { code: 'CLZ', className: 'is-cloze' },
+        categorization: { code: 'CAT', className: 'is-cat' },
+        table_completion: { code: 'TAB', className: 'is-table' },
         short_answer: { code: 'SA', className: 'is-sa' },
         essay: { code: 'ES', className: 'is-es' }
     };

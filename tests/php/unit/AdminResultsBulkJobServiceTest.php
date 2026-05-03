@@ -184,6 +184,10 @@ final class AdminResultsBulkJobServiceTest extends TestCase
         self::assertSame(2, $secondResponse['payload']['abandoned_count']);
         self::assertSame(1, CBT_Cache::$invalidateAnalyticsCalls);
         self::assertCount(101, CBT_Cache::$invalidatedAnalyticsExamIdsBatch);
+        self::assertCount(101, $wpdb->answerCleanupAttemptIds);
+        self::assertCount(101, $wpdb->essayAiCleanupAttemptIds);
+        self::assertSame(1001, min($wpdb->answerCleanupAttemptIds));
+        self::assertSame(1101, max($wpdb->answerCleanupAttemptIds));
         self::assertSame([], CBT_Auth::$clearedLoginSessionUserIds);
         self::assertCount(2, array_filter(CBT_Runtime::$clearedAttemptIds, static fn ($attemptId): bool => $attemptId >= 5001));
         self::assertSame('', (string) get_transient('cbt_results_bulk_job_active_' . get_current_user_id()));
@@ -582,6 +586,10 @@ final class AdminResultsBulkJobFakeWpdb
     public string $prefix = 'wp_';
     public string $users = 'wp_users';
     public string $usermeta = 'wp_usermeta';
+    /** @var int[] */
+    public array $answerCleanupAttemptIds = [];
+    /** @var int[] */
+    public array $essayAiCleanupAttemptIds = [];
 
     /** @var array<int,array<string,mixed>> */
     private array $attemptRows;
@@ -685,6 +693,18 @@ final class AdminResultsBulkJobFakeWpdb
         $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
         $args = is_array($prepared) ? (array) ($prepared['args'] ?? []) : [];
 
+        if (str_contains($query, 'DELETE FROM wp_cbt_essay_ai_suggestions')) {
+            $attemptIds = $this->positiveIntArgs($args);
+            $this->essayAiCleanupAttemptIds = array_values(array_unique(array_merge($this->essayAiCleanupAttemptIds, $attemptIds)));
+            return count($attemptIds);
+        }
+
+        if (str_contains($query, 'DELETE FROM wp_cbt_answers')) {
+            $attemptIds = $this->positiveIntArgs($args);
+            $this->answerCleanupAttemptIds = array_values(array_unique(array_merge($this->answerCleanupAttemptIds, $attemptIds)));
+            return count($attemptIds);
+        }
+
         if (str_contains($query, "SET status = 'abandoned'")) {
             $pairs = $this->buildPairsFromArgs($args, 1);
             $affected = 0;
@@ -725,6 +745,17 @@ final class AdminResultsBulkJobFakeWpdb
         }
 
         return 0;
+    }
+
+    /**
+     * @param array<int,mixed> $args
+     * @return int[]
+     */
+    private function positiveIntArgs(array $args): array
+    {
+        return array_values(array_filter(array_map('absint', $args), static function (int $value): bool {
+            return $value > 0;
+        }));
     }
 
     private function parseIdsFromQuery(string $query): array

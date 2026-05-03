@@ -55,8 +55,14 @@ jobs:
       - name: Build frontend assets
         run: npm run build
 
+      - name: Check source release readiness
+        run: npm run release:package-check
+
       - name: Install production PHP dependencies
         run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+
+      - name: Install release packaging tools
+        run: sudo apt-get update && sudo apt-get install -y rsync zip
 
       - name: Prepare release package
         shell: bash
@@ -129,6 +135,11 @@ jobs:
           ];
           file_put_contents(getenv("MANIFEST_PATH"), json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
           '
+
+          node bin/check-release-package.mjs \
+            --staged-root "${PLUGIN_ROOT}" \
+            --zip "${DIST_ROOT}/${PACKAGE_NAME}" \
+            --update-manifest "${DIST_ROOT}/${MANIFEST_NAME}"
 
           printf "%s\n" "${CHANGELOG}" > "${RELEASE_NOTES_PATH}"
 

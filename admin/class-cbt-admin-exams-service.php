@@ -2671,6 +2671,55 @@ final class CBT_Admin_Exams_Service
                 }
             }
 
+            $question_ids = array_values(array_filter(array_map('absint', (array) $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT id FROM {$wpdb->prefix}cbt_questions WHERE exam_id = %d",
+                    $id
+                )
+            ))));
+            CBT_Admin_Questions_Helper::delete_question_dependents($question_ids);
+            if (!empty($question_ids)) {
+                $question_placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+                $wpdb->query(
+                    $wpdb->prepare(
+                        "DELETE FROM {$wpdb->prefix}cbt_questions WHERE exam_id = %d AND id IN ({$question_placeholders})",
+                        $id,
+                        ...$question_ids
+                    )
+                );
+            }
+
+            $attempt_ids = array_values(array_filter(array_map('absint', (array) $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT id FROM {$wpdb->prefix}cbt_attempts WHERE exam_id = %d",
+                    $id
+                )
+            ))));
+            if (!empty($attempt_ids)) {
+                $attempt_placeholders = implode(',', array_fill(0, count($attempt_ids), '%d'));
+                $wpdb->query(
+                    $wpdb->prepare(
+                        "DELETE FROM {$wpdb->prefix}cbt_essay_ai_suggestions WHERE attempt_id IN ({$attempt_placeholders})",
+                        ...$attempt_ids
+                    )
+                );
+                $wpdb->query(
+                    $wpdb->prepare(
+                        "DELETE FROM {$wpdb->prefix}cbt_answers WHERE attempt_id IN ({$attempt_placeholders})",
+                        ...$attempt_ids
+                    )
+                );
+                $wpdb->query(
+                    $wpdb->prepare(
+                        "DELETE FROM {$wpdb->prefix}cbt_security_logs WHERE attempt_id IN ({$attempt_placeholders}) OR exam_id = %d",
+                        ...array_merge($attempt_ids, [$id])
+                    )
+                );
+            } else {
+                $wpdb->delete($wpdb->prefix . 'cbt_security_logs', ['exam_id' => $id], ['%d']);
+            }
+            $wpdb->delete($wpdb->prefix . 'cbt_exam_incidents', ['exam_id' => $id], ['%d']);
+            $wpdb->delete($wpdb->prefix . 'cbt_attempts', ['exam_id' => $id], ['%d']);
             $wpdb->delete($wpdb->prefix . 'cbt_exams', ['id' => $id], ['%d']);
         }
 
@@ -8553,6 +8602,7 @@ final class CBT_Admin_Exams_Service
         }
 
         if (!empty($delete_ids)) {
+            CBT_Admin_Questions_Helper::delete_question_dependents($delete_ids);
             $delete_placeholders = implode(',', array_fill(0, count($delete_ids), '%d'));
             $deleted_removed = $wpdb->query(
                 $wpdb->prepare(

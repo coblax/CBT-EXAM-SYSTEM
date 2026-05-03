@@ -2044,6 +2044,7 @@ final class CBT_Admin_Questions_Service
 
                     self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
                 }
+                CBT_Admin_Questions_Helper::delete_question_dependents([$id]);
                 $wpdb->delete($wpdb->prefix . 'cbt_questions', ['id' => $id], ['%d']);
                 if ($question_import_token !== '' && $question_import_scope === self::QUESTION_IMPORT_SCOPE_CREATED && in_array($id, $question_import_batch_ids, true)) {
                     CBT_Admin_Questions_Import_Helper::remove_question_import_created_question_ids_for_current_user($question_import_token, [$id]);
@@ -2376,6 +2377,7 @@ final class CBT_Admin_Questions_Service
                     continue;
                 }
 
+                CBT_Admin_Questions_Helper::delete_question_dependents([$question_id]);
                 $deleted_rows = $wpdb->delete($wpdb->prefix . 'cbt_questions', ['id' => $question_id], ['%d']);
                 if ($deleted_rows) {
                     $deleted += (int) $deleted_rows;

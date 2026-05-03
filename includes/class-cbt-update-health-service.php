@@ -6,6 +6,26 @@ if (!defined('ABSPATH')) {
 
 final class CBT_Update_Health_Service
 {
+    private const REQUIRED_QUESTION_DETAIL_TABLES = [
+        'cbt_question_multiple_choice',
+        'cbt_question_multiple_answer',
+        'cbt_question_true_false',
+        'cbt_question_short_answer',
+        'cbt_question_essay',
+        'cbt_question_ordering',
+        'cbt_question_ordering_items',
+        'cbt_question_matching',
+        'cbt_question_matching_items',
+        'cbt_question_cloze_dropdown',
+        'cbt_question_cloze_dropdown_blanks',
+        'cbt_question_cloze_dropdown_options',
+        'cbt_question_categorization',
+        'cbt_question_categorization_items',
+        'cbt_question_table_completion',
+        'cbt_question_table_completion_cells',
+        'cbt_question_table_completion_cell_options',
+    ];
+
     /**
      * @param array<string,mixed> $manifest
      * @param array<string,mixed> $context
@@ -56,10 +76,15 @@ final class CBT_Update_Health_Service
                 : sprintf('DB version aktif %s, target %s.', $installed_db_version !== '' ? $installed_db_version : '-', $expected_db_version)
         );
 
+        $items[] = self::question_detail_schema_item();
+
         if (class_exists('CBT_Cache') && method_exists('CBT_Cache', 'invalidate_all')) {
             try {
                 CBT_Cache::invalidate_all();
-                $items[] = self::item('cache_invalidation', 'Invalidate cache', true, 'Cache CBT berhasil diinvalidasi.');
+                if (method_exists('CBT_Cache', 'invalidate_catalog')) {
+                    CBT_Cache::invalidate_catalog();
+                }
+                $items[] = self::item('cache_invalidation', 'Invalidate cache', true, 'Cache global dan catalog CBT berhasil diinvalidasi.');
             } catch (Throwable $throwable) {
                 $items[] = self::item('cache_invalidation', 'Invalidate cache', false, $throwable->getMessage());
             }
@@ -133,6 +158,47 @@ final class CBT_Update_Health_Service
         }
 
         return '';
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private static function question_detail_schema_item(): array
+    {
+        global $wpdb;
+
+        if (!is_object($wpdb) || !isset($wpdb->prefix) || !method_exists($wpdb, 'get_var')) {
+            return self::item('question_detail_schema', 'Schema detail tipe soal', false, 'wpdb tidak tersedia untuk memeriksa tabel detail tipe soal.');
+        }
+
+        $missing = [];
+        $prefix = (string) $wpdb->prefix;
+        foreach (self::REQUIRED_QUESTION_DETAIL_TABLES as $table_suffix) {
+            $table_name = $prefix . $table_suffix;
+            $query = method_exists($wpdb, 'prepare')
+                ? $wpdb->prepare('SHOW TABLES LIKE %s', $table_name)
+                : "SHOW TABLES LIKE '" . str_replace(["\\", "'"], ["\\\\", "\\'"], $table_name) . "'";
+            $found = $wpdb->get_var($query);
+            if (!is_scalar($found) || (string) $found === '') {
+                $missing[] = $table_name;
+            }
+        }
+
+        if (!empty($missing)) {
+            return self::item(
+                'question_detail_schema',
+                'Schema detail tipe soal',
+                false,
+                'Tabel detail tipe soal hilang: ' . implode(', ', array_slice($missing, 0, 8)) . (count($missing) > 8 ? ', ...' : '')
+            );
+        }
+
+        return self::item(
+            'question_detail_schema',
+            'Schema detail tipe soal',
+            true,
+            sprintf('%d tabel detail tipe soal tersedia.', count(self::REQUIRED_QUESTION_DETAIL_TABLES))
+        );
     }
 
     /**

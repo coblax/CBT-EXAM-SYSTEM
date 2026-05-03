@@ -127,6 +127,40 @@ final class AdminQuestionDeleteGuardTest extends TestCase
         self::assertStringContainsString('cbt_err=Soal+tidak+bisa+dihapus+saat+masih+ada+peserta+aktif+pada+exam+terkait.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
+    #[RunInSeparateProcess]
+    public function test_handle_delete_question_cleans_detail_tables_before_deleting_parent_question(): void
+    {
+        $this->bootstrapQuestionsDeleteGuardScaffold();
+        $this->setRosterRedisUnavailable();
+
+        global $wpdb;
+        $wpdb = new AdminQuestionDeleteGuardFakeWpdb([
+            ['id' => 501, 'exam_id' => 72, 'source_question_id' => 0],
+        ]);
+
+        $_GET = [
+            'id' => 501,
+            'return_page' => 'cbt-question-bank',
+        ];
+
+        try {
+            CBT_Admin_Questions_Service::handle_delete_question();
+            self::fail('Expected redirect signal was not thrown.');
+        } catch (RuntimeException $runtimeException) {
+            self::assertSame('__cbt_admin_questions_redirect__', $runtimeException->getMessage());
+        }
+
+        self::assertSame(1, $wpdb->deleteCalls);
+        self::assertSame('wp_cbt_essay_ai_suggestions', $wpdb->cleanupTables[0] ?? '');
+        self::assertContains('wp_cbt_answers', $wpdb->cleanupTables);
+        self::assertContains('wp_cbt_question_matching_items', $wpdb->cleanupTables);
+        self::assertContains('wp_cbt_question_cloze_dropdown_options', $wpdb->cleanupTables);
+        self::assertContains('wp_cbt_question_categorization_items', $wpdb->cleanupTables);
+        self::assertContains('wp_cbt_question_table_completion_cell_options', $wpdb->cleanupTables);
+        self::assertSame('wp_cbt_options', end($wpdb->cleanupTables));
+        self::assertStringContainsString('cbt_msg=Question+deleted', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
     private function bootstrapQuestionsDeleteGuardScaffold(): void
     {
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
@@ -176,6 +210,8 @@ final class AdminQuestionDeleteGuardFakeWpdb
 
     public int $deleteCalls = 0;
     public int $activeAttemptGuardQueryCalls = 0;
+    /** @var string[] */
+    public array $cleanupTables = [];
 
     /** @var array<int,array<string,int>> */
     private array $questionRowsById = [];
@@ -284,6 +320,17 @@ final class AdminQuestionDeleteGuardFakeWpdb
     public function delete($table, $where, $whereFormat = null): int
     {
         $this->deleteCalls++;
+
+        return 1;
+    }
+
+    /** @param array<string,mixed>|string $prepared */
+    public function query($prepared): int
+    {
+        $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
+        if (preg_match('/DELETE FROM\\s+(\\S+)\\s+WHERE question_id IN/i', $query, $matches)) {
+            $this->cleanupTables[] = (string) ($matches[1] ?? '');
+        }
 
         return 1;
     }

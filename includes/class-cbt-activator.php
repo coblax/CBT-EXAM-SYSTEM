@@ -10,7 +10,7 @@ class CBT_Activator
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
     private const OPTION_SUPERVISOR_FRONTEND_PAGE_ID = 'cbt_exam_system_supervisor_page_id';
     private const OPTION_FRONTEND_PAGE_SYNC_PENDING = 'cbt_exam_system_frontend_page_sync_pending';
-    private const DB_VERSION = '1.6.20';
+    private const DB_VERSION = '1.6.21';
 
     public static function activate(): void
     {

@@ -14,6 +14,30 @@ if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
 
 class CBT_Exam_Question_Delivery_Cache
 {
+    private const SNAPSHOT_PAYLOAD_VERSION = 2;
+    private const SENSITIVE_DELIVERY_KEYS = [
+        'correct_text',
+        'short_answer_correct_text',
+        'is_correct',
+        'correct_value',
+        'correct_values',
+        'correct_option_id',
+        'correct_option_ids',
+        'correct_option_ids_by_key',
+        'correct_option_key',
+        'correct_option_text',
+        'correct_category_index',
+        'correct_position',
+        'ordering_correct_option_ids',
+        'true_false_correct_value',
+        'true_false_option_value_by_id',
+        'short_answer_values',
+        'true_false_matrix_answers',
+        'matching_correct_option_ids_by_key',
+        'cloze_dropdown_correct_option_ids_by_key',
+        'categorization_correct_option_ids_by_key',
+        'table_completion_answers_by_key',
+    ];
     private const DIAGNOSTIC_PREVIEW_DEFAULT_PER_PAGE = 5;
     private const DELIVERY_REDIS_TTL_SECONDS = 44100;
     private const DELIVERY_EVENT_REDIS_TTL_SECONDS = 604800;
@@ -156,6 +180,7 @@ class CBT_Exam_Question_Delivery_Cache
                 $stored_signature = is_scalar($decoded['revision_signature'] ?? null)
                     ? (string) $decoded['revision_signature']
                     : '';
+                $stored_payload_version = max(0, (int) ($decoded['snapshot_payload_version'] ?? 0));
                 $expected_signature = self::revision_signature($revision_meta);
                 $items = self::normalize_items($decoded['items'] ?? []);
                 $snapshot_item_count = count($items);
@@ -167,7 +192,12 @@ class CBT_Exam_Question_Delivery_Cache
                     return absint(is_array($item) ? ($item['id'] ?? 0) : 0);
                 }, $preview_slice)));
                 $preview_items = self::build_preview_items($preview_slice);
-                $snapshot_valid = $stored_exam_id === $exam_id && $stored_signature === $expected_signature;
+                $snapshot_valid = $stored_exam_id === $exam_id
+                    && $stored_signature === $expected_signature
+                    && $stored_payload_version === self::SNAPSHOT_PAYLOAD_VERSION;
+                if (!$snapshot_valid && $stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION) {
+                    self::write_delivery_event_marker($exam_id, 'invalid_payload');
+                }
             } else {
                 self::write_delivery_event_marker($exam_id, 'invalid_payload');
             }
@@ -444,9 +474,17 @@ class CBT_Exam_Question_Delivery_Cache
         $stored_signature = is_scalar($decoded['revision_signature'] ?? null)
             ? (string) $decoded['revision_signature']
             : '';
+        $stored_payload_version = max(0, (int) ($decoded['snapshot_payload_version'] ?? 0));
         $expected_signature = self::revision_signature($revision_meta);
-        if ($stored_exam_id !== $exam_id || $stored_signature !== $expected_signature) {
+        if (
+            $stored_exam_id !== $exam_id
+            || $stored_signature !== $expected_signature
+            || $stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION
+        ) {
             $redis->del($storage_key);
+            if ($stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION) {
+                self::write_delivery_event_marker($exam_id, 'invalid_payload');
+            }
             return null;
         }
 
@@ -473,6 +511,7 @@ class CBT_Exam_Question_Delivery_Cache
 
         $storage_key = self::storage_key($exam_id, $revision_meta);
         $encoded_payload = wp_json_encode([
+            'snapshot_payload_version' => self::SNAPSHOT_PAYLOAD_VERSION,
             'exam_id' => $exam_id,
             'revision_signature' => self::revision_signature($revision_meta),
             'items' => array_values($items),
@@ -832,10 +871,33 @@ class CBT_Exam_Question_Delivery_Cache
                 continue;
             }
 
-            $normalized[] = $item;
+            $normalized[] = self::redact_delivery_payload($item);
         }
 
         return array_values($normalized);
+    }
+
+    /**
+     * @param mixed $payload
+     * @return mixed
+     */
+    private static function redact_delivery_payload($payload)
+    {
+        if (!is_array($payload)) {
+            return $payload;
+        }
+
+        $redacted = [];
+        foreach ($payload as $key => $value) {
+            $safe_key = is_string($key) ? sanitize_key($key) : $key;
+            if (is_string($safe_key) && in_array($safe_key, self::SENSITIVE_DELIVERY_KEYS, true)) {
+                continue;
+            }
+
+            $redacted[$key] = is_array($value) ? self::redact_delivery_payload($value) : $value;
+        }
+
+        return $redacted;
     }
 
     /**
