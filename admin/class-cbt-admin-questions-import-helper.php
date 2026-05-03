@@ -447,7 +447,8 @@ final class CBT_Admin_Questions_Import_Helper
             }
 
             $question_count = self::sanitize_word_template_question_count();
-            $lines = self::build_word_template_lines($template_type, $question_count);
+            $template_config = self::sanitize_word_template_config($template_type);
+            $lines = self::build_word_template_lines($template_type, $question_count, $template_config);
 
             self::output_question_template_word_file($lines, $download_name);
         }
@@ -4762,9 +4763,9 @@ final class CBT_Admin_Questions_Import_Helper
                 ? (int) wp_unslash((string) $_GET['question_count'])
                 : 10;
 
-            $normalized_count = (int) floor($raw_count / 10) * 10;
-            if ($normalized_count < 10) {
-                $normalized_count = 10;
+            $normalized_count = (int) floor($raw_count / 5) * 5;
+            if ($normalized_count < 5) {
+                $normalized_count = 5;
             }
             if ($normalized_count > 100) {
                 $normalized_count = 100;
@@ -4773,9 +4774,75 @@ final class CBT_Admin_Questions_Import_Helper
             return $normalized_count;
         }
 
-        private static function build_word_template_lines(string $template_type, int $question_count): array
+        private static function sanitize_word_template_config(string $template_type): array
         {
-            $question_count = max(10, min(100, $question_count));
+            $defaults = self::default_word_template_config();
+            $raw_config = [];
+            foreach ($defaults as $key => $default_value) {
+                $raw_config[$key] = isset($_GET[$key])
+                    ? (int) wp_unslash((string) $_GET[$key])
+                    : (int) $default_value;
+            }
+
+            return self::normalize_word_template_config($template_type, $raw_config);
+        }
+
+        private static function default_word_template_config(): array
+        {
+            return [
+                'option_count' => 5,
+                'input_count' => 3,
+                'statement_count' => 5,
+                'item_count' => 4,
+                'pair_count' => 3,
+                'dropdown_count' => 2,
+                'dropdown_option_count' => 3,
+                'category_count' => 2,
+                'categorization_item_count' => 3,
+                'table_rows' => 2,
+                'table_cols' => 2,
+            ];
+        }
+
+        private static function normalize_word_template_config(string $template_type, array $config): array
+        {
+            $defaults = self::default_word_template_config();
+            $value = static function (string $key) use ($config, $defaults): int {
+                return (int) ($config[$key] ?? $defaults[$key] ?? 0);
+            };
+
+            $normalized = $defaults;
+            $normalized['option_count'] = self::clamp_int($value('option_count'), 3, $template_type === 'multiple_answer' ? 12 : 5);
+            $normalized['input_count'] = self::clamp_int($value('input_count'), 1, 8);
+            $normalized['statement_count'] = self::clamp_int($value('statement_count'), 2, 10);
+            $normalized['item_count'] = self::clamp_int($value('item_count'), 2, 12);
+            $normalized['pair_count'] = self::clamp_int($value('pair_count'), 2, 12);
+            $normalized['dropdown_count'] = self::clamp_int($value('dropdown_count'), 1, 8);
+            $normalized['dropdown_option_count'] = self::clamp_int($value('dropdown_option_count'), 2, 6);
+            $normalized['category_count'] = self::clamp_int($value('category_count'), 2, 8);
+            $normalized['categorization_item_count'] = self::clamp_int($value('categorization_item_count'), 2, 24);
+            $normalized['table_rows'] = self::clamp_int($value('table_rows'), 2, 8);
+            $normalized['table_cols'] = self::clamp_int($value('table_cols'), 2, 6);
+
+            return $normalized;
+        }
+
+        private static function clamp_int(int $value, int $min, int $max): int
+        {
+            return max($min, min($max, $value));
+        }
+
+        private static function build_word_template_lines(string $template_type, int $question_count, $template_config = []): array
+        {
+            $question_count = max(5, min(100, $question_count));
+            if (is_int($template_config)) {
+                $template_config = ['option_count' => $template_config];
+            }
+            if (!is_array($template_config)) {
+                $template_config = [];
+            }
+            $template_config = self::normalize_word_template_config($template_type, $template_config);
+            $option_count = (int) ($template_config['option_count'] ?? 5);
             $header_lines = [
                 'CBT_TEMPLATE: ' . self::DOCX_TEMPLATE_MARKER_VALUE,
                 'CATATAN_VALIDATOR: Jangan hapus marker CBT_TEMPLATE dan field JENIS_SOAL pada tiap blok.',
@@ -4794,6 +4861,7 @@ final class CBT_Admin_Questions_Import_Helper
                     'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar atau tabel langsung di bawah baris SOAL. Kontennya akan ikut masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
+                    'Jumlah pilihan per soal: ' . $option_count . ' opsi.',
                     '',
                 ]);
 
@@ -4802,11 +4870,17 @@ final class CBT_Admin_Questions_Import_Helper
                         'JENIS_SOAL: multiple_answer',
                         'SOAL: [MA ' . $idx . '] Pilih semua pernyataan yang benar.',
                     ];
-                    for ($opt_idx = 1; $opt_idx <= 12; $opt_idx++) {
+                    for ($opt_idx = 1; $opt_idx <= $option_count; $opt_idx++) {
                         $alpha = chr(ord('A') + $opt_idx - 1);
                         $block[] = 'PILIHAN_' . $opt_idx . ': Pernyataan ' . $alpha;
                     }
-                    $block[] = 'JAWABAN: 1,3,5';
+                    $answer_indices = array_values(array_filter([1, 3, 5], static function (int $answer_index) use ($option_count): bool {
+                        return $answer_index <= $option_count;
+                    }));
+                    if (empty($answer_indices)) {
+                        $answer_indices = [1];
+                    }
+                    $block[] = 'JAWABAN: ' . implode(',', $answer_indices);
                     $block[] = 'POIN: 1';
                     $block[] = 'PEMBAHASAN: Tulis pembahasan opsional di sini.';
                     $blocks[] = $block;
@@ -4835,6 +4909,7 @@ final class CBT_Admin_Questions_Import_Helper
                     ];
                 }
             } elseif ($template_type === 'true_false_matrix') {
+                $statement_count = (int) ($template_config['statement_count'] ?? 5);
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import True/False Matrix (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
@@ -4846,28 +4921,26 @@ final class CBT_Admin_Questions_Import_Helper
                     'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar atau tabel langsung di bawah baris SOAL. Kontennya akan ikut masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
+                    'Jumlah pernyataan per soal: ' . $statement_count . ' pernyataan.',
                     '',
                 ]);
 
                 for ($idx = 1; $idx <= $question_count; $idx++) {
-                    $blocks[] = [
+                    $block = [
                         'JENIS_SOAL: true_false_matrix',
                         'SOAL: [TFM ' . $idx . '] Tentukan Benar/Salah untuk setiap pernyataan berikut.',
-                        'PERNYATAAN_1: Pernyataan A',
-                        'KUNCI_1: true',
-                        'PERNYATAAN_2: Pernyataan B',
-                        'KUNCI_2: false',
-                        'PERNYATAAN_3: Pernyataan C',
-                        'KUNCI_3: true',
-                        'PERNYATAAN_4: Pernyataan D',
-                        'KUNCI_4: false',
-                        'PERNYATAAN_5: Pernyataan E',
-                        'KUNCI_5: true',
-                        'POIN: 1',
-                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
+                    for ($statement_idx = 1; $statement_idx <= $statement_count; $statement_idx++) {
+                        $alpha = chr(ord('A') + $statement_idx - 1);
+                        $block[] = 'PERNYATAAN_' . $statement_idx . ': Pernyataan ' . $alpha;
+                        $block[] = 'KUNCI_' . $statement_idx . ': ' . ($statement_idx % 2 === 0 ? 'false' : 'true');
+                    }
+                    $block[] = 'POIN: 1';
+                    $block[] = 'PEMBAHASAN: Tulis pembahasan opsional di sini.';
+                    $blocks[] = $block;
                 }
             } elseif ($template_type === 'short_answer') {
+                $input_count = (int) ($template_config['input_count'] ?? 3);
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Short Answer (format tabel, maks 8 jawaban valid).',
                     'Setiap blok soal dipisahkan oleh ---',
@@ -4880,24 +4953,26 @@ final class CBT_Admin_Questions_Import_Helper
                     'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar atau tabel langsung di bawah baris SOAL. Kontennya akan ikut masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
+                    'Jumlah input per soal: ' . $input_count . ' input.',
                     '',
                 ]);
 
                 for ($idx = 1; $idx <= $question_count; $idx++) {
-                    $blocks[] = [
+                    $placeholders = [];
+                    for ($input_idx = 1; $input_idx <= $input_count; $input_idx++) {
+                        $placeholders[] = '[INPUT_' . $input_idx . ']';
+                    }
+                    $block = [
                         'JENIS_SOAL: short_answer',
-                        'SOAL: [SA ' . $idx . '] Lengkapi: [INPUT_1], [INPUT_2], [INPUT_3], [INPUT_4], [INPUT_5], [INPUT_6], [INPUT_7], [INPUT_8].',
-                        'JAWABAN_A: jawaban-1',
-                        'JAWABAN_B: jawaban-2',
-                        'JAWABAN_C: jawaban-3',
-                        'JAWABAN_D: jawaban-4',
-                        'JAWABAN_E: jawaban-5',
-                        'JAWABAN_F: jawaban-6',
-                        'JAWABAN_G: jawaban-7',
-                        'JAWABAN_H: jawaban-8',
-                        'POIN: 1',
-                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
+                        'SOAL: [SA ' . $idx . '] Lengkapi: ' . implode(', ', $placeholders) . '.',
                     ];
+                    for ($input_idx = 1; $input_idx <= $input_count; $input_idx++) {
+                        $answer_key = chr(64 + $input_idx);
+                        $block[] = 'JAWABAN_' . $answer_key . ': jawaban-' . $input_idx;
+                    }
+                    $block[] = 'POIN: 1';
+                    $block[] = 'PEMBAHASAN: Tulis pembahasan opsional di sini.';
+                    $blocks[] = $block;
                 }
             } elseif ($template_type === 'essay') {
                 $header_lines = array_merge($header_lines, [
@@ -4922,6 +4997,7 @@ final class CBT_Admin_Questions_Import_Helper
                     ];
                 }
             } elseif ($template_type === 'ordering') {
+                $item_count = (int) ($template_config['item_count'] ?? 4);
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Ordering / Sequencing (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
@@ -4932,22 +5008,24 @@ final class CBT_Admin_Questions_Import_Helper
                     'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar atau tabel langsung di bawah baris SOAL atau ITEM_n. Kontennya akan ikut masuk.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
+                    'Jumlah item per soal: ' . $item_count . ' item.',
                     '',
                 ]);
 
                 for ($idx = 1; $idx <= $question_count; $idx++) {
-                    $blocks[] = [
+                    $block = [
                         'JENIS_SOAL: ordering',
                         'SOAL: [ORD ' . $idx . '] Susun langkah berikut sesuai urutan yang benar.',
-                        'ITEM_1: Langkah pertama',
-                        'ITEM_2: Langkah kedua',
-                        'ITEM_3: Langkah ketiga',
-                        'ITEM_4: Langkah keempat',
-                        'POIN: 1',
-                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
+                    for ($item_idx = 1; $item_idx <= $item_count; $item_idx++) {
+                        $block[] = 'ITEM_' . $item_idx . ': Langkah ke-' . $item_idx;
+                    }
+                    $block[] = 'POIN: 1';
+                    $block[] = 'PEMBAHASAN: Tulis pembahasan opsional di sini.';
+                    $blocks[] = $block;
                 }
             } elseif ($template_type === 'matching') {
+                $pair_count = (int) ($template_config['pair_count'] ?? 3);
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Matching (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
@@ -4958,24 +5036,36 @@ final class CBT_Admin_Questions_Import_Helper
                     'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar atau tabel langsung di bawah baris SOAL atau KIRI_n. Kontennya akan ikut masuk.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
+                    'Jumlah pasangan per soal: ' . $pair_count . ' pasangan.',
                     '',
                 ]);
 
                 for ($idx = 1; $idx <= $question_count; $idx++) {
-                    $blocks[] = [
+                    $block = [
                         'JENIS_SOAL: matching',
                         'SOAL: [MATCH ' . $idx . '] Pasangkan istilah di kiri dengan pilihan yang tepat.',
-                        'KIRI_1: Istilah pertama',
-                        'KANAN_1: Pasangan pertama',
-                        'KIRI_2: Istilah kedua',
-                        'KANAN_2: Pasangan kedua',
-                        'KIRI_3: Istilah ketiga',
-                        'KANAN_3: Pasangan ketiga',
-                        'POIN: 1',
-                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
+                    for ($pair_idx = 1; $pair_idx <= $pair_count; $pair_idx++) {
+                        $left_label = [
+                            1 => 'Istilah pertama',
+                            2 => 'Istilah kedua',
+                            3 => 'Istilah ketiga',
+                        ][$pair_idx] ?? ('Istilah ke-' . $pair_idx);
+                        $right_label = [
+                            1 => 'Pasangan pertama',
+                            2 => 'Pasangan kedua',
+                            3 => 'Pasangan ketiga',
+                        ][$pair_idx] ?? ('Pasangan ke-' . $pair_idx);
+                        $block[] = 'KIRI_' . $pair_idx . ': ' . $left_label;
+                        $block[] = 'KANAN_' . $pair_idx . ': ' . $right_label;
+                    }
+                    $block[] = 'POIN: 1';
+                    $block[] = 'PEMBAHASAN: Tulis pembahasan opsional di sini.';
+                    $blocks[] = $block;
                 }
             } elseif ($template_type === 'cloze_dropdown') {
+                $dropdown_count = (int) ($template_config['dropdown_count'] ?? 2);
+                $dropdown_option_count = (int) ($template_config['dropdown_option_count'] ?? 3);
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Cloze Dropdown (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
@@ -4985,26 +5075,34 @@ final class CBT_Admin_Questions_Import_Helper
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
+                    'Jumlah dropdown per soal: ' . $dropdown_count . ' dropdown.',
+                    'Jumlah opsi per dropdown: ' . $dropdown_option_count . ' opsi.',
                     '',
                 ]);
 
                 for ($idx = 1; $idx <= $question_count; $idx++) {
-                    $blocks[] = [
+                    $placeholders = [];
+                    for ($dropdown_idx = 1; $dropdown_idx <= $dropdown_count; $dropdown_idx++) {
+                        $placeholders[] = '[DROPDOWN_' . $dropdown_idx . ']';
+                    }
+                    $block = [
                         'JENIS_SOAL: cloze_dropdown',
-                        'SOAL: [CLOZE ' . $idx . '] Lengkapi kalimat: [DROPDOWN_1] adalah pilihan pertama, sedangkan [DROPDOWN_2] adalah pilihan kedua.',
-                        'DROPDOWN_1_OPSI_1: Opsi 1A',
-                        'DROPDOWN_1_OPSI_2: Opsi 1B',
-                        'DROPDOWN_1_OPSI_3: Opsi 1C',
-                        'DROPDOWN_1_JAWABAN: 2',
-                        'DROPDOWN_2_OPSI_1: Opsi 2A',
-                        'DROPDOWN_2_OPSI_2: Opsi 2B',
-                        'DROPDOWN_2_OPSI_3: Opsi 2C',
-                        'DROPDOWN_2_JAWABAN: 1',
-                        'POIN: 1',
-                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
+                        'SOAL: [CLOZE ' . $idx . '] Lengkapi bagian berikut: ' . implode(', ', $placeholders) . '.',
                     ];
+                    for ($dropdown_idx = 1; $dropdown_idx <= $dropdown_count; $dropdown_idx++) {
+                        for ($option_idx = 1; $option_idx <= $dropdown_option_count; $option_idx++) {
+                            $alpha = chr(ord('A') + $option_idx - 1);
+                            $block[] = 'DROPDOWN_' . $dropdown_idx . '_OPSI_' . $option_idx . ': Opsi ' . $dropdown_idx . $alpha;
+                        }
+                        $block[] = 'DROPDOWN_' . $dropdown_idx . '_JAWABAN: ' . min(2, $dropdown_option_count);
+                    }
+                    $block[] = 'POIN: 1';
+                    $block[] = 'PEMBAHASAN: Tulis pembahasan opsional di sini.';
+                    $blocks[] = $block;
                 }
             } elseif ($template_type === 'categorization') {
+                $category_count = (int) ($template_config['category_count'] ?? 2);
+                $categorization_item_count = (int) ($template_config['categorization_item_count'] ?? 3);
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Categorization (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
@@ -5013,26 +5111,30 @@ final class CBT_Admin_Questions_Import_Helper
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
+                    'Jumlah kategori per soal: ' . $category_count . ' kategori.',
+                    'Jumlah item per soal: ' . $categorization_item_count . ' item.',
                     '',
                 ]);
 
                 for ($idx = 1; $idx <= $question_count; $idx++) {
-                    $blocks[] = [
+                    $block = [
                         'JENIS_SOAL: categorization',
                         'SOAL: [CAT ' . $idx . '] Kelompokkan item berikut ke kategori yang tepat.',
-                        'KATEGORI_1: Mamalia',
-                        'KATEGORI_2: Reptil',
-                        'ITEM_1: Kucing',
-                        'KUNCI_1: 1',
-                        'ITEM_2: Ular',
-                        'KUNCI_2: 2',
-                        'ITEM_3: Paus',
-                        'KUNCI_3: 1',
-                        'POIN: 1',
-                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
+                    for ($category_idx = 1; $category_idx <= $category_count; $category_idx++) {
+                        $block[] = 'KATEGORI_' . $category_idx . ': Kategori ' . $category_idx;
+                    }
+                    for ($item_idx = 1; $item_idx <= $categorization_item_count; $item_idx++) {
+                        $block[] = 'ITEM_' . $item_idx . ': Item ' . $item_idx;
+                        $block[] = 'KUNCI_' . $item_idx . ': ' . ((($item_idx - 1) % $category_count) + 1);
+                    }
+                    $block[] = 'POIN: 1';
+                    $block[] = 'PEMBAHASAN: Tulis pembahasan opsional di sini.';
+                    $blocks[] = $block;
                 }
             } elseif ($template_type === 'table_completion') {
+                $table_rows = (int) ($template_config['table_rows'] ?? 2);
+                $table_cols = (int) ($template_config['table_cols'] ?? 2);
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Table Completion (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
@@ -5041,26 +5143,58 @@ final class CBT_Admin_Questions_Import_Helper
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
+                    'Ukuran tabel per soal: ' . $table_rows . 'x' . $table_cols . '.',
                     '',
                 ]);
 
                 for ($idx = 1; $idx <= $question_count; $idx++) {
-                    $blocks[] = [
+                    $block = [
                         'JENIS_SOAL: table_completion',
                         'SOAL: [TABLE ' . $idx . '] Lengkapi tabel berikut.',
-                        'TABLE_ROWS: 2',
-                        'TABLE_COLS: 2',
-                        'CELL_A1_TYPE: static',
-                        'CELL_A1_TEXT: Negara',
-                        'CELL_B1_TYPE: static',
-                        'CELL_B1_TEXT: Ibu Kota',
-                        'CELL_A2_TYPE: static',
-                        'CELL_A2_TEXT: Jepang',
-                        'CELL_B2_TYPE: text',
-                        'CELL_B2_JAWABAN: Tokyo',
-                        'POIN: 1',
-                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
+                        'TABLE_ROWS: ' . $table_rows,
+                        'TABLE_COLS: ' . $table_cols,
                     ];
+                    $answer_cells = 0;
+                    for ($row = 1; $row <= $table_rows; $row++) {
+                        for ($col = 1; $col <= $table_cols; $col++) {
+                            $cell_key = chr(64 + $col) . (string) $row;
+                            $is_answer_cell = $row > 1 && $col > 1 && $answer_cells < 24;
+                            if ($is_answer_cell) {
+                                $answer_cells++;
+                                if ($answer_cells % 3 === 0) {
+                                    $block[] = 'CELL_' . $cell_key . '_TYPE: dropdown';
+                                    $block[] = 'CELL_' . $cell_key . '_TEXT: Pilih nilai ' . $cell_key;
+                                    $block[] = 'CELL_' . $cell_key . '_OPSI_1: Opsi ' . $cell_key . 'A';
+                                    $block[] = 'CELL_' . $cell_key . '_OPSI_2: Opsi ' . $cell_key . 'B';
+                                    $block[] = 'CELL_' . $cell_key . '_OPSI_3: Opsi ' . $cell_key . 'C';
+                                    $block[] = 'CELL_' . $cell_key . '_JAWABAN: 2';
+                                    continue;
+                                }
+
+                                $block[] = 'CELL_' . $cell_key . '_TYPE: text';
+                                $block[] = 'CELL_' . $cell_key . '_JAWABAN: Jawaban ' . $cell_key;
+                                continue;
+                            }
+
+                            $block[] = 'CELL_' . $cell_key . '_TYPE: static';
+                            if ($row === 1 && $col === 1) {
+                                $block[] = 'CELL_' . $cell_key . '_TEXT: Label';
+                            } elseif ($row === 1) {
+                                $block[] = 'CELL_' . $cell_key . '_TEXT: Kolom ' . chr(64 + $col);
+                            } elseif ($col === 1) {
+                                $block[] = 'CELL_' . $cell_key . '_TEXT: Baris ' . $row;
+                            } else {
+                                $block[] = 'CELL_' . $cell_key . '_TEXT: Sel ' . $cell_key;
+                            }
+                        }
+                    }
+                    if ($answer_cells <= 0) {
+                        $block[] = 'CELL_B2_TYPE: text';
+                        $block[] = 'CELL_B2_JAWABAN: Jawaban B2';
+                    }
+                    $block[] = 'POIN: 1';
+                    $block[] = 'PEMBAHASAN: Tulis pembahasan opsional di sini.';
+                    $blocks[] = $block;
                 }
             } else {
                 $header_lines = array_merge($header_lines, [
@@ -5074,23 +5208,24 @@ final class CBT_Admin_Questions_Import_Helper
                     'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
                     'Boleh tempel gambar atau tabel langsung di bawah baris SOAL. Kontennya akan ikut masuk ke soal.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
+                    'Jumlah pilihan per soal: ' . $option_count . ' opsi.',
                     '',
                 ]);
 
                 for ($idx = 1; $idx <= $question_count; $idx++) {
-                    $answer = (string) ((($idx - 1) % 5) + 1);
-                    $blocks[] = [
+                    $answer = (string) ((($idx - 1) % $option_count) + 1);
+                    $block = [
                         'JENIS_SOAL: multiple_choice',
                         'SOAL: [MC ' . $idx . '] Tulis pertanyaan pilihan ganda di sini.',
-                        'PILIHAN_1: Opsi A',
-                        'PILIHAN_2: Opsi B',
-                        'PILIHAN_3: Opsi C',
-                        'PILIHAN_4: Opsi D',
-                        'PILIHAN_5: Opsi E',
-                        'JAWABAN: ' . $answer,
-                        'POIN: 1',
-                        'PEMBAHASAN: Tulis pembahasan opsional di sini.',
                     ];
+                    for ($opt_idx = 1; $opt_idx <= $option_count; $opt_idx++) {
+                        $alpha = chr(ord('A') + $opt_idx - 1);
+                        $block[] = 'PILIHAN_' . $opt_idx . ': Opsi ' . $alpha;
+                    }
+                    $block[] = 'JAWABAN: ' . $answer;
+                    $block[] = 'POIN: 1';
+                    $block[] = 'PEMBAHASAN: Tulis pembahasan opsional di sini.';
+                    $blocks[] = $block;
                 }
             }
 

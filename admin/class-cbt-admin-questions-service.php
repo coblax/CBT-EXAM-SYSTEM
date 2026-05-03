@@ -915,8 +915,8 @@ final class CBT_Admin_Questions_Service
                 $categorization_category_values = array_fill(1, 8, '');
                 $categorization_item_values = array_fill(1, 24, '');
                 $categorization_item_correct = array_fill(1, 24, 1);
-                $table_completion_row_count = 3;
-                $table_completion_column_count = 3;
+                $table_completion_row_count = 2;
+                $table_completion_column_count = 2;
                 $table_completion_cells = [];
                 for ($table_row = 1; $table_row <= 8; $table_row++) {
                     for ($table_col = 1; $table_col <= 6; $table_col++) {
@@ -1142,6 +1142,93 @@ final class CBT_Admin_Questions_Service
                         ];
                     }
                 }
+
+                $question_text_for_count = (string) ($editing_question['question_text'] ?? '');
+                $last_non_empty_html_index = static function (array $values, int $max): int {
+                    $last = 0;
+                    for ($index = 1; $index <= $max; $index++) {
+                        if (CBT_Admin_Questions_Helper::has_non_empty_html_content((string) ($values[$index] ?? ''))) {
+                            $last = $index;
+                        }
+                    }
+
+                    return $last;
+                };
+                $last_non_empty_text_index = static function (array $values, int $max): int {
+                    $last = 0;
+                    for ($index = 1; $index <= $max; $index++) {
+                        if (trim((string) ($values[$index] ?? '')) !== '') {
+                            $last = $index;
+                        }
+                    }
+
+                    return $last;
+                };
+                $manual_active_count = static function (int $default, int $min, int $max, int $detected) use ($editing_question): int {
+                    $target = $editing_question ? max($min, $detected) : $default;
+                    if ($target < $min) {
+                        $target = $min;
+                    }
+                    if ($target > $max) {
+                        $target = $max;
+                    }
+
+                    return $target;
+                };
+                $extract_max_short_answer_placeholder = static function (string $html): int {
+                    $plain = wp_strip_all_tags($html);
+                    preg_match_all('/\[\s*input(?:\s*[_-]?\s*)?([a-h1-8])\s*\]/i', $plain, $matches);
+                    $max = 0;
+                    foreach ((array) ($matches[1] ?? []) as $token) {
+                        $normalized = strtoupper((string) $token);
+                        $index = ctype_digit($normalized) ? (int) $normalized : (ord($normalized) - 64);
+                        if ($index >= 1 && $index <= 8) {
+                            $max = max($max, $index);
+                        }
+                    }
+
+                    return $max;
+                };
+                $extract_max_cloze_placeholder = static function (string $html): int {
+                    $plain = wp_strip_all_tags($html);
+                    preg_match_all('/\[\s*dropdown(?:\s*[_-]?\s*)?([1-8])\s*\]/i', $plain, $matches);
+                    $max = 0;
+                    foreach ((array) ($matches[1] ?? []) as $token) {
+                        $index = (int) $token;
+                        if ($index >= 1 && $index <= 8) {
+                            $max = max($max, $index);
+                        }
+                    }
+
+                    return $max;
+                };
+
+                $mc_active_option_count = $manual_active_count(5, 3, 5, $last_non_empty_html_index($mc_option_values, 5));
+                $ma_active_option_count = $manual_active_count(5, 3, 12, max($last_non_empty_html_index($ma_option_values, 12), $last_non_empty_text_index($ma_option_correct, 12)));
+                $tfm_text_values = [];
+                foreach ($tf_matrix_rows as $tfm_index => $tfm_row) {
+                    $tfm_text_values[(int) $tfm_index] = (string) ($tfm_row['text'] ?? '');
+                }
+                $tfm_active_statement_count = $manual_active_count(5, 2, 10, $last_non_empty_html_index($tfm_text_values, 10));
+                $short_answer_active_input_count = $manual_active_count(3, 1, 8, max($last_non_empty_text_index($editing_short_answer_inputs, 8), $extract_max_short_answer_placeholder($question_text_for_count)));
+                $ordering_active_item_count = $manual_active_count(4, 2, 12, $last_non_empty_html_index($ordering_option_values, 12));
+                $matching_active_pair_count = $manual_active_count(3, 2, 12, max($last_non_empty_html_index($matching_left_values, 12), $last_non_empty_html_index($matching_right_values, 12)));
+                $cloze_detected_blank_count = $extract_max_cloze_placeholder($question_text_for_count);
+                $cloze_detected_option_count = 0;
+                foreach ($cloze_dropdown_rows as $blank_index => $blank_row) {
+                    $blank_options = isset($blank_row['options']) && is_array($blank_row['options'])
+                        ? $blank_row['options']
+                        : [];
+                    $blank_option_count = $last_non_empty_text_index($blank_options, 6);
+                    $cloze_detected_option_count = max($cloze_detected_option_count, $blank_option_count, (int) ($blank_row['correct'] ?? 0));
+                    if ($blank_option_count > 0) {
+                        $cloze_detected_blank_count = max($cloze_detected_blank_count, (int) $blank_index);
+                    }
+                }
+                $cloze_active_dropdown_count = $manual_active_count(2, 1, 8, $cloze_detected_blank_count);
+                $cloze_active_option_count = $manual_active_count(3, 2, 6, $cloze_detected_option_count);
+                $categorization_active_category_count = $manual_active_count(2, 2, 8, $last_non_empty_text_index($categorization_category_values, 8));
+                $categorization_active_item_count = $manual_active_count(3, 2, 24, $last_non_empty_html_index($categorization_item_values, 24));
         
                 $initial_subject_id = $selected_subject_id > 0
                     ? $selected_subject_id
@@ -2422,13 +2509,27 @@ final class CBT_Admin_Questions_Service
             return CBT_Admin_Questions_Helper::has_non_empty_html_content($value);
         }
 
+        private static function read_manual_count_from_post(string $field_name, int $fallback, int $min, int $max): int
+        {
+            $value = isset($_POST[$field_name]) ? (int) wp_unslash($_POST[$field_name]) : $fallback;
+            if ($value < $min) {
+                $value = $min;
+            }
+            if ($value > $max) {
+                $value = $max;
+            }
+
+            return $value;
+        }
+
         /**
          * @return array<int,array{position:int,item_key:string,prompt_text:string,option_text:string}>
          */
         private static function read_matching_items_from_post(): array
         {
             $rows = [];
-            for ($index = 1; $index <= 12; $index++) {
+            $pair_count = self::read_manual_count_from_post('cbt_matching_pair_count', 12, 2, 12);
+            for ($index = 1; $index <= $pair_count; $index++) {
                 $left_field = 'cbt_matching_left_' . $index;
                 $right_field = 'cbt_matching_right_' . $index;
                 $rows[] = [
@@ -2451,12 +2552,14 @@ final class CBT_Admin_Questions_Service
         private static function read_cloze_dropdown_blanks_from_post(): array
         {
             $rows = [];
-            for ($blank_index = 1; $blank_index <= 8; $blank_index++) {
+            $blank_count = self::read_manual_count_from_post('cbt_cloze_dropdown_count', 8, 1, 8);
+            $option_count = self::read_manual_count_from_post('cbt_cloze_option_count', 6, 2, 6);
+            for ($blank_index = 1; $blank_index <= $blank_count; $blank_index++) {
                 $options = [];
                 $correct_index = isset($_POST['cbt_cloze_correct_' . $blank_index])
                     ? (int) wp_unslash($_POST['cbt_cloze_correct_' . $blank_index])
                     : 1;
-                for ($option_index = 1; $option_index <= 6; $option_index++) {
+                for ($option_index = 1; $option_index <= $option_count; $option_index++) {
                     $field = 'cbt_cloze_' . $blank_index . '_option_' . $option_index;
                     $value = isset($_POST[$field]) ? sanitize_text_field((string) wp_unslash($_POST[$field])) : '';
                     if (trim($value) === '') {
@@ -2490,7 +2593,8 @@ final class CBT_Admin_Questions_Service
         private static function read_categorization_categories_from_post(): array
         {
             $rows = [];
-            for ($index = 1; $index <= 8; $index++) {
+            $category_count = self::read_manual_count_from_post('cbt_cat_category_count', 8, 2, 8);
+            for ($index = 1; $index <= $category_count; $index++) {
                 $field = 'cbt_cat_category_' . $index;
                 $rows[] = [
                     'category_index' => $index,
@@ -2509,7 +2613,8 @@ final class CBT_Admin_Questions_Service
         private static function read_categorization_items_from_post(): array
         {
             $rows = [];
-            for ($index = 1; $index <= 24; $index++) {
+            $item_count = self::read_manual_count_from_post('cbt_cat_item_count', 24, 2, 24);
+            for ($index = 1; $index <= $item_count; $index++) {
                 $item_field = 'cbt_cat_item_' . $index;
                 $correct_field = 'cbt_cat_correct_' . $index;
                 $rows[] = [
@@ -2532,12 +2637,12 @@ final class CBT_Admin_Questions_Service
          */
         private static function read_table_completion_from_post(): array
         {
-            $row_count = isset($_POST['cbt_table_rows']) ? (int) wp_unslash($_POST['cbt_table_rows']) : 2;
-            $column_count = isset($_POST['cbt_table_cols']) ? (int) wp_unslash($_POST['cbt_table_cols']) : 2;
+            $row_count = self::read_manual_count_from_post('cbt_table_rows', 2, 2, 8);
+            $column_count = self::read_manual_count_from_post('cbt_table_cols', 2, 2, 6);
             $cells = [];
 
-            for ($row = 1; $row <= 8; $row++) {
-                for ($column = 1; $column <= 6; $column++) {
+            for ($row = 1; $row <= $row_count; $row++) {
+                for ($column = 1; $column <= $column_count; $column++) {
                     $cell_key = chr(64 + $column) . (string) $row;
                     $prefix = 'cbt_table_' . $cell_key . '_';
                     $type = isset($_POST[$prefix . 'type']) ? sanitize_key((string) wp_unslash($_POST[$prefix . 'type'])) : 'static';

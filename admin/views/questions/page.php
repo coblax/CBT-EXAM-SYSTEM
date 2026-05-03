@@ -522,14 +522,14 @@ if (!defined('ABSPATH')) {
                     .cbt-questions-panel .form-table {
                         margin: 0;
                         border-collapse: separate;
-                        border-spacing: 0 18px;
+                        border-spacing: 0 12px;
                     }
                     .cbt-questions-panel .form-table th {
-                        width: 190px;
-                        padding: 10px 18px 0 0;
+                        width: 172px;
+                        padding: 8px 14px 0 0;
                         vertical-align: top;
                         color: #0f172a;
-                        font-size: 14px;
+                        font-size: 13px;
                         font-weight: 700;
                     }
                     .cbt-questions-panel .form-table td {
@@ -557,18 +557,18 @@ if (!defined('ABSPATH')) {
                     .cbt-questions-panel input[type="email"],
                     .cbt-questions-panel input[type="search"],
                     .cbt-questions-panel select {
-                        min-height: 48px;
-                        padding: 0 15px;
+                        min-height: 42px;
+                        padding: 0 13px;
                     }
                     .cbt-questions-panel select {
                         appearance: none;
                         -webkit-appearance: none;
                         -moz-appearance: none;
-                        padding-right: 46px;
+                        padding-right: 40px;
                         cursor: pointer;
                         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6.5L8 10.5L12 6.5' stroke='%23546A85' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
                         background-repeat: no-repeat;
-                        background-position: right 16px center;
+                        background-position: right 13px center;
                         background-size: 16px 16px;
                     }
                     .cbt-questions-panel select:disabled {
@@ -576,13 +576,13 @@ if (!defined('ABSPATH')) {
                         background-color: #eef4fb;
                     }
                     .cbt-questions-panel input[type="number"] {
-                        min-height: 48px;
-                        padding: 0 12px;
-                        width: 130px;
+                        min-height: 42px;
+                        padding: 0 10px;
+                        width: 112px;
                     }
                     .cbt-questions-panel input[type="file"] {
-                        min-height: 48px;
-                        padding: 10px 14px;
+                        min-height: 42px;
+                        padding: 8px 12px;
                         border: 1px dashed #c9d7e6;
                         border-radius: 16px;
                         background: #f8fbff;
@@ -591,8 +591,8 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-questions-panel textarea {
                         width: min(100%, 960px);
-                        min-height: 120px;
-                        padding: 14px 16px;
+                        min-height: 96px;
+                        padding: 12px 14px;
                     }
                     .cbt-questions-panel .regular-text,
                     .cbt-questions-panel .large-text {
@@ -601,17 +601,17 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-questions-panel .description,
                     .cbt-questions-panel .cbt-inline-help {
-                        margin-top: 10px;
+                        margin-top: 7px;
                         color: #64748b;
-                        font-size: 13px;
-                        line-height: 1.65;
+                        font-size: 12px;
+                        line-height: 1.5;
                     }
                     .cbt-questions-panel .wp-editor-wrap {
                         max-width: 980px;
                     }
                     .cbt-questions-panel .wp-editor-container {
                         border: 1px solid #cfdbe8;
-                        border-radius: 18px;
+                        border-radius: 14px;
                         overflow: hidden;
                         background: #fff;
                     }
@@ -627,18 +627,18 @@ if (!defined('ABSPATH')) {
                         background: #fff;
                     }
                     .cbt-questions-panel .wp-editor-tools {
-                        padding: 0 0 8px;
+                        padding: 0 0 6px;
                     }
                     .cbt-questions-panel .insert-media {
-                        border-radius: 12px;
+                        border-radius: 10px;
                     }
                     .cbt-question-editor-box {
                         display: grid;
-                        gap: 12px;
+                        gap: 9px;
                         width: min(100%, 980px);
-                        padding: 16px;
+                        padding: 12px;
                         border: 1px solid #d7e3ef;
-                        border-radius: 18px;
+                        border-radius: 14px;
                         background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
                         box-shadow: 0 12px 28px rgba(15, 23, 42, 0.045);
                         box-sizing: border-box;
@@ -649,20 +649,20 @@ if (!defined('ABSPATH')) {
                     .cbt-question-editor-box .wp-editor-tools {
                         display: flex;
                         align-items: flex-start;
-                        gap: 10px;
+                        gap: 8px;
                         flex-wrap: wrap;
-                        padding: 0 0 10px;
+                        padding: 0 0 7px;
                     }
                     .cbt-question-editor-box .wp-media-buttons {
                         display: flex;
-                        gap: 8px;
+                        gap: 6px;
                         flex-wrap: wrap;
                     }
                     .cbt-question-editor-box .wp-editor-tabs {
                         margin-left: auto;
                     }
                     .cbt-question-editor-box .wp-editor-container {
-                        border-radius: 16px;
+                        border-radius: 12px;
                     }
                     .cbt-question-editor-box .description {
                         margin: 0;
@@ -696,31 +696,32 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-option-list {
                         display: grid;
-                        gap: 8px;
+                        gap: 6px;
                         max-width: 900px;
-                        padding: 16px;
+                        padding: 10px;
                         border: 1px solid #dfe7ef;
-                        border-radius: 18px;
+                        border-radius: 14px;
                         background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
                     }
                     .cbt-option-row {
                         display: flex;
                         align-items: flex-start;
-                        gap: 8px;
-                        padding: 12px 14px;
+                        gap: 7px;
+                        padding: 9px 10px;
                         border: 1px solid #e5ebf2;
-                        border-radius: 14px;
+                        border-radius: 11px;
                         background: #fff;
                     }
                     .cbt-option-row label {
-                        width: 84px;
-                        padding-top: 10px;
+                        width: 76px;
+                        padding-top: 8px;
                         color: #0f172a;
+                        font-size: 12px;
                         font-weight: 700;
                     }
                     .cbt-option-row label.cbt-inline-check {
                         width: auto;
-                        padding-top: 12px;
+                        padding-top: 9px;
                         font-weight: 600;
                         color: #475569;
                     }
@@ -731,79 +732,144 @@ if (!defined('ABSPATH')) {
                     .cbt-option-row .wp-editor-wrap .wp-editor-area {
                         width: 100%;
                     }
+                    .cbt-manual-row-hidden,
+                    .cbt-manual-option-hidden,
+                    .cbt-cloze-tag-button.is-hidden,
+                    .cbt-short-answer-tag-button.is-hidden {
+                        display: none !important;
+                    }
                     .cbt-authoring-panel {
                         display: grid;
-                        gap: 16px;
+                        gap: 10px;
                         width: min(100%, 1080px);
-                        padding: 18px;
+                        padding: 12px;
                         border: 1px solid #d7e3ef;
-                        border-radius: 18px;
+                        border-radius: 14px;
                         background:
                             linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 251, 255, 0.96) 100%);
-                        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.045);
+                        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.04);
                     }
                     .cbt-authoring-panel-head {
                         display: flex;
-                        align-items: flex-start;
+                        align-items: center;
                         justify-content: space-between;
-                        gap: 14px;
+                        gap: 12px;
                         flex-wrap: wrap;
-                        padding-bottom: 14px;
+                        padding-bottom: 8px;
                         border-bottom: 1px solid #e3ebf4;
+                    }
+                    .cbt-authoring-panel-head > div:first-child {
+                        flex: 1 1 280px;
+                        min-width: 0;
                     }
                     .cbt-authoring-panel-head strong {
                         display: block;
-                        margin-bottom: 4px;
+                        margin-bottom: 2px;
                         color: #0f172a;
-                        font-size: 15px;
+                        font-size: 14px;
                         line-height: 1.35;
                     }
                     .cbt-authoring-panel-head p {
                         margin: 0;
                         color: #64748b;
-                        font-size: 13px;
-                        line-height: 1.55;
+                        font-size: 12px;
+                        line-height: 1.45;
+                    }
+                    .cbt-manual-panel-actions {
+                        display: flex;
+                        align-items: center;
+                        justify-content: flex-end;
+                        gap: 6px;
+                        flex-wrap: wrap;
+                        flex: 0 1 auto;
+                        margin-left: auto;
+                    }
+                    .cbt-qtype-panel > td > .cbt-manual-panel-actions {
+                        justify-content: flex-start;
+                        width: min(100%, 900px);
+                        margin: 0 0 8px;
+                        padding: 8px 10px;
+                        border: 1px solid #dfe7ef;
+                        border-radius: 14px;
+                        background: #ffffff;
+                    }
+                    .cbt-manual-count-control {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                        min-width: 0;
+                        color: #334155;
+                        font-size: 11px;
+                        font-weight: 700;
+                        white-space: nowrap;
+                    }
+                    .cbt-manual-count-control select {
+                        min-height: 34px;
+                        min-width: 70px;
+                        padding: 0 32px 0 10px;
+                        border-radius: 10px;
+                    }
+                    .cbt-manual-count-step.button {
+                        min-height: 34px;
+                        padding: 0 10px;
+                        border-radius: 10px;
+                    }
+                    .cbt-manual-hidden-warning {
+                        display: none;
+                        flex-basis: 100%;
+                        margin: -1px 0 0;
+                        color: #b45309;
+                        font-size: 11px;
+                        font-weight: 700;
+                        line-height: 1.25;
+                        text-align: right;
+                    }
+                    .cbt-manual-hidden-warning.is-visible {
+                        display: block;
+                    }
+                    .cbt-manual-panel-actions + .cbt-option-list {
+                        margin-top: 0;
                     }
                     .cbt-authoring-badge {
                         display: inline-flex;
                         align-items: center;
-                        min-height: 30px;
-                        padding: 0 12px;
+                        min-height: 26px;
+                        padding: 0 10px;
                         border: 1px solid #bfdbfe;
                         border-radius: 999px;
                         background: #eff6ff;
                         color: #1d4ed8;
-                        font-size: 12px;
+                        font-size: 11px;
                         font-weight: 700;
                         white-space: nowrap;
                     }
                     .cbt-matching-author-grid,
                     .cbt-cloze-author-grid {
                         display: grid;
-                        gap: 12px;
+                        gap: 8px;
                     }
                     .cbt-matching-author-row {
                         display: grid;
-                        grid-template-columns: 54px minmax(260px, 1fr) 38px minmax(260px, 1fr);
-                        gap: 12px;
+                        grid-template-columns: 44px minmax(230px, 1fr) 30px minmax(230px, 1fr);
+                        gap: 8px;
                         align-items: start;
-                        padding: 14px;
+                        padding: 10px;
                         border: 1px solid #e1eaf3;
-                        border-radius: 16px;
+                        border-radius: 12px;
                         background: #ffffff;
                     }
                     .cbt-author-row-index {
                         display: grid;
                         place-items: center;
                         gap: 3px;
-                        min-height: 54px;
+                        min-height: 44px;
                         border: 1px solid #dbeafe;
-                        border-radius: 14px;
+                        border-radius: 11px;
                         background: #f8fbff;
                         color: #1e40af;
                     }
                     .cbt-author-row-index span {
-                        font-size: 18px;
+                        font-size: 15px;
                         font-weight: 800;
                         line-height: 1;
                     }
@@ -823,7 +889,7 @@ if (!defined('ABSPATH')) {
                     .cbt-cloze-correct-row > label,
                     .cbt-cloze-option-field > span {
                         display: block;
-                        margin: 0 0 7px;
+                        margin: 0 0 5px;
                         color: #334155;
                         font-size: 12px;
                         font-weight: 700;
@@ -835,19 +901,19 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-matching-author-left .wp-editor-container,
                     .cbt-matching-author-right .wp-editor-container {
-                        border-radius: 14px;
+                        border-radius: 11px;
                     }
                     .cbt-matching-author-link {
                         display: inline-grid;
                         place-items: center;
-                        width: 38px;
-                        height: 38px;
-                        margin-top: 34px;
+                        width: 30px;
+                        height: 30px;
+                        margin-top: 29px;
                         border: 1px solid #dbeafe;
                         border-radius: 999px;
                         background: #eff6ff;
                         color: #1d4ed8;
-                        font-size: 18px;
+                        font-size: 15px;
                         font-weight: 800;
                     }
                     .cbt-authoring-panel--cloze {
@@ -858,15 +924,15 @@ if (!defined('ABSPATH')) {
                         display: flex;
                         flex-wrap: wrap;
                         align-items: center;
-                        gap: 8px;
-                        padding: 10px 12px;
+                        gap: 6px;
+                        padding: 8px 10px;
                         border: 1px solid #e1eaf3;
                         border-radius: 8px;
                         background: #ffffff;
                     }
                     .cbt-question-tags {
                         display: none;
-                        margin-bottom: 10px;
+                        margin-bottom: 8px;
                     }
                     .cbt-question-tags.is-active {
                         display: flex;
@@ -879,8 +945,8 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-cloze-tag-button.button,
                     .cbt-short-answer-tag-button.button {
-                        min-height: 30px;
-                        padding: 0 10px;
+                        min-height: 28px;
+                        padding: 0 9px;
                         border-color: #bfdbfe;
                         border-radius: 8px;
                         background: #f8fbff;
@@ -888,25 +954,25 @@ if (!defined('ABSPATH')) {
                         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
                         font-size: 11px;
                         font-weight: 800;
-                        line-height: 28px;
+                        line-height: 26px;
                     }
                     .cbt-cloze-author-grid {
-                        gap: 10px;
+                        gap: 8px;
                     }
                     .cbt-cloze-author-row {
                         display: grid;
-                        grid-template-columns: 118px minmax(0, 1fr) 150px;
-                        gap: 12px;
+                        grid-template-columns: 100px minmax(0, 1fr) 132px;
+                        gap: 8px;
                         align-items: start;
                         min-width: 0;
-                        padding: 12px;
+                        padding: 10px;
                         border: 1px solid #e1eaf3;
                         border-radius: 8px;
                         background: #ffffff;
                     }
                     .cbt-cloze-blank-meta {
                         display: grid;
-                        gap: 6px;
+                        gap: 5px;
                         align-content: start;
                         min-width: 0;
                     }
@@ -920,8 +986,8 @@ if (!defined('ABSPATH')) {
                         align-items: center;
                         width: fit-content;
                         max-width: 100%;
-                        min-height: 26px;
-                        padding: 0 8px;
+                        min-height: 24px;
+                        padding: 0 7px;
                         border: 1px solid #bbf7d0;
                         border-radius: 8px;
                         background: #f0fdf4;
@@ -934,7 +1000,7 @@ if (!defined('ABSPATH')) {
                     .cbt-cloze-options-grid {
                         display: grid;
                         grid-template-columns: repeat(3, minmax(0, 1fr));
-                        gap: 8px;
+                        gap: 7px;
                         min-width: 0;
                     }
                     .cbt-cloze-option-field {
@@ -951,7 +1017,7 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-cloze-correct-row {
                         display: grid;
-                        gap: 7px;
+                        gap: 5px;
                         min-width: 0;
                     }
                     .cbt-cloze-correct-row > label {
@@ -963,17 +1029,17 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-short-answer-grid {
                         display: grid;
-                        gap: 10px;
+                        gap: 7px;
                     }
                     .cbt-short-answer-row {
                         display: grid;
-                        grid-template-columns: minmax(130px, 170px) minmax(240px, 1fr);
-                        gap: 12px;
+                        grid-template-columns: minmax(118px, 152px) minmax(220px, 1fr);
+                        gap: 9px;
                         align-items: center;
                         min-width: 0;
-                        padding: 12px 14px;
+                        padding: 9px 10px;
                         border: 1px solid #e1eaf3;
-                        border-radius: 16px;
+                        border-radius: 12px;
                         background: #ffffff;
                     }
                     .cbt-short-answer-label {
@@ -989,8 +1055,8 @@ if (!defined('ABSPATH')) {
                         display: inline-flex;
                         align-items: center;
                         width: fit-content;
-                        min-height: 26px;
-                        padding: 0 9px;
+                        min-height: 24px;
+                        padding: 0 8px;
                         border: 1px solid #bfdbfe;
                         border-radius: 999px;
                         background: #eff6ff;
@@ -1005,16 +1071,16 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-tfm-author-grid {
                         display: grid;
-                        gap: 12px;
+                        gap: 8px;
                     }
                     .cbt-tfm-author-row {
                         display: grid;
-                        grid-template-columns: 54px minmax(300px, 1fr) minmax(180px, 220px);
-                        gap: 12px;
+                        grid-template-columns: 44px minmax(260px, 1fr) minmax(150px, 190px);
+                        gap: 8px;
                         align-items: start;
-                        padding: 14px;
+                        padding: 10px;
                         border: 1px solid #e1eaf3;
-                        border-radius: 16px;
+                        border-radius: 12px;
                         background: #ffffff;
                     }
                     .cbt-tfm-author-statement {
@@ -1023,7 +1089,7 @@ if (!defined('ABSPATH')) {
                     .cbt-tfm-author-statement > label,
                     .cbt-tfm-author-answer > label {
                         display: block;
-                        margin: 0 0 7px;
+                        margin: 0 0 5px;
                         color: #334155;
                         font-size: 12px;
                         font-weight: 700;
@@ -1033,11 +1099,11 @@ if (!defined('ABSPATH')) {
                         max-width: none;
                     }
                     .cbt-tfm-author-statement .wp-editor-container {
-                        border-radius: 14px;
+                        border-radius: 11px;
                     }
                     .cbt-tfm-author-answer {
                         display: grid;
-                        gap: 10px;
+                        gap: 7px;
                         min-width: 0;
                     }
                     .cbt-tfm-author-answer select {
@@ -1046,17 +1112,17 @@ if (!defined('ABSPATH')) {
                     .cbt-categorization-author-grid,
                     .cbt-table-author-grid {
                         display: grid;
-                        gap: 12px;
+                        gap: 8px;
                     }
                     .cbt-cat-category-grid {
                         display: grid;
                         grid-template-columns: repeat(4, minmax(140px, 1fr));
-                        gap: 10px;
+                        gap: 7px;
                     }
                     .cbt-cat-category-field,
                     .cbt-table-cell-options label {
                         display: grid;
-                        gap: 5px;
+                        gap: 4px;
                         min-width: 0;
                     }
                     .cbt-cat-category-field span,
@@ -1076,48 +1142,48 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-cat-item-row {
                         display: grid;
-                        grid-template-columns: 54px minmax(220px, 1fr) minmax(150px, 220px);
-                        gap: 12px;
+                        grid-template-columns: 44px minmax(220px, 1fr) minmax(140px, 190px);
+                        gap: 8px;
                         align-items: center;
-                        padding: 12px;
+                        padding: 9px 10px;
                         border: 1px solid #e1eaf3;
-                        border-radius: 12px;
+                        border-radius: 11px;
                         background: #ffffff;
                     }
                     .cbt-table-size-row {
                         display: flex;
-                        gap: 12px;
+                        gap: 8px;
                         flex-wrap: wrap;
                         align-items: end;
-                        padding: 12px;
+                        padding: 9px 10px;
                         border: 1px solid #e1eaf3;
-                        border-radius: 14px;
+                        border-radius: 12px;
                         background: #f8fbff;
                     }
                     .cbt-table-size-row label {
                         display: grid;
-                        gap: 6px;
-                        min-width: 120px;
+                        gap: 4px;
+                        min-width: 104px;
                         color: #334155;
                         font-size: 12px;
                         font-weight: 700;
                     }
                     .cbt-table-author-scroll {
                         overflow-x: auto;
-                        padding: 12px;
+                        padding: 10px;
                         border: 1px solid #dbe6f3;
-                        border-radius: 16px;
+                        border-radius: 12px;
                         background: #f8fbff;
                     }
                     .cbt-table-author-matrix {
                         display: grid;
-                        gap: 10px;
-                        min-width: min(100%, calc(var(--cbt-table-cols, 3) * 220px));
+                        gap: 8px;
+                        min-width: min(100%, calc(var(--cbt-table-cols, 3) * 184px));
                     }
                     .cbt-table-author-row {
                         display: grid;
-                        grid-template-columns: repeat(var(--cbt-table-cols, 3), minmax(190px, 1fr));
-                        gap: 10px;
+                        grid-template-columns: repeat(var(--cbt-table-cols, 3), minmax(168px, 1fr));
+                        gap: 8px;
                     }
                     .cbt-table-author-row.is-hidden,
                     .cbt-table-cell-field.is-hidden {
@@ -1125,13 +1191,13 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-table-cell-field {
                         display: grid;
-                        gap: 10px;
+                        gap: 7px;
                         align-content: start;
                         min-width: 0;
-                        padding: 12px;
+                        padding: 9px;
                         border: 1px solid #dbe6f3;
-                        border-left: 4px solid #cbd5e1;
-                        border-radius: 14px;
+                        border-left: 3px solid #cbd5e1;
+                        border-radius: 11px;
                         background: #ffffff;
                     }
                     .cbt-table-cell-field.is-text {
@@ -1146,19 +1212,19 @@ if (!defined('ABSPATH')) {
                         display: grid;
                         grid-template-columns: auto minmax(0, 1fr);
                         align-items: center;
-                        gap: 8px;
+                        gap: 6px;
                     }
                     .cbt-table-cell-key {
                         display: inline-flex;
                         align-items: center;
                         justify-content: center;
-                        width: 34px;
-                        height: 34px;
-                        border-radius: 10px;
+                        width: 28px;
+                        height: 28px;
+                        border-radius: 8px;
                         background: #eef4ff;
                         color: #1d4ed8;
                         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-                        font-size: 12px;
+                        font-size: 11px;
                         font-weight: 800;
                     }
                     .cbt-table-cell-type {
@@ -1167,13 +1233,13 @@ if (!defined('ABSPATH')) {
                     .cbt-table-cell-options {
                         display: grid;
                         grid-template-columns: repeat(2, minmax(0, 1fr));
-                        gap: 6px;
+                        gap: 5px;
                     }
                     .cbt-table-cell-options-head {
                         display: flex;
                         align-items: center;
                         justify-content: space-between;
-                        gap: 8px;
+                        gap: 6px;
                         color: #334155;
                         font-size: 12px;
                         font-weight: 800;
@@ -1183,9 +1249,38 @@ if (!defined('ABSPATH')) {
                         font-size: 11px;
                         font-weight: 700;
                     }
+                    .cbt-authoring-panel input[type="text"],
+                    .cbt-authoring-panel select,
+                    .cbt-option-list input[type="text"],
+                    .cbt-option-list select {
+                        min-height: 38px;
+                        border-radius: 11px;
+                    }
+                    .cbt-table-cell-options input[type="text"] {
+                        min-height: 34px;
+                        padding: 0 8px;
+                        border-radius: 9px;
+                    }
+                    .cbt-option-row .wp-editor-tools,
+                    .cbt-matching-author-row .wp-editor-tools,
+                    .cbt-tfm-author-row .wp-editor-tools {
+                        padding-bottom: 4px;
+                    }
+                    .cbt-option-row .wp-editor-container,
+                    .cbt-matching-author-row .wp-editor-container,
+                    .cbt-tfm-author-row .wp-editor-container {
+                        border-radius: 10px;
+                    }
+                    .cbt-option-row .wp-editor-tabs .wp-switch-editor,
+                    .cbt-matching-author-row .wp-editor-tabs .wp-switch-editor,
+                    .cbt-tfm-author-row .wp-editor-tabs .wp-switch-editor {
+                        height: 27px;
+                        padding: 4px 8px;
+                        font-size: 12px;
+                    }
                     @media (max-width: 980px) {
                         .cbt-matching-author-row {
-                            grid-template-columns: 48px 1fr;
+                            grid-template-columns: 44px 1fr;
                         }
                         .cbt-matching-author-link {
                             display: none;
@@ -1194,13 +1289,13 @@ if (!defined('ABSPATH')) {
                             grid-column: 2;
                         }
                         .cbt-tfm-author-row {
-                            grid-template-columns: 48px 1fr;
+                            grid-template-columns: 44px 1fr;
                         }
                         .cbt-tfm-author-answer {
                             grid-column: 2;
                         }
                         .cbt-cloze-author-row {
-                            grid-template-columns: 110px minmax(0, 1fr);
+                            grid-template-columns: 96px minmax(0, 1fr);
                         }
                         .cbt-cloze-correct-row {
                             grid-column: 2;
@@ -1212,12 +1307,12 @@ if (!defined('ABSPATH')) {
                             grid-template-columns: repeat(2, minmax(0, 1fr));
                         }
                         .cbt-cat-item-row {
-                            grid-template-columns: 48px 1fr;
+                            grid-template-columns: 44px 1fr;
                         }
                     }
                     @media (max-width: 640px) {
                         .cbt-authoring-panel {
-                            padding: 14px;
+                            padding: 10px;
                         }
                         .cbt-matching-author-row {
                             grid-template-columns: 1fr;
@@ -1228,7 +1323,7 @@ if (!defined('ABSPATH')) {
                             grid-column: auto;
                         }
                         .cbt-author-row-index {
-                            width: 54px;
+                            width: 44px;
                         }
                         .cbt-cloze-author-grid,
                         .cbt-cloze-options-grid,
@@ -1251,8 +1346,26 @@ if (!defined('ABSPATH')) {
                         gap: 8px;
                         flex-wrap: wrap;
                     }
+                    .cbt-word-template-control {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    .cbt-word-template-control[hidden] {
+                        display: none;
+                    }
+                    .cbt-word-template-control select {
+                        min-width: 72px;
+                    }
                     .cbt-questions-form-actions {
-                        margin-top: 18px;
+                        position: sticky;
+                        bottom: 0;
+                        z-index: 20;
+                        margin-top: 12px;
+                        padding: 9px 0;
+                        border-top: 1px solid #dbe6f3;
+                        background: rgba(246, 248, 250, 0.94);
+                        backdrop-filter: blur(8px);
                     }
                     .cbt-questions-progress {
                         margin-bottom: 18px;
@@ -2281,7 +2394,7 @@ if (!defined('ABSPATH')) {
                                     >
                                         <span class="cbt-cloze-tag-toolbar-label">Tag</span>
                                         <?php for ($i = 1; $i <= 8; $i++): ?>
-                                            <button type="button" class="button button-secondary cbt-cloze-tag-button" data-cbt-cloze-placeholder="[DROPDOWN_<?php echo (int) $i; ?>]">[DROPDOWN_<?php echo (int) $i; ?>]</button>
+                                            <button type="button" class="button button-secondary cbt-cloze-tag-button" data-cbt-cloze-placeholder="[DROPDOWN_<?php echo (int) $i; ?>]" data-cbt-manual-tag-group="cloze_dropdown" data-cbt-manual-tag-index="<?php echo (int) $i; ?>">[DROPDOWN_<?php echo (int) $i; ?>]</button>
                                         <?php endfor; ?>
                                     </div>
                                     <div
@@ -2294,7 +2407,7 @@ if (!defined('ABSPATH')) {
                                         <span class="cbt-cloze-tag-toolbar-label">Tag</span>
                                         <?php for ($i = 1; $i <= 8; $i++): ?>
                                             <?php $short_answer_tag_key = chr(64 + $i); ?>
-                                            <button type="button" class="button button-secondary cbt-short-answer-tag-button" data-cbt-short-answer-placeholder="[INPUT_<?php echo esc_attr($short_answer_tag_key); ?>]">[INPUT_<?php echo esc_html($short_answer_tag_key); ?>]</button>
+                                            <button type="button" class="button button-secondary cbt-short-answer-tag-button" data-cbt-short-answer-placeholder="[INPUT_<?php echo esc_attr($short_answer_tag_key); ?>]" data-cbt-manual-tag-group="short_answer_input" data-cbt-manual-tag-index="<?php echo (int) $i; ?>">[INPUT_<?php echo esc_html($short_answer_tag_key); ?>]</button>
                                         <?php endfor; ?>
                                     </div>
                                     <?php
@@ -2322,9 +2435,22 @@ if (!defined('ABSPATH')) {
                         <tr class="cbt-qtype-panel<?php echo $editing_type === 'multiple_choice' ? ' cbt-active' : ''; ?>" data-qtype="multiple_choice">
                             <th>Multiple Choice</th>
                             <td>
+                                <div class="cbt-manual-panel-actions">
+                                    <label class="cbt-manual-count-control" for="cbt_mc_option_count">
+                                        Jumlah Pilihan
+                                        <select id="cbt_mc_option_count" name="cbt_mc_option_count" data-cbt-manual-count data-target="mc_option" data-min="3" data-max="5">
+                                            <?php for ($i = 3; $i <= 5; $i++): ?>
+                                                <option value="<?php echo (int) $i; ?>" <?php selected((int) $mc_active_option_count, $i); ?>><?php echo (int) $i; ?></option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </label>
+                                    <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_mc_option_count" data-cbt-count-step="-1">-</button>
+                                    <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_mc_option_count" data-cbt-count-step="1">+ Tambah</button>
+                                    <span class="cbt-manual-hidden-warning" data-cbt-count-warning="mc_option">Pilihan di luar jumlah aktif tidak akan disimpan.</span>
+                                </div>
                                 <div class="cbt-option-list">
                                     <?php for ($i = 1; $i <= 5; $i++): ?>
-                                        <div class="cbt-option-row">
+                                        <div class="cbt-option-row" data-cbt-manual-row data-manual-row-group="mc_option" data-manual-index="<?php echo (int) $i; ?>">
                                             <label for="cbt_mc_option_<?php echo (int) $i; ?>">Pilihan <?php echo (int) $i; ?></label>
                                             <?php
                                             $mc_editor_id = 'cbt_mc_option_' . (int) $i;
@@ -2333,7 +2459,7 @@ if (!defined('ABSPATH')) {
                                                 $mc_editor_id,
                                                 [
                                                     'textarea_name' => $mc_editor_id,
-                                                    'textarea_rows' => 3,
+                                                    'textarea_rows' => 2,
                                                     'media_buttons' => true,
                                                     'teeny' => true,
                                                     'quicktags' => true,
@@ -2346,7 +2472,7 @@ if (!defined('ABSPATH')) {
                                 </div>
                                 <p class="cbt-inline-help">Isi minimal 3 pilihan, maksimal 5 pilihan. Wajib pilih tepat 1 jawaban benar dan tidak boleh ada pilihan duplikat. Tiap pilihan bisa teks atau gambar. Paste langsung dari clipboard untuk gambar kecil, atau pakai Add Media untuk file besar.</p>
                                 <label for="cbt-correct-mc-index">Jawaban Benar</label>
-                                <select id="cbt-correct-mc-index">
+                                <select id="cbt-correct-mc-index" data-cbt-manual-option-bound="mc_option">
                                     <?php for ($i = 1; $i <= 5; $i++): ?>
                                         <option value="<?php echo (int) $i; ?>" <?php selected((int) $mc_correct_index, $i); ?>>Pilihan <?php echo (int) $i; ?></option>
                                     <?php endfor; ?>
@@ -2356,9 +2482,22 @@ if (!defined('ABSPATH')) {
                         <tr class="cbt-qtype-panel<?php echo $editing_type === 'multiple_answer' ? ' cbt-active' : ''; ?>" data-qtype="multiple_answer">
                             <th>Multiple Answer</th>
                             <td>
+                                <div class="cbt-manual-panel-actions">
+                                    <label class="cbt-manual-count-control" for="cbt_ma_option_count">
+                                        Jumlah Pilihan
+                                        <select id="cbt_ma_option_count" name="cbt_ma_option_count" data-cbt-manual-count data-target="ma_option" data-min="3" data-max="12">
+                                            <?php for ($i = 3; $i <= 12; $i++): ?>
+                                                <option value="<?php echo (int) $i; ?>" <?php selected((int) $ma_active_option_count, $i); ?>><?php echo (int) $i; ?></option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </label>
+                                    <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_ma_option_count" data-cbt-count-step="-1">-</button>
+                                    <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_ma_option_count" data-cbt-count-step="1">+ Tambah</button>
+                                    <span class="cbt-manual-hidden-warning" data-cbt-count-warning="ma_option">Pilihan di luar jumlah aktif tidak akan disimpan.</span>
+                                </div>
                                 <div class="cbt-option-list">
                                     <?php for ($i = 1; $i <= 12; $i++): ?>
-                                        <div class="cbt-option-row">
+                                        <div class="cbt-option-row" data-cbt-manual-row data-manual-row-group="ma_option" data-manual-index="<?php echo (int) $i; ?>">
                                             <label for="cbt_ma_option_<?php echo (int) $i; ?>">Pilihan <?php echo (int) $i; ?></label>
                                             <?php
                                             $ma_editor_id = 'cbt_ma_option_' . (int) $i;
@@ -2367,7 +2506,7 @@ if (!defined('ABSPATH')) {
                                                 $ma_editor_id,
                                                 [
                                                     'textarea_name' => $ma_editor_id,
-                                                    'textarea_rows' => 3,
+                                                    'textarea_rows' => 2,
                                                     'media_buttons' => true,
                                                     'teeny' => true,
                                                     'quicktags' => true,
@@ -2403,11 +2542,24 @@ if (!defined('ABSPATH')) {
                                             <strong>Pernyataan dan kunci Benar/Salah</strong>
                                             <p>Tulis pernyataan dengan editor, lalu pilih kunci untuk setiap baris yang dipakai.</p>
                                         </div>
-                                        <span class="cbt-authoring-badge">Minimal 2 pernyataan</span>
+                                        <div class="cbt-manual-panel-actions">
+                                            <span class="cbt-authoring-badge">Minimal 2 pernyataan</span>
+                                            <label class="cbt-manual-count-control" for="cbt_tfm_statement_count">
+                                                Jumlah Pernyataan
+                                                <select id="cbt_tfm_statement_count" name="cbt_tfm_statement_count" data-cbt-manual-count data-target="tfm_statement" data-min="2" data-max="10">
+                                                    <?php for ($i = 2; $i <= 10; $i++): ?>
+                                                        <option value="<?php echo (int) $i; ?>" <?php selected((int) $tfm_active_statement_count, $i); ?>><?php echo (int) $i; ?></option>
+                                                    <?php endfor; ?>
+                                                </select>
+                                            </label>
+                                            <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_tfm_statement_count" data-cbt-count-step="-1">-</button>
+                                            <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_tfm_statement_count" data-cbt-count-step="1">+ Tambah</button>
+                                            <span class="cbt-manual-hidden-warning" data-cbt-count-warning="tfm_statement">Pernyataan di luar jumlah aktif tidak akan disimpan.</span>
+                                        </div>
                                     </div>
                                     <div class="cbt-tfm-author-grid">
                                     <?php for ($i = 1; $i <= 10; $i++): ?>
-                                        <section class="cbt-tfm-author-row">
+                                        <section class="cbt-tfm-author-row" data-cbt-manual-row data-manual-row-group="tfm_statement" data-manual-index="<?php echo (int) $i; ?>">
                                             <div class="cbt-author-row-index">
                                                 <span><?php echo (int) $i; ?></span>
                                                 <small>Baris</small>
@@ -2421,7 +2573,7 @@ if (!defined('ABSPATH')) {
                                                     $tfm_editor_id,
                                                     [
                                                         'textarea_name' => $tfm_editor_id,
-                                                        'textarea_rows' => 3,
+                                                        'textarea_rows' => 2,
                                                         'media_buttons' => true,
                                                         'teeny' => true,
                                                         'quicktags' => true,
@@ -2453,12 +2605,25 @@ if (!defined('ABSPATH')) {
                                             <strong>Jawaban valid per input</strong>
                                             <p>Isi kunci untuk setiap input yang dipakai pada teks soal.</p>
                                         </div>
-                                        <span class="cbt-authoring-badge">8 input tersedia</span>
+                                        <div class="cbt-manual-panel-actions">
+                                            <span class="cbt-authoring-badge">8 input tersedia</span>
+                                            <label class="cbt-manual-count-control" for="cbt_short_answer_input_count">
+                                                Jumlah Input
+                                                <select id="cbt_short_answer_input_count" name="cbt_short_answer_input_count" data-cbt-manual-count data-target="short_answer_input" data-min="1" data-max="8">
+                                                    <?php for ($i = 1; $i <= 8; $i++): ?>
+                                                        <option value="<?php echo (int) $i; ?>" <?php selected((int) $short_answer_active_input_count, $i); ?>><?php echo (int) $i; ?></option>
+                                                    <?php endfor; ?>
+                                                </select>
+                                            </label>
+                                            <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_short_answer_input_count" data-cbt-count-step="-1">-</button>
+                                            <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_short_answer_input_count" data-cbt-count-step="1">+ Tambah</button>
+                                            <span class="cbt-manual-hidden-warning" data-cbt-count-warning="short_answer_input">Input di luar jumlah aktif tidak akan disimpan.</span>
+                                        </div>
                                     </div>
                                     <div class="cbt-short-answer-grid">
                                     <?php for ($i = 1; $i <= 8; $i++): ?>
                                         <?php $short_answer_key = chr(64 + $i); ?>
-                                        <section class="cbt-short-answer-row">
+                                        <section class="cbt-short-answer-row" data-cbt-manual-row data-manual-row-group="short_answer_input" data-manual-index="<?php echo (int) $i; ?>">
                                             <div class="cbt-short-answer-label">
                                                 <strong>Input <?php echo esc_html($short_answer_key); ?></strong>
                                                 <span class="cbt-short-answer-tag">[INPUT_<?php echo esc_html($short_answer_key); ?>]</span>
@@ -2494,9 +2659,22 @@ if (!defined('ABSPATH')) {
                         <tr class="cbt-qtype-panel<?php echo $editing_type === 'ordering' ? ' cbt-active' : ''; ?>" data-qtype="ordering">
                             <th>Ordering</th>
                             <td>
+                                <div class="cbt-manual-panel-actions">
+                                    <label class="cbt-manual-count-control" for="cbt_ordering_item_count">
+                                        Jumlah Item
+                                        <select id="cbt_ordering_item_count" name="cbt_ordering_item_count" data-cbt-manual-count data-target="ordering_item" data-min="2" data-max="12">
+                                            <?php for ($i = 2; $i <= 12; $i++): ?>
+                                                <option value="<?php echo (int) $i; ?>" <?php selected((int) $ordering_active_item_count, $i); ?>><?php echo (int) $i; ?></option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </label>
+                                    <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_ordering_item_count" data-cbt-count-step="-1">-</button>
+                                    <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_ordering_item_count" data-cbt-count-step="1">+ Tambah</button>
+                                    <span class="cbt-manual-hidden-warning" data-cbt-count-warning="ordering_item">Item di luar jumlah aktif tidak akan disimpan.</span>
+                                </div>
                                 <div class="cbt-option-list">
                                     <?php for ($i = 1; $i <= 12; $i++): ?>
-                                        <div class="cbt-option-row">
+                                        <div class="cbt-option-row" data-cbt-manual-row data-manual-row-group="ordering_item" data-manual-index="<?php echo (int) $i; ?>">
                                             <label for="cbt_ordering_item_<?php echo (int) $i; ?>">Urutan benar <?php echo (int) $i; ?></label>
                                             <?php
                                             $ordering_editor_id = 'cbt_ordering_item_' . (int) $i;
@@ -2505,7 +2683,7 @@ if (!defined('ABSPATH')) {
                                                 $ordering_editor_id,
                                                 [
                                                     'textarea_name' => $ordering_editor_id,
-                                                    'textarea_rows' => 3,
+                                                    'textarea_rows' => 2,
                                                     'media_buttons' => true,
                                                     'teeny' => true,
                                                     'quicktags' => true,
@@ -2528,11 +2706,24 @@ if (!defined('ABSPATH')) {
                                             <strong>Pasangan kiri dan pilihan kanan</strong>
                                             <p>Prompt kiri boleh rich text. Pilihan kanan dibuat sebagai label dropdown yang dipilih siswa.</p>
                                         </div>
-                                        <span class="cbt-authoring-badge">Partial score per pasangan</span>
+                                        <div class="cbt-manual-panel-actions">
+                                            <span class="cbt-authoring-badge">Partial score per pasangan</span>
+                                            <label class="cbt-manual-count-control" for="cbt_matching_pair_count">
+                                                Jumlah Pasangan
+                                                <select id="cbt_matching_pair_count" name="cbt_matching_pair_count" data-cbt-manual-count data-target="matching_pair" data-min="2" data-max="12">
+                                                    <?php for ($i = 2; $i <= 12; $i++): ?>
+                                                        <option value="<?php echo (int) $i; ?>" <?php selected((int) $matching_active_pair_count, $i); ?>><?php echo (int) $i; ?></option>
+                                                    <?php endfor; ?>
+                                                </select>
+                                            </label>
+                                            <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_matching_pair_count" data-cbt-count-step="-1">-</button>
+                                            <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_matching_pair_count" data-cbt-count-step="1">+ Tambah</button>
+                                            <span class="cbt-manual-hidden-warning" data-cbt-count-warning="matching_pair">Pasangan di luar jumlah aktif tidak akan disimpan.</span>
+                                        </div>
                                     </div>
                                     <div class="cbt-matching-author-grid">
                                     <?php for ($i = 1; $i <= 12; $i++): ?>
-                                        <section class="cbt-matching-author-row">
+                                        <section class="cbt-matching-author-row" data-cbt-manual-row data-manual-row-group="matching_pair" data-manual-index="<?php echo (int) $i; ?>">
                                             <div class="cbt-author-row-index">
                                                 <span><?php echo (int) $i; ?></span>
                                                 <small>Baris</small>
@@ -2546,7 +2737,7 @@ if (!defined('ABSPATH')) {
                                                     $matching_left_editor_id,
                                                     [
                                                         'textarea_name' => $matching_left_editor_id,
-                                                        'textarea_rows' => 3,
+                                                        'textarea_rows' => 2,
                                                         'media_buttons' => true,
                                                         'teeny' => true,
                                                         'quicktags' => true,
@@ -2565,7 +2756,7 @@ if (!defined('ABSPATH')) {
                                                     $matching_right_editor_id,
                                                     [
                                                         'textarea_name' => $matching_right_editor_id,
-                                                        'textarea_rows' => 3,
+                                                        'textarea_rows' => 2,
                                                         'media_buttons' => true,
                                                         'teeny' => true,
                                                         'quicktags' => true,
@@ -2590,18 +2781,39 @@ if (!defined('ABSPATH')) {
                                             <strong>Dropdown inline di teks soal</strong>
                                             <p>Masukkan tag ke teks soal, lalu isi opsi dan kunci pada baris blank yang dipakai.</p>
                                         </div>
-                                        <span class="cbt-authoring-badge">8 blank tersedia</span>
+                                        <div class="cbt-manual-panel-actions">
+                                            <span class="cbt-authoring-badge">8 blank tersedia</span>
+                                            <label class="cbt-manual-count-control" for="cbt_cloze_dropdown_count">
+                                                Jumlah Dropdown
+                                                <select id="cbt_cloze_dropdown_count" name="cbt_cloze_dropdown_count" data-cbt-manual-count data-target="cloze_dropdown" data-min="1" data-max="8">
+                                                    <?php for ($i = 1; $i <= 8; $i++): ?>
+                                                        <option value="<?php echo (int) $i; ?>" <?php selected((int) $cloze_active_dropdown_count, $i); ?>><?php echo (int) $i; ?></option>
+                                                    <?php endfor; ?>
+                                                </select>
+                                            </label>
+                                            <label class="cbt-manual-count-control" for="cbt_cloze_option_count">
+                                                Opsi per Dropdown
+                                                <select id="cbt_cloze_option_count" name="cbt_cloze_option_count" data-cbt-manual-count data-target="cloze_option" data-min="2" data-max="6">
+                                                    <?php for ($i = 2; $i <= 6; $i++): ?>
+                                                        <option value="<?php echo (int) $i; ?>" <?php selected((int) $cloze_active_option_count, $i); ?>><?php echo (int) $i; ?></option>
+                                                    <?php endfor; ?>
+                                                </select>
+                                            </label>
+                                            <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_cloze_dropdown_count" data-cbt-count-step="-1">-</button>
+                                            <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_cloze_dropdown_count" data-cbt-count-step="1">+ Tambah</button>
+                                            <span class="cbt-manual-hidden-warning" data-cbt-count-warning="cloze_dropdown">Dropdown/opsi di luar jumlah aktif tidak akan disimpan.</span>
+                                        </div>
                                     </div>
                                     <div class="cbt-cloze-author-grid">
                                     <?php for ($i = 1; $i <= 8; $i++): ?>
-                                        <section class="cbt-cloze-author-row">
+                                        <section class="cbt-cloze-author-row" data-cbt-manual-row data-manual-row-group="cloze_dropdown" data-manual-index="<?php echo (int) $i; ?>">
                                             <div class="cbt-cloze-blank-meta">
                                                 <strong>Blank <?php echo (int) $i; ?></strong>
                                                 <span class="cbt-cloze-placeholder">[DROPDOWN_<?php echo (int) $i; ?>]</span>
                                             </div>
                                             <div class="cbt-cloze-options-grid">
                                                 <?php for ($j = 1; $j <= 6; $j++): ?>
-                                                    <label class="cbt-cloze-option-field" for="cbt_cloze_<?php echo (int) $i; ?>_option_<?php echo (int) $j; ?>">
+                                                    <label class="cbt-cloze-option-field" for="cbt_cloze_<?php echo (int) $i; ?>_option_<?php echo (int) $j; ?>" data-cbt-manual-row data-manual-row-group="cloze_option" data-manual-index="<?php echo (int) $j; ?>" data-manual-parent-index="<?php echo (int) $i; ?>">
                                                         <span>Opsi <?php echo (int) $j; ?></span>
                                                         <input
                                                             type="text"
@@ -2638,11 +2850,32 @@ if (!defined('ABSPATH')) {
                                             <strong>Kategori dan item</strong>
                                             <p>Siswa memilih kategori lewat dropdown pada setiap item.</p>
                                         </div>
-                                        <span class="cbt-authoring-badge">Partial score per item</span>
+                                        <div class="cbt-manual-panel-actions">
+                                            <span class="cbt-authoring-badge">Partial score per item</span>
+                                            <label class="cbt-manual-count-control" for="cbt_cat_category_count">
+                                                Jumlah Kategori
+                                                <select id="cbt_cat_category_count" name="cbt_cat_category_count" data-cbt-manual-count data-target="cat_category" data-min="2" data-max="8">
+                                                    <?php for ($i = 2; $i <= 8; $i++): ?>
+                                                        <option value="<?php echo (int) $i; ?>" <?php selected((int) $categorization_active_category_count, $i); ?>><?php echo (int) $i; ?></option>
+                                                    <?php endfor; ?>
+                                                </select>
+                                            </label>
+                                            <label class="cbt-manual-count-control" for="cbt_cat_item_count">
+                                                Jumlah Item
+                                                <select id="cbt_cat_item_count" name="cbt_cat_item_count" data-cbt-manual-count data-target="cat_item" data-min="2" data-max="24">
+                                                    <?php for ($i = 2; $i <= 24; $i++): ?>
+                                                        <option value="<?php echo (int) $i; ?>" <?php selected((int) $categorization_active_item_count, $i); ?>><?php echo (int) $i; ?></option>
+                                                    <?php endfor; ?>
+                                                </select>
+                                            </label>
+                                            <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_cat_item_count" data-cbt-count-step="-1">-</button>
+                                            <button type="button" class="button cbt-manual-count-step" data-cbt-count-target="cbt_cat_item_count" data-cbt-count-step="1">+ Tambah</button>
+                                            <span class="cbt-manual-hidden-warning" data-cbt-count-warning="cat_item">Kategori/item di luar jumlah aktif tidak akan disimpan.</span>
+                                        </div>
                                     </div>
                                     <div class="cbt-cat-category-grid">
                                         <?php for ($i = 1; $i <= 8; $i++): ?>
-                                            <label class="cbt-cat-category-field" for="cbt_cat_category_<?php echo (int) $i; ?>">
+                                            <label class="cbt-cat-category-field" for="cbt_cat_category_<?php echo (int) $i; ?>" data-cbt-manual-row data-manual-row-group="cat_category" data-manual-index="<?php echo (int) $i; ?>">
                                                 <span>Kategori <?php echo (int) $i; ?></span>
                                                 <input
                                                     type="text"
@@ -2656,7 +2889,7 @@ if (!defined('ABSPATH')) {
                                     </div>
                                     <div class="cbt-categorization-author-grid">
                                         <?php for ($i = 1; $i <= 24; $i++): ?>
-                                            <section class="cbt-cat-item-row">
+                                            <section class="cbt-cat-item-row" data-cbt-manual-row data-manual-row-group="cat_item" data-manual-index="<?php echo (int) $i; ?>">
                                                 <div class="cbt-author-row-index">
                                                     <span><?php echo (int) $i; ?></span>
                                                     <small>Item</small>
@@ -2673,7 +2906,7 @@ if (!defined('ABSPATH')) {
                                                 </label>
                                                 <label for="cbt_cat_correct_<?php echo (int) $i; ?>">
                                                     <span class="screen-reader-text">Kunci kategori item <?php echo (int) $i; ?></span>
-                                                    <select id="cbt_cat_correct_<?php echo (int) $i; ?>" name="cbt_cat_correct_<?php echo (int) $i; ?>">
+                                                    <select id="cbt_cat_correct_<?php echo (int) $i; ?>" name="cbt_cat_correct_<?php echo (int) $i; ?>" data-cbt-cat-correct-select>
                                                         <?php for ($j = 1; $j <= 8; $j++): ?>
                                                             <option value="<?php echo (int) $j; ?>" <?php selected((int) ($categorization_item_correct[$i] ?? 1), $j); ?>>Kategori <?php echo (int) $j; ?></option>
                                                         <?php endfor; ?>
@@ -3096,12 +3329,102 @@ if (!defined('ABSPATH')) {
                     </p>
                 </div>
                 <p class="cbt-questions-actions">
-                    <label for="cbt-word-template-count"><strong>Jumlah Soal</strong></label>
-                    <select id="cbt-word-template-count">
-                        <?php for ($count_option = 10; $count_option <= 100; $count_option += 10): ?>
-                            <option value="<?php echo (int) $count_option; ?>"><?php echo (int) $count_option; ?></option>
-                        <?php endfor; ?>
-                    </select>
+                    <span class="cbt-word-template-control">
+                        <label for="cbt-word-template-count"><strong>Jumlah Soal</strong></label>
+                        <select id="cbt-word-template-count">
+                            <?php for ($count_option = 5; $count_option <= 100; $count_option += 5): ?>
+                                <option value="<?php echo (int) $count_option; ?>" <?php selected($count_option, 10); ?>><?php echo (int) $count_option; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
+                    <span class="cbt-word-template-control" data-template-control="option_count" hidden>
+                        <label for="cbt-word-template-option-count"><strong>Jumlah Pilihan</strong></label>
+                        <select id="cbt-word-template-option-count" data-template-select="option_count" disabled hidden>
+                            <?php for ($option_count = 3; $option_count <= 12; $option_count++): ?>
+                                <option value="<?php echo (int) $option_count; ?>" <?php selected($option_count, 5); ?>><?php echo (int) $option_count; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
+                    <span class="cbt-word-template-control" data-template-control="input_count" hidden>
+                        <label for="cbt-word-template-input-count"><strong>Jumlah Input</strong></label>
+                        <select id="cbt-word-template-input-count" data-template-select="input_count" disabled hidden>
+                            <?php for ($input_count = 1; $input_count <= 8; $input_count++): ?>
+                                <option value="<?php echo (int) $input_count; ?>" <?php selected($input_count, 3); ?>><?php echo (int) $input_count; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
+                    <span class="cbt-word-template-control" data-template-control="statement_count" hidden>
+                        <label for="cbt-word-template-statement-count"><strong>Jumlah Pernyataan</strong></label>
+                        <select id="cbt-word-template-statement-count" data-template-select="statement_count" disabled hidden>
+                            <?php for ($statement_count = 2; $statement_count <= 10; $statement_count++): ?>
+                                <option value="<?php echo (int) $statement_count; ?>" <?php selected($statement_count, 5); ?>><?php echo (int) $statement_count; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
+                    <span class="cbt-word-template-control" data-template-control="item_count" hidden>
+                        <label for="cbt-word-template-item-count"><strong>Jumlah Item</strong></label>
+                        <select id="cbt-word-template-item-count" data-template-select="item_count" disabled hidden>
+                            <?php for ($item_count = 2; $item_count <= 12; $item_count++): ?>
+                                <option value="<?php echo (int) $item_count; ?>" <?php selected($item_count, 4); ?>><?php echo (int) $item_count; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
+                    <span class="cbt-word-template-control" data-template-control="pair_count" hidden>
+                        <label for="cbt-word-template-pair-count"><strong>Jumlah Pasangan</strong></label>
+                        <select id="cbt-word-template-pair-count" data-template-select="pair_count" disabled hidden>
+                            <?php for ($pair_count = 2; $pair_count <= 12; $pair_count++): ?>
+                                <option value="<?php echo (int) $pair_count; ?>" <?php selected($pair_count, 3); ?>><?php echo (int) $pair_count; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
+                    <span class="cbt-word-template-control" data-template-control="dropdown_count" hidden>
+                        <label for="cbt-word-template-dropdown-count"><strong>Jumlah Dropdown</strong></label>
+                        <select id="cbt-word-template-dropdown-count" data-template-select="dropdown_count" disabled hidden>
+                            <?php for ($dropdown_count = 1; $dropdown_count <= 8; $dropdown_count++): ?>
+                                <option value="<?php echo (int) $dropdown_count; ?>" <?php selected($dropdown_count, 2); ?>><?php echo (int) $dropdown_count; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
+                    <span class="cbt-word-template-control" data-template-control="dropdown_option_count" hidden>
+                        <label for="cbt-word-template-dropdown-option-count"><strong>Opsi per Dropdown</strong></label>
+                        <select id="cbt-word-template-dropdown-option-count" data-template-select="dropdown_option_count" disabled hidden>
+                            <?php for ($dropdown_option_count = 2; $dropdown_option_count <= 6; $dropdown_option_count++): ?>
+                                <option value="<?php echo (int) $dropdown_option_count; ?>" <?php selected($dropdown_option_count, 3); ?>><?php echo (int) $dropdown_option_count; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
+                    <span class="cbt-word-template-control" data-template-control="category_count" hidden>
+                        <label for="cbt-word-template-category-count"><strong>Jumlah Kategori</strong></label>
+                        <select id="cbt-word-template-category-count" data-template-select="category_count" disabled hidden>
+                            <?php for ($category_count = 2; $category_count <= 8; $category_count++): ?>
+                                <option value="<?php echo (int) $category_count; ?>" <?php selected($category_count, 2); ?>><?php echo (int) $category_count; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
+                    <span class="cbt-word-template-control" data-template-control="categorization_item_count" hidden>
+                        <label for="cbt-word-template-categorization-item-count"><strong>Jumlah Item</strong></label>
+                        <select id="cbt-word-template-categorization-item-count" data-template-select="categorization_item_count" disabled hidden>
+                            <?php for ($categorization_item_count = 2; $categorization_item_count <= 24; $categorization_item_count++): ?>
+                                <option value="<?php echo (int) $categorization_item_count; ?>" <?php selected($categorization_item_count, 3); ?>><?php echo (int) $categorization_item_count; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
+                    <span class="cbt-word-template-control" data-template-control="table_rows" hidden>
+                        <label for="cbt-word-template-table-rows"><strong>Rows</strong></label>
+                        <select id="cbt-word-template-table-rows" data-template-select="table_rows" disabled hidden>
+                            <?php for ($table_rows = 2; $table_rows <= 8; $table_rows++): ?>
+                                <option value="<?php echo (int) $table_rows; ?>" <?php selected($table_rows, 2); ?>><?php echo (int) $table_rows; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
+                    <span class="cbt-word-template-control" data-template-control="table_cols" hidden>
+                        <label for="cbt-word-template-table-cols"><strong>Columns</strong></label>
+                        <select id="cbt-word-template-table-cols" data-template-select="table_cols" disabled hidden>
+                            <?php for ($table_cols = 2; $table_cols <= 6; $table_cols++): ?>
+                                <option value="<?php echo (int) $table_cols; ?>" <?php selected($table_cols, 2); ?>><?php echo (int) $table_cols; ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </span>
                     <a
                         id="cbt-download-word-template"
                         class="button button-secondary"
@@ -3704,6 +4027,121 @@ if (!defined('ABSPATH')) {
                 const qTypeCurrent = document.getElementById('cbt-question-type-current');
                 const qTypePanels = document.querySelectorAll('.cbt-qtype-panel');
                 const qTypeToolbars = document.querySelectorAll('[data-cbt-qtype-toolbar]');
+                const manualCountControls = Array.from(document.querySelectorAll('[data-cbt-manual-count]'));
+
+                function clampManualCount(value, min, max) {
+                    let safeValue = Number.isFinite(value) ? value : min;
+                    if (safeValue < min) safeValue = min;
+                    if (safeValue > max) safeValue = max;
+                    return safeValue;
+                }
+
+                function getManualCountValue(selectId, fallback, min, max) {
+                    const select = document.getElementById(selectId);
+                    const parsed = parseInt(String(select?.value || fallback), 10);
+                    return clampManualCount(Number.isFinite(parsed) ? parsed : fallback, min, max);
+                }
+
+                function syncSelectOptionLimit(select, count) {
+                    if (!select) return;
+                    Array.from(select.options || []).forEach((option) => {
+                        const optionValue = parseInt(String(option.value || '0'), 10);
+                        const isAllowed = optionValue <= count;
+                        option.hidden = !isAllowed;
+                        option.disabled = !isAllowed;
+                    });
+                    const selectedValue = parseInt(String(select.value || '1'), 10) || 1;
+                    if (selectedValue > count) {
+                        select.value = String(count);
+                    }
+                }
+
+                function getWarningGroupsForCountTarget(target) {
+                    if (target === 'cloze_dropdown' || target === 'cloze_option') {
+                        return ['cloze_dropdown'];
+                    }
+                    if (target === 'cat_category' || target === 'cat_item') {
+                        return ['cat_item'];
+                    }
+                    return target ? [target] : [];
+                }
+
+                function markManualCountWarning(target) {
+                    getWarningGroupsForCountTarget(target).forEach((group) => {
+                        document.querySelectorAll(`[data-cbt-count-warning="${group}"]`).forEach((warning) => {
+                            warning.setAttribute('data-cbt-warning-visible', '1');
+                        });
+                    });
+                }
+
+                function syncManualCompactAuthoring() {
+                    const counts = {};
+                    const maxByGroup = {};
+                    manualCountControls.forEach((select) => {
+                        const group = String(select.getAttribute('data-target') || '');
+                        if (group === '') return;
+                        const min = parseInt(String(select.getAttribute('data-min') || '1'), 10) || 1;
+                        const max = parseInt(String(select.getAttribute('data-max') || min), 10) || min;
+                        const parsed = parseInt(String(select.value || min), 10);
+                        const value = clampManualCount(Number.isFinite(parsed) ? parsed : min, min, max);
+                        select.value = String(value);
+                        counts[group] = value;
+                        maxByGroup[group] = max;
+                    });
+
+                    document.querySelectorAll('[data-cbt-manual-row]').forEach((row) => {
+                        const group = String(row.getAttribute('data-manual-row-group') || '');
+                        const index = parseInt(String(row.getAttribute('data-manual-index') || '0'), 10) || 0;
+                        const parentIndex = parseInt(String(row.getAttribute('data-manual-parent-index') || '0'), 10) || 0;
+                        const limit = counts[group];
+                        let isHidden = false;
+                        if (Number.isFinite(limit) && limit > 0 && index > limit) {
+                            isHidden = true;
+                        }
+                        if (group === 'cloze_option' && parentIndex > 0 && counts.cloze_dropdown && parentIndex > counts.cloze_dropdown) {
+                            isHidden = true;
+                        }
+                        row.classList.toggle('cbt-manual-row-hidden', isHidden);
+                    });
+
+                    document.querySelectorAll('[data-cbt-manual-tag-group]').forEach((tagButton) => {
+                        const group = String(tagButton.getAttribute('data-cbt-manual-tag-group') || '');
+                        const index = parseInt(String(tagButton.getAttribute('data-cbt-manual-tag-index') || '0'), 10) || 0;
+                        tagButton.classList.toggle('is-hidden', !!counts[group] && index > counts[group]);
+                    });
+
+                    document.querySelectorAll('[data-cbt-manual-option-bound]').forEach((select) => {
+                        const group = String(select.getAttribute('data-cbt-manual-option-bound') || '');
+                        syncSelectOptionLimit(select, counts[group] || 1);
+                    });
+
+                    const clozeOptionCount = counts.cloze_option || 6;
+                    for (let blankIndex = 1; blankIndex <= 8; blankIndex += 1) {
+                        syncSelectOptionLimit(document.getElementById(`cbt_cloze_correct_${blankIndex}`), clozeOptionCount);
+                    }
+
+                    const categoryCount = counts.cat_category || 8;
+                    document.querySelectorAll('[data-cbt-cat-correct-select]').forEach((select) => {
+                        syncSelectOptionLimit(select, categoryCount);
+                    });
+
+                    document.querySelectorAll('[data-cbt-count-warning]').forEach((warning) => {
+                        const group = String(warning.getAttribute('data-cbt-count-warning') || '');
+                        const wasTriggered = warning.getAttribute('data-cbt-warning-visible') === '1';
+                        let hasHiddenActiveFields = false;
+                        if (group === 'cloze_dropdown') {
+                            hasHiddenActiveFields = (counts.cloze_dropdown || 8) < 8 || (counts.cloze_option || 6) < 6;
+                        } else if (group === 'cat_item') {
+                            hasHiddenActiveFields = (counts.cat_category || 8) < 8 || (counts.cat_item || 24) < 24;
+                        } else {
+                            hasHiddenActiveFields = !!maxByGroup[group] && counts[group] < maxByGroup[group];
+                        }
+                        if (!hasHiddenActiveFields) {
+                            warning.removeAttribute('data-cbt-warning-visible');
+                        }
+                        warning.classList.toggle('is-visible', wasTriggered && hasHiddenActiveFields);
+                    });
+                }
 
                 function activateQType(type, shouldFocus = false) {
                     if (!qTypeHidden) return;
@@ -3727,6 +4165,7 @@ if (!defined('ABSPATH')) {
                         toolbar.classList.toggle('is-active', isActive);
                         toolbar.hidden = !isActive;
                     });
+                    syncManualCompactAuthoring();
 
                     if (!shouldFocus) return;
 
@@ -3789,12 +4228,39 @@ if (!defined('ABSPATH')) {
                 }
                 activateQType(qTypeHidden?.value || 'multiple_choice');
 
+                manualCountControls.forEach((select) => {
+                    select.setAttribute('data-cbt-previous-count', String(select.value || ''));
+                    select.addEventListener('change', () => {
+                        const previous = parseInt(String(select.getAttribute('data-cbt-previous-count') || select.value || '0'), 10);
+                        const current = parseInt(String(select.value || '0'), 10);
+                        if (Number.isFinite(previous) && Number.isFinite(current) && current < previous) {
+                            markManualCountWarning(String(select.getAttribute('data-target') || ''));
+                        }
+                        select.setAttribute('data-cbt-previous-count', String(select.value || ''));
+                        syncManualCompactAuthoring();
+                    });
+                });
+                document.querySelectorAll('[data-cbt-count-target][data-cbt-count-step]').forEach((button) => {
+                    button.addEventListener('click', () => {
+                        const targetId = String(button.getAttribute('data-cbt-count-target') || '');
+                        const step = parseInt(String(button.getAttribute('data-cbt-count-step') || '0'), 10) || 0;
+                        const select = document.getElementById(targetId);
+                        if (!select || step === 0) return;
+                        const min = parseInt(String(select.getAttribute('data-min') || '1'), 10) || 1;
+                        const max = parseInt(String(select.getAttribute('data-max') || min), 10) || min;
+                        const current = parseInt(String(select.value || min), 10) || min;
+                        select.value = String(clampManualCount(current + step, min, max));
+                        select.dispatchEvent(new window.Event('change', { bubbles: true }));
+                    });
+                });
+                syncManualCompactAuthoring();
+
                 const tableRowsSelect = document.getElementById('cbt_table_rows');
                 const tableColsSelect = document.getElementById('cbt_table_cols');
 
                 function syncTableCompletionAuthoring() {
-                    const rowCount = Math.max(2, Math.min(8, parseInt(String(tableRowsSelect?.value || '3'), 10) || 3));
-                    const colCount = Math.max(2, Math.min(6, parseInt(String(tableColsSelect?.value || '3'), 10) || 3));
+                    const rowCount = Math.max(2, Math.min(8, parseInt(String(tableRowsSelect?.value || '2'), 10) || 2));
+                    const colCount = Math.max(2, Math.min(6, parseInt(String(tableColsSelect?.value || '2'), 10) || 2));
                     const matrix = document.getElementById('cbt-table-author-matrix');
                     if (matrix) {
                         matrix.style.setProperty('--cbt-table-cols', String(colCount));
@@ -3877,6 +4343,11 @@ if (!defined('ABSPATH')) {
                 const importFileInput = document.getElementById('cbt-question-file');
                 const wordTemplateButton = document.getElementById('cbt-download-word-template');
                 const wordTemplateCount = document.getElementById('cbt-word-template-count');
+                const wordTemplateControls = Array.from(document.querySelectorAll('[data-template-control]')).map((control) => ({
+                    key: control.getAttribute('data-template-control') || '',
+                    control,
+                    select: control.querySelector('[data-template-select]'),
+                })).filter((entry) => entry.key && entry.select);
                 const docxFileAccept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
                 const importHelpSuffix = ' Gambar dan tabel di soal, opsi, serta pembahasan didukung. Wajib gunakan template resmi terbaru dan jangan hapus marker CBT_TEMPLATE atau field JENIS_SOAL.';
 
@@ -3885,11 +4356,17 @@ if (!defined('ABSPATH')) {
                         help: 'Mode import aktif: Multiple Choice. DOCX didukung (minimal 3 opsi, maks 5 opsi, tepat 1 jawaban benar, opsi tidak boleh duplikat, gambar bisa ditempel, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word MC (.docx)',
                         urlKey: 'urlMc',
+                        templateControls: {
+                            option_count: { min: 3, max: 5, defaultValue: 5 },
+                        },
                     },
                     multiple_answer: {
                         help: 'Mode import aktif: Multiple Answer. DOCX didukung (minimal 3 opsi, maks 12 opsi, minimal 1 jawaban benar, opsi tidak boleh duplikat, jawaban bisa lebih dari satu: contoh 1,3,5, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word MA (.docx)',
                         urlKey: 'urlMa',
+                        templateControls: {
+                            option_count: { min: 3, max: 12, defaultValue: 5 },
+                        },
                     },
                     true_false: {
                         help: 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
@@ -3900,11 +4377,17 @@ if (!defined('ABSPATH')) {
                         help: 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false secara berurutan tanpa nomor loncat, pernyataan tidak boleh duplikat, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word TF Matrix (.docx)',
                         urlKey: 'urlTfm',
+                        templateControls: {
+                            statement_count: { min: 2, max: 10, defaultValue: 5 },
+                        },
                     },
                     short_answer: {
                         help: 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, wajib gunakan placeholder [INPUT_1] s.d. [INPUT_8] tanpa duplikat di teks soal, dan wajib pakai JAWABAN_A..H sesuai key placeholder, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word SA (.docx)',
                         urlKey: 'urlSa',
+                        templateControls: {
+                            input_count: { min: 1, max: 8, defaultValue: 3 },
+                        },
                     },
                     essay: {
                         help: 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
@@ -3915,38 +4398,58 @@ if (!defined('ABSPATH')) {
                         help: 'Mode import aktif: Ordering. DOCX didukung (isi ITEM_1..12 sesuai urutan benar, minimal 2 item, item tidak boleh duplikat, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word Ordering (.docx)',
                         urlKey: 'urlOrdering',
+                        templateControls: {
+                            item_count: { min: 2, max: 12, defaultValue: 4 },
+                        },
                     },
                     matching: {
                         help: 'Mode import aktif: Matching. DOCX didukung (isi KIRI_1..12 dan KANAN_1..12, minimal 2 pasangan, tidak boleh duplikat, field opsional PEMBAHASAN didukung).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word Matching (.docx)',
                         urlKey: 'urlMatching',
+                        templateControls: {
+                            pair_count: { min: 2, max: 12, defaultValue: 3 },
+                        },
                     },
                     cloze_dropdown: {
                         help: 'Mode import aktif: Cloze Dropdown. DOCX didukung (pakai placeholder [DROPDOWN_1] s.d. [DROPDOWN_8], tiap dropdown minimal 2 opsi dan tepat 1 kunci).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word Cloze (.docx)',
                         urlKey: 'urlCloze',
+                        templateControls: {
+                            dropdown_count: { min: 1, max: 8, defaultValue: 2 },
+                            dropdown_option_count: { min: 2, max: 6, defaultValue: 3 },
+                        },
                     },
                     categorization: {
                         help: 'Mode import aktif: Categorization. DOCX didukung (isi KATEGORI_1..8, ITEM_1..24, dan KUNCI_1..24).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word Categorization (.docx)',
                         urlKey: 'urlCategorization',
+                        templateControls: {
+                            category_count: { min: 2, max: 8, defaultValue: 2 },
+                            categorization_item_count: { min: 2, max: 24, defaultValue: 3 },
+                        },
                     },
                     table_completion: {
                         help: 'Mode import aktif: Table Completion. DOCX didukung (isi TABLE_ROWS, TABLE_COLS, CELL_A1_TYPE/TEXT/JAWABAN/OPSI).' + importHelpSuffix,
                         buttonLabel: 'Download Template Word Table Completion (.docx)',
                         urlKey: 'urlTableCompletion',
+                        templateControls: {
+                            table_rows: { min: 2, max: 8, defaultValue: 2 },
+                            table_cols: { min: 2, max: 6, defaultValue: 2 },
+                        },
                     },
                 };
 
                 function activateImportType(type) {
                     if (!importTypeHidden) return;
 
-                    const info = importTypeInfo[type] || importTypeInfo.multiple_choice;
-                    importTypeHidden.value = type;
+                    const activeType = Object.prototype.hasOwnProperty.call(importTypeInfo, type) ? type : 'multiple_choice';
+                    const info = importTypeInfo[activeType] || importTypeInfo.multiple_choice;
+                    const templateControls = info.templateControls || {};
+                    importTypeHidden.value = activeType;
 
                     if (importTypeTabs) {
                         importTypeTabs.querySelectorAll('button[data-import-type]').forEach((btn) => {
-                            btn.classList.toggle('cbt-active', btn.getAttribute('data-import-type') === type);
+                            btn.classList.toggle('cbt-active', btn.getAttribute('data-import-type') === activeType);
                         });
                     }
 
@@ -3961,16 +4464,48 @@ if (!defined('ABSPATH')) {
                     if (wordTemplateButton) {
                         const parsedCount = parseInt(wordTemplateCount?.value || '10', 10);
                         const safeCount = Number.isFinite(parsedCount) ? parsedCount : 10;
-                        let selectedCount = Math.floor(safeCount / 10) * 10;
-                        if (selectedCount < 10) selectedCount = 10;
+                        let selectedCount = Math.floor(safeCount / 5) * 5;
+                        if (selectedCount < 5) selectedCount = 5;
                         if (selectedCount > 100) selectedCount = 100;
                         if (wordTemplateCount && String(wordTemplateCount.value) !== String(selectedCount)) {
                             wordTemplateCount.value = String(selectedCount);
                         }
+                        const templateParams = {
+                            question_count: selectedCount,
+                        };
+                        wordTemplateControls.forEach(({ key, control, select }) => {
+                            const config = templateControls[key];
+                            const isActive = !!config;
+                            control.hidden = !isActive;
+                            select.hidden = !isActive;
+                            select.disabled = !isActive;
+                            const min = parseInt(String(config?.min ?? '1'), 10) || 1;
+                            const max = parseInt(String(config?.max ?? min), 10) || min;
+                            const defaultValue = parseInt(String(config?.defaultValue ?? min), 10) || min;
+                            Array.from(select.options || []).forEach((option) => {
+                                const optionValue = parseInt(String(option.value || '0'), 10);
+                                const isAllowed = isActive && optionValue >= min && optionValue <= max;
+                                option.hidden = !isAllowed;
+                                option.disabled = !isAllowed;
+                            });
+                            if (!isActive) {
+                                return;
+                            }
+                            const parsedValue = parseInt(String(select.value || defaultValue), 10);
+                            let selectedValue = Number.isFinite(parsedValue) ? parsedValue : defaultValue;
+                            if (selectedValue < min) selectedValue = min;
+                            if (selectedValue > max) selectedValue = max;
+                            select.value = String(selectedValue);
+                            templateParams[key] = selectedValue;
+                        });
                         const baseUrl = wordTemplateButton.dataset[info.urlKey] || '';
                         if (baseUrl) {
                             const separator = baseUrl.includes('?') ? '&' : '?';
-                            wordTemplateButton.setAttribute('href', `${baseUrl}${separator}question_count=${selectedCount}`);
+                            const query = Object.keys(templateParams).map((key) => {
+                                return `${encodeURIComponent(key)}=${encodeURIComponent(String(templateParams[key]))}`;
+                            }).join('&');
+                            const templateUrl = `${baseUrl}${separator}${query}`;
+                            wordTemplateButton.setAttribute('href', templateUrl);
                         }
                         wordTemplateButton.textContent = info.buttonLabel;
                     }
@@ -3987,6 +4522,11 @@ if (!defined('ABSPATH')) {
                         activateImportType(importTypeHidden?.value || 'multiple_choice');
                     });
                 }
+                wordTemplateControls.forEach(({ select }) => {
+                    select.addEventListener('change', () => {
+                        activateImportType(importTypeHidden?.value || 'multiple_choice');
+                    });
+                });
 
                 activateImportType(importTypeHidden?.value || 'multiple_choice');
 
@@ -4689,6 +5229,18 @@ if (!defined('ABSPATH')) {
                                 .trim();
                             return textOnly !== '';
                         };
+                        const manualCounts = {
+                            mcOption: getManualCountValue('cbt_mc_option_count', 5, 3, 5),
+                            maOption: getManualCountValue('cbt_ma_option_count', 5, 3, 12),
+                            tfmStatement: getManualCountValue('cbt_tfm_statement_count', 5, 2, 10),
+                            shortAnswerInput: getManualCountValue('cbt_short_answer_input_count', 3, 1, 8),
+                            orderingItem: getManualCountValue('cbt_ordering_item_count', 4, 2, 12),
+                            matchingPair: getManualCountValue('cbt_matching_pair_count', 3, 2, 12),
+                            clozeDropdown: getManualCountValue('cbt_cloze_dropdown_count', 2, 1, 8),
+                            clozeOption: getManualCountValue('cbt_cloze_option_count', 3, 2, 6),
+                            catCategory: getManualCountValue('cbt_cat_category_count', 2, 2, 8),
+                            catItem: getManualCountValue('cbt_cat_item_count', 3, 2, 24),
+                        };
 
                         if (type === 'multiple_choice') {
                             const optionsPayload = [];
@@ -4696,7 +5248,7 @@ if (!defined('ABSPATH')) {
                             let filledCount = 0;
                             const selectedCorrectValue = editorValue(`cbt_mc_option_${correctIdx}`);
 
-                            for (let i = 1; i <= 5; i += 1) {
+                            for (let i = 1; i <= manualCounts.mcOption; i += 1) {
                                 const optVal = editorValue(`cbt_mc_option_${i}`);
                                 if (!hasOptionContent(optVal)) continue;
                                 filledCount += 1;
@@ -4732,6 +5284,7 @@ if (!defined('ABSPATH')) {
                             validationMetaHidden.value = JSON.stringify({
                                 type,
                                 selected_correct_index: correctIdx,
+                                option_count: manualCounts.mcOption,
                             });
                         } else if (type === 'multiple_answer') {
                             const optionsPayload = [];
@@ -4740,7 +5293,7 @@ if (!defined('ABSPATH')) {
                             let hasCheckedEmptyOption = false;
                             const selectedCorrectIndexes = [];
 
-                            for (let i = 1; i <= 12; i += 1) {
+                            for (let i = 1; i <= manualCounts.maOption; i += 1) {
                                 const optVal = editorValue(`cbt_ma_option_${i}`);
                                 const checked = !!document.getElementById(`cbt-ma-correct-${i}`)?.checked;
                                 if (checked) {
@@ -4786,6 +5339,7 @@ if (!defined('ABSPATH')) {
                             validationMetaHidden.value = JSON.stringify({
                                 type,
                                 selected_correct_indexes: selectedCorrectIndexes,
+                                option_count: manualCounts.maOption,
                             });
                         } else if (type === 'true_false') {
                             const tf = String(document.getElementById('cbt-correct-tf')?.value || 'true').toLowerCase();
@@ -4795,7 +5349,7 @@ if (!defined('ABSPATH')) {
                             const statements = [];
                             let encounteredFilledStatement = false;
                             let foundGapAfterFilledStatement = false;
-                            for (let i = 1; i <= 10; i += 1) {
+                            for (let i = 1; i <= manualCounts.tfmStatement; i += 1) {
                                 const statementText = String(document.getElementById(`cbt-tfm-statement-${i}`)?.value || '').trim();
                                 if (!hasOptionContent(statementText)) {
                                     if (encounteredFilledStatement) {
@@ -4832,10 +5386,11 @@ if (!defined('ABSPATH')) {
                             validationMetaHidden.value = JSON.stringify({
                                 type,
                                 provided_indexes: statements.map((item) => Number(item.index || 0)).filter((item) => item > 0),
+                                statement_count: manualCounts.tfmStatement,
                             });
                         } else if (type === 'short_answer') {
                             const shortAnswerValuesByKey = {};
-                            for (let i = 1; i <= 8; i += 1) {
+                            for (let i = 1; i <= manualCounts.shortAnswerInput; i += 1) {
                                 const val = String(document.getElementById(`cbt-correct-sa-${i}`)?.value || '').trim();
                                 if (val !== '') {
                                     const key = String.fromCharCode(64 + i);
@@ -4885,6 +5440,7 @@ if (!defined('ABSPATH')) {
                             validationMetaHidden.value = JSON.stringify({
                                 type,
                                 provided_keys: providedShortAnswerKeysSorted,
+                                input_count: manualCounts.shortAnswerInput,
                             });
                         } else if (type === 'essay') {
                             validationMetaHidden.value = JSON.stringify({ type });
@@ -4892,7 +5448,7 @@ if (!defined('ABSPATH')) {
                             const optionsPayload = [];
                             let filledCount = 0;
 
-                            for (let i = 1; i <= 12; i += 1) {
+                            for (let i = 1; i <= manualCounts.orderingItem; i += 1) {
                                 const itemVal = editorValue(`cbt_ordering_item_${i}`);
                                 if (!hasOptionContent(itemVal)) continue;
                                 filledCount += 1;
@@ -4915,13 +5471,13 @@ if (!defined('ABSPATH')) {
 
                             optionsHidden.value = JSON.stringify(optionsPayload);
                             correctTextHidden.value = '';
-                            validationMetaHidden.value = JSON.stringify({ type });
+                            validationMetaHidden.value = JSON.stringify({ type, item_count: manualCounts.orderingItem });
                         } else if (type === 'matching') {
                             const leftSignatures = new Map();
                             const rightSignatures = new Map();
                             let filledCount = 0;
 
-                            for (let i = 1; i <= 12; i += 1) {
+                            for (let i = 1; i <= manualCounts.matchingPair; i += 1) {
                                 const leftVal = editorValue(`cbt_matching_left_${i}`);
                                 const rightVal = editorValue(`cbt_matching_right_${i}`);
                                 const hasLeft = hasOptionContent(leftVal);
@@ -4962,7 +5518,7 @@ if (!defined('ABSPATH')) {
                             }
 
                             correctTextHidden.value = '';
-                            validationMetaHidden.value = JSON.stringify({ type });
+                            validationMetaHidden.value = JSON.stringify({ type, pair_count: manualCounts.matchingPair });
                         } else if (type === 'cloze_dropdown') {
                             const questionEditorHtml = editorValue('cbt_question_text_editor');
                             const duplicateClozeKeys = findDuplicateClozeDropdownKeys(questionEditorHtml);
@@ -4978,6 +5534,12 @@ if (!defined('ABSPATH')) {
                                 window.alert('Cloze Dropdown wajib memakai placeholder [DROPDOWN_1] s.d. [DROPDOWN_8] pada teks soal.');
                                 return;
                             }
+                            const outOfRangeClozeKey = clozeKeys.find((key) => Number(key) > manualCounts.clozeDropdown);
+                            if (outOfRangeClozeKey) {
+                                event.preventDefault();
+                                window.alert('Naikkan Jumlah Dropdown agar semua placeholder di teks soal ikut disimpan.');
+                                return;
+                            }
 
                             for (const key of clozeKeys) {
                                 const optionValues = [];
@@ -4985,7 +5547,7 @@ if (!defined('ABSPATH')) {
                                 const correctIndex = parseInt(String(document.getElementById(`cbt_cloze_correct_${key}`)?.value || '1'), 10);
                                 let correctOptionFilled = false;
 
-                                for (let optionIndex = 1; optionIndex <= 6; optionIndex += 1) {
+                                for (let optionIndex = 1; optionIndex <= manualCounts.clozeOption; optionIndex += 1) {
                                     const optionValue = String(document.getElementById(`cbt_cloze_${key}_option_${optionIndex}`)?.value || '').trim();
                                     if (optionValue === '') {
                                         continue;
@@ -5022,11 +5584,13 @@ if (!defined('ABSPATH')) {
                             validationMetaHidden.value = JSON.stringify({
                                 type,
                                 provided_keys: clozeKeys.slice().sort(),
+                                dropdown_count: manualCounts.clozeDropdown,
+                                dropdown_option_count: manualCounts.clozeOption,
                             });
                         } else if (type === 'categorization') {
                             const categoryValues = [];
                             const categorySignatures = new Map();
-                            for (let i = 1; i <= 8; i += 1) {
+                            for (let i = 1; i <= manualCounts.catCategory; i += 1) {
                                 const categoryValue = String(document.getElementById(`cbt_cat_category_${i}`)?.value || '').trim();
                                 if (categoryValue === '') continue;
                                 const signature = normalizeCompareText(categoryValue);
@@ -5046,7 +5610,7 @@ if (!defined('ABSPATH')) {
 
                             const itemSignatures = new Map();
                             let filledItems = 0;
-                            for (let i = 1; i <= 24; i += 1) {
+                            for (let i = 1; i <= manualCounts.catItem; i += 1) {
                                 const itemValue = String(document.getElementById(`cbt_cat_item_${i}`)?.value || '').trim();
                                 if (itemValue === '') continue;
                                 filledItems += 1;
@@ -5070,7 +5634,11 @@ if (!defined('ABSPATH')) {
                                 return;
                             }
                             correctTextHidden.value = '';
-                            validationMetaHidden.value = JSON.stringify({ type });
+                            validationMetaHidden.value = JSON.stringify({
+                                type,
+                                category_count: manualCounts.catCategory,
+                                item_count: manualCounts.catItem,
+                            });
                         } else if (type === 'table_completion') {
                             const rowCount = parseInt(String(document.getElementById('cbt_table_rows')?.value || '0'), 10);
                             const colCount = parseInt(String(document.getElementById('cbt_table_cols')?.value || '0'), 10);
