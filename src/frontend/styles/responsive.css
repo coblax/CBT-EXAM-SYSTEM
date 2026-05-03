@@ -367,6 +367,63 @@
         padding-top: 0 !important;
     }
 
+    .cbt-table-completion-wrap {
+        margin-top: 12px;
+        border-radius: 12px;
+    }
+
+    .cbt-table-completion-table {
+        min-width: 460px;
+    }
+
+    .cbt-table-completion-cell {
+        min-width: 108px;
+        padding: 7px 8px;
+    }
+
+    .cbt-table-completion-cell.is-answer {
+        min-width: 138px;
+    }
+
+    .cbt-table-completion-cell-key {
+        min-width: 24px;
+        height: 20px;
+        margin-bottom: 5px;
+        padding: 0 6px;
+        font-size: 10px;
+    }
+
+    .cbt-table-completion-cell-label {
+        margin-bottom: 5px;
+        font-size: calc(11px * var(--cbt-font-scale));
+    }
+
+    .cbt-table-completion-input.cbt-input,
+    .cbt-table-completion-select.cbt-input {
+        min-height: 32px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        font-size: calc(12px * var(--cbt-font-scale));
+    }
+
+    .cbt-table-completion-select.cbt-input {
+        padding-right: 28px;
+    }
+
+    .cbt-review-table-completion {
+        border-radius: 12px;
+    }
+
+    .cbt-table-completion-review-table {
+        min-width: 500px;
+    }
+
+    .cbt-table-completion-review-table th,
+    .cbt-table-completion-review-table td {
+        padding: 7px 8px;
+        font-size: calc(12px * var(--cbt-font-scale));
+    }
+
     .cbt-question-actions {
         flex-direction: column;
     }
@@ -399,6 +456,63 @@
 }
 
 @media (max-width: 560px) {
+    .cbt-table-completion-review-table,
+    .cbt-table-completion-review-table thead,
+    .cbt-table-completion-review-table tbody,
+    .cbt-table-completion-review-table tr,
+    .cbt-table-completion-review-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .cbt-table-completion-review-table {
+        min-width: 0;
+        border: 0;
+    }
+
+    .cbt-table-completion-review-table thead {
+        display: none;
+    }
+
+    .cbt-table-completion-review-table tr {
+        margin: 0;
+        padding: 8px;
+        border-bottom: 1px solid #d5dee8;
+        background: #fff;
+    }
+
+    .cbt-table-completion-review-table tr:last-child {
+        border-bottom: 0;
+    }
+
+    .cbt-table-completion-review-table td {
+        display: grid;
+        grid-template-columns: 96px minmax(0, 1fr);
+        gap: 8px;
+        align-items: start;
+        border-width: 0;
+        padding: 5px 0;
+        text-align: left;
+    }
+
+    .cbt-table-completion-review-table td::before {
+        content: attr(data-review-label);
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 800;
+    }
+
+    .cbt-table-completion-review-cell-key span {
+        min-width: 30px;
+        height: 24px;
+    }
+
+    .cbt-table-completion-review-cell-key small {
+        display: inline-flex;
+        margin: 0 0 0 6px;
+        vertical-align: middle;
+    }
+
     .cbt-topbar {
         padding: 11px 12px;
     }

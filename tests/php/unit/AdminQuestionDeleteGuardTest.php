@@ -151,7 +151,13 @@ final class AdminQuestionDeleteGuardTest extends TestCase
         }
 
         self::assertSame(1, $wpdb->deleteCalls);
-        self::assertSame('wp_cbt_essay_ai_suggestions', $wpdb->cleanupTables[0] ?? '');
+        self::assertSame('wp_cbt_question_table_completion_cell_options', $wpdb->cleanupTables[0] ?? '');
+        self::assertSame('wp_cbt_question_cloze_dropdown_options', $wpdb->cleanupTables[1] ?? '');
+        self::assertStringContainsString('WHERE cell_id IN', $wpdb->cleanupQueries[0] ?? '');
+        self::assertStringContainsString('FROM wp_cbt_question_table_completion_cells', $wpdb->cleanupQueries[0] ?? '');
+        self::assertStringContainsString('WHERE blank_id IN', $wpdb->cleanupQueries[1] ?? '');
+        self::assertStringContainsString('FROM wp_cbt_question_cloze_dropdown_blanks', $wpdb->cleanupQueries[1] ?? '');
+        self::assertContains('wp_cbt_essay_ai_suggestions', $wpdb->cleanupTables);
         self::assertContains('wp_cbt_answers', $wpdb->cleanupTables);
         self::assertContains('wp_cbt_question_matching_items', $wpdb->cleanupTables);
         self::assertContains('wp_cbt_question_cloze_dropdown_options', $wpdb->cleanupTables);
@@ -212,6 +218,8 @@ final class AdminQuestionDeleteGuardFakeWpdb
     public int $activeAttemptGuardQueryCalls = 0;
     /** @var string[] */
     public array $cleanupTables = [];
+    /** @var string[] */
+    public array $cleanupQueries = [];
 
     /** @var array<int,array<string,int>> */
     private array $questionRowsById = [];
@@ -328,8 +336,9 @@ final class AdminQuestionDeleteGuardFakeWpdb
     public function query($prepared): int
     {
         $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
-        if (preg_match('/DELETE FROM\\s+(\\S+)\\s+WHERE question_id IN/i', $query, $matches)) {
+        if (preg_match('/DELETE FROM\\s+(\\S+)/i', $query, $matches)) {
             $this->cleanupTables[] = (string) ($matches[1] ?? '');
+            $this->cleanupQueries[] = preg_replace('/\\s+/', ' ', trim($query)) ?? $query;
         }
 
         return 1;

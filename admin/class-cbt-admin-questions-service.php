@@ -259,18 +259,18 @@ final class CBT_Admin_Questions_Service
                 $lock_question_type = ($active_question_type !== '');
                 $import_type_help_suffix = ' Gambar dan tabel di soal, opsi, serta pembahasan didukung. Wajib gunakan template resmi terbaru dan jangan hapus marker CBT_TEMPLATE atau field JENIS_SOAL.';
                 $import_type_help_map = [
-                    'multiple_choice' => 'Mode import aktif: Multiple Choice. DOCX didukung (minimal 3 opsi, maks 5 opsi, tepat 1 jawaban benar berupa nomor opsi, opsi tidak boleh duplikat, gambar bisa ditempel, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
-                    'multiple_answer' => 'Mode import aktif: Multiple Answer. DOCX didukung (minimal 3 opsi, maks 12 opsi, minimal 1 jawaban benar, opsi tidak boleh duplikat, jawaban bisa lebih dari satu: contoh 1,3,5, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                    'multiple_choice' => 'Mode import aktif: Multiple Choice. DOCX didukung (PILIHAN_1..N sesuai Jumlah Pilihan 3-5, JAWABAN berupa satu nomor opsi 1..N, opsi tidak boleh duplikat).' . $import_type_help_suffix,
+                    'multiple_answer' => 'Mode import aktif: Multiple Answer. DOCX didukung (PILIHAN_1..N sesuai Jumlah Pilihan 3-12, JAWABAN boleh lebih dari satu seperti 1,3,5, minimal 1 benar, opsi tidak boleh duplikat).' . $import_type_help_suffix,
                     'true_false' => 'Mode import aktif: True/False. DOCX didukung (jawaban: true/false, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
-                'true_false_matrix' => 'Mode import aktif: True/False Matrix. DOCX didukung (isi PERNYATAAN_1..10 dan KUNCI_1..10: true/false secara berurutan tanpa nomor loncat, pernyataan tidak boleh duplikat, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
-                'short_answer' => 'Mode import aktif: Short Answer. DOCX didukung (maks 8 jawaban valid per soal, wajib gunakan placeholder [INPUT_1] s.d. [INPUT_8] tanpa duplikat di teks soal, jumlah placeholder harus sama dengan jumlah jawaban valid, dan wajib pakai JAWABAN_A..H sesuai key input, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
-                'essay' => 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
-                'ordering' => 'Mode import aktif: Ordering. DOCX didukung (isi ITEM_1..12 sesuai urutan benar, minimal 2 item, item tidak boleh duplikat, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
-                'matching' => 'Mode import aktif: Matching. DOCX didukung (isi KIRI_1..12 dan KANAN_1..12, minimal 2 pasangan, tidak boleh duplikat, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
-                'cloze_dropdown' => 'Mode import aktif: Cloze Dropdown. DOCX didukung (pakai placeholder [DROPDOWN_1] s.d. [DROPDOWN_8], tiap dropdown minimal 2 opsi dan tepat 1 kunci).' . $import_type_help_suffix,
-                'categorization' => 'Mode import aktif: Categorization. DOCX didukung (isi KATEGORI_1..8, ITEM_1..24, dan KUNCI_1..24).' . $import_type_help_suffix,
-                'table_completion' => 'Mode import aktif: Table Completion. DOCX didukung (isi TABLE_ROWS, TABLE_COLS, CELL_A1_TYPE/TEXT/JAWABAN/OPSI).' . $import_type_help_suffix,
-            ];
+                    'true_false_matrix' => 'Mode import aktif: True/False Matrix. DOCX didukung (PERNYATAAN_1..N dan KUNCI_1..N sesuai Jumlah Pernyataan 2-10, kunci true/false berurutan tanpa nomor loncat).' . $import_type_help_suffix,
+                    'short_answer' => 'Mode import aktif: Short Answer. DOCX didukung (pakai placeholder [INPUT_1]..[INPUT_N] sesuai Jumlah Input 1-8, lalu isi JAWABAN_A..H sesuai key placeholder).' . $import_type_help_suffix,
+                    'essay' => 'Mode import aktif: Essay. DOCX didukung (wajib isi acuan jawaban/rubrik, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
+                    'ordering' => 'Mode import aktif: Ordering. DOCX didukung (ITEM_1..N sesuai Jumlah Item 2-12 ditulis dalam urutan benar, item tidak boleh duplikat).' . $import_type_help_suffix,
+                    'matching' => 'Mode import aktif: Matching. DOCX didukung (KIRI_1..N dan KANAN_1..N sesuai Jumlah Pasangan 2-12; KANAN_n adalah pasangan benar KIRI_n).' . $import_type_help_suffix,
+                    'cloze_dropdown' => 'Mode import aktif: Cloze Dropdown. DOCX didukung (pakai [DROPDOWN_1]..[DROPDOWN_N], isi DROPDOWN_n_OPSI_1..M dan DROPDOWN_n_JAWABAN; tiap dropdown tepat 1 kunci).' . $import_type_help_suffix,
+                    'categorization' => 'Mode import aktif: Categorization. DOCX didukung (KATEGORI_1..N, ITEM_1..M, dan KUNCI_1..M berisi nomor atau teks kategori benar).' . $import_type_help_suffix,
+                    'table_completion' => 'Mode import aktif: Table Completion. DOCX didukung (TABLE_ROWS, TABLE_COLS, lalu CELL_A1_TYPE/TEXT/JAWABAN/OPSI sesuai ukuran tabel).' . $import_type_help_suffix,
+                ];
                 $import_active_type = $lock_question_type ? $active_question_type : 'multiple_choice';
                 $import_help_text = $import_type_help_map[$import_active_type] ?? $import_type_help_map['multiple_choice'];
             $import_allow_docx = in_array($import_active_type, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown', 'categorization', 'table_completion'], true);

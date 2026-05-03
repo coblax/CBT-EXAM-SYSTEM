@@ -139,6 +139,44 @@ describe('createReviewRenderer', function () {
         expect(markup).toContain('is-mismatch');
     });
 
+    it('renders table completion review with per-cell status labels', function () {
+        var renderer = createFixture([
+            {
+                question_number: 6,
+                question_text: '<p>Lengkapi tabel</p>',
+                question_type: 'table_completion',
+                points: 4,
+                score_awarded: 2,
+                status: 'incorrect',
+                table_completion_rows: [
+                    {
+                        key: 'A1',
+                        cell_type: 'text',
+                        submitted_text: 'Tokyo',
+                        correct_text: 'Tokyo',
+                        is_match: 1
+                    },
+                    {
+                        key: 'B1',
+                        cell_type: 'dropdown',
+                        submitted_text: 'Korea',
+                        correct_text: 'Jepang',
+                        is_match: 0
+                    }
+                ]
+            }
+        ]);
+
+        var markup = renderer.renderResultReviewSection();
+
+        expect(markup).toContain('cbt-table-completion-review-table');
+        expect(markup).toContain('<th>Status</th>');
+        expect(markup).toContain('data-review-label="Jawaban Anda"');
+        expect(markup).toContain('<span>Benar</span>');
+        expect(markup).toContain('<span>Salah</span>');
+        expect(markup).toContain('<small>dropdown</small>');
+    });
+
     it('preserves cbt math wrappers inside review rich html payloads', function () {
         var renderer = createFixture([
             {

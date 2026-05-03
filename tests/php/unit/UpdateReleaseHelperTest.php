@@ -448,6 +448,39 @@ final class UpdateReleaseHelperTest extends TestCase
         self::assertStringContainsString('wp_cbt_question_table_completion_cells', $item['message']);
     }
 
+    public function test_health_check_schema_item_tracks_all_question_detail_tables(): void
+    {
+        global $wpdb;
+        $wpdb = new UpdateHealthSchemaFakeWpdb();
+
+        $reflection = new \ReflectionClass(\CBT_Update_Health_Service::class);
+        $constant = $reflection->getReflectionConstant('REQUIRED_QUESTION_DETAIL_TABLES');
+        self::assertNotFalse($constant);
+        $requiredTables = (array) $constant->getValue();
+
+        foreach ([
+            'cbt_question_matching',
+            'cbt_question_matching_items',
+            'cbt_question_cloze_dropdown',
+            'cbt_question_cloze_dropdown_blanks',
+            'cbt_question_cloze_dropdown_options',
+            'cbt_question_categorization',
+            'cbt_question_categorization_items',
+            'cbt_question_table_completion',
+            'cbt_question_table_completion_cells',
+            'cbt_question_table_completion_cell_options',
+        ] as $tableName) {
+            self::assertContains($tableName, $requiredTables);
+        }
+
+        $method = $reflection->getMethod('question_detail_schema_item');
+        $method->setAccessible(true);
+        $item = $method->invoke(null);
+
+        self::assertSame('ok', $item['status']);
+        self::assertStringContainsString((string) count($requiredTables) . ' tabel detail tipe soal tersedia', $item['message']);
+    }
+
     public function test_build_page_context_maps_check_failed_state(): void
     {
         set_transient(\CBT_Update_Release_Helper::release_state_transient(), [

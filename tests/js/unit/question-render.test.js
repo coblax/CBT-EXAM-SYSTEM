@@ -164,4 +164,52 @@ describe('createQuestionRenderManager', function () {
         expect(html).toContain('data-cloze-key="1"');
         expect(html).toContain('<option value="302" selected>Tokyo</option>');
     });
+
+    it('renders table completion answer cells with compact labels and restored values', function () {
+        var manager = createManager({
+            resolveStoredAnswerValueForQuestion: function () {
+                return { A1: 'Tokyo', B1: 402 };
+            }
+        });
+        var html = manager.renderQuestionInput({
+            id: 61,
+            question_type: 'table_completion',
+            table_completion_meta: {
+                rows: 1,
+                columns: 2,
+                cells: [
+                    {
+                        key: 'A1',
+                        row: 1,
+                        column: 1,
+                        type: 'text',
+                        text: 'Kota'
+                    },
+                    {
+                        key: 'B1',
+                        row: 1,
+                        column: 2,
+                        type: 'dropdown',
+                        text: 'Negara',
+                        options: [
+                            {
+                                id: 401,
+                                option_text: 'Korea'
+                            },
+                            {
+                                id: 402,
+                                option_text: 'Jepang'
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        expect(html).toContain('cbt-table-completion-cell is-answer is-text');
+        expect(html).toContain('cbt-table-completion-cell-key">A1</span>');
+        expect(html).toContain('aria-label="Jawaban sel A1"');
+        expect(html).toContain('value="Tokyo"');
+        expect(html).toContain('<option value="402" selected>Jepang</option>');
+    });
 });

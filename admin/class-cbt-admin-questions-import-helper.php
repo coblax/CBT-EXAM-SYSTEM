@@ -83,7 +83,7 @@ final class CBT_Admin_Questions_Import_Helper
             }
 
             if ($extension === 'docx' && !in_array($requested_import_type, ['all', 'multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
-                self::redirect_question_import_with_error('Import DOCX hanya tersedia untuk tab Multiple Choice, Multiple Answer, True/False, TF Matrix, Short Answer, Essay, dan Ordering.', $return_page);
+                self::redirect_question_import_with_error('Import DOCX hanya tersedia untuk tab tipe soal resmi CBT yang didukung.', $return_page);
             }
 
             $parsed = self::parse_question_docx($tmp_path);
@@ -4854,8 +4854,8 @@ final class CBT_Admin_Questions_Import_Helper
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Multiple Answer (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: JENIS_SOAL, SOAL, PILIHAN_1..PILIHAN_minimal_3, JAWABAN.',
-                    'JAWABAN diisi nomor pilihan (1-12) dan boleh lebih dari satu, contoh 2,4.',
+                    'Field wajib: JENIS_SOAL, SOAL, PILIHAN_1..PILIHAN_N sesuai jumlah pilihan, JAWABAN.',
+                    'JAWABAN diisi nomor pilihan yang dibuat (1..N) dan boleh lebih dari satu, contoh 2,4.',
                     'Isi pilihan tidak boleh duplikat.',
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
@@ -4913,9 +4913,9 @@ final class CBT_Admin_Questions_Import_Helper
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import True/False Matrix (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: JENIS_SOAL, SOAL, minimal 2 pernyataan + kunci.',
-                    'Isi PERNYATAAN_1..PERNYATAAN_10 (maks 10 baris).',
-                    'Isi KUNCI_1..KUNCI_10 dengan TRUE/FALSE (atau BENAR/SALAH) secara berurutan tanpa nomor loncat.',
+                    'Field wajib: JENIS_SOAL, SOAL, PERNYATAAN_1..PERNYATAAN_N, KUNCI_1..KUNCI_N.',
+                    'Isi PERNYATAAN dan KUNCI sesuai jumlah pernyataan yang dipilih (2-10), tanpa nomor loncat.',
+                    'Isi KUNCI_n dengan TRUE/FALSE atau BENAR/SALAH.',
                     'Pernyataan tidak boleh duplikat.',
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
@@ -4945,7 +4945,7 @@ final class CBT_Admin_Questions_Import_Helper
                     'Template Word ini untuk import Short Answer (format tabel, maks 8 jawaban valid).',
                     'Setiap blok soal dipisahkan oleh ---',
                     'Field wajib: JENIS_SOAL, SOAL, minimal 1 jawaban.',
-                    'Tandai titik isian di SOAL dengan [INPUT_1] sampai [INPUT_8] tanpa placeholder duplikat.',
+                    'Tandai titik isian di SOAL dengan [INPUT_1] sampai [INPUT_N] sesuai jumlah input, tanpa placeholder duplikat.',
                     'Jumlah placeholder input harus sama dengan jumlah jawaban valid.',
                     'Format lama seperti [INPUT A] / [INPUT 1] tetap didukung.',
                     'Isi jawaban bisa pakai JAWABAN_A sampai JAWABAN_H, dan key-nya harus cocok dengan placeholder input.',
@@ -5001,8 +5001,8 @@ final class CBT_Admin_Questions_Import_Helper
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Ordering / Sequencing (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: JENIS_SOAL, SOAL, ITEM_1..ITEM_minimal_2.',
-                    'ITEM_1 sampai ITEM_12 diisi sesuai urutan benar. Sistem akan mengacak item saat ujian.',
+                    'Field wajib: JENIS_SOAL, SOAL, ITEM_1..ITEM_N sesuai jumlah item.',
+                    'ITEM_1 sampai ITEM_N diisi sesuai urutan benar. Sistem akan mengacak item saat ujian.',
                     'Item tidak boleh duplikat.',
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
@@ -5029,7 +5029,7 @@ final class CBT_Admin_Questions_Import_Helper
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Matching (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: JENIS_SOAL, SOAL, KIRI_1..KIRI_minimal_2, KANAN_1..KANAN_minimal_2.',
+                    'Field wajib: JENIS_SOAL, SOAL, KIRI_1..KIRI_N, KANAN_1..KANAN_N sesuai jumlah pasangan.',
                     'KIRI_n adalah prompt kiri; KANAN_n adalah pasangan benar untuk baris yang sama.',
                     'Minimal 2 dan maksimal 12 pasangan. Teks kiri dan kanan tidak boleh duplikat.',
                     'POIN opsional, default 1.',
@@ -5069,8 +5069,8 @@ final class CBT_Admin_Questions_Import_Helper
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Cloze Dropdown (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: JENIS_SOAL, SOAL dengan placeholder [DROPDOWN_1] sampai [DROPDOWN_8].',
-                    'Isi DROPDOWN_n_OPSI_1..6 untuk tiap placeholder yang dipakai.',
+                    'Field wajib: JENIS_SOAL, SOAL dengan placeholder [DROPDOWN_1] sampai [DROPDOWN_N] sesuai jumlah dropdown.',
+                    'Isi DROPDOWN_n_OPSI_1..M sesuai jumlah opsi per dropdown untuk tiap placeholder yang dipakai.',
                     'Isi DROPDOWN_n_JAWABAN dengan nomor opsi benar. Tiap dropdown minimal 2 opsi dan tepat 1 kunci.',
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional. Bisa diisi teks, tabel, atau gambar; gambar/tabel boleh diletakkan setelah field PEMBAHASAN.',
@@ -5106,7 +5106,7 @@ final class CBT_Admin_Questions_Import_Helper
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Categorization (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: JENIS_SOAL, SOAL, KATEGORI_1..8, ITEM_1..24, KUNCI_1..24.',
+                    'Field wajib: JENIS_SOAL, SOAL, KATEGORI_1..N, ITEM_1..M, KUNCI_1..M sesuai jumlah kategori/item.',
                     'KUNCI_n diisi nomor kategori atau teks kategori.',
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional.',
@@ -5138,8 +5138,8 @@ final class CBT_Admin_Questions_Import_Helper
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Table Completion (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: JENIS_SOAL, SOAL, TABLE_ROWS, TABLE_COLS, CELL_A1_TYPE.',
-                    'CELL_A1_TYPE dapat static, text, atau dropdown. Text memakai CELL_A1_JAWABAN. Dropdown memakai CELL_A1_OPSI_1..6 dan CELL_A1_JAWABAN.',
+                    'Field wajib: JENIS_SOAL, SOAL, TABLE_ROWS, TABLE_COLS, dan CELL_*_TYPE sesuai ukuran tabel.',
+                    'CELL_*_TYPE dapat static, text, atau dropdown. Text memakai CELL_*_JAWABAN. Dropdown memakai CELL_*_OPSI_1..6 dan CELL_*_JAWABAN.',
                     'POIN opsional, default 1.',
                     'PEMBAHASAN opsional.',
                     'Jumlah blok template: ' . $question_count . ' soal.',
@@ -5200,8 +5200,8 @@ final class CBT_Admin_Questions_Import_Helper
                 $header_lines = array_merge($header_lines, [
                     'Template Word ini untuk import Multiple Choice (format tabel).',
                     'Setiap blok soal dipisahkan oleh ---',
-                    'Field wajib: JENIS_SOAL, SOAL, PILIHAN_1..PILIHAN_minimal_3, JAWABAN.',
-                    'JAWABAN diisi nomor pilihan (1-5).',
+                    'Field wajib: JENIS_SOAL, SOAL, PILIHAN_1..PILIHAN_N sesuai jumlah pilihan, JAWABAN.',
+                    'JAWABAN diisi satu nomor pilihan yang dibuat (1..N).',
                     'Untuk multiple_choice: hanya satu jawaban, contoh 2.',
                     'Isi pilihan tidak boleh duplikat.',
                     'POIN opsional, default 1.',

@@ -30,7 +30,7 @@ final class AdminResultsHelperObjectMapProgressTest extends TestCase
 
         self::assertSame('wrong', $item['status'] ?? '');
         self::assertSame(3.0, $item['score_awarded'] ?? -1);
-        self::assertSame('Terjawab 2 item', $item['answer_preview'] ?? '');
+        self::assertSame('1: #123 | 2: #124', $item['answer_preview'] ?? '');
     }
 
     public function test_table_completion_zero_text_value_counts_as_answered(): void
@@ -42,7 +42,23 @@ final class AdminResultsHelperObjectMapProgressTest extends TestCase
 
         self::assertSame('correct', $item['status'] ?? '');
         self::assertSame(4.0, $item['score_awarded'] ?? -1);
-        self::assertSame('Terjawab 1 item', $item['answer_preview'] ?? '');
+        self::assertSame('A1: 0', $item['answer_preview'] ?? '');
+    }
+
+    public function test_object_map_answer_progress_uses_option_labels_when_available(): void
+    {
+        $item = $this->buildProgressItem(
+            ['id' => 13, 'question_type' => 'matching', 'points' => 8],
+            ['answer_text' => '{"1":123,"2":124,"3":125,"4":126}', 'is_correct' => 0, 'score_awarded' => 2],
+            [
+                123 => 'Jakarta',
+                124 => 'Bandung',
+                125 => 'Surabaya',
+                126 => 'Medan',
+            ]
+        );
+
+        self::assertSame('1: Jakarta | 2: Bandung | 3: Surabaya +1 item', $item['answer_preview'] ?? '');
     }
 
     /**
@@ -50,11 +66,11 @@ final class AdminResultsHelperObjectMapProgressTest extends TestCase
      * @param array<string,mixed> $answer
      * @return array<string,mixed>
      */
-    private function buildProgressItem(array $question, array $answer): array
+    private function buildProgressItem(array $question, array $answer, array $optionLabels = []): array
     {
         $method = new ReflectionMethod(CBT_Admin_Results_Helper::class, 'build_attempt_answer_progress_item');
         $method->setAccessible(true);
 
-        return (array) $method->invoke(null, $question, $answer, [], [], 1, false);
+        return (array) $method->invoke(null, $question, $answer, $optionLabels, [], 1, false);
     }
 }

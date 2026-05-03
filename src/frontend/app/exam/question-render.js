@@ -682,27 +682,31 @@ export function createQuestionRenderManager(deps) {
                     };
                     if (cell.type === 'text') {
                         cellsMarkup.push([
-                            '<td>',
-                            '<input class="cbt-input cbt-table-completion-input" data-action="answer-table-completion-text" data-qid="' + escapeHtml(question.id) + '" data-table-key="' + escapeHtml(cell.key) + '" value="' + escapeHtml(String(tableAnswer[cell.key] || '')) + '"' + disabledAttr + ' />',
+                            '<td class="cbt-table-completion-cell is-answer is-text" data-table-cell-key="' + escapeHtml(cell.key) + '">',
+                            '<span class="cbt-table-completion-cell-key">' + escapeHtml(cell.key || '') + '</span>',
+                            cell.text ? '<div class="cbt-table-completion-cell-label">' + renderExamRichHtml(cell.text || '', { context: 'question' }) + '</div>' : '',
+                            '<input class="cbt-input cbt-table-completion-input" data-action="answer-table-completion-text" data-qid="' + escapeHtml(question.id) + '" data-table-key="' + escapeHtml(cell.key) + '" aria-label="Jawaban sel ' + escapeHtml(cell.key || '') + '" value="' + escapeHtml(String(tableAnswer[cell.key] || '')) + '"' + disabledAttr + ' />',
                             '</td>'
                         ].join(''));
                     } else if (cell.type === 'dropdown') {
                         cellsMarkup.push([
-                            '<td>',
-                            '<select class="cbt-input cbt-table-completion-select" data-action="answer-table-completion-dropdown" data-qid="' + escapeHtml(question.id) + '" data-table-key="' + escapeHtml(cell.key) + '"' + disabledAttr + '>',
+                            '<td class="cbt-table-completion-cell is-answer is-dropdown" data-table-cell-key="' + escapeHtml(cell.key) + '">',
+                            '<span class="cbt-table-completion-cell-key">' + escapeHtml(cell.key || '') + '</span>',
+                            cell.text ? '<div class="cbt-table-completion-cell-label">' + renderExamRichHtml(cell.text || '', { context: 'question' }) + '</div>' : '',
+                            '<select class="cbt-input cbt-table-completion-select" data-action="answer-table-completion-dropdown" data-qid="' + escapeHtml(question.id) + '" data-table-key="' + escapeHtml(cell.key) + '" aria-label="Jawaban sel ' + escapeHtml(cell.key || '') + '"' + disabledAttr + '>',
                             renderDropdownOptionTags(cell.options || [], Number(tableAnswer[cell.key]) || 0),
                             '</select>',
                             '</td>'
                         ].join(''));
                     } else {
-                        cellsMarkup.push('<td>' + renderExamRichHtml(cell.text || '', { context: 'question' }) + '</td>');
+                        cellsMarkup.push('<td class="cbt-table-completion-cell is-static">' + '<div class="cbt-table-completion-static">' + renderExamRichHtml(cell.text || '', { context: 'question' }) + '</div></td>');
                     }
                 }
                 bodyRows.push('<tr>' + cellsMarkup.join('') + '</tr>');
             }
 
             return [
-                '<div class="cbt-table-completion-wrap">',
+                '<div class="cbt-table-completion-wrap" role="region" aria-label="Table Completion">',
                 '<table class="cbt-table-completion-table">',
                 '<tbody>',
                 bodyRows.join(''),

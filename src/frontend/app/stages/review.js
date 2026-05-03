@@ -311,18 +311,21 @@ export function createReviewRenderer(deps) {
                 answerMarkup = '<div class="cbt-review-text">Data Table Completion tidak tersedia.</div>';
             } else {
                 answerMarkup = [
-                    '<div class="cbt-review-ordering">',
-                    '<table class="cbt-ordering-review-table">',
-                    '<thead><tr><th>Sel</th><th>Jawaban Anda</th><th>Kunci</th></tr></thead>',
+                    '<div class="cbt-review-table-completion" role="region" aria-label="Review Table Completion">',
+                    '<table class="cbt-table-completion-review-table">',
+                    '<thead><tr><th>Sel</th><th>Status</th><th>Jawaban Anda</th><th>Kunci</th></tr></thead>',
                     '<tbody>',
                     tableRows.map(function (row) {
                         var isMatch = Number(row && row.is_match) === 1;
                         var matchClass = isMatch ? ' is-match' : ' is-mismatch';
+                        var cellType = row && row.cell_type ? String(row.cell_type) : '';
+                        var statusText = isMatch ? 'Benar' : 'Salah';
                         return [
                             '<tr>',
-                            '<td class="cbt-ordering-review-position">' + escapeHtml(row && row.key ? row.key : '-') + '</td>',
-                            '<td class="cbt-ordering-review-answer' + matchClass + '">' + (row && row.submitted_text ? escapeHtml(row.submitted_text) : '<span class="cbt-review-empty">-</span>') + '</td>',
-                            '<td class="cbt-ordering-review-answer">' + (row && row.correct_text ? escapeHtml(row.correct_text) : '<span class="cbt-review-empty">-</span>') + '</td>',
+                            '<td class="cbt-table-completion-review-cell-key" data-review-label="Sel"><span>' + escapeHtml(row && row.key ? row.key : '-') + '</span>' + (cellType ? '<small>' + escapeHtml(cellType) + '</small>' : '') + '</td>',
+                            '<td class="cbt-table-completion-review-status' + matchClass + '" data-review-label="Status"><span>' + escapeHtml(statusText) + '</span></td>',
+                            '<td class="cbt-table-completion-review-answer' + matchClass + '" data-review-label="Jawaban Anda">' + (row && row.submitted_text ? escapeHtml(row.submitted_text) : '<span class="cbt-review-empty">-</span>') + '</td>',
+                            '<td class="cbt-table-completion-review-answer is-key" data-review-label="Kunci">' + (row && row.correct_text ? escapeHtml(row.correct_text) : '<span class="cbt-review-empty">-</span>') + '</td>',
                             '</tr>'
                         ].join('');
                     }).join(''),

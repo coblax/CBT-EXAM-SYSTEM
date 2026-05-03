@@ -1206,6 +1206,30 @@ XML;
         self::assertNotContains('CELL_D1_TYPE: static', $tableLines);
     }
 
+    public function test_build_word_template_lines_clamps_counts_and_omits_unused_fields(): void
+    {
+        $multipleChoiceLines = $this->invokeImportHelper('build_word_template_lines', ['multiple_choice', 10, ['option_count' => 99]]);
+        $multipleAnswerLines = $this->invokeImportHelper('build_word_template_lines', ['multiple_answer', 10, ['option_count' => 1]]);
+        $shortAnswerLines = $this->invokeImportHelper('build_word_template_lines', ['short_answer', 10, ['input_count' => 1]]);
+        $matrixLines = $this->invokeImportHelper('build_word_template_lines', ['true_false_matrix', 10, ['statement_count' => 99]]);
+        $orderingLines = $this->invokeImportHelper('build_word_template_lines', ['ordering', 10, ['item_count' => 1]]);
+
+        self::assertContains('PILIHAN_5: Opsi E', $multipleChoiceLines);
+        self::assertNotContains('PILIHAN_6: Opsi F', $multipleChoiceLines);
+        self::assertContains('PILIHAN_3: Pernyataan C', $multipleAnswerLines);
+        self::assertNotContains('PILIHAN_4: Pernyataan D', $multipleAnswerLines);
+        self::assertContains('JAWABAN: 1,3', $multipleAnswerLines);
+        self::assertStringNotContainsString('JAWABAN: 1,3,5', implode("\n", $multipleAnswerLines));
+        self::assertStringContainsString('[INPUT_1]', implode("\n", $shortAnswerLines));
+        self::assertStringNotContainsString('[INPUT_2]', implode("\n", $shortAnswerLines));
+        self::assertContains('JAWABAN_A: jawaban-1', $shortAnswerLines);
+        self::assertNotContains('JAWABAN_B: jawaban-2', $shortAnswerLines);
+        self::assertContains('PERNYATAAN_10: Pernyataan J', $matrixLines);
+        self::assertNotContains('PERNYATAAN_11: Pernyataan K', $matrixLines);
+        self::assertContains('ITEM_2: Langkah ke-2', $orderingLines);
+        self::assertNotContains('ITEM_3: Langkah ke-3', $orderingLines);
+    }
+
     public function test_describe_docx_block_failure_reports_specific_reason_for_empty_correct_option(): void
     {
         $message = $this->invokeImportHelper('describe_docx_block_failure', [[
@@ -1497,6 +1521,50 @@ XML;
             self::assertSame('A', $rows[0]['correct_answer']);
         } finally {
             @unlink($tmpPath);
+        }
+    }
+
+    public function test_parse_question_docx_accepts_generated_templates_for_all_supported_types(): void
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        foreach ([
+            'multiple_choice',
+            'multiple_answer',
+            'true_false',
+            'true_false_matrix',
+            'short_answer',
+            'essay',
+            'ordering',
+            'matching',
+            'cloze_dropdown',
+            'categorization',
+            'table_completion',
+        ] as $questionType) {
+            $officialLines = $this->invokeImportHelper('build_word_template_lines', [$questionType, 5]);
+            $documentXml = $this->invokeImportHelper('build_minimal_docx_document_xml', [$officialLines]);
+
+            $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-template-roundtrip-all-');
+            self::assertIsString($tmpPath);
+            self::assertNotSame('', $tmpPath);
+
+            $zip = new \ZipArchive();
+            self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+            $zip->addFromString('word/document.xml', $documentXml);
+            $zip->close();
+
+            try {
+                $rows = $this->invokeImportHelper('parse_question_docx', [$tmpPath]);
+
+                self::assertFalse(is_wp_error($rows), 'Generated template failed to parse for ' . $questionType);
+                self::assertIsArray($rows);
+                self::assertCount(5, $rows, 'Generated template row count mismatch for ' . $questionType);
+                self::assertSame($questionType, $rows[0]['question_type'] ?? '', 'Generated template type mismatch for ' . $questionType);
+            } finally {
+                @unlink($tmpPath);
+            }
         }
     }
 

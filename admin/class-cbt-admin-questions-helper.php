@@ -101,18 +101,7 @@ final class CBT_Admin_Questions_Helper
             if (in_array($question_type, ['matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
                 $decoded = json_decode($answer_text, true);
                 if (is_array($decoded)) {
-                    $count = 0;
-                    foreach ($decoded as $value) {
-                        if (!is_scalar($value)) {
-                            continue;
-                        }
-                        if ($question_type === 'table_completion' && trim((string) $value) !== '') {
-                            $count++;
-                        } elseif ((int) $value > 0) {
-                            $count++;
-                        }
-                    }
-                    return $count > 0 ? ('Terjawab ' . $count . ' item') : 'Belum dijawab';
+                    return self::build_object_map_answer_preview($question_type, $decoded, $option_labels);
                 }
                 return $answer_text === '' ? 'Belum dijawab' : 'Terjawab';
             }
@@ -122,6 +111,119 @@ final class CBT_Admin_Questions_Helper
             }
     
             return (string) wp_trim_words(wp_strip_all_tags($answer_text), 10, '...');
+        }
+
+        /**
+         * @param array<string|int,mixed> $answer_map
+         * @param array<int,string> $option_labels
+         */
+        private static function build_object_map_answer_preview(string $question_type, array $answer_map, array $option_labels): string
+        {
+            $parts = [];
+            $answered_count = 0;
+
+            foreach ($answer_map as $raw_key => $raw_value) {
+                if (!is_scalar($raw_value)) {
+                    continue;
+                }
+                if (!self::is_answered_object_map_value($question_type, $raw_value)) {
+                    continue;
+                }
+
+                $answered_count++;
+                if (count($parts) >= 3) {
+                    continue;
+                }
+
+                $key = self::format_object_map_preview_key($raw_key);
+                $value = self::format_object_map_preview_value($question_type, $raw_value, $option_labels);
+                $parts[] = $key . ': ' . $value;
+            }
+
+            if ($answered_count <= 0) {
+                return 'Belum dijawab';
+            }
+
+            if (empty($parts)) {
+                return 'Terjawab ' . $answered_count . ' item';
+            }
+
+            $preview = implode(' | ', $parts);
+            if ($answered_count > count($parts)) {
+                $preview .= ' +' . ($answered_count - count($parts)) . ' item';
+            }
+
+            return $preview;
+        }
+
+        private static function is_answered_object_map_value(string $question_type, $value): bool
+        {
+            if (!is_scalar($value)) {
+                return false;
+            }
+
+            if ($question_type === 'table_completion') {
+                return trim((string) $value) !== '';
+            }
+
+            return (int) $value > 0;
+        }
+
+        private static function format_object_map_preview_key($key): string
+        {
+            $key = strtoupper(trim((string) $key));
+            if ($key === '') {
+                return '?';
+            }
+
+            return self::trim_preview_text($key, 3);
+        }
+
+        /**
+         * @param array<int,string> $option_labels
+         */
+        private static function format_object_map_preview_value(string $question_type, $value, array $option_labels): string
+        {
+            $value_text = trim((string) $value);
+            $option_id = (int) $value;
+            if ($option_id > 0 && isset($option_labels[$option_id])) {
+                return self::trim_preview_text((string) $option_labels[$option_id], 6);
+            }
+
+            if ($question_type !== 'table_completion' && $option_id > 0) {
+                return '#' . $option_id;
+            }
+
+            if ($value_text === '') {
+                return '-';
+            }
+
+            return self::trim_preview_text($value_text, 6);
+        }
+
+        private static function trim_preview_text(string $text, int $word_limit): string
+        {
+            if (function_exists('wp_strip_all_tags')) {
+                $text = (string) wp_strip_all_tags($text);
+            } else {
+                $text = (string) strip_tags($text);
+            }
+
+            $text = trim(preg_replace('/\s+/', ' ', $text) ?? $text);
+            if ($text === '') {
+                return '-';
+            }
+
+            if (function_exists('wp_trim_words')) {
+                return (string) wp_trim_words($text, $word_limit, '...');
+            }
+
+            $words = preg_split('/\s+/', $text) ?: [];
+            if (count($words) <= $word_limit) {
+                return $text;
+            }
+
+            return implode(' ', array_slice($words, 0, $word_limit)) . '...';
         }
 
         public static function build_short_answer_progress_slots(array $question, ?array $answer_row): array
@@ -915,6 +1017,7 @@ final class CBT_Admin_Questions_Helper
             }
 
             $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+            self::delete_nested_question_detail_dependents($question_ids, $placeholders);
             $tables = [
                 $wpdb->prefix . 'cbt_essay_ai_suggestions',
                 $wpdb->prefix . 'cbt_question_table_completion_cell_options',
@@ -950,6 +1053,58 @@ final class CBT_Admin_Questions_Helper
             }
         }
 
+        /**
+         * Delete child rows that can outlive their question_id value when FK constraints are unavailable.
+         *
+         * @param int[] $question_ids
+         */
+        private static function delete_nested_question_detail_dependents(array $question_ids, string $placeholders = ''): void
+        {
+            global $wpdb;
+
+            if (empty($question_ids)) {
+                return;
+            }
+            if (!is_object($wpdb) || !method_exists($wpdb, 'query') || !method_exists($wpdb, 'prepare')) {
+                return;
+            }
+            if ($placeholders === '') {
+                $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+            }
+
+            $nested_deletes = [
+                [
+                    'child_table' => $wpdb->prefix . 'cbt_question_table_completion_cell_options',
+                    'child_key' => 'cell_id',
+                    'parent_table' => $wpdb->prefix . 'cbt_question_table_completion_cells',
+                ],
+                [
+                    'child_table' => $wpdb->prefix . 'cbt_question_cloze_dropdown_options',
+                    'child_key' => 'blank_id',
+                    'parent_table' => $wpdb->prefix . 'cbt_question_cloze_dropdown_blanks',
+                ],
+            ];
+
+            foreach ($nested_deletes as $delete) {
+                $child_table = (string) ($delete['child_table'] ?? '');
+                $child_key = (string) ($delete['child_key'] ?? '');
+                $parent_table = (string) ($delete['parent_table'] ?? '');
+                if ($child_table === '' || $child_key === '' || $parent_table === '') {
+                    continue;
+                }
+
+                $wpdb->query(
+                    $wpdb->prepare(
+                        "DELETE FROM {$child_table}
+                         WHERE {$child_key} IN (
+                             SELECT id FROM {$parent_table} WHERE question_id IN ({$placeholders})
+                         )",
+                        ...$question_ids
+                    )
+                );
+            }
+        }
+
         public static function save_question_type_detail(int $question_id, string $question_type, string $correct_text, array $context = []): void
         {
             global $wpdb;
@@ -966,6 +1121,7 @@ final class CBT_Admin_Questions_Helper
             $categorization_item_table = $wpdb->prefix . 'cbt_question_categorization_items';
             $table_option_table = $wpdb->prefix . 'cbt_question_table_completion_cell_options';
             $table_cell_table = $wpdb->prefix . 'cbt_question_table_completion_cells';
+            self::delete_nested_question_detail_dependents([$question_id]);
             $wpdb->delete($table_option_table, ['question_id' => $question_id], ['%d']);
             $wpdb->delete($table_cell_table, ['question_id' => $question_id], ['%d']);
             $wpdb->delete($categorization_item_table, ['question_id' => $question_id], ['%d']);

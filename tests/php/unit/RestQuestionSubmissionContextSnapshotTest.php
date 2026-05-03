@@ -199,6 +199,70 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
         self::assertSame('{"1":301}', $clozePartial['answer_text']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_evaluate_answer_from_submission_context_scores_categorization_and_table_completion_partially(): void
+    {
+        $this->bootstrapRestScaffold();
+
+        $method = new ReflectionMethod('CBT_REST', 'evaluate_answer_from_submission_context');
+        $method->setAccessible(true);
+
+        $categorizationContext = [
+            'id' => 405,
+            'exam_id' => 90,
+            'question_type' => 'categorization',
+            'points' => 6,
+            'correct_option_ids' => [],
+            'true_false_correct_value' => null,
+            'true_false_option_value_by_id' => [],
+            'short_answer_values' => [],
+            'true_false_matrix_answers' => [],
+            'matching_correct_option_ids_by_key' => [],
+            'cloze_dropdown_correct_option_ids_by_key' => [],
+            'categorization_correct_option_ids_by_key' => ['1' => 501, '2' => 502, '3' => 501],
+            'table_completion_answers_by_key' => [],
+        ];
+        $tableContext = [
+            'id' => 406,
+            'exam_id' => 90,
+            'question_type' => 'table_completion',
+            'points' => 8,
+            'correct_option_ids' => [],
+            'true_false_correct_value' => null,
+            'true_false_option_value_by_id' => [],
+            'short_answer_values' => [],
+            'true_false_matrix_answers' => [],
+            'matching_correct_option_ids_by_key' => [],
+            'cloze_dropdown_correct_option_ids_by_key' => [],
+            'categorization_correct_option_ids_by_key' => [],
+            'table_completion_answers_by_key' => [
+                'A1' => [
+                    'cell_type' => 'text',
+                    'correct_values' => ['Tokyo'],
+                ],
+                'B1' => [
+                    'cell_type' => 'dropdown',
+                    'correct_option_id' => 602,
+                ],
+            ],
+        ];
+
+        $categorizationPartial = $method->invoke(null, $categorizationContext, ['1' => 501, '2' => 999, '3' => 501]);
+        $categorizationForeignKey = $method->invoke(null, $categorizationContext, ['1' => 501, 'x' => 502]);
+        $tablePartial = $method->invoke(null, $tableContext, ['A1' => '  tokyo. ', 'B1' => 999]);
+        $tableFull = $method->invoke(null, $tableContext, '{"A1":"Tokyo","B1":602}');
+
+        self::assertSame(0, $categorizationPartial['is_correct']);
+        self::assertSame(4.0, $categorizationPartial['score_awarded']);
+        self::assertSame(0, $categorizationForeignKey['is_correct']);
+        self::assertSame(2.0, $categorizationForeignKey['score_awarded']);
+        self::assertSame(0, $tablePartial['is_correct']);
+        self::assertSame(4.0, $tablePartial['score_awarded']);
+        self::assertSame(1, $tableFull['is_correct']);
+        self::assertSame(8.0, $tableFull['score_awarded']);
+        self::assertSame('{"A1":"Tokyo","B1":602}', $tableFull['answer_text']);
+    }
+
     private function bootstrapRestScaffold(): void
     {
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';

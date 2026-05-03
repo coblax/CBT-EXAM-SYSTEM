@@ -90,6 +90,68 @@
     color: #d9e9fb;
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-wrap,
+.cbt-web-shell.cbt-theme-dark .cbt-review-table-completion {
+    background: #111c2f;
+    border-color: #3a4f6b;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-table,
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-cell,
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-review-table {
+    background: #0f172a;
+    border-color: #3a4f6b;
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-cell {
+    border-color: #3a4f6b;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-cell:first-child {
+    box-shadow: 1px 0 0 #3a4f6b;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-cell.is-answer,
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-cell.is-dropdown {
+    background: #111c2f;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-cell-key,
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-review-cell-key span {
+    background: #172554;
+    border-color: #2f5f9f;
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-cell-label,
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-review-cell-key small {
+    color: #9fb0c5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-review-table th,
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-review-table td {
+    border-color: #3a4f6b;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-review-table tr {
+    background: #0f172a;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-review-table th,
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-review-answer.is-key {
+    background: #16253a;
+    color: #d9e9fb;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-review-answer.is-match {
+    background: rgba(16, 185, 129, 0.12);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-table-completion-review-answer.is-mismatch {
+    background: rgba(248, 113, 113, 0.13);
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-side-card .cbt-side-card-title {
     color: #f8fafc;
 }
