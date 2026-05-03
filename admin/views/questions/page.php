@@ -1155,28 +1155,33 @@ if (!defined('ABSPATH')) {
                         gap: 8px;
                         flex-wrap: wrap;
                         align-items: end;
-                        padding: 9px 10px;
-                        border: 1px solid #e1eaf3;
-                        border-radius: 12px;
-                        background: #f8fbff;
+                        width: fit-content;
+                        max-width: 100%;
+                        padding: 0;
+                        border: 0;
+                        border-radius: 0;
+                        background: transparent;
                     }
                     .cbt-table-size-row label {
                         display: grid;
-                        gap: 4px;
+                        gap: 3px;
                         min-width: 104px;
                         color: #334155;
                         font-size: 12px;
                         font-weight: 700;
                     }
+                    .cbt-table-size-row select {
+                        min-height: 36px;
+                    }
                     .cbt-table-designer {
                         display: grid;
-                        grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+                        grid-template-columns: 1fr;
                         gap: 10px;
                         align-items: start;
                     }
                     .cbt-table-grid-area {
                         display: grid;
-                        gap: 8px;
+                        gap: 7px;
                         min-width: 0;
                     }
                     .cbt-table-designer-summary {
@@ -1200,7 +1205,7 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-table-author-scroll {
                         overflow-x: auto;
-                        padding: 8px;
+                        padding: 7px;
                         border: 1px solid #dbe6f3;
                         border-radius: 12px;
                         background: #f8fbff;
@@ -1208,11 +1213,11 @@ if (!defined('ABSPATH')) {
                     .cbt-table-author-matrix {
                         display: grid;
                         gap: 6px;
-                        min-width: min(100%, calc(var(--cbt-table-cols, 3) * 112px));
+                        min-width: min(100%, calc(var(--cbt-table-cols, 3) * 104px));
                     }
                     .cbt-table-author-row {
                         display: grid;
-                        grid-template-columns: repeat(var(--cbt-table-cols, 3), minmax(104px, 1fr));
+                        grid-template-columns: repeat(var(--cbt-table-cols, 3), minmax(96px, 1fr));
                         gap: 6px;
                     }
                     .cbt-table-author-row.is-hidden,
@@ -1224,9 +1229,9 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-table-cell-button {
                         display: grid;
-                        gap: 5px;
+                        gap: 4px;
                         width: 100%;
-                        min-height: 82px;
+                        min-height: 64px;
                         padding: 8px;
                         border: 1px solid #dbe6f3;
                         border-left: 3px solid #cbd5e1;
@@ -1272,8 +1277,8 @@ if (!defined('ABSPATH')) {
                         display: inline-flex;
                         align-items: center;
                         justify-content: center;
-                        width: 28px;
-                        height: 28px;
+                        width: 26px;
+                        height: 26px;
                         border-radius: 8px;
                         background: #eef4ff;
                         color: #1d4ed8;
@@ -1294,12 +1299,12 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-table-cell-summary {
                         display: -webkit-box;
-                        min-height: 32px;
+                        min-height: 16px;
                         overflow: hidden;
                         color: #334155;
                         font-size: 11px;
                         font-weight: 700;
-                        line-height: 1.45;
+                        line-height: 1.35;
                         -webkit-line-clamp: 2;
                         -webkit-box-orient: vertical;
                     }
@@ -1307,22 +1312,25 @@ if (!defined('ABSPATH')) {
                         display: none !important;
                     }
                     .cbt-table-side-panel {
-                        position: sticky;
-                        top: 44px;
+                        position: static;
                         display: grid;
-                        gap: 10px;
-                        padding: 11px;
+                        gap: 8px;
+                        padding: 10px;
                         border: 1px solid #dbe6f3;
-                        border-radius: 14px;
+                        border-radius: 12px;
                         background: #ffffff;
                         box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+                    }
+                    .cbt-table-author-matrix > .cbt-table-side-panel {
+                        width: 100%;
+                        margin: 2px 0 4px;
                     }
                     .cbt-table-side-head {
                         display: flex;
                         align-items: center;
                         justify-content: space-between;
                         gap: 8px;
-                        padding-bottom: 8px;
+                        padding-bottom: 7px;
                         border-bottom: 1px solid #e6eef7;
                     }
                     .cbt-table-side-title {
@@ -1336,9 +1344,7 @@ if (!defined('ABSPATH')) {
                         line-height: 1.2;
                     }
                     .cbt-table-side-title span {
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
+                        overflow-wrap: anywhere;
                         color: #64748b;
                         font-size: 11px;
                         font-weight: 700;
@@ -1346,7 +1352,20 @@ if (!defined('ABSPATH')) {
                     .cbt-table-side-fields,
                     .cbt-table-side-field {
                         display: grid;
-                        gap: 7px;
+                        gap: 6px;
+                    }
+                    .cbt-table-side-fields {
+                        grid-template-columns: minmax(150px, 190px) minmax(240px, 1fr);
+                        align-items: start;
+                    }
+                    .cbt-table-side-field[data-cbt-table-panel-mode="text"],
+                    .cbt-table-side-field[data-cbt-table-panel-mode="dropdown"],
+                    .cbt-table-side-field.cbt-table-side-field--wide {
+                        grid-column: 1 / -1;
+                    }
+                    .cbt-table-side-field[hidden],
+                    [data-cbt-table-panel-mode][hidden] {
+                        display: none !important;
                     }
                     .cbt-table-side-field > span,
                     .cbt-table-side-options-head {
@@ -1356,8 +1375,8 @@ if (!defined('ABSPATH')) {
                     }
                     .cbt-table-side-options {
                         display: grid;
-                        grid-template-columns: repeat(2, minmax(0, 1fr));
-                        gap: 6px;
+                        grid-template-columns: repeat(3, minmax(140px, 1fr));
+                        gap: 7px;
                     }
                     .cbt-table-cell-options {
                         display: grid;
@@ -1391,9 +1410,29 @@ if (!defined('ABSPATH')) {
                         border-radius: 9px;
                     }
                     .cbt-table-side-options input[type="text"] {
-                        min-height: 34px;
+                        min-height: 32px;
                         padding: 0 8px;
                         border-radius: 9px;
+                    }
+                    .cbt-authoring-panel--table {
+                        width: min(100%, 980px);
+                    }
+                    .cbt-authoring-panel--table .cbt-authoring-panel-head {
+                        gap: 8px;
+                        padding-bottom: 7px;
+                    }
+                    .cbt-authoring-panel--table .cbt-authoring-panel-head strong {
+                        margin-bottom: 1px;
+                    }
+                    .cbt-authoring-panel--table .cbt-authoring-panel-head p {
+                        max-width: 680px;
+                    }
+                    .cbt-authoring-panel--table .cbt-authoring-badge {
+                        min-height: 26px;
+                    }
+                    .cbt-authoring-panel--table input[type="text"],
+                    .cbt-authoring-panel--table select {
+                        min-height: 36px;
                     }
                     .cbt-option-row .wp-editor-tools,
                     .cbt-matching-author-row .wp-editor-tools,
@@ -1443,11 +1482,9 @@ if (!defined('ABSPATH')) {
                         .cbt-cat-item-row {
                             grid-template-columns: 44px 1fr;
                         }
-                        .cbt-table-designer {
-                            grid-template-columns: 1fr;
-                        }
-                        .cbt-table-side-panel {
-                            position: static;
+                        .cbt-table-side-fields,
+                        .cbt-table-side-options {
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
                         }
                     }
                     @media (max-width: 640px) {
@@ -1477,6 +1514,7 @@ if (!defined('ABSPATH')) {
                         .cbt-cloze-correct-row {
                             grid-column: auto;
                         }
+                        .cbt-table-side-fields,
                         .cbt-table-side-options {
                             grid-template-columns: 1fr;
                         }
@@ -3068,14 +3106,14 @@ if (!defined('ABSPATH')) {
                                 <div class="cbt-authoring-panel cbt-authoring-panel--table">
                                     <div class="cbt-authoring-panel-head">
                                         <div>
-                                            <strong>Tabel mixed cell</strong>
-                                            <p>Pilih Teks tetap, Isian teks, atau Dropdown per sel. Sel jawaban dinilai partial.</p>
+                                            <strong>Tabel sel campuran</strong>
+                                            <p>Pilih Statis, Isian teks, atau Dropdown per sel. Sel jawaban dinilai partial.</p>
                                         </div>
                                         <span class="cbt-authoring-badge">Maks 8x6</span>
                                     </div>
                                     <div class="cbt-table-size-row">
                                         <label for="cbt_table_rows">
-                                            Rows
+                                            Baris
                                             <select id="cbt_table_rows" name="cbt_table_rows">
                                                 <?php for ($i = 2; $i <= 8; $i++): ?>
                                                     <option value="<?php echo (int) $i; ?>" <?php selected((int) $table_completion_row_count, $i); ?>><?php echo (int) $i; ?></option>
@@ -3083,7 +3121,7 @@ if (!defined('ABSPATH')) {
                                             </select>
                                         </label>
                                         <label for="cbt_table_cols">
-                                            Columns
+                                            Kolom
                                             <select id="cbt_table_cols" name="cbt_table_cols">
                                                 <?php for ($i = 2; $i <= 6; $i++): ?>
                                                     <option value="<?php echo (int) $i; ?>" <?php selected((int) $table_completion_column_count, $i); ?>><?php echo (int) $i; ?></option>
@@ -3210,7 +3248,7 @@ if (!defined('ABSPATH')) {
                                                         <option value="dropdown">Dropdown</option>
                                                     </select>
                                                 </label>
-                                                <label class="cbt-table-side-field" for="cbt_table_cell_panel_text">
+                                                <label class="cbt-table-side-field cbt-table-side-field--wide" for="cbt_table_cell_panel_text">
                                                     <span data-cbt-table-panel-text-caption>Teks tetap</span>
                                                     <input type="text" id="cbt_table_cell_panel_text" data-cbt-table-panel-text placeholder="Teks yang tampil di tabel" />
                                                 </label>
@@ -4619,6 +4657,19 @@ if (!defined('ABSPATH')) {
                     syncTablePanelMode(type);
                 }
 
+                function positionTablePanelForActiveCell() {
+                    if (!tablePanel) return;
+                    const field = getTableCellField(activeTableCellKey);
+                    const rowEl = field ? field.closest('.cbt-table-author-row[data-table-row]') : null;
+                    const matrix = document.getElementById('cbt-table-author-matrix');
+                    if (!field || !rowEl || !matrix || field.hidden || rowEl.hidden || rowEl.parentElement !== matrix) {
+                        return;
+                    }
+                    if (tablePanel.parentElement !== matrix || tablePanel.previousElementSibling !== rowEl) {
+                        rowEl.insertAdjacentElement('afterend', tablePanel);
+                    }
+                }
+
                 function selectTableCell(cellKey, shouldFocusPanel = false) {
                     const field = getTableCellField(cellKey);
                     if (!field || field.hidden) {
@@ -4633,6 +4684,7 @@ if (!defined('ABSPATH')) {
                             button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
                         }
                     });
+                    positionTablePanelForActiveCell();
                     syncTablePanelFromActiveCell();
                     if (shouldFocusPanel && tablePanelType) {
                         tablePanelType.focus();
