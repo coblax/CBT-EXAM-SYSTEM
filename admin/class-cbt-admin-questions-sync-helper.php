@@ -68,7 +68,7 @@ final class CBT_Admin_Questions_Sync_Helper
                 $normalized_detail_text = (string) ($detail['rubric_text'] ?? ($row['correct_text'] ?? ''));
             } elseif ($question_type === 'true_false_matrix') {
                 $normalized_detail_text = (string) ($row['correct_text'] ?? '');
-            } elseif (in_array($question_type, ['matching', 'cloze_dropdown'], true)) {
+            } elseif (in_array($question_type, ['matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
                 $normalized_detail_text = (string) ($row['correct_text'] ?? '');
             }
             if ($question_type === 'ordering') {
@@ -528,6 +528,43 @@ final class CBT_Admin_Questions_Sync_Helper
             }
             if ($question_type === 'cloze_dropdown') {
                 $detail_context['cloze_blanks'] = (array) (($source_snapshot['question_detail']['blanks'] ?? []) ?: []);
+            }
+            if ($question_type === 'categorization') {
+                $source_options = array_values((array) ($source_snapshot['options'] ?? []));
+                $target_option_ids = self::resolve_synced_option_ids_in_snapshot_order($target_question_id, $source_options);
+                $source_to_target_option_ids = [];
+                foreach ($source_options as $idx => $source_option) {
+                    $source_option_id = (int) (((array) $source_option)['id'] ?? 0);
+                    $target_option_id = (int) ($target_option_ids[$idx] ?? 0);
+                    if ($source_option_id > 0 && $target_option_id > 0) {
+                        $source_to_target_option_ids[$source_option_id] = $target_option_id;
+                    }
+                }
+                $categorization_items = [];
+                foreach ((array) (($source_snapshot['question_detail']['items'] ?? []) ?: []) as $item) {
+                    if (!is_array($item)) {
+                        continue;
+                    }
+                    $source_option_id = (int) ($item['correct_option_id'] ?? 0);
+                    $target_option_id = (int) ($source_to_target_option_ids[$source_option_id] ?? 0);
+                    if ($target_option_id <= 0) {
+                        continue;
+                    }
+                    $categorization_items[] = [
+                        'position' => (int) ($item['item_position'] ?? $item['position'] ?? (count($categorization_items) + 1)),
+                        'item_key' => (string) ($item['item_key'] ?? (count($categorization_items) + 1)),
+                        'item_text' => (string) ($item['item_text'] ?? ''),
+                        'correct_option_id' => $target_option_id,
+                    ];
+                }
+                $detail_context['categorization_items'] = $categorization_items;
+            }
+            if ($question_type === 'table_completion') {
+                $detail_context['table_completion'] = [
+                    'row_count' => (int) ($source_snapshot['question_detail']['row_count'] ?? 2),
+                    'column_count' => (int) ($source_snapshot['question_detail']['column_count'] ?? 2),
+                    'cells' => (array) (($source_snapshot['question_detail']['cells'] ?? []) ?: []),
+                ];
             }
 
             CBT_Admin_Questions_Helper::save_question_type_detail(

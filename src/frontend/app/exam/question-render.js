@@ -87,6 +87,52 @@ function getClozeDropdownBlanks(question) {
     });
 }
 
+function getCategorizationItems(question) {
+    var meta = question && question.categorization_meta ? question.categorization_meta : null;
+    var items = meta && Array.isArray(meta.items) ? meta.items : [];
+
+    return items.map(function (item, index) {
+        var key = String(item && item.key ? item.key : (index + 1)).trim();
+        if (key === '') {
+            key = String(index + 1);
+        }
+
+        return {
+            key: key,
+            text: String(item && item.text ? item.text : '')
+        };
+    });
+}
+
+function getTableCompletionCells(question) {
+    var meta = question && question.table_completion_meta ? question.table_completion_meta : null;
+    var cells = meta && Array.isArray(meta.cells) ? meta.cells : [];
+
+    return cells.map(function (cell) {
+        var type = String(cell && cell.type ? cell.type : 'static');
+        if (['static', 'text', 'dropdown'].indexOf(type) < 0) {
+            type = 'static';
+        }
+        var options = Array.isArray(cell && cell.options) ? cell.options : [];
+        return {
+            key: String(cell && cell.key ? cell.key : '').trim().toUpperCase(),
+            row: Number(cell && cell.row) || 0,
+            column: Number(cell && cell.column) || 0,
+            type: type,
+            text: String(cell && cell.text ? cell.text : ''),
+            options: options.map(function (option, optionIndex) {
+                return {
+                    id: Number(option && option.id) || 0,
+                    option_key: String(option && option.option_key ? option.option_key : questionOptionKey(option, optionIndex)),
+                    option_text: String(option && option.option_text ? option.option_text : '')
+                };
+            }).filter(function (option) {
+                return option.id > 0;
+            })
+        };
+    });
+}
+
 function normalizeTrueFalseMatrixAnswer(answer) {
     if (!answer || typeof answer !== 'object') {
         return {};
@@ -115,6 +161,29 @@ function normalizeDropdownOptionAnswer(answer) {
         if (normalizedKey !== '' && optionId > 0) {
             accumulator[normalizedKey] = optionId;
         }
+        return accumulator;
+    }, {});
+}
+
+function normalizeTableCompletionAnswer(answer) {
+    if (!answer || typeof answer !== 'object' || Array.isArray(answer)) {
+        return {};
+    }
+
+    return Object.keys(answer).reduce(function (accumulator, key) {
+        var normalizedKey = String(key || '').trim().toUpperCase();
+        if (normalizedKey === '') {
+            return accumulator;
+        }
+        var value = answer[key];
+        if (value === null || value === undefined) {
+            return accumulator;
+        }
+        var textValue = String(value).trim();
+        if (textValue === '') {
+            return accumulator;
+        }
+        accumulator[normalizedKey] = /^\d+$/.test(textValue) ? Number(textValue) : textValue;
         return accumulator;
     }, {});
 }
@@ -547,6 +616,96 @@ export function createQuestionRenderManager(deps) {
                         '</tr>'
                     ].join('');
                 }).join(''),
+                '</tbody>',
+                '</table>',
+                '</div>'
+            ].join('');
+        }
+
+        if (question.question_type === 'categorization') {
+            var categorizationItems = getCategorizationItems(question);
+            var categorizationAnswer = normalizeDropdownOptionAnswer(answer);
+            var categorizationOptions = Array.isArray(question.options) ? question.options : [];
+            if (!categorizationItems.length || !categorizationOptions.length) {
+                return '<p class="cbt-muted">Konfigurasi categorization belum tersedia.</p>';
+            }
+
+            return [
+                '<div class="cbt-matching-wrap cbt-categorization-wrap">',
+                '<table class="cbt-matching-table cbt-categorization-table">',
+                '<tbody>',
+                categorizationItems.map(function (item, index) {
+                    var selectedOptionId = Number(categorizationAnswer[item.key]) || 0;
+                    return [
+                        '<tr>',
+                        '<td class="cbt-matching-prompt"><span class="cbt-option-key">' + escapeHtml(index + 1) + '.</span> <span>' + renderExamRichHtml(item.text || '', {
+                            context: 'question'
+                        }) + '</span></td>',
+                        '<td class="cbt-matching-choice">',
+                        '<select class="cbt-input cbt-matching-select" data-action="answer-categorization" data-qid="' + escapeHtml(question.id) + '" data-categorization-key="' + escapeHtml(item.key) + '"' + disabledAttr + '>',
+                        renderDropdownOptionTags(categorizationOptions, selectedOptionId),
+                        '</select>',
+                        '</td>',
+                        '</tr>'
+                    ].join('');
+                }).join(''),
+                '</tbody>',
+                '</table>',
+                '</div>'
+            ].join('');
+        }
+
+        if (question.question_type === 'table_completion') {
+            var tableMeta = question.table_completion_meta || {};
+            var tableRows = Math.max(1, Number(tableMeta.rows) || 0);
+            var tableColumns = Math.max(1, Number(tableMeta.columns) || 0);
+            var tableCells = getTableCompletionCells(question);
+            var tableAnswer = normalizeTableCompletionAnswer(answer);
+            var tableCellsByPosition = {};
+            tableCells.forEach(function (cell) {
+                if (cell.row > 0 && cell.column > 0) {
+                    tableCellsByPosition[cell.row + ':' + cell.column] = cell;
+                }
+            });
+            if (!tableRows || !tableColumns || !tableCells.length) {
+                return '<p class="cbt-muted">Konfigurasi Table Completion belum tersedia.</p>';
+            }
+
+            var bodyRows = [];
+            for (var row = 1; row <= tableRows; row += 1) {
+                var cellsMarkup = [];
+                for (var column = 1; column <= tableColumns; column += 1) {
+                    var cell = tableCellsByPosition[row + ':' + column] || {
+                        key: '',
+                        type: 'static',
+                        text: ''
+                    };
+                    if (cell.type === 'text') {
+                        cellsMarkup.push([
+                            '<td>',
+                            '<input class="cbt-input cbt-table-completion-input" data-action="answer-table-completion-text" data-qid="' + escapeHtml(question.id) + '" data-table-key="' + escapeHtml(cell.key) + '" value="' + escapeHtml(String(tableAnswer[cell.key] || '')) + '"' + disabledAttr + ' />',
+                            '</td>'
+                        ].join(''));
+                    } else if (cell.type === 'dropdown') {
+                        cellsMarkup.push([
+                            '<td>',
+                            '<select class="cbt-input cbt-table-completion-select" data-action="answer-table-completion-dropdown" data-qid="' + escapeHtml(question.id) + '" data-table-key="' + escapeHtml(cell.key) + '"' + disabledAttr + '>',
+                            renderDropdownOptionTags(cell.options || [], Number(tableAnswer[cell.key]) || 0),
+                            '</select>',
+                            '</td>'
+                        ].join(''));
+                    } else {
+                        cellsMarkup.push('<td>' + renderExamRichHtml(cell.text || '', { context: 'question' }) + '</td>');
+                    }
+                }
+                bodyRows.push('<tr>' + cellsMarkup.join('') + '</tr>');
+            }
+
+            return [
+                '<div class="cbt-table-completion-wrap">',
+                '<table class="cbt-table-completion-table">',
+                '<tbody>',
+                bodyRows.join(''),
                 '</tbody>',
                 '</table>',
                 '</div>'

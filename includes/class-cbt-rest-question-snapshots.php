@@ -1295,7 +1295,7 @@ trait CBT_REST_Question_Snapshot_Helpers
             $question_manifest[] = $manifest_item;
 
             $question_type = (string) ($question['question_type'] ?? '');
-            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'ordering', 'matching'], true)) {
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'ordering', 'matching', 'categorization'], true)) {
                 $option_question_ids[] = $question_id;
                 if ($question_type === 'ordering' && (int) ($question['ordering_shuffle_items'] ?? 1) !== 0) {
                     $force_option_shuffle_question_ids[$question_id] = $question_id;
@@ -1480,7 +1480,7 @@ trait CBT_REST_Question_Snapshot_Helpers
             if ($question_id <= 0) {
                 continue;
             }
-            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering', 'matching'], true)) {
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering', 'matching', 'categorization'], true)) {
                 $option_question_ids[] = $question_id;
             }
         }
@@ -1515,6 +1515,8 @@ trait CBT_REST_Question_Snapshot_Helpers
 
         $matching_items_by_question = [];
         $cloze_blanks_by_question = [];
+        $categorization_items_by_question = [];
+        $table_completion_by_question = [];
         if (class_exists('CBT_Admin_Questions_Helper')) {
             foreach ($question_rows as $question_row) {
                 $question_id = (int) ($question_row['id'] ?? 0);
@@ -1527,6 +1529,10 @@ trait CBT_REST_Question_Snapshot_Helpers
                     $matching_items_by_question[$question_id] = CBT_Admin_Questions_Helper::get_matching_items($question_id);
                 } elseif ($question_type === 'cloze_dropdown') {
                     $cloze_blanks_by_question[$question_id] = CBT_Admin_Questions_Helper::get_cloze_dropdown_blanks($question_id, false);
+                } elseif ($question_type === 'categorization') {
+                    $categorization_items_by_question[$question_id] = CBT_Admin_Questions_Helper::get_categorization_items($question_id);
+                } elseif ($question_type === 'table_completion') {
+                    $table_completion_by_question[$question_id] = CBT_Admin_Questions_Helper::get_table_completion_definition($question_id, false);
                 }
             }
         }
@@ -1623,11 +1629,66 @@ trait CBT_REST_Question_Snapshot_Helpers
                         ];
                     }, $cloze_blanks, array_keys($cloze_blanks)),
                 ];
+            } elseif ((string) ($question['question_type'] ?? '') === 'categorization') {
+                $categorization_items = (array) ($categorization_items_by_question[$question_id] ?? []);
+                $question['categorization_meta'] = [
+                    'item_count' => count($categorization_items),
+                    'scoring_mode' => 'partial',
+                    'shuffle_items' => 1,
+                    'items' => array_map(static function (array $row, int $idx): array {
+                        $key = trim((string) ($row['item_key'] ?? ''));
+                        if ($key === '') {
+                            $key = (string) ($idx + 1);
+                        }
+
+                        return [
+                            'key' => $key,
+                            'text' => (string) ($row['item_text'] ?? ''),
+                        ];
+                    }, $categorization_items, array_keys($categorization_items)),
+                ];
+            } elseif ((string) ($question['question_type'] ?? '') === 'table_completion') {
+                $table_definition = (array) ($table_completion_by_question[$question_id] ?? []);
+                $cells = [];
+                foreach ((array) ($table_definition['cells'] ?? []) as $cell_row) {
+                    $cell = (array) $cell_row;
+                    $cell_type = (string) ($cell['cell_type'] ?? 'static');
+                    $payload_cell = [
+                        'key' => (string) ($cell['cell_key'] ?? ''),
+                        'row' => (int) ($cell['row_position'] ?? 0),
+                        'column' => (int) ($cell['column_position'] ?? 0),
+                        'type' => in_array($cell_type, ['static', 'text', 'dropdown'], true) ? $cell_type : 'static',
+                        'text' => (string) ($cell['cell_text'] ?? ''),
+                    ];
+                    if ($payload_cell['type'] === 'dropdown') {
+                        $options = [];
+                        foreach ((array) ($cell['options'] ?? []) as $option_row) {
+                            $option = (array) $option_row;
+                            $option_id = (int) ($option['id'] ?? 0);
+                            if ($option_id <= 0) {
+                                continue;
+                            }
+                            $options[] = [
+                                'id' => $option_id,
+                                'option_key' => (string) ($option['option_key'] ?? ''),
+                                'option_text' => (string) ($option['option_text'] ?? ''),
+                            ];
+                        }
+                        $payload_cell['options'] = $options;
+                    }
+                    $cells[] = $payload_cell;
+                }
+                $question['table_completion_meta'] = [
+                    'rows' => max(0, (int) ($table_definition['row_count'] ?? 0)),
+                    'columns' => max(0, (int) ($table_definition['column_count'] ?? 0)),
+                    'scoring_mode' => 'partial',
+                    'cells' => $cells,
+                ];
             }
 
             unset($question['short_answer_correct_text']);
             unset($question['ordering_scoring_mode'], $question['ordering_shuffle_items']);
-            if (in_array((string) ($question['question_type'] ?? ''), ['true_false_matrix', 'matching', 'cloze_dropdown'], true)) {
+            if (in_array((string) ($question['question_type'] ?? ''), ['true_false_matrix', 'matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
                 unset($question['correct_text']);
             }
 
@@ -1775,6 +1836,70 @@ trait CBT_REST_Question_Snapshot_Helpers
                     'blank_count' => max(0, (int) ($question['cloze_dropdown_meta']['blank_count'] ?? count($blanks))),
                     'scoring_mode' => 'partial',
                     'blanks' => $blanks,
+                ];
+            }
+
+            if (!empty($question['categorization_meta']) && is_array($question['categorization_meta'])) {
+                $items = [];
+                foreach ((array) ($question['categorization_meta']['items'] ?? []) as $item_row) {
+                    $item = (array) $item_row;
+                    $key = trim((string) ($item['key'] ?? ''));
+                    if ($key === '') {
+                        continue;
+                    }
+                    $items[] = [
+                        'key' => $key,
+                        'text' => (string) ($item['text'] ?? ''),
+                    ];
+                }
+
+                $sanitized['categorization_meta'] = [
+                    'item_count' => max(0, (int) ($question['categorization_meta']['item_count'] ?? count($items))),
+                    'scoring_mode' => 'partial',
+                    'shuffle_items' => ((int) ($question['categorization_meta']['shuffle_items'] ?? 1) === 0) ? 0 : 1,
+                    'items' => $items,
+                ];
+            }
+
+            if (!empty($question['table_completion_meta']) && is_array($question['table_completion_meta'])) {
+                $cells = [];
+                foreach ((array) ($question['table_completion_meta']['cells'] ?? []) as $cell_row) {
+                    $cell = (array) $cell_row;
+                    $type = (string) ($cell['type'] ?? 'static');
+                    if (!in_array($type, ['static', 'text', 'dropdown'], true)) {
+                        $type = 'static';
+                    }
+                    $payload_cell = [
+                        'key' => (string) ($cell['key'] ?? ''),
+                        'row' => max(1, (int) ($cell['row'] ?? 0)),
+                        'column' => max(1, (int) ($cell['column'] ?? 0)),
+                        'type' => $type,
+                        'text' => (string) ($cell['text'] ?? ''),
+                    ];
+                    if ($type === 'dropdown') {
+                        $options = [];
+                        foreach ((array) ($cell['options'] ?? []) as $option_row) {
+                            $option = (array) $option_row;
+                            $option_id = (int) ($option['id'] ?? 0);
+                            if ($option_id <= 0) {
+                                continue;
+                            }
+                            $options[] = [
+                                'id' => $option_id,
+                                'option_key' => (string) ($option['option_key'] ?? ''),
+                                'option_text' => (string) ($option['option_text'] ?? ''),
+                            ];
+                        }
+                        $payload_cell['options'] = $options;
+                    }
+                    $cells[] = $payload_cell;
+                }
+
+                $sanitized['table_completion_meta'] = [
+                    'rows' => max(0, (int) ($question['table_completion_meta']['rows'] ?? 0)),
+                    'columns' => max(0, (int) ($question['table_completion_meta']['columns'] ?? 0)),
+                    'scoring_mode' => 'partial',
+                    'cells' => $cells,
                 ];
             }
 
@@ -2466,7 +2591,7 @@ trait CBT_REST_Question_Snapshot_Helpers
             }
 
             $question_type = (string) ($question['question_type'] ?? '');
-            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'ordering', 'matching'], true)) {
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'ordering', 'matching', 'categorization'], true)) {
                 $ordered_options = self::order_question_options_by_attempt_sequence(
                     is_array($question['options'] ?? null) ? $question['options'] : [],
                     $option_order_map[$question_id]
@@ -2507,7 +2632,7 @@ trait CBT_REST_Question_Snapshot_Helpers
             return ((int) ($meta['shuffle_items'] ?? 1) !== 0);
         }
 
-        return in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false_matrix', 'matching'], true);
+        return in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false_matrix', 'matching', 'categorization'], true);
     }
 
     /**
@@ -2518,7 +2643,7 @@ trait CBT_REST_Question_Snapshot_Helpers
     {
         $question_type = (string) ($question['question_type'] ?? '');
 
-        if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'ordering', 'matching'], true)) {
+        if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'ordering', 'matching', 'categorization'], true)) {
             $tokens = [];
             $options = is_array($question['options'] ?? null) ? $question['options'] : [];
             foreach ($options as $option_row) {
@@ -2837,7 +2962,7 @@ trait CBT_REST_Question_Snapshot_Helpers
             }
 
             $question_type = (string) ($question['question_type'] ?? '');
-            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering', 'matching'], true)) {
+            if (in_array($question_type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering', 'matching', 'categorization'], true)) {
                 $manifest_item['options'] = array_map(static function ($option): array {
                     $option_row = (array) $option;
                     return [
@@ -2866,6 +2991,14 @@ trait CBT_REST_Question_Snapshot_Helpers
 
             if ($question_type === 'cloze_dropdown' && isset($question['cloze_dropdown_meta']) && is_array($question['cloze_dropdown_meta'])) {
                 $manifest_item['cloze_dropdown_meta'] = $question['cloze_dropdown_meta'];
+            }
+
+            if ($question_type === 'categorization' && isset($question['categorization_meta']) && is_array($question['categorization_meta'])) {
+                $manifest_item['categorization_meta'] = $question['categorization_meta'];
+            }
+
+            if ($question_type === 'table_completion' && isset($question['table_completion_meta']) && is_array($question['table_completion_meta'])) {
+                $manifest_item['table_completion_meta'] = $question['table_completion_meta'];
             }
 
             $manifest[] = $manifest_item;
@@ -3244,9 +3377,30 @@ trait CBT_REST_Question_Snapshot_Helpers
                     break;
                 case 'matching':
                 case 'cloze_dropdown':
+                case 'categorization':
                     $existing_map = self::normalize_dropdown_option_id_submission($existing_text);
                     if (!empty($existing_map)) {
                         $question['existing_answer'] = $existing_map;
+                    }
+                    break;
+                case 'table_completion':
+                    $decoded_table_answer = json_decode($existing_text, true);
+                    $table_answer = [];
+                    if (is_array($decoded_table_answer)) {
+                        foreach ($decoded_table_answer as $key => $value) {
+                            $safe_key = strtoupper(trim((string) $key));
+                            if ($safe_key === '' || !is_scalar($value)) {
+                                continue;
+                            }
+                            $safe_value = trim((string) $value);
+                            if ($safe_value === '') {
+                                continue;
+                            }
+                            $table_answer[$safe_key] = is_numeric($safe_value) ? (int) $safe_value : $safe_value;
+                        }
+                    }
+                    if (!empty($table_answer)) {
+                        $question['existing_answer'] = $table_answer;
                     }
                     break;
                 case 'short_answer':

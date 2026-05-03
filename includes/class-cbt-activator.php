@@ -10,7 +10,7 @@ class CBT_Activator
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
     private const OPTION_SUPERVISOR_FRONTEND_PAGE_ID = 'cbt_exam_system_supervisor_page_id';
     private const OPTION_FRONTEND_PAGE_SYNC_PENDING = 'cbt_exam_system_frontend_page_sync_pending';
-    private const DB_VERSION = '1.6.19';
+    private const DB_VERSION = '1.6.20';
 
     public static function activate(): void
     {
@@ -261,6 +261,71 @@ class CBT_Activator
             KEY idx_blank_id (blank_id)
         ) $charset;";
 
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_categorization (
+            question_id BIGINT UNSIGNED NOT NULL,
+            scoring_mode VARCHAR(30) NOT NULL DEFAULT 'partial',
+            shuffle_items TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (question_id)
+        ) $charset;";
+
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_categorization_items (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            question_id BIGINT UNSIGNED NOT NULL,
+            item_key VARCHAR(10) NOT NULL,
+            item_position SMALLINT UNSIGNED NOT NULL,
+            item_text LONGTEXT NOT NULL,
+            correct_option_id BIGINT UNSIGNED NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uniq_question_item_key (question_id, item_key),
+            UNIQUE KEY uniq_question_item_position (question_id, item_position),
+            KEY idx_correct_option_id (correct_option_id)
+        ) $charset;";
+
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_table_completion (
+            question_id BIGINT UNSIGNED NOT NULL,
+            scoring_mode VARCHAR(30) NOT NULL DEFAULT 'partial',
+            row_count SMALLINT UNSIGNED NOT NULL DEFAULT 2,
+            column_count SMALLINT UNSIGNED NOT NULL DEFAULT 2,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (question_id)
+        ) $charset;";
+
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_table_completion_cells (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            question_id BIGINT UNSIGNED NOT NULL,
+            cell_key VARCHAR(10) NULL,
+            row_position SMALLINT UNSIGNED NOT NULL,
+            column_position SMALLINT UNSIGNED NOT NULL,
+            cell_type VARCHAR(20) NOT NULL DEFAULT 'static',
+            cell_text LONGTEXT NULL,
+            correct_text TEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uniq_question_cell_position (question_id, row_position, column_position),
+            UNIQUE KEY uniq_question_cell_key (question_id, cell_key),
+            KEY idx_question_cell_type (question_id, cell_type)
+        ) $charset;";
+
+        $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_question_table_completion_cell_options (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            question_id BIGINT UNSIGNED NOT NULL,
+            cell_id BIGINT UNSIGNED NOT NULL,
+            option_key VARCHAR(10) NULL,
+            option_text LONGTEXT NOT NULL,
+            is_correct TINYINT(1) NOT NULL DEFAULT 0,
+            option_order SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_question_cell (question_id, cell_id),
+            KEY idx_cell_id (cell_id)
+        ) $charset;";
+
         $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_attempts (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             exam_id BIGINT UNSIGNED NOT NULL,
@@ -376,6 +441,13 @@ class CBT_Activator
             ['name' => 'fk_cbt_qclozeb_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_cloze_dropdown_blanks ADD CONSTRAINT fk_cbt_qclozeb_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_qclozeo_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_cloze_dropdown_options ADD CONSTRAINT fk_cbt_qclozeo_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_qclozeo_blank', 'sql' => "ALTER TABLE {$prefix}cbt_question_cloze_dropdown_options ADD CONSTRAINT fk_cbt_qclozeo_blank FOREIGN KEY (blank_id) REFERENCES {$prefix}cbt_question_cloze_dropdown_blanks(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qcat_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_categorization ADD CONSTRAINT fk_cbt_qcat_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qcati_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_categorization_items ADD CONSTRAINT fk_cbt_qcati_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qcati_option', 'sql' => "ALTER TABLE {$prefix}cbt_question_categorization_items ADD CONSTRAINT fk_cbt_qcati_option FOREIGN KEY (correct_option_id) REFERENCES {$prefix}cbt_options(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qtable_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_table_completion ADD CONSTRAINT fk_cbt_qtable_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qtablec_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_table_completion_cells ADD CONSTRAINT fk_cbt_qtablec_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qtableo_question', 'sql' => "ALTER TABLE {$prefix}cbt_question_table_completion_cell_options ADD CONSTRAINT fk_cbt_qtableo_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],
+            ['name' => 'fk_cbt_qtableo_cell', 'sql' => "ALTER TABLE {$prefix}cbt_question_table_completion_cell_options ADD CONSTRAINT fk_cbt_qtableo_cell FOREIGN KEY (cell_id) REFERENCES {$prefix}cbt_question_table_completion_cells(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_attempts_exam', 'sql' => "ALTER TABLE {$prefix}cbt_attempts ADD CONSTRAINT fk_cbt_attempts_exam FOREIGN KEY (exam_id) REFERENCES {$prefix}cbt_exams(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_answers_attempt', 'sql' => "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_attempt FOREIGN KEY (attempt_id) REFERENCES {$prefix}cbt_attempts(id) ON DELETE CASCADE"],
             ['name' => 'fk_cbt_answers_question', 'sql' => "ALTER TABLE {$prefix}cbt_answers ADD CONSTRAINT fk_cbt_answers_question FOREIGN KEY (question_id) REFERENCES {$prefix}cbt_questions(id) ON DELETE CASCADE"],

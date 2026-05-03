@@ -278,6 +278,59 @@ export function createReviewRenderer(deps) {
                     '</div>'
                 ].join('');
             }
+        } else if (questionType === 'categorization') {
+            var categorizationRows = item && Array.isArray(item.categorization_rows) ? item.categorization_rows : [];
+            if (!categorizationRows.length) {
+                answerMarkup = '<div class="cbt-review-text">Data categorization tidak tersedia.</div>';
+            } else {
+                answerMarkup = [
+                    '<div class="cbt-review-ordering">',
+                    '<table class="cbt-ordering-review-table">',
+                    '<thead><tr><th>Item</th><th>Jawaban Anda</th><th>Kunci</th></tr></thead>',
+                    '<tbody>',
+                    categorizationRows.map(function (row, index) {
+                        var isMatch = Number(row && row.is_match) === 1;
+                        var matchClass = isMatch ? ' is-match' : ' is-mismatch';
+                        var itemText = row && row.item_text ? safeRichHtml(row.item_text) : ('Item ' + (index + 1));
+                        return [
+                            '<tr>',
+                            '<td class="cbt-ordering-review-position">' + itemText + '</td>',
+                            '<td class="cbt-ordering-review-answer' + matchClass + '">' + (row && row.submitted_text ? escapeHtml(row.submitted_text) : '<span class="cbt-review-empty">-</span>') + '</td>',
+                            '<td class="cbt-ordering-review-answer">' + (row && row.correct_text ? escapeHtml(row.correct_text) : '<span class="cbt-review-empty">-</span>') + '</td>',
+                            '</tr>'
+                        ].join('');
+                    }).join(''),
+                    '</tbody>',
+                    '</table>',
+                    '</div>'
+                ].join('');
+            }
+        } else if (questionType === 'table_completion') {
+            var tableRows = item && Array.isArray(item.table_completion_rows) ? item.table_completion_rows : [];
+            if (!tableRows.length) {
+                answerMarkup = '<div class="cbt-review-text">Data Table Completion tidak tersedia.</div>';
+            } else {
+                answerMarkup = [
+                    '<div class="cbt-review-ordering">',
+                    '<table class="cbt-ordering-review-table">',
+                    '<thead><tr><th>Sel</th><th>Jawaban Anda</th><th>Kunci</th></tr></thead>',
+                    '<tbody>',
+                    tableRows.map(function (row) {
+                        var isMatch = Number(row && row.is_match) === 1;
+                        var matchClass = isMatch ? ' is-match' : ' is-mismatch';
+                        return [
+                            '<tr>',
+                            '<td class="cbt-ordering-review-position">' + escapeHtml(row && row.key ? row.key : '-') + '</td>',
+                            '<td class="cbt-ordering-review-answer' + matchClass + '">' + (row && row.submitted_text ? escapeHtml(row.submitted_text) : '<span class="cbt-review-empty">-</span>') + '</td>',
+                            '<td class="cbt-ordering-review-answer">' + (row && row.correct_text ? escapeHtml(row.correct_text) : '<span class="cbt-review-empty">-</span>') + '</td>',
+                            '</tr>'
+                        ].join('');
+                    }).join(''),
+                    '</tbody>',
+                    '</table>',
+                    '</div>'
+                ].join('');
+            }
         } else if (options.length > 0) {
             answerMarkup = [
                 '<div class="cbt-review-options">',

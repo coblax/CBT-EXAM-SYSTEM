@@ -1715,6 +1715,32 @@
     padding-right: 30px;
 }
 
+.cbt-table-completion-wrap {
+    margin-top: 16px;
+    overflow-x: auto;
+}
+
+.cbt-table-completion-table {
+    width: 100%;
+    min-width: 520px;
+    border-collapse: collapse;
+    border: 1px solid #d5dee8;
+    background: #fff;
+}
+
+.cbt-table-completion-table td {
+    min-width: 120px;
+    border: 1px solid #d5dee8;
+    padding: 9px 10px;
+    vertical-align: top;
+}
+
+.cbt-table-completion-input.cbt-input,
+.cbt-table-completion-select.cbt-input {
+    width: 100%;
+    min-height: 36px;
+}
+
 .cbt-tf-matrix-review td.is-match {
     background: #ecfbf4;
     color: #1a7f5a;

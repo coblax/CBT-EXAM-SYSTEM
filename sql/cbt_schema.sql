@@ -206,6 +206,78 @@ CREATE TABLE wp_cbt_question_cloze_dropdown_options (
   CONSTRAINT fk_cbt_qclozeo_blank FOREIGN KEY (blank_id) REFERENCES wp_cbt_question_cloze_dropdown_blanks(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
 
+CREATE TABLE wp_cbt_question_categorization (
+  question_id BIGINT UNSIGNED NOT NULL,
+  scoring_mode VARCHAR(30) NOT NULL DEFAULT 'partial',
+  shuffle_items TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (question_id),
+  CONSTRAINT fk_cbt_qcat_question FOREIGN KEY (question_id) REFERENCES wp_cbt_questions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
+
+CREATE TABLE wp_cbt_question_categorization_items (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  question_id BIGINT UNSIGNED NOT NULL,
+  item_key VARCHAR(10) NOT NULL,
+  item_position SMALLINT UNSIGNED NOT NULL,
+  item_text LONGTEXT NOT NULL,
+  correct_option_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_question_item_key (question_id, item_key),
+  UNIQUE KEY uniq_question_item_position (question_id, item_position),
+  KEY idx_correct_option_id (correct_option_id),
+  CONSTRAINT fk_cbt_qcati_question FOREIGN KEY (question_id) REFERENCES wp_cbt_questions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cbt_qcati_option FOREIGN KEY (correct_option_id) REFERENCES wp_cbt_options(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
+
+CREATE TABLE wp_cbt_question_table_completion (
+  question_id BIGINT UNSIGNED NOT NULL,
+  scoring_mode VARCHAR(30) NOT NULL DEFAULT 'partial',
+  row_count SMALLINT UNSIGNED NOT NULL DEFAULT 2,
+  column_count SMALLINT UNSIGNED NOT NULL DEFAULT 2,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (question_id),
+  CONSTRAINT fk_cbt_qtable_question FOREIGN KEY (question_id) REFERENCES wp_cbt_questions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
+
+CREATE TABLE wp_cbt_question_table_completion_cells (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  question_id BIGINT UNSIGNED NOT NULL,
+  cell_key VARCHAR(10) NULL,
+  row_position SMALLINT UNSIGNED NOT NULL,
+  column_position SMALLINT UNSIGNED NOT NULL,
+  cell_type VARCHAR(20) NOT NULL DEFAULT 'static',
+  cell_text LONGTEXT NULL,
+  correct_text TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_question_cell_position (question_id, row_position, column_position),
+  UNIQUE KEY uniq_question_cell_key (question_id, cell_key),
+  KEY idx_question_cell_type (question_id, cell_type),
+  CONSTRAINT fk_cbt_qtablec_question FOREIGN KEY (question_id) REFERENCES wp_cbt_questions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
+
+CREATE TABLE wp_cbt_question_table_completion_cell_options (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  question_id BIGINT UNSIGNED NOT NULL,
+  cell_id BIGINT UNSIGNED NOT NULL,
+  option_key VARCHAR(10) NULL,
+  option_text LONGTEXT NOT NULL,
+  is_correct TINYINT(1) NOT NULL DEFAULT 0,
+  option_order SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_question_cell (question_id, cell_id),
+  KEY idx_cell_id (cell_id),
+  CONSTRAINT fk_cbt_qtableo_question FOREIGN KEY (question_id) REFERENCES wp_cbt_questions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cbt_qtableo_cell FOREIGN KEY (cell_id) REFERENCES wp_cbt_question_table_completion_cells(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
+
 CREATE TABLE wp_cbt_attempts (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   exam_id BIGINT UNSIGNED NOT NULL,

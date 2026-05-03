@@ -18,6 +18,8 @@ final class CBT_Admin_Questions_Helper
                 'cbt-questions-ordering',
                 'cbt-questions-matching',
                 'cbt-questions-cloze',
+                'cbt-questions-categorization',
+                'cbt-questions-table-completion',
             ];
         }
 
@@ -49,6 +51,10 @@ final class CBT_Admin_Questions_Helper
                     return 'matching';
                 case 'cbt-questions-cloze':
                     return 'cloze_dropdown';
+                case 'cbt-questions-categorization':
+                    return 'categorization';
+                case 'cbt-questions-table-completion':
+                    return 'table_completion';
                 default:
                     return '';
             }
@@ -92,12 +98,12 @@ final class CBT_Admin_Questions_Helper
                 return 'Terjawab';
             }
 
-            if (in_array($question_type, ['matching', 'cloze_dropdown'], true)) {
+            if (in_array($question_type, ['matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
                 $decoded = json_decode($answer_text, true);
                 if (is_array($decoded)) {
                     $count = 0;
                     foreach ($decoded as $value) {
-                        if ((int) $value > 0) {
+                        if (is_scalar($value) && trim((string) $value) !== '' && (string) $value !== '0') {
                             $count++;
                         }
                     }
@@ -883,6 +889,8 @@ final class CBT_Admin_Questions_Helper
                 'ordering' => $wpdb->prefix . 'cbt_question_ordering',
                 'matching' => $wpdb->prefix . 'cbt_question_matching',
                 'cloze_dropdown' => $wpdb->prefix . 'cbt_question_cloze_dropdown',
+                'categorization' => $wpdb->prefix . 'cbt_question_categorization',
+                'table_completion' => $wpdb->prefix . 'cbt_question_table_completion',
             ];
         }
 
@@ -899,6 +907,12 @@ final class CBT_Admin_Questions_Helper
             $matching_item_table = $wpdb->prefix . 'cbt_question_matching_items';
             $cloze_option_table = $wpdb->prefix . 'cbt_question_cloze_dropdown_options';
             $cloze_blank_table = $wpdb->prefix . 'cbt_question_cloze_dropdown_blanks';
+            $categorization_item_table = $wpdb->prefix . 'cbt_question_categorization_items';
+            $table_option_table = $wpdb->prefix . 'cbt_question_table_completion_cell_options';
+            $table_cell_table = $wpdb->prefix . 'cbt_question_table_completion_cells';
+            $wpdb->delete($table_option_table, ['question_id' => $question_id], ['%d']);
+            $wpdb->delete($table_cell_table, ['question_id' => $question_id], ['%d']);
+            $wpdb->delete($categorization_item_table, ['question_id' => $question_id], ['%d']);
             $wpdb->delete($cloze_option_table, ['question_id' => $question_id], ['%d']);
             $wpdb->delete($cloze_blank_table, ['question_id' => $question_id], ['%d']);
             $wpdb->delete($matching_item_table, ['question_id' => $question_id], ['%d']);
@@ -1035,6 +1049,47 @@ final class CBT_Admin_Questions_Helper
                     ? array_values($context['cloze_blanks'])
                     : [];
                 self::save_cloze_dropdown_blanks($question_id, $cloze_blanks);
+                return;
+            }
+
+            if ($question_type === 'categorization' && isset($tables['categorization'])) {
+                $wpdb->insert(
+                    $tables['categorization'],
+                    [
+                        'question_id' => $question_id,
+                        'scoring_mode' => 'partial',
+                        'shuffle_items' => 1,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    ['%d', '%s', '%d', '%s', '%s']
+                );
+
+                $categorization_items = isset($context['categorization_items']) && is_array($context['categorization_items'])
+                    ? array_values($context['categorization_items'])
+                    : [];
+                self::save_categorization_items($question_id, $categorization_items);
+                return;
+            }
+
+            if ($question_type === 'table_completion' && isset($tables['table_completion'])) {
+                $table_definition = isset($context['table_completion']) && is_array($context['table_completion'])
+                    ? self::normalize_table_completion_definition($context['table_completion'])
+                    : self::normalize_table_completion_definition([]);
+                $wpdb->insert(
+                    $tables['table_completion'],
+                    [
+                        'question_id' => $question_id,
+                        'scoring_mode' => 'partial',
+                        'row_count' => max(2, (int) ($table_definition['row_count'] ?? 2)),
+                        'column_count' => max(2, (int) ($table_definition['column_count'] ?? 2)),
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    ['%d', '%s', '%d', '%d', '%s', '%s']
+                );
+
+                self::save_table_completion_cells($question_id, $table_definition);
             }
         }
 
@@ -1354,6 +1409,628 @@ final class CBT_Admin_Questions_Helper
             return $blanks;
         }
 
+        /**
+         * @param array<int,array<string,mixed>> $rows
+         * @return array<int,array{category_index:int,option_text:string,is_correct:int}>
+         */
+        public static function normalize_categorization_categories(array $rows): array
+        {
+            $categories = [];
+            foreach ($rows as $index => $row) {
+                if (count($categories) >= 8) {
+                    break;
+                }
+
+                if (is_array($row)) {
+                    $label = sanitize_text_field(trim((string) ($row['option_text'] ?? $row['category_text'] ?? $row['text'] ?? '')));
+                    $category_index = (int) ($row['category_index'] ?? $row['position'] ?? ($index + 1));
+                } else {
+                    $label = sanitize_text_field(trim((string) $row));
+                    $category_index = $index + 1;
+                }
+
+                if ($label === '') {
+                    continue;
+                }
+
+                $categories[] = [
+                    'category_index' => count($categories) + 1,
+                    'option_text' => $label,
+                    'is_correct' => 0,
+                ];
+            }
+
+            return $categories;
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $rows
+         * @return array<int,array<string,mixed>>
+         */
+        public static function normalize_categorization_items(array $rows): array
+        {
+            $items = [];
+            foreach ($rows as $index => $row) {
+                if (count($items) >= 24 || !is_array($row)) {
+                    continue;
+                }
+
+                $position = (int) ($row['position'] ?? $row['item_position'] ?? ($index + 1));
+                if ($position <= 0) {
+                    $position = count($items) + 1;
+                }
+
+                $item_text = self::sanitize_editor_html(trim((string) ($row['item_text'] ?? $row['text'] ?? $row['item'] ?? '')));
+                $correct_category_index = (int) ($row['correct_category_index'] ?? $row['category_index'] ?? $row['correct_index'] ?? 0);
+                $correct_option_id = (int) ($row['correct_option_id'] ?? 0);
+                if (!self::has_non_empty_option_content($item_text) && $correct_category_index <= 0 && $correct_option_id <= 0) {
+                    continue;
+                }
+
+                $item_key = trim((string) ($row['item_key'] ?? $row['key'] ?? $position));
+                if ($item_key === '') {
+                    $item_key = (string) (count($items) + 1);
+                }
+
+                $items[] = [
+                    'position' => count($items) + 1,
+                    'item_key' => (string) (count($items) + 1),
+                    'item_text' => $item_text,
+                    'correct_category_index' => $correct_category_index,
+                    'correct_option_id' => $correct_option_id,
+                ];
+            }
+
+            return $items;
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $categories
+         * @param array<int,array<string,mixed>> $items
+         */
+        public static function validate_categorization_definition(array $categories, array $items): string
+        {
+            $categories = self::normalize_categorization_categories($categories);
+            $items = self::normalize_categorization_items($items);
+
+            if (count($categories) < 2) {
+                return 'Categorization minimal harus punya 2 kategori.';
+            }
+            if (count($items) < 2) {
+                return 'Categorization minimal harus punya 2 item.';
+            }
+
+            $category_signatures = [];
+            foreach ($categories as $category) {
+                $label = sanitize_text_field(trim((string) ($category['option_text'] ?? '')));
+                if ($label === '') {
+                    return 'Kategori tidak boleh kosong.';
+                }
+                $signature = self::normalize_short_answer_compare_value($label);
+                if ($signature !== '' && isset($category_signatures[$signature])) {
+                    return 'Kategori tidak boleh duplikat.';
+                }
+                $category_signatures[$signature] = true;
+            }
+
+            $valid_category_indexes = array_fill_keys(range(1, count($categories)), true);
+            $item_signatures = [];
+            foreach ($items as $item) {
+                $item_text = (string) ($item['item_text'] ?? '');
+                if (!self::has_non_empty_option_content($item_text)) {
+                    return 'Item Categorization tidak boleh kosong.';
+                }
+
+                $signature = self::normalize_option_compare_signature($item_text);
+                if ($signature !== '' && isset($item_signatures[$signature])) {
+                    return 'Item Categorization tidak boleh duplikat.';
+                }
+                $item_signatures[$signature] = true;
+
+                $correct_category_index = (int) ($item['correct_category_index'] ?? 0);
+                $correct_option_id = (int) ($item['correct_option_id'] ?? 0);
+                if ($correct_option_id <= 0 && ($correct_category_index <= 0 || !isset($valid_category_indexes[$correct_category_index]))) {
+                    return 'Setiap item Categorization wajib punya kunci kategori yang valid.';
+                }
+            }
+
+            return '';
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $categories
+         * @param array<int,array<string,mixed>> $items
+         */
+        public static function build_categorization_payload(array $categories, array $items): string
+        {
+            $categories = self::normalize_categorization_categories($categories);
+            $items = self::normalize_categorization_items($items);
+            if (empty($categories) || empty($items)) {
+                return '';
+            }
+
+            return (string) wp_json_encode([
+                'categories' => array_map(static function (array $category): array {
+                    return [
+                        'category_index' => (int) ($category['category_index'] ?? 0),
+                        'option_text' => (string) ($category['option_text'] ?? ''),
+                    ];
+                }, $categories),
+                'items' => array_map(static function (array $item): array {
+                    return [
+                        'item_key' => (string) ($item['item_key'] ?? ''),
+                        'position' => (int) ($item['position'] ?? 0),
+                        'item_text' => (string) ($item['item_text'] ?? ''),
+                        'correct_category_index' => (int) ($item['correct_category_index'] ?? 0),
+                    ];
+                }, $items),
+            ]);
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $items
+         */
+        public static function save_categorization_items(int $question_id, array $items): void
+        {
+            global $wpdb;
+
+            if ($question_id <= 0) {
+                return;
+            }
+
+            $table = $wpdb->prefix . 'cbt_question_categorization_items';
+            $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
+
+            $now = current_time('mysql');
+            foreach ($items as $index => $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $option_id = (int) ($item['correct_option_id'] ?? 0);
+                $item_text = self::sanitize_editor_html((string) ($item['item_text'] ?? ''));
+                if ($option_id <= 0 || !self::has_non_empty_option_content($item_text)) {
+                    continue;
+                }
+
+                $position = (int) ($item['position'] ?? $item['item_position'] ?? ($index + 1));
+                if ($position <= 0) {
+                    $position = $index + 1;
+                }
+                $item_key = trim((string) ($item['item_key'] ?? $position));
+                if ($item_key === '') {
+                    $item_key = (string) $position;
+                }
+
+                $wpdb->insert(
+                    $table,
+                    [
+                        'question_id' => $question_id,
+                        'item_key' => $item_key,
+                        'item_position' => $position,
+                        'item_text' => $item_text,
+                        'correct_option_id' => $option_id,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    ['%d', '%s', '%d', '%s', '%d', '%s', '%s']
+                );
+            }
+        }
+
+        /**
+         * @return array<int,array<string,mixed>>
+         */
+        public static function get_categorization_items(int $question_id): array
+        {
+            global $wpdb;
+
+            if ($question_id <= 0) {
+                return [];
+            }
+
+            $item_table = $wpdb->prefix . 'cbt_question_categorization_items';
+            $option_table = $wpdb->prefix . 'cbt_options';
+            $rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT ci.id, ci.question_id, ci.item_key, ci.item_position, ci.item_text, ci.correct_option_id,
+                            o.option_text AS correct_option_text, o.option_key AS correct_option_key
+                     FROM {$item_table} ci
+                     LEFT JOIN {$option_table} o ON o.id = ci.correct_option_id AND o.question_id = ci.question_id
+                     WHERE ci.question_id = %d
+                     ORDER BY ci.item_position ASC, ci.id ASC",
+                    $question_id
+                ),
+                ARRAY_A
+            );
+
+            return is_array($rows) ? array_values($rows) : [];
+        }
+
+        /**
+         * @param array<string,mixed> $definition
+         * @return array<string,mixed>
+         */
+        public static function normalize_table_completion_definition(array $definition): array
+        {
+            $row_count = (int) ($definition['row_count'] ?? $definition['rows'] ?? 2);
+            $column_count = (int) ($definition['column_count'] ?? $definition['columns'] ?? 2);
+            if ($row_count <= 0) {
+                $row_count = 2;
+            }
+            if ($column_count <= 0) {
+                $column_count = 2;
+            }
+
+            $raw_cells = isset($definition['cells']) && is_array($definition['cells'])
+                ? $definition['cells']
+                : [];
+            $raw_by_position = [];
+            foreach ($raw_cells as $raw_cell) {
+                if (!is_array($raw_cell)) {
+                    continue;
+                }
+
+                $row_position = (int) ($raw_cell['row_position'] ?? $raw_cell['row'] ?? 0);
+                $column_position = (int) ($raw_cell['column_position'] ?? $raw_cell['column'] ?? 0);
+                if (($row_position <= 0 || $column_position <= 0) && !empty($raw_cell['cell_key'])) {
+                    $parsed = self::parse_table_completion_cell_key((string) $raw_cell['cell_key']);
+                    $row_position = (int) ($parsed['row'] ?? $row_position);
+                    $column_position = (int) ($parsed['column'] ?? $column_position);
+                }
+                if ($row_position <= 0 || $column_position <= 0) {
+                    continue;
+                }
+                $raw_by_position[$row_position . ':' . $column_position] = $raw_cell;
+            }
+
+            $cells = [];
+            $max_rows = min(max($row_count, 1), 8);
+            $max_columns = min(max($column_count, 1), 6);
+            for ($row = 1; $row <= $max_rows; $row++) {
+                for ($column = 1; $column <= $max_columns; $column++) {
+                    $cell_key = self::build_table_completion_cell_key($row, $column);
+                    $raw = $raw_by_position[$row . ':' . $column] ?? [];
+                    $type = sanitize_key((string) ($raw['cell_type'] ?? $raw['type'] ?? 'static'));
+                    if (!in_array($type, ['static', 'text', 'dropdown'], true)) {
+                        $type = 'static';
+                    }
+
+                    $cell_text = self::sanitize_editor_html(trim((string) ($raw['cell_text'] ?? $raw['text'] ?? '')));
+                    $correct_source = (string) ($raw['correct_text'] ?? $raw['answer'] ?? $raw['jawaban'] ?? '');
+                    $correct_text = $type === 'text' ? self::normalize_short_answer_payload($correct_source) : '';
+
+                    $options = [];
+                    if ($type === 'dropdown') {
+                        foreach ((array) ($raw['options'] ?? []) as $option_index => $option_row) {
+                            if (count($options) >= 6 || !is_array($option_row)) {
+                                continue;
+                            }
+                            $option_text = sanitize_text_field(trim((string) ($option_row['option_text'] ?? $option_row['text'] ?? '')));
+                            if ($option_text === '') {
+                                continue;
+                            }
+                            $option_key = strtoupper(trim((string) ($option_row['option_key'] ?? '')));
+                            if ($option_key === '') {
+                                $option_key = chr(65 + (count($options) % 26));
+                            }
+                            $options[] = [
+                                'option_key' => $option_key,
+                                'option_text' => $option_text,
+                                'is_correct' => ((int) ($option_row['is_correct'] ?? 0) === 1) ? 1 : 0,
+                                'option_order' => count($options) + 1,
+                            ];
+                        }
+                    }
+
+                    $cells[] = [
+                        'cell_key' => $type === 'static' ? null : $cell_key,
+                        'row_position' => $row,
+                        'column_position' => $column,
+                        'cell_type' => $type,
+                        'cell_text' => $cell_text,
+                        'correct_text' => $correct_text,
+                        'options' => $options,
+                    ];
+                }
+            }
+
+            return [
+                'row_count' => $row_count,
+                'column_count' => $column_count,
+                'cells' => $cells,
+            ];
+        }
+
+        /**
+         * @param array<string,mixed> $definition
+         */
+        public static function validate_table_completion_definition(array $definition): string
+        {
+            $definition = self::normalize_table_completion_definition($definition);
+            $row_count = (int) ($definition['row_count'] ?? 0);
+            $column_count = (int) ($definition['column_count'] ?? 0);
+            if ($row_count < 2 || $row_count > 8 || $column_count < 2 || $column_count > 6) {
+                return 'Table Completion harus berukuran minimal 2x2 dan maksimal 8x6.';
+            }
+
+            $answer_count = 0;
+            $cell_keys = [];
+            foreach ((array) ($definition['cells'] ?? []) as $cell) {
+                if (!is_array($cell)) {
+                    continue;
+                }
+                $type = (string) ($cell['cell_type'] ?? 'static');
+                if ($type === 'static') {
+                    continue;
+                }
+
+                $answer_count++;
+                $cell_key = (string) ($cell['cell_key'] ?? '');
+                if ($cell_key === '') {
+                    return 'Setiap sel jawaban Table Completion wajib punya key sel.';
+                }
+                if (isset($cell_keys[$cell_key])) {
+                    return 'Key sel Table Completion tidak boleh duplikat.';
+                }
+                $cell_keys[$cell_key] = true;
+
+                if ($type === 'text') {
+                    if (empty(self::normalize_short_answer_values((string) ($cell['correct_text'] ?? '')))) {
+                        return 'Sel teks Table Completion wajib punya jawaban valid.';
+                    }
+                    continue;
+                }
+
+                if ($type !== 'dropdown') {
+                    return 'Tipe sel Table Completion tidak valid.';
+                }
+
+                $options = isset($cell['options']) && is_array($cell['options']) ? $cell['options'] : [];
+                if (count($options) < 2) {
+                    return 'Setiap sel dropdown Table Completion minimal punya 2 opsi.';
+                }
+
+                $correct_count = 0;
+                $seen = [];
+                foreach ($options as $option) {
+                    if (!is_array($option)) {
+                        continue;
+                    }
+                    $option_text = sanitize_text_field(trim((string) ($option['option_text'] ?? '')));
+                    if ($option_text === '') {
+                        return 'Opsi dropdown Table Completion tidak boleh kosong.';
+                    }
+                    $signature = self::normalize_short_answer_compare_value($option_text);
+                    if ($signature !== '' && isset($seen[$signature])) {
+                        return 'Opsi dropdown Table Completion dalam satu sel tidak boleh duplikat.';
+                    }
+                    $seen[$signature] = true;
+                    if ((int) ($option['is_correct'] ?? 0) === 1) {
+                        $correct_count++;
+                    }
+                }
+                if ($correct_count !== 1) {
+                    return 'Setiap sel dropdown Table Completion harus punya tepat 1 jawaban benar.';
+                }
+            }
+
+            if ($answer_count < 1) {
+                return 'Table Completion minimal harus punya 1 sel jawaban.';
+            }
+            if ($answer_count > 24) {
+                return 'Table Completion maksimal punya 24 sel jawaban.';
+            }
+
+            return '';
+        }
+
+        /**
+         * @param array<string,mixed> $definition
+         */
+        public static function build_table_completion_payload(array $definition): string
+        {
+            $definition = self::normalize_table_completion_definition($definition);
+            if (empty($definition['cells'])) {
+                return '';
+            }
+
+            return (string) wp_json_encode($definition);
+        }
+
+        /**
+         * @param array<string,mixed> $definition
+         */
+        public static function save_table_completion_cells(int $question_id, array $definition): void
+        {
+            global $wpdb;
+
+            if ($question_id <= 0) {
+                return;
+            }
+
+            $cell_table = $wpdb->prefix . 'cbt_question_table_completion_cells';
+            $option_table = $wpdb->prefix . 'cbt_question_table_completion_cell_options';
+            $wpdb->delete($option_table, ['question_id' => $question_id], ['%d']);
+            $wpdb->delete($cell_table, ['question_id' => $question_id], ['%d']);
+
+            $definition = self::normalize_table_completion_definition($definition);
+            $now = current_time('mysql');
+            foreach ((array) ($definition['cells'] ?? []) as $cell) {
+                if (!is_array($cell)) {
+                    continue;
+                }
+
+                $cell_type = sanitize_key((string) ($cell['cell_type'] ?? 'static'));
+                if (!in_array($cell_type, ['static', 'text', 'dropdown'], true)) {
+                    $cell_type = 'static';
+                }
+                $cell_key = $cell_type === 'static' ? null : (string) ($cell['cell_key'] ?? '');
+                $correct_text = $cell_type === 'text' ? (string) ($cell['correct_text'] ?? '') : null;
+
+                $inserted = $wpdb->insert(
+                    $cell_table,
+                    [
+                        'question_id' => $question_id,
+                        'cell_key' => $cell_key !== '' ? $cell_key : null,
+                        'row_position' => max(1, (int) ($cell['row_position'] ?? 1)),
+                        'column_position' => max(1, (int) ($cell['column_position'] ?? 1)),
+                        'cell_type' => $cell_type,
+                        'cell_text' => self::sanitize_editor_html((string) ($cell['cell_text'] ?? '')),
+                        'correct_text' => $correct_text !== '' ? $correct_text : null,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    ['%d', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s']
+                );
+                if ($inserted === false) {
+                    continue;
+                }
+
+                $cell_id = (int) $wpdb->insert_id;
+                if ($cell_type !== 'dropdown') {
+                    continue;
+                }
+
+                foreach ((array) ($cell['options'] ?? []) as $option_index => $option) {
+                    if (!is_array($option)) {
+                        continue;
+                    }
+                    $option_text = sanitize_text_field(trim((string) ($option['option_text'] ?? '')));
+                    if ($option_text === '') {
+                        continue;
+                    }
+                    $option_key = strtoupper(trim((string) ($option['option_key'] ?? '')));
+                    if ($option_key === '') {
+                        $option_key = chr(65 + ($option_index % 26));
+                    }
+                    $option_order = (int) ($option['option_order'] ?? ($option_index + 1));
+                    if ($option_order <= 0) {
+                        $option_order = $option_index + 1;
+                    }
+
+                    $wpdb->insert(
+                        $option_table,
+                        [
+                            'question_id' => $question_id,
+                            'cell_id' => $cell_id,
+                            'option_key' => $option_key,
+                            'option_text' => $option_text,
+                            'is_correct' => ((int) ($option['is_correct'] ?? 0) === 1) ? 1 : 0,
+                            'option_order' => $option_order,
+                            'created_at' => $now,
+                        ],
+                        ['%d', '%d', '%s', '%s', '%d', '%d', '%s']
+                    );
+                }
+            }
+        }
+
+        /**
+         * @return array<int,array<string,mixed>>
+         */
+        public static function get_table_completion_cells(int $question_id, bool $include_correct = true): array
+        {
+            $definition = self::get_table_completion_definition($question_id, $include_correct);
+
+            return isset($definition['cells']) && is_array($definition['cells'])
+                ? array_values($definition['cells'])
+                : [];
+        }
+
+        /**
+         * @return array<string,mixed>
+         */
+        public static function get_table_completion_definition(int $question_id, bool $include_correct = true): array
+        {
+            global $wpdb;
+
+            if ($question_id <= 0) {
+                return [];
+            }
+
+            $detail_table = $wpdb->prefix . 'cbt_question_table_completion';
+            $cell_table = $wpdb->prefix . 'cbt_question_table_completion_cells';
+            $option_table = $wpdb->prefix . 'cbt_question_table_completion_cell_options';
+            $detail = $wpdb->get_row(
+                $wpdb->prepare("SELECT * FROM {$detail_table} WHERE question_id = %d", $question_id),
+                ARRAY_A
+            );
+            if (!is_array($detail) || empty($detail)) {
+                return [];
+            }
+
+            $cell_rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT id, question_id, cell_key, row_position, column_position, cell_type, cell_text, correct_text
+                     FROM {$cell_table}
+                     WHERE question_id = %d
+                     ORDER BY row_position ASC, column_position ASC, id ASC",
+                    $question_id
+                ),
+                ARRAY_A
+            );
+            $cell_rows = is_array($cell_rows) ? array_values($cell_rows) : [];
+
+            $cell_ids = array_values(array_filter(array_map(static fn($row): int => (int) ($row['id'] ?? 0), $cell_rows), static fn(int $id): bool => $id > 0));
+            $options_by_cell = [];
+            if (!empty($cell_ids)) {
+                $cell_ids_sql = implode(',', array_map('intval', $cell_ids));
+                $option_rows = $wpdb->get_results(
+                    "SELECT id, question_id, cell_id, option_key, option_text, is_correct, option_order
+                     FROM {$option_table}
+                     WHERE cell_id IN ({$cell_ids_sql})
+                     ORDER BY cell_id ASC, option_order ASC, id ASC",
+                    ARRAY_A
+                );
+                foreach ((array) $option_rows as $option_row) {
+                    $cell_id = (int) ($option_row['cell_id'] ?? 0);
+                    if ($cell_id <= 0) {
+                        continue;
+                    }
+                    if (!isset($options_by_cell[$cell_id])) {
+                        $options_by_cell[$cell_id] = [];
+                    }
+                    $option = [
+                        'id' => (int) ($option_row['id'] ?? 0),
+                        'option_key' => (string) ($option_row['option_key'] ?? ''),
+                        'option_text' => (string) ($option_row['option_text'] ?? ''),
+                        'option_order' => (int) ($option_row['option_order'] ?? 0),
+                    ];
+                    if ($include_correct) {
+                        $option['is_correct'] = (int) ($option_row['is_correct'] ?? 0);
+                    }
+                    $options_by_cell[$cell_id][] = $option;
+                }
+            }
+
+            $cells = [];
+            foreach ($cell_rows as $cell_row) {
+                $cell = [
+                    'id' => (int) ($cell_row['id'] ?? 0),
+                    'question_id' => (int) ($cell_row['question_id'] ?? 0),
+                    'cell_key' => (string) ($cell_row['cell_key'] ?? ''),
+                    'row_position' => (int) ($cell_row['row_position'] ?? 0),
+                    'column_position' => (int) ($cell_row['column_position'] ?? 0),
+                    'cell_type' => (string) ($cell_row['cell_type'] ?? 'static'),
+                    'cell_text' => (string) ($cell_row['cell_text'] ?? ''),
+                    'options' => $options_by_cell[(int) ($cell_row['id'] ?? 0)] ?? [],
+                ];
+                if ($include_correct) {
+                    $cell['correct_text'] = (string) ($cell_row['correct_text'] ?? '');
+                }
+                $cells[] = $cell;
+            }
+
+            return [
+                'question_id' => (int) ($detail['question_id'] ?? 0),
+                'scoring_mode' => (string) ($detail['scoring_mode'] ?? 'partial'),
+                'row_count' => (int) ($detail['row_count'] ?? 2),
+                'column_count' => (int) ($detail['column_count'] ?? 2),
+                'cells' => $cells,
+            ];
+        }
+
         public static function get_question_type_detail(int $question_id, string $question_type): array
         {
             global $wpdb;
@@ -1382,6 +2059,17 @@ final class CBT_Admin_Questions_Helper
                     }
                     if ($question_type === 'cloze_dropdown') {
                         $detail['blanks'] = self::get_cloze_dropdown_blanks($question_id, true);
+                    }
+                    if ($question_type === 'categorization') {
+                        $detail['items'] = self::get_categorization_items($question_id);
+                    }
+                    if ($question_type === 'table_completion') {
+                        $table_definition = self::get_table_completion_definition($question_id, true);
+                        $detail['row_count'] = (int) ($table_definition['row_count'] ?? ($detail['row_count'] ?? 2));
+                        $detail['column_count'] = (int) ($table_definition['column_count'] ?? ($detail['column_count'] ?? 2));
+                        $detail['cells'] = isset($table_definition['cells']) && is_array($table_definition['cells'])
+                            ? $table_definition['cells']
+                            : [];
                     }
                     return $detail;
                 }
@@ -1458,6 +2146,30 @@ final class CBT_Admin_Questions_Helper
                     'blanks' => self::get_cloze_dropdown_blanks($question_id, true),
                 ];
             }
+
+            if ($question_type === 'categorization') {
+                return [
+                    'question_id' => $question_id,
+                    'scoring_mode' => 'partial',
+                    'shuffle_items' => 1,
+                    'items' => self::get_categorization_items($question_id),
+                ];
+            }
+
+            if ($question_type === 'table_completion') {
+                $table_definition = self::get_table_completion_definition($question_id, true);
+                if (!empty($table_definition)) {
+                    return $table_definition;
+                }
+
+                return [
+                    'question_id' => $question_id,
+                    'scoring_mode' => 'partial',
+                    'row_count' => 2,
+                    'column_count' => 2,
+                    'cells' => [],
+                ];
+            }
     
             return [];
         }
@@ -1519,6 +2231,10 @@ final class CBT_Admin_Questions_Helper
                     return 'Matching';
                 case 'cloze_dropdown':
                     return 'Cloze Dropdown';
+                case 'categorization':
+                    return 'Categorization';
+                case 'table_completion':
+                    return 'Table Completion';
                 default:
                     return ucwords(str_replace('_', ' ', $question_type));
             }
@@ -1824,6 +2540,69 @@ final class CBT_Admin_Questions_Helper
     letter-spacing: 0.03em;
     text-transform: uppercase;
 }
+.cbt-admin-student-preview-table-wrap {
+    overflow-x: auto;
+}
+.cbt-admin-student-preview-table {
+    width: 100%;
+    min-width: 520px;
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid #dbe5ef;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #ffffff;
+}
+.cbt-admin-student-preview-table td {
+    min-width: 120px;
+    padding: 11px 12px;
+    border-right: 1px solid #dbe5ef;
+    border-bottom: 1px solid #dbe5ef;
+    vertical-align: top;
+    color: #1f2937;
+    font-size: 13px;
+    line-height: 1.5;
+}
+.cbt-admin-student-preview-table tr:last-child td {
+    border-bottom: 0;
+}
+.cbt-admin-student-preview-table td:last-child {
+    border-right: 0;
+}
+.cbt-admin-student-preview-table-cell--answer {
+    background: #f8fbff;
+}
+.cbt-admin-student-preview-cell-key {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 8px;
+    margin-bottom: 8px;
+    border-radius: 999px;
+    border: 1px solid #d0def2;
+    background: #eef4ff;
+    color: #1e3a6f;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+}
+.cbt-admin-student-preview-cell-control {
+    display: block;
+    width: 100%;
+    min-height: 34px;
+    padding: 7px 10px;
+    border: 1px solid #cbd9eb;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #64748b;
+    font-weight: 700;
+}
+.cbt-admin-student-preview-cell-answer {
+    margin-top: 8px;
+    color: #0f7a56;
+    font-size: 12px;
+    font-weight: 800;
+}
 .cbt-admin-student-preview-empty {
     color: #64748b;
     font-size: 13px;
@@ -2110,6 +2889,116 @@ CSS;
                                 </div>
                             </div>
                         <?php endforeach; ?>
+                    </div>
+                </section>
+                <?php
+                return trim((string) ob_get_clean());
+            }
+
+            if ($question_type === 'categorization') {
+                $items = isset($question_detail['items']) && is_array($question_detail['items'])
+                    ? $question_detail['items']
+                    : [];
+                if (empty($items)) {
+                    return '';
+                }
+
+                ob_start();
+                ?>
+                <section class="cbt-admin-student-preview-section">
+                    <strong class="cbt-admin-student-preview-section-title"><?php echo esc_html($show_answer_key ? 'Item dan Kategori' : 'Item Categorization'); ?></strong>
+                    <div class="cbt-admin-student-preview-options">
+                        <?php foreach ($items as $item): ?>
+                            <div class="cbt-admin-student-preview-option">
+                                <div class="cbt-admin-student-preview-option-main">
+                                    <span class="cbt-admin-student-preview-option-key"><?php echo esc_html((string) ($item['item_key'] ?? '')); ?></span>
+                                    <div class="cbt-admin-student-preview-option-text cbt-admin-student-preview-richtext">
+                                        <?php echo self::render_editor_html((string) ($item['item_text'] ?? '')); ?>
+                                        <?php if ($show_answer_key): ?>
+                                            <div><strong><?php echo esc_html('Kategori:'); ?></strong> <?php echo esc_html(wp_strip_all_tags((string) ($item['correct_option_text'] ?? ''))); ?></div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+                <?php
+                return trim((string) ob_get_clean());
+            }
+
+            if ($question_type === 'table_completion') {
+                $cells = isset($question_detail['cells']) && is_array($question_detail['cells'])
+                    ? $question_detail['cells']
+                    : [];
+                if (empty($cells)) {
+                    return '';
+                }
+
+                $row_count = max(1, (int) ($question_detail['row_count'] ?? 2));
+                $column_count = max(1, (int) ($question_detail['column_count'] ?? 2));
+                $cells_by_position = [];
+                foreach ($cells as $cell) {
+                    if (!is_array($cell)) {
+                        continue;
+                    }
+                    $row = max(1, (int) ($cell['row_position'] ?? 0));
+                    $column = max(1, (int) ($cell['column_position'] ?? 0));
+                    if ($row <= $row_count && $column <= $column_count) {
+                        $cells_by_position[$row . ':' . $column] = $cell;
+                    }
+                }
+
+                ob_start();
+                ?>
+                <section class="cbt-admin-student-preview-section">
+                    <strong class="cbt-admin-student-preview-section-title"><?php echo esc_html($show_answer_key ? 'Tabel dan Kunci' : 'Table Completion'); ?></strong>
+                    <div class="cbt-admin-student-preview-table-wrap">
+                        <table class="cbt-admin-student-preview-table">
+                            <tbody>
+                                <?php for ($row = 1; $row <= $row_count; $row++): ?>
+                                    <tr>
+                                        <?php for ($column = 1; $column <= $column_count; $column++): ?>
+                                            <?php
+                                            $cell = (array) ($cells_by_position[$row . ':' . $column] ?? []);
+                                            $cell_type = (string) ($cell['cell_type'] ?? 'static');
+                                            if (!in_array($cell_type, ['static', 'text', 'dropdown'], true)) {
+                                                $cell_type = 'static';
+                                            }
+                                            $cell_key = (string) ($cell['cell_key'] ?? '');
+                                            $cell_text = (string) ($cell['cell_text'] ?? '');
+                                            $correct_label = '';
+                                            if ($cell_type === 'text') {
+                                                $correct_values = self::normalize_short_answer_values((string) ($cell['correct_text'] ?? ''));
+                                                $correct_label = implode(' | ', $correct_values);
+                                            } elseif ($cell_type === 'dropdown') {
+                                                foreach ((array) ($cell['options'] ?? []) as $option) {
+                                                    if ((int) (((array) $option)['is_correct'] ?? 0) === 1) {
+                                                        $correct_label = (string) (((array) $option)['option_text'] ?? '');
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            ?>
+                                            <td class="<?php echo $cell_type === 'static' ? 'cbt-admin-student-preview-table-cell--static' : 'cbt-admin-student-preview-table-cell--answer'; ?>">
+                                                <?php if ($cell_type === 'static'): ?>
+                                                    <div class="cbt-admin-student-preview-richtext"><?php echo self::render_editor_html($cell_text); ?></div>
+                                                <?php else: ?>
+                                                    <span class="cbt-admin-student-preview-cell-key"><?php echo esc_html($cell_key); ?></span>
+                                                    <?php if (self::has_non_empty_html_content($cell_text)): ?>
+                                                        <div class="cbt-admin-student-preview-richtext"><?php echo self::render_editor_html($cell_text); ?></div>
+                                                    <?php endif; ?>
+                                                    <span class="cbt-admin-student-preview-cell-control"><?php echo esc_html($cell_type === 'dropdown' ? 'Dropdown' : 'Jawaban teks'); ?></span>
+                                                    <?php if ($show_answer_key && $correct_label !== ''): ?>
+                                                        <div class="cbt-admin-student-preview-cell-answer"><?php echo esc_html('Kunci: ' . $correct_label); ?></div>
+                                                    <?php endif; ?>
+                                                <?php endif; ?>
+                                            </td>
+                                        <?php endfor; ?>
+                                    </tr>
+                                <?php endfor; ?>
+                            </tbody>
+                        </table>
                     </div>
                 </section>
                 <?php
@@ -2647,6 +3536,30 @@ CSS;
             }
 
             return preg_match('/^[1-8]$/', $token) === 1 ? $token : '';
+        }
+
+        private static function build_table_completion_cell_key(int $row, int $column): string
+        {
+            $row = max(1, $row);
+            $column = max(1, min(26, $column));
+
+            return chr(64 + $column) . (string) $row;
+        }
+
+        /**
+         * @return array{row:int,column:int}
+         */
+        private static function parse_table_completion_cell_key(string $cell_key): array
+        {
+            $cell_key = strtoupper(trim($cell_key));
+            if (preg_match('/^([A-Z])([1-9][0-9]*)$/', $cell_key, $matches) !== 1) {
+                return ['row' => 0, 'column' => 0];
+            }
+
+            return [
+                'row' => (int) ($matches[2] ?? 0),
+                'column' => max(1, ord((string) ($matches[1] ?? 'A')) - 64),
+            ];
         }
 
         private static function normalize_option_compare_signature(string $html): string

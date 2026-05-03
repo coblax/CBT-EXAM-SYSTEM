@@ -839,6 +839,8 @@ final class CBT_Admin_Exams_Service
             'ordering' => 'Ordering',
             'matching' => 'Matching',
             'cloze_dropdown' => 'Cloze Dropdown',
+            'categorization' => 'Categorization',
+            'table_completion' => 'Table Completion',
         ];
         $builder_question_search = isset($query['cbt_exam_question_search'])
             ? sanitize_text_field(wp_unslash((string) $query['cbt_exam_question_search']))
@@ -2336,6 +2338,8 @@ final class CBT_Admin_Exams_Service
             'ordering' => 'Ordering',
             'matching' => 'Matching',
             'cloze_dropdown' => 'Cloze Dropdown',
+            'categorization' => 'Categorization',
+            'table_completion' => 'Table Completion',
         ];
         $can_manage_questions = current_user_can('cbt_manage_questions');
         $question_type_counts = [];
@@ -7932,6 +7936,41 @@ final class CBT_Admin_Exams_Service
                 if ($question_type === 'cloze_dropdown') {
                     $detail_context['cloze_blanks'] = (array) (($source_snapshot['question_detail']['blanks'] ?? []) ?: []);
                 }
+                if ($question_type === 'categorization') {
+                    $source_to_new_option_ids = [];
+                    foreach (array_values((array) ($source_snapshot['options'] ?? [])) as $idx => $source_option) {
+                        $source_option_id = (int) (((array) $source_option)['id'] ?? 0);
+                        $new_option_id = (int) ($inserted_option_ids[$idx] ?? 0);
+                        if ($source_option_id > 0 && $new_option_id > 0) {
+                            $source_to_new_option_ids[$source_option_id] = $new_option_id;
+                        }
+                    }
+                    $categorization_items = [];
+                    foreach ((array) (($source_snapshot['question_detail']['items'] ?? []) ?: []) as $item) {
+                        if (!is_array($item)) {
+                            continue;
+                        }
+                        $source_option_id = (int) ($item['correct_option_id'] ?? 0);
+                        $new_option_id = (int) ($source_to_new_option_ids[$source_option_id] ?? 0);
+                        if ($new_option_id <= 0) {
+                            continue;
+                        }
+                        $categorization_items[] = [
+                            'position' => (int) ($item['item_position'] ?? $item['position'] ?? (count($categorization_items) + 1)),
+                            'item_key' => (string) ($item['item_key'] ?? (count($categorization_items) + 1)),
+                            'item_text' => (string) ($item['item_text'] ?? ''),
+                            'correct_option_id' => $new_option_id,
+                        ];
+                    }
+                    $detail_context['categorization_items'] = $categorization_items;
+                }
+                if ($question_type === 'table_completion') {
+                    $detail_context['table_completion'] = [
+                        'row_count' => (int) ($source_snapshot['question_detail']['row_count'] ?? 2),
+                        'column_count' => (int) ($source_snapshot['question_detail']['column_count'] ?? 2),
+                        'cells' => (array) (($source_snapshot['question_detail']['cells'] ?? []) ?: []),
+                    ];
+                }
                 CBT_Admin_Questions_Helper::save_question_type_detail(
                     $new_question_id,
                     $question_type,
@@ -7984,7 +8023,7 @@ final class CBT_Admin_Exams_Service
             $detail_text = (string) ($source_detail['correct_text'] ?? ($source_row['correct_text'] ?? ''));
         } elseif ($question_type === 'essay') {
             $detail_text = (string) ($source_detail['rubric_text'] ?? ($source_row['correct_text'] ?? ''));
-        } elseif (in_array($question_type, ['matching', 'cloze_dropdown'], true)) {
+        } elseif (in_array($question_type, ['matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
             $detail_text = (string) ($source_row['correct_text'] ?? '');
         }
         if ($question_type === 'ordering') {
@@ -8158,7 +8197,7 @@ final class CBT_Admin_Exams_Service
                 $detail_text = (string) ($source_detail['correct_text'] ?? ($source_row['correct_text'] ?? ''));
             } elseif ($question_type === 'essay') {
                 $detail_text = (string) ($source_detail['rubric_text'] ?? ($source_row['correct_text'] ?? ''));
-            } elseif (in_array($question_type, ['matching', 'cloze_dropdown'], true)) {
+            } elseif (in_array($question_type, ['matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
                 $detail_text = (string) ($source_row['correct_text'] ?? '');
             }
             if ($question_type === 'ordering') {
@@ -8302,6 +8341,41 @@ final class CBT_Admin_Exams_Service
             }
             if ($question_type === 'cloze_dropdown') {
                 $detail_context['cloze_blanks'] = (array) (($source_detail['blanks'] ?? []) ?: []);
+            }
+            if ($question_type === 'categorization') {
+                $source_to_new_option_ids = [];
+                foreach (array_values($source_options) as $idx => $source_option) {
+                    $source_option_id = (int) (((array) $source_option)['id'] ?? 0);
+                    $new_option_id = (int) ($inserted_option_ids[$idx] ?? 0);
+                    if ($source_option_id > 0 && $new_option_id > 0) {
+                        $source_to_new_option_ids[$source_option_id] = $new_option_id;
+                    }
+                }
+                $categorization_items = [];
+                foreach ((array) (($source_detail['items'] ?? []) ?: []) as $item) {
+                    if (!is_array($item)) {
+                        continue;
+                    }
+                    $source_option_id = (int) ($item['correct_option_id'] ?? 0);
+                    $new_option_id = (int) ($source_to_new_option_ids[$source_option_id] ?? 0);
+                    if ($new_option_id <= 0) {
+                        continue;
+                    }
+                    $categorization_items[] = [
+                        'position' => (int) ($item['item_position'] ?? $item['position'] ?? (count($categorization_items) + 1)),
+                        'item_key' => (string) ($item['item_key'] ?? (count($categorization_items) + 1)),
+                        'item_text' => (string) ($item['item_text'] ?? ''),
+                        'correct_option_id' => $new_option_id,
+                    ];
+                }
+                $detail_context['categorization_items'] = $categorization_items;
+            }
+            if ($question_type === 'table_completion') {
+                $detail_context['table_completion'] = [
+                    'row_count' => (int) ($source_detail['row_count'] ?? 2),
+                    'column_count' => (int) ($source_detail['column_count'] ?? 2),
+                    'cells' => (array) (($source_detail['cells'] ?? []) ?: []),
+                ];
             }
             CBT_Admin_Questions_Helper::save_question_type_detail($new_question_id, $question_type, $detail_text, $detail_context);
             $sync_summary['created_new_count']++;

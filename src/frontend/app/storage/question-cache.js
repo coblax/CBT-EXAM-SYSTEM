@@ -497,6 +497,22 @@ export function createQuestionCacheStorage(deps) {
             normalized.short_answer_meta = item.short_answer_meta;
         }
 
+        if (item.matching_meta && typeof item.matching_meta === 'object') {
+            normalized.matching_meta = item.matching_meta;
+        }
+
+        if (item.cloze_dropdown_meta && typeof item.cloze_dropdown_meta === 'object') {
+            normalized.cloze_dropdown_meta = item.cloze_dropdown_meta;
+        }
+
+        if (item.categorization_meta && typeof item.categorization_meta === 'object') {
+            normalized.categorization_meta = item.categorization_meta;
+        }
+
+        if (item.table_completion_meta && typeof item.table_completion_meta === 'object') {
+            normalized.table_completion_meta = item.table_completion_meta;
+        }
+
         return normalized;
     }
 

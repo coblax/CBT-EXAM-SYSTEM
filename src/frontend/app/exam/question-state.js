@@ -5,6 +5,7 @@ import {
     getShortAnswerKeys,
     normalizeAnswerValueForQuestion,
     normalizeDropdownOptionAnswer,
+    normalizeTableCompletionAnswer,
     normalizeTrueFalseMatrixAnswer
 } from './question-helpers';
 
@@ -260,7 +261,7 @@ export function createQuestionStateManager(deps) {
             };
         }
 
-        if (questionType === 'matching' || questionType === 'cloze_dropdown') {
+        if (questionType === 'matching' || questionType === 'cloze_dropdown' || questionType === 'categorization') {
             var normalizedDropdownAnswer = normalizeAnswerValueForQuestion(question, answer, {
                 preserveText: true
             });
@@ -269,7 +270,7 @@ export function createQuestionStateManager(deps) {
             }
 
             var dropdownOptionKeysByAnswerKey = {};
-            if (questionType === 'matching') {
+            if (questionType === 'matching' || questionType === 'categorization') {
                 Object.keys(normalizedDropdownAnswer.value).forEach(function (answerKey) {
                     var optionKey = findQuestionOptionKeyById(question, normalizedDropdownAnswer.value[answerKey]);
                     if (optionKey !== '') {
@@ -308,6 +309,21 @@ export function createQuestionStateManager(deps) {
                 kind: 'dropdown_option_map',
                 question_type: questionType,
                 option_keys_by_answer_key: dropdownOptionKeysByAnswerKey,
+                question_updated_at: questionUpdatedAt
+            };
+        }
+
+        if (questionType === 'table_completion') {
+            var normalizedTableAnswer = normalizeAnswerValueForQuestion(question, answer, {
+                preserveText: true
+            });
+            if (!normalizedTableAnswer.hasValue) {
+                return null;
+            }
+
+            return {
+                kind: 'table_completion',
+                value: normalizedTableAnswer.value,
                 question_updated_at: questionUpdatedAt
             };
         }
@@ -396,7 +412,7 @@ export function createQuestionStateManager(deps) {
                 ? preservedAnswer.option_keys_by_answer_key
                 : {};
 
-            if (dropdownQuestionType === 'matching') {
+            if (dropdownQuestionType === 'matching' || dropdownQuestionType === 'categorization') {
                 Object.keys(optionKeysByAnswerKey).forEach(function (answerKey) {
                     var option = findQuestionOptionByKey(question, optionKeysByAnswerKey[answerKey]);
                     var optionId = Number(option && option.id) || 0;
@@ -430,7 +446,7 @@ export function createQuestionStateManager(deps) {
             });
             nextValue = normalizedDropdown.value;
             hasValue = normalizedDropdown.hasValue;
-        } else if (kind === 'true_false_matrix' || kind === 'short_answer' || kind === 'text') {
+        } else if (kind === 'true_false_matrix' || kind === 'short_answer' || kind === 'text' || kind === 'table_completion') {
             var normalizedAnswer = normalizeAnswerValueForQuestion(
                 question,
                 preservedAnswer.value,
@@ -571,7 +587,7 @@ export function createQuestionStateManager(deps) {
             return normalizeTrueFalseMatrixAnswer(normalizedMatrixAnswer.value);
         }
 
-        if (question.question_type === 'matching' || question.question_type === 'cloze_dropdown') {
+        if (question.question_type === 'matching' || question.question_type === 'cloze_dropdown' || question.question_type === 'categorization') {
             var normalizedDropdownAnswer = normalizeAnswerValueForQuestion(question, answer, {
                 preserveText: true
             });
@@ -579,6 +595,16 @@ export function createQuestionStateManager(deps) {
                 return null;
             }
             return normalizeDropdownOptionAnswer(question, normalizedDropdownAnswer.value, question.question_type);
+        }
+
+        if (question.question_type === 'table_completion') {
+            var normalizedTableAnswer = normalizeAnswerValueForQuestion(question, answer, {
+                preserveText: true
+            });
+            if (!normalizedTableAnswer.hasValue || !normalizedTableAnswer.value || !Object.keys(normalizedTableAnswer.value).length) {
+                return null;
+            }
+            return normalizeTableCompletionAnswer(question, normalizedTableAnswer.value);
         }
 
         if (question.question_type === 'short_answer') {

@@ -229,7 +229,7 @@ final class CBT_Admin_Questions_Service
                 $option_table = $wpdb->prefix . 'cbt_options';
                 $is_admin_scope = self::is_admin_scope();
                 $current_user_id = get_current_user_id();
-            $allowed_question_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'];
+            $allowed_question_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown', 'categorization', 'table_completion'];
             $question_type_labels = [
                 'multiple_choice' => 'Multiple Choice',
                 'multiple_answer' => 'Multiple Answer',
@@ -240,6 +240,8 @@ final class CBT_Admin_Questions_Service
                 'ordering' => 'Ordering',
                 'matching' => 'Matching',
                 'cloze_dropdown' => 'Cloze Dropdown',
+                'categorization' => 'Categorization',
+                'table_completion' => 'Table Completion',
             ];
                 $current_page_slug = CBT_Admin_Questions_Helper::normalize_question_page_slug(isset($query['page']) ? wp_unslash($query['page']) : 'cbt-question-bank');
                 $page_locked_type = CBT_Admin_Questions_Helper::forced_question_type_for_page($current_page_slug);
@@ -266,10 +268,12 @@ final class CBT_Admin_Questions_Service
                 'ordering' => 'Mode import aktif: Ordering. DOCX didukung (isi ITEM_1..12 sesuai urutan benar, minimal 2 item, item tidak boleh duplikat, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
                 'matching' => 'Mode import aktif: Matching. DOCX didukung (isi KIRI_1..12 dan KANAN_1..12, minimal 2 pasangan, tidak boleh duplikat, field opsional PEMBAHASAN didukung).' . $import_type_help_suffix,
                 'cloze_dropdown' => 'Mode import aktif: Cloze Dropdown. DOCX didukung (pakai placeholder [DROPDOWN_1] s.d. [DROPDOWN_8], tiap dropdown minimal 2 opsi dan tepat 1 kunci).' . $import_type_help_suffix,
+                'categorization' => 'Mode import aktif: Categorization. DOCX didukung (isi KATEGORI_1..8, ITEM_1..24, dan KUNCI_1..24).' . $import_type_help_suffix,
+                'table_completion' => 'Mode import aktif: Table Completion. DOCX didukung (isi TABLE_ROWS, TABLE_COLS, CELL_A1_TYPE/TEXT/JAWABAN/OPSI).' . $import_type_help_suffix,
             ];
                 $import_active_type = $lock_question_type ? $active_question_type : 'multiple_choice';
                 $import_help_text = $import_type_help_map[$import_active_type] ?? $import_type_help_map['multiple_choice'];
-            $import_allow_docx = in_array($import_active_type, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'], true);
+            $import_allow_docx = in_array($import_active_type, ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown', 'categorization', 'table_completion'], true);
                 $import_file_accept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
         
                 $bank_exam_title_like = 'Bank Soal - %';
@@ -908,6 +912,24 @@ final class CBT_Admin_Questions_Service
                     'options' => array_fill(1, 6, ''),
                     'correct' => 1,
                 ]);
+                $categorization_category_values = array_fill(1, 8, '');
+                $categorization_item_values = array_fill(1, 24, '');
+                $categorization_item_correct = array_fill(1, 24, 1);
+                $table_completion_row_count = 3;
+                $table_completion_column_count = 3;
+                $table_completion_cells = [];
+                for ($table_row = 1; $table_row <= 8; $table_row++) {
+                    for ($table_col = 1; $table_col <= 6; $table_col++) {
+                        $table_cell_key = chr(64 + $table_col) . (string) $table_row;
+                        $table_completion_cells[$table_cell_key] = [
+                            'cell_type' => 'static',
+                            'cell_text' => '',
+                            'correct_text' => '',
+                            'options' => array_fill(1, 6, ''),
+                            'correct' => 1,
+                        ];
+                    }
+                }
                 $mc_correct_index = 1;
                 $legacy_tf_seed = (string) ($editing_detail['correct_text'] ?? ($editing_question['correct_text'] ?? ''));
                 $tf_correct = ((int) ($editing_detail['correct_value'] ?? (strtolower(trim($legacy_tf_seed)) === 'false' ? 0 : 1)) === 0)
@@ -978,6 +1000,31 @@ final class CBT_Admin_Questions_Service
                             }
                             $matching_left_values[$pos] = (string) ($item['prompt_text'] ?? '');
                             $matching_right_values[$pos] = (string) ($item['correct_option_text'] ?? '');
+                        }
+                    } elseif ($editing_type === 'categorization') {
+                        $category_option_index_by_id = [];
+                        foreach ($editing_options as $idx => $opt) {
+                            $pos = $idx + 1;
+                            if ($pos > 8) {
+                                break;
+                            }
+                            $option_id = (int) ($opt['id'] ?? 0);
+                            if ($option_id > 0) {
+                                $category_option_index_by_id[$option_id] = $pos;
+                            }
+                            $categorization_category_values[$pos] = (string) ($opt['option_text'] ?? '');
+                        }
+                        $categorization_items = isset($editing_detail['items']) && is_array($editing_detail['items'])
+                            ? $editing_detail['items']
+                            : [];
+                        foreach ($categorization_items as $idx => $item) {
+                            $pos = $idx + 1;
+                            if ($pos > 24) {
+                                break;
+                            }
+                            $categorization_item_values[$pos] = (string) ($item['item_text'] ?? '');
+                            $correct_option_id = (int) ($item['correct_option_id'] ?? 0);
+                            $categorization_item_correct[$pos] = (int) ($category_option_index_by_id[$correct_option_id] ?? 1);
                         }
                     } elseif ($editing_type === 'true_false' && empty($editing_detail)) {
                         foreach ($editing_options as $opt) {
@@ -1051,6 +1098,45 @@ final class CBT_Admin_Questions_Service
                             }
                         }
                         $cloze_dropdown_rows[$pos] = [
+                            'options' => $options,
+                            'correct' => $correct,
+                        ];
+                    }
+                }
+
+                if ($editing_type === 'table_completion') {
+                    $table_completion_row_count = max(2, min(8, (int) ($editing_detail['row_count'] ?? $table_completion_row_count)));
+                    $table_completion_column_count = max(2, min(6, (int) ($editing_detail['column_count'] ?? $table_completion_column_count)));
+                    $editing_cells = isset($editing_detail['cells']) && is_array($editing_detail['cells'])
+                        ? $editing_detail['cells']
+                        : [];
+                    foreach ($editing_cells as $cell) {
+                        if (!is_array($cell)) {
+                            continue;
+                        }
+                        $row_position = (int) ($cell['row_position'] ?? 0);
+                        $column_position = (int) ($cell['column_position'] ?? 0);
+                        if ($row_position < 1 || $row_position > 8 || $column_position < 1 || $column_position > 6) {
+                            continue;
+                        }
+                        $cell_key = chr(64 + $column_position) . (string) $row_position;
+                        $options = array_fill(1, 6, '');
+                        $correct = 1;
+                        foreach ((array) ($cell['options'] ?? []) as $idx => $option) {
+                            $option_pos = $idx + 1;
+                            if ($option_pos > 6) {
+                                break;
+                            }
+                            $options[$option_pos] = (string) ($option['option_text'] ?? '');
+                            if ((int) ($option['is_correct'] ?? 0) === 1) {
+                                $correct = $option_pos;
+                            }
+                        }
+                        $correct_values = CBT_Admin_Questions_Helper::normalize_short_answer_values((string) ($cell['correct_text'] ?? ''));
+                        $table_completion_cells[$cell_key] = [
+                            'cell_type' => (string) ($cell['cell_type'] ?? 'static'),
+                            'cell_text' => (string) ($cell['cell_text'] ?? ''),
+                            'correct_text' => (string) ($correct_values[0] ?? ''),
                             'options' => $options,
                             'correct' => $correct,
                         ];
@@ -1324,7 +1410,7 @@ final class CBT_Admin_Questions_Service
             $previous_exam_id = 0;
             $previous_question_snapshot = [];
 
-            $allowed_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'];
+            $allowed_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown', 'categorization', 'table_completion'];
             if (!in_array($question_type, $allowed_types, true)) {
                 $question_type = 'multiple_choice';
             }
@@ -1359,6 +1445,9 @@ final class CBT_Admin_Questions_Service
             $matrix_provided_indexes = [];
             $matching_items = $question_type === 'matching' ? self::read_matching_items_from_post() : [];
             $cloze_blanks = $question_type === 'cloze_dropdown' ? self::read_cloze_dropdown_blanks_from_post() : [];
+            $categorization_categories = $question_type === 'categorization' ? self::read_categorization_categories_from_post() : [];
+            $categorization_items = $question_type === 'categorization' ? self::read_categorization_items_from_post() : [];
+            $table_completion_definition = $question_type === 'table_completion' ? self::read_table_completion_from_post() : [];
             if ($question_type === 'true_false') {
                 $normalized_detail_text = CBT_Admin_Questions_Helper::normalize_true_false_value($correct_text) === 1 ? 'true' : 'false';
             } elseif ($question_type === 'true_false_matrix') {
@@ -1398,6 +1487,10 @@ final class CBT_Admin_Questions_Service
                 $normalized_detail_text = CBT_Admin_Questions_Helper::build_matching_payload($matching_items);
             } elseif ($question_type === 'cloze_dropdown') {
                 $normalized_detail_text = CBT_Admin_Questions_Helper::build_cloze_dropdown_payload($cloze_blanks);
+            } elseif ($question_type === 'categorization') {
+                $normalized_detail_text = CBT_Admin_Questions_Helper::build_categorization_payload($categorization_categories, $categorization_items);
+            } elseif ($question_type === 'table_completion') {
+                $normalized_detail_text = CBT_Admin_Questions_Helper::build_table_completion_payload($table_completion_definition);
             }
     
             $resolved_bank_exam_id = 0;
@@ -1433,6 +1526,20 @@ final class CBT_Admin_Questions_Service
                 $cloze_validation_error = CBT_Admin_Questions_Helper::validate_cloze_dropdown_definition($question_text, $cloze_blanks);
                 if ($cloze_validation_error !== '') {
                     self::redirect_question_import_with_error($cloze_validation_error, $return_page);
+                }
+            }
+
+            if ($question_type === 'categorization') {
+                $categorization_validation_error = CBT_Admin_Questions_Helper::validate_categorization_definition($categorization_categories, $categorization_items);
+                if ($categorization_validation_error !== '') {
+                    self::redirect_question_import_with_error($categorization_validation_error, $return_page);
+                }
+            }
+
+            if ($question_type === 'table_completion') {
+                $table_completion_validation_error = CBT_Admin_Questions_Helper::validate_table_completion_definition($table_completion_definition);
+                if ($table_completion_validation_error !== '') {
+                    self::redirect_question_import_with_error($table_completion_validation_error, $return_page);
                 }
             }
 
@@ -1634,6 +1741,19 @@ final class CBT_Admin_Questions_Service
                 if ($question_type === 'cloze_dropdown') {
                     $options_to_insert = [];
                 }
+
+                if ($question_type === 'categorization') {
+                    $options_to_insert = array_map(static function (array $category): array {
+                        return [
+                            'option_text' => (string) ($category['option_text'] ?? ''),
+                            'is_correct' => 0,
+                        ];
+                    }, $categorization_categories);
+                }
+
+                if ($question_type === 'table_completion') {
+                    $options_to_insert = [];
+                }
     
                 if ($question_type === 'true_false' && empty($options_to_insert)) {
                     $true_is_correct = CBT_Admin_Questions_Helper::normalize_true_false_value($normalized_detail_text) === 1 ? 1 : 0;
@@ -1677,12 +1797,35 @@ final class CBT_Admin_Questions_Service
                     }
                 }
 
+                $categorization_detail_items = [];
+                if ($question_type === 'categorization') {
+                    foreach ($categorization_items as $idx => $categorization_item) {
+                        $category_index = (int) ($categorization_item['correct_category_index'] ?? 0);
+                        $option_id = $category_index > 0 ? (int) ($inserted_option_ids[$category_index - 1] ?? 0) : 0;
+                        if ($option_id <= 0) {
+                            continue;
+                        }
+                        $categorization_detail_items[] = [
+                            'position' => (int) ($categorization_item['position'] ?? ($idx + 1)),
+                            'item_key' => (string) ($categorization_item['item_key'] ?? ($idx + 1)),
+                            'item_text' => (string) ($categorization_item['item_text'] ?? ''),
+                            'correct_option_id' => $option_id,
+                        ];
+                    }
+                }
+
                 $detail_context = ['ordered_option_ids' => $inserted_option_ids];
                 if ($question_type === 'matching') {
                     $detail_context['matching_items'] = $matching_detail_items;
                 }
                 if ($question_type === 'cloze_dropdown') {
                     $detail_context['cloze_blanks'] = $cloze_blanks;
+                }
+                if ($question_type === 'categorization') {
+                    $detail_context['categorization_items'] = $categorization_detail_items;
+                }
+                if ($question_type === 'table_completion') {
+                    $detail_context['table_completion'] = $table_completion_definition;
                 }
     
                 CBT_Admin_Questions_Helper::save_question_type_detail(
@@ -1751,7 +1894,7 @@ final class CBT_Admin_Questions_Service
                 isset($_GET['question_per_page']) ? absint(wp_unslash($_GET['question_per_page'])) : 20
             );
             $question_paged = isset($_GET['question_paged']) ? max(1, absint(wp_unslash($_GET['question_paged']))) : 1;
-            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'];
+            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown', 'categorization', 'table_completion'];
             if (!in_array($filter_type, $allowed_filter_types, true)) {
                 $filter_type = '';
             }
@@ -1938,7 +2081,7 @@ final class CBT_Admin_Questions_Service
                 isset($_POST['redirect_question_per_page']) ? absint(wp_unslash($_POST['redirect_question_per_page'])) : 20
             );
             $question_paged = isset($_POST['redirect_question_paged']) ? max(1, absint(wp_unslash($_POST['redirect_question_paged']))) : 1;
-            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'];
+            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown', 'categorization', 'table_completion'];
             if (!in_array($filter_type, $allowed_filter_types, true)) {
                 $filter_type = '';
             }
@@ -2058,7 +2201,7 @@ final class CBT_Admin_Questions_Service
             $filter_type = isset($state['filter_type']) ? sanitize_text_field((string) $state['filter_type']) : '';
             $filter_source_kind = isset($state['filter_source_kind']) ? sanitize_text_field((string) $state['filter_source_kind']) : '';
             $filter_subject_id = isset($state['filter_subject_id']) ? absint($state['filter_subject_id']) : 0;
-            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown'];
+            $allowed_filter_types = ['multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown', 'categorization', 'table_completion'];
             if (!in_array($filter_type, $allowed_filter_types, true)) {
                 $filter_type = '';
             }
@@ -2339,6 +2482,110 @@ final class CBT_Admin_Questions_Service
             }
 
             return CBT_Admin_Questions_Helper::normalize_cloze_dropdown_blanks($rows);
+        }
+
+        /**
+         * @return array<int,array<string,mixed>>
+         */
+        private static function read_categorization_categories_from_post(): array
+        {
+            $rows = [];
+            for ($index = 1; $index <= 8; $index++) {
+                $field = 'cbt_cat_category_' . $index;
+                $rows[] = [
+                    'category_index' => $index,
+                    'option_text' => isset($_POST[$field])
+                        ? sanitize_text_field((string) wp_unslash($_POST[$field]))
+                        : '',
+                ];
+            }
+
+            return CBT_Admin_Questions_Helper::normalize_categorization_categories($rows);
+        }
+
+        /**
+         * @return array<int,array<string,mixed>>
+         */
+        private static function read_categorization_items_from_post(): array
+        {
+            $rows = [];
+            for ($index = 1; $index <= 24; $index++) {
+                $item_field = 'cbt_cat_item_' . $index;
+                $correct_field = 'cbt_cat_correct_' . $index;
+                $rows[] = [
+                    'position' => $index,
+                    'item_key' => (string) $index,
+                    'item_text' => isset($_POST[$item_field])
+                        ? CBT_Admin_Questions_Helper::sanitize_editor_html((string) wp_unslash($_POST[$item_field]))
+                        : '',
+                    'correct_category_index' => isset($_POST[$correct_field])
+                        ? (int) wp_unslash($_POST[$correct_field])
+                        : 0,
+                ];
+            }
+
+            return CBT_Admin_Questions_Helper::normalize_categorization_items($rows);
+        }
+
+        /**
+         * @return array<string,mixed>
+         */
+        private static function read_table_completion_from_post(): array
+        {
+            $row_count = isset($_POST['cbt_table_rows']) ? (int) wp_unslash($_POST['cbt_table_rows']) : 2;
+            $column_count = isset($_POST['cbt_table_cols']) ? (int) wp_unslash($_POST['cbt_table_cols']) : 2;
+            $cells = [];
+
+            for ($row = 1; $row <= 8; $row++) {
+                for ($column = 1; $column <= 6; $column++) {
+                    $cell_key = chr(64 + $column) . (string) $row;
+                    $prefix = 'cbt_table_' . $cell_key . '_';
+                    $type = isset($_POST[$prefix . 'type']) ? sanitize_key((string) wp_unslash($_POST[$prefix . 'type'])) : 'static';
+                    if (!in_array($type, ['static', 'text', 'dropdown'], true)) {
+                        $type = 'static';
+                    }
+
+                    $options = [];
+                    $correct_index = isset($_POST[$prefix . 'correct']) ? (int) wp_unslash($_POST[$prefix . 'correct']) : 1;
+                    if ($type === 'dropdown') {
+                        for ($option_index = 1; $option_index <= 6; $option_index++) {
+                            $option_field = $prefix . 'option_' . $option_index;
+                            $option_text = isset($_POST[$option_field])
+                                ? sanitize_text_field((string) wp_unslash($_POST[$option_field]))
+                                : '';
+                            if (trim($option_text) === '') {
+                                continue;
+                            }
+                            $options[] = [
+                                'option_key' => chr(64 + count($options) + 1),
+                                'option_text' => $option_text,
+                                'is_correct' => ($option_index === $correct_index) ? 1 : 0,
+                                'option_order' => count($options) + 1,
+                            ];
+                        }
+                    }
+
+                    $cells[] = [
+                        'cell_key' => $cell_key,
+                        'row_position' => $row,
+                        'column_position' => $column,
+                        'cell_type' => $type,
+                        'cell_text' => isset($_POST[$prefix . 'text'])
+                            ? CBT_Admin_Questions_Helper::sanitize_editor_html((string) wp_unslash($_POST[$prefix . 'text']))
+                            : '',
+                        'correct_text' => isset($_POST[$prefix . 'answer'])
+                            ? sanitize_text_field((string) wp_unslash($_POST[$prefix . 'answer']))
+                            : '',
+                        'options' => $options,
+                    ];
+                }
+            }
+
+            return CBT_Admin_Questions_Helper::normalize_table_completion_definition([
+                'row_count' => $row_count,
+                'column_count' => $column_count,
+                'cells' => $cells,
+            ]);
         }
 
         private static function redirect_question_import_with_error(string $message, string $return_page = 'cbt-question-bank'): void

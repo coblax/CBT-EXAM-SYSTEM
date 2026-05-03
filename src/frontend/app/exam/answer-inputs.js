@@ -373,11 +373,15 @@ export function createAnswerInputManager(deps) {
             return true;
         }
 
-        if (targetAction === 'answer-matching' || targetAction === 'answer-cloze-dropdown') {
+        if (targetAction === 'answer-matching' || targetAction === 'answer-cloze-dropdown' || targetAction === 'answer-categorization') {
             var dropdownQid = Number(target.getAttribute('data-qid')) || 0;
-            var dropdownKey = String(
-                target.getAttribute(targetAction === 'answer-matching' ? 'data-matching-key' : 'data-cloze-key') || ''
-            ).trim();
+            var dropdownKeyAttr = 'data-cloze-key';
+            if (targetAction === 'answer-matching') {
+                dropdownKeyAttr = 'data-matching-key';
+            } else if (targetAction === 'answer-categorization') {
+                dropdownKeyAttr = 'data-categorization-key';
+            }
+            var dropdownKey = String(target.getAttribute(dropdownKeyAttr) || '').trim();
             var dropdownOptionId = target instanceof HTMLSelectElement ? (Number(target.value) || 0) : 0;
             if (dropdownQid <= 0 || dropdownKey === '') {
                 return true;
@@ -405,11 +409,46 @@ export function createAnswerInputManager(deps) {
             syncCurrentQuestionHeadUi(dropdownQid);
             renderAnswerChangePatch('answer-change', {
                 questionId: dropdownQid,
-                inputType: targetAction === 'answer-matching' ? 'matching' : 'cloze-dropdown'
+                inputType: targetAction === 'answer-matching' ? 'matching' : (targetAction === 'answer-categorization' ? 'categorization' : 'cloze-dropdown')
             }, {
                 includeInput: false,
                 includeQuestionHead: false,
                 includeNotice: hadDropdownVisibleMessages
+            });
+            return true;
+        }
+
+        if (targetAction === 'answer-table-completion-dropdown') {
+            var tableDropdownQid = Number(target.getAttribute('data-qid')) || 0;
+            var tableDropdownKey = String(target.getAttribute('data-table-key') || '').trim().toUpperCase();
+            var tableDropdownOptionId = target instanceof HTMLSelectElement ? (Number(target.value) || 0) : 0;
+            if (tableDropdownQid <= 0 || tableDropdownKey === '') {
+                return true;
+            }
+            if (!state.answers[tableDropdownQid] || typeof state.answers[tableDropdownQid] !== 'object' || Array.isArray(state.answers[tableDropdownQid])) {
+                state.answers[tableDropdownQid] = {};
+            }
+            if (tableDropdownOptionId > 0) {
+                state.answers[tableDropdownQid][tableDropdownKey] = tableDropdownOptionId;
+            } else {
+                delete state.answers[tableDropdownQid][tableDropdownKey];
+            }
+            if (Object.keys(state.answers[tableDropdownQid]).length > 0) {
+                state.answeredQuestionLookup[tableDropdownQid] = true;
+            } else {
+                delete state.answeredQuestionLookup[tableDropdownQid];
+            }
+            scheduleQuestionCachePersist(240);
+            clearMessages();
+            scheduleAutoSave(tableDropdownQid, autoSaveChoiceDelayMs);
+            syncCurrentQuestionHeadUi(tableDropdownQid);
+            renderAnswerChangePatch('answer-change', {
+                questionId: tableDropdownQid,
+                inputType: 'table-completion'
+            }, {
+                includeInput: false,
+                includeQuestionHead: false,
+                includeNotice: !!(state.error || state.notice || state.success)
             });
             return true;
         }
@@ -506,6 +545,41 @@ export function createAnswerInputManager(deps) {
             renderAnswerChangePatch('answer-input', {
                 questionId: shortQid,
                 inputType: 'short'
+            }, {
+                includeInput: false,
+                includeQuestionHead: false
+            });
+            return true;
+        }
+
+        if (action === 'answer-table-completion-text') {
+            var tableTextQid = Number(target.getAttribute('data-qid')) || 0;
+            var tableTextKey = String(target.getAttribute('data-table-key') || '').trim().toUpperCase();
+            if (tableTextQid <= 0 || tableTextKey === '') {
+                return true;
+            }
+            if (!state.answers[tableTextQid] || typeof state.answers[tableTextQid] !== 'object' || Array.isArray(state.answers[tableTextQid])) {
+                state.answers[tableTextQid] = {};
+            }
+            var tableTextValue = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+                ? String(target.value || '')
+                : '';
+            if (tableTextValue.trim() !== '') {
+                state.answers[tableTextQid][tableTextKey] = tableTextValue;
+            } else {
+                delete state.answers[tableTextQid][tableTextKey];
+            }
+            if (Object.keys(state.answers[tableTextQid]).length > 0) {
+                state.answeredQuestionLookup[tableTextQid] = true;
+            } else {
+                delete state.answeredQuestionLookup[tableTextQid];
+            }
+            scheduleQuestionCachePersist(500);
+            scheduleAutoSave(tableTextQid, autoSaveTextDelayMs);
+            syncCurrentQuestionHeadUi(tableTextQid);
+            renderAnswerChangePatch('answer-input', {
+                questionId: tableTextQid,
+                inputType: 'table-completion'
             }, {
                 includeInput: false,
                 includeQuestionHead: false

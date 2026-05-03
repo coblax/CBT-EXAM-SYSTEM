@@ -80,4 +80,14 @@ final class CBT_Admin_Questions_Actions
     {
         CBT_Admin_Questions_Import_Helper::handle_download_question_template_word_cloze();
     }
+
+    public static function handle_download_question_template_word_categorization(): void
+    {
+        CBT_Admin_Questions_Import_Helper::handle_download_question_template_word_categorization();
+    }
+
+    public static function handle_download_question_template_word_table_completion(): void
+    {
+        CBT_Admin_Questions_Import_Helper::handle_download_question_template_word_table_completion();
+    }
 }

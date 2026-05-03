@@ -635,7 +635,7 @@ class CBT_Question_Submission_Context_Cache
         $option_rows = [];
         $option_question_ids = array_values(array_filter(array_keys($question_types_by_id), static function (int $question_id) use ($question_types_by_id): bool {
             $type = (string) ($question_types_by_id[$question_id] ?? '');
-            return in_array($type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering', 'matching'], true);
+            return in_array($type, ['multiple_choice', 'multiple_answer', 'true_false', 'ordering', 'matching', 'categorization'], true);
         }));
 
         if (!empty($option_question_ids)) {
@@ -1128,6 +1128,55 @@ class CBT_Question_Submission_Context_Cache
             }
         }
 
+        $categorization_correct_option_ids_by_key = [];
+        if ($question_type === 'categorization' && class_exists('CBT_Admin_Questions_Helper')) {
+            foreach (CBT_Admin_Questions_Helper::get_categorization_items($question_id) as $idx => $item_row) {
+                $item = (array) $item_row;
+                $key = trim((string) ($item['item_key'] ?? ($idx + 1)));
+                $option_id = absint($item['correct_option_id'] ?? 0);
+                if ($key !== '' && $option_id > 0) {
+                    $categorization_correct_option_ids_by_key[$key] = $option_id;
+                }
+            }
+        }
+
+        $table_completion_answers_by_key = [];
+        if ($question_type === 'table_completion' && class_exists('CBT_Admin_Questions_Helper')) {
+            foreach (CBT_Admin_Questions_Helper::get_table_completion_cells($question_id, true) as $idx => $cell_row) {
+                $cell = (array) $cell_row;
+                $cell_type = (string) ($cell['cell_type'] ?? 'static');
+                if (!in_array($cell_type, ['text', 'dropdown'], true)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) ($cell['cell_key'] ?? '')));
+                if ($key === '') {
+                    $key = chr(64 + max(1, (int) ($cell['column_position'] ?? 1))) . (string) max(1, (int) ($cell['row_position'] ?? ($idx + 1)));
+                }
+                if ($cell_type === 'text') {
+                    $table_completion_answers_by_key[$key] = [
+                        'cell_type' => 'text',
+                        'correct_values' => CBT_Admin_Questions_Helper::normalize_short_answer_values((string) ($cell['correct_text'] ?? '')),
+                    ];
+                    continue;
+                }
+                $correct_option_id = 0;
+                foreach ((array) ($cell['options'] ?? []) as $option_row) {
+                    $option = (array) $option_row;
+                    if ((int) ($option['is_correct'] ?? 0) !== 1) {
+                        continue;
+                    }
+                    $correct_option_id = absint($option['id'] ?? 0);
+                    break;
+                }
+                if ($correct_option_id > 0) {
+                    $table_completion_answers_by_key[$key] = [
+                        'cell_type' => 'dropdown',
+                        'correct_option_id' => $correct_option_id,
+                    ];
+                }
+            }
+        }
+
         return self::sanitize_snapshot([
             'id' => $question_id,
             'exam_id' => $exam_id,
@@ -1141,6 +1190,8 @@ class CBT_Question_Submission_Context_Cache
             'true_false_matrix_answers' => $true_false_matrix_answers,
             'matching_correct_option_ids_by_key' => $matching_correct_option_ids_by_key,
             'cloze_dropdown_correct_option_ids_by_key' => $cloze_dropdown_correct_option_ids_by_key,
+            'categorization_correct_option_ids_by_key' => $categorization_correct_option_ids_by_key,
+            'table_completion_answers_by_key' => $table_completion_answers_by_key,
         ]);
     }
 
@@ -1247,6 +1298,8 @@ class CBT_Question_Submission_Context_Cache
 
         $matching_correct_option_ids_by_key = self::sanitize_option_id_answer_key_map($raw['matching_correct_option_ids_by_key'] ?? []);
         $cloze_dropdown_correct_option_ids_by_key = self::sanitize_option_id_answer_key_map($raw['cloze_dropdown_correct_option_ids_by_key'] ?? []);
+        $categorization_correct_option_ids_by_key = self::sanitize_option_id_answer_key_map($raw['categorization_correct_option_ids_by_key'] ?? []);
+        $table_completion_answers_by_key = self::sanitize_table_completion_answer_key_map($raw['table_completion_answers_by_key'] ?? []);
 
         return [
             'id' => $question_id,
@@ -1261,6 +1314,8 @@ class CBT_Question_Submission_Context_Cache
             'true_false_matrix_answers' => $true_false_matrix_answers,
             'matching_correct_option_ids_by_key' => $matching_correct_option_ids_by_key,
             'cloze_dropdown_correct_option_ids_by_key' => $cloze_dropdown_correct_option_ids_by_key,
+            'categorization_correct_option_ids_by_key' => $categorization_correct_option_ids_by_key,
+            'table_completion_answers_by_key' => $table_completion_answers_by_key,
         ];
     }
 
@@ -1292,6 +1347,68 @@ class CBT_Question_Submission_Context_Cache
             if (ctype_digit($left) && ctype_digit($right)) {
                 return ((int) $left) <=> ((int) $right);
             }
+            return strnatcasecmp($left, $right);
+        });
+
+        return $normalized;
+    }
+
+    /**
+     * @return array<string,array<string,mixed>>
+     */
+    private static function sanitize_table_completion_answer_key_map($raw): array
+    {
+        if (!is_array($raw) || empty($raw)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($raw as $key => $value) {
+            if (count($normalized) >= 48) {
+                break;
+            }
+            if (!is_array($value)) {
+                continue;
+            }
+
+            $safe_key = strtoupper(trim((string) $key));
+            $cell_type = sanitize_key((string) ($value['cell_type'] ?? ''));
+            if ($safe_key === '' || !in_array($cell_type, ['text', 'dropdown'], true)) {
+                continue;
+            }
+
+            if ($cell_type === 'dropdown') {
+                $option_id = absint($value['correct_option_id'] ?? 0);
+                if ($option_id <= 0) {
+                    continue;
+                }
+                $normalized[$safe_key] = [
+                    'cell_type' => 'dropdown',
+                    'correct_option_id' => $option_id,
+                ];
+                continue;
+            }
+
+            $correct_values = [];
+            foreach ((array) ($value['correct_values'] ?? []) as $correct_value) {
+                if (!is_scalar($correct_value)) {
+                    continue;
+                }
+                $correct_value = sanitize_text_field(trim((string) $correct_value));
+                if ($correct_value !== '') {
+                    $correct_values[] = $correct_value;
+                }
+            }
+            if (empty($correct_values)) {
+                continue;
+            }
+            $normalized[$safe_key] = [
+                'cell_type' => 'text',
+                'correct_values' => array_values(array_unique($correct_values)),
+            ];
+        }
+
+        uksort($normalized, static function (string $left, string $right): int {
             return strnatcasecmp($left, $right);
         });
 
