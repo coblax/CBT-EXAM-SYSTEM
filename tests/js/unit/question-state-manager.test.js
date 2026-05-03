@@ -68,6 +68,62 @@ describe('createQuestionStateManager', function () {
                         { id: 62, option_key: 'B' },
                         { id: 63, option_key: 'C' }
                     ]
+                }),
+                7: createQuestion(7, 'matching', {
+                    matching_meta: {
+                        items: [
+                            { key: '1', text: 'Kota' },
+                            { key: '2', text: 'Negara' }
+                        ]
+                    },
+                    options: [
+                        { id: 71, option_key: 'A' },
+                        { id: 72, option_key: 'B' }
+                    ]
+                }),
+                8: createQuestion(8, 'cloze_dropdown', {
+                    cloze_dropdown_meta: {
+                        blanks: [
+                            {
+                                key: '1',
+                                options: [
+                                    { id: 81, option_key: 'A', option_text: 'Seoul' },
+                                    { id: 82, option_key: 'B', option_text: 'Tokyo' }
+                                ]
+                            }
+                        ]
+                    }
+                }),
+                9: createQuestion(9, 'categorization', {
+                    categorization_meta: {
+                        items: [
+                            { key: '1', text: 'Kucing' },
+                            { key: '2', text: 'Ular' }
+                        ]
+                    },
+                    options: [
+                        { id: 91, option_key: 'A' },
+                        { id: 92, option_key: 'B' }
+                    ]
+                }),
+                10: createQuestion(10, 'table_completion', {
+                    table_completion_meta: {
+                        cells: [
+                            { key: 'A1', row: 1, column: 1, type: 'text', text: 'Kota' },
+                            {
+                                key: 'B1',
+                                row: 1,
+                                column: 2,
+                                type: 'dropdown',
+                                text: 'Negara',
+                                options: [
+                                    { id: 101, option_key: 'A', option_text: 'Korea' },
+                                    { id: 102, option_key: 'B', option_text: 'Jepang' }
+                                ]
+                            },
+                            { key: 'C1', row: 1, column: 3, type: 'static', text: 'Tidak dijawab' }
+                        ]
+                    }
                 })
             },
             state: {
@@ -83,7 +139,26 @@ describe('createQuestionStateManager', function () {
                         B: ' '
                     },
                     5: '  paragraf  ',
-                    6: [62, 61, 62, 999, 63]
+                    6: [62, 61, 62, 999, 63],
+                    7: {
+                        1: 72,
+                        2: 999,
+                        x: 71
+                    },
+                    8: {
+                        1: 82,
+                        2: 81
+                    },
+                    9: {
+                        1: 91,
+                        2: 999
+                    },
+                    10: {
+                        A1: '  Tokyo  ',
+                        B1: 102,
+                        C1: 'statis',
+                        Z9: 'asing'
+                    }
                 },
                 answeredQuestionLookup: {
                     1: true,
@@ -91,7 +166,11 @@ describe('createQuestionStateManager', function () {
                     3: true,
                     4: true,
                     5: true,
-                    6: true
+                    6: true,
+                    7: true,
+                    8: true,
+                    9: true,
+                    10: true
                 }
             }
         });
@@ -106,6 +185,19 @@ describe('createQuestionStateManager', function () {
         });
         expect(fixture.manager.questionAnswerPayload(fixture.questionsById[5])).toBe('paragraf');
         expect(fixture.manager.questionAnswerPayload(fixture.questionsById[6])).toEqual([62, 61, 63]);
+        expect(fixture.manager.questionAnswerPayload(fixture.questionsById[7])).toEqual({
+            1: 72
+        });
+        expect(fixture.manager.questionAnswerPayload(fixture.questionsById[8])).toEqual({
+            1: 82
+        });
+        expect(fixture.manager.questionAnswerPayload(fixture.questionsById[9])).toEqual({
+            1: 91
+        });
+        expect(fixture.manager.questionAnswerPayload(fixture.questionsById[10])).toEqual({
+            A1: 'Tokyo',
+            B1: 102
+        });
     });
 
     it('restores revision-safe answers by option key when option ids change', function () {

@@ -225,6 +225,172 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
         self::assertDeliveryPayloadDoesNotContainSensitiveKeys($cached);
     }
 
+    public function test_get_exam_payload_redacts_sensitive_keys_for_all_question_types(): void
+    {
+        $payload = CBT_Exam_Question_Delivery_Cache::get_exam_payload(56, static function (int $examId): array {
+            $common = [
+                'exam_id' => $examId,
+                'points' => 5,
+                'correct_text' => 'server-only',
+                'short_answer_correct_text' => 'server-only',
+                'correct_option_ids' => [1],
+                'true_false_correct_value' => 1,
+                'true_false_option_value_by_id' => ['1' => 1],
+                'short_answer_values' => ['server-only'],
+                'true_false_matrix_answers' => ['1' => 'true'],
+                'matching_correct_option_ids_by_key' => ['1' => 1],
+                'cloze_dropdown_correct_option_ids_by_key' => ['1' => 1],
+                'categorization_correct_option_ids_by_key' => ['1' => 1],
+                'table_completion_answers_by_key' => ['A1' => ['cell_type' => 'text', 'correct_values' => ['server-only']]],
+            ];
+
+            return [
+                $common + [
+                    'id' => 401,
+                    'question_text' => 'MC',
+                    'question_type' => 'multiple_choice',
+                    'options' => [
+                        ['id' => 1, 'option_key' => 'A', 'option_text' => 'A', 'is_correct' => 1, 'correct_position' => 1],
+                    ],
+                ],
+                $common + [
+                    'id' => 402,
+                    'question_text' => 'MA',
+                    'question_type' => 'multiple_answer',
+                    'options' => [
+                        ['id' => 2, 'option_key' => 'A', 'option_text' => 'A', 'is_correct' => 1],
+                    ],
+                ],
+                $common + [
+                    'id' => 403,
+                    'question_text' => 'TF',
+                    'question_type' => 'true_false',
+                    'options' => [
+                        ['id' => 3, 'option_key' => 'T', 'option_text' => 'Benar', 'correct_value' => 1],
+                    ],
+                ],
+                $common + [
+                    'id' => 404,
+                    'question_text' => 'TF Matrix',
+                    'question_type' => 'true_false_matrix',
+                    'true_false_matrix_meta' => [
+                        'items' => [
+                            ['key' => '1', 'text' => 'Pernyataan', 'correct_value' => 'true'],
+                        ],
+                    ],
+                ],
+                $common + [
+                    'id' => 405,
+                    'question_text' => 'Short Answer',
+                    'question_type' => 'short_answer',
+                    'short_answer_meta' => [
+                        'input_keys' => ['A'],
+                        'correct_values' => ['server-only'],
+                    ],
+                ],
+                $common + [
+                    'id' => 406,
+                    'question_text' => 'Essay',
+                    'question_type' => 'essay',
+                    'essay_rubric' => 'Rubrik boleh tampil.',
+                ],
+                $common + [
+                    'id' => 407,
+                    'question_text' => 'Ordering',
+                    'question_type' => 'ordering',
+                    'options' => [
+                        ['id' => 4, 'option_key' => 'A', 'option_text' => 'A', 'correct_position' => 1],
+                    ],
+                    'ordering_correct_option_ids' => [4],
+                ],
+                $common + [
+                    'id' => 408,
+                    'question_text' => 'Matching',
+                    'question_type' => 'matching',
+                    'options' => [
+                        ['id' => 5, 'option_key' => 'A', 'option_text' => 'A', 'is_correct' => 1],
+                    ],
+                    'matching_meta' => [
+                        'items' => [
+                            ['key' => '1', 'text' => 'Prompt', 'correct_option_id' => 5],
+                        ],
+                    ],
+                ],
+                $common + [
+                    'id' => 409,
+                    'question_text' => 'Cloze [DROPDOWN_1]',
+                    'question_type' => 'cloze_dropdown',
+                    'cloze_dropdown_meta' => [
+                        'blanks' => [
+                            [
+                                'key' => '1',
+                                'options' => [
+                                    ['id' => 6, 'option_text' => 'A', 'is_correct' => 1, 'correct_option_key' => 'A'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+                $common + [
+                    'id' => 410,
+                    'question_text' => 'Categorization',
+                    'question_type' => 'categorization',
+                    'options' => [
+                        ['id' => 7, 'option_key' => 'A', 'option_text' => 'Kategori', 'is_correct' => 1],
+                    ],
+                    'categorization_meta' => [
+                        'items' => [
+                            ['key' => '1', 'text' => 'Item', 'correct_option_id' => 7, 'correct_category_index' => 1],
+                        ],
+                    ],
+                ],
+                $common + [
+                    'id' => 411,
+                    'question_text' => 'Table',
+                    'question_type' => 'table_completion',
+                    'table_completion_meta' => [
+                        'cells' => [
+                            ['key' => 'A1', 'type' => 'text', 'text' => 'Kota', 'correct_text' => 'Tokyo', 'correct_values' => ['Tokyo']],
+                            [
+                                'key' => 'B1',
+                                'type' => 'dropdown',
+                                'text' => 'Negara',
+                                'options' => [
+                                    ['id' => 8, 'option_text' => 'Jepang', 'is_correct' => 1, 'correct_option_text' => 'Jepang'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ];
+        });
+
+        self::assertCount(11, $payload);
+        self::assertSame([
+            'multiple_choice',
+            'multiple_answer',
+            'true_false',
+            'true_false_matrix',
+            'short_answer',
+            'essay',
+            'ordering',
+            'matching',
+            'cloze_dropdown',
+            'categorization',
+            'table_completion',
+        ], array_column($payload, 'question_type'));
+
+        foreach ($payload as $question) {
+            self::assertDeliveryPayloadDoesNotContainSensitiveKeys($question);
+        }
+
+        $storageKey = $this->storedRedisKeys()[0] ?? '';
+        self::assertNotSame('', $storageKey);
+        $cached = json_decode((string) ($GLOBALS['cbt_test_redis_storage'][$storageKey] ?? ''), true);
+        self::assertIsArray($cached);
+        self::assertDeliveryPayloadDoesNotContainSensitiveKeys($cached);
+    }
+
     public function test_get_exam_payload_falls_back_to_producer_when_redis_is_unavailable(): void
     {
         $this->setDeliveryRedisUnavailable();

@@ -1,4 +1,6 @@
 const { expect } = require('@playwright/test');
+const { expectVisibleWithE2EDiagnostic } = require('./e2e-diagnostics');
+const { e2eFrontendUrl } = require('./e2e-url');
 
 const AUTH_SESSION_STORAGE_KEY = 'cbt_exam_frontend_auth_v1';
 const ATTEMPT_UI_SESSION_STORAGE_KEY_PREFIX = 'cbt_exam_frontend_attempt_ui_v1_';
@@ -13,8 +15,8 @@ function resolvedExamToken() {
 }
 
 async function waitForFrontendRoot(page) {
-    await page.goto('/');
-    await expect(page.locator('#cbt-login-form')).toBeVisible({ timeout: 20000 });
+    await page.goto(e2eFrontendUrl());
+    await expectVisibleWithE2EDiagnostic(page, page.locator('#cbt-login-form'), 'Form login CBT frontend (#cbt-login-form)');
 }
 
 function examCardLocator(page) {
@@ -423,7 +425,7 @@ async function openRehydratedPage(browser, baseURL, storageSnapshot) {
     }, storageSnapshot);
 
     const page = await context.newPage();
-    await page.goto(new URL('/', String(baseURL || 'http://localhost/')).toString());
+    await page.goto(e2eFrontendUrl(baseURL));
     return { context, page };
 }
 

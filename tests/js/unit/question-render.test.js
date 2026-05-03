@@ -165,6 +165,42 @@ describe('createQuestionRenderManager', function () {
         expect(html).toContain('<option value="302" selected>Tokyo</option>');
     });
 
+    it('restores selected categorization dropdown answers', function () {
+        var manager = createManager({
+            resolveStoredAnswerValueForQuestion: function () {
+                return { 1: 502 };
+            }
+        });
+        var html = manager.renderQuestionInput({
+            id: 53,
+            question_type: 'categorization',
+            categorization_meta: {
+                items: [
+                    {
+                        key: '1',
+                        text: 'Kucing'
+                    }
+                ]
+            },
+            options: [
+                {
+                    id: 501,
+                    option_key: 'A',
+                    option_text: 'Reptil'
+                },
+                {
+                    id: 502,
+                    option_key: 'B',
+                    option_text: 'Mamalia'
+                }
+            ]
+        });
+
+        expect(html).toContain('data-action="answer-categorization"');
+        expect(html).toContain('data-categorization-key="1"');
+        expect(html).toContain('<option value="502" selected>Mamalia</option>');
+    });
+
     it('renders table completion answer cells with compact labels and restored values', function () {
         var manager = createManager({
             resolveStoredAnswerValueForQuestion: function () {

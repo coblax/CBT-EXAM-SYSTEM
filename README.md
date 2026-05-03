@@ -251,18 +251,24 @@ composer test:php
 
 ```bash
 npm run playwright:install:chromium
+npm run test:e2e:check
 npm run test:e2e
 npm run test:e2e:headed
 npm run test:e2e:ui
 npm run test:e2e:recovery
 ```
 
-Untuk Playwright, set `CBT_E2E_BASE_URL` bila URL WordPress lokal Anda bukan default `http://localhost/wordpress`.
+Untuk Playwright, set `CBT_E2E_BASE_URL` ke root WordPress lokal. `npm run test:e2e`, `test:e2e:headed`, dan `test:e2e:ui` akan menjalankan readiness check lebih dulu supaya URL login WordPress, halaman CBT, dan fixture Bulk Test Data jelas statusnya sebelum browser dibuka. Jika halaman CBT bukan homepage WordPress, set `CBT_E2E_FRONTEND_URL` ke halaman yang memuat shortcode/frontend CBT. Jika perlu memisahkan root admin dari base lama, `CBT_E2E_WP_BASE_URL` bisa dipakai sebagai override root WordPress.
+
+Saat debugging rendah-level, readiness check bisa dilewati dengan `CBT_E2E_SKIP_READINESS_CHECK=1` atau argumen `--skip-readiness`.
 
 Contoh:
 
 ```bash
 CBT_E2E_BASE_URL=http://localhost/wordpress npm run test:e2e
+CBT_E2E_BASE_URL=http://localhost/wordpress npm run test:e2e:check
+CBT_E2E_BASE_URL=http://localhost/wordpress CBT_E2E_FRONTEND_URL=http://localhost/wordpress/ujian npm run test:e2e
+CBT_E2E_SKIP_READINESS_CHECK=1 npm run test:e2e -- new-question-types.spec.js
 ```
 
 ### Release Plugin ke GitHub

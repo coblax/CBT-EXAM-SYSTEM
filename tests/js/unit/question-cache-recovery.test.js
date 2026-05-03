@@ -208,6 +208,93 @@ describe('question cache recovery', function () {
         })).toEqual([101, 102]);
     });
 
+    it('preserves object-map answers and structured metadata during cache recovery', async function () {
+        var fixture = createManager();
+        var snapshot = createSnapshot({
+            question_order_ids: [201, 202, 203, 204],
+            question_payload_by_id: {
+                201: {
+                    id: 201,
+                    question_number: 1,
+                    question_type: 'matching',
+                    matching_meta: {
+                        items: [{ key: '1', text: 'Kota' }]
+                    },
+                    options: [{ id: 71, option_text: 'Tokyo' }]
+                },
+                202: {
+                    id: 202,
+                    question_number: 2,
+                    question_type: 'cloze_dropdown',
+                    cloze_dropdown_meta: {
+                        blanks: [
+                            {
+                                key: '1',
+                                options: [{ id: 81, option_text: 'Tokyo' }]
+                            }
+                        ]
+                    }
+                },
+                203: {
+                    id: 203,
+                    question_number: 3,
+                    question_type: 'categorization',
+                    categorization_meta: {
+                        items: [{ key: '1', text: 'Kucing' }]
+                    },
+                    options: [{ id: 91, option_text: 'Mamalia' }]
+                },
+                204: {
+                    id: 204,
+                    question_number: 4,
+                    question_type: 'table_completion',
+                    table_completion_meta: {
+                        rows: 1,
+                        columns: 2,
+                        cells: [
+                            { key: 'A1', row: 1, column: 1, type: 'text', text: 'Kota' },
+                            {
+                                key: 'B1',
+                                row: 1,
+                                column: 2,
+                                type: 'dropdown',
+                                text: 'Negara',
+                                options: [{ id: 102, option_text: 'Jepang' }]
+                            }
+                        ]
+                    }
+                }
+            },
+            answered_question_lookup: {
+                201: true,
+                202: true,
+                203: true,
+                204: true
+            },
+            answers: {
+                201: { 1: 71 },
+                202: { 1: 81 },
+                203: { 1: 91 },
+                204: { A1: 'Tokyo', B1: 102 }
+            }
+        });
+
+        writeSessionSnapshot(fixture, snapshot);
+
+        var restored = await fixture.manager.readPersistedQuestionCache(55);
+
+        expect(restored.answers).toEqual({
+            201: { 1: 71 },
+            202: { 1: 81 },
+            203: { 1: 91 },
+            204: { A1: 'Tokyo', B1: 102 }
+        });
+        expect(restored.questionPayloadById[201].matching_meta.items[0].key).toBe('1');
+        expect(restored.questionPayloadById[202].cloze_dropdown_meta.blanks[0].options[0].id).toBe(81);
+        expect(restored.questionPayloadById[203].categorization_meta.items[0].text).toBe('Kucing');
+        expect(restored.questionPayloadById[204].table_completion_meta.cells[1].options[0].id).toBe(102);
+    });
+
     it('rejects incompatible stale snapshots when revision changes and keeps the newer valid answer set', async function () {
         var fixture = createManager();
         var staleSessionSnapshot = createSnapshot({

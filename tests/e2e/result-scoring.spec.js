@@ -20,6 +20,7 @@ const {
     openResultsPage,
     openResultsEssayTab,
 } = require('./helpers/admin-browser');
+const { e2eFrontendUrl } = require('./helpers/e2e-url');
 
 test.describe.configure({ mode: 'serial' });
 
@@ -133,7 +134,7 @@ test.describe('Result & Scoring flow check', () => {
         }
 
         await test.step('Siswa reopen hasil dan melihat state essay yang sudah diregrade', async () => {
-            await page.goto('/');
+            await page.goto(e2eFrontendUrl(baseURL));
             await openResultFromConfirm(page, fixture.exam.title);
             await expect(page.locator('.cbt-result-wrap')).not.toContainText(/Menunggu Koreksi/i, { timeout: 20000 });
             await expect(page.locator('.cbt-score-value')).toBeVisible({ timeout: 20000 });
@@ -230,12 +231,12 @@ test.describe('Result & Scoring flow check', () => {
         await test.step('Fixture restricted tetap restricted setelah refresh dan reopen', async () => {
             const restrictedFixture = getE2EFixture('result_restricted', 'primary_student');
             resetE2EFixture('result_restricted', 'primary_student');
-            await page.goto('/');
+            await page.goto(e2eFrontendUrl(baseURL));
             await loginAsStudent(page, restrictedFixture.user);
             await startOrResumeAttempt(page, restrictedFixture);
             await answerCurrentSingleChoice(page, 0);
             await finishCurrentExam(page);
-            await page.goto('/');
+            await page.goto(e2eFrontendUrl(baseURL));
             await openResultFromConfirm(page, restrictedFixture.exam.title);
             await expect(page.locator('.cbt-result-card--restricted')).toBeVisible({ timeout: 20000 });
         });

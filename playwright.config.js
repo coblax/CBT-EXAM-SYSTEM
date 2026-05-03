@@ -26,7 +26,7 @@ module.exports = defineConfig({
     retries: 0,
     reporter: reporters,
     use: {
-        baseURL: process.env.CBT_E2E_BASE_URL || 'http://localhost/wordpress',
+        baseURL: process.env.CBT_E2E_WP_BASE_URL || process.env.CBT_E2E_BASE_URL || 'http://localhost/wordpress',
         headless: true,
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',

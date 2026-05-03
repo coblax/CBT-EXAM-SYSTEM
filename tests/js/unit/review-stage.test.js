@@ -139,6 +139,70 @@ describe('createReviewRenderer', function () {
         expect(markup).toContain('is-mismatch');
     });
 
+    it('renders object-map review rows for matching cloze and categorization', function () {
+        var renderer = createFixture([
+            {
+                question_number: 6,
+                question_text: '<p>Pasangkan</p>',
+                question_type: 'matching',
+                points: 4,
+                score_awarded: 2,
+                status: 'incorrect',
+                matching_rows: [
+                    {
+                        prompt_text: '<p>Ibu kota Jepang</p>',
+                        submitted_text: 'Seoul',
+                        correct_text: 'Tokyo',
+                        is_match: 0
+                    }
+                ]
+            },
+            {
+                question_number: 7,
+                question_text: '<p>Isi dropdown</p>',
+                question_type: 'cloze_dropdown',
+                points: 4,
+                score_awarded: 4,
+                status: 'correct',
+                cloze_dropdown_rows: [
+                    {
+                        key: '1',
+                        submitted_text: 'Tokyo',
+                        correct_text: 'Tokyo',
+                        is_match: 1
+                    }
+                ]
+            },
+            {
+                question_number: 8,
+                question_text: '<p>Kategorikan</p>',
+                question_type: 'categorization',
+                points: 4,
+                score_awarded: 2,
+                status: 'incorrect',
+                categorization_rows: [
+                    {
+                        item_text: '<strong>Kucing</strong>',
+                        submitted_text: 'Reptil',
+                        correct_text: 'Mamalia',
+                        is_match: 0
+                    }
+                ]
+            }
+        ]);
+
+        var markup = renderer.renderResultReviewSection();
+
+        expect(markup).toContain('<p>Ibu kota Jepang</p>');
+        expect(markup).toContain('Seoul');
+        expect(markup).toContain('Dropdown 1');
+        expect(markup).toContain('Tokyo');
+        expect(markup).toContain('<strong>Kucing</strong>');
+        expect(markup).toContain('Mamalia');
+        expect(markup).toContain('is-match');
+        expect(markup).toContain('is-mismatch');
+    });
+
     it('renders table completion review with per-cell status labels', function () {
         var renderer = createFixture([
             {

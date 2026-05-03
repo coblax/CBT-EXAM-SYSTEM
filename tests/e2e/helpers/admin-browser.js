@@ -3,9 +3,11 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { expect } = require('@playwright/test');
+const { expectVisibleWithE2EDiagnostic } = require('./e2e-diagnostics');
+const { e2eUrl } = require('./e2e-url');
 
 async function submitWpAdminLoginForm(page, adminUser) {
-    await expect(page.locator('#user_login')).toBeVisible({ timeout: 20000 });
+    await expectVisibleWithE2EDiagnostic(page, page.locator('#user_login'), 'Form login WordPress (#user_login)');
     await page.locator('#user_login').fill(String(adminUser.username || ''));
     await page.locator('#user_pass').fill(String(adminUser.password || ''));
     await page.locator('#wp-submit').click();
@@ -21,39 +23,39 @@ async function loginToWpAdmin(page, adminUser) {
         };
     }
 
-    await page.goto('/wp-admin/');
+    await page.goto(e2eUrl('wp-admin/'));
     if (await page.locator('#wpadminbar').count()) {
-        await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 20000 });
+        await expectVisibleWithE2EDiagnostic(page, page.locator('#wpadminbar'), 'Admin bar WordPress (#wpadminbar)');
         await page.waitForLoadState('networkidle').catch(() => {});
         return;
     }
 
     if (!await page.locator('#user_login').count()) {
-        await page.goto('/wp-login.php');
+        await page.goto(e2eUrl('wp-login.php'));
     }
 
     if (await page.locator('#wpadminbar').count()) {
-        await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 20000 });
+        await expectVisibleWithE2EDiagnostic(page, page.locator('#wpadminbar'), 'Admin bar WordPress (#wpadminbar)');
         await page.waitForLoadState('networkidle').catch(() => {});
         return;
     }
 
     await submitWpAdminLoginForm(page, adminUser);
-    await expect(page.locator('#wpadminbar')).toBeVisible({ timeout: 20000 });
+    await expectVisibleWithE2EDiagnostic(page, page.locator('#wpadminbar'), 'Admin bar WordPress setelah login (#wpadminbar)');
     await page.waitForLoadState('networkidle').catch(() => {});
 }
 
 async function openResultsPage(page, examId) {
     const nextUrl = examId && Number(examId) > 0
-        ? `/wp-admin/admin.php?page=cbt-results&cbt_exam_id=${Number(examId)}`
-        : '/wp-admin/admin.php?page=cbt-results';
+        ? `wp-admin/admin.php?page=cbt-results&cbt_exam_id=${Number(examId)}`
+        : 'wp-admin/admin.php?page=cbt-results';
     const resultsShell = page.locator('.cbt-results-page, #cbt-results-filter-card, #cbt-results-tab-btn-monitoring').first();
     const loginForm = page.locator('#user_login');
     const rememberedAdminUser = page.__cbtAdminUser && typeof page.__cbtAdminUser === 'object'
         ? page.__cbtAdminUser
         : null;
 
-    await page.goto(nextUrl, { waitUntil: 'domcontentloaded' });
+    await page.goto(e2eUrl(nextUrl), { waitUntil: 'domcontentloaded' });
 
     if (await loginForm.count()) {
         if (!rememberedAdminUser || !rememberedAdminUser.username || !rememberedAdminUser.password) {
@@ -65,7 +67,7 @@ async function openResultsPage(page, examId) {
     try {
         await expect(resultsShell).toBeVisible({ timeout: 10000 });
     } catch (error) {
-        await page.goto(nextUrl, { waitUntil: 'networkidle' }).catch(async () => {
+        await page.goto(e2eUrl(nextUrl), { waitUntil: 'networkidle' }).catch(async () => {
             await page.reload({ waitUntil: 'networkidle' });
         });
 
@@ -89,7 +91,7 @@ async function openResultsEssayTab(page, examId) {
 }
 
 async function openSetupSecurityLogPage(page) {
-    await page.goto('/wp-admin/admin.php?page=cbt-security#security-log');
+    await page.goto(e2eUrl('wp-admin/admin.php?page=cbt-security#security-log'));
     const tabButton = page.locator('#cbt-setup-tab-security-log').first();
     await expect(tabButton).toBeVisible({ timeout: 20000 });
     await tabButton.click({ force: true });
@@ -97,7 +99,7 @@ async function openSetupSecurityLogPage(page) {
 }
 
 async function openSetupSecurityNativePage(page) {
-    await page.goto('/wp-admin/admin.php?page=cbt-security#native');
+    await page.goto(e2eUrl('wp-admin/admin.php?page=cbt-security#native'));
     const tabButton = page.locator('#cbt-setup-tab-native').first();
     await expect(tabButton).toBeVisible({ timeout: 20000 });
     await tabButton.click({ force: true });
@@ -105,7 +107,7 @@ async function openSetupSecurityNativePage(page) {
 }
 
 async function openQuestionsImportPage(page) {
-    await page.goto('/wp-admin/admin.php?page=cbt-question-bank');
+    await page.goto(e2eUrl('wp-admin/admin.php?page=cbt-question-bank'));
     const importTab = page.locator('[data-cbt-questions-tab="import"]').first();
     await expect(importTab).toBeVisible({ timeout: 20000 });
     await importTab.click({ force: true });
@@ -113,7 +115,7 @@ async function openQuestionsImportPage(page) {
 }
 
 async function openQuestionsListPage(page) {
-    await page.goto('/wp-admin/admin.php?page=cbt-question-bank');
+    await page.goto(e2eUrl('wp-admin/admin.php?page=cbt-question-bank'));
     const listTab = page.locator('[data-cbt-questions-tab="list"]').first();
     await expect(listTab).toBeVisible({ timeout: 20000 });
     await listTab.click({ force: true });
@@ -121,7 +123,7 @@ async function openQuestionsListPage(page) {
 }
 
 async function openQuestionsFormPage(page) {
-    await page.goto('/wp-admin/admin.php?page=cbt-question-bank');
+    await page.goto(e2eUrl('wp-admin/admin.php?page=cbt-question-bank'));
     const formTab = page.locator('[data-cbt-questions-tab="form"]').first();
     await expect(formTab).toBeVisible({ timeout: 20000 });
     await formTab.click({ force: true });
@@ -134,7 +136,7 @@ async function openQuestionEditPage(page, questionId) {
         throw new Error('questionId tidak valid untuk openQuestionEditPage().');
     }
 
-    await page.goto(`/wp-admin/admin.php?page=cbt-question-bank&edit=${safeQuestionId}`);
+    await page.goto(e2eUrl(`wp-admin/admin.php?page=cbt-question-bank&edit=${safeQuestionId}`));
     await expect(page.locator('#cbt-question-manual-form')).toBeVisible({ timeout: 20000 });
     await expect(page.locator('input[name="id"]').first()).toHaveValue(String(safeQuestionId), { timeout: 20000 });
 }
@@ -606,7 +608,7 @@ function escapeDocxXmlText(value) {
 }
 
 async function openExamPreviewPage(page, examId) {
-    await page.goto(`/wp-admin/admin.php?page=cbt-exams&preview_exam_id=${Number(examId)}`);
+    await page.goto(e2eUrl(`wp-admin/admin.php?page=cbt-exams&preview_exam_id=${Number(examId)}`));
     await expect(page.locator('.cbt-admin-exam-preview-wrap')).toBeVisible({ timeout: 20000 });
 }
 

@@ -1230,6 +1230,64 @@ XML;
         self::assertNotContains('ITEM_3: Langkah ke-3', $orderingLines);
     }
 
+    public function test_build_word_template_lines_dynamic_extremes_keep_example_answers_valid(): void
+    {
+        $multipleChoiceMinLines = $this->invokeImportHelper('build_word_template_lines', ['multiple_choice', 10, ['option_count' => 3]]);
+        $multipleChoiceMaxLines = $this->invokeImportHelper('build_word_template_lines', ['multiple_choice', 10, ['option_count' => 99]]);
+        $multipleAnswerMinLines = $this->invokeImportHelper('build_word_template_lines', ['multiple_answer', 10, ['option_count' => 1]]);
+        $multipleAnswerMaxLines = $this->invokeImportHelper('build_word_template_lines', ['multiple_answer', 10, ['option_count' => 99]]);
+        $clozeMinLines = $this->invokeImportHelper('build_word_template_lines', ['cloze_dropdown', 10, [
+            'dropdown_count' => 1,
+            'dropdown_option_count' => 1,
+        ]]);
+        $clozeMaxLines = $this->invokeImportHelper('build_word_template_lines', ['cloze_dropdown', 10, [
+            'dropdown_count' => 99,
+            'dropdown_option_count' => 99,
+        ]]);
+        $categorizationMaxLines = $this->invokeImportHelper('build_word_template_lines', ['categorization', 10, [
+            'category_count' => 99,
+            'categorization_item_count' => 99,
+        ]]);
+        $tableMaxLines = $this->invokeImportHelper('build_word_template_lines', ['table_completion', 10, [
+            'table_rows' => 99,
+            'table_cols' => 99,
+        ]]);
+
+        self::assertContains('PILIHAN_3: Opsi C', $multipleChoiceMinLines);
+        self::assertNotContains('PILIHAN_4: Opsi D', $multipleChoiceMinLines);
+        self::assertContains('PILIHAN_5: Opsi E', $multipleChoiceMaxLines);
+        self::assertNotContains('PILIHAN_6: Opsi F', $multipleChoiceMaxLines);
+        $this->assertChoiceTemplateAnswersWithinOptionCount($multipleChoiceMinLines, 3);
+        $this->assertChoiceTemplateAnswersWithinOptionCount($multipleChoiceMaxLines, 5);
+
+        self::assertContains('PILIHAN_3: Pernyataan C', $multipleAnswerMinLines);
+        self::assertNotContains('PILIHAN_4: Pernyataan D', $multipleAnswerMinLines);
+        self::assertContains('PILIHAN_12: Pernyataan L', $multipleAnswerMaxLines);
+        self::assertNotContains('PILIHAN_13: Pernyataan M', $multipleAnswerMaxLines);
+        $this->assertChoiceTemplateAnswersWithinOptionCount($multipleAnswerMinLines, 3);
+        $this->assertChoiceTemplateAnswersWithinOptionCount($multipleAnswerMaxLines, 12);
+
+        self::assertContains('DROPDOWN_1_OPSI_2: Opsi 1B', $clozeMinLines);
+        self::assertNotContains('DROPDOWN_1_OPSI_3: Opsi 1C', $clozeMinLines);
+        self::assertStringNotContainsString('[DROPDOWN_2]', implode("\n", $clozeMinLines));
+        self::assertContains('DROPDOWN_8_OPSI_6: Opsi 8F', $clozeMaxLines);
+        self::assertNotContains('DROPDOWN_8_OPSI_7: Opsi 8G', $clozeMaxLines);
+        $this->assertDropdownTemplateAnswersWithinOptionCount($clozeMinLines, 2);
+        $this->assertDropdownTemplateAnswersWithinOptionCount($clozeMaxLines, 6);
+
+        self::assertContains('KATEGORI_8: Kategori 8', $categorizationMaxLines);
+        self::assertNotContains('KATEGORI_9: Kategori 9', $categorizationMaxLines);
+        self::assertContains('ITEM_24: Item 24', $categorizationMaxLines);
+        self::assertContains('KUNCI_24: 8', $categorizationMaxLines);
+        self::assertNotContains('ITEM_25: Item 25', $categorizationMaxLines);
+
+        self::assertContains('TABLE_ROWS: 8', $tableMaxLines);
+        self::assertContains('TABLE_COLS: 6', $tableMaxLines);
+        self::assertContains('CELL_F8_TYPE: static', $tableMaxLines);
+        self::assertNotContains('CELL_G1_TYPE: static', $tableMaxLines);
+        self::assertNotContains('CELL_A9_TYPE: static', $tableMaxLines);
+    }
+
     public function test_describe_docx_block_failure_reports_specific_reason_for_empty_correct_option(): void
     {
         $message = $this->invokeImportHelper('describe_docx_block_failure', [[
@@ -2360,6 +2418,50 @@ XML;
         self::assertIsString($bootstrapSource);
         self::assertStringNotContainsString("add_action('admin_post_cbt_download_question_template',", $bootstrapSource);
         self::assertStringNotContainsString("add_action('admin_post_cbt_download_question_template_xlsx',", $bootstrapSource);
+    }
+
+    /**
+     * @param string[] $lines
+     */
+    private function assertChoiceTemplateAnswersWithinOptionCount(array $lines, int $optionCount): void
+    {
+        $seenAnswerLine = false;
+        foreach ($lines as $line) {
+            if (preg_match('/^JAWABAN:\s*(.+)$/', trim((string) $line), $matches) !== 1) {
+                continue;
+            }
+
+            $seenAnswerLine = true;
+            $answers = preg_split('/\s*,\s*/', trim((string) ($matches[1] ?? '')));
+            self::assertIsArray($answers);
+            foreach ($answers as $answer) {
+                $answerIndex = (int) $answer;
+                self::assertGreaterThanOrEqual(1, $answerIndex, 'Template answer must point to an existing option.');
+                self::assertLessThanOrEqual($optionCount, $answerIndex, 'Template answer must not point past generated options.');
+            }
+        }
+
+        self::assertTrue($seenAnswerLine, 'Expected at least one JAWABAN line in generated choice template.');
+    }
+
+    /**
+     * @param string[] $lines
+     */
+    private function assertDropdownTemplateAnswersWithinOptionCount(array $lines, int $optionCount): void
+    {
+        $seenAnswerLine = false;
+        foreach ($lines as $line) {
+            if (preg_match('/^DROPDOWN_\d+_JAWABAN:\s*(\d+)$/', trim((string) $line), $matches) !== 1) {
+                continue;
+            }
+
+            $seenAnswerLine = true;
+            $answerIndex = (int) ($matches[1] ?? 0);
+            self::assertGreaterThanOrEqual(1, $answerIndex, 'Dropdown answer must point to an existing option.');
+            self::assertLessThanOrEqual($optionCount, $answerIndex, 'Dropdown answer must not point past generated options.');
+        }
+
+        self::assertTrue($seenAnswerLine, 'Expected at least one DROPDOWN_n_JAWABAN line in generated cloze template.');
     }
 
     private function invokeImportHelper(string $method, array $args): mixed

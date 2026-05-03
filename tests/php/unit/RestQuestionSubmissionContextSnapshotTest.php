@@ -149,6 +149,166 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_evaluate_answer_from_submission_context_covers_all_legacy_and_new_question_types(): void
+    {
+        $this->bootstrapRestScaffold();
+
+        $method = new ReflectionMethod('CBT_REST', 'evaluate_answer_from_submission_context');
+        $method->setAccessible(true);
+
+        $base = [
+            'exam_id' => 90,
+            'correct_option_ids' => [],
+            'true_false_correct_value' => null,
+            'true_false_option_value_by_id' => [],
+            'short_answer_values' => [],
+            'ordering_correct_option_ids' => [],
+            'true_false_matrix_answers' => [],
+            'matching_correct_option_ids_by_key' => [],
+            'cloze_dropdown_correct_option_ids_by_key' => [],
+            'categorization_correct_option_ids_by_key' => [],
+            'table_completion_answers_by_key' => [],
+        ];
+
+        $scenarios = [
+            'multiple_choice' => [
+                'context' => array_merge($base, [
+                    'id' => 501,
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'correct_option_ids' => [11],
+                ]),
+                'answer' => 11,
+                'is_correct' => 1,
+                'score_awarded' => 5.0,
+            ],
+            'multiple_answer' => [
+                'context' => array_merge($base, [
+                    'id' => 502,
+                    'question_type' => 'multiple_answer',
+                    'points' => 6,
+                    'correct_option_ids' => [21, 23],
+                ]),
+                'answer' => [23, 21, 21],
+                'is_correct' => 1,
+                'score_awarded' => 6.0,
+            ],
+            'true_false' => [
+                'context' => array_merge($base, [
+                    'id' => 503,
+                    'question_type' => 'true_false',
+                    'points' => 2,
+                    'true_false_correct_value' => 1,
+                    'true_false_option_value_by_id' => ['31' => 1, '32' => 0],
+                ]),
+                'answer' => 'true',
+                'is_correct' => 1,
+                'score_awarded' => 2.0,
+            ],
+            'true_false_matrix' => [
+                'context' => array_merge($base, [
+                    'id' => 504,
+                    'question_type' => 'true_false_matrix',
+                    'points' => 4,
+                    'true_false_matrix_answers' => ['1' => 'true', '2' => 'false'],
+                ]),
+                'answer' => ['1' => 'true', '2' => 'false'],
+                'is_correct' => 1,
+                'score_awarded' => 4.0,
+            ],
+            'short_answer' => [
+                'context' => array_merge($base, [
+                    'id' => 505,
+                    'question_type' => 'short_answer',
+                    'points' => 3,
+                    'short_answer_values' => ['Jakarta', 'Tokyo'],
+                ]),
+                'answer' => ['input_a' => ' jakarta. ', 'input_b' => 'Tokyo'],
+                'is_correct' => 1,
+                'score_awarded' => 6.0,
+            ],
+            'essay' => [
+                'context' => array_merge($base, [
+                    'id' => 506,
+                    'question_type' => 'essay',
+                    'points' => 10,
+                ]),
+                'answer' => '  Jawaban esai siswa.  ',
+                'is_correct' => null,
+                'score_awarded' => 0.0,
+                'answer_text' => 'Jawaban esai siswa.',
+            ],
+            'ordering' => [
+                'context' => array_merge($base, [
+                    'id' => 507,
+                    'question_type' => 'ordering',
+                    'points' => 5,
+                    'ordering_correct_option_ids' => [41, 42, 43],
+                ]),
+                'answer' => [41, 42, 43],
+                'is_correct' => 1,
+                'score_awarded' => 5.0,
+            ],
+            'matching' => [
+                'context' => array_merge($base, [
+                    'id' => 508,
+                    'question_type' => 'matching',
+                    'points' => 4,
+                    'matching_correct_option_ids_by_key' => ['1' => 101, '2' => 102],
+                ]),
+                'answer' => ['1' => 101, '2' => 102],
+                'is_correct' => 1,
+                'score_awarded' => 4.0,
+            ],
+            'cloze_dropdown' => [
+                'context' => array_merge($base, [
+                    'id' => 509,
+                    'question_type' => 'cloze_dropdown',
+                    'points' => 4,
+                    'cloze_dropdown_correct_option_ids_by_key' => ['1' => 201, '2' => 202],
+                ]),
+                'answer' => ['1' => 201, '2' => 202],
+                'is_correct' => 1,
+                'score_awarded' => 4.0,
+            ],
+            'categorization' => [
+                'context' => array_merge($base, [
+                    'id' => 510,
+                    'question_type' => 'categorization',
+                    'points' => 6,
+                    'categorization_correct_option_ids_by_key' => ['1' => 301, '2' => 302, '3' => 301],
+                ]),
+                'answer' => ['1' => 301, '2' => 302, '3' => 301],
+                'is_correct' => 1,
+                'score_awarded' => 6.0,
+            ],
+            'table_completion' => [
+                'context' => array_merge($base, [
+                    'id' => 511,
+                    'question_type' => 'table_completion',
+                    'points' => 8,
+                    'table_completion_answers_by_key' => [
+                        'A1' => ['cell_type' => 'text', 'correct_values' => ['Tokyo']],
+                        'B1' => ['cell_type' => 'dropdown', 'correct_option_id' => 402],
+                    ],
+                ]),
+                'answer' => ['A1' => ' tokyo. ', 'B1' => 402],
+                'is_correct' => 1,
+                'score_awarded' => 8.0,
+            ],
+        ];
+
+        foreach ($scenarios as $label => $scenario) {
+            $result = $method->invoke(null, $scenario['context'], $scenario['answer']);
+            self::assertSame($scenario['is_correct'], $result['is_correct'], $label . ' correctness mismatch');
+            self::assertSame($scenario['score_awarded'], $result['score_awarded'], $label . ' score mismatch');
+            if (array_key_exists('answer_text', $scenario)) {
+                self::assertSame($scenario['answer_text'], $result['answer_text'], $label . ' answer text mismatch');
+            }
+        }
+    }
+
+    #[RunInSeparateProcess]
     public function test_evaluate_answer_from_submission_context_scores_matching_and_cloze_dropdown_partially(): void
     {
         $this->bootstrapRestScaffold();
@@ -186,7 +346,10 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
         $matchingFull = $method->invoke(null, $matchingContext, ['1' => 101, '2' => 102]);
         $matchingPartial = $method->invoke(null, $matchingContext, ['1' => 101, '2' => 999]);
         $matchingForeignKey = $method->invoke(null, $matchingContext, ['1' => 101, 'x' => 102]);
+        $matchingEmpty = $method->invoke(null, $matchingContext, []);
+        $matchingInvalidIds = $method->invoke(null, $matchingContext, ['1' => 0, '2' => 999]);
         $clozePartial = $method->invoke(null, $clozeContext, '{"1":301}');
+        $clozeForeignKey = $method->invoke(null, $clozeContext, ['1' => 301, 'x' => 302]);
 
         self::assertSame(1, $matchingFull['is_correct']);
         self::assertSame(4.0, $matchingFull['score_awarded']);
@@ -194,9 +357,16 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
         self::assertSame(2.0, $matchingPartial['score_awarded']);
         self::assertSame(0, $matchingForeignKey['is_correct']);
         self::assertSame(2.0, $matchingForeignKey['score_awarded']);
+        self::assertSame(0, $matchingEmpty['is_correct']);
+        self::assertSame(0.0, $matchingEmpty['score_awarded']);
+        self::assertNull($matchingEmpty['answer_text']);
+        self::assertSame(0, $matchingInvalidIds['is_correct']);
+        self::assertSame(0.0, $matchingInvalidIds['score_awarded']);
         self::assertSame(0, $clozePartial['is_correct']);
         self::assertSame(3.0, $clozePartial['score_awarded']);
         self::assertSame('{"1":301}', $clozePartial['answer_text']);
+        self::assertSame(0, $clozeForeignKey['is_correct']);
+        self::assertSame(3.0, $clozeForeignKey['score_awarded']);
     }
 
     #[RunInSeparateProcess]
@@ -249,18 +419,30 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
 
         $categorizationPartial = $method->invoke(null, $categorizationContext, ['1' => 501, '2' => 999, '3' => 501]);
         $categorizationForeignKey = $method->invoke(null, $categorizationContext, ['1' => 501, 'x' => 502]);
+        $categorizationEmpty = $method->invoke(null, $categorizationContext, []);
         $tablePartial = $method->invoke(null, $tableContext, ['A1' => '  tokyo. ', 'B1' => 999]);
         $tableFull = $method->invoke(null, $tableContext, '{"A1":"Tokyo","B1":602}');
+        $tableForeignKey = $method->invoke(null, $tableContext, ['A1' => 'Tokyo', 'Z9' => 'Tokyo']);
+        $tableEmpty = $method->invoke(null, $tableContext, []);
 
         self::assertSame(0, $categorizationPartial['is_correct']);
         self::assertSame(4.0, $categorizationPartial['score_awarded']);
         self::assertSame(0, $categorizationForeignKey['is_correct']);
         self::assertSame(2.0, $categorizationForeignKey['score_awarded']);
+        self::assertSame(0, $categorizationEmpty['is_correct']);
+        self::assertSame(0.0, $categorizationEmpty['score_awarded']);
+        self::assertNull($categorizationEmpty['answer_text']);
         self::assertSame(0, $tablePartial['is_correct']);
         self::assertSame(4.0, $tablePartial['score_awarded']);
         self::assertSame(1, $tableFull['is_correct']);
         self::assertSame(8.0, $tableFull['score_awarded']);
         self::assertSame('{"A1":"Tokyo","B1":602}', $tableFull['answer_text']);
+        self::assertSame(0, $tableForeignKey['is_correct']);
+        self::assertSame(4.0, $tableForeignKey['score_awarded']);
+        self::assertSame('{"A1":"Tokyo","Z9":"Tokyo"}', $tableForeignKey['answer_text']);
+        self::assertSame(0, $tableEmpty['is_correct']);
+        self::assertSame(0.0, $tableEmpty['score_awarded']);
+        self::assertNull($tableEmpty['answer_text']);
     }
 
     private function bootstrapRestScaffold(): void

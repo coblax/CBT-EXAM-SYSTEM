@@ -15,9 +15,10 @@
     "test:js": "vitest run",
     "test:js:watch": "vitest",
     "test:js:coverage": "vitest run --coverage",
-    "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers PLAYWRIGHT_OUTPUT_DIR=playwright-results/cli playwright test",
-    "test:e2e:headed": "PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers PLAYWRIGHT_OUTPUT_DIR=playwright-results/cli playwright test --headed",
-    "test:e2e:ui": "PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers PLAYWRIGHT_OUTPUT_DIR=playwright-results/cli playwright test --ui",
+    "test:e2e": "node bin/run-e2e.mjs",
+    "test:e2e:check": "node bin/check-e2e-readiness.mjs",
+    "test:e2e:headed": "node bin/run-e2e.mjs --headed",
+    "test:e2e:ui": "node bin/run-e2e.mjs --ui",
     "test:e2e:recovery": "PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers PLAYWRIGHT_OUTPUT_DIR=playwright-results/cli node tests/e2e/run-recovery-flow.mjs",
     "playwright:install:chromium": "PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers playwright install chromium"
   },
