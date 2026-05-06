@@ -363,6 +363,60 @@ describe('createAnswerSyncManager', function () {
         expect(fixture.state.syncBlockingReason).toBe('');
     });
 
+    it('reports unique pending sync question ids from queued and in-flight batches', async function () {
+        var resolveBatch;
+        var payloadByQuestion = {
+            101: { selected: 501 },
+            102: { selected: 601 }
+        };
+        var fixture = createFixture({
+            apiRequest: async function () {
+                return new Promise(function (resolve) {
+                    resolveBatch = resolve;
+                });
+            },
+            getQuestionById: function (questionId) {
+                return {
+                    id: Number(questionId) || 0,
+                    question_type: 'multiple_choice'
+                };
+            },
+            payloadSignature: function (payload) {
+                return JSON.stringify(payload || null);
+            },
+            questionAnswerPayload: function (question) {
+                return payloadByQuestion[Number(question && question.id) || 0] || null;
+            }
+        });
+        var question101 = { id: 101, question_type: 'multiple_choice' };
+        var question102 = { id: 102, question_type: 'multiple_choice' };
+
+        expect(fixture.manager.queueQuestionAnswer(question101)).toBe(true);
+        expect(fixture.manager.queueQuestionAnswer(question102)).toBe(true);
+        expect(fixture.manager.getPendingSyncQuestionIds()).toEqual([101, 102]);
+
+        var flushPromise = fixture.manager.flushPendingAnswerBatch();
+        expect(fixture.manager.getPendingSyncQuestionIds()).toEqual([101, 102]);
+
+        expect(fixture.manager.queueQuestionAnswer(question101)).toBe(true);
+        expect(fixture.manager.getPendingSyncQuestionIds()).toEqual([101, 102]);
+
+        resolveBatch({
+            attempt_id: 55,
+            accepted_count: 2,
+            buffered: 0,
+            flushed: 2,
+            pending_count: 0,
+            items: [
+                { question_id: 101, is_correct: 1, score_awarded: 1, deferred: 0, cleared: 0 },
+                { question_id: 102, is_correct: 1, score_awarded: 1, deferred: 0, cleared: 0 }
+            ]
+        });
+        await flushPromise;
+
+        expect(fixture.manager.getPendingSyncQuestionIds()).toEqual([101]);
+    });
+
     it('restores sparse autosave snapshots and empty question payload maps without crashing', function () {
         var fixture = createFixture({
             state: {

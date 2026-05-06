@@ -3348,6 +3348,34 @@ final class CBT_Admin_Analytics_Service
                 $effective_max_score = max(0.0, (float) ($question['points'] ?? 0.0)) * count($short_answer_correct_answers);
                 $is_partial_credit = true;
             } elseif ($question_type === 'true_false_matrix') {
+                $matrix_count = count($matrix_items);
+                if ($matrix_count > 0) {
+                    $effective_max_score = max(0.0, (float) ($question['points'] ?? 0.0)) * $matrix_count;
+                }
+                $is_partial_credit = true;
+            } elseif ($question_type === 'matching') {
+                $item_count = count((array) ($detail['items'] ?? []));
+                if ($item_count > 0) {
+                    $effective_max_score = max(0.0, (float) ($question['points'] ?? 0.0)) * $item_count;
+                }
+                $is_partial_credit = true;
+            } elseif ($question_type === 'cloze_dropdown') {
+                $blank_count = count((array) ($detail['blanks'] ?? []));
+                if ($blank_count > 0) {
+                    $effective_max_score = max(0.0, (float) ($question['points'] ?? 0.0)) * $blank_count;
+                }
+                $is_partial_credit = true;
+            } elseif ($question_type === 'categorization') {
+                $item_count = count((array) ($detail['items'] ?? []));
+                if ($item_count > 0) {
+                    $effective_max_score = max(0.0, (float) ($question['points'] ?? 0.0)) * $item_count;
+                }
+                $is_partial_credit = true;
+            } elseif ($question_type === 'table_completion') {
+                $answer_cell_count = self::count_table_completion_answer_cells((array) ($detail['cells'] ?? []));
+                if ($answer_cell_count > 0) {
+                    $effective_max_score = max(0.0, (float) ($question['points'] ?? 0.0)) * $answer_cell_count;
+                }
                 $is_partial_credit = true;
             }
 
@@ -3949,6 +3977,22 @@ final class CBT_Admin_Analytics_Service
         }
 
         return (string) wp_trim_words($plain, 16, '...');
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $cells
+     */
+    private static function count_table_completion_answer_cells(array $cells): int
+    {
+        $count = 0;
+        foreach ($cells as $cell_row) {
+            $cell = (array) $cell_row;
+            if (in_array((string) ($cell['cell_type'] ?? 'static'), ['text', 'dropdown'], true)) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     private static function format_question_type_label(string $questionType): string

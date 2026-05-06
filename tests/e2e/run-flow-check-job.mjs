@@ -60,7 +60,18 @@ function readJobFile(jobFilePath) {
 
 function writeJobFile(jobFilePath, payload) {
     fs.mkdirSync(path.dirname(jobFilePath), { recursive: true, mode: 0o777 });
-    fs.writeFileSync(jobFilePath, JSON.stringify(payload, null, 2));
+    const tempPath = path.join(
+        path.dirname(jobFilePath),
+        `.${path.basename(jobFilePath)}.${process.pid}.${Date.now()}.tmp`
+    );
+
+    fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2));
+    try {
+        fs.chmodSync(tempPath, 0o666);
+    } catch (error) {
+        // Best effort only.
+    }
+    fs.renameSync(tempPath, jobFilePath);
     try {
         fs.chmodSync(jobFilePath, 0o666);
     } catch (error) {

@@ -20,7 +20,12 @@ export function createExamNavigationManager(deps) {
             return questionNumber > 0 ? questionNumber : Math.max(1, Math.floor(Number(fallbackIndex) || 0) + 1);
         };
     var getQuestionIdAtIndex = deps.getQuestionIdAtIndex;
+    var getCategorizationItems = typeof deps.getCategorizationItems === 'function' ? deps.getCategorizationItems : function () { return []; };
+    var getClozeDropdownBlanks = typeof deps.getClozeDropdownBlanks === 'function' ? deps.getClozeDropdownBlanks : function () { return []; };
+    var getMatchingItems = typeof deps.getMatchingItems === 'function' ? deps.getMatchingItems : function () { return []; };
+    var getPendingSyncQuestionIds = typeof deps.getPendingSyncQuestionIds === 'function' ? deps.getPendingSyncQuestionIds : function () { return []; };
     var getShortAnswerKeys = deps.getShortAnswerKeys;
+    var getTableCompletionCells = typeof deps.getTableCompletionCells === 'function' ? deps.getTableCompletionCells : function () { return []; };
     var getTrueFalseMatrixItems = deps.getTrueFalseMatrixItems;
     var hasUsableLocalAnswerForQuestion = deps.hasUsableLocalAnswerForQuestion;
     var isExamAnswerEditingLocked = deps.isExamAnswerEditingLocked;
@@ -31,6 +36,8 @@ export function createExamNavigationManager(deps) {
     var navQuestionFilterDoubtful = deps.navQuestionFilterDoubtful;
     var navQuestionFilterUnanswered = deps.navQuestionFilterUnanswered;
     var navigationQuestionTypeBadgeConfig = deps.navigationQuestionTypeBadgeConfig;
+    var normalizeDropdownOptionAnswer = typeof deps.normalizeDropdownOptionAnswer === 'function' ? deps.normalizeDropdownOptionAnswer : function () { return {}; };
+    var normalizeTableCompletionAnswer = typeof deps.normalizeTableCompletionAnswer === 'function' ? deps.normalizeTableCompletionAnswer : function () { return {}; };
     var normalizeTrueFalseMatrixAnswer = deps.normalizeTrueFalseMatrixAnswer;
     var persistCurrentAttemptUiStateLocally = deps.persistCurrentAttemptUiStateLocally;
     var prefetchNextQuestionBatch = deps.prefetchNextQuestionBatch;
@@ -88,18 +95,119 @@ export function createExamNavigationManager(deps) {
         return !!state.doubtful[question.id];
     }
 
+    function countObjectKeys(value) {
+        return value && typeof value === 'object' && !Array.isArray(value)
+            ? Object.keys(value).length
+            : 0;
+    }
+
+    function buildAnswerProgress(answered, total) {
+        var safeTotal = Math.max(0, Number(total) || 0);
+        var safeAnswered = Math.max(0, Number(answered) || 0);
+        if (safeTotal > 0) {
+            safeAnswered = Math.min(safeAnswered, safeTotal);
+        }
+        var status = 'empty';
+        if (safeTotal > 0 && safeAnswered >= safeTotal) {
+            status = 'complete';
+        } else if (safeAnswered > 0) {
+            status = 'partial';
+        }
+
+        return {
+            answered: safeAnswered,
+            total: safeTotal,
+            label: safeTotal > 0 ? (String(safeAnswered) + '/' + String(safeTotal)) : '',
+            status: status
+        };
+    }
+
+    function resolveNavigationAnswer(question) {
+        var questionId = Number(question && question.id) || 0;
+        var hasLocalAnswer = hasUsableLocalAnswerForQuestion(questionId, question);
+        return {
+            answer: hasLocalAnswer ? state.answers[questionId] : resolveStoredAnswerValueForQuestion(question),
+            hasLocalAnswer: hasLocalAnswer,
+            questionId: questionId
+        };
+    }
+
+    function getStructuredAnswerProgress(question, answer) {
+        if (!question) {
+            return null;
+        }
+
+        var type = String(question.question_type || '');
+        if (type === 'short_answer') {
+            var shortAnswerKeys = getShortAnswerKeys(question);
+            var shortAnswerCount = answer && typeof answer === 'object' && !Array.isArray(answer)
+                ? shortAnswerKeys.reduce(function (acc, key) {
+                    return acc + (String(answer[key] || '').trim() !== '' ? 1 : 0);
+                }, 0)
+                : 0;
+            return buildAnswerProgress(shortAnswerCount, shortAnswerKeys.length);
+        }
+
+        if (type === 'true_false_matrix') {
+            var matrixItems = getTrueFalseMatrixItems(question);
+            var matrixAnswer = normalizeTrueFalseMatrixAnswer(answer);
+            var matrixAnsweredCount = matrixItems.reduce(function (acc, item) {
+                var value = String(matrixAnswer[item.key] || '').trim().toLowerCase();
+                return acc + ((value === 'true' || value === 'false') ? 1 : 0);
+            }, 0);
+            return buildAnswerProgress(matrixAnsweredCount, matrixItems.length);
+        }
+
+        if (type === 'matching') {
+            var matchingItems = getMatchingItems(question);
+            return buildAnswerProgress(countObjectKeys(normalizeDropdownOptionAnswer(question, answer, type)), matchingItems.length);
+        }
+
+        if (type === 'cloze_dropdown') {
+            var clozeBlanks = getClozeDropdownBlanks(question);
+            return buildAnswerProgress(countObjectKeys(normalizeDropdownOptionAnswer(question, answer, type)), clozeBlanks.length);
+        }
+
+        if (type === 'categorization') {
+            var categorizationItems = getCategorizationItems(question);
+            return buildAnswerProgress(countObjectKeys(normalizeDropdownOptionAnswer(question, answer, type)), categorizationItems.length);
+        }
+
+        if (type === 'table_completion') {
+            var answerCells = getTableCompletionCells(question).filter(function (cell) {
+                var cellType = String(cell && cell.type ? cell.type : 'static');
+                var cellKey = String(cell && cell.key ? cell.key : '').trim();
+                return cellKey !== '' && (cellType === 'text' || cellType === 'dropdown');
+            });
+            return buildAnswerProgress(countObjectKeys(normalizeTableCompletionAnswer(question, answer)), answerCells.length);
+        }
+
+        return null;
+    }
+
     function isQuestionAnswered(question) {
         if (!question) {
             return false;
         }
 
-        var questionId = Number(question.id) || 0;
-        var hasLocalAnswer = hasUsableLocalAnswerForQuestion(questionId, question);
-        var answer = hasLocalAnswer ? state.answers[questionId] : resolveStoredAnswerValueForQuestion(question);
+        var resolvedAnswer = resolveNavigationAnswer(question);
+        var structuredProgress = getStructuredAnswerProgress(question, resolvedAnswer.answer);
 
-        if (!hasLocalAnswer) {
-            return !!(state.answeredQuestionLookup && state.answeredQuestionLookup[questionId]);
+        if (structuredProgress) {
+            if (structuredProgress.answered > 0) {
+                return true;
+            }
+            if (!resolvedAnswer.hasLocalAnswer) {
+                return !!(state.answeredQuestionLookup && state.answeredQuestionLookup[resolvedAnswer.questionId]);
+            }
+            return false;
         }
+
+        if (!resolvedAnswer.hasLocalAnswer) {
+            return !!(state.answeredQuestionLookup && state.answeredQuestionLookup[resolvedAnswer.questionId]);
+        }
+
+        var answer = resolvedAnswer.answer;
 
         if (question.question_type === 'multiple_choice' || question.question_type === 'true_false') {
             return Number(answer) > 0;
@@ -207,12 +315,22 @@ export function createExamNavigationManager(deps) {
         var doubtfulQuestions = 0;
         var unansweredQuestionItems = [];
         var doubtfulQuestionItems = [];
+        var partialQuestionItems = [];
+        var pendingSyncQuestionItems = [];
 
         var summaryQuestionIds = Array.isArray(state.questionOrderIds) && state.questionOrderIds.length
             ? state.questionOrderIds
             : (Array.isArray(state.questionManifest) && state.questionManifest.length
                 ? state.questionManifest.map(function (question) { return Number(question && question.id) || 0; })
                 : state.questions.map(function (question) { return Number(question && question.id) || 0; }));
+        var pendingSyncQuestionLookup = {};
+        var pendingSyncQuestionIds = getPendingSyncQuestionIds();
+        (Array.isArray(pendingSyncQuestionIds) ? pendingSyncQuestionIds : []).forEach(function (questionId) {
+            var safeQuestionId = Number(questionId) || 0;
+            if (safeQuestionId > 0) {
+                pendingSyncQuestionLookup[safeQuestionId] = true;
+            }
+        });
 
         summaryQuestionIds.forEach(function (questionId, questionIndex) {
             var question = getQuestionById(questionId);
@@ -226,14 +344,25 @@ export function createExamNavigationManager(deps) {
                 number: questionDisplayNumber,
                 label: String(questionDisplayNumber)
             };
+            var resolvedAnswer = resolveNavigationAnswer(question);
+            var answerProgress = getStructuredAnswerProgress(question, resolvedAnswer.answer);
             if (isQuestionAnswered(question)) {
                 answeredQuestions += 1;
             } else {
                 unansweredQuestionItems.push(questionItem);
             }
+            if (answerProgress && answerProgress.status === 'partial') {
+                partialQuestionItems.push(Object.assign({}, questionItem, {
+                    progressLabel: answerProgress.label,
+                    status: answerProgress.status
+                }));
+            }
             if (isQuestionDoubtful(question)) {
                 doubtfulQuestions += 1;
                 doubtfulQuestionItems.push(questionItem);
+            }
+            if (pendingSyncQuestionLookup[Number(question.id) || Number(questionId) || 0]) {
+                pendingSyncQuestionItems.push(questionItem);
             }
         });
 
@@ -247,8 +376,12 @@ export function createExamNavigationManager(deps) {
             doubtfulQuestions: doubtfulQuestions,
             unansweredQuestionItems: unansweredQuestionItems,
             doubtfulQuestionItems: doubtfulQuestionItems,
+            partialQuestionItems: partialQuestionItems,
+            pendingSyncQuestionItems: pendingSyncQuestionItems,
             unansweredQuestionNumbers: unansweredQuestionItems.map(function (item) { return item.label; }),
             doubtfulQuestionNumbers: doubtfulQuestionItems.map(function (item) { return item.label; }),
+            partialQuestionNumbers: partialQuestionItems.map(function (item) { return item.label; }),
+            pendingSyncQuestionNumbers: pendingSyncQuestionItems.map(function (item) { return item.label; }),
             answeredPercentage: answeredPercentage
         };
     }
@@ -261,6 +394,7 @@ export function createExamNavigationManager(deps) {
         var type = String(question.question_type || '');
         var options = Array.isArray(question.options) ? question.options : [];
         var answer = resolveStoredAnswerValueForQuestion(question);
+        var structuredProgress = getStructuredAnswerProgress(question, answer);
 
         if (type === 'multiple_choice') {
             var selectedOptionId = Number(answer) || 0;
@@ -349,29 +483,23 @@ export function createExamNavigationManager(deps) {
             return [String(orderingCount) + '/' + String(options.length)];
         }
 
-        if (type === 'true_false_matrix') {
-            var matrixItems = getTrueFalseMatrixItems(question);
-            var matrixAnswer = normalizeTrueFalseMatrixAnswer(answer);
-            var answeredCount = matrixItems.reduce(function (acc, item) {
-                var value = String(matrixAnswer[item.key] || '').trim().toLowerCase();
-                return acc + ((value === 'true' || value === 'false') ? 1 : 0);
-            }, 0);
-            if (!matrixItems.length || answeredCount <= 0) {
+        if (structuredProgress) {
+            if (!structuredProgress || structuredProgress.total <= 0 || structuredProgress.answered <= 0) {
                 return [];
             }
-            return [String(answeredCount) + '/' + String(matrixItems.length)];
-        }
-
-        if (type === 'short_answer') {
-            if (!answer || typeof answer !== 'object') {
-                return [];
-            }
-            return getShortAnswerKeys(question).filter(function (key) {
-                return String(answer[key] || '').trim() !== '';
-            });
+            return [structuredProgress.label];
         }
 
         return [];
+    }
+
+    function getNavigationAnswerBadgeStatus(question, keyText) {
+        var answer = resolveStoredAnswerValueForQuestion(question);
+        var structuredProgress = getStructuredAnswerProgress(question, answer);
+        if (!structuredProgress || structuredProgress.total <= 0 || structuredProgress.answered <= 0) {
+            return '';
+        }
+        return String(keyText || '') === structuredProgress.label ? structuredProgress.status : '';
     }
 
     function renderNavigationAnswerBadges(question) {
@@ -392,6 +520,12 @@ export function createExamNavigationManager(deps) {
             visibleKeys.map(function (key) {
                 var keyText = String(key || '').trim();
                 var badgeClass = 'cbt-nav-answer-badge' + (keyText.length > 2 ? ' is-long' : '');
+                var badgeStatus = getNavigationAnswerBadgeStatus(question, keyText);
+                if (badgeStatus === 'partial') {
+                    badgeClass += ' is-partial';
+                } else if (badgeStatus === 'complete') {
+                    badgeClass += ' is-complete';
+                }
                 return '<span class="' + badgeClass + '">' + escapeHtml(keyText) + '</span>';
             }).join(''),
             '</span>'
@@ -579,8 +713,21 @@ export function createExamNavigationManager(deps) {
         var reviewFilter = action === 'finish-review-doubtful'
             ? navQuestionFilterDoubtful
             : navQuestionFilterUnanswered;
-        var reviewEntries = getNavigationQuestionEntries(reviewFilter);
-        var targetIndex = reviewEntries.length ? clampQuestionIndex(reviewEntries[0].index) : -1;
+        var reviewEntries = [];
+        var targetIndex = -1;
+
+        if (action === 'finish-review-partial') {
+            reviewFilter = navQuestionFilterAll;
+            var partialQuestionItems = getExamProgressSummary().partialQuestionItems;
+            targetIndex = partialQuestionItems.length ? clampQuestionIndex(partialQuestionItems[0].index) : -1;
+        } else if (action === 'finish-review-pending-sync') {
+            reviewFilter = navQuestionFilterAll;
+            var pendingSyncQuestionItems = getExamProgressSummary().pendingSyncQuestionItems;
+            targetIndex = pendingSyncQuestionItems.length ? clampQuestionIndex(pendingSyncQuestionItems[0].index) : -1;
+        } else {
+            reviewEntries = getNavigationQuestionEntries(reviewFilter);
+            targetIndex = reviewEntries.length ? clampQuestionIndex(reviewEntries[0].index) : -1;
+        }
         state.finishConfirmOpen = false;
         state.finishConfirmSummary = null;
         state.navQuestionFilter = reviewFilter;
@@ -645,7 +792,7 @@ export function createExamNavigationManager(deps) {
     }
 
     function handleAction(action, actionNode) {
-        if (action === 'finish-review-unanswered' || action === 'finish-review-doubtful') {
+        if (action === 'finish-review-unanswered' || action === 'finish-review-partial' || action === 'finish-review-doubtful' || action === 'finish-review-pending-sync') {
             focusFinishReviewIssue(action);
             return true;
         }

@@ -157,6 +157,28 @@ export function createAnswerSyncManager(deps) {
         return Object.keys(pendingLookup).length;
     }
 
+    function getPendingSyncQuestionIds() {
+        var pendingLookup = Object.keys(pendingAnswerBatchByQuestion || {}).reduce(function (lookup, key) {
+            var questionId = Number(key) || 0;
+            if (questionId > 0) {
+                lookup[questionId] = true;
+            }
+            return lookup;
+        }, {});
+
+        (Array.isArray(answerBatchInFlightItems) ? answerBatchInFlightItems : []).forEach(function (item) {
+            var questionId = Number(item && item.question_id) || 0;
+            if (questionId > 0) {
+                pendingLookup[questionId] = true;
+            }
+        });
+
+        return Object.keys(pendingLookup)
+            .map(function (key) { return Number(key) || 0; })
+            .filter(function (questionId) { return questionId > 0; })
+            .sort(function (left, right) { return left - right; });
+    }
+
     function resolveSyncBlockingReason() {
         var pendingSyncForced = diagnosticsManager
             && diagnosticsManager.enabled
@@ -1340,6 +1362,7 @@ export function createAnswerSyncManager(deps) {
         getAutoSaveState: getAutoSaveState,
         getQuestionSaveFeedback: getQuestionSaveFeedback,
         getPendingAnswerBatchCount: getPendingAnswerBatchCount,
+        getPendingSyncQuestionIds: getPendingSyncQuestionIds,
         handleRecoverableAnswerSyncFailure: handleRecoverableAnswerSyncFailure,
         hasFlushInFlight: hasFlushInFlight,
         hasPendingBatchItems: hasPendingBatchItems,

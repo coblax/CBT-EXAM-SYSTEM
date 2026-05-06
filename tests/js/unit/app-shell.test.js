@@ -326,12 +326,22 @@ describe('createAppShellManager rich zoom modal', function () {
                     doubtfulQuestionItems: [
                         { index: 1, label: '2', questionId: 102 }
                     ],
+                    partialQuestionItems: [
+                        { index: 0, label: '1', progressLabel: '2/4', questionId: 101, status: 'partial' },
+                        { index: 2, label: '3', progressLabel: '1/3', questionId: 103, status: 'partial' }
+                    ],
+                    partialQuestionNumbers: ['1', '3'],
                     totalQuestions: 5,
                     unansweredQuestions: 2,
                     unansweredQuestionItems: [
                         { index: 3, label: '4', questionId: 104 },
                         { index: 4, label: '5', questionId: 105 }
-                    ]
+                    ],
+                    pendingSyncQuestionItems: [
+                        { index: 0, label: '1', questionId: 101 },
+                        { index: 2, label: '3', questionId: 103 }
+                    ],
+                    pendingSyncQuestionNumbers: ['1', '3']
                 };
             }
         });
@@ -342,11 +352,21 @@ describe('createAppShellManager rich zoom modal', function () {
         expect(html).toContain('Offline / lokal aman');
         expect(html).toContain('2 jawaban menunggu koneksi.');
         expect(html).toContain('Masih ada 2 soal belum dijawab.');
+        expect(html).toContain('Ada 2 soal dengan jawaban parsial.');
         expect(html).toContain('Ada 1 soal ditandai ragu-ragu.');
+        expect(html).toContain('Soal 1, 3 masih menunggu sinkronisasi.');
         expect(html).toContain('data-action="finish-review-unanswered"');
+        expect(html).toContain('data-action="finish-review-partial"');
         expect(html).toContain('data-action="finish-review-doubtful"');
+        expect(html).toContain('data-action="finish-review-pending-sync"');
         expect(html).toContain('Cek Belum Dijawab');
+        expect(html).toContain('Jawaban Parsial');
+        expect(html).toContain('Cek Jawaban Parsial');
+        expect(html).toContain('<small>2/4</small>');
+        expect(html).toContain('<small>1/3</small>');
         expect(html).toContain('Cek Ragu-Ragu');
+        expect(html).toContain('Belum Sinkron');
+        expect(html).toContain('Cek Belum Sinkron');
         expect(html).toContain('Saya Yakin Kumpulkan');
         expect(html).not.toContain('data-action="finish-confirm-submit" type="button" disabled');
     });
@@ -361,6 +381,19 @@ describe('createAppShellManager rich zoom modal', function () {
                 finishProgressStatus: 'Mengecek jawaban terakhir',
                 finishProgressDetail: 'Menyimpan posisi terakhir dan memastikan semua jawaban ikut tersinkron.',
                 examLockedForPendingFinish: true
+            },
+            getExamProgressSummary: function () {
+                return {
+                    answeredQuestions: 1,
+                    doubtfulQuestions: 0,
+                    doubtfulQuestionItems: [],
+                    partialQuestionItems: [
+                        { index: 0, label: '1', progressLabel: '1/2', questionId: 101, status: 'partial' }
+                    ],
+                    totalQuestions: 1,
+                    unansweredQuestions: 0,
+                    unansweredQuestionItems: []
+                };
             }
         });
         var html = manager.renderFinishConfirmModal();
@@ -371,5 +404,6 @@ describe('createAppShellManager rich zoom modal', function () {
         expect(html).toContain('Progress finalisasi: 12%');
         expect(html).toContain('Proses...');
         expect(html).toContain('aria-label="Progress pengumpulan ujian"');
+        expect(html).toContain('data-action="finish-review-partial" type="button" disabled');
     });
 });

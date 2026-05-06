@@ -6,8 +6,14 @@ import { createFinishFlowManager } from './finish-flow';
 import { createExamNavigationManager } from './navigation';
 import { createQuestionFlags } from './question-flags';
 import {
+    getCategorizationItems,
+    getClozeDropdownBlanks,
+    getMatchingItems,
     getShortAnswerKeys,
+    getTableCompletionCells,
     getTrueFalseMatrixItems,
+    normalizeDropdownOptionAnswer,
+    normalizeTableCompletionAnswer,
     normalizeTrueFalseMatrixAnswer,
     questionOptionKey
 } from './question-helpers';
@@ -225,7 +231,12 @@ export function createExamRuntimeBundle(deps) {
         getQuestionCount: questionWindowManager.getQuestionCount,
         getQuestionDisplayNumber: questionWindowManager.getQuestionDisplayNumber,
         getQuestionIdAtIndex: questionWindowManager.getQuestionIdAtIndex,
+        getCategorizationItems: getCategorizationItems,
+        getClozeDropdownBlanks: getClozeDropdownBlanks,
+        getMatchingItems: getMatchingItems,
+        getPendingSyncQuestionIds: answerSyncManager.getPendingSyncQuestionIds,
         getShortAnswerKeys: getShortAnswerKeys,
+        getTableCompletionCells: getTableCompletionCells,
         getTrueFalseMatrixItems: getTrueFalseMatrixItems,
         hasUsableLocalAnswerForQuestion: questionStateManager.hasUsableLocalAnswerForQuestion,
         isExamAnswerEditingLocked: deps.isExamAnswerEditingLocked,
@@ -236,6 +247,8 @@ export function createExamRuntimeBundle(deps) {
         navQuestionFilterDoubtful: deps.navQuestionFilterDoubtful,
         navQuestionFilterUnanswered: deps.navQuestionFilterUnanswered,
         navigationQuestionTypeBadgeConfig: deps.navigationQuestionTypeBadgeConfig,
+        normalizeDropdownOptionAnswer: normalizeDropdownOptionAnswer,
+        normalizeTableCompletionAnswer: normalizeTableCompletionAnswer,
         normalizeTrueFalseMatrixAnswer: normalizeTrueFalseMatrixAnswer,
         persistCurrentAttemptUiStateLocally: attemptUiStateStorage.persistCurrentAttemptUiStateLocally,
         prefetchNextQuestionBatch: questionWindowManager.prefetchNextQuestionBatch,

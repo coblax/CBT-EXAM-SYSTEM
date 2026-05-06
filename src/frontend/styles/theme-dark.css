@@ -66,6 +66,23 @@
     color: #bfdbfe;
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-issue.is-partial {
+    background: rgba(245, 158, 11, 0.13);
+    border-color: rgba(245, 158, 11, 0.34);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-number.is-partial {
+    background: rgba(245, 158, 11, 0.16);
+    border-color: rgba(245, 158, 11, 0.38);
+    color: #facc15;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-finish-review-number.is-complete {
+    background: rgba(22, 163, 74, 0.16);
+    border-color: rgba(74, 222, 128, 0.34);
+    color: #86efac;
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-brand h2,
 .cbt-web-shell.cbt-theme-dark .cbt-option-label,
 .cbt-web-shell.cbt-theme-dark .cbt-question-stem,

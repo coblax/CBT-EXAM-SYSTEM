@@ -300,10 +300,14 @@ export function createAppShellManager(deps) {
             var label = '';
             var questionIndex = index;
             var questionId = 0;
+            var progressLabel = '';
+            var status = '';
             if (item && typeof item === 'object') {
                 label = String(item.label || item.number || (Number(item.index) + 1) || '');
                 questionIndex = Math.max(0, Number(item.index) || index);
                 questionId = Number(item.questionId) || 0;
+                progressLabel = String(item.progressLabel || item.progress || '');
+                status = String(item.status || '');
             } else {
                 label = String(item || '');
             }
@@ -313,7 +317,9 @@ export function createAppShellManager(deps) {
             items.push({
                 index: questionIndex,
                 label: label,
-                questionId: questionId
+                progressLabel: progressLabel,
+                questionId: questionId,
+                status: status
             });
             return items;
         }, []);
@@ -330,7 +336,13 @@ export function createAppShellManager(deps) {
         return [
             '<div class="cbt-finish-review-number-list" aria-label="Preview nomor soal">',
             previewItems.map(function (item) {
-                return '<span class="cbt-finish-review-number">' + escapeHtml(item.label) + '</span>';
+                var progressLabel = String(item && item.progressLabel ? item.progressLabel : '');
+                var itemStatus = String(item && item.status ? item.status : '');
+                var numberClass = 'cbt-finish-review-number'
+                    + (progressLabel !== '' ? ' is-progress' : '')
+                    + (itemStatus === 'partial' ? ' is-partial' : '')
+                    + (itemStatus === 'complete' ? ' is-complete' : '');
+                return '<span class="' + numberClass + '"><span>' + escapeHtml(item.label) + '</span>' + (progressLabel !== '' ? '<small>' + escapeHtml(progressLabel) + '</small>' : '') + '</span>';
             }).join(''),
             hiddenCount > 0 ? '<span class="cbt-finish-review-more">+' + escapeHtml(hiddenCount) + ' lagi</span>' : '',
             '</div>'
@@ -343,7 +355,7 @@ export function createAppShellManager(deps) {
         }
 
         return [
-            '<div class="cbt-finish-review-issue">',
+            '<div class="cbt-finish-review-issue' + (action === 'finish-review-partial' ? ' is-partial' : '') + '">',
             '<div class="cbt-finish-review-issue-main">',
             '<strong>' + escapeHtml(title) + '</strong>',
             '<span>' + escapeHtml(count) + ' soal</span>',
@@ -366,6 +378,8 @@ export function createAppShellManager(deps) {
         var doubtfulQuestions = Number(summary.doubtfulQuestions) || 0;
         var unansweredItems = normalizeFinishReviewQuestionItems(summary, 'unansweredQuestionItems', 'unansweredQuestionNumbers');
         var doubtfulItems = normalizeFinishReviewQuestionItems(summary, 'doubtfulQuestionItems', 'doubtfulQuestionNumbers');
+        var partialItems = normalizeFinishReviewQuestionItems(summary, 'partialQuestionItems', 'partialQuestionNumbers');
+        var pendingSyncItems = normalizeFinishReviewQuestionItems(summary, 'pendingSyncQuestionItems', 'pendingSyncQuestionNumbers');
         var answeredPercentage = totalQuestions > 0 ? (answeredQuestions / totalQuestions) * 100 : 0;
         var progressWidth = Math.max(0, Math.min(100, answeredPercentage)).toFixed(2);
         var progressLabel = formatScoreValue(answeredPercentage);
@@ -411,11 +425,18 @@ export function createAppShellManager(deps) {
         if (unansweredQuestions > 0) {
             reviewWarnings.push('Masih ada ' + String(unansweredQuestions) + ' soal belum dijawab.');
         }
+        if (partialItems.length > 0) {
+            reviewWarnings.push('Ada ' + String(partialItems.length) + ' soal dengan jawaban parsial.');
+        }
         if (doubtfulQuestions > 0) {
             reviewWarnings.push('Ada ' + String(doubtfulQuestions) + ' soal ditandai ragu-ragu.');
         }
         if (pendingSyncCount > 0) {
-            reviewWarnings.push(String(pendingSyncCount) + ' jawaban masih menunggu sinkronisasi.');
+            if (pendingSyncItems.length) {
+                reviewWarnings.push('Soal ' + pendingSyncItems.map(function (item) { return item.label; }).join(', ') + ' masih menunggu sinkronisasi.');
+            } else {
+                reviewWarnings.push(String(pendingSyncCount) + ' jawaban masih menunggu sinkronisasi.');
+            }
         }
         if (isOffline) {
             reviewWarnings.push('Perangkat sedang offline; finalisasi akan menunggu koneksi.');
@@ -427,7 +448,9 @@ export function createAppShellManager(deps) {
             : '<div class="cbt-finish-modal-ok">Semua soal sudah terjawab, tidak ada tanda ragu-ragu, dan sinkronisasi aman.</div>';
         var reviewIssueMarkup = [
             renderFinishReviewIssue('Belum Dijawab', unansweredQuestions, unansweredItems, 'finish-review-unanswered', 'Cek Belum Dijawab', showFinishLiveProgress),
-            renderFinishReviewIssue('Ragu-Ragu', doubtfulQuestions, doubtfulItems, 'finish-review-doubtful', 'Cek Ragu-Ragu', showFinishLiveProgress)
+            renderFinishReviewIssue('Jawaban Parsial', partialItems.length, partialItems, 'finish-review-partial', 'Cek Jawaban Parsial', showFinishLiveProgress),
+            renderFinishReviewIssue('Ragu-Ragu', doubtfulQuestions, doubtfulItems, 'finish-review-doubtful', 'Cek Ragu-Ragu', showFinishLiveProgress),
+            renderFinishReviewIssue('Belum Sinkron', pendingSyncItems.length, pendingSyncItems, 'finish-review-pending-sync', 'Cek Belum Sinkron', showFinishLiveProgress)
         ].join('');
         var finishLiveMarkup = showFinishLiveProgress
             ? [

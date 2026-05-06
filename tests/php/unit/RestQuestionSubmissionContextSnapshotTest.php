@@ -81,13 +81,13 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
         }
 
         self::assertSame(0, $itemsByQuestionId[601]['is_correct']);
-        self::assertSame(2.0, $itemsByQuestionId[601]['score_awarded']);
+        self::assertSame(4.0, $itemsByQuestionId[601]['score_awarded']);
         self::assertSame(0, $itemsByQuestionId[602]['is_correct']);
-        self::assertSame(3.0, $itemsByQuestionId[602]['score_awarded']);
+        self::assertSame(6.0, $itemsByQuestionId[602]['score_awarded']);
         self::assertSame(0, $itemsByQuestionId[603]['is_correct']);
-        self::assertSame(4.0, $itemsByQuestionId[603]['score_awarded']);
+        self::assertSame(12.0, $itemsByQuestionId[603]['score_awarded']);
         self::assertSame(0, $itemsByQuestionId[604]['is_correct']);
-        self::assertSame(4.0, $itemsByQuestionId[604]['score_awarded']);
+        self::assertSame(8.0, $itemsByQuestionId[604]['score_awarded']);
         self::assertSame(1, $wpdb->attemptGetRowCalls);
         self::assertSame(1, $wpdb->contextQuestionHydrateCalls);
         self::assertSame(1, $wpdb->contextOptionHydrateCalls);
@@ -179,16 +179,16 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
             'status' => 'completed',
             'started_at' => '2026-04-02 08:00:00',
             'finished_at' => '2026-04-02 08:30:00',
-            'score' => 13.0,
-            'max_score' => 24.0,
+            'score' => 30.0,
+            'max_score' => 54.0,
             'question_order' => '[601,602,603,604]',
             'option_order' => '',
         ]);
 
         self::assertIsArray($payload);
-        self::assertSame(13.0, $payload['attempt']['score']);
-        self::assertSame(24.0, $payload['attempt']['max_score']);
-        self::assertSame(54.17, $payload['percentage']);
+        self::assertSame(30.0, $payload['attempt']['score']);
+        self::assertSame(54.0, $payload['attempt']['max_score']);
+        self::assertSame(55.56, $payload['percentage']);
         self::assertSame(4, $payload['review_summary']['wrong_questions'] ?? -1);
         self::assertCount(4, $payload['review_items']);
 
@@ -198,22 +198,26 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
         }
 
         self::assertSame('wrong', $items['matching']['status'] ?? '');
-        self::assertSame(2.0, $items['matching']['score_awarded'] ?? -1);
+        self::assertSame(4.0, $items['matching']['score_awarded'] ?? -1);
+        self::assertSame(8.0, $items['matching']['points'] ?? -1);
         self::assertSame('Tokyo', $items['matching']['matching_rows'][0]['submitted_text'] ?? '');
         self::assertSame('Seoul', $items['matching']['matching_rows'][1]['correct_text'] ?? '');
 
         self::assertSame('wrong', $items['cloze_dropdown']['status'] ?? '');
-        self::assertSame(3.0, $items['cloze_dropdown']['score_awarded'] ?? -1);
+        self::assertSame(6.0, $items['cloze_dropdown']['score_awarded'] ?? -1);
+        self::assertSame(12.0, $items['cloze_dropdown']['points'] ?? -1);
         self::assertSame('Jepang', $items['cloze_dropdown']['cloze_dropdown_rows'][0]['submitted_text'] ?? '');
         self::assertSame('Tokyo', $items['cloze_dropdown']['cloze_dropdown_rows'][1]['correct_text'] ?? '');
 
         self::assertSame('wrong', $items['categorization']['status'] ?? '');
-        self::assertSame(4.0, $items['categorization']['score_awarded'] ?? -1);
+        self::assertSame(12.0, $items['categorization']['score_awarded'] ?? -1);
+        self::assertSame(18.0, $items['categorization']['points'] ?? -1);
         self::assertSame('Mamalia', $items['categorization']['categorization_rows'][0]['submitted_text'] ?? '');
         self::assertSame('Reptil', $items['categorization']['categorization_rows'][1]['correct_text'] ?? '');
 
         self::assertSame('wrong', $items['table_completion']['status'] ?? '');
-        self::assertSame(4.0, $items['table_completion']['score_awarded'] ?? -1);
+        self::assertSame(8.0, $items['table_completion']['score_awarded'] ?? -1);
+        self::assertSame(16.0, $items['table_completion']['points'] ?? -1);
         self::assertSame('Tokyo', $items['table_completion']['table_completion_rows'][0]['submitted_text'] ?? '');
         self::assertSame('Jepang', $items['table_completion']['table_completion_rows'][1]['correct_text'] ?? '');
     }
@@ -250,10 +254,24 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
             'true_false_matrix_answers' => ['1' => 'true', '2' => 'false'],
         ], ['1' => true, '2' => false]);
 
+        $matrixPartial = $method->invoke(null, [
+            'id' => 403,
+            'exam_id' => 90,
+            'question_type' => 'true_false_matrix',
+            'points' => 6,
+            'correct_option_ids' => [],
+            'true_false_correct_value' => null,
+            'true_false_option_value_by_id' => [],
+            'short_answer_values' => [],
+            'true_false_matrix_answers' => ['1' => 'true', '2' => 'false'],
+        ], ['1' => true, '2' => true]);
+
         self::assertSame(1, $multipleAnswer['is_correct']);
         self::assertSame(4.0, $multipleAnswer['score_awarded']);
         self::assertSame(1, $matrix['is_correct']);
-        self::assertSame(6.0, $matrix['score_awarded']);
+        self::assertSame(12.0, $matrix['score_awarded']);
+        self::assertSame(0, $matrixPartial['is_correct']);
+        self::assertSame(6.0, $matrixPartial['score_awarded']);
     }
 
     #[RunInSeparateProcess]
@@ -322,7 +340,7 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
                 ]),
                 'answer' => ['1' => 'true', '2' => 'false'],
                 'is_correct' => 1,
-                'score_awarded' => 4.0,
+                'score_awarded' => 8.0,
             ],
             'short_answer' => [
                 'context' => array_merge($base, [
@@ -366,7 +384,7 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
                 ]),
                 'answer' => ['1' => 101, '2' => 102],
                 'is_correct' => 1,
-                'score_awarded' => 4.0,
+                'score_awarded' => 8.0,
             ],
             'cloze_dropdown' => [
                 'context' => array_merge($base, [
@@ -377,7 +395,7 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
                 ]),
                 'answer' => ['1' => 201, '2' => 202],
                 'is_correct' => 1,
-                'score_awarded' => 4.0,
+                'score_awarded' => 8.0,
             ],
             'categorization' => [
                 'context' => array_merge($base, [
@@ -388,7 +406,7 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
                 ]),
                 'answer' => ['1' => 301, '2' => 302, '3' => 301],
                 'is_correct' => 1,
-                'score_awarded' => 6.0,
+                'score_awarded' => 18.0,
             ],
             'table_completion' => [
                 'context' => array_merge($base, [
@@ -402,7 +420,7 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
                 ]),
                 'answer' => ['A1' => ' tokyo. ', 'B1' => 402],
                 'is_correct' => 1,
-                'score_awarded' => 8.0,
+                'score_awarded' => 16.0,
             ],
         ];
 
@@ -460,21 +478,21 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
         $clozeForeignKey = $method->invoke(null, $clozeContext, ['1' => 301, 'x' => 302]);
 
         self::assertSame(1, $matchingFull['is_correct']);
-        self::assertSame(4.0, $matchingFull['score_awarded']);
+        self::assertSame(8.0, $matchingFull['score_awarded']);
         self::assertSame(0, $matchingPartial['is_correct']);
-        self::assertSame(2.0, $matchingPartial['score_awarded']);
+        self::assertSame(4.0, $matchingPartial['score_awarded']);
         self::assertSame(0, $matchingForeignKey['is_correct']);
-        self::assertSame(2.0, $matchingForeignKey['score_awarded']);
+        self::assertSame(4.0, $matchingForeignKey['score_awarded']);
         self::assertSame(0, $matchingEmpty['is_correct']);
         self::assertSame(0.0, $matchingEmpty['score_awarded']);
         self::assertNull($matchingEmpty['answer_text']);
         self::assertSame(0, $matchingInvalidIds['is_correct']);
         self::assertSame(0.0, $matchingInvalidIds['score_awarded']);
         self::assertSame(0, $clozePartial['is_correct']);
-        self::assertSame(3.0, $clozePartial['score_awarded']);
+        self::assertSame(6.0, $clozePartial['score_awarded']);
         self::assertSame('{"1":301}', $clozePartial['answer_text']);
         self::assertSame(0, $clozeForeignKey['is_correct']);
-        self::assertSame(3.0, $clozeForeignKey['score_awarded']);
+        self::assertSame(6.0, $clozeForeignKey['score_awarded']);
     }
 
     #[RunInSeparateProcess]
@@ -534,19 +552,19 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
         $tableEmpty = $method->invoke(null, $tableContext, []);
 
         self::assertSame(0, $categorizationPartial['is_correct']);
-        self::assertSame(4.0, $categorizationPartial['score_awarded']);
+        self::assertSame(12.0, $categorizationPartial['score_awarded']);
         self::assertSame(0, $categorizationForeignKey['is_correct']);
-        self::assertSame(2.0, $categorizationForeignKey['score_awarded']);
+        self::assertSame(6.0, $categorizationForeignKey['score_awarded']);
         self::assertSame(0, $categorizationEmpty['is_correct']);
         self::assertSame(0.0, $categorizationEmpty['score_awarded']);
         self::assertNull($categorizationEmpty['answer_text']);
         self::assertSame(0, $tablePartial['is_correct']);
-        self::assertSame(4.0, $tablePartial['score_awarded']);
+        self::assertSame(8.0, $tablePartial['score_awarded']);
         self::assertSame(1, $tableFull['is_correct']);
-        self::assertSame(8.0, $tableFull['score_awarded']);
+        self::assertSame(16.0, $tableFull['score_awarded']);
         self::assertSame('{"A1":"Tokyo","B1":602}', $tableFull['answer_text']);
         self::assertSame(0, $tableForeignKey['is_correct']);
-        self::assertSame(4.0, $tableForeignKey['score_awarded']);
+        self::assertSame(8.0, $tableForeignKey['score_awarded']);
         self::assertSame('{"A1":"Tokyo","Z9":"Tokyo"}', $tableForeignKey['answer_text']);
         self::assertSame(0, $tableEmpty['is_correct']);
         self::assertSame(0.0, $tableEmpty['score_awarded']);

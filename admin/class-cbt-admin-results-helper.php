@@ -426,6 +426,11 @@ final class CBT_Admin_Results_Helper
         if ($question_type === 'true_false_matrix' && is_array($answer_row)) {
             $matrix_items = CBT_Admin_Questions_Helper::normalize_true_false_matrix_config((string) ($question['correct_text'] ?? ''));
             $matrix_submission = self::normalize_attempt_true_false_matrix_submission($answer_text, count($matrix_items));
+            $matrix_item_count = count($matrix_items);
+            $base_points = max(0, (float) ($question['points'] ?? 0));
+            if ($matrix_item_count > 0) {
+                $points = $base_points * $matrix_item_count;
+            }
 
             if (!empty($matrix_items)) {
                 $answered_count = 0;
@@ -455,11 +460,16 @@ final class CBT_Admin_Results_Helper
                     $score_awarded = $points;
                 } elseif ($matched_count >= 0) {
                     $status = 'wrong';
-                    $score_awarded = count($matrix_items) > 0
-                        ? min($points, $points * ((float) $matched_count / (float) count($matrix_items)))
+                    $score_awarded = $matrix_item_count > 0
+                        ? min($points, $base_points * $matched_count)
                         : 0.0;
                 }
             }
+        }
+
+        if (in_array($question_type, ['matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
+            $points = max(0, (float) ($question['points'] ?? 0))
+                * self::count_per_item_scored_question_units_for_progress($question_type, $question);
         }
 
         if (in_array($question_type, ['matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
@@ -499,6 +509,86 @@ final class CBT_Admin_Results_Helper
             'true_false_matrix_submission' => $matrix_submission,
             'detail_note' => '',
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $question
+     */
+    private static function count_per_item_scored_question_units_for_progress(string $question_type, array $question): int
+    {
+        $count = 0;
+
+        if ($question_type === 'matching') {
+            $count = count((array) ($question['matching_items'] ?? $question['items'] ?? []));
+            $count = max($count, (int) ($question['matching_item_count'] ?? 0));
+        } elseif ($question_type === 'cloze_dropdown') {
+            $count = count((array) ($question['cloze_blanks'] ?? $question['blanks'] ?? []));
+            $count = max($count, (int) ($question['cloze_dropdown_blank_count'] ?? 0));
+        } elseif ($question_type === 'categorization') {
+            $count = count((array) ($question['categorization_items'] ?? $question['items'] ?? []));
+            $count = max($count, (int) ($question['categorization_item_count'] ?? 0));
+        } elseif ($question_type === 'table_completion') {
+            $count = self::count_table_completion_answer_units_for_progress(
+                (array) ($question['table_completion_cells'] ?? $question['cells'] ?? [])
+            );
+            $count = max($count, (int) ($question['table_completion_answer_cell_count'] ?? 0));
+        }
+
+        $question_id = absint($question['id'] ?? 0);
+        if (
+            $count <= 0 &&
+            $question_id > 0 &&
+            class_exists('CBT_Admin_Questions_Helper') &&
+            isset($GLOBALS['wpdb']) &&
+            is_object($GLOBALS['wpdb'])
+        ) {
+            if ($question_type === 'matching') {
+                $count = count(CBT_Admin_Questions_Helper::get_matching_items($question_id));
+            } elseif ($question_type === 'cloze_dropdown') {
+                $count = count(CBT_Admin_Questions_Helper::get_cloze_dropdown_blanks($question_id, false));
+            } elseif ($question_type === 'categorization') {
+                $count = count(CBT_Admin_Questions_Helper::get_categorization_items($question_id));
+            } elseif ($question_type === 'table_completion') {
+                $definition = CBT_Admin_Questions_Helper::get_table_completion_definition($question_id, false);
+                $count = self::count_table_completion_answer_units_for_progress((array) ($definition['cells'] ?? []));
+            }
+        }
+
+        if ($count <= 0) {
+            $correct_text = trim((string) ($question['correct_text'] ?? ''));
+            if ($correct_text !== '') {
+                $decoded = json_decode($correct_text, true);
+                if (is_array($decoded)) {
+                    if ($question_type === 'matching') {
+                        $count = count((array) ($decoded['pairs'] ?? []));
+                    } elseif ($question_type === 'cloze_dropdown') {
+                        $count = count((array) ($decoded['blanks'] ?? []));
+                    } elseif ($question_type === 'categorization') {
+                        $count = count((array) ($decoded['items'] ?? []));
+                    } elseif ($question_type === 'table_completion') {
+                        $count = self::count_table_completion_answer_units_for_progress((array) ($decoded['cells'] ?? []));
+                    }
+                }
+            }
+        }
+
+        return max(1, $count);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $cells
+     */
+    private static function count_table_completion_answer_units_for_progress(array $cells): int
+    {
+        $count = 0;
+        foreach ($cells as $cell_row) {
+            $cell = (array) $cell_row;
+            if (in_array((string) ($cell['cell_type'] ?? 'static'), ['text', 'dropdown'], true)) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     private static function count_object_map_answer_values(string $question_type, string $answer_text): int

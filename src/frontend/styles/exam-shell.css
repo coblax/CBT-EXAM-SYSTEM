@@ -3148,6 +3148,18 @@
     white-space: nowrap;
 }
 
+.cbt-nav-answer-badge.is-partial {
+    background: #f59e0b;
+    color: #422006;
+    box-shadow: 0 2px 5px rgba(245, 158, 11, 0.34);
+}
+
+.cbt-nav-answer-badge.is-complete {
+    background: #16a34a;
+    color: #fff;
+    box-shadow: 0 2px 5px rgba(22, 163, 74, 0.34);
+}
+
 .cbt-nav-type-badge {
     position: absolute;
     bottom: -7px;

@@ -943,6 +943,10 @@ trait CBT_REST_Scoring_Helpers
                         'answer' => (string) ($row['answer'] ?? 'true'),
                     ];
                 }, $matrix_config, array_keys($matrix_config));
+                $matrix_item_count = count($matrix_items);
+                if ($matrix_item_count > 0) {
+                    $question_max_points *= $matrix_item_count;
+                }
                 if (isset($attempt_option_order_map[$question_id])) {
                     $matrix_items = self::order_true_false_matrix_items_by_attempt_sequence(
                         $matrix_items,
@@ -1007,6 +1011,9 @@ trait CBT_REST_Scoring_Helpers
                 $matching_items = isset($question_detail['items']) && is_array($question_detail['items'])
                     ? $question_detail['items']
                     : [];
+                if (!empty($matching_items)) {
+                    $question_max_points *= count($matching_items);
+                }
                 foreach ($matching_items as $idx => $item_row) {
                     $item = (array) $item_row;
                     $key = trim((string) ($item['item_key'] ?? ($idx + 1)));
@@ -1036,6 +1043,9 @@ trait CBT_REST_Scoring_Helpers
                 $cloze_blanks = isset($question_detail['blanks']) && is_array($question_detail['blanks'])
                     ? $question_detail['blanks']
                     : [];
+                if (!empty($cloze_blanks)) {
+                    $question_max_points *= count($cloze_blanks);
+                }
                 foreach ($cloze_blanks as $idx => $blank_row) {
                     $blank = (array) $blank_row;
                     $key = trim((string) ($blank['blank_key'] ?? ($idx + 1)));
@@ -1079,6 +1089,9 @@ trait CBT_REST_Scoring_Helpers
                 $categorization_items = isset($question_detail['items']) && is_array($question_detail['items'])
                     ? $question_detail['items']
                     : [];
+                if (!empty($categorization_items)) {
+                    $question_max_points *= count($categorization_items);
+                }
                 foreach ($categorization_items as $idx => $item_row) {
                     $item = (array) $item_row;
                     $key = trim((string) ($item['item_key'] ?? ($idx + 1)));
@@ -1108,6 +1121,10 @@ trait CBT_REST_Scoring_Helpers
                 $table_cells = isset($question_detail['cells']) && is_array($question_detail['cells'])
                     ? $question_detail['cells']
                     : [];
+                $table_answer_cell_count = self::count_table_completion_answer_units($table_cells);
+                if ($table_answer_cell_count > 0) {
+                    $question_max_points *= $table_answer_cell_count;
+                }
                 foreach ($table_cells as $idx => $cell_row) {
                     $cell = (array) $cell_row;
                     $cell_type = (string) ($cell['cell_type'] ?? 'static');
@@ -1549,7 +1566,7 @@ trait CBT_REST_Scoring_Helpers
 
         $question_rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT q.question_type, q.points, q.correct_text,
+                "SELECT q.id, q.question_type, q.points, q.correct_text,
                         qsa.correct_text AS short_answer_correct_text
                  FROM {$question_table} q
                  LEFT JOIN {$question_short_answer_table} qsa ON qsa.question_id = q.id
@@ -1564,6 +1581,25 @@ trait CBT_REST_Scoring_Helpers
             $question = (array) $question_row;
             $question_type = (string) ($question['question_type'] ?? '');
             $base_points = max(0.0, (float) ($question['points'] ?? 0));
+
+            if ($question_type === 'true_false_matrix') {
+                $matrix_count = count(self::normalize_true_false_matrix_config((string) ($question['correct_text'] ?? '')));
+                if ($matrix_count <= 0) {
+                    $matrix_count = 1;
+                }
+                $max_score += ($base_points * $matrix_count);
+                continue;
+            }
+
+            if (in_array($question_type, ['matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
+                $item_count = self::count_per_item_scored_question_units(
+                    (int) ($question['id'] ?? 0),
+                    $question_type,
+                    (string) ($question['correct_text'] ?? '')
+                );
+                $max_score += ($base_points * $item_count);
+                continue;
+            }
 
             if ($question_type !== 'short_answer') {
                 $max_score += $base_points;
@@ -1584,6 +1620,57 @@ trait CBT_REST_Scoring_Helpers
         }
 
         return $max_score;
+    }
+
+    private static function count_per_item_scored_question_units(int $question_id, string $question_type, string $correct_text = ''): int
+    {
+        $count = 0;
+
+        if ($question_id > 0 && class_exists('CBT_Admin_Questions_Helper')) {
+            if ($question_type === 'matching') {
+                $count = count(CBT_Admin_Questions_Helper::get_matching_items($question_id));
+            } elseif ($question_type === 'cloze_dropdown') {
+                $count = count(CBT_Admin_Questions_Helper::get_cloze_dropdown_blanks($question_id, false));
+            } elseif ($question_type === 'categorization') {
+                $count = count(CBT_Admin_Questions_Helper::get_categorization_items($question_id));
+            } elseif ($question_type === 'table_completion') {
+                $definition = CBT_Admin_Questions_Helper::get_table_completion_definition($question_id, false);
+                $count = self::count_table_completion_answer_units((array) ($definition['cells'] ?? []));
+            }
+        }
+
+        if ($count <= 0 && trim($correct_text) !== '') {
+            $decoded = json_decode($correct_text, true);
+            if (is_array($decoded)) {
+                if ($question_type === 'matching') {
+                    $count = count((array) ($decoded['pairs'] ?? []));
+                } elseif ($question_type === 'cloze_dropdown') {
+                    $count = count((array) ($decoded['blanks'] ?? []));
+                } elseif ($question_type === 'categorization') {
+                    $count = count((array) ($decoded['items'] ?? []));
+                } elseif ($question_type === 'table_completion') {
+                    $count = self::count_table_completion_answer_units((array) ($decoded['cells'] ?? []));
+                }
+            }
+        }
+
+        return max(1, $count);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $cells
+     */
+    private static function count_table_completion_answer_units(array $cells): int
+    {
+        $count = 0;
+        foreach ($cells as $cell_row) {
+            $cell = (array) $cell_row;
+            if (in_array((string) ($cell['cell_type'] ?? 'static'), ['text', 'dropdown'], true)) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     private static function is_empty_answer_submission($answer_input): bool
@@ -2003,6 +2090,7 @@ trait CBT_REST_Scoring_Helpers
                 $answer_text = !empty($submitted_map) ? (string) wp_json_encode($submitted_map) : '';
 
                 $total_items = count($true_false_matrix_answers);
+                $max_matrix_score = $points * max(1, $total_items);
                 $matched_items = 0;
                 foreach ($true_false_matrix_answers as $key => $correct_value) {
                     $submitted_value = (string) ($submitted_map[(string) $key] ?? '');
@@ -2012,14 +2100,12 @@ trait CBT_REST_Scoring_Helpers
                 }
 
                 $is_correct = ($total_items > 0 && $matched_items === $total_items) ? 1 : 0;
-                $score = ($total_items > 0)
-                    ? ($points * ((float) $matched_items / (float) $total_items))
-                    : 0.0;
+                $score = ($total_items > 0) ? ($points * $matched_items) : 0.0;
                 if ($score < 0) {
                     $score = 0.0;
                 }
-                if ($score > $points) {
-                    $score = $points;
+                if ($score > $max_matrix_score) {
+                    $score = $max_matrix_score;
                 }
                 break;
 
@@ -2037,6 +2123,7 @@ trait CBT_REST_Scoring_Helpers
                 $answer_text = !empty($submitted_map) ? (string) wp_json_encode($submitted_map) : '';
 
                 $total_items = count($correct_map);
+                $max_dropdown_score = $points * max(1, $total_items);
                 $matched_items = 0;
                 $has_foreign_key = false;
                 foreach ($submitted_map as $submitted_key => $_submitted_option_id) {
@@ -2053,14 +2140,12 @@ trait CBT_REST_Scoring_Helpers
                 }
 
                 $is_correct = ($total_items > 0 && !$has_foreign_key && $matched_items === $total_items) ? 1 : 0;
-                $score = ($total_items > 0)
-                    ? ($points * ((float) $matched_items / (float) $total_items))
-                    : 0.0;
+                $score = ($total_items > 0) ? ($points * $matched_items) : 0.0;
                 if ($score < 0) {
                     $score = 0.0;
                 }
-                if ($score > $points) {
-                    $score = $points;
+                if ($score > $max_dropdown_score) {
+                    $score = $max_dropdown_score;
                 }
                 break;
 
@@ -2069,6 +2154,7 @@ trait CBT_REST_Scoring_Helpers
                 $answer_text = !empty($submitted_map) ? (string) wp_json_encode($submitted_map) : '';
 
                 $total_items = count($table_completion_answers_by_key);
+                $max_table_score = $points * max(1, $total_items);
                 $matched_items = 0;
                 $has_foreign_key = false;
                 foreach ($submitted_map as $submitted_key => $_submitted_value) {
@@ -2102,14 +2188,12 @@ trait CBT_REST_Scoring_Helpers
                 }
 
                 $is_correct = ($total_items > 0 && !$has_foreign_key && $matched_items === $total_items) ? 1 : 0;
-                $score = ($total_items > 0)
-                    ? ($points * ((float) $matched_items / (float) $total_items))
-                    : 0.0;
+                $score = ($total_items > 0) ? ($points * $matched_items) : 0.0;
                 if ($score < 0) {
                     $score = 0.0;
                 }
-                if ($score > $points) {
-                    $score = $points;
+                if ($score > $max_table_score) {
+                    $score = $max_table_score;
                 }
                 break;
 

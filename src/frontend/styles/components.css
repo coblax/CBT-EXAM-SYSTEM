@@ -601,6 +601,40 @@
     line-height: 1;
 }
 
+.cbt-finish-review-number.is-progress {
+    gap: 5px;
+    min-width: 42px;
+    padding: 0 8px;
+}
+
+.cbt-finish-review-number small {
+    display: inline-flex;
+    align-items: center;
+    min-height: 16px;
+    padding-left: 5px;
+    border-left: 1px solid currentColor;
+    font-size: 10px;
+    font-weight: 900;
+    opacity: 0.78;
+}
+
+.cbt-finish-review-issue.is-partial {
+    border-color: #f7d796;
+    background: #fffbeb;
+}
+
+.cbt-finish-review-number.is-partial {
+    border-color: #f7d796;
+    background: #fff7d6;
+    color: #a15c00;
+}
+
+.cbt-finish-review-number.is-complete {
+    border-color: #b8e6ca;
+    background: #ecfdf3;
+    color: #15803d;
+}
+
 .cbt-finish-review-more {
     padding: 0 8px;
     color: #53667d;
